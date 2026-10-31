@@ -55,7 +55,7 @@ def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
     meta["schema_version"] = "1.0"
     table.fields["description"] = json.dumps(meta)
 
-    with pytest.raises(ValueError, match="not a spatial-rates table"):
+    with pytest.raises(ValueError, match=r"Spatial-rates schema '1\.0'"):
         read_spatial_rates(empty_nwb, env=env)
 
 

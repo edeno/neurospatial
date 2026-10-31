@@ -665,7 +665,9 @@ class TestSpatialRatesRoundTrip:
             )
         )
 
-        with pytest.raises(ValueError, match="not a spatial-rates table"):
+        with pytest.raises(
+            ValueError, match="/analysis/not_rates is not a spatial-rates"
+        ):
             read_spatial_rates(empty_nwb, name="not_rates", env=sample_environment)
 
     def test_reserved_unit_table_columns_raise(self, empty_nwb, sample_environment):

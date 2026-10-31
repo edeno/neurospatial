@@ -2365,7 +2365,9 @@ def test_reader_names_a_non_environment_record_and_lists_environments(
     with pytest.raises(ValueError, match="/analysis/tagged is not an environment"):
         read_environment(empty_nwb, name="tagged")
     # A description that is not JSON at all cannot say what it is.
-    with pytest.raises(ValueError, match="Invalid environment metadata") as error:
+    with pytest.raises(
+        ValueError, match="/analysis/quality is not an environment"
+    ) as error:
         read_environment(empty_nwb, name="quality")
     assert "Fix: pass name= one of ['open_field']" in str(error.value)
     with pytest.raises(KeyError) as missing:

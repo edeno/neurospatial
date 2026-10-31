@@ -243,18 +243,81 @@ def _is_environment_record(record: object) -> bool:
     return metadata is not None and metadata.get("format") == ENVIRONMENT_FORMAT
 
 
+def _analysis_records(nwbfile: NWBFile, record_format: str) -> dict[str, dict]:
+    """Metadata of the ``/analysis`` records declaring ``record_format``, by name.
+
+    Names are in sorted order.
+    """
+    found = {}
+    for name in sorted(nwbfile.analysis):
+        metadata = _record_metadata(nwbfile.analysis[name])
+        if metadata is not None and metadata.get("format") == record_format:
+            found[name] = metadata
+    return found
+
+
 def _spatial_rates_using(nwbfile: NWBFile, env_name: str) -> list[str]:
     """Names of the spatial-rates records in ``/analysis`` that use ``env_name``."""
-    users = []
-    for table_name, table in nwbfile.analysis.items():
-        metadata = _record_metadata(table)
-        if (
-            metadata is not None
-            and metadata.get("format") == SPATIAL_RATES_FORMAT
-            and metadata.get("environment_name") == env_name
-        ):
-            users.append(table_name)
-    return sorted(users)
+    return [
+        name
+        for name, metadata in _analysis_records(nwbfile, SPATIAL_RATES_FORMAT).items()
+        if metadata.get("environment_name") == env_name
+    ]
+
+
+def _require_record(
+    nwbfile: NWBFile, name: str, record_format: str, *, what: str, writer: str
+) -> dict[str, Any]:
+    """Return the metadata of ``/analysis/{name}``, a record of ``record_format``.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        File holding the record in ``/analysis``.
+    name : str
+        Name of an existing ``/analysis`` object.
+    record_format : str
+        The ``"format"`` the record's description declares.
+    what : str
+        The kind of record with its article, e.g. ``"an environment"``.
+    writer : str
+        The function that writes such records.
+
+    Raises
+    ------
+    ValueError
+        If the object's description does not declare ``record_format``.
+    """
+    from neurospatial._exceptions import _format_error
+
+    metadata = _record_metadata(nwbfile.analysis[name])
+    if metadata is None or metadata.get("format") != record_format:
+        saved = list(_analysis_records(nwbfile, record_format))
+        raise ValueError(
+            _format_error(
+                f"/analysis/{name} is not {what} record (saved: {saved or 'none'}).",
+                why=f"Why: its description does not declare format "
+                f"{record_format!r}, as every record written by {writer} does.",
+                fix=f"pass name= one of {saved}"
+                if saved
+                else f"write the record with {writer} first",
+            )
+        )
+    return metadata
+
+
+def _earlier_location_error(what: str, where: str, *, fix: str) -> ValueError:
+    """Refusal of a record an earlier version saved outside ``/analysis``."""
+    from neurospatial._exceptions import _format_error
+
+    return ValueError(
+        _format_error(
+            f"{what} is in {where}, where earlier versions of neurospatial saved "
+            "it; this version reads only records in /analysis.",
+            why="Why: earlier records store a different layout and are not converted.",
+            fix=fix,
+        )
+    )
 
 
 def _refuse_replacing_a_used_environment(
@@ -296,15 +359,6 @@ def _check_environment_name(nwbfile: NWBFile, name: str) -> None:
         )
 
 
-def _environment_record_names(nwbfile: NWBFile) -> list[str]:
-    """Names of the environment records in ``nwbfile.analysis``, sorted."""
-    return sorted(
-        name
-        for name, record in nwbfile.analysis.items()
-        if _is_environment_record(record)
-    )
-
-
 class _MissingEnvironmentError(KeyError):
     """No saved environment of the requested name; prints its message as written."""
 
@@ -319,7 +373,7 @@ def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
     from neurospatial._exceptions import _format_error
     from neurospatial.io.nwb._core import _find_containers_by_type
 
-    stored = _environment_record_names(nwbfile)
+    stored = list(_analysis_records(nwbfile, ENVIRONMENT_FORMAT))
     positions = [path for path, _ in _find_containers_by_type(nwbfile, Position)]
     build = "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)"
     if positions:
@@ -404,56 +458,22 @@ def read_environment(
 
     if name not in nwbfile.analysis:
         if name in nwbfile.scratch:
-            raise ValueError(
-                _format_error(
-                    f"Environment {name!r} is in NWB scratch space, where "
-                    "earlier versions of neurospatial saved it; this version "
-                    "reads only records in /analysis.",
-                    why="Why: earlier records store a different layout and are "
-                    "not converted.",
-                    fix="recreate the environment with an Environment factory "
-                    "and save it again with this version",
-                )
+            raise _earlier_location_error(
+                f"Environment {name!r}",
+                "NWB scratch space",
+                fix="recreate the environment with an Environment factory and "
+                "save it again with this version",
             )
         raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
     record = nwbfile.analysis[name]
     source = f"NWB analysis/{name}"
-    stored = _environment_record_names(nwbfile)
-    choose = f"pass name= one of {stored}, or " if stored else ""
-    try:
-        metadata = json.loads(record.description)
-        if not isinstance(metadata, dict):
-            raise ValueError("environment metadata must be a dictionary")
-    except (
-        ValueError,
-        TypeError,
-        KeyError,
-        IndexError,
-        AttributeError,
-        RecursionError,
-    ) as error:
-        raise ValueError(
-            _format_error(
-                f"Invalid environment metadata in {source}: {error}",
-                why="Why: an environment record's description is its complete "
-                "JSON metadata, without excessive nesting.",
-                fix=f"{choose}restore the original environment record, or "
-                "re-save the original environment",
-            )
-        ) from error
-    if metadata.get("format") != ENVIRONMENT_FORMAT:
-        raise ValueError(
-            _format_error(
-                f"/analysis/{name} is not an environment record "
-                f"(saved environments: {stored or 'none'}).",
-                why=f"Why: its description does not declare format "
-                f"{ENVIRONMENT_FORMAT!r}, as every record written by "
-                "write_environment does.",
-                fix=f"pass name= one of {stored}"
-                if stored
-                else "save the environment with write_environment first",
-            )
-        )
+    metadata = _require_record(
+        nwbfile,
+        name,
+        ENVIRONMENT_FORMAT,
+        what="an environment",
+        writer="write_environment",
+    )
     _check_schema(metadata, source)
     try:
         if len(record) != 1:

@@ -22,12 +22,19 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
+from neurospatial.io.files import _check_schema
 from neurospatial.io.nwb._core import (
     _refuse_in_place_replacement,
     _require_pynwb,
     logger,
 )
-from neurospatial.io.nwb._environment import SPATIAL_RATES_FORMAT, _record_metadata
+from neurospatial.io.nwb._environment import (
+    SPATIAL_RATES_FORMAT,
+    _analysis_records,
+    _earlier_location_error,
+    _record_metadata,
+    _require_record,
+)
 
 if TYPE_CHECKING:
     from hdmf.common import DynamicTable, DynamicTableRegion
@@ -553,7 +560,6 @@ def _plan_spatial_rates_write(
         _environment_record,
         _is_environment_record,
         _record_fingerprint,
-        _record_metadata,
         _spatial_rates_using,
     )
 
@@ -772,42 +778,34 @@ def read_spatial_rates(
     if name not in analysis:
         earlier = nwbfile.processing.get(_EARLIER_MODULE)
         if earlier is not None and name in earlier.data_interfaces:
-            raise ValueError(
-                _format_error(
-                    f"Spatial rates '{name}' are in the processing module "
-                    f"'{_EARLIER_MODULE}', where neurospatial before spatial-rates "
-                    f"schema {SPATIAL_RATES_SCHEMA_VERSION} wrote them; this "
-                    "version reads only rates in /analysis.",
-                    why="Why: earlier records store a different layout and are "
-                    "not converted.",
-                    fix=_RECREATE_FIX,
-                )
+            raise _earlier_location_error(
+                f"Spatial rates {name!r}",
+                f"the processing module {_EARLIER_MODULE!r}",
+                fix=_RECREATE_FIX,
             )
-        available = _spatial_rates_names(nwbfile)
+        available = list(_analysis_records(nwbfile, SPATIAL_RATES_FORMAT))
         raise KeyError(
             f"Spatial rates '{name}' not found in /analysis. Saved spatial "
             f"rates: {available}"
         )
 
     table = analysis[name]
-
-    # A table not written by write_spatial_rates has a plain-text description.
-    try:
-        meta = json.loads(table.description)
-    except (json.JSONDecodeError, TypeError) as exc:
-        raise ValueError(
-            f"'{name}' is not a spatial-rates table: its description is not the "
-            f"JSON metadata written by write_spatial_rates."
-        ) from exc
-    if not isinstance(meta, dict) or "method" not in meta or "n_bins" not in meta:
-        raise ValueError(
-            f"'{name}' is not a spatial-rates table: its description JSON is "
-            f"missing the expected spatial-rates metadata ('method', 'n_bins')."
-        )
-
-    _require_current_schema(meta, name)
-    method = meta["method"]
-    meta_n_bins = int(meta["n_bins"])
+    meta = _require_record(
+        nwbfile,
+        name,
+        SPATIAL_RATES_FORMAT,
+        what="a spatial-rates",
+        writer="write_spatial_rates",
+    )
+    _check_schema(
+        meta,
+        f"/analysis/{name}",
+        current=SPATIAL_RATES_SCHEMA_VERSION,
+        kind="Spatial-rates",
+        fix=_RECREATE_FIX,
+    )
+    method = _required_key(meta, "method", name)
+    meta_n_bins = int(_required_key(meta, "n_bins", name))
     bandwidth = _required_key(meta, "bandwidth", name)
     n_units = int(_required_key(meta, "n_units", name))
     unit_table_columns = _required_key(meta, "unit_table_columns", name)
@@ -1043,35 +1041,6 @@ def _require_unchanged_environment(
                 fix="restore the original environment record, or recompute the "
                 "rates on the environment now saved and write them again with "
                 "write_spatial_rates",
-            )
-        )
-
-
-def _spatial_rates_names(nwbfile: NWBFile) -> list[str]:
-    """Names of the spatial-rates tables in ``nwbfile.analysis``, sorted."""
-    return sorted(
-        name
-        for name, table in nwbfile.analysis.items()
-        if (_record_metadata(table) or {}).get("format") == SPATIAL_RATES_FORMAT
-    )
-
-
-def _require_current_schema(meta: dict[str, Any], name: str) -> None:
-    """Refuse a spatial-rates record written with another schema version."""
-    recorded = meta.get("schema_version")
-    if recorded != SPATIAL_RATES_SCHEMA_VERSION:
-        raise ValueError(
-            _format_error(
-                f"Spatial rates '{name}' has schema_version={recorded!r}; this "
-                f"version of neurospatial reads only schema "
-                f"{SPATIAL_RATES_SCHEMA_VERSION}.",
-                why="other versions store different data (records before 3.0 "
-                "are in a processing module and keep a private copy of their "
-                "environment, records before 2.6 store occupancy as a time "
-                "series, and records before 2.5 lack the occupancy threshold "
-                "that defines spatial_support), and reading them would mean "
-                "guessing",
-                fix=_RECREATE_FIX,
             )
         )
 

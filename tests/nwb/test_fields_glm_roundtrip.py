@@ -319,6 +319,8 @@ class TestSchemaVersionGuard:
         with pytest.raises(ValueError) as caught:
             read_spatial_rates(empty_nwb, env=env)
         message = str(caught.value)
-        assert f"has schema_version={recorded!r}" in message
-        assert "reads only schema 3.0" in message
+        assert (
+            f"Spatial-rates schema {recorded!r} in /analysis/spatial_rates" in message
+        )
+        assert "reads only '3.0'" in message
         assert "write them again with write_spatial_rates" in message
