@@ -415,7 +415,7 @@ def score_recording(
     truth: Truth,
     rec: Recording,
     spike_times: NDArray[np.float64],
-    t_fine: NDArray[np.float64],
+    t_fine: NDArray[np.float64],  # noqa: ARG001  # kept in scoring signature shared with callers
     x_fine: NDArray[np.float64],
     envs: dict[float, Environment],
     grid: NDArray[np.float64],

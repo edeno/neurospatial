@@ -139,7 +139,7 @@ def assert_environment_contract(
             for refused in (query, np.full((1, value.n_dims), np.nan)):
                 try:
                     value.bin_at(refused)
-                except NotImplementedError as error:
+                except NotImplementedError as error:  # noqa: PERF203  # each refused query is checked
                     if "track_width" not in str(error):
                         msg = (
                             "a track without track_width refused a lookup "

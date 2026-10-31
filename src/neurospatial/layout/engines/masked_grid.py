@@ -76,7 +76,7 @@ class MaskedGridLayout(_GridMixin):
         """
         self._begin_build()
         if not isinstance(active_mask, np.ndarray):
-            msg = (
+            msg = (  # type: ignore[unreachable]  # runtime check of user input
                 f"active_mask must be a NumPy array, got {type(active_mask).__name__}."
             )
             raise TypeError(msg)

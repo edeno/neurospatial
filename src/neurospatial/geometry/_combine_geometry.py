@@ -831,7 +831,7 @@ def combine_binnings(
         because a bridge's wall crossings cannot be certified there.
     """
     if type(auto_bridge) is not bool:
-        msg = "auto_bridge must be boolean."
+        msg = "auto_bridge must be boolean."  # type: ignore[unreachable]  # runtime check of user input
         raise TypeError(msg)
     validate_finite_scalar(
         max_mnn_distance, name="max_mnn_distance", positive=False, none_allowed=True
@@ -903,7 +903,7 @@ def combine_binnings(
             msg = "Conductance keys must be pairs of (component_key, local_bin_id) endpoints."
             raise ValueError(msg) from error
         if any(
-            not isinstance(index, (int, np.integer))
+            not isinstance(index, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or isinstance(index, (bool, np.bool_))
             or not 0 <= index < children[owner].bins.n_bins
             for index, owner in ((source_bin, i), (target_bin, j))

@@ -340,7 +340,7 @@ class Landmarks(Mapping[str, Landmark]):
         items: dict[str, Landmark] = {}
         for landmark in landmarks:
             if not isinstance(landmark, Landmark):
-                msg = (
+                msg = (  # type: ignore[unreachable]  # runtime check of user input
                     f"Landmarks holds Landmark records, got {type(landmark).__name__}."
                 )
                 raise TypeError(msg)

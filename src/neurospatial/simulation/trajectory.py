@@ -985,7 +985,7 @@ def simulate_trajectory_laps(
     return_metadata: bool = False,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
 ):
     """Simulate structured lap-based trajectory.
 
@@ -1184,7 +1184,7 @@ def _simulate_trajectory_laps(
     call: str,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
 ):
     """Shared lap engine; sessions allocate samples before generating positions.
 
@@ -1217,7 +1217,7 @@ def _simulate_trajectory_laps(
     ):
         _check_positive(name, value, allow_zero=allow_zero, units=units)
     if (
-        not isinstance(n_laps, (int, np.integer))
+        not isinstance(n_laps, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
         or isinstance(n_laps, bool)
         or n_laps <= 0
     ):

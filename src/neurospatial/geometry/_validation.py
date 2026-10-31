@@ -1267,7 +1267,7 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
             msg = "outline boundary does not match mesh locator boundary."
             raise ValueError(msg)
     if track is not None:
-        if not isinstance(track, TrackLinearization) or not isinstance(
+        if not isinstance(track, TrackLinearization) or not isinstance(  # type: ignore[redundant-expr]  # runtime check of user input
             geometry.leaf, NearestBinLocator
         ):
             msg = "linearization needs stored track geometry and a nearest-bin locator."

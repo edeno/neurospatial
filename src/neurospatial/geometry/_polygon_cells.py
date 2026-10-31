@@ -156,7 +156,7 @@ class ClipMapping(ReadOnlyState):
     def __post_init__(self) -> None:
         raw = np.asarray(self.parent_bin_indices)
         if (
-            not isinstance(self.n_parent_bins, (int, np.integer))
+            not isinstance(self.n_parent_bins, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or isinstance(self.n_parent_bins, (bool, np.bool_))
             or self.n_parent_bins < 0
             or self.n_parent_bins > np.iinfo(np.intp).max

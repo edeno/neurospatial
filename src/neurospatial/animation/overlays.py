@@ -1941,9 +1941,11 @@ class TimeSeriesOverlay(_Overlay):
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
-        env: Any,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
+        env: Any,  # noqa: ARG002  # OverlayProtocol signature
     ) -> TimeSeriesData:
         """Convert overlay to internal data representation.
 
@@ -2120,8 +2122,10 @@ class SpikeRasterOverlay(_Overlay):
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
         env: Any,
     ) -> SpikeRasterData:
         """The raster's rows, bottom row first.
@@ -2273,9 +2277,11 @@ class EpochOverlay(_Overlay):
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
-        env: Any,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
+        env: Any,  # noqa: ARG002  # OverlayProtocol signature
     ) -> EpochData:
         """The epochs, sorted and merged.
 
@@ -2786,7 +2792,7 @@ class VideoOverlay(_Overlay):
             raise ValueError(msg)
 
         # Validate downsample
-        if not isinstance(self.downsample, int) or self.downsample < 1:
+        if not isinstance(self.downsample, int) or self.downsample < 1:  # type: ignore[redundant-expr]  # runtime check of user input
             msg = (
                 f"WHAT: downsample must be a positive integer >= 1, got {self.downsample}.\n"
                 f"WHY: Downsample factor controls spatial resolution reduction.\n"
@@ -2795,7 +2801,7 @@ class VideoOverlay(_Overlay):
             raise ValueError(msg)
 
         # Validate cache_size
-        if not isinstance(self.cache_size, int) or self.cache_size < 1:
+        if not isinstance(self.cache_size, int) or self.cache_size < 1:  # type: ignore[redundant-expr]  # runtime check of user input
             msg = (
                 f"WHAT: cache_size must be a positive integer >= 1, got {self.cache_size}.\n"
                 f"WHY: cache_size controls how many video frames are kept in memory.\n"
@@ -2805,7 +2811,7 @@ class VideoOverlay(_Overlay):
             raise ValueError(msg)
 
         # Validate prefetch_ahead
-        if not isinstance(self.prefetch_ahead, int) or self.prefetch_ahead < 0:
+        if not isinstance(self.prefetch_ahead, int) or self.prefetch_ahead < 0:  # type: ignore[redundant-expr]  # runtime check of user input
             msg = (
                 f"WHAT: prefetch_ahead must be a non-negative integer, "
                 f"got {self.prefetch_ahead}.\n"
@@ -3153,7 +3159,9 @@ class PositionData(_SampledData):
         )
 
     def support(
-        self, name: str | None = None
+        self,
+        name: str  # noqa: ARG002  # OverlayProtocol signature
+        | None = None,  # OverlayProtocol signature  # OverlayProtocol signature
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the positions."""
         return self.sample_valid, self.interval_valid
@@ -3220,7 +3228,7 @@ class BodypartData(_SampledData):
     def __post_init__(self) -> None:
         """Resolve each body part's support and color."""
         given = {
-            label: {} if masks is None else masks
+            label: {} if masks is None else masks  # type: ignore[redundant-expr]  # runtime check of user input
             for label, masks in (
                 ("sample_valid", self.sample_valid),
                 ("interval_valid", self.interval_valid),
@@ -3228,7 +3236,7 @@ class BodypartData(_SampledData):
         }
         for label, masks in given.items():
             if not isinstance(masks, dict):
-                msg = f"BodypartData.{label} must map bodypart names to boolean masks."
+                msg = f"BodypartData.{label} must map bodypart names to boolean masks."  # type: ignore[unreachable]  # runtime check of user input
                 raise ValueError(msg)
             unknown = masks.keys() - self.bodyparts.keys()
             if unknown:
@@ -3349,7 +3357,9 @@ class HeadDirectionData(_SampledData):
         )
 
     def support(
-        self, name: str | None = None
+        self,
+        name: str  # noqa: ARG002  # OverlayProtocol signature
+        | None = None,  # OverlayProtocol signature  # OverlayProtocol signature
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the headings."""
         return self.sample_valid, self.interval_valid
@@ -4752,7 +4762,7 @@ def _convert_overlays_to_data(
         cleanup.callback(readers.close)
         for overlay in overlays:
             if not isinstance(overlay, OverlayProtocol):
-                msg = (
+                msg = (  # type: ignore[unreachable]  # runtime check of user input
                     f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
                     "Ensure your overlay has a 'convert_to_data()' method."
                 )

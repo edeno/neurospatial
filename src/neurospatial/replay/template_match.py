@@ -266,7 +266,7 @@ class TemplateMatchMethod:
         rate = self.min_peak_rate
         if rate is not None and (
             isinstance(rate, bool)
-            or not isinstance(rate, (int, float, np.integer, np.floating))
+            or not isinstance(rate, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
             or not np.isfinite(rate)
             or rate <= 0
         ):
@@ -340,7 +340,7 @@ def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
         raise ValueError(msg)
     probability = method.trial_probability
     if (
-        isinstance(probability, bool)
+        isinstance(probability, bool)  # type: ignore[redundant-expr]  # runtime check of user input
         or not isinstance(probability, (int, float, np.integer, np.floating))
         or not 0 < probability < 1
     ):
@@ -566,7 +566,10 @@ def _chosen(
     if scored:
         return max(scored, key=lambda result: (result.score, -result.p_value))
     label = method.criteria[0].label
-    return max(results, key=lambda result: result.values[label])
+    return max(
+        results,
+        key=lambda result: result.values[label],  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+    )  # a dataclass field holding a mapping, not a DataFrame
 
 
 # --------------------------------------------------------------------------

@@ -1634,7 +1634,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             ax.set_title("MAP position over time")
             ax.legend()
         else:
-            msg = f"quantity must be 'entropy' or 'map', got {quantity!r}."
+            msg = f"quantity must be 'entropy' or 'map', got {quantity!r}."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)
 
         ax.set_xlabel(x_label)

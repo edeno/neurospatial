@@ -38,7 +38,7 @@ def _run_all(actions: Iterable[Callable[[], object]], message: str) -> None:
     for action in actions:
         try:
             action()
-        except BaseException as error:
+        except BaseException as error:  # noqa: PERF203  # every cleanup action runs even if one fails
             failures.append(error)
     if failures:
         raise _cleanup_error(message, failures)

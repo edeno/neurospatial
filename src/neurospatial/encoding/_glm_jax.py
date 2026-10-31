@@ -26,7 +26,7 @@ Requires JAX (Linux/macOS only).
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import numpy as np
@@ -183,7 +183,7 @@ def _step_halve_jax(
 # ---------------------------------------------------------------------------
 # Batched Newton/IRLS loop (mirror _glm_numpy._newton_fit_numpy)
 # ---------------------------------------------------------------------------
-@jax.jit
+@jax.jit  # type: ignore[misc, unused-ignore]
 def _warm_start_jax(
     counts: Array, occupancy: Array, basis: Array, constant_base: Array
 ) -> Array:
@@ -238,11 +238,11 @@ def _newton_loop_jax(
     coeffs = warm_coeffs
     prev_obj = _penalized_obj_jax(coeffs, basis, counts, occupancy, penalty_diag)
 
-    def cond(state):
+    def cond(state: tuple[Any, ...]) -> Any:
         _coeffs, _prev, iteration, _max_step, _converged, done = state
         return (iteration < max_iter) & jnp.logical_not(done)
 
-    def body(state):
+    def body(state: tuple[Any, ...]) -> tuple[Any, ...]:
         coeffs, prev_obj, iteration, _max_step, _converged, _done = state
         eta = jnp.clip(basis @ coeffs, -_ETA_CLIP, _ETA_CLIP)
         mu = occupancy[:, None] * jnp.exp(eta)

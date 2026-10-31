@@ -1188,7 +1188,7 @@ def _max_over_templates(
                     n_shuffles=n_shuffles,
                     rng=streams[name],
                 )
-            except _UndefinedNullError as error:
+            except _UndefinedNullError as error:  # noqa: PERF203  # an undefined template score is kept per template
                 undefined = error
                 scores[name] = error.score
             else:
@@ -1454,7 +1454,7 @@ def _checked_null_options(
         take, or gives an option an invalid value.
     """
     given = {} if null_options is None else null_options
-    if not isinstance(given, Mapping) or not all(
+    if not isinstance(given, Mapping) or not all(  # type: ignore[redundant-expr]  # runtime check of user input
         isinstance(options, Mapping) for options in given.values()
     ):
         msg = (
@@ -2011,7 +2011,7 @@ def _scorer_for(
             raise TypeError(msg)
         return spec.scorer(env, posterior, times, **options)
     if not callable(score):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             f"{_OPERATION}: score must be a function such as "
             f"detect_trajectory_radon, got {type(score).__name__}."
         )

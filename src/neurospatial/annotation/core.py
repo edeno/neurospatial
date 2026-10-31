@@ -412,7 +412,7 @@ def annotate_project(
     elif isinstance(project, AnnotationProject):
         draft = project
     else:
-        msg = "project must be an AnnotationProject or a project file path."
+        msg = "project must be an AnnotationProject or a project file path."  # type: ignore[unreachable]  # runtime check of user input
         raise TypeError(msg)
     project_saved = (
         source is not None

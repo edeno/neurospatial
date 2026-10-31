@@ -44,7 +44,10 @@ def check_napari_available() -> bool:
 
 
 def benchmark_napari_init(
-    env, fields, overlays, config
+    env,
+    fields,
+    overlays,
+    config,  # noqa: ARG001  # shared benchmark signature
 ) -> tuple[float, float, float, Any]:
     """Benchmark napari viewer initialization.
 
@@ -229,7 +232,7 @@ Examples:
         try:
             result = run_napari_benchmark(config_name)
             results.append(result)
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 

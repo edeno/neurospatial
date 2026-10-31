@@ -1007,7 +1007,7 @@ def _apply_modes(
     if mode == "density":
         m = _safe_denominator(_ht(volumes.reshape(-1, 1)), xp)
         return _h(F / m)
-    msg = f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+    msg = f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."  # type: ignore[unreachable]  # runtime check of user input
     raise ValueError(msg)
 
 
@@ -1107,7 +1107,9 @@ def _resolve_basis(
         vals_full, vecs_full = _symmetric_eigenbasis(S, rank=None)
         basis = (_frozen(vecs_full), _frozen(vals_full))
         return holder.with_rank(key, "dense", basis), basis
-    assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
+    # Narrowed by rank is not None.
+    assert eigvals is not None
+    assert eigvecs is not None
     # The single cached basis is replaced by a larger one (it never shrinks),
     # so a request needing more modes than are cached recomputes it.
     cached_rank = 0 if holder.basis is None else holder.basis[1].shape[0]

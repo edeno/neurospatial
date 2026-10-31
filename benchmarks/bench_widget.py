@@ -37,7 +37,10 @@ from utils import (
 
 
 def benchmark_widget_render(
-    env, fields, overlays, config
+    env,
+    fields,
+    overlays,
+    config,  # noqa: ARG001  # shared benchmark signature
 ) -> tuple[float, float, list[float], float]:
     """Benchmark widget rendering.
 
@@ -111,7 +114,11 @@ def benchmark_widget_render(
 
 
 def benchmark_scrubbing(
-    env, fields, overlays, config, n_scrubs: int = 50
+    env,
+    fields,
+    overlays,
+    config,  # noqa: ARG001  # shared benchmark signature
+    n_scrubs: int = 50,
 ) -> tuple[float, list[float]]:
     """Benchmark random scrubbing (simulating user interaction).
 
@@ -301,9 +308,9 @@ Examples:
     warnings.filterwarnings("ignore", category=UserWarning)
 
     # Use non-interactive backend
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
 
     print("=" * 60)
     print("WIDGET BACKEND BENCHMARK")
@@ -319,7 +326,7 @@ Examples:
         try:
             result = run_widget_benchmark(config_name)
             results.append(result)
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 

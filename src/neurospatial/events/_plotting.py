@@ -122,7 +122,7 @@ def plot_peri_event_response(
     from matplotlib.axes import Axes
 
     if not isinstance(result, PeriEventResult):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             "result must be a single-unit PeriEventResult. "
             "Select a population unit with .sel(unit_id=...) and pass that unit's spikes."
         )
@@ -151,8 +151,8 @@ def plot_peri_event_response(
             msg = "axes must contain two distinct Matplotlib Axes."
             raise ValueError(msg) from error
         if (
-            not isinstance(raster_ax, Axes)
-            or not isinstance(histogram_ax, Axes)
+            not isinstance(raster_ax, Axes)  # type: ignore[redundant-expr]  # runtime check of user input
+            or not isinstance(histogram_ax, Axes)  # type: ignore[redundant-expr]  # runtime check of user input
             or raster_ax is histogram_ax
         ):
             msg = "axes must contain two distinct Matplotlib Axes."

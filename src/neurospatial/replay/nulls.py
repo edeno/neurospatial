@@ -455,7 +455,7 @@ def shuffle_place_fields_circular_2d(
 
     # Get grid shape from environment
     if env.grid_shape is None:
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             "shuffle_place_fields_circular_2d requires environment with grid layout "
             "(grid_shape attribute)"
         )
@@ -637,7 +637,7 @@ def shuffle_posterior_circular(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
     )
     if not isinstance(exclude_zero_shift, (bool, np.bool_)):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             "shuffle_posterior_circular() needs exclude_zero_shift=True or "
             f"False, got {exclude_zero_shift!r}."
         )
@@ -816,7 +816,7 @@ def _peak_probabilities(
         )
     if (
         isinstance(edge_exclusion, bool)
-        or not isinstance(edge_exclusion, (int, float, np.integer, np.floating))
+        or not isinstance(edge_exclusion, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
         or not np.isfinite(edge_exclusion)
         or edge_exclusion < 0
     ):

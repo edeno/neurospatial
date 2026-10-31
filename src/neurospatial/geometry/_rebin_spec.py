@@ -54,7 +54,7 @@ class GridBinningSpec(ReadOnlyState):
             msg = "Grid specification frame dimensions must match its origin."
             raise ValueError(msg)
         if type(self.connect_diagonal) is not bool:
-            msg = "Grid specification connect_diagonal must be boolean."
+            msg = "Grid specification connect_diagonal must be boolean."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)
         origin.setflags(write=False)
         matrix.setflags(write=False)

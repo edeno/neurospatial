@@ -228,7 +228,7 @@ class ReactivationWindows:
                 )
                 raise ValueError(msg)
         if not isinstance(self.allow_shorter, (bool, np.bool_)):
-            msg = (
+            msg = (  # type: ignore[unreachable]  # runtime check of user input
                 "ReactivationWindows: allow_shorter must be True or False, got "
                 f"{self.allow_shorter!r}."
             )
@@ -1550,7 +1550,7 @@ def _match_window_rows(
     ):
         try:
             rows.extend(window_rows(index, window))
-        except _MethodError as failure:
+        except _MethodError as failure:  # noqa: PERF203  # a failing window becomes an error row
             rows.append({**_window_columns(index, window), "error": str(failure)})
     return rows
 
@@ -1885,8 +1885,10 @@ def _detected_patterns(
         sets.append((every, None))
     else:
         regions = session.groups["region"]
-        for region in np.unique(regions):
-            sets.append((np.flatnonzero(regions == region), str(region)))
+        sets.extend(
+            (np.flatnonzero(regions == region), str(region))
+            for region in np.unique(regions)
+        )
         if method.detection_units == "each_region_and_cross_region":
             sets.append((every, "cross_region"))
     generator = stream()
@@ -2282,8 +2284,12 @@ def _z_scored(
         n = total
     constant = high == low
     std = np.where(constant, 1.0, np.sqrt(squares / n))
-    control_z = (control.values - mean) / std
-    match_z = (match.values - mean) / std
+    control_z = (
+        control.values - mean  # noqa: PD011  # a dataclass field holding an array, not a DataFrame
+    ) / std  # a dataclass field holding an array, not a DataFrame
+    match_z = (
+        match.values - mean  # noqa: PD011  # a dataclass field holding an array, not a DataFrame
+    ) / std  # a dataclass field holding an array, not a DataFrame
     control_z[:, constant] = 0.0
     match_z[:, constant] = 0.0
     return control_z, match_z, ~constant

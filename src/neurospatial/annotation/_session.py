@@ -4,6 +4,8 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from typing_extensions import override
+
 if TYPE_CHECKING:
     import napari
 
@@ -79,8 +81,9 @@ def run_annotation_session(
     def close_delivered() -> None:
         closing[0] = False
 
-    class DraftCloseGuard(QObject):
-        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
+    class DraftCloseGuard(QObject):  # type: ignore[misc, unused-ignore]
+        @override
+        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:
             if event is None:
                 return False
             if event.type() == QEvent.Type.Hide and closing[0]:

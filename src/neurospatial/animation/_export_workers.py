@@ -88,7 +88,7 @@ def _pickled_scene(scene: Any, n_workers: int) -> dict[str, Any]:
     for label, key, value in parts:
         try:
             pickled[key] = _dumps(value)
-        except Exception as error:
+        except Exception as error:  # noqa: PERF203  # names the part that cannot be pickled
             if key == "overlay_data":
                 label = _unpicklable_overlay(value)
             msg = (
@@ -112,7 +112,7 @@ def _unpicklable_overlay(data: Any) -> str:
         for index, item in enumerate(items if isinstance(items, list) else ()):
             try:
                 _dumps(item)
-            except Exception:
+            except Exception:  # noqa: PERF203  # finds the first overlay that cannot be pickled
                 kind = type(item).__name__.removesuffix("Data")
                 return f"{kind} overlay {index}"
     return "the overlays"
@@ -136,12 +136,12 @@ def _renderer() -> Any:
     if "renderer" not in _worker:
         from multiprocessing.util import Finalize
 
-        import matplotlib
+        import matplotlib as mpl
 
         from neurospatial.animation._scene_rendering import SceneRenderer
         from neurospatial.animation.scene import Animation
 
-        matplotlib.rcParams.update(_worker.pop("rc_params"))
+        mpl.rcParams.update(_worker.pop("rc_params"))
         arguments: dict[str, Any] = {"fields": {}}
         for key, data in _worker.pop("pickled").items():
             value = pickle.loads(data)
@@ -180,13 +180,13 @@ def render_in_workers(
     Pickling is checked before any worker starts. Contiguous chunks keep
     each worker's renderer moving forward in time.
     """
-    import matplotlib
+    import matplotlib as mpl
 
     pickled = _pickled_scene(scene, n_workers)
     rc_params = {
         # Reading "backend" through rcParams would select and import one.
-        key: dict.__getitem__(matplotlib.rcParams, key)
-        for key in matplotlib.rcParams
+        key: dict.__getitem__(mpl.rcParams, key)
+        for key in mpl.rcParams
         if key != "backend"
     }
     chunks = [

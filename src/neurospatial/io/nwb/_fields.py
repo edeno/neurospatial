@@ -467,13 +467,13 @@ def write_spatial_rates(
         for obj_name in reversed(added):
             try:
                 del nwbfile.analysis[obj_name]
-            except Exception:
+            except Exception:  # noqa: PERF203  # best-effort rollback of every record
                 not_removed.append(obj_name)
         not_restored = []
         for obj_name, obj in reversed(removed):
             try:
                 nwbfile.add_analysis(obj)
-            except Exception:
+            except Exception:  # noqa: PERF203  # best-effort rollback of every record
                 not_restored.append(obj_name)
         raise ValueError(
             _abort_message(name, exc, removed, not_removed, not_restored)

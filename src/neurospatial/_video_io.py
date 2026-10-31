@@ -12,7 +12,7 @@ import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import NamedTuple, Protocol, runtime_checkable
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -476,7 +476,7 @@ class _VideoReader:
         """Number of frames to prefetch ahead during sequential access."""
         return self._prefetch_ahead
 
-    def __reduce__(self) -> tuple:
+    def __reduce__(self) -> tuple[Any, ...]:
         """Support pickle serialization.
 
         The capture, cache and prefetch executor are dropped; the restored

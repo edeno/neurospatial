@@ -281,7 +281,7 @@ def simulate_replay_event(
             raise ValueError(msg)
     if (
         isinstance(drop_fraction, bool)
-        or not isinstance(drop_fraction, (int, float, np.integer, np.floating))
+        or not isinstance(drop_fraction, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
         or not 0.0 <= drop_fraction <= 1.0
     ):
         msg = (
@@ -291,7 +291,7 @@ def simulate_replay_event(
         raise ValueError(msg)
     if (
         isinstance(n_noise_spikes, bool)
-        or not isinstance(n_noise_spikes, (int, np.integer))
+        or not isinstance(n_noise_spikes, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
         or n_noise_spikes < 0
     ):
         msg = (

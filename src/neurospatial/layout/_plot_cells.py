@@ -148,7 +148,11 @@ def _hexagon_cells(
 
 
 def _triangle_cells(
-    binning: Binning, connectivity: nx.Graph, title: str, ax: Axes | None, **kwargs: Any
+    binning: Binning,
+    connectivity: nx.Graph,  # noqa: ARG001  # _Renderer signature
+    title: str,
+    ax: Axes | None,
+    **kwargs: Any,  # _Renderer signature
 ) -> Axes:
     assert isinstance(binning.shapes, TriangleShapes)
     ranges = binning.dimension_ranges
@@ -205,7 +209,11 @@ def _grid_cells(
 
 
 def _point_cells(
-    binning: Binning, connectivity: nx.Graph, title: str, ax: Axes | None, **kwargs: Any
+    binning: Binning,
+    connectivity: nx.Graph,  # noqa: ARG001  # _Renderer signature
+    title: str,  # noqa: ARG001  # _Renderer signature
+    ax: Axes | None,
+    **kwargs: Any,  # _Renderer signature
 ) -> Axes:
     import matplotlib.pyplot as plt
 
@@ -265,7 +273,7 @@ def _patch_field(
     collection = collection_type(
         cells, cmap=_field_cmap(style), rasterized=style.rasterized, **kwargs
     )
-    collection.set_array(np.ma.masked_invalid(field))
+    collection.set_array(np.ma.masked_invalid(field))  # type: ignore[no-untyped-call]
     collection.set_clim(style.vmin, style.vmax)
     ax.add_collection(collection)
     return collection

@@ -170,7 +170,7 @@ def _frames_graphic(
                 return
             generation = self._generation
             result = await run_in_thread_pool(self._reader, read, time)
-            if not self._closed and generation == self._generation:
+            if not self._closed and generation == self._generation:  # type: ignore[redundant-expr]  # close() can run while awaiting the read
                 show(time, result)
                 self._last_indices = at
 
@@ -387,7 +387,9 @@ def configure_volume_material(graphic: Any, texture: Any) -> None:
     configure(graphic)
     reference = weakref.ref(graphic)
 
-    def mode_changed(event: Any) -> None:
+    def mode_changed(
+        event: Any,  # noqa: ARG001  # event callback signature
+    ) -> None:  # event callback signature  # event callback signature
         target = reference()
         if target is not None:
             configure(target)

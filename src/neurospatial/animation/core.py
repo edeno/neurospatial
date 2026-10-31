@@ -625,7 +625,7 @@ def _select_backend(
     try:
         from IPython import get_ipython  # type: ignore[attr-defined]
 
-        in_jupyter = get_ipython() is not None
+        in_jupyter = get_ipython() is not None  # type: ignore[no-untyped-call, unused-ignore]
     except ImportError:
         in_jupyter = False
     if in_jupyter and n_frames <= 10_000:
@@ -681,11 +681,11 @@ def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.i
 
 
 def subsample_frames(
-    fields: NDArray | list,
+    fields: NDArray[Any] | list[Any],
     *,
     target_fps: int,
     source_fps: int,
-) -> NDArray | list:
+) -> NDArray[Any] | list[Any]:
     """Subsample frames to target frame rate.
 
     Essential utility for large-scale sessions. Allows users to reduce
@@ -751,14 +751,14 @@ def subsample_frames(
     indices = _subsample_indices(len(fields), source_fps, target_fps)
 
     if isinstance(fields, np.ndarray):
-        result: NDArray | list = fields[indices]
+        result: NDArray[Any] | list[Any] = fields[indices]
         return result
-    result_list: NDArray | list = [fields[i] for i in indices]
+    result_list: NDArray[Any] | list[Any] = [fields[i] for i in indices]
     return result_list
 
 
 def estimate_colormap_range_from_subset(
-    fields: NDArray | list,
+    fields: NDArray[Any] | list[Any],
     *,
     n_samples: int = 10_000,
     percentile: tuple[float, float] = (1.0, 99.0),

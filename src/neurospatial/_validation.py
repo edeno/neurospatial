@@ -129,7 +129,7 @@ def timestamps_of(values: Any, *, name: str) -> Any:
     return values
 
 
-def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
+def validate_lengths(name_to_array: dict[str, NDArray[Any]]) -> None:
     """Raise ValueError if the named arrays do not share a first-axis length.
 
     Lengths along the first axis are compared exactly, so a 2-D
@@ -347,7 +347,7 @@ def validate_times_positions(
     for name, value in (("times", times), ("positions", positions)):
         try:
             arrays.append(np.asarray(value, dtype=np.float64))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError):  # noqa: PERF203  # each value reports its own conversion failure
             arrays.append(None)
             conversion_problems.append(
                 f"{name} must contain numeric values convertible to float64, got {value!r}."

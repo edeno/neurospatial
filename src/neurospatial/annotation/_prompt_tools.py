@@ -152,7 +152,7 @@ class PromptTools:
         dragged |= bool(np.linalg.norm(np.asarray(event.pos) - start) >= 5)
         if (
             dragged
-            or not self.active
+            or not self.active  # type: ignore[redundant-expr]  # runtime check of user input
             or self._viewer.layers.selection.active is not layer
             or layer.mode != "pan_zoom"
         ):

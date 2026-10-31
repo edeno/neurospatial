@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import shapely.geometry as shp
@@ -424,7 +424,7 @@ def env_from_boundary_region(
     bin_size: float,
     holes: list[Region] | None = None,
     walls: Mapping[str, shp.LineString] | None = None,
-    **from_polygon_kwargs,
+    **from_polygon_kwargs: Any,
 ) -> Environment:
     """Create Environment from an annotated boundary polygon.
 

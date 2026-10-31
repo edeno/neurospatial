@@ -24,7 +24,7 @@ video-to-environment coordinate transforms.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from neurospatial._logging import logger
 from neurospatial.animation.backends._napari_compat import (
@@ -118,7 +118,9 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
                         return
                     draw = overlay._on_rendering_change
 
-                    def draw_in_original_units(*, _overlay=overlay, _draw=draw):
+                    def draw_in_original_units(
+                        *, _overlay: Any = overlay, _draw: Any = draw
+                    ) -> None:
                         length = _overlay._current_length * _overlay._scale
                         _overlay.node.text.text = f"{length * _overlay._unit:g~P}"
                         _draw()
@@ -128,7 +130,9 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
                     overlay._on_size_or_zoom_change(force=True)
                     return
 
-                def patched_on_zoom_change(*, force: bool = False, _overlay=overlay):
+                def patched_on_zoom_change(
+                    *, force: bool = False, _overlay: Any = overlay
+                ) -> None:
                     """Patched zoom handler that uses unit-preserving format."""
                     import numpy as np
 

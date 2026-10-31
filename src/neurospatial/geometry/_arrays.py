@@ -108,7 +108,7 @@ def owned_grid(
         tuple(len(edge) - 1 for edge in raw_edges) if shape is None else tuple(shape)
     )
     if len(counts) != len(raw_edges) or any(
-        not isinstance(count, (int, np.integer))
+        not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
         or isinstance(count, (bool, np.bool_))
         or count < 1
         for count in counts

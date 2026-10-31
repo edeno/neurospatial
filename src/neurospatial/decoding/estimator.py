@@ -467,7 +467,7 @@ warn_on_drop
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         if not isinstance(rates, SpatialRatesResult):
-            msg = (
+            msg = (  # type: ignore[unreachable]  # runtime check of user input
                 f"BayesianDecoder.from_rates expects SpatialRatesResult, got {type(rates).__name__}.\n"
                 "Why: the decoder needs spatial rate maps, their environment and unit identities.\n"
                 "Fix: call rates = compute_spatial_rates(env, spike_times, times, positions), "

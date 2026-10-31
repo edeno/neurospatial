@@ -373,7 +373,7 @@ def retained_linear_intervals(
             )
             walls = tuple(shapely.transform(wall, frame.to_source) for wall in walls)
 
-    def owner_of(queries):
+    def owner_of(queries: NDArray[np.float64]) -> NDArray[np.intp]:
         if source_locator is None:
             return locate(binning, arena, queries, indexes, call=_LINEAR_CALL)
         owners = source_locator.locate(queries, indexes)
@@ -530,7 +530,7 @@ def _retained_box_intervals(
         source_locator, positions = _source_grid(frame, positions)
         boxes = cell_boxes(source_locator)
 
-    def domain_boxes(arena):
+    def domain_boxes(arena: Arena) -> list[NDArray[np.float64]]:
         if isinstance(arena, UnknownArena):
             return []
         if isinstance(arena, _CombinedArena):

@@ -192,7 +192,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         # and dt.
         window = self.window
         if not (
-            len(window) == 2
+            len(window) == 2  # type: ignore[redundant-expr]  # runtime check of user input
             and all(_is_real_number(v) and np.isfinite(v) for v in window)
             and window[0] < window[1]
         ):
@@ -210,9 +210,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             status.size,
         )
 
-        for name in ("value_kinds", "interpolation", "feature_units"):
-            if len(getattr(self, name)) != n_features:
-                problems.append(f"{name} needs {n_features} entries")
+        problems.extend(
+            f"{name} needs {n_features} entries"
+            for name in ("value_kinds", "interpolation", "feature_units")
+            if len(getattr(self, name)) != n_features
+        )
         if not set(self.value_kinds) <= set(_VALUE_KINDS):
             problems.append(f"value_kinds must be in {list(_VALUE_KINDS)}")
         if not np.isin(status, _EVENT_STATUSES).all():
@@ -223,9 +225,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             problems.append(f"event_ids needs shape ({n_input},)")
 
         cell = (n_times, n_features)
-        for name in ("counts", "sums", "sin_sums", "cos_sums"):
-            if np.shape(getattr(self, name)) != cell:
-                problems.append(f"{name} needs shape {cell}")
+        problems.extend(
+            f"{name} needs shape {cell}"
+            for name in ("counts", "sums", "sin_sums", "cos_sums")
+            if np.shape(getattr(self, name)) != cell
+        )
 
         category_features = np.asarray(self.category_features)
         n_categories = category_features.size

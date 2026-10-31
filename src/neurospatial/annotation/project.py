@@ -98,7 +98,7 @@ class AnnotationShape:
             msg = "Shape identifier must be nonempty."
             raise ValueError(msg)
         if not isinstance(self.metadata, Mapping):
-            msg = "Shape metadata must be a mapping of JSON values."
+            msg = "Shape metadata must be a mapping of JSON values."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)
         metadata = _thaw_metadata(self.metadata)
         # Refused now rather than when the draft becomes a Region.
@@ -164,7 +164,7 @@ def _checked_calibration(
     can share it instead of copying it.
     """
     if not isinstance(calibration, VideoCalibration):
-        msg = "calibration must be a VideoCalibration or None."
+        msg = "calibration must be a VideoCalibration or None."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
     if calibration.frame_size_px != frame_size:
         msg = (
@@ -242,13 +242,13 @@ class AnnotationProject:
             raise ValueError(msg)
         if (
             isinstance(frame_index, bool)
-            or not isinstance(frame_index, (int, np.integer))
+            or not isinstance(frame_index, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or frame_index < 0
         ):
             msg = "frame_index must be a nonnegative integer."
             raise ValueError(msg)
         if video_path is not None and not isinstance(video_path, (str, Path)):
-            msg = "video_path must be a string, Path, or None."
+            msg = "video_path must be a string, Path, or None."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)
         if mode not in get_args(AnnotationMode):
             msg = f"Unknown annotation mode {mode!r}."

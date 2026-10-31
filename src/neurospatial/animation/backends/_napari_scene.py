@@ -17,6 +17,7 @@ from time import monotonic
 from typing import Any, NamedTuple, cast
 
 import numpy as np
+from typing_extensions import override
 
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
@@ -155,7 +156,7 @@ class _ScientificPanels:
             len(scene.fields) - 1 if helper.track_extents is not None else 0
         )
         self.figure = Figure(figsize=(8, max(1.5, 1.5 * count)), dpi=100)
-        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas = FigureCanvasQTAgg(self.figure)  # type: ignore[no-untyped-call, unused-ignore]
         self.axes: list[Any] = []
 
         def axis() -> Any:
@@ -190,12 +191,12 @@ class _ScientificPanels:
     def update(self, time: float, prepared: list[Any]) -> None:
         for panel, data in zip(self.panels, prepared, strict=True):
             panel.apply(time, data)
-        self.canvas.draw_idle()
+        self.canvas.draw_idle()  # type: ignore[no-untyped-call, unused-ignore]
 
     def capture(self) -> np.ndarray:
         if self.figure.stale:
-            self.canvas.draw()
-        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
+            self.canvas.draw()  # type: ignore[no-untyped-call, unused-ignore]
+        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())  # type: ignore[no-untyped-call, unused-ignore]
 
 
 class NapariScene:
@@ -215,7 +216,7 @@ class NapariScene:
                 "backend='widget' in a notebook or backend='fastplotlib'."
             )
             raise ImportError(msg) from error
-        from qtpy.QtCore import (  # type: ignore[attr-defined]
+        from qtpy.QtCore import (  # type: ignore[attr-defined, unused-ignore]
             QEvent,
             QObject,
             Qt,
@@ -320,7 +321,7 @@ class NapariScene:
                 getattr(owner, name).connect(slot)
                 self._connections.append((owner, name, slot))
 
-            class PreparedBridge(QObject):
+            class PreparedBridge(QObject):  # type: ignore[misc, unused-ignore]
                 ready = Signal(object)
 
             self._bridge = PreparedBridge(controls)
@@ -336,8 +337,9 @@ class NapariScene:
             window = qt_window(self.viewer)
             handle_ref, window_ref = weakref.ref(self), weakref.ref(window)
 
-            class WindowLifecycle(QObject):
-                def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802
+            class WindowLifecycle(QObject):  # type: ignore[misc, unused-ignore]
+                @override
+                def eventFilter(self, obj: Any, event: Any) -> bool:
                     if event.type() == QEvent.Type.Close:
 
                         def after_close() -> None:
@@ -468,7 +470,9 @@ class NapariScene:
                 )
 
                 def assign(
-                    values: np.ndarray, layer: Any = layer, grid: Any = None
+                    values: np.ndarray,
+                    layer: Any = layer,
+                    grid: Any = None,  # noqa: ARG001  # field-update callback signature
                 ) -> None:
                     layer.features = {"value": values}
                     layer.shown = np.isfinite(values)

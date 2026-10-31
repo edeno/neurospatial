@@ -688,7 +688,7 @@ def _maze(
 ) -> Environment:
     """Implement Environment.maze using explicit construction inputs."""
     allowed = ("w", "plus", "t")
-    kind_normalized = kind.lower() if isinstance(kind, str) else kind
+    kind_normalized = kind.lower() if isinstance(kind, str) else kind  # type: ignore[redundant-expr]  # runtime check of user input
     if kind_normalized not in allowed:
         raise ValueError(
             _format_error(
@@ -1020,7 +1020,7 @@ def _from_layout(
 
 
 def _from_nwb(
-    cls: type[Environment[Any]],
+    cls: type[Environment[Any]],  # noqa: ARG001  # Environment.from_nwb passes its class
     nwbfile: Any,
     *,
     name: str,

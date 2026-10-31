@@ -364,7 +364,10 @@ class RectilinearLocator(ReadOnlyState):
         object.__setattr__(self, "flat_to_active", mask_active_map(mask))
 
     def locate(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside the grid or active cells.
 
@@ -384,7 +387,8 @@ class RectilinearLocator(ReadOnlyState):
         self,
         points: NDArray[np.float64],
         error: NDArray[np.float64],
-        indexes: LookupIndexes | None = None,
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
         *,
         half_open: bool = False,
     ) -> NDArray[np.intp]:
@@ -664,7 +668,7 @@ class HexLocator(ReadOnlyState):
             raise ValueError(msg)
         shape = tuple(self.centers_shape)
         if len(shape) != 2 or any(
-            not isinstance(count, (int, np.integer))
+            not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or isinstance(count, (bool, np.bool_))
             or count < 1
             for count in shape
@@ -688,7 +692,10 @@ class HexLocator(ReadOnlyState):
         )
 
     def locate(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside active hexagonal cells.
 
@@ -707,9 +714,10 @@ class HexLocator(ReadOnlyState):
         self,
         points: NDArray[np.float64],
         error: NDArray[np.float64],
-        indexes: LookupIndexes | None = None,
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices of points known to within ``error``.
 
@@ -1046,7 +1054,7 @@ class MeshLocator(ReadOnlyState):
         error: NDArray[np.float64],
         indexes: LookupIndexes | None = None,
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active triangle indices of points known to within ``error``.
 
@@ -1202,7 +1210,7 @@ class NearestBinLocator(ReadOnlyState):
         error: NDArray[np.float64],
         indexes: LookupIndexes | None = None,
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return nearest bin indices of points known to within ``error``.
 

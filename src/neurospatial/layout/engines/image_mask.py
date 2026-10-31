@@ -94,7 +94,7 @@ class ImageMaskLayout(_GridMixin):
         self._begin_build()
 
         if not isinstance(image_mask, np.ndarray):
-            msg = "image_mask must be a numpy array."
+            msg = "image_mask must be a numpy array."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
         if image_mask.ndim != 2:
             msg = "image_mask must be a 2D array."

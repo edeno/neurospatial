@@ -236,7 +236,7 @@ class ReplayCriterion:
         threshold = self.threshold
         if (
             isinstance(threshold, bool)
-            or not isinstance(threshold, (int, float, np.integer, np.floating))
+            or not isinstance(threshold, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
             or not np.isfinite(threshold)
         ):
             raise ValueError(
@@ -691,7 +691,7 @@ class ReplayMethod:
             self, "nulls", (given,) if isinstance(given, str) else tuple(given)
         )
         options = self.null_options
-        if isinstance(options, Mapping) and all(
+        if isinstance(options, Mapping) and all(  # type: ignore[redundant-expr]  # runtime check of user input
             isinstance(value, Mapping) for value in options.values()
         ):
             options = MappingProxyType(
@@ -864,7 +864,7 @@ class ReplayMethod:
                 raise ValueError(msg)
         distance = self.exclude_end_distance
         if not (
-            isinstance(distance, (int, float, np.integer, np.floating))
+            isinstance(distance, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
             and not isinstance(distance, bool)
             and np.isfinite(distance)
             and distance >= 0
@@ -1060,7 +1060,7 @@ class ReplayMethod:
                 raise ValueError(msg)
             return
         if not callable(self.score):
-            msg = (
+            msg = (  # type: ignore[unreachable]  # runtime check of user input
                 f"ReplayMethod {self.name!r}: score must be a function "
                 "score(env, posterior, times, **score_options), such as "
                 f"weighted_correlation, or None; got {self.score!r}."
@@ -1918,7 +1918,10 @@ def _detection_event(
         posterior=rows,
         times=np.asarray(times, dtype=np.float64),
         counts=counts,
-        values={**tested.values, **values},
+        values={
+            **tested.values,  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+            **values,
+        },  # a dataclass field holding a mapping, not a DataFrame
         template=tested.template,
         joint=tested.joint,
         summed=tested.summed,
@@ -2480,8 +2483,12 @@ def _event_quantities(names: Sequence[str], measured: _Measured) -> dict[str, fl
     for name in names:
         if name == "score":
             value = measured.score
-        elif name in measured.values:
-            value = measured.values[name]
+        elif (
+            name in measured.values  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+        ):  # a dataclass field holding a mapping, not a DataFrame
+            value = measured.values[  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+                name
+            ]  # a dataclass field holding a mapping, not a DataFrame
         elif name in _SEGMENT_QUANTITIES:
             assert measured.segments is not None
             assert measured.segment is not None
@@ -2533,7 +2540,7 @@ def _verdict(replay_method: ReplayMethod, measured: _Measured) -> ReplayDetectio
         segment=measured.segment,
         template=measured.template,
         n_shuffles_used=measured.n_shuffles_used,
-        tested_values={} if quantity_test is None else quantity_test.values,
+        tested_values={} if quantity_test is None else quantity_test.values,  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
         tested_p_values={} if quantity_test is None else quantity_test.p_values,
         z_scores=measured.z_scores,
         error=error,
@@ -3177,7 +3184,7 @@ def _quantity_test(
                 rng=seed,
                 **inputs,
             )
-        except _UndefinedScoreError:
+        except _UndefinedScoreError:  # noqa: PERF203  # an undefined quantity test becomes NaN
             values[quantity], p_values[quantity] = np.nan, np.nan
         except _UndefinedNullError as error:
             values[quantity], p_values[quantity] = error.score, np.nan
@@ -3309,7 +3316,9 @@ def detect_rank_order_replay(
     detected = [result for result in results if result.is_replay]
 
     def strength(result: ReplayDetectionResult) -> tuple[float, float]:
-        cells = result.values[method.criteria[0].label]
+        cells = result.values[  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+            method.criteria[0].label
+        ]  # a dataclass field holding a mapping, not a DataFrame
         return cells, abs(result.score) if np.isfinite(result.score) else -1.0
 
     return max(detected or results, key=strength)

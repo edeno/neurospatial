@@ -465,24 +465,23 @@ def _transitions(
             return _diffusion_transitions(
                 cache, binning, bandwidth=bandwidth, normalize=normalize
             )
-        msg = f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."
+        msg = f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
-    else:
-        # EMPIRICAL MODE
-        return _empirical_transitions(
-            bins=bins,
-            binning=binning,
-            arena=arena,
-            cache=cache,
-            times=times,
-            positions=positions,
-            lag=lag,
-            normalize=normalize,
-            allow_teleports=allow_teleports,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-        )
+    # EMPIRICAL MODE
+    return _empirical_transitions(
+        bins=bins,
+        binning=binning,
+        arena=arena,
+        cache=cache,
+        times=times,
+        positions=positions,
+        lag=lag,
+        normalize=normalize,
+        allow_teleports=allow_teleports,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+    )
 
 
 def _empirical_transitions(

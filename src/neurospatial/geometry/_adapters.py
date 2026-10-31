@@ -64,7 +64,7 @@ class SnapshotAdapter:
 
     def __post_init__(self) -> None:
         if (
-            not isinstance(self.name, str)
+            not isinstance(self.name, str)  # type: ignore[redundant-expr]  # runtime check of user input
             or not self.name
             or self.name != self.name.strip()
         ):
@@ -77,8 +77,8 @@ class SnapshotAdapter:
             msg = f"SnapshotAdapter.role must be one of {_ROLES!r}."
             raise ValueError(msg)
         if not isinstance(self.provider_type, type):
-            msg = "SnapshotAdapter.provider_type must be a Python type."
+            msg = "SnapshotAdapter.provider_type must be a Python type."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
-        if not callable(self.snapshot) or not callable(self.decode):
-            msg = "SnapshotAdapter.snapshot and decode must be callable."
+        if not callable(self.snapshot) or not callable(self.decode):  # type: ignore[redundant-expr]  # runtime check of user input
+            msg = "SnapshotAdapter.snapshot and decode must be callable."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)

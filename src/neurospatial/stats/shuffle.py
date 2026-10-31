@@ -110,7 +110,7 @@ def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None
     if not is_integer_at_least(n_shuffles, 1):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
     if (
-        not isinstance(min_shift, (int, float, np.integer, np.floating))
+        not isinstance(min_shift, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
         or not np.isfinite(min_shift)
         or min_shift < 0
     ):
@@ -620,7 +620,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             "n_shuffles_used": self.n_shuffles_used,
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs) -> Axes:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the null distribution with observed score.
 
         Creates a histogram of the finite null scores with a vertical line

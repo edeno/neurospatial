@@ -1187,7 +1187,7 @@ def regression_line_score(
 
     operation = "regression_line_score()"
     if not isinstance(wrap_band, (bool, np.bool_)):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             f"{operation} needs wrap_band=True or wrap_band=False, got "
             f"{wrap_band!r}; True takes band past a track end from the other end."
         )
@@ -2128,7 +2128,7 @@ def _check_line_options(
     from neurospatial._validation import validate_choice
 
     if not isinstance(wrap, (bool, np.bool_)):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             f"{operation} needs wrap=True or wrap=False, got {wrap!r}; True "
             "treats the track as a closed loop."
         )
@@ -2139,7 +2139,7 @@ def _check_line_options(
     for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
         if count is not None and (
             isinstance(count, (bool, np.bool_))
-            or not isinstance(count, (int, np.integer))
+            or not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or count < smallest
         ):
             msg = (

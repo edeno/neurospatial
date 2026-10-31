@@ -622,7 +622,7 @@ def _saved_provenance(metadata: dict[str, Any]) -> _Provenance:
     for key, value in params.items():
         try:
             build_choices({key: value}, owner="layout_parameters")
-        except TypeError:
+        except TypeError:  # noqa: PERF203  # names the offending layout parameter
             msg = (
                 f"layout_parameters[{key!r}] is not a build choice (a scalar or "
                 "a flat sequence of scalars), which is all an environment saves"

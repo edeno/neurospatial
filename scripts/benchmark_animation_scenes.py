@@ -362,7 +362,7 @@ def measure_playback(
         polls.append(time.perf_counter())
         recording_times.append(driver.view.time)
 
-    def on_draw(event: Any) -> None:
+    def on_draw(event: Any) -> None:  # noqa: ARG001  # driver callback signature
         draws.append(time.perf_counter())
         draw_recording_times.append(driver.view.time)
 

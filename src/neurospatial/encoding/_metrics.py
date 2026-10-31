@@ -1226,7 +1226,7 @@ def _score_units(
     for i in range(n_neurons):
         try:
             scores[i] = score(firing_rates[i])
-        except NotImplementedError:
+        except NotImplementedError:  # noqa: PERF203  # a unit whose score fails becomes NaN
             raise
         except (ValueError, RuntimeError):
             scores[i] = np.nan

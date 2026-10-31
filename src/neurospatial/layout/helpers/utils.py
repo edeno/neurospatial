@@ -238,15 +238,15 @@ def map_active_data_to_grid(
         1D NumPy array, or its length is not the number of active bins.
 
     """
-    if grid_shape is None or active_mask is None:
-        msg = (
+    if grid_shape is None or active_mask is None:  # type: ignore[redundant-expr]  # runtime check of user input
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             "This method is applicable only to grid-based environments "
             "that have 'grid_shape' and 'active_mask' attributes."
         )
         raise ValueError(
             msg,
         )
-    if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:
+    if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:  # type: ignore[redundant-expr]  # runtime check of user input
         msg = "active_bin_data must be a 1D NumPy array."
         raise ValueError(msg)
 

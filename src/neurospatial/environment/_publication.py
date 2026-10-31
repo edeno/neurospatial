@@ -166,7 +166,10 @@ def _diffusion_geometry_view(geometry: DiffusionGeometry) -> DiffusionGeometry:
     )
 
 
-def _refuse_graph_edit(*args: Any, **kwargs: Any) -> NoReturn:
+def _refuse_graph_edit(
+    *args: Any,  # noqa: ARG001  # replaces every mutating graph method
+    **kwargs: Any,  # noqa: ARG001  # replaces every mutating graph method
+) -> NoReturn:  # replaces every mutating graph method
     raise TypeError(
         _format_error(
             "Environment.connectivity attributes are read-only.",
@@ -208,7 +211,7 @@ class _ReadOnlyGraphAttributes(dict[str, Any]):
         return type(self), (dict(self),)
 
 
-class _PublishedGraph(nx.Graph):
+class _PublishedGraph(nx.Graph):  # type: ignore[misc]
     """Freeze public graph bindings as well as topology and attribute values.
 
     NetworkX's cached views remain lazy. Copies construct an ordinary editable
@@ -361,7 +364,7 @@ class _Provenance:
         if length_scale is not None:
             if (
                 isinstance(length_scale, bool)
-                or not isinstance(length_scale, (int, float, np.number))
+                or not isinstance(length_scale, (int, float, np.number))  # type: ignore[redundant-expr]  # runtime check of user input
                 or not np.isfinite(length_scale)
                 or length_scale <= 0
             ):
@@ -473,7 +476,7 @@ def _restored_state(state: object) -> dict[str, Any]:
                 ),
             )
         )
-    geometry: _PublishedGeometry = state["_geometry"]
+    geometry: _PublishedGeometry[Any] = state["_geometry"]
     state = {key: value for key, value in state.items() if key != "_state_format"}
     return {
         **state,

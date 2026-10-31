@@ -450,7 +450,7 @@ class UnknownArena:
     def __post_init__(self) -> None:
         if (
             isinstance(self.n_dims, (bool, np.bool_))
-            or not isinstance(self.n_dims, (int, np.integer))
+            or not isinstance(self.n_dims, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
             or self.n_dims < 1
         ):
             msg = "n_dims must be a positive integer."
@@ -605,7 +605,7 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                 "give one name per wall",
             )
         for name in names:
-            if not isinstance(name, str) or not name:
+            if not isinstance(name, str) or not name:  # type: ignore[redundant-expr]  # runtime check of user input
                 msg = f"Wall names must be nonempty strings, got {name!r}."
                 raise _error(
                     msg,
@@ -1187,7 +1187,10 @@ class EgocentricSurround:
         """None: this arena is not a track."""
         return None
 
-    def transformed(self, matrix: NDArray[np.float64]) -> Arena:
+    def transformed(
+        self,
+        matrix: NDArray[np.float64],  # noqa: ARG002  # Arena protocol signature
+    ) -> Arena:  # Arena protocol signature
         """Refuse Cartesian affine maps of radial/angular coordinates."""
         msg = "Cartesian affine maps do not apply to EgocentricSurround."
         raise _error(

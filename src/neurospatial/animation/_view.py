@@ -234,7 +234,7 @@ class AnimationView:
     def _ipython_display_(self) -> None:
         from IPython.display import display
 
-        display(self.native)
+        display(self.native)  # type: ignore[no-untyped-call, unused-ignore]
 
 
 def _png(frame: NDArray[np.uint8]) -> bytes:

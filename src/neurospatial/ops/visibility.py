@@ -502,9 +502,11 @@ class ViewshedResult(ReadOnlyArraysMixin):
             and np.all(np.diff(cues) > 0)
         ):
             problems.append("visible_cues are increasing non-negative cue indices")
-        for name in ("cue_distances", "cue_bearings"):
-            if np.shape(getattr(self, name)) != n_cues:
-                problems.append(f"{name} needs shape {n_cues}, like visible_cues")
+        problems.extend(
+            f"{name} needs shape {n_cues}, like visible_cues"
+            for name in ("cue_distances", "cue_bearings")
+            if np.shape(getattr(self, name)) != n_cues
+        )
         return problems
 
     @property

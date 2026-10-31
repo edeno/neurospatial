@@ -332,7 +332,7 @@ def _regions_mask(
     elif isinstance(regions, Mapping):
         resolved = [_require_region(r, key=k) for k, r in regions.items()]
     else:
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             "regions must be str, list[str], Region, or a mapping of names to "
             f"Region values; got {type(regions).__name__}."
         )

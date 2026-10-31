@@ -594,13 +594,13 @@ def _corner_positions(
         # the ring's start.
         order = np.roll(np.arange(len(position)), -int(np.flatnonzero(turning == 0)[0]))
         edges = np.flatnonzero(np.diff(turning[order]) != 0) + 1
-        for run in np.split(order, edges):
-            if (
-                turning[run[0]] != 0
-                and np.max(np.abs(turn[run])) > threshold
-                and not sharp_sample[run].any()
-            ):
-                cuts.append(position[run[int(np.argmax(np.abs(turn[run])))]])
+        cuts.extend(
+            position[run[int(np.argmax(np.abs(turn[run])))]]
+            for run in np.split(order, edges)
+            if turning[run[0]] != 0
+            and np.max(np.abs(turn[run])) > threshold
+            and not sharp_sample[run].any()
+        )
     return np.sort(np.asarray(cuts, dtype=float))
 
 

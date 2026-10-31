@@ -130,7 +130,7 @@ def _get_graph_bins(
     refuse_coincident_nodes(graph, edge_order)
 
     # (u, v) and (v, u) map to the same edge ID.
-    edge_id_map: dict[frozenset, int] = {
+    edge_id_map: dict[frozenset[Any], int] = {
         frozenset(edge): idx for idx, edge in enumerate(graph.edges())
     }
 

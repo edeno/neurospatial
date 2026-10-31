@@ -175,8 +175,8 @@ class SceneRenderer:
             self._build()
         for update in self._updates:
             update(time)
-        self.canvas.draw()
-        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
+        self.canvas.draw()  # type: ignore[no-untyped-call]
+        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())  # type: ignore[no-untyped-call]
 
     def _build(self) -> None:
         """Create every axis and artist once, laid out at the scene's start.
@@ -336,7 +336,7 @@ class SceneRenderer:
                     ).T
                 )
             elif shape == "polygons":
-                artist.set_array(np.ma.masked_invalid(values))
+                artist.set_array(np.ma.masked_invalid(values))  # type: ignore[no-untyped-call]
             elif shape == "triangles":
                 artist.set_array(values)
             elif shape in ("hexagons", "points"):
@@ -827,7 +827,10 @@ def epoch_panel(ax: Any, prepared: PreparedScene) -> Panel:
             )
     ax.set_yticks(range(len(epochs)), [e.label for e in epochs])
     time_axis = _time_axis(ax, prepared)
-    return Panel(lambda time: None, lambda time, _: time_axis(time))
+    return Panel(
+        lambda time: None,  # noqa: ARG005  # Panel callback signature
+        lambda time, _: time_axis(time),  # Panel callback signature
+    )  # Panel callback signature
 
 
 def track_panel(
@@ -884,7 +887,7 @@ def track_panel(
             cells.set_data(
                 window.time_edges,
                 window.track_edges,
-                np.ma.masked_invalid(window.values),
+                np.ma.masked_invalid(window.values),  # type: ignore[no-untyped-call]
             )
         # Matplotlib's stubs omit the (n, 2, 2) array input it accepts.
         positions.set_segments(cast("Any", window.paths))

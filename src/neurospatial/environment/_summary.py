@@ -240,8 +240,7 @@ def _info(
         lines.append(f"Regions: {n_regions} defined")
         # Show region names if not too many
         if n_regions <= 5:
-            for region_name in region_names:
-                lines.append(f"  - {region_name}")
+            lines.extend(f"  - {region_name}" for region_name in region_names)
         else:
             lines.append("  (use env.regions to inspect all regions)")
     else:

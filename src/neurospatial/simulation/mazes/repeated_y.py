@@ -492,12 +492,11 @@ def _create_repeated_y_track_graph(
         graph.nodes[node]["pos"] = (float(x), float(y))
 
     # Define edge order for linearization
-    edge_order = []
-
     # Main path: entrance box -> junctions -> food box
-    edge_order.append(("entrance_box", "junction_1"))
-    for i in range(1, dims.n_junctions):
-        edge_order.append((f"junction_{i}", f"junction_{i + 1}"))
+    edge_order = [("entrance_box", "junction_1")]
+    edge_order.extend(
+        (f"junction_{i}", f"junction_{i + 1}") for i in range(1, dims.n_junctions)
+    )
     edge_order.append((f"junction_{dims.n_junctions}", "food_box"))
 
     # Terminal arms with forks

@@ -182,7 +182,9 @@ class ArmReplayMethod:
         return "no_test"
 
     def _compare(
-        self, event: _CompareEvent, rng: np.random.Generator
+        self,
+        event: _CompareEvent,
+        rng: np.random.Generator,  # noqa: ARG002  # shared by every method's _compare
     ) -> ReplayDetectionResult:
         """This method's verdict on one event of ``compare_replay_methods``."""
         from neurospatial.decoding import JointDecodingResult

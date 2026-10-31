@@ -193,7 +193,7 @@ class GraphLayout(_NeighborPairsMixin):
     def plot_linear_layout(
         self,
         ax: "matplotlib.axes.Axes | None" = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "matplotlib.axes.Axes":
         """Plot the 1D linearized representation of the graph layout.
 

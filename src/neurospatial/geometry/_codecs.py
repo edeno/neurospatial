@@ -152,7 +152,7 @@ def decode(
         If the codec is unknown, its version is unsupported, or data is invalid.
     """
     if not isinstance(meta, dict):
-        msg = f"invalid geometry metadata at {prefix}: expected a dict."
+        msg = f"invalid geometry metadata at {prefix}: expected a dict."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
     name = meta.get("codec")
     codec = _CODECS.get(name) if isinstance(name, str) else None
@@ -331,7 +331,9 @@ def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
 
 
 def _decode_bins(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> SpatialBins:
     return SpatialBins.from_arrays(
         _array(arrays, prefix, "centers", np.float64),
@@ -352,7 +354,9 @@ def _encode_connections(obj: BinConnections, prefix: str) -> Payload:
 
 
 def _decode_connections(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> BinConnections:
     return BinConnections.from_arrays(
         _array(arrays, prefix, "all_pairs", np.intp),
@@ -375,7 +379,9 @@ def _encode_faces(obj: KnownFaces, prefix: str) -> Payload:
 
 
 def _decode_faces(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> KnownFaces:
     return KnownFaces(
         FaceGeometry(
@@ -387,12 +393,17 @@ def _decode_faces(
     )
 
 
-def _encode_missing(obj: MissingFaces, prefix: str) -> Payload:
+def _encode_missing(
+    obj: MissingFaces,
+    prefix: str,  # noqa: ARG001  # codec signature
+) -> Payload:  # codec signature  # codec signature
     return {"reason": obj.reason}, {}
 
 
 def _decode_missing(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],
+    arrays: Mapping[str, NDArray[Any]],  # noqa: ARG001  # codec signature
+    prefix: str,  # noqa: ARG001  # codec signature
 ) -> MissingFaces:
     return MissingFaces(meta["reason"])
 
@@ -427,7 +438,7 @@ def _refuse_json_attributes(graph: nx.Graph) -> None:
     for element, key, value in graph_attribute_items(graph):
         try:
             _json_safe(value)
-        except _UnsupportedJSONValueError as exc:
+        except _UnsupportedJSONValueError as exc:  # noqa: PERF203  # names the first attribute JSON cannot store
             msg = (
                 f"cannot save track graph {element} attribute {key!r}: its "
                 f"value ({type(value).__name__}) is or contains a {exc.reason}, "
@@ -617,7 +628,9 @@ def _mesh_arrays(
 
 
 def _decode_triangle_shapes(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> TriangleShapes:
     return TriangleShapes(
         _array(arrays, prefix, "points", np.float64),
@@ -632,7 +645,9 @@ def _encode_outline(obj: Outline, prefix: str) -> Payload:
 
 
 def _decode_outline(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> Outline:
     encoded = _array(arrays, prefix, "wkb", np.uint8)
     if encoded.ndim != 1:
@@ -1166,7 +1181,9 @@ def _encode_face_normals(obj: FaceNormals, prefix: str) -> Payload:
 
 
 def _decode_face_normals(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+    meta: dict[str, Any],  # noqa: ARG001  # codec signature
+    arrays: Mapping[str, NDArray[Any]],
+    prefix: str,  # codec signature
 ) -> FaceNormals:
     return FaceNormals(np.asarray(arrays[f"{prefix}/values"]))
 

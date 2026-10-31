@@ -16,7 +16,7 @@ conversion in one call and return the converted array.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -872,7 +872,7 @@ class VideoCalibration:
         axis_scales = np.linalg.norm(self.transform_px_to_cm.A[:2, :2], axis=0)
         return float(np.mean(axis_scales))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize calibration to dict for JSON storage.
 
         Returns
@@ -886,7 +886,7 @@ class VideoCalibration:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> VideoCalibration:
+    def from_dict(cls, d: dict[str, Any]) -> VideoCalibration:
         """Restore calibration from dict.
 
         Parameters
@@ -1098,7 +1098,7 @@ def identity_nd(*, n_dims: int = 2) -> AffineND:
 # Quick NumPy helpers that build and apply a 2D AffineND
 # ---------------------------------------------------------------------
 def flip_y_data(
-    data: NDArray[np.float64] | tuple | list,
+    data: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
 ) -> NDArray[np.float64]:
     """Flip y-axis of coordinates so that the origin moves from
@@ -1142,7 +1142,7 @@ def _check_cm_per_px(cm_per_px: float) -> None:
 
 
 def convert_to_cm(
-    data_px: NDArray[np.float64] | tuple | list,
+    data_px: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
     *,
     cm_per_px: float,
@@ -1185,7 +1185,7 @@ def convert_to_cm(
 
 
 def convert_to_pixels(
-    data_cm: NDArray[np.float64] | tuple | list,
+    data_cm: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
     *,
     cm_per_px: float,

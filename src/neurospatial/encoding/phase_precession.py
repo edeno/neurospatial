@@ -1089,8 +1089,8 @@ def plot_phase_precession(
     marker_size: float = 20.0,
     marker_alpha: float = 0.6,
     show_doubled_note: bool = True,
-    scatter_kwargs: dict | None = None,
-    line_kwargs: dict | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
+    line_kwargs: dict[str, Any] | None = None,
 ) -> Axes:
     """
     Plot phase precession with doubled phase axis.
@@ -1190,8 +1190,8 @@ def plot_phase_precession(
         _, ax = plt.subplots(figsize=(8, 6))
 
     # Default kwargs
-    scatter_defaults: dict = {"c": "C0", "zorder": 2}
-    line_defaults: dict = {"color": "red", "linewidth": 2, "zorder": 3}
+    scatter_defaults: dict[str, Any] = {"c": "C0", "zorder": 2}
+    line_defaults: dict[str, Any] = {"color": "red", "linewidth": 2, "zorder": 3}
 
     # Merge with user kwargs
     scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}

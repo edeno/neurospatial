@@ -436,7 +436,7 @@ def field_stability(
     elif method == "spearman":
         correlation, _ = stats.spearmanr(map1_clean, map2_clean)
     else:
-        msg = f"Unknown method: {method}. Use 'pearson' or 'spearman'."
+        msg = f"Unknown method: {method}. Use 'pearson' or 'spearman'."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
 
     return float(correlation)

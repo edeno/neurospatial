@@ -490,7 +490,7 @@ def _check_rate_options(
         msg = f"{operation}: confidence must be in (0, 1), got {confidence}."
         raise ValueError(msg)
     if expected_rate is not None and not (
-        isinstance(expected_rate, (int, float, np.integer, np.floating))
+        isinstance(expected_rate, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
         and not isinstance(expected_rate, bool)
         and 0 < expected_rate < 1
     ):
@@ -736,7 +736,9 @@ def method_agreement(
     else:
         data = data.assign(is_replay=data["is_replay"] & ~data["_error"])
     index = [*groups, "event"]
-    verdicts = data.pivot(index=index, columns="method", values="is_replay")
+    verdicts = data.pivot(  # noqa: PD010  # pivot raises on a duplicated (event, method) entry; pivot_table would average it
+        index=index, columns="method", values="is_replay"
+    )  # pivot raises on a duplicated (event, method) entry; pivot_table would average it
     methods = list(dict.fromkeys(table["method"]))
     rows = []
     for first, second in itertools.combinations(methods, 2):
@@ -872,7 +874,9 @@ def score_agreement(
     )
     rows = []
     for key, frame in grouped:
-        scores = frame.pivot(index="event", columns="method", values="score")
+        scores = frame.pivot(  # noqa: PD010  # pivot raises on a duplicated (event, method) entry; pivot_table would average it
+            index="event", columns="method", values="score"
+        )  # pivot raises on a duplicated (event, method) entry; pivot_table would average it
         scores = scores.reindex(columns=methods)
         for first, second in itertools.combinations(methods, 2):
             a = scores[first].to_numpy()

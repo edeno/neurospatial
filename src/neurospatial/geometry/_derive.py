@@ -123,7 +123,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
                 _restricted_mask(track.active_mask, keep),
             )
         else:
-            msg = "Track derivation requires an owned TrackLinearization snapshot."
+            msg = "Track derivation requires an owned TrackLinearization snapshot."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
     return Binning(
         binning.kind,
@@ -620,7 +620,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if isinstance(track, TrackLinearization):
             track = _track_transform(track, matrix, scale)
         else:
-            msg = "Track derivation requires an owned TrackLinearization snapshot."
+            msg = "Track derivation requires an owned TrackLinearization snapshot."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
     return Binning(
         binning.kind,

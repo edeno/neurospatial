@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     import napari
 
 
-class _RectangleControl(QWidget):
+class _RectangleControl(QWidget):  # type: ignore[misc, unused-ignore]
     """Draw one optional rectangle without changing annotation coordinates.
 
     The dedicated rectangle uses pixel ``(row, column)`` coordinates. Clicking

@@ -63,7 +63,7 @@ class CombinedLocator(ReadOnlyState):
         if (
             not keys
             or len(set(keys)) != len(keys)
-            or any(not isinstance(key, str) or not key or "/" in key for key in keys)
+            or any(not isinstance(key, str) or not key or "/" in key for key in keys)  # type: ignore[redundant-expr]  # runtime check of user input
         ):
             msg = "Component keys must be unique nonempty strings without '/'."
             raise ValueError(msg)

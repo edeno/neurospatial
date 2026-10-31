@@ -242,7 +242,8 @@ class GridCellModel:
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        headings: NDArray[np.float64] | None = None,
+        headings: NDArray[np.float64]  # noqa: ARG002  # NeuralModel protocol signature
+        | None = None,  # NeuralModel protocol signature  # NeuralModel protocol signature
     ) -> NDArray[np.float64]:
         """Compute hexagonal grid firing rate.
 

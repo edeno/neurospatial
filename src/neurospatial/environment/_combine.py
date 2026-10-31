@@ -40,11 +40,11 @@ def _combine(
     ``environment_type`` is the ``Environment`` class, passed in because
     ``core`` imports this module; every component must be an instance of it.
     """
-    if not isinstance(components, Mapping) or not components:
+    if not isinstance(components, Mapping) or not components:  # type: ignore[redundant-expr]  # runtime check of user input
         msg = "components must be a nonempty ordered mapping of keys to environments."
         raise ValueError(msg)
     keys, values = tuple(components), tuple(components.values())
-    if any(not isinstance(key, str) or not key or "/" in key for key in keys):
+    if any(not isinstance(key, str) or not key or "/" in key for key in keys):  # type: ignore[redundant-expr]  # runtime check of user input
         msg = "Component keys must be nonempty strings without '/'."
         raise ValueError(msg)
     if any(not isinstance(env, environment_type) for env in values):

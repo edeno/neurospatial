@@ -692,17 +692,21 @@ def _pieces_binning(
                     records.append(record(u, v, row, is_open=False))
     for parent in np.flatnonzero(~links.is_open):
         parent_u, parent_v = links.all_pairs[parent]
-        for u in by_parent[int(parent_u)]:
-            for v in by_parent[int(parent_v)]:
-                # Corner contact counts: a diagonal across a wall stays closed.
-                if not contact(u, v).is_empty:
-                    records.append(record(u, v, int(parent), is_open=False))
+        # Corner contact counts: a diagonal across a wall stays closed.
+        records.extend(
+            record(u, v, int(parent), is_open=False)
+            for u in by_parent[int(parent_u)]
+            for v in by_parent[int(parent_v)]
+            if not contact(u, v).is_empty
+        )
     for children in by_parent.values():
         # Pieces of one cell that meet on the wall that divided it.
-        for position, u in enumerate(children):
-            for v in children[position + 1 :]:
-                if divided(contact(u, v)):
-                    records.append(record(u, v, None, is_open=False))
+        records.extend(
+            record(u, v, None, is_open=False)
+            for position, u in enumerate(children)
+            for v in children[position + 1 :]
+            if divided(contact(u, v))
+        )
     records.sort(key=lambda item: (item.u, item.v))
     all_pairs = np.array([(r.u, r.v) for r in records], dtype=np.intp).reshape(-1, 2)
     is_open = np.array([r.is_open for r in records], dtype=bool)

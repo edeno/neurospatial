@@ -83,7 +83,7 @@ def build_choices(
     for name, value in params.items():
         try:
             choices[name] = _choice(value)
-        except TypeError as error:
+        except TypeError as error:  # noqa: PERF203  # names the offending argument
             raise TypeError(
                 _format_error(
                     f"{owner} argument {name!r} is not a build choice: {error}.",

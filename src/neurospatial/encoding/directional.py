@@ -206,7 +206,7 @@ def _check_angular_bins(result: _DirectionalRateMixin) -> int:
     bin_size = result.bin_size
     if (
         isinstance(bin_size, bool)
-        or not isinstance(bin_size, int | float | np.number)
+        or not isinstance(bin_size, int | float | np.number)  # type: ignore[redundant-expr]  # runtime check of user input
         or not (np.isfinite(bin_size) and 0 < bin_size <= 2 * np.pi)
     ):
         raise ValueError(
@@ -286,7 +286,7 @@ def _check_dispersion(result: _DirectionalRateMixin) -> None:
     if (
         dispersion is None
         or isinstance(dof, bool | np.bool_)
-        or not isinstance(dof, int | np.integer)
+        or not isinstance(dof, int | np.integer)  # type: ignore[redundant-expr]  # runtime check of user input
         or dof < 1
     ):
         raise ValueError(
@@ -365,11 +365,11 @@ _MIN_TUNING_TEST_SPIKES = 50
 
 
 def _tuning_pvalues(
-    rates: NDArray,
-    occupancy: NDArray,
-    centers: NDArray,
-    spike_counts: NDArray | None,
-    dispersion: NDArray | None = None,
+    rates: NDArray[Any],
+    occupancy: NDArray[Any],
+    centers: NDArray[Any],
+    spike_counts: NDArray[Any] | None,
+    dispersion: NDArray[Any] | None = None,
     dispersion_dof: int | None = None,
 ) -> NDArray[np.float64]:
     """Occupancy-corrected test of one preferred direction, one p-value per unit.
@@ -493,7 +493,7 @@ def _tuning_inputs(
     }
 
 
-def _directional_tuning_width(rates: NDArray, bin_size: float) -> float:
+def _directional_tuning_width(rates: NDArray[Any], bin_size: float) -> float:
     """Half-width at half-maximum in radians; NaN for a map with no finite rate."""
     rates = np.asarray(rates, dtype=np.float64)
     if not np.any(np.isfinite(rates)):

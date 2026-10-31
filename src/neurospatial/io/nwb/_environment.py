@@ -257,7 +257,9 @@ def _is_environment_record(record: object) -> bool:
     return metadata is not None and metadata.get("format") == ENVIRONMENT_FORMAT
 
 
-def _analysis_records(nwbfile: NWBFile, record_format: str) -> dict[str, dict]:
+def _analysis_records(
+    nwbfile: NWBFile, record_format: str
+) -> dict[str, dict[str, Any]]:
     """Metadata of the ``/analysis`` records declaring ``record_format``, by name.
 
     Names are in sorted order.

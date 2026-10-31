@@ -1189,7 +1189,7 @@ def _find_autocorr_peaks(
     center = np.array([n // 2 for n in centered.shape])
     valid = np.isfinite(centered)
     floor = np.min(centered[valid]) - 1.0
-    peaks = peak_local_max(
+    peaks = peak_local_max(  # type: ignore[no-untyped-call]
         np.where(valid, centered, floor),
         min_distance=max(1, int(np.floor(central_radius))),
         threshold_abs=threshold_rel * centered[tuple(center)],

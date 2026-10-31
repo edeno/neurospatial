@@ -325,5 +325,5 @@ def combine_fields(
             return min_combined
 
         case _:
-            msg = f"Unknown mode '{mode}'. Valid modes: 'mean', 'max', 'min'."
+            msg = f"Unknown mode '{mode}'. Valid modes: 'mean', 'max', 'min'."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)

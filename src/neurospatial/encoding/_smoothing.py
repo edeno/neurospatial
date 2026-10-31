@@ -428,7 +428,7 @@ def smooth_rate_maps_batch(
         return _binned_batch(
             env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
-    msg = f"Unknown method: {method}"
+    msg = f"Unknown method: {method}"  # type: ignore[unreachable]  # runtime check of user input
     raise ValueError(msg)
 
 

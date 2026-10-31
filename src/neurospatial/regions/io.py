@@ -144,7 +144,7 @@ def regions_from_json(path: str | Path) -> Regions:
     for index, entry in enumerate(entries):
         try:
             regions.append(Region.from_dict(entry))
-        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:  # noqa: PERF203  # names the malformed entry
             raise ValueError(
                 _format_error(
                     f"Region entry {index} in {path} is malformed: {exc!r}.",
@@ -274,7 +274,7 @@ def _labelled_regions(
     metadata: Mapping[str, Any],
     *,
     pixel_to_world: SpatialTransform | None,
-    label_metadata: Callable[[str], Mapping[str, Any]] = lambda label: {},
+    label_metadata: Callable[[str], Mapping[str, Any]] = lambda label: {},  # noqa: ARG005  # default callback signature
 ) -> Regions:
     """Build an annotation file's regions, named by label, in file order.
 

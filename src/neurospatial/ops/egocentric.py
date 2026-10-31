@@ -398,7 +398,8 @@ def compute_egocentric_bearing(
 @reads_pynapple_samples
 def compute_egocentric_distance(
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64] | None,
+    headings: NDArray[np.float64]  # noqa: ARG001  # headings kept for the canonical egocentric signature
+    | None,  # headings kept for the canonical egocentric signature
     targets: NDArray[np.float64],
     *,
     metric: str = "euclidean",

@@ -150,7 +150,13 @@ class _Field:
         # The held row: the same array until the field's sample changes.
         return self.prepared.field_sample(self.field, time)
 
-    def apply(self, time: float, values: NDArray[np.float64]) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        values: NDArray[
+            np.float64
+        ],  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if values is not self.graphic.values:
             self.graphic.update(values)
 
@@ -197,7 +203,11 @@ class _Position:
         point = np.array(self.prepared.sample(data, data.data, time))
         return point, self.prepared.trail(data, time) if self.capacity else None
 
-    def apply(self, time: float, prepared: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        prepared: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         point, trail = prepared
         for marker in self.markers:
             marker.data = xyz(point)
@@ -247,7 +257,11 @@ class _Bodyparts:
     def prepare(self, time: float) -> Any:
         return self.prepared.pose(self.data, time)
 
-    def apply(self, time: float, pose: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        pose: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         for points in self.points:
             points.data = xyz(pose.points)
         if self.lines:
@@ -273,7 +287,11 @@ class _HeadDirection:
     def prepare(self, time: float) -> Any:
         return self.prepared.heading_arrow(self.data, time)
 
-    def apply(self, time: float, arrow: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        arrow: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if arrow is None:
             segment = np.full((2, self.prepared.scene.env.n_dims), np.nan)
         else:
@@ -322,7 +340,11 @@ class _Events:
     def prepare(self, time: float) -> Any:
         return self.prepared.events(self.data, time)
 
-    def apply(self, time: float, shown: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        shown: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         for name, (fill, border, graphics) in self.kinds.items():
             visible = shown[name]
             if self.drawn.get(name) == visible.key:
@@ -377,7 +399,11 @@ class _ObjectVectors:
         rate = self.prepared.sample(data, data.firing_rates, time, name="firing_rates")
         return animal, _rate_opacity(float(rate), data._rate_peak)
 
-    def apply(self, time: float, prepared: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        prepared: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         animal, opacity = prepared
         objects = self.data.object_positions
         segments = pair_segments(np.broadcast_to(animal, objects.shape), objects)
@@ -427,7 +453,12 @@ class _Video:
         # The held frame: the same array until the nearest sample changes.
         return self.prepared.video_frame(self.data, time)
 
-    def apply(self, time: float, frame: NDArray[np.uint8] | None) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        frame: NDArray[np.uint8]
+        | None,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if frame is self.shown:
             return
         self.shown = frame
@@ -1579,7 +1610,7 @@ class FastplotlibAnimation:
             keys.append("Up/Down unit, Esc none")
         self.key_hint = "Keys, after a click on the figure:  " + "  |  ".join(keys)
 
-        @self.figure.add_imgui_window(location="top", size=48, title=None)
+        @self.figure.add_imgui_window(location="top", size=48, title=None)  # type: ignore[misc, unused-ignore]
         def hint() -> None:
             imgui.text(self.status)
             imgui.text_disabled(self.key_hint)
@@ -1663,7 +1694,11 @@ class FastplotlibAnimation:
         with self._source_lock:
             return _Frame(time, [layer.prepare(time) for layer in self._updates])
 
-    def _show(self, time: float, frame: _Frame) -> None:
+    def _show(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        frame: _Frame,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # callers pass the slider time  # _show/apply: the slider time, kept with the frame it was read for
         """Draw ``frame``; ``time`` is the slider's, which ``frame`` was read for."""
         for layer, prepared in zip(self._updates, frame.layers, strict=True):
             layer.apply(frame.time, prepared)
@@ -1806,7 +1841,10 @@ class FastplotlibAnimation:
         with self.capture_session() as capture:
             return capture(time)
 
-    def _canvas_closed(self, event: Any) -> None:
+    def _canvas_closed(
+        self,
+        event: Any,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # canvas close callback signature  # _show/apply: the slider time, kept with the frame it was read for
         """Closing the native canvas also stops the workers and the view."""
         self.close()
 
@@ -1889,7 +1927,7 @@ class FastplotlibAnimation:
     def _ipython_display_(self) -> None:
         from IPython.display import display
 
-        display(self.show())
+        display(self.show())  # type: ignore[no-untyped-call, unused-ignore]
 
 
 def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> None:

@@ -2383,7 +2383,7 @@ def _check_dataset_tables(
                 "dataset from a NullSpikeData's copy_index",
             )
         )
-    if "dataset" in observed and observed["dataset"].nunique(dropna=False) > 1:
+    if "dataset" in observed and len(observed["dataset"].unique()) > 1:
         msg = (
             f"{operation}: observed holds {observed['dataset'].nunique()} data "
             "sets; pass the one observed data set (dataset_values with null=None)."

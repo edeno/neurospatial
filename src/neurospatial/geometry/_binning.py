@@ -560,7 +560,11 @@ class KnownFaces(ReadOnlyState):
         """Whether validated face geometry can be obtained."""
         return True
 
-    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+    def build(
+        self,
+        bins: SpatialBins,  # noqa: ARG002  # face-source signature
+        connections: BinConnections,  # noqa: ARG002  # face-source signature
+    ) -> FaceGeometry:
         """Return the stored faces, which a binning checks against its pairs."""
         return self.faces
 
@@ -583,7 +587,7 @@ class MissingFaces:
 
     def __post_init__(self) -> None:
         if not isinstance(self.reason, str):
-            msg = (
+            msg = (  # type: ignore[unreachable]  # runtime check of user input
                 "MissingFaces.reason must be a string explaining why the faces "
                 f"are missing, got {self.reason!r}."
             )
@@ -594,7 +598,11 @@ class MissingFaces:
         """Whether validated face geometry can be obtained."""
         return False
 
-    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+    def build(
+        self,
+        bins: SpatialBins,  # noqa: ARG002  # face-source signature
+        connections: BinConnections,  # noqa: ARG002  # face-source signature
+    ) -> FaceGeometry:
         """Refuse construction because valid face geometry is unavailable."""
         msg = "This operation"
         raise self.missing_error(msg)
@@ -613,7 +621,7 @@ class MissingFaces:
 class _ReadOnlyTrackAttributes(dict[str, Any]):
     """Protect stored track geometry while supporting pickle and editable copies."""
 
-    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
+    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:  # noqa: ARG002  # stands in for every dict mutator
         msg = "Stored track graph attributes are read-only."
         raise TypeError(msg)
 
@@ -658,7 +666,7 @@ def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
             pickle.dumps(value)
         # Any failure to pickle, whatever the value's own __reduce__ raises,
         # means the attribute cannot be saved; name it and chain the cause.
-        except Exception as exc:
+        except Exception as exc:  # noqa: PERF203  # names the attribute that fails
             raise TypeError(
                 _format_error(
                     f"Track graph {element} attribute {key!r} holds a "
@@ -963,7 +971,7 @@ class Binning:
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, str):
-            msg = f"Binning.kind must be a descriptive string, got {self.kind!r}."
+            msg = f"Binning.kind must be a descriptive string, got {self.kind!r}."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
         self.connections.check_bins(self.bins.n_bins)
         pairs = self.connections.pairs

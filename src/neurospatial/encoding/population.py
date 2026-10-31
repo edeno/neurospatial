@@ -126,7 +126,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         """Validate, own the arrays and prevent replacing per-unit fields."""
         place_fields = tuple(
             fields
-            if isinstance(fields, PlaceFieldsResult)
+            if isinstance(fields, PlaceFieldsResult)  # type: ignore[redundant-expr]  # runtime check of user input
             else PlaceFieldsResult(fields=list(fields))
             for fields in self.place_fields
         )
@@ -578,7 +578,7 @@ def plot_population_coverage(
     """
     # Validate result type
     if not isinstance(result, PopulationCoverageResult):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             f"result must be PopulationCoverageResult, got {type(result).__name__}. "
             f"Use population_coverage() to compute the result first."
         )

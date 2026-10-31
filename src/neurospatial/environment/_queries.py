@@ -243,7 +243,7 @@ def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.in
     """Bins grouped by hop distance from ``center_bin``, up to ``hops``."""
     # Type validation for hops
     if not isinstance(hops, (int, np.integer)):
-        msg = f"hops must be an integer, got {type(hops).__name__}"
+        msg = f"hops must be an integer, got {type(hops).__name__}"  # type: ignore[unreachable]  # runtime check of user input
         raise TypeError(msg)
 
     # Validate hops is non-negative

@@ -7,7 +7,8 @@ from napari.settings import get_settings
 # Create simple test data
 n_frames = 1000
 height, width = 100, 100
-data = np.random.rand(n_frames, height, width).astype(np.float32)
+rng = np.random.default_rng(0)
+data = rng.random((n_frames, height, width)).astype(np.float32)
 
 print(f"Test data: {data.shape} ({data.nbytes / 1e6:.1f} MB)")
 

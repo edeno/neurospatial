@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -82,7 +82,7 @@ def boundary_from_positions(
     config: BoundaryConfig | None = None,
     buffer_fraction: float | None = None,
     simplify_fraction: float | None = None,
-    **method_kwargs,
+    **method_kwargs: Any,
 ) -> Polygon:
     """Infer environment boundary from position data.
 
@@ -196,7 +196,7 @@ def boundary_from_positions(
             )
             boundary = _convex_hull_boundary(positions)
     else:
-        msg = f"Unknown method: {effective_method}"
+        msg = f"Unknown method: {effective_method}"  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
 
     # Apply buffer (fraction of bbox diagonal)
@@ -300,7 +300,7 @@ def _alpha_shape_boundary(
             n_points,
         )
         # Also print to stdout for users who don't have logging configured
-        print(
+        print(  # noqa: T201  # notice for users who have not configured logging
             f"Computing alpha shape boundary for {n_points:,} positions...",
             file=sys.stderr,
             flush=True,

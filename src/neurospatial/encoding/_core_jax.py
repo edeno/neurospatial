@@ -123,7 +123,7 @@ def compute_firing_rates_batch(
     return out
 
 
-@jax.jit
+@jax.jit  # type: ignore[misc, unused-ignore]
 def _firing_rates_kernel(
     spike_counts: Array, occupancy: Array, min_occupancy: Array
 ) -> Array:
@@ -354,7 +354,7 @@ def sparsity_single(
     return out
 
 
-@jax.jit
+@jax.jit  # type: ignore[misc, unused-ignore]
 def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
     valid = jnp.isfinite(firing_rate) & jnp.isfinite(occupancy)
     firing_rate_clean = jnp.where(valid, firing_rate, 0.0)

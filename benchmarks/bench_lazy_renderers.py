@@ -594,7 +594,7 @@ Examples:
             config = RENDERER_CONFIGS[config_name]
             result = run_renderer_benchmark(config)
             all_results[config_name] = result
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 
@@ -608,7 +608,7 @@ Examples:
     print("\n" + "=" * 60)
     print("DETAILED RESULTS")
     print("=" * 60)
-    for _config_name, result in all_results.items():
+    for result in all_results.values():
         result.print_table()
 
     # Print key insights

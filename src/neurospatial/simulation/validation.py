@@ -36,7 +36,7 @@ def _select_unit_indices(
     from neurospatial.simulation.session import SimulationSession
 
     if not isinstance(session, SimulationSession):
-        msg = (
+        msg = (  # type: ignore[unreachable]  # runtime check of user input
             f"session must be a SimulationSession instance, got {type(session).__name__}.\n"
             "Why: validation and plotting need the simulator's ground truth.\n"
             "Fix: pass the holder returned by simulate_session() or open_field_session()."
@@ -669,7 +669,7 @@ def plot_session_summary(
     *,
     unit_ids: list[int] | None = None,
     figsize: tuple[float, float] = (15, 10),
-) -> tuple[Figure, NDArray]:
+) -> tuple[Figure, NDArray[np.object_]]:
     """Create comprehensive visualization of simulation session.
 
     Generates a multi-panel figure showing trajectory, spatial rate maps,
@@ -811,10 +811,7 @@ def plot_session_summary(
     ax_info = fig.add_subplot(gs[0, 2])
 
     # Rows 1-2: Rate maps (2x3 grid for up to 6 cells)
-    axes_rates = []
-    for i in range(2):
-        for j in range(3):
-            axes_rates.append(fig.add_subplot(gs[i + 1, j]))
+    axes_rates = [fig.add_subplot(gs[i + 1, j]) for i in range(2) for j in range(3)]
 
     # Row 3: Raster plot (spans all columns)
     ax_raster = fig.add_subplot(gs[3, :])

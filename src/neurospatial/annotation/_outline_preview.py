@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import napari
 
 
-class OutlinePreviewControl(QWidget):
+class OutlinePreviewControl(QWidget):  # type: ignore[misc, unused-ignore]
     """Keep painted foreground authoritative while previewing simpler polygons."""
 
     def __init__(self, viewer: napari.Viewer, *, on_change: Callable[[], None]) -> None:
@@ -145,18 +145,27 @@ class OutlinePreviewControl(QWidget):
                     active.mode = active_mode
         self._refresh()
 
-    def _lock_polygon_editing(self, event: Any = None) -> None:
+    def _lock_polygon_editing(
+        self,
+        event: Any = None,  # noqa: ARG002  # napari/Qt callback signature
+    ) -> None:  # napari/Qt callback signature
         # Napari resets Shapes.editable after data and displayed-dimension changes.
         # The source mask is the only editing surface for an assisted outline.
         if self.polygon_layer is not None and self.polygon_layer.editable:
             self.polygon_layer.editable = False
 
-    def _mask_changed(self, event: Any = None) -> None:
+    def _mask_changed(
+        self,
+        event: Any = None,  # noqa: ARG002  # napari/Qt callback signature
+    ) -> None:  # napari/Qt callback signature  # napari/Qt callback signature
         if self._disposed or self._updating or self._proposal is None:
             return
         self._schedule_refresh("Updating painted outline…")
 
-    def _detail_changed(self, value: int) -> None:
+    def _detail_changed(
+        self,
+        value: int,  # noqa: ARG002  # napari/Qt callback signature
+    ) -> None:  # napari/Qt callback signature  # napari/Qt callback signature
         if not self._disposed and self._proposal is not None:
             self._schedule_refresh("Updating polygon detail…")
 

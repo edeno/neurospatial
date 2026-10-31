@@ -188,7 +188,7 @@ def plot_grid(
     ax.pcolormesh(
         x,
         y,
-        np.ma.masked_where(~active, np.ones(active.shape)),
+        np.ma.masked_where(~active, np.ones(active.shape)),  # type: ignore[no-untyped-call]
         cmap=cmap,
         vmin=0.0,
         vmax=4.0,

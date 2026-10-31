@@ -398,7 +398,7 @@ def _batched_chol_logdet(
     for k in range(H.shape[0]):
         try:
             chol = scipy.linalg.cholesky(H[k], lower=True)
-        except np.linalg.LinAlgError:
+        except np.linalg.LinAlgError:  # noqa: PERF203  # a block that is not positive definite gets an infinite log-determinant
             logdet[k] = np.inf
         else:
             logdet[k] = 2.0 * np.sum(np.log(np.diag(chol)))

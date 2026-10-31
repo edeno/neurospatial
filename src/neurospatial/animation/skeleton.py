@@ -245,7 +245,7 @@ class Skeleton:
         node_set = set(self.nodes)
         for edge in self.edges:
             if len(edge) != 2:
-                msg = (
+                msg = (  # type: ignore[unreachable]  # runtime check of user input
                     f"WHAT: Invalid edge format: {edge}\n"
                     "WHY: Edges must be (source, target) pairs.\n"
                     "Fix: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"

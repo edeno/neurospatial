@@ -341,7 +341,7 @@ def decode_jointly(
                 fix="decode one set of rate maps with decode_position()",
             )
         )
-    bad_names = [name for name in names if not isinstance(name, str)]
+    bad_names = [name for name in names if not isinstance(name, str)]  # type: ignore[redundant-expr]  # runtime check of user input
     if bad_names:
         msg = f"{_OPERATION}: template names must be strings, got {bad_names!r}."
         raise ValueError(msg)

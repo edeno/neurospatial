@@ -223,7 +223,9 @@ class EventInspector:
                 self._table[column] = pd.Series([None] * len(self._table), dtype=object)
             elif self._table[column].dtype != object:
                 self._table[column] = self._table[column].astype(object)
-            self._table.at[row, column] = copy.deepcopy(value)
+            self._table.at[row, column] = copy.deepcopy(  # noqa: PD008  # .at stores a list or dict in one object cell; .loc would broadcast it
+                value
+            )  # .at stores a list or dict in one object cell; .loc would broadcast it
         self._update_controls()
 
     def export(self, path: str | Path, **kwargs: Any) -> Path:
@@ -348,7 +350,9 @@ class EventInspector:
             if not updating and change["new"] is not None:
                 self.select(change["new"])
 
-        def annotated(change: dict[str, Any]) -> None:
+        def annotated(
+            change: dict[str, Any],  # noqa: ARG001  # ipywidgets observer signature
+        ) -> None:  # ipywidgets observer signature  # ipywidgets observer signature
             if not updating and self._selected is not None:
                 self.annotate(self._selected, review=decision.value, note=note.value)
 

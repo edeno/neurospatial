@@ -388,7 +388,7 @@ class _SpikeTrack(NamedTuple):
 
 
 def _start_frame_bins(
-    env: Environment, times: NDArray[np.float64], positions: NDArray[np.float64]
+    env: Environment, positions: NDArray[np.float64]
 ) -> NDArray[np.intp]:
     """Bin of each frame under ``"start"`` allocation, shape (n_samples,).
 
@@ -430,7 +430,7 @@ def _spike_track(
             times.min(),
             times.max(),
             interval_mask,
-            _start_frame_bins(env, times, positions),
+            _start_frame_bins(env, positions),
             None,
             None,
             None,
@@ -1254,7 +1254,7 @@ def compute_occupancy(
     if linear_intervals is not None:
         return np.array(linear_intervals.occupancy, dtype=np.float64, copy=True)
     return start_allocated_occupancy(
-        _start_frame_bins(env, times, positions),
+        _start_frame_bins(env, positions),
         np.diff(times),
         interval_mask,
         env.n_bins,

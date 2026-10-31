@@ -452,7 +452,7 @@ def prepare_export(
             msg = f"image_format must be 'png' or 'jpeg', got {image_format!r}."
             raise ValueError(msg)
         if not isinstance(embed, bool):
-            msg = "embed must be True or False."
+            msg = "embed must be True or False."  # type: ignore[unreachable]  # runtime check of user input
             raise TypeError(msg)
         if embed and frames_dir is not None:
             msg = (

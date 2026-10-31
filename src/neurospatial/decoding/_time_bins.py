@@ -281,6 +281,6 @@ def bin_spikes_in_time(
     if orient == "neuron_x_time":
         counts = counts.T
     elif orient != "time_x_neuron":
-        msg = f"orient must be 'time_x_neuron' or 'neuron_x_time', got {orient!r}."
+        msg = f"orient must be 'time_x_neuron' or 'neuron_x_time', got {orient!r}."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
     return counts, bin_centers

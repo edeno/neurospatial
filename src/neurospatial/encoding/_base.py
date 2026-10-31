@@ -68,7 +68,7 @@ def _is_jax_array(arr: ArrayLike) -> bool:
         return False
 
 
-def _to_numpy(arr: ArrayLike) -> NDArray:
+def _to_numpy(arr: ArrayLike) -> NDArray[Any]:
     """Convert array to NumPy for host-only operations.
 
     Use this for plotting, DataFrame export, and other convenience methods

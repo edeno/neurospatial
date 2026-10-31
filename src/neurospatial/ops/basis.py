@@ -254,7 +254,7 @@ def select_basis_centers(
         )
     if method == "random":
         return _select_centers_random(env.n_bins, n_centers, generator)
-    msg = (
+    msg = (  # type: ignore[unreachable]  # runtime check of user input
         f"Unknown method: {method!r}. "
         f"Expected one of: 'kmeans', 'farthest_point', 'random'."
     )
@@ -504,7 +504,7 @@ def _normalize_basis(
         result_max: NDArray[np.float64] = basis / maxes
         return result_max
 
-    msg = f"Unknown normalization mode: {mode!r}"
+    msg = f"Unknown normalization mode: {mode!r}"  # type: ignore[unreachable]  # runtime check of user input
     raise ValueError(msg)
 
 

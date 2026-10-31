@@ -41,7 +41,7 @@ def _frame_size(frame_shape: Sequence[int]) -> tuple[int, int]:
 def validate_roi_bounds(bounds: ROIBounds, frame_shape: Sequence[int]) -> ROIBounds:
     """Validate a nonempty half-open crop entirely inside the original frame."""
     height, width = _frame_size(frame_shape)
-    if len(bounds) != 4 or any(
+    if len(bounds) != 4 or any(  # type: ignore[redundant-expr]  # runtime check of user input
         isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer))
         for value in bounds
     ):

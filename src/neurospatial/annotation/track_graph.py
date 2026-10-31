@@ -25,7 +25,7 @@ from __future__ import annotations
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from napari.utils.events import Event
     from numpy.typing import NDArray
 
+    from neurospatial.annotation._track_types import TrackGraphMode
     from neurospatial.ops.transforms import VideoCalibration
 
 __all__ = [
@@ -87,7 +88,9 @@ def _apply_initial_edges(
             )
 
 
-def _same_paths(actual: list[NDArray], reference: list[NDArray]) -> bool:
+def _same_paths(
+    actual: list[NDArray[np.float64]], reference: list[NDArray[np.float64]]
+) -> bool:
     """Whether layer paths equal the reference paths at layer precision.
 
     Shapes stores coordinates in its display dtype (currently float32).
@@ -292,7 +295,7 @@ def annotate_track_graph(
 
     pending_removal: tuple[int, ...] = ()
 
-    def _sync_layer_to_state(event=None):
+    def _sync_layer_to_state(event: Event | None = None) -> None:
         """Apply completed native napari edits; ignore before-action events."""
         nonlocal pending_removal
         action = str(getattr(event, "action", ""))
@@ -401,11 +404,13 @@ def annotate_track_graph(
     edges_layer.events.data.connect(_sync_edges_to_state)
 
     # Sync napari layer mode changes back to state
-    def _sync_mode_to_state(event=None):
+    def _sync_mode_to_state(
+        event: Event | None = None,  # noqa: ARG001  # napari callback signature
+    ) -> None:  # napari callback signature
         """Sync napari layer mode changes to TrackBuilderState."""
         layer_mode = nodes_layer.mode
         # Map napari modes to our state modes
-        mode_map = {
+        mode_map: dict[str, TrackGraphMode] = {
             "add": "add_node",
             "select": "delete",  # Select mode is used for delete
             "pan_zoom": state.mode,  # Keep current mode when pan/zoom
@@ -429,8 +434,11 @@ def annotate_track_graph(
     #   - Escape = Cancel edge creation
 
     # Mouse click handler for edge mode
-    @nodes_layer.mouse_drag_callbacks.append
-    def on_click(layer, event):
+    @nodes_layer.mouse_drag_callbacks.append  # type: ignore[misc, unused-ignore]
+    def on_click(
+        layer: Any,  # noqa: ARG001  # napari callback signature
+        event: Any,  # napari callback signature
+    ) -> None:  # napari callback signature  # napari callback signature
         """Handle mouse clicks for edge creation mode."""
         # Only handle single clicks (not drags) in add_edge mode
         if state.mode != "add_edge":
@@ -450,8 +458,10 @@ def annotate_track_graph(
         else:
             viewer.status = "Mode: Edge - click two nodes to connect (Escape to cancel)"
 
-    @nodes_layer.bind_key("e", overwrite=True)
-    def set_add_edge_mode(layer):
+    @nodes_layer.bind_key("e", overwrite=True)  # type: ignore[misc, unused-ignore]
+    def set_add_edge_mode(
+        layer: Any,  # noqa: ARG001  # napari callback signature
+    ) -> None:  # napari callback signature  # napari callback signature
         """Switch to edge mode - click two nodes to connect them."""
         _handle_key(state, "E")
         # Switch napari layer to pan_zoom mode so clicking doesn't add points
@@ -459,8 +469,8 @@ def annotate_track_graph(
         widget.sync_from_state()
         viewer.status = "Mode: Edge - click a node to start, then another to connect"
 
-    @viewer.bind_key("Control-z")
-    def undo_action(viewer):
+    @viewer.bind_key("Control-z")  # type: ignore[misc, unused-ignore]
+    def undo_action(viewer: Any) -> None:
         """Undo last action."""
         result = _handle_key(state, "Z", modifiers=["Control"])
         if result == "undo":
@@ -468,8 +478,8 @@ def annotate_track_graph(
             widget.sync_from_state()
             viewer.status = "Undo"
 
-    @viewer.bind_key("Control-Shift-z")
-    def redo_action(viewer):
+    @viewer.bind_key("Control-Shift-z")  # type: ignore[misc, unused-ignore]
+    def redo_action(viewer: Any) -> None:
         """Redo last undone action."""
         result = _handle_key(state, "Z", modifiers=["Control", "Shift"])
         if result == "redo":
@@ -477,8 +487,8 @@ def annotate_track_graph(
             widget.sync_from_state()
             viewer.status = "Redo"
 
-    @viewer.bind_key("Shift-s")
-    def set_start_node(viewer):
+    @viewer.bind_key("Shift-s")  # type: ignore[misc, unused-ignore]
+    def set_start_node(viewer: Any) -> None:
         """Set selected node as start."""
         # Get selected node from layer
         if len(nodes_layer.selected_data) == 1:
@@ -496,8 +506,8 @@ def annotate_track_graph(
         else:
             viewer.status = "Select exactly one node first (press 3), then Shift+S"
 
-    @viewer.bind_key("Escape")
-    def cancel_edge(viewer):
+    @viewer.bind_key("Escape")  # type: ignore[misc, unused-ignore]
+    def cancel_edge(viewer: Any) -> None:
         """Cancel edge creation in progress."""
         result = _handle_key(state, "Escape")
         if result == "cancel":
