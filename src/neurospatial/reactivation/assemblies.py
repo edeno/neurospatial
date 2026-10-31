@@ -3140,6 +3140,39 @@ def _check_correlation_values(correlations: NDArray[np.float64], argument: str) 
         )
 
 
+def _residual_covariance(
+    correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
+) -> NDArray[np.float64] | None:
+    """Covariance of the residuals of x and y regressed on ``controls``.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix of all vectors; NaN propagates.
+    x, y : int
+        Rows of the two vectors to residualize.
+    controls : sequence of int
+        Rows of the vectors to regress out; at least one.
+
+    Returns
+    -------
+    ndarray, shape (2, 2), or None
+        The Schur complement of the controls' block for ``(x, y)``. None
+        when an entry is NaN or the controls are collinear (within
+        rounding), which leaves the regression undefined.
+    """
+    pair, rows = [x, y], list(controls)
+    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+        return None
+    between_controls = correlations[np.ix_(rows, rows)]
+    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
+        return None
+    with_controls = correlations[np.ix_(pair, rows)]
+    explained = with_controls @ np.linalg.solve(between_controls, with_controls.T)
+    residual: NDArray[np.float64] = correlations[np.ix_(pair, pair)] - explained
+    return residual
+
+
 def _partial_correlation(
     correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
 ) -> float:
@@ -3166,19 +3199,11 @@ def _partial_correlation(
     """
     if not controls:
         return float(correlations[x, y])
-    pair, rows = [x, y], list(controls)
-    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+    residual = _residual_covariance(correlations, x, y, controls)
+    if residual is None:
         return np.nan
-    between_controls = correlations[np.ix_(rows, rows)]
-    # Collinear controls (within rounding) leave the regression undefined.
-    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
-        return np.nan
-    with_controls = correlations[np.ix_(pair, rows)]
-    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
-        between_controls, with_controls.T
-    )
     unexplained_x, unexplained_y = residual[0, 0], residual[1, 1]
-    # |r| within rounding of 1 (np.corrcoef of identical vectors can return
+    # |r| within rounding of 1 (identical vectors can correlate at
     # 1 - 2e-16) leaves a residual of pure rounding error.
     if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
         return np.nan
@@ -3210,17 +3235,8 @@ def _semipartial_correlation(
     """
     if not controls:
         return float(correlations[x, y])
-    pair, rows = [x, y], list(controls)
-    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
-        return np.nan
-    between_controls = correlations[np.ix_(rows, rows)]
-    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
-        return np.nan
-    with_controls = correlations[np.ix_(pair, rows)]
-    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
-        between_controls, with_controls.T
-    )
-    if not residual[1, 1] > 1e-12:
+    residual = _residual_covariance(correlations, x, y, controls)
+    if residual is None or not residual[1, 1] > 1e-12:
         return np.nan
     return float(residual[0, 1] / np.sqrt(residual[1, 1]))
 
