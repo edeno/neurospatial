@@ -186,7 +186,12 @@ def certify_transformed_faces(
     resolved = (lengths_before > 0) & (lengths_after > 0)
     valid = ((~positive) | (source_valid & target_valid)) & resolved
     if not np.all(valid):
-        index = int(np.flatnonzero(~valid)[0])
+        # Name a face the transform itself bent when there is one: its
+        # stretch is what the fix addresses, even when the source also has
+        # faces that were never at a right angle (a mesh's outline).
+        failing = ~valid
+        bent = failing & source_valid & resolved
+        index = int(np.flatnonzero(bent if bent.any() else failing)[0])
         return MissingFaces(
             _refusal_reason(
                 kind,
