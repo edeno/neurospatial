@@ -632,6 +632,50 @@ class TestWriteEnvironment:
         scratch_data = empty_nwb.scratch["spatial_environment"]
         assert "meters" in scratch_data.description
 
+    def test_overwrite_in_a_file_opened_for_writing_is_refused(
+        self, empty_nwb, sample_environment, tmp_path
+    ):
+        """pynwb cannot delete a written record, so r+ overwrite must not try."""
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        path = tmp_path / "session.nwb"
+        write_environment(empty_nwb, sample_environment)
+        with pynwb.NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
+        replacement = sample_environment.rebin(2)
+        with pynwb.NWBHDF5IO(str(path), "r+") as io:
+            nwbfile = io.read()
+            with pytest.raises(NotImplementedError, match="mode='r\\+'"):
+                write_environment(nwbfile, replacement, overwrite=True)
+            # The original record is untouched.
+            assert "spatial_environment" in nwbfile.scratch
+        with pynwb.NWBHDF5IO(str(path), "r") as io:
+            restored = read_environment(io.read())
+        np.testing.assert_array_equal(
+            restored.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_overwrite_then_export_reads_back_the_replacement(
+        self, empty_nwb, sample_environment, tmp_path
+    ):
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        source, copy = tmp_path / "session.nwb", tmp_path / "updated.nwb"
+        write_environment(empty_nwb, sample_environment)
+        with pynwb.NWBHDF5IO(str(source), "w") as io:
+            io.write(empty_nwb)
+        replacement = sample_environment.rebin(2)
+        assert replacement.n_bins != sample_environment.n_bins
+        with pynwb.NWBHDF5IO(str(source), "r") as io:
+            nwbfile = io.read()
+            write_environment(nwbfile, replacement, overwrite=True)
+            with pynwb.NWBHDF5IO(str(copy), "w") as export_io:
+                export_io.export(src_io=io, nwbfile=nwbfile)
+        with pynwb.NWBHDF5IO(str(copy), "r") as io:
+            restored = read_environment(io.read())
+        np.testing.assert_array_equal(restored.bin_centers, replacement.bin_centers)
+        np.testing.assert_array_equal(restored.edge_pairs, replacement.edge_pairs)
+
     def test_point_regions_stored(self, empty_nwb, sample_environment):
         """Point regions use the canonical Region JSON schema."""
         from neurospatial.io.nwb import write_environment

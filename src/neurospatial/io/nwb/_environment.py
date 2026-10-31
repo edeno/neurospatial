@@ -10,7 +10,11 @@ import numpy as np
 
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import position_units_from_series
-from neurospatial.io.nwb._core import _require_pynwb, logger
+from neurospatial.io.nwb._core import (
+    _refuse_in_place_replacement,
+    _require_pynwb,
+    logger,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -52,12 +56,18 @@ def write_environment(
     name : str, default "spatial_environment"
         Scratch record name.
     overwrite : bool, default False
-        Replace an existing record with the same name.
+        Replace an existing record with the same name. pynwb cannot delete a
+        record already written to disk, so replace one in a file opened with
+        ``mode="r"`` and save a copy with
+        ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``.
 
     Raises
     ------
     ValueError
         If the name exists and overwrite is false, or a component has no codec.
+    NotImplementedError
+        If ``overwrite=True`` would replace a record in a file opened with
+        ``mode="r+"`` or ``"a"``.
     ImportError
         If pynwb is unavailable.
 
@@ -113,6 +123,7 @@ def write_environment(
     )
     # Construct the replacement before removing a valid existing record.
     if name in nwbfile.scratch:
+        _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
         del nwbfile.scratch[name]
         logger.info("Overwriting existing environment '%s'", name)
     nwbfile.add_scratch(record)

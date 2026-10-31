@@ -5365,6 +5365,10 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If environment with same name exists and overwrite=False.
+        NotImplementedError
+            If ``overwrite=True`` would replace a record in a file opened with
+            ``mode="r+"`` or ``"a"``; see
+            :func:`neurospatial.io.nwb.write_environment`.
         ImportError
             If pynwb is not installed.
 
