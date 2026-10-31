@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Firing by distance from an event
+
+**Added**
+
+- `peri_event_distance_histogram(spike_times, event_times, times, positions,
+  window, *, bin_size)` and `PeriEventDistanceResult`: firing rate (Hz) by
+  path length travelled from each event, negative before it. Each distance
+  bin's spikes are divided by the time spent there, pooled over events, so a
+  slow and a fast pass give the same rate and a pause adds time at one
+  distance. Distance stops at tracking gaps and breaks; time outside
+  `spike_window` is not counted; a bin no pass reached is NaN. The result has
+  `to_dataframe`, `summary_table` (peak rate, peak distance, baseline rate
+  before the event), `summary` and `plot`.
+
+### Comparing routes along the environment
+
+**Changed**
+
+- `trajectory_similarity(method="hausdorff" | "dtw")` measures distances
+  along the environment by default: the shortest path through its
+  connectivity graph, around walls and along a maze's arms, scaled by the
+  environment's geodesic diameter (computed once per environment). Runs up
+  two neighboring arms of a U maze were similar in a straight line; along
+  the maze they are far apart. `metric="euclidean"` keeps the straight-line
+  score. Routes in parts of the environment that do not connect score 0.
+  `metric` is refused with `method="jaccard"` or `"correlation"`, which
+  compare bins.
+
 ### Shared helpers: one rule each, faster
 
 **Changed**

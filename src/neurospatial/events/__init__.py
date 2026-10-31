@@ -83,6 +83,10 @@ from neurospatial.events.continuous import (
     align_continuous_to_events,
 )
 from neurospatial.events.detection import add_positions
+from neurospatial.events.distance import (
+    PeriEventDistanceResult,
+    peri_event_distance_histogram,
+)
 from neurospatial.events.intervals import (
     events_to_intervals,
     filter_by_intervals,
@@ -99,6 +103,7 @@ __all__ = [
     # Result dataclasses
     "PeriEventResult",
     "PopulationPeriEventResult",
+    "PeriEventDistanceResult",
     # Spatial utilities
     "add_positions",
     # Interval utilities
@@ -114,6 +119,7 @@ __all__ = [
     "align_spikes_to_events",
     "peri_event_histogram",
     "population_peri_event_histogram",
+    "peri_event_distance_histogram",
     # Continuous signals
     "ContinuousEventResult",
     "align_continuous_to_events",

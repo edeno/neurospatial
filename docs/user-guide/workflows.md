@@ -1363,6 +1363,64 @@ neighboring sample windows never count the same boundary event twice. Regressors
 describe the selected events at each sample; restrict their sample rows to your
 modeling epochs when fitting a model.
 
+## Workflow 8: Firing by Distance From a Cue
+
+Some questions are about distance rather than time: does a cell fire over the
+first 10 cm after the animal passes a cue, whatever its speed? A peri-event
+*time* histogram mixes the two, because a fast pass covers more distance in
+each second. `peri_event_distance_histogram` bins spikes by the path length
+travelled from each event (negative before it) and divides by the time spent
+at each distance, so the result is a firing rate in Hz on a distance axis,
+like a rate map whose coordinate is "distance from the cue".
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.events import peri_event_distance_histogram
+
+# Laps along a 100 cm track, alternately slow (10 cm/s) and fast (40 cm/s),
+# with a cue at 50 cm. The cell fires 20 Hz over the 10 cm after the cue and
+# 2 Hz elsewhere.
+rng = np.random.default_rng(0)
+lap_times, lap_positions, cue_times, spikes = [], [], [], []
+clock = 0.0
+for lap in range(40):
+    speed = 10.0 if lap % 2 else 40.0
+    t = clock + np.arange(0.0, 100.0 / speed, 1 / 60)
+    x = (t - clock) * speed
+    rate = np.where((x >= 50) & (x < 60), 20.0, 2.0)
+    n = rng.poisson(rate / 60)
+    spikes.append(np.repeat(t, n) + rng.uniform(0, 1 / 60, n.sum()))
+    lap_times.append(t)
+    lap_positions.append(x)
+    cue_times.append(clock + 50.0 / speed)
+    clock = t[-1] + 5.0  # the animal is carried back: a break in tracking
+
+result = peri_event_distance_histogram(
+    np.sort(np.concatenate(spikes)),
+    np.array(cue_times),
+    np.concatenate(lap_times),
+    np.concatenate(lap_positions)[:, None],
+    window=(-30.0, 30.0),
+    bin_size=10.0,
+)
+print(result.to_dataframe()[["bin_center", "firing_rate", "occupancy"]].round(1))
+assert 15 < result.firing_rate[3] < 25  # the 10 cm after the cue
+ax = result.plot()
+```
+
+Each row is a 10 cm bin of distance from the cue; `occupancy` is the seconds
+spent there over all passes, and `firing_rate` is spikes over those seconds.
+The rate peaks in the bin just after the cue on both slow and fast laps;
+a time histogram of the same data would smear the slow laps' response over
+four times as many seconds. A distance no pass reached has no rate (NaN),
+not zero.
+
+For your own recording, pass the unit's spike times, the event times, and the
+tracked `times` and `positions` (in cm). Tracking gaps longer than `max_gap`
+end the distance axis, and `spike_window` keeps time without spike recording
+from being read as silence.
+
 ## Common Patterns
 
 ### Pattern: Handling Edge Cases
