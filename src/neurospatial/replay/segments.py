@@ -543,14 +543,6 @@ def replay_segments(
         metric=metric,
     )
     max_jump = checked["max_jump"]
-    max_gap_bins = checked["max_gap_bins"]
-    max_spread = checked["max_spread"]
-    min_peak_probability = checked["min_peak_probability"]
-    merge_max_time_gap = checked["merge_max_time_gap"]
-    merge_max_distance = checked["merge_max_distance"]
-    min_duration = checked["min_duration"]
-    min_time_bins = checked["min_time_bins"]
-    min_dispersion = checked["min_dispersion"]
 
     metrics, map_distances = _trajectory_metrics(
         env,
@@ -572,14 +564,80 @@ def replay_segments(
         if valid_time_bins is None
         else _valid_time_bins(valid_time_bins, n_time_bins)
     )
-    accepted = valid.copy()
-    if max_spread is not None:
-        accepted &= _compare(metrics.spread, "<", max_spread)
-    if min_peak_probability is not None:
-        accepted &= _compare(metrics.peak_probability, ">", min_peak_probability)
-    if jump_rule == "drop_earlier":
-        accepted[:-1] &= _compare(jumps, "<", max_jump) & valid[1:]
+    accepted = _accepted_time_bins(metrics, jumps, valid, checked)
+    bounds, lone, on_trajectory = _pieces(
+        accepted, distance, max_jump=max_jump, max_gap_bins=checked["max_gap_bins"]
+    )
+    bounds = _merged(bounds, lone, on_trajectory, times, distance, checked)
 
+    starts, stops = bounds[:, 0], bounds[:, 1]
+    durations = times[stops - 1] - times[starts]
+    counts = stops - starts
+    dispersions, path_lengths = _per_segment(
+        starts, on_trajectory, metrics.mean_positions, distance
+    )
+    keep = _passing_segments(durations, counts, dispersions, checked)
+    for start, stop in bounds[~keep]:
+        on_trajectory[start:stop] = False
+    bounds, starts, stops = bounds[keep], starts[keep], stops[keep]
+
+    return ReplaySegmentsResult(
+        segments=bounds,
+        start_times=times[starts],
+        end_times=times[stops - 1],
+        dispersions=dispersions[keep],
+        start_to_end_distances=distance(starts, stops - 1),
+        path_lengths=path_lengths[keep],
+        trajectory_time_bins=on_trajectory,
+        method=method,
+        jump_rule=jump_rule,
+        metric=metrics.metric,
+        units=metrics.units,
+    )
+
+
+def _accepted_time_bins(
+    metrics: Any,
+    jumps: NDArray[np.float64],
+    valid: NDArray[np.bool_],
+    checked: dict[str, Any],
+) -> NDArray[np.bool_]:
+    """The time bins a segment may hold: valid, focused and, by rule, not jumping.
+
+    ``checked`` is the output of :func:`_checked_options`.
+    """
+    accepted: NDArray[np.bool_] = valid.copy()
+    if checked["max_spread"] is not None:
+        accepted &= _compare(metrics.spread, "<", checked["max_spread"])
+    if checked["min_peak_probability"] is not None:
+        accepted &= _compare(
+            metrics.peak_probability, ">", checked["min_peak_probability"]
+        )
+    if checked["jump_rule"] == "drop_earlier":
+        accepted[:-1] &= _compare(jumps, "<", checked["max_jump"]) & valid[1:]
+    return accepted
+
+
+def _pieces(
+    accepted: NDArray[np.bool_],
+    distance: Any,
+    *,
+    max_jump: float,
+    max_gap_bins: int,
+) -> tuple[NDArray[np.int64], NDArray[np.intp], NDArray[np.bool_]]:
+    """Runs of accepted time bins within reach of each other.
+
+    Returns
+    -------
+    bounds : NDArray[np.int64], shape (n_pieces, 2)
+        First row and one past the last row of each piece of more than one
+        time bin, in time order.
+    lone : NDArray[np.intp], shape (n_lone,)
+        The row of each piece of a single time bin, dropped from ``bounds``.
+    on_trajectory : NDArray[np.bool_], shape (n_time_bins,)
+        The time bins of the pieces in ``bounds``; skipped bins are False.
+    """
+    n_time_bins = len(accepted)
     # The bin each time bin's segment continues to: the earliest accepted
     # bin within reach, or -1. Writing the farthest offset first lets the
     # nearest overwrite it.
@@ -608,62 +666,66 @@ def replay_segments(
     bounds = np.array(pieces, dtype=np.int64).reshape(-1, 2)
     lone = bounds[bounds[:, 1] - bounds[:, 0] == 1, 0]
     on_trajectory[lone] = False
-    bounds = bounds[bounds[:, 1] - bounds[:, 0] > 1]
+    return bounds[bounds[:, 1] - bounds[:, 0] > 1], lone, on_trajectory
 
-    if (
-        merge_max_time_gap is not None
-        and merge_max_distance is not None
-        and len(bounds) > 1
-    ):
-        last = bounds[:-1, 1] - 1
-        first = bounds[1:, 0]
-        join = _compare(times[first] - times[last], "<", merge_max_time_gap) & _compare(
-            distance(last, first), "<", merge_max_distance
-        )
-        bounds = np.column_stack(
-            [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
-        )
-        if jump_rule == "drop_earlier":
-            # A lone accepted bin inside a merged segment leads on to the
-            # next bin, so the Widloski & Foster (2022) code keeps it on the
-            # trajectory. It never ends a segment: lone + 1 is inside too.
-            span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
-            inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
-            lone = lone[inside]
-            on_trajectory[lone[_compare(distance(lone, lone + 1), "<", max_jump)]] = (
-                True
-            )
 
-    starts, stops = bounds[:, 0], bounds[:, 1]
-    durations = times[stops - 1] - times[starts]
-    counts = stops - starts
-    dispersions, path_lengths = _per_segment(
-        starts, on_trajectory, metrics.mean_positions, distance
+def _merged(
+    bounds: NDArray[np.int64],
+    lone: NDArray[np.intp],
+    on_trajectory: NDArray[np.bool_],
+    times: NDArray[np.float64],
+    distance: Any,
+    checked: dict[str, Any],
+) -> NDArray[np.int64]:
+    """``bounds`` with neighboring pieces close in time and space merged.
+
+    With ``jump_rule="drop_earlier"``, marks the lone bins inside a merged
+    segment that lead on to the next bin in ``on_trajectory``, in place.
+    ``checked`` is the output of :func:`_checked_options`.
+    """
+    merge_max_time_gap = checked["merge_max_time_gap"]
+    merge_max_distance = checked["merge_max_distance"]
+    if merge_max_time_gap is None or merge_max_distance is None or len(bounds) <= 1:
+        return bounds
+    last = bounds[:-1, 1] - 1
+    first = bounds[1:, 0]
+    join = _compare(times[first] - times[last], "<", merge_max_time_gap) & _compare(
+        distance(last, first), "<", merge_max_distance
     )
-    keep = np.ones(len(bounds), dtype=bool)
-    if min_duration is not None:
-        keep &= _compare(durations, ">=", min_duration)
-    if min_time_bins is not None:
-        keep &= counts >= min_time_bins
-    if min_dispersion is not None:
-        keep &= _compare(dispersions, ">=", min_dispersion)
-    for start, stop in bounds[~keep]:
-        on_trajectory[start:stop] = False
-    bounds, starts, stops = bounds[keep], starts[keep], stops[keep]
-
-    return ReplaySegmentsResult(
-        segments=bounds,
-        start_times=times[starts],
-        end_times=times[stops - 1],
-        dispersions=dispersions[keep],
-        start_to_end_distances=distance(starts, stops - 1),
-        path_lengths=path_lengths[keep],
-        trajectory_time_bins=on_trajectory,
-        method=method,
-        jump_rule=jump_rule,
-        metric=metrics.metric,
-        units=metrics.units,
+    bounds = np.column_stack(
+        [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
     )
+    if checked["jump_rule"] == "drop_earlier":
+        # A lone accepted bin inside a merged segment leads on to the
+        # next bin, so the Widloski & Foster (2022) code keeps it on the
+        # trajectory. It never ends a segment: lone + 1 is inside too.
+        span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
+        inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
+        lone = lone[inside]
+        on_trajectory[
+            lone[_compare(distance(lone, lone + 1), "<", checked["max_jump"])]
+        ] = True
+    return bounds
+
+
+def _passing_segments(
+    durations: NDArray[np.float64],
+    counts: NDArray[np.int64],
+    dispersions: NDArray[np.float64],
+    checked: dict[str, Any],
+) -> NDArray[np.bool_]:
+    """Whether each segment reaches the minimum duration, count and dispersion.
+
+    ``checked`` is the output of :func:`_checked_options`.
+    """
+    keep = np.ones(len(durations), dtype=bool)
+    if checked["min_duration"] is not None:
+        keep &= _compare(durations, ">=", checked["min_duration"])
+    if checked["min_time_bins"] is not None:
+        keep &= counts >= checked["min_time_bins"]
+    if checked["min_dispersion"] is not None:
+        keep &= _compare(dispersions, ">=", checked["min_dispersion"])
+    return keep
 
 
 def _valid_time_bins(
