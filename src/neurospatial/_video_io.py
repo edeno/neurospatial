@@ -16,6 +16,8 @@ from typing import NamedTuple, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 
 @runtime_checkable
 class VideoReaderProtocol(Protocol):
@@ -267,7 +269,25 @@ class _VideoReader:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             if not ret:
-                raise IndexError(f"Could not read frame {frame_idx}")
+                raise OSError(
+                    _format_error(
+                        f"Could not decode frame {frame_idx} of video '{self._path}'.",
+                        why=(
+                            "OpenCV read no image, although the video "
+                            f"reports {self._n_frames} frames. "
+                            "The frame may be corrupt, this OpenCV build may "
+                            "lack the codec, or the container may overstate "
+                            "its frame count (common for variable-frame-rate "
+                            "MP4 files)."
+                        ),
+                        fix=(
+                            "check that the video plays to this frame in a "
+                            "media player, or re-encode it at a constant frame "
+                            "rate, e.g. ffmpeg -i in.mp4 -c:v libx264 "
+                            "-fps_mode cfr out.mp4, then reopen it."
+                        ),
+                    )
+                )
 
             # Apply crop if specified
             if self._crop is not None:
@@ -306,6 +326,8 @@ class _VideoReader:
         ------
         IndexError
             If frame_idx is out of range or negative.
+        OSError
+            If OpenCV cannot decode a frame inside the reported range.
         """
         if frame_idx < 0 or frame_idx >= self._n_frames:
             raise IndexError(

@@ -317,6 +317,36 @@ class TestVideoReaderErrorHandling:
         error_msg = str(exc_info.value)
         assert "crop" in error_msg.lower()
 
+    def test_reader_frame_that_cannot_be_decoded_raises_oserror(
+        self, tiny_video_path: Path, monkeypatch
+    ):
+        """An in-range frame OpenCV cannot decode is not reported as out of range."""
+        import cv2
+
+        real_capture = cv2.VideoCapture
+
+        class UndecodableCapture:
+            def __init__(self, path):
+                self._capture = real_capture(path)
+
+            def read(self):
+                return False, None
+
+            def __getattr__(self, name):
+                return getattr(self._capture, name)
+
+        monkeypatch.setattr(cv2, "VideoCapture", UndecodableCapture)
+        reader = _VideoReader(tiny_video_path)
+
+        with pytest.raises(OSError) as exc_info:
+            reader[2]
+        assert not isinstance(exc_info.value, IndexError)
+        message = str(exc_info.value)
+        assert "frame 2" in message
+        assert tiny_video_path.name in message
+        assert "reports 5 frames" in message
+        assert "Fix:" in message
+
     def test_reader_invalid_downsample_raises(self, larger_video_path: Path):
         """Test that invalid downsample raises ValueError."""
         with pytest.raises(ValueError):

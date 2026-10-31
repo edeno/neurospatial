@@ -1074,6 +1074,41 @@ class TestLoadVideoFrame:
             _load_video_frame(video_file, frame_index=99)
         assert closed["count"] == 1, "Reader should be closed despite the error"
 
+    def test_undecodable_frame_in_range_is_not_reported_as_out_of_range(
+        self, tmp_path, monkeypatch
+    ):
+        """A decode failure on a valid frame index keeps the reader's error."""
+        cv2 = pytest.importorskip("cv2")
+        from pathlib import Path
+
+        from neurospatial.annotation.core import _load_video_frame
+
+        video_file = Path(tmp_path / "test.mp4")
+        writer = cv2.VideoWriter(
+            str(video_file), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (8, 8)
+        )
+        for _ in range(3):
+            writer.write(np.zeros((8, 8, 3), dtype=np.uint8))
+        writer.release()
+
+        real_capture = cv2.VideoCapture
+
+        class UndecodableCapture:
+            def __init__(self, path):
+                self._capture = real_capture(path)
+
+            def read(self):
+                return False, None
+
+            def __getattr__(self, name):
+                return getattr(self._capture, name)
+
+        monkeypatch.setattr(cv2, "VideoCapture", UndecodableCapture)
+
+        with pytest.raises(OSError, match="Could not decode frame 1") as caught:
+            _load_video_frame(video_file, frame_index=1)
+        assert "out of range" not in str(caught.value)
+
 
 class TestProcessInitialBoundary:
     """Tests for _process_initial_boundary helper."""
