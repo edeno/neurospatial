@@ -322,7 +322,7 @@ def test_time_support_records_fractional_runs_when_given():
         max_gap=None,
         runs=np.array([[0.25, 1.75]]),
     )
-    assert support.analysis_settings()["observed_intervals"] == [[0.25, 1.75]]
+    assert support.temporal_settings()["observed_intervals"] == [[0.25, 1.75]]
 
 
 def test_touching_interval_sets_do_not_intersect():

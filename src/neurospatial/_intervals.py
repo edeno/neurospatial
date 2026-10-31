@@ -105,8 +105,8 @@ class TimeSupport(ReadOnlyArraysMixin):
             break_sample_times(times, break_before),
         )
 
-    def analysis_settings(self) -> dict[str, Any]:
-        """Export independent, JSON-compatible temporal provenance."""
+    def temporal_settings(self) -> dict[str, Any]:
+        """The temporal part of a result's ``analysis_settings``, JSON-compatible."""
 
         def listed(array: NDArray[np.float64] | None) -> list[Any] | None:
             return None if array is None else array.tolist()
