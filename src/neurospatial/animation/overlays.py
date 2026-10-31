@@ -56,6 +56,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import timestamps_of, validate_finite
+from neurospatial._video_io import _validate_frame_processing
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
     observed_support,
@@ -2896,7 +2897,7 @@ class VideoOverlay(_Overlay):
             # Determine video source: array or file path
             if isinstance(self.source, np.ndarray):
                 original_size = (self.source.shape[2], self.source.shape[1])
-                _validate_video_processing(original_size, self.crop, self.downsample)
+                _validate_frame_processing(original_size, self.crop, self.downsample)
                 reader: NDArray[np.uint8] | Any = self.source
                 if self.crop is not None:
                     x, y, width, height = self.crop
@@ -2921,7 +2922,6 @@ class VideoOverlay(_Overlay):
                 cleanup.callback(reader.close)
                 n_video_frames = reader.n_frames
                 original_size = reader.original_size_px
-                _validate_video_processing(original_size, self.crop, self.downsample)
                 processed_size = reader.frame_size_px
 
             # Each video frame is a sample at its own time.
@@ -3933,36 +3933,6 @@ OverlayData._LISTS.update(
 # =============================================================================
 # Validation Functions (WHAT/WHY/HOW error messages)
 # =============================================================================
-
-
-def _validate_video_processing(
-    original_size: tuple[int, int],
-    crop: tuple[int, int, int, int] | None,
-    downsample: int,
-) -> None:
-    width, height = original_size
-    if crop is not None:
-        if (
-            len(crop) != 4
-            or any(not isinstance(value, (int, np.integer)) for value in crop)
-            or crop[0] < 0
-            or crop[1] < 0
-            or crop[2] <= 0
-            or crop[3] <= 0
-            or crop[0] + crop[2] > width
-            or crop[1] + crop[3] > height
-        ):
-            raise ValueError(
-                "crop must be (x, y, width, height) with positive size inside the original video frame."
-            )
-        width, height = crop[2:]
-    if width // downsample < 1 or height // downsample < 1:
-        raise ValueError(
-            _format_error(
-                "downsample leaves no video pixels.",
-                fix="use a smaller downsample factor or a larger crop.",
-            )
-        )
 
 
 def _validate_position_metadata(
