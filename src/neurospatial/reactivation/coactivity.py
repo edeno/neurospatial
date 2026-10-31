@@ -34,6 +34,7 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _columns_by_label,
     _label_order,
+    _n_units_from_pairs,
     _one_control_ev,
     _pairwise_correlations,
     _validated_counts,
@@ -944,8 +945,8 @@ def explained_variance_contributions(
             f"{call}: the correlation vectors must be 1-D with the same length, "
             f"got shapes {[vector.shape for vector in vectors]}."
         )
-    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-    if n_units * (n_units - 1) // 2 != n_pairs:
+    n_units = _n_units_from_pairs(n_pairs)
+    if n_units is None:
         raise ValueError(
             f"{call}: {n_pairs} pairs is not n_units * (n_units - 1) / 2 for any "
             "number of units; pass pairwise_correlations() output."

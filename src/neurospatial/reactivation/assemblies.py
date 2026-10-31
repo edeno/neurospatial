@@ -3074,12 +3074,8 @@ def _selected_pairs(
         selected &= mask
     if unit_groups is not None:
         groups = np.asarray(unit_groups)
-        n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-        if (
-            groups.ndim != 1
-            or groups.size != n_units
-            or n_units * (n_units - 1) // 2 != n_pairs
-        ):
+        n_units = _n_units_from_pairs(n_pairs)
+        if groups.ndim != 1 or n_units is None or groups.size != n_units:
             raise ValueError(
                 _format_error(
                     f"{call}: unit_groups must hold one group per unit; got shape "
@@ -3117,6 +3113,23 @@ def _selected_pairs(
         first, second = np.triu_indices(n_units, k=1)
         selected &= groups[first] != groups[second]
     return selected
+
+
+def _n_units_from_pairs(n_pairs: int) -> int | None:
+    """Number of units with ``n_pairs`` pairs, None if no count has that many.
+
+    Parameters
+    ----------
+    n_pairs : int
+        Length of a pair vector.
+
+    Returns
+    -------
+    int or None
+        ``n`` with ``n * (n - 1) / 2 == n_pairs``, or None.
+    """
+    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
+    return n_units if n_units * (n_units - 1) // 2 == n_pairs else None
 
 
 def _check_correlation_values(correlations: NDArray[np.float64], argument: str) -> None:
@@ -3472,8 +3485,8 @@ def _pair_labels(
             )
         )
     n_pairs = correlations.size
-    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-    if n_units * (n_units - 1) // 2 != n_pairs:
+    n_units = _n_units_from_pairs(n_pairs)
+    if n_units is None:
         raise ValueError(
             _format_error(
                 f"{call}: {argument} has {n_pairs} entries, which is not "
