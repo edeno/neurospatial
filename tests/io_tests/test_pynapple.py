@@ -111,6 +111,16 @@ needs_pynapple = [
 GAPPED = np.array([[0.0, 10.0], [10.5, 20.0]])
 
 
+def _half_open(closed_rows) -> np.ndarray:
+    """The half-open ``[start, stop)`` rows holding the same floats as ``[start, end]``."""
+    rows = np.array(closed_rows, dtype=np.float64)
+    rows[:, 1] = np.nextafter(rows[:, 1], np.inf)
+    return rows
+
+
+HALF_OPEN_GAPPED = _half_open(GAPPED)
+
+
 def _gapped_support():
     import pynapple as nap
 
@@ -139,7 +149,7 @@ def test_from_pynapple_ts_returns_spike_times_and_epochs() -> None:
     spike_times, epochs = from_pynapple(ts)
 
     np.testing.assert_array_equal(spike_times, spikes)
-    np.testing.assert_array_equal(epochs, GAPPED)
+    np.testing.assert_array_equal(epochs, HALF_OPEN_GAPPED)
 
 
 @_pynapple_test
@@ -157,7 +167,7 @@ def test_from_pynapple_tsd_returns_times_values_and_gapped_epochs() -> None:
     kept = ~((times > 10.0) & (times < 10.5))
     np.testing.assert_array_equal(out_times, times[kept])
     np.testing.assert_array_equal(out_values, speed[kept])
-    np.testing.assert_array_equal(epochs, GAPPED)
+    np.testing.assert_array_equal(epochs, HALF_OPEN_GAPPED)
 
 
 @_pynapple_test
@@ -186,6 +196,54 @@ def test_from_pynapple_gapped_tsdframe_epochs_exclude_the_gap_from_occupancy() -
 
 
 @_pynapple_test
+def test_from_pynapple_default_tsgroup_support_keeps_the_last_spike() -> None:
+    """A spike exactly at a pynapple epoch end is inside the returned window."""
+    import pynapple as nap
+
+    from neurospatial.behavior import restrict_spike_trains
+
+    spikes = {1: np.array([1.0, 4.0, 7.5]), 2: np.array([2.0, 9.0])}
+    # The default support runs from the first spike to the last, so 9.0 sits
+    # exactly on its end.
+    tsgroup = nap.TsGroup({uid: nap.Ts(t=t) for uid, t in spikes.items()})
+    assert tsgroup.time_support.values.tolist() == [[1.0, 9.0]]
+
+    trains, _, recorded = from_pynapple(tsgroup)
+
+    # Plain half-open rows with the same numbers drop the spike at 9.0 ...
+    plain = restrict_spike_trains(trains, np.array([[1.0, 9.0]]))
+    assert [len(t) for t in plain] == [3, 1]
+    # ... the converted epochs and a directly passed IntervalSet keep it,
+    # as pynapple does.
+    for window in (recorded, tsgroup.time_support):
+        kept = restrict_spike_trains(trains, window)
+        for train, uid in zip(kept, [1, 2], strict=True):
+            np.testing.assert_array_equal(train, spikes[uid])
+    assert len(tsgroup.restrict(tsgroup.time_support)[2]) == 2
+
+
+@_pynapple_test
+def test_pynapple_round_trip_preserves_epoch_membership() -> None:
+    import pynapple as nap
+
+    # Samples sit exactly on both ends of each pynapple interval.
+    times = np.array([0.0, 1.0, 2.0, 10.5, 12.5])
+    tsd = nap.Tsd(
+        t=times,
+        d=np.arange(5.0),
+        time_support=nap.IntervalSet(start=[0.0, 10.5], end=[2.0, 12.5]),
+    )
+
+    out_times, out_values, epochs = from_pynapple(tsd)
+    back = to_pynapple(out_times, out_values, epochs=epochs)
+
+    np.testing.assert_array_equal(back.t, times)
+    np.testing.assert_array_equal(back.values, np.arange(5.0))
+    np.testing.assert_array_equal(back.time_support.values, tsd.time_support.values)
+    np.testing.assert_array_equal(from_pynapple(back)[2], epochs)
+
+
+@_pynapple_test
 def test_from_pynapple_tsdframe_values_keep_column_order() -> None:
     import pynapple as nap
 
@@ -197,7 +255,7 @@ def test_from_pynapple_tsdframe_values_keep_column_order() -> None:
 
     np.testing.assert_array_equal(out_times, times)
     np.testing.assert_array_equal(out_values, data)
-    np.testing.assert_array_equal(epochs, [[0.0, 10.0]])
+    np.testing.assert_array_equal(epochs, _half_open([[0.0, 10.0]]))
 
 
 @_pynapple_test
@@ -232,7 +290,7 @@ def test_from_pynapple_intervalset_returns_epoch_rows() -> None:
     epochs = from_pynapple(_gapped_support())
 
     assert epochs.shape == (2, 2)
-    np.testing.assert_array_equal(epochs, GAPPED)
+    np.testing.assert_array_equal(epochs, HALF_OPEN_GAPPED)
 
 
 @_pynapple_test
@@ -250,7 +308,7 @@ def test_from_pynapple_tsgroup_returns_trains_ids_and_epochs() -> None:
     np.testing.assert_array_equal(np.asarray(unit_ids), [7, 9])
     for train, uid in zip(trains, [7, 9], strict=True):
         np.testing.assert_array_equal(train, spikes[uid])
-    np.testing.assert_array_equal(epochs, GAPPED)
+    np.testing.assert_array_equal(epochs, HALF_OPEN_GAPPED)
 
 
 @_pynapple_test
@@ -365,7 +423,7 @@ def test_to_pynapple_roundtrips_a_track() -> None:
 
     np.testing.assert_array_equal(out_times, times)
     np.testing.assert_array_equal(out_positions, positions)
-    np.testing.assert_array_equal(epochs, [[0.0, 10.0]])
+    np.testing.assert_array_equal(epochs, _half_open([[0.0, 10.0]]))
 
 
 @_pynapple_test
@@ -375,11 +433,19 @@ def test_to_pynapple_epochs_become_the_time_support() -> None:
 
     tsd = to_pynapple(times, values, epochs=[[0.0, 2.0], [10.5, 12.5]])
 
-    np.testing.assert_array_equal(tsd.time_support.values, [[0.0, 2.0], [10.5, 12.5]])
+    # pynapple's closed intervals end one float below the half-open stops.
+    np.testing.assert_array_equal(
+        _half_open(tsd.time_support.values), [[0.0, 2.0], [10.5, 12.5]]
+    )
     out_times, out_values, epochs = from_pynapple(tsd)
     np.testing.assert_array_equal(out_times, times)
     np.testing.assert_array_equal(out_values, values)
     np.testing.assert_array_equal(epochs, [[0.0, 2.0], [10.5, 12.5]])
+
+
+def test_to_pynapple_refuses_a_time_at_a_half_open_stop() -> None:
+    with pytest.raises(ValueError, match=r"1 of 2 timestamp\(s\) lie outside"):
+        to_pynapple(np.array([0.5, 2.0]), np.array([1.0, 2.0]), epochs=[[0.0, 2.0]])
 
 
 def test_to_pynapple_refuses_times_outside_epochs() -> None:
@@ -425,7 +491,7 @@ def test_to_pynapple_decode_result_keeps_multi_window_spike_window() -> None:
     tsdframe = to_pynapple(result)
 
     # One interval per spike window: the 10-25 s gap is not decoded time.
-    np.testing.assert_array_equal(tsdframe.time_support.values, windows)
+    np.testing.assert_array_equal(_half_open(tsdframe.time_support.values), windows)
     np.testing.assert_array_equal(tsdframe.t, result.times)
     np.testing.assert_array_equal(tsdframe.values, result.map_position)
 

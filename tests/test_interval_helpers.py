@@ -52,9 +52,15 @@ def test_as_intervals_real_intervalset():
     from neurospatial._intervals import as_intervals
 
     value = nap.IntervalSet(start=[0, 20], end=[10, 30])
-    np.testing.assert_array_equal(
-        as_intervals(value, name="epochs"), [[0, 10], [20, 30]]
-    )
+    rows = as_intervals(value, name="epochs")
+    # pynapple intervals include their end; the half-open stop is the next
+    # float, so a sample exactly at 10.0 stays inside.
+    np.testing.assert_array_equal(rows[:, 0], [0, 20])
+    np.testing.assert_array_equal(rows[:, 1], np.nextafter([10.0, 30.0], np.inf))
+    t = np.array([10.0, 30.0])
+    np.testing.assert_array_equal(value.in_interval(nap.Ts(t=t)), [0, 1])
+    inside = (t[:, None] >= rows[:, 0]) & (t[:, None] < rows[:, 1])
+    np.testing.assert_array_equal(inside.any(axis=1), [True, True])
 
 
 @pytest.mark.parametrize(

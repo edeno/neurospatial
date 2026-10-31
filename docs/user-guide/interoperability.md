@@ -308,7 +308,9 @@ start/stop arrays are rejected: convert them with `np.column_stack([starts, stop
     Prefer the original arrays with `epochs=`; if using sliced arrays, pass the
     windows again. Point selection uses the same `[start, stop)` windows as
     the analyses, so adjacent train/test windows never share a spike or
-    event; pass `closed="both"` to match pynapple's inclusive `restrict`.
+    event. A pynapple `IntervalSet` includes its end, and its rows are
+    converted so a point at `end` stays inside; for plain arrays of
+    pynapple bounds, pass `closed="both"` to match pynapple's `restrict`.
 
 ## Analysis settings and exports
 
@@ -390,7 +392,7 @@ pynapple objects convert to and from plain arrays **at the boundary** with
 A pynapple object is defined only on its `time_support`: the recording epochs,
 with gaps between them for artifacts, sleep boxes or lost tracking.
 `from_pynapple` returns that support as `epochs`, a `(n_epochs, 2)` array of
-`[start, stop]` rows in seconds, so you can pass it to the analysis and keep
+half-open `[start, stop)` rows in seconds, so you can pass it to the analysis and keep
 the gaps out of occupancy and rates:
 
 ```python
@@ -417,8 +419,11 @@ the axis names in another order, such as `["y", "x"]`, is refused rather than
 silently swapping the axes; reorder it with `tsdframe.loc[["x", "y"]]` first.
 
 pynapple intervals include their end, while neurospatial windows are half-open
-`[start, stop)`. The bounds are passed through unchanged, so a sample or spike
-exactly at an epoch end falls outside the epochs in neurospatial.
+`[start, stop)`. Each pynapple `end` becomes the next float above it
+(`np.nextafter(end, np.inf)`), so the epochs hold exactly the timestamps pynapple
+holds: a sample or spike at an epoch end, such as the last spike of a `TsGroup`'s
+default support, stays inside. An `IntervalSet` passed directly as `epochs=` or
+`spike_window=` is converted the same way, and `to_pynapple` converts back.
 
 A raw `TsGroup` can also supply spikes and unit labels directly, and an
 `IntervalSet` is accepted directly as `epochs=` or `spike_window=`:

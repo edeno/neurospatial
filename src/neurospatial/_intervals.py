@@ -39,6 +39,25 @@ _ACCEPTED_FORMS = (
 )
 
 
+def pynapple_end_to_stop(end: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Convert pynapple's inclusive interval ends to half-open stops.
+
+    A pynapple interval ``[start, end]`` holds exactly the floats of
+    ``[start, nextafter(end, inf))``, so a sample at ``end`` stays inside.
+    """
+    return np.nextafter(end, np.inf)
+
+
+def stop_to_pynapple_end(stop: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Convert half-open stops to pynapple's inclusive ends (the inverse)."""
+    return np.nextafter(stop, -np.inf)
+
+
+def _is_pynapple_object(value: Any) -> bool:
+    """Return whether ``value`` is a pynapple object, without importing pynapple."""
+    return type(value).__module__.partition(".")[0] == "pynapple"
+
+
 @dataclass(frozen=True, eq=False)
 class TimeSupport(ReadOnlyArraysMixin):
     """Resolved windows and the exact intervals retained by an operation.
@@ -246,6 +265,10 @@ def _parse_intervals(
                 f"{name}.start and {name}.end must be 1-D arrays of equal "
                 f"length, got shapes {starts.shape} and {stops.shape}"
             ]
+        if _is_pynapple_object(value):
+            # pynapple intervals include their end; neurospatial windows are
+            # half-open, so move each end to the next float.
+            stops = pynapple_end_to_stop(stops)
         rows = np.column_stack([starts, stops])
     elif (
         isinstance(value, (tuple, list))
@@ -334,7 +357,9 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     value : None, (start, stop), array-like of shape (n, 2), or IntervalSet-like
         The window(s). An object exposing 1-D ``.start`` and ``.end`` arrays
         (for example a pynapple ``IntervalSet``) is accepted by duck typing;
-        pynapple is never imported.
+        pynapple is never imported. A pynapple interval includes its end, so
+        its stop becomes the next float above ``end``: a sample exactly at
+        ``end`` stays inside, as in pynapple.
     name : str
         Argument name used in error messages (``"epochs"``, ``"spike_window"``).
 

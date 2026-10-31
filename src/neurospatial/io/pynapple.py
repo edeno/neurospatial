@@ -53,11 +53,13 @@ def _require_pynapple() -> Any:
 
 
 def _epochs_of(support: Any) -> NDArray[np.float64]:
-    """Return a pynapple ``IntervalSet`` as an owned ``(n, 2)`` float array."""
+    """Return a pynapple ``IntervalSet`` as owned half-open ``(n, 2)`` rows."""
+    from neurospatial._intervals import pynapple_end_to_stop
+
     return np.column_stack(
         [
             np.array(support.start, dtype=np.float64),
-            np.array(support.end, dtype=np.float64),
+            pynapple_end_to_stop(np.asarray(support.end, dtype=np.float64)),
         ]
     )
 
@@ -84,8 +86,8 @@ def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
     """Convert a pynapple object to plain NumPy arrays and its epochs.
 
     Each time series comes back with its pynapple ``time_support`` as
-    ``epochs``, a ``(n_epochs, 2)`` array of ``[start, stop]`` rows in
-    seconds. Pass it as ``epochs=`` (or, for spikes, ``spike_window=``) so the
+    ``epochs``, a ``(n_epochs, 2)`` array of half-open ``[start, stop)`` rows
+    in seconds. Pass it as ``epochs=`` (or, for spikes, ``spike_window=``) so the
     gaps between recording epochs stay out of occupancy and rates.
 
     Parameters
@@ -106,7 +108,7 @@ ndarray of shape (n_epochs, 2)
         For a ``TsGroup``: one spike-time array per unit in group order, the
         group's unit labels, and the group's time support.
     epochs : ndarray, shape (n_epochs, 2)
-        For an ``IntervalSet``: one ``[start, end]`` row per interval.
+        For an ``IntervalSet``: one ``[start, stop)`` row per interval.
 
     All arrays are float64 copies (``unit_ids`` keeps its label type), so
     editing them never changes the pynapple object.
@@ -124,11 +126,13 @@ ndarray of shape (n_epochs, 2)
 
     Notes
     -----
-    pynapple intervals include their end, while neurospatial windows are
-    half-open ``[start, stop)``. The bounds are returned unchanged, so a
-    sample or spike exactly at an epoch end (for example the last spike of
-    a support built from first to last spike) falls outside the epochs in
-    neurospatial analyses.
+    pynapple intervals ``[start, end]`` include their end, while neurospatial
+    windows are half-open ``[start, stop)``. Each ``stop`` is the next float
+    above ``end`` (``np.nextafter(end, np.inf)``), so the epochs hold exactly
+    the timestamps pynapple holds: a sample or spike at ``end``, such as the
+    last spike of a support built from first to last spike, stays inside.
+    An ``IntervalSet`` passed directly as ``epochs=`` or ``spike_window=`` is
+    converted the same way.
 
     A ``TsGroup`` built from spike times alone gets a default time support
     from its first to its last spike, which is not recording coverage. Use
@@ -210,10 +214,12 @@ def to_pynapple(
 or None, optional
         Time support of the output, in seconds: the epochs over which the
         values were observed, so gaps between them are not read as recorded
-        time. Rows are sorted and touching rows merged, as for every
-        ``epochs=`` argument. Every timestamp must lie inside a row (pynapple
-        would silently drop the others). Default ``None`` uses a decode
-        result's ``spike_window`` when it has one.
+        time. Rows are half-open ``[start, stop)``, sorted and touching rows
+        merged, as for every ``epochs=`` argument; each pynapple interval ends
+        at the float just below ``stop``, so it holds the same timestamps.
+        Every timestamp must lie inside a row (pynapple would silently drop
+        the others). Default ``None`` uses a decode result's ``spike_window``
+        when it has one.
 
     Returns
     -------
@@ -246,7 +252,7 @@ or None, optional
     >>> tsdframe = to_pynapple(result)  # a DecodingResult MAP track  # doctest: +SKIP
     >>> tsd = to_pynapple(times, linear_positions, epochs=run_epochs)  # doctest: +SKIP
     """
-    from neurospatial._intervals import as_intervals
+    from neurospatial._intervals import as_intervals, stop_to_pynapple_end
 
     if values is None:
         # Duck-typed decode result: pull the MAP track off it. Guard the
@@ -333,10 +339,10 @@ or None, optional
 
     support = as_intervals(epochs, name="epochs")
     if support is not None:
-        # pynapple intervals include their end, so this is the membership
-        # pynapple applies when it drops samples outside the time support.
+        # Half-open membership, the same set as the inclusive pynapple
+        # intervals built below.
         row = np.searchsorted(support[:, 0], times, side="right") - 1
-        inside = (row >= 0) & (times <= support[np.maximum(row, 0), 1])
+        inside = (row >= 0) & (times < support[np.maximum(row, 0), 1])
         outside = np.flatnonzero(~inside)
         if outside.size:
             i = int(outside[0])
@@ -356,7 +362,9 @@ or None, optional
     time_support = (
         None
         if support is None
-        else nap.IntervalSet(start=support[:, 0], end=support[:, 1])
+        else nap.IntervalSet(
+            start=support[:, 0], end=stop_to_pynapple_end(support[:, 1])
+        )
     )
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values, time_support=time_support)
