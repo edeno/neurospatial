@@ -7,8 +7,6 @@ using the ndx-pose extension.
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pytest
 
@@ -282,10 +280,8 @@ class TestReadPose:
             assert data.ndim == 2, f"Bodypart {name} should be 2D"
             assert data.shape[1] == 2, f"Bodypart {name} should have 2 columns (x, y)"
 
-    def test_multiple_pose_estimation_uses_first_alphabetically(
-        self, empty_nwb, caplog
-    ):
-        """Test that multiple PoseEstimation uses first alphabetically with INFO log."""
+    def test_multiple_pose_estimation_requires_a_name(self, empty_nwb):
+        """Several PoseEstimation containers are refused unless one is named."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
         from neurospatial.io.nwb import read_pose
@@ -362,22 +358,22 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        # Enable logging capture
-        with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            bodyparts, _timestamps, _skeleton = read_pose(nwbfile)
-
-        # Should use 'alpha' (first alphabetically)
-        np.testing.assert_array_almost_equal(bodyparts["a"], np.ones((50, 2)) * 1.0)
-
-        # Check INFO log message
-        assert any(
-            "Multiple PoseEstimation" in record.message
-            or ("Using" in record.message and "alpha" in record.message)
-            for record in caplog.records
+        with pytest.raises(ValueError) as caught:
+            read_pose(nwbfile)
+        message = str(caught.value)
+        assert (
+            "Found 2 PoseEstimation container candidates: ['processing/behavior/alpha', "
+            "'processing/behavior/zebra']" in message
         )
+        assert "pose_estimation_name='processing/behavior/alpha'" in message
 
-    def test_prioritizes_behavior_module_over_others(self, empty_nwb):
-        """Test that processing/behavior is prioritized over other modules."""
+        bodyparts, _timestamps, _skeleton = read_pose(
+            nwbfile, pose_estimation_name="zebra"
+        )
+        np.testing.assert_array_equal(bodyparts["a"], np.full((50, 2), 999.0))
+
+    def test_same_name_in_two_modules_is_chosen_by_path(self, empty_nwb):
+        """processing/behavior is not silently preferred over another module."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
         from neurospatial.io.nwb import read_pose
@@ -440,10 +436,15 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, _timestamps, _skeleton = read_pose(nwbfile)
-
-        # Should get behavior module (value 99.0), not analysis (value 10.0)
-        np.testing.assert_array_almost_equal(bodyparts["a"], np.ones((50, 2)) * 99.0)
+        for name in (None, "PoseEstimation"):
+            with pytest.raises(
+                ValueError, match="Found 2 PoseEstimation container candidates"
+            ):
+                read_pose(nwbfile, pose_estimation_name=name)
+        bodyparts, _timestamps, _skeleton = read_pose(
+            nwbfile, pose_estimation_name="processing/analysis/PoseEstimation"
+        )
+        np.testing.assert_array_equal(bodyparts["a"], np.full((50, 2), 10.0))
 
     def test_uses_rate_when_timestamps_not_available(self, empty_nwb):
         """Test that timestamps are computed from rate when explicit timestamps not provided."""

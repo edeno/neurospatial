@@ -17,9 +17,11 @@ from neurospatial._keyword_hint import keyword_hint
 from neurospatial._units import same_coordinate_declaration
 from neurospatial.io.nwb._adapters import (
     data_from_series,
+    missing_error,
     position_frame_from_series,
     position_units_from_series,
     require_unscaled_for_lazy,
+    select_one,
     timestamps_from_series,
     timestamps_handle_from_series,
     validate_handle_lengths,
@@ -51,9 +53,9 @@ def read_pose(
     nwbfile : NWBFile
         The NWB file to read from.
     pose_estimation_name : str, optional
-        Name of the specific PoseEstimation container.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/*.
+        Name of the PoseEstimation container, or its full path such as
+        ``"processing/behavior/PoseEstimation"``. Required when the file
+        holds more than one PoseEstimation container.
     lazy : bool, default False
         If ``False`` (default), each bodypart trajectory and the timestamps are
         fully materialized into ``NDArray[np.float64]``. If ``True``, the
@@ -81,8 +83,9 @@ def read_pose(
     KeyError
         If no PoseEstimation container found, or if specified name not found.
     ValueError
-        If ``lazy=True`` and a series declares a non-identity ``conversion``
-        or ``offset``, bodypart timestamps differ, or bodyparts declare
+        If more than one PoseEstimation container matches, ``lazy=True`` and
+        a series declares a non-identity ``conversion`` or ``offset``,
+        bodypart timestamps differ, or bodyparts declare
         incompatible units or reference frames.
     ImportError
         If ndx-pose is not installed.
@@ -252,7 +255,7 @@ def _get_pose_estimation_container(
     target_type : type
         The PoseEstimation type class.
     pose_estimation_name : str, optional
-        If provided, look for this specific PoseEstimation by name.
+        Container name or full path. Required when there is more than one.
 
     Returns
     -------
@@ -263,43 +266,23 @@ def _get_pose_estimation_container(
     ------
     KeyError
         If no container found or if specified name doesn't exist.
+    ValueError
+        If more than one container matches.
     """
-    # Find all PoseEstimation containers using type-based search
     found = _find_containers_by_type(nwbfile, target_type)
-
     if not found:
-        searched_locations = ["processing/*"]
-        raise KeyError(
-            f"No PoseEstimation data found in NWB file. Searched: {searched_locations}"
+        raise missing_error(
+            "No PoseEstimation data found in NWB file. Searched: "
+            "processing/* and acquisition.",
+            fix="add an ndx-pose PoseEstimation container to processing/behavior.",
         )
-
-    if pose_estimation_name is not None:
-        # Look for specific name
-        for path, container in found:
-            if container.name == pose_estimation_name:
-                logger.debug(
-                    "Found PoseEstimation '%s' at %s", pose_estimation_name, path
-                )
-                return container
-        # Not found - raise with available names
-        available_names = [container.name for _, container in found]
-        raise KeyError(
-            f"PoseEstimation '{pose_estimation_name}' not found. "
-            f"Available: {sorted(available_names)}"
-        )
-
-    # Auto-select: use first by priority (behavior module first, then alphabetically)
-    path, container = found[0]
-    if len(found) > 1:
-        all_names = [c.name for _, c in found]
-        logger.info(
-            "Multiple PoseEstimation containers found: %s. Using '%s'",
-            all_names,
-            container.name,
-        )
-    else:
-        logger.debug("Found PoseEstimation at %s", path)
-
+    container = select_one(
+        found,
+        pose_estimation_name,
+        what="PoseEstimation container",
+        keyword="pose_estimation_name",
+    )
+    logger.debug("Reading PoseEstimation '%s'", container.name)
     return container
 
 

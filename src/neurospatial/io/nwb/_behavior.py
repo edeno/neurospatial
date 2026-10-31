@@ -15,7 +15,9 @@ from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
+    missing_error,
     require_unscaled_for_lazy,
+    select_one,
     timestamps_from_series,
     timestamps_handle_from_series,
 )
@@ -24,7 +26,7 @@ from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
-    from pynwb.behavior import CompassDirection, Position, SpatialSeries
+    from pynwb.behavior import SpatialSeries
 
 
 @keyword_hint("processing_module", "position_name")
@@ -43,12 +45,12 @@ def read_position(
     nwbfile : NWBFile
         The NWB file to read from.
     processing_module : str, optional
-        Name of the processing module containing Position data.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/* > acquisition.
+        Name of the processing module containing Position data. If None,
+        every processing module and acquisition is searched.
     position_name : str, optional
-        Name of the specific SpatialSeries within Position.
-        If None and multiple exist, uses first alphabetically with INFO log.
+        Name of the SpatialSeries within a Position container, or its full
+        path such as ``"processing/behavior/Position/position"``. Required
+        when the search finds more than one series.
     lazy : bool, default False
         If ``False`` (default), positions and timestamps are fully materialized
         into ``NDArray[np.float64]``. If ``True``, the h5py-backed
@@ -74,8 +76,9 @@ def read_position(
     KeyError
         If no Position container found, or if specified position_name not found.
     ValueError
-        If ``lazy=True`` and the series declares a non-identity ``conversion``
-        or ``offset``.
+        If more than one Position series matches (pass ``position_name=``),
+        or ``lazy=True`` and the series declares a non-identity
+        ``conversion`` or ``offset``.
     ImportError
         If pynwb is not installed.
 
@@ -130,14 +133,13 @@ def read_position(
     _require_pynwb()
     from pynwb.behavior import Position as PositionType
 
-    # Find Position container
-    position_container = _get_behavior_container(
-        nwbfile, PositionType, "Position", processing_module
-    )
-
-    # Get SpatialSeries from Position container
     spatial_series = _get_spatial_series(
-        position_container, position_name, "SpatialSeries", "Position"
+        nwbfile,
+        PositionType,
+        "Position",
+        processing_module,
+        position_name,
+        "position_name",
     )
 
     if lazy:
@@ -157,138 +159,86 @@ def read_position(
     )
 
 
-def _get_behavior_container(
+def _get_spatial_series(
     nwbfile: NWBFile,
-    target_type: type,
+    container_type: type,
     type_name: str,
     processing_module: str | None,
-) -> Position | CompassDirection:
+    series_name: str | None,
+    keyword: str,
+) -> SpatialSeries:
     """
-    Get a behavior container (Position or CompassDirection) from NWB file.
+    Get the one SpatialSeries of a behavior container type.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to search.
-    target_type : type
+    container_type : type
         The container type class (Position or CompassDirection).
     type_name : str
-        Human-readable name for error messages (e.g., "Position", "CompassDirection").
-    processing_module : str, optional
-        If provided, look only in this specific module.
-
-    Returns
-    -------
-    Position | CompassDirection
-        The behavior container.
-
-    Raises
-    ------
-    KeyError
-        If no container found or if specified module doesn't exist.
-    """
-    if processing_module is not None:
-        # Look in specific module
-        if processing_module not in nwbfile.processing:
-            raise KeyError(
-                f"Processing module '{processing_module}' not found in NWB file. Available modules: {list(nwbfile.processing.keys())}"
-                + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-            )
-        module = nwbfile.processing[processing_module]
-        # Find container in this module
-        for obj_name in module.data_interfaces:
-            obj = module.data_interfaces[obj_name]
-            if isinstance(obj, target_type):
-                logger.debug(
-                    "Found %s at processing/%s/%s",
-                    type_name,
-                    processing_module,
-                    obj_name,
-                )
-                return obj
-        raise KeyError(
-            f"No {type_name} found in processing module '{processing_module}'"
-            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-        )
-
-    # Auto-discover using priority search
-    found = _find_containers_by_type(nwbfile, target_type)
-
-    if not found:
-        searched_locations = ["processing/*", "acquisition"]
-        raise KeyError(
-            f"No {type_name} data found in NWB file. Searched: {searched_locations}"
-            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-        )
-
-    # Return the first one (highest priority due to sort order)
-    path, container = found[0]
-    if len(found) > 1:
-        all_paths = [p for p, _ in found]
-        logger.info(
-            "Multiple %s containers found: %s. Using '%s'", type_name, all_paths, path
-        )
-    else:
-        logger.debug("Found %s at %s", type_name, path)
-
-    return container
-
-
-def _get_spatial_series(
-    container: Position | CompassDirection,
-    series_name: str | None,
-    series_type_name: str,
-    container_type_name: str = "Position",
-) -> SpatialSeries:
-    """
-    Get a SpatialSeries from a behavior container.
-
-    Parameters
-    ----------
-    container : Position | CompassDirection
-        The behavior container to extract from.
+        Human-readable name for error messages, e.g. ``"Position"``.
+    processing_module : str or None
+        If provided, look only in this processing module.
     series_name : str or None
-        Name of the specific series. If None, auto-selects.
-    series_type_name : str
-        Name to use in error messages (e.g., "SpatialSeries").
-    container_type_name : str, default "Position"
-        Name of the container type for error messages.
+        Series name, or its full path such as
+        ``"processing/behavior/Position/position"``.
+    keyword : str
+        The reader argument that takes ``series_name``.
 
     Returns
     -------
     SpatialSeries
-        The spatial series object.
+        The selected series.
 
     Raises
     ------
     KeyError
-        If specified series not found or container is empty.
+        If the module, a container or the named series is missing.
+    ValueError
+        If more than one series matches.
     """
-    # Get available series names
-    available_series = sorted(container.spatial_series.keys())
-
-    if not available_series:
-        raise KeyError(f"{container_type_name} container has no {series_type_name}")
-
-    if series_name is not None:
-        # Look for specific series
-        if series_name not in container.spatial_series:
-            raise KeyError(
-                f"{series_type_name} '{series_name}' not found. "
-                f"Available: {available_series}"
+    fix = (
+        f"store the {type_name} container in processing/behavior, or pass "
+        "processing_module= with the module that holds it."
+    )
+    found = _find_containers_by_type(nwbfile, container_type)
+    if processing_module is not None:
+        if processing_module not in nwbfile.processing:
+            raise missing_error(
+                f"Processing module '{processing_module}' not found in NWB "
+                f"file. Available modules: {list(nwbfile.processing.keys())}.",
+                fix=fix,
             )
-        return container.spatial_series[series_name]
-
-    # Auto-select: use first alphabetically
-    if len(available_series) > 1:
-        logger.info(
-            "Multiple %s found: %s. Using '%s'",
-            series_type_name,
-            available_series,
-            available_series[0],
+        found = [
+            (path, container)
+            for path, container in found
+            if path.startswith(f"processing/{processing_module}/")
+        ]
+        searched = f"processing/{processing_module}"
+    else:
+        searched = "processing/* and acquisition"
+    if not found:
+        raise missing_error(
+            f"No {type_name} data found in NWB file. Searched: {searched}.",
+            fix=fix,
         )
-
-    return container.spatial_series[available_series[0]]
+    candidates = [
+        (f"{path}/{name}", container.spatial_series[name])
+        for path, container in found
+        for name in sorted(container.spatial_series)
+    ]
+    if not candidates:
+        raise missing_error(
+            f"{type_name} container(s) {[path for path, _ in found]} "
+            "has no SpatialSeries.",
+            fix=f"add a SpatialSeries to the {type_name} container.",
+        )
+    series = select_one(
+        candidates, series_name, what=f"{type_name} series", keyword=keyword
+    )
+    logger.debug("Reading %s series '%s'", type_name, series.name)
+    return series
 
 
 @keyword_hint("processing_module", "compass_name")
@@ -306,12 +256,13 @@ def read_head_direction(
     nwbfile : NWBFile
         The NWB file to read from.
     processing_module : str, optional
-        Name of the processing module containing CompassDirection data.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/* > acquisition.
+        Name of the processing module containing CompassDirection data. If
+        None, every processing module and acquisition is searched.
     compass_name : str, optional
-        Name of the specific SpatialSeries within CompassDirection.
-        If None and multiple exist, uses first alphabetically with INFO log.
+        Name of the SpatialSeries within a CompassDirection container, or its
+        full path such as
+        ``"processing/behavior/CompassDirection/head_direction"``. Required
+        when the search finds more than one series.
 
     Returns
     -------
@@ -329,7 +280,9 @@ def read_head_direction(
         If no CompassDirection container found, or if specified compass_name
         not found.
     ValueError
-        If the series ``unit`` is not a radian or degree spelling (pynwb's
+        If more than one CompassDirection series matches (pass
+        ``compass_name=``), the series ``unit`` is not a radian or degree
+        spelling (pynwb's
         default ``"meters"`` included) for angle data, or the data is
         neither ``(n_samples,)`` nor ``(n_samples, 2)``.
     ImportError
@@ -353,14 +306,13 @@ def read_head_direction(
     _require_pynwb()
     from pynwb.behavior import CompassDirection as CompassDirectionType
 
-    # Find CompassDirection container
-    compass_container = _get_behavior_container(
-        nwbfile, CompassDirectionType, "CompassDirection", processing_module
-    )
-
-    # Get SpatialSeries from CompassDirection container
     spatial_series = _get_spatial_series(
-        compass_container, compass_name, "SpatialSeries", "CompassDirection"
+        nwbfile,
+        CompassDirectionType,
+        "CompassDirection",
+        processing_module,
+        compass_name,
+        "compass_name",
     )
 
     raw = data_from_series(spatial_series)

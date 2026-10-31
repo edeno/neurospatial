@@ -41,6 +41,73 @@ def position_frame_from_series(series: Any) -> str | None:
     return _declared_frame(getattr(series, "reference_frame", None))
 
 
+def missing_error(what: str, *, fix: str) -> KeyError:
+    """A ``KeyError`` whose message and fix stay on one line.
+
+    ``str(KeyError)`` shows the message's repr, which would print line
+    breaks as ``\\n``.
+    """
+    from neurospatial._exceptions import _format_error
+
+    return KeyError(_format_error(what, fix=fix).replace("\n", " "))
+
+
+def select_one(
+    candidates: list[tuple[str, Any]],
+    name: str | None,
+    *,
+    what: str,
+    keyword: str,
+) -> Any:
+    """Return the one candidate named ``name``, or the only candidate.
+
+    Parameters
+    ----------
+    candidates : list of (str, Any)
+        ``(path, object)`` pairs, e.g.
+        ``("processing/behavior/Position/position", series)``.
+    name : str or None
+        An object's name (the last path component) or its full path.
+    what : str
+        Description of the objects for messages, e.g. ``"Position series"``.
+    keyword : str
+        The calling reader's argument that takes ``name``.
+
+    Raises
+    ------
+    KeyError
+        If no candidate matches ``name``.
+    ValueError
+        If more than one candidate matches; never picks one silently.
+    """
+    from neurospatial._exceptions import _format_error
+
+    paths = [path for path, _ in candidates]
+    if name is not None:
+        candidates = [
+            (path, obj)
+            for path, obj in candidates
+            if name in (path, path.rsplit("/", 1)[-1])
+        ]
+        if not candidates:
+            raise missing_error(
+                f"{what} '{name}' not found. Available: {paths}",
+                fix=f"pass {keyword}= with a name or path from this list.",
+            )
+    if len(candidates) > 1:
+        matching = [path for path, _ in candidates]
+        raise ValueError(
+            _format_error(
+                f"Found {len(matching)} {what} candidates: {matching}.",
+                why="they may differ in units, frame or processing, so none is "
+                "chosen for you.",
+                fix=f"pass {keyword}= with one of these paths, e.g. "
+                f"{keyword}={matching[0]!r}.",
+            )
+        )
+    return candidates[0][1]
+
+
 def merge_overlay_coordinate_metadata(
     units: str | None,
     frame: str | None,

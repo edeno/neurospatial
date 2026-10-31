@@ -7,8 +7,6 @@ Position and CompassDirection data from NWB files.
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pytest
 
@@ -136,32 +134,25 @@ class TestReadPosition:
         with pytest.raises(KeyError, match=r"Processing module.*not found"):
             read_position(sample_nwb_with_position, processing_module="nonexistent")
 
-    def test_multiple_spatial_series_uses_first_alphabetically(
-        self, sample_nwb_with_position_multiple_series, caplog
+    def test_multiple_spatial_series_require_a_name(
+        self, sample_nwb_with_position_multiple_series
     ):
-        """Test that multiple SpatialSeries uses first alphabetically with INFO log."""
+        """Several series in one Position are refused unless one is named."""
         from neurospatial.io.nwb import read_position
 
-        # Enable logging capture
-        with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            position_data = read_position(sample_nwb_with_position_multiple_series)
-            positions = position_data.positions
+        file = sample_nwb_with_position_multiple_series
+        with pytest.raises(ValueError) as caught:
+            read_position(file)
+        message = str(caught.value)
+        assert (
+            "Found 2 Position series candidates: ['processing/behavior/Position/body', "
+            "'processing/behavior/Position/head']" in message
+        )
+        assert "position_name='processing/behavior/Position/body'" in message
 
-        # Should use 'body' (first alphabetically)
-        assert positions.shape == (500, 2)
-
-        # Verify it's the body data
-        original_position = sample_nwb_with_position_multiple_series.processing[
-            "behavior"
-        ]["Position"]
-        original_body = original_position.spatial_series["body"]
-        np.testing.assert_array_almost_equal(positions, original_body.data[:])
-
-        # Check INFO log message
-        assert any(
-            "Multiple SpatialSeries found" in record.message
-            or ("Using" in record.message and "body" in record.message)
-            for record in caplog.records
+        head = file.processing["behavior"]["Position"].spatial_series["head"]
+        np.testing.assert_array_equal(
+            read_position(file, position_name="head").positions, head.data[:]
         )
 
     def test_position_in_acquisition(self, empty_nwb):
@@ -193,8 +184,8 @@ class TestReadPosition:
         assert positions.shape == (100, 2)
         assert timestamps.shape == (100,)
 
-    def test_prioritizes_behavior_module_over_others(self, empty_nwb):
-        """Test that processing/behavior is prioritized over other modules."""
+    def test_behavior_module_is_not_silently_preferred(self, empty_nwb):
+        """A series in another module makes an unqualified read ambiguous."""
         from pynwb.behavior import Position, SpatialSeries
 
         from neurospatial.io.nwb import read_position
@@ -233,11 +224,14 @@ class TestReadPosition:
         )
         behavior_module.add(position_behavior)
 
-        position_data = read_position(nwbfile)
-        positions = position_data.positions
-
-        # Should get behavior module Position (value 99.0), not analysis (value 10.0)
-        np.testing.assert_array_almost_equal(positions, np.ones((50, 2)) * 99.0)
+        with pytest.raises(ValueError, match="Found 2 Position series candidates"):
+            read_position(nwbfile)
+        positions = read_position(nwbfile, processing_module="behavior").positions
+        np.testing.assert_array_equal(positions, np.full((50, 2), 99.0))
+        positions = read_position(
+            nwbfile, position_name="processing/analysis/Position/pos"
+        ).positions
+        np.testing.assert_array_equal(positions, np.full((50, 2), 10.0))
 
     def test_1d_position_data(self, empty_nwb):
         """Test reading 1D position data (single dimension)."""
@@ -550,8 +544,8 @@ class TestReadHeadDirection:
                 sample_nwb_with_head_direction, processing_module="nonexistent"
             )
 
-    def test_multiple_spatial_series_uses_first_alphabetically(self, empty_nwb, caplog):
-        """Test that multiple SpatialSeries uses first alphabetically with INFO log."""
+    def test_multiple_spatial_series_require_a_name(self, empty_nwb):
+        """Several compass series are refused unless one is named."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
         from neurospatial.io.nwb import read_head_direction
@@ -585,21 +579,12 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass)
 
-        # Enable logging capture
-        with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            head_direction_data = read_head_direction(nwbfile)
-            angles = head_direction_data.headings
-
-        # Should use 'alpha' (first alphabetically)
-        assert angles.shape == (50,)
-        np.testing.assert_array_almost_equal(angles, np.ones(50) * 1.0)
-
-        # Check INFO log message
-        assert any(
-            "Multiple SpatialSeries found" in record.message
-            or ("Using" in record.message and "alpha" in record.message)
-            for record in caplog.records
-        )
+        with pytest.raises(
+            ValueError, match="Found 2 CompassDirection series candidates"
+        ):
+            read_head_direction(nwbfile)
+        angles = read_head_direction(nwbfile, compass_name="alpha").headings
+        np.testing.assert_array_equal(angles, np.ones(50))
 
     def test_compass_direction_in_acquisition(self, empty_nwb):
         """Test reading CompassDirection from acquisition when not in processing."""
@@ -670,11 +655,12 @@ class TestReadHeadDirection:
         )
         behavior_module.add(compass_behavior)
 
-        head_direction_data = read_head_direction(nwbfile)
-        angles = head_direction_data.headings
-
-        # Should get behavior module (value 2.5), not analysis (value 0.5)
-        np.testing.assert_array_almost_equal(angles, np.ones(50) * 2.5)
+        with pytest.raises(
+            ValueError, match="Found 2 CompassDirection series candidates"
+        ):
+            read_head_direction(nwbfile)
+        angles = read_head_direction(nwbfile, processing_module="behavior").headings
+        np.testing.assert_array_equal(angles, np.full(50, 2.5))
 
     def test_uses_rate_when_timestamps_not_available(self, empty_nwb):
         """Test that timestamps are computed from rate when explicit timestamps not provided."""
@@ -1067,3 +1053,50 @@ def test_zero_heading_vector_has_no_direction(empty_nwb):
     headings = read_head_direction(empty_nwb).headings
     assert headings[0] == pytest.approx(np.pi / 2)
     assert np.isnan(headings[1])
+
+
+def test_two_position_containers_in_one_module_are_refused(empty_nwb):
+    """Raw pixels and calibrated cm side by side: neither is picked silently."""
+    from pynwb.behavior import Position, SpatialSeries
+
+    from neurospatial.io.nwb import read_position
+
+    module = empty_nwb.create_processing_module(name="behavior", description="b")
+    for container, unit, value in (
+        ("PositionCm", "cm", 2.0),
+        ("PositionPx", "px", 50.0),
+    ):
+        position = Position(name=container)
+        position.add_spatial_series(
+            SpatialSeries(
+                name="position",
+                data=np.full((5, 2), value),
+                timestamps=np.arange(5) / 30.0,
+                reference_frame="arena corner",
+                unit=unit,
+            )
+        )
+        module.add(position)
+    for kwargs in (
+        {},
+        {"processing_module": "behavior"},
+        {"position_name": "position"},
+    ):
+        with pytest.raises(ValueError) as caught:
+            read_position(empty_nwb, **kwargs)
+        assert (
+            "Found 2 Position series candidates: ['processing/behavior/PositionCm/position', "
+            "'processing/behavior/PositionPx/position']" in str(caught.value)
+        )
+    pos = read_position(
+        empty_nwb, position_name="processing/behavior/PositionCm/position"
+    )
+    assert pos.units == "cm"
+    np.testing.assert_array_equal(pos.positions, np.full((5, 2), 2.0))
+
+
+def test_missing_position_error_names_every_searched_location(empty_nwb):
+    from neurospatial.io.nwb import read_position
+
+    with pytest.raises(KeyError, match="Searched: processing/\\* and acquisition"):
+        read_position(empty_nwb)
