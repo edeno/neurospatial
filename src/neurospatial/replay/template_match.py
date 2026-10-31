@@ -59,6 +59,7 @@ from neurospatial.replay.sequence_match import (
     _template_ranks,
     _trial_group,
 )
+from neurospatial.stats.shuffle import _shuffle_p_values, compute_shuffle_zscore
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1036,8 +1037,6 @@ def _word_groups_test(
     rng: np.random.Generator,
 ) -> TemplateMatchDatasetResult:
     """Lee & Wilson's binomial tests of pairs, triplets and low-probability words."""
-    from neurospatial.stats.shuffle import compute_shuffle_zscore
-
     assert method.max_isi is not None and method.trial_probability is not None
     probability = method.trial_probability
     words = []
@@ -1128,7 +1127,6 @@ def _word_groups_test(
         shuffle_group=_LOW,
         observed=observed,
         shuffled=shuffled,
-        zscore=compute_shuffle_zscore,
     )
 
 
@@ -1163,14 +1161,11 @@ def _dataset_result(
     shuffle_group: str,
     observed: float,
     shuffled: NDArray[np.float64],
-    zscore: Any,
 ) -> TemplateMatchDatasetResult:
-    finite = shuffled[np.isfinite(shuffled)]
-    if np.isfinite(observed) and finite.size:
-        shuffle_p = float((np.sum(finite >= observed) + 1) / (finite.size + 1))
-        shuffle_z = float(zscore(observed, shuffled))
-    else:
-        shuffle_p, shuffle_z = np.nan, np.nan
+    shuffle_p = float(_shuffle_p_values(observed, shuffled, "greater"))
+    shuffle_z = (
+        compute_shuffle_zscore(observed, shuffled) if np.isfinite(shuffle_p) else np.nan
+    )
     return TemplateMatchDatasetResult(
         method=method.name,
         statistic=method.statistic,
@@ -1213,8 +1208,6 @@ def _frame_test(
 ) -> TemplateMatchDatasetResult:
     """Ji & Wilson's chance and template-shuffle tests of replaying frames."""
     from scipy import stats
-
-    from neurospatial.stats.shuffle import compute_shuffle_zscore
 
     assert method.bandwidth is not None
     names = list(ranks)
@@ -1312,7 +1305,6 @@ def _frame_test(
         shuffle_group=_FRAMES,
         observed=float(replaying[assigned >= 0].sum()),
         shuffled=shuffle_counts,
-        zscore=compute_shuffle_zscore,
     )
 
 
