@@ -20,7 +20,15 @@ environment), and geodesic distances began to be any-angle paths that keep
 out of missing cells. The two geodesic entries were captured again when a
 straight leg from a position (to the goal, or to the first corner) began to
 be checked for line of sight: 333 of the 10,000 distances to the goal, whose
-old line cut through a missing cell, grew by up to 14%.
+old line cut through a missing cell, grew by up to 14%. The velocity- and
+smoothing-based entries were captured again when velocity smoothing began to
+weight samples by their time difference instead of their sample distance:
+values more than four smoothing widths from the ends of the recording
+changed by less than 3e-14 rad, values near the ends moved because the
+window is renormalized there instead of repeating the end sample, and the
+angular path efficiencies changed by less than 3e-8 because pairs exactly
+four widths apart are now always counted. The ``heading_from_velocity_smoothed``
+golden now leaves samples slower than ``min_speed`` without a heading.
 """
 
 import json
@@ -75,32 +83,7 @@ def kinematic_goldens():
         "compute_vte_session",
     ],
 )
-def test_gap_free_outputs_unchanged(
-    name, kinematic_outputs, kinematic_goldens, continuous_recording
-):
+def test_gap_free_outputs_unchanged(name, kinematic_outputs, kinematic_goldens):
     actual = structural_snapshot(kinematic_outputs[name])
     expected = kinematic_goldens[name]
-    if name == "heading_from_velocity_smoothed":
-        from neurospatial.behavior import compute_speed
-
-        assert actual.keys() == expected.keys()
-        assert actual["array"] == expected["array"]
-        assert actual["shape"] == expected["shape"]
-        # The golden filled samples slower than min_speed=5.0 by interpolation;
-        # they now have no heading. Every other sample keeps its golden value.
-        r = load_kinematic_recording(continuous_recording)
-        slow = compute_speed(r.times, r.positions, smooth_window=0.04) < 5.0
-        assert slow.sum() == 753
-        values = np.asarray(actual["values"], dtype=float)
-        assert np.isnan(values[slow]).all()
-        # Actual floating-point intervals replace the old scalar median.
-        # The maintainer approved this radian rounding floor near zero.
-        np.testing.assert_allclose(
-            values[~slow],
-            np.asarray(expected["values"], dtype=float)[~slow],
-            rtol=1e-12,
-            atol=1e-15,
-            equal_nan=True,
-        )
-    else:
-        assert_snapshot_equal(actual, expected)
+    assert_snapshot_equal(actual, expected)

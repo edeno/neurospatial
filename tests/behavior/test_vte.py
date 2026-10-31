@@ -1593,8 +1593,10 @@ def test_head_sweep_of_a_full_circle_is_two_pi():
 
     The first revolution falls short of 2 pi only by its edges: the last
     sample is one frame short of a full turn, and the velocity smoothing
-    (sigma 0.1 s) cannot see past the ends of the recording, which costs at
-    most the angle turned in one smoothing width.
+    (sigma 0.1 s) cannot see past the ends of the recording. At each end it
+    averages one side of the window only, whose mean lies sigma * sqrt(2 / pi)
+    seconds inside the recording, so each end costs at most the angle turned
+    in that time.
     """
     from neurospatial.behavior.vte import head_sweep_from_positions
 
@@ -1603,7 +1605,8 @@ def test_head_sweep_of_a_full_circle_is_two_pi():
         two = head_sweep_from_positions(*_circle(2, fs=fs), min_speed=1.0)
         assert_allclose(two - one, 2 * np.pi, rtol=1e-9)
         omega = 2 * np.pi / 4.0  # rad/s
-        assert 0 < 2 * np.pi - one < omega * (1 / fs + 0.1)
+        one_sided_lag = 0.1 * np.sqrt(2 / np.pi)
+        assert 0 < 2 * np.pi - one < omega * (1 / fs + 2 * one_sided_lag)
 
 
 def test_head_sweep_is_invariant_to_rotation_translation_clock_and_units():

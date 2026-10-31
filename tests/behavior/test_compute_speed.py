@@ -13,6 +13,8 @@ import shapely
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.behavior import compute_speed, segment_by_velocity
 
+from ._reference_velocity import reference_speed
+
 JITTER_CM = 0.5
 
 
@@ -184,3 +186,26 @@ def test_negative_smooth_window_raises():
     times = np.arange(5) / 10
     with pytest.raises(ValueError, match="smooth_window must be a finite number"):
         compute_speed(times, np.arange(10.0).reshape(5, 2), smooth_window=-0.1)
+
+
+def test_smoothing_window_is_in_seconds_across_a_bridged_gap():
+    """A bridged tracking gap does not stretch the smoothing window.
+
+    The animal sits still until 2.0 s, then runs at 50 cm/s; tracking is lost
+    from 1.5 s to 2.4 s, a gap bridged under the default max_gap. A 0.1 s
+    window counts samples 0.9 s apart as 0.9 s apart, not as neighbours, so
+    the still animal at 1.4 s stays under a 5 cm/s speed gate.
+    """
+    times = np.arange(0.0, 4.0, 1.0 / 30.0)
+    x = np.where(times < 2.0, 0.0, 50.0 * (times - 2.0))
+    positions = np.column_stack([x, np.zeros_like(x)])
+    lost = (times >= 1.5) & (times < 2.4)
+    positions[lost] = np.nan
+    speed = compute_speed(times, positions, smooth_window=0.1)
+
+    kept = ~lost
+    expected = reference_speed(times[kept], positions[kept], 0.1)
+    np.testing.assert_allclose(speed[kept], expected, rtol=1e-12, atol=1e-12)
+    assert np.isnan(speed[lost]).all()
+    at = int(np.argmin(np.abs(times - 1.4)))
+    assert speed[at] < 5.0

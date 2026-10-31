@@ -33,6 +33,10 @@ inside the environment between bin centers) instead of the bin graph.
 region's edge began to belong to the region only where a nudge north-east
 moves it inside: the column of centers at x = 10 lies on the source box's east
 edge, so it left the source and the run departs one sample (0.1 s) earlier.
+``compute_pre_decision_metrics`` and ``compute_vte_trial`` were captured
+again when velocity smoothing began to weight samples by their time
+difference and to renormalize the window at the ends of a run: the window's
+mean speed moved from 42.188 to 42.198 cm/s.
 """
 
 import json

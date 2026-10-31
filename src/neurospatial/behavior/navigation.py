@@ -3329,10 +3329,8 @@ def _time_smoothed_positions(
     ndarray, shape (n_samples, n_dims)
     """
     from neurospatial._intervals import run_sample_bounds
-    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, gaussian_pair_weights
 
-    sigma = DEFAULT_SPEED_SMOOTHING
-    reach = 4.0 * sigma
     finite = np.all(np.isfinite(positions), axis=1)
     smoothed = positions.astype(np.float64, copy=True)
     mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
@@ -3341,10 +3339,6 @@ def _time_smoothed_positions(
         if run.size < 2:
             continue
         t, p = times[run], positions[run]
-        index = np.arange(run.size)
-        lo = np.searchsorted(t, t - reach, side="left")
-        hi = np.searchsorted(t, t + reach, side="right")
-        widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
         # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
         # in differences from each sample so a still animal stays exactly still.
         # Each sample weighs itself by 1; each pair (i, i + k) within reach
@@ -3354,9 +3348,8 @@ def _time_smoothed_positions(
         s2 = np.zeros(run.size)
         m0 = np.zeros_like(p)
         m1 = np.zeros_like(p)
-        for k in range(1, widest + 1):
+        for k, weight in gaussian_pair_weights(t, DEFAULT_SPEED_SMOOTHING):
             lag = t[k:] - t[:-k]
-            weight = np.where(lag <= reach, np.exp(-0.5 * (lag / sigma) ** 2), 0.0)
             weighted_lag = weight * lag
             weighted_square = weighted_lag * lag
             deviation = p[k:] - p[:-k]
