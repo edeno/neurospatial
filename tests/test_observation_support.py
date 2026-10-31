@@ -76,7 +76,8 @@ def test_nan_row_is_bridged_like_a_deleted_row():
     np.testing.assert_array_equal(s.run_sample_bounds, [[0, 4]])
     np.testing.assert_allclose(s.run_time_bounds, deleted.run_time_bounds)
     assert not s.sample_valid[2]
-    assert not s.isolated.any()
+    # Every valid sample is in a run.
+    assert (s.run_ids[s.sample_valid] >= 0).all()
 
 
 def test_nan_row_gap_longer_than_max_gap_breaks_the_path():
@@ -99,16 +100,57 @@ def test_bridged_gaps_longer_than_max_gap_warn_once():
     assert not support.interval_mask.any()
 
 
-def test_no_observed_sample_warns_that_nothing_is_usable():
-    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite"):
-        _support(np.arange(5) * 0.1, np.full(5, np.nan))
+@pytest.mark.parametrize("observed", [[], [2]], ids=["none", "one"])
+def test_no_observed_interval_warns_that_samples_are_missing(observed):
+    """Missing samples, not the gates, leave nothing usable: say so."""
+    x = np.full(5, np.nan)
+    x[observed] = 1.0
+    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite") as record:
+        _support(np.arange(5) * 0.1, x)
+    message = str(record[0].message)
+    assert f"{len(observed)} of 5 samples are observed" in message
+    assert "max_gap" not in message
+
+
+@pytest.mark.parametrize("bad", [np.inf, -np.inf])
+def test_infinite_position_is_refused_not_missing(bad):
+    """An infinite coordinate is usually a calibration error, not a lost frame."""
+    positions = np.c_[np.arange(5, dtype=float), np.zeros(5)]
+    positions[2, 1] = bad
+    with pytest.raises(ValueError, match=r"f\(\) got 1 infinite value\(s\)") as caught:
+        validated_observations(
+            np.arange(5) * 0.1,
+            positions,
+            call="f",
+            max_gap=0.5,
+            epochs=None,
+            break_before=None,
+            result="the result is empty",
+        )
+    message = str(caught.value)
+    assert "row 2, column 1" in message
+    assert "\nWhy: " in message and "\nFix: " in message
+
+
+def test_infinite_position_is_refused_by_a_public_analysis():
+    positions = np.c_[np.arange(5, dtype=float), np.zeros(5)]
+    positions[4, 0] = np.inf
+    with pytest.raises(ValueError, match=r"compute_speed\(\) got 1 infinite"):
+        behavior.compute_speed(np.arange(5) * 0.1, positions)
+
+
+def test_infinite_signal_is_refused_in_any_feature():
+    signals = np.ones((5, 2))
+    signals[3, 1] = -np.inf
+    with pytest.raises(ValueError, match="row 3, column 1"):
+        _signals(signals=signals)
 
 
 def test_isolated_finite_sample():
     s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
     assert s.sample_valid[2]
-    np.testing.assert_array_equal(s.isolated, [False, False, True, False, False])
+    np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
 
 
 def test_stationary_interval_is_usable():
@@ -522,3 +564,67 @@ def test_validated_break_before_is_read_only():
     assert not owned.flags.writeable
     flags[1] = False
     assert owned[1]
+
+
+_T7 = np.arange(7) / 10
+
+
+def _defined(*missing):
+    defined = np.ones(7, dtype=bool)
+    defined[list(missing)] = False
+    return defined
+
+
+@pytest.mark.parametrize(
+    ("break_at", "expected"),
+    [
+        (None, [True, True, True, True, True, True]),
+        (3, [True, True, False, False, True, True]),
+    ],
+    ids=["no-break", "break-at-missing"],
+)
+def test_restricted_gap_keeps_a_break_hidden_in_the_missing_sample(break_at, expected):
+    """Sample 3 is undefined; a break declared there still splits its gap."""
+    breaks = None
+    if break_at is not None:
+        breaks = np.zeros(7, dtype=bool)
+        breaks[break_at] = True
+    support = _support(_T7, max_gap=0.5, break_before=breaks)
+    restricted = support.restricted(_T7, _defined(3))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)
+    np.testing.assert_array_equal(restricted.sample_valid, _defined(3))
+    assert restricted.run_ids[3] == -1
+
+
+@pytest.mark.parametrize(
+    ("missing", "expected"),
+    [
+        # Gap [0.3, 0.5) lies inside the epoch [0.3, 0.6): bridged.
+        (4, [True, True, False, True, True, True]),
+        # Gap [0.1, 0.3) crosses the epoch edge at 0.2: excluded.
+        (2, [True, False, False, True, True, True]),
+    ],
+    ids=["inside-epoch", "across-epoch-edge"],
+)
+def test_restricted_gap_must_lie_inside_one_epoch(missing, expected):
+    support = _support(_T7, max_gap=0.5, epochs=[[0.0, 0.2], [0.3, 0.6]])
+    np.testing.assert_array_equal(
+        support.interval_mask, [True, True, False, True, True, True]
+    )
+    restricted = support.restricted(_T7, _defined(missing))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)
+
+
+@pytest.mark.parametrize(
+    ("max_gap", "expected"),
+    [
+        (0.35, [True, True, True, True, True, True]),  # 0.3 s gap bridged
+        (0.25, [True, True, False, False, False, True]),  # 0.3 s gap is a loss
+    ],
+)
+def test_restricted_gap_is_gated_by_max_gap(max_gap, expected):
+    """Samples 3 and 4 undefined: the gap from sample 2 to 5 lasts 0.3 s."""
+    support = _support(_T7, max_gap=max_gap)
+    assert support.interval_mask.all()
+    restricted = support.restricted(_T7, _defined(3, 4))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)

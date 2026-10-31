@@ -33,6 +33,10 @@ inside the environment between bin centers) instead of the bin graph.
 region's edge began to belong to the region only where a nudge north-east
 moves it inside: the column of centers at x = 10 lies on the source box's east
 edge, so it left the source and the run departs one sample (0.1 s) earlier.
+``compute_pre_decision_metrics`` and ``compute_vte_trial`` were captured
+again when velocity smoothing began to weight samples by their time
+difference and to renormalize the window at the ends of a run: the window's
+mean speed moved from 42.188 to 42.198 cm/s.
 """
 
 import json
@@ -67,6 +71,14 @@ def gap_free_goldens():
     return goldens
 
 
+# A metric that is a difference of order-one quantities, such as a circular
+# variance 1 - R with R near 1, carries an absolute rounding error near machine
+# epsilon, and platforms' vectorized math (np.exp, summation order) differ in
+# the last bit; a relative tolerance alone cannot hold such a value. This floor
+# matters only for values below about 1e-3.
+_ROUNDING_FLOOR = 1e-15
+
+
 def assert_snapshot_equal(actual, expected):
     """Check structure exactly; allow only numerical rounding in float metrics."""
     if isinstance(expected, dict):
@@ -79,7 +91,7 @@ def assert_snapshot_equal(actual, expected):
                     actual["values"],
                     expected["values"],
                     rtol=1e-12,
-                    atol=0,
+                    atol=_ROUNDING_FLOOR,
                     equal_nan=True,
                 )
             else:
@@ -92,7 +104,9 @@ def assert_snapshot_equal(actual, expected):
         for a, b in zip(actual, expected, strict=True):
             assert_snapshot_equal(a, b)
     elif isinstance(expected, float):
-        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0, equal_nan=True)
+        np.testing.assert_allclose(
+            actual, expected, rtol=1e-12, atol=_ROUNDING_FLOOR, equal_nan=True
+        )
     else:
         assert actual == expected
 

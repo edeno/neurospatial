@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 # Every accepted spelling of a length unit, mapped to its canonical name.
+# Micrometers are written with the micro sign (U+00B5) or the Greek small mu
+# (U+03BC); the two look identical, so both are listed.
 _UNIT_SPELLINGS = {
     **dict.fromkeys(["m", "meter", "meters", "metre", "metres"], "m"),
     **dict.fromkeys(
@@ -24,7 +26,16 @@ _UNIT_SPELLINGS = {
         ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], "mm"
     ),
     **dict.fromkeys(
-        ["um", "µm", "micrometer", "micrometers", "micrometre", "micrometres"], "um"
+        [
+            "um",
+            "\u00b5m",
+            "\u03bcm",
+            "micrometer",
+            "micrometers",
+            "micrometre",
+            "micrometres",
+        ],
+        "um",
     ),
     **dict.fromkeys(["px", "pixel", "pixels"], "px"),
 }
@@ -44,8 +55,8 @@ def units_per_centimeter(units: str | None) -> float | None:
     Returns
     -------
     float or None
-        For example 100.0 for ``"mm"`` and 0.01 for ``"m"``; None for pixels,
-        custom units and unset units.
+        For example 0.01 for ``"m"``, 10.0 for ``"mm"`` and 10000.0 for
+        ``"um"``; None for pixels, custom units and unset units.
     """
     centimeters = _CENTIMETERS_PER_UNIT.get(normalize_position_units(str(units or "")))
     return None if centimeters is None else 1.0 / centimeters

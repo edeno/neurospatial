@@ -47,7 +47,7 @@ from neurospatial._results import (
     _copy_unit_table,
     align_unit_table,
     read_only_copy,
-    resolve_unit_ids,
+    resolve_record_unit_ids,
 )
 from neurospatial._spikes import (
     _coerce_spike_input,
@@ -176,26 +176,16 @@ class SpikeTrains(UnitSelectionMixin):
         # raises, keeping the ``len(unit_ids) == len(trains)`` invariant intact.
         object.__setattr__(self, "trains", tuple(coerced))
 
-        n_units = len(coerced)
-        if self.unit_ids is None and group_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
-        resolved = resolve_unit_ids(
-            self.unit_ids, n_units, context="SpikeTrains", input_ids=group_ids
+        resolve_record_unit_ids(
+            self, len(coerced), context="SpikeTrains", input_ids=group_ids
         )
-        require_finite_spike_times(coerced, resolved)
-        object.__setattr__(self, "unit_ids", resolved)
+        require_finite_spike_times(coerced, self.unit_ids)
 
         object.__setattr__(
             self,
             "unit_table",
             align_unit_table(self.unit_table, self.unit_ids, context="SpikeTrains"),
         )
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        super().__setstate__(state)
-        for train in self.trains:
-            train.flags.writeable = False
 
     @property
     def index(self) -> NDArray[Any]:

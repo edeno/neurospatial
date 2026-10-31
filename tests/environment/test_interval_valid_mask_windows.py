@@ -27,9 +27,14 @@ from neurospatial._intervals import (
         ({}, [True, True, True]),
     ],
 )
-def test_interval_valid_mask_windows(kwargs, expected):
-    times = np.array([0.0, 0.5, 1.0, 1.5])
-    np.testing.assert_array_equal(interval_valid_mask(times, **kwargs), expected)
+@pytest.mark.parametrize("offset", [0.0, 1.7e9])  # session start or Unix clock
+def test_interval_valid_mask_windows(kwargs, expected, offset):
+    times = offset + np.array([0.0, 0.5, 1.0, 1.5])
+    shifted = {
+        key: value + offset if key in ("epochs", "spike_window") else value
+        for key, value in kwargs.items()
+    }
+    np.testing.assert_array_equal(interval_valid_mask(times, **shifted), expected)
 
 
 def test_min_speed_without_speed_is_refused():
@@ -60,9 +65,10 @@ def test_inclusive_gap_contract():
     )
 
 
+@pytest.mark.parametrize("offset", [0.0, 1.7e9])
 @pytest.mark.parametrize("rate", [30.0, 1000.0, 29.97])
-def test_max_gap_at_the_sampling_interval_warns_about_rounding(rate):
-    times = np.arange(10_000) / rate
+def test_max_gap_at_the_sampling_interval_warns_about_rounding(rate, offset):
+    times = offset + np.arange(10_000) / rate
     mask = interval_valid_mask(times, max_gap=1 / rate)
     assert 0 < np.count_nonzero(~mask) < mask.size  # rounding drops a share
     with pytest.warns(UserWarning, match="only by float rounding") as record:
@@ -70,8 +76,9 @@ def test_max_gap_at_the_sampling_interval_warns_about_rounding(rate):
     assert "not in seconds" not in str(record[0].message)
 
 
-def test_max_gap_above_the_sampling_interval_is_silent(recwarn):
-    times = np.arange(10_000) / 30.0
+@pytest.mark.parametrize("offset", [0.0, 1.7e9])
+def test_max_gap_above_the_sampling_interval_is_silent(recwarn, offset):
+    times = offset + np.arange(10_000) / 30.0
     mask = interval_valid_mask(times, max_gap=1.5 / 30.0)
     assert mask.all()
     warn_excluded_intervals(times, mask, max_gap=1.5 / 30.0)

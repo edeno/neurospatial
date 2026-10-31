@@ -33,7 +33,6 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     TimeSupport,
     fill_missing_positions,
-    gap_endpoints,
     hold_last_valid,
     interval_valid_mask,
     resolve_time_windows,
@@ -792,26 +791,20 @@ def _spatial_interval_mask(
 
     sample_bins = env.bin_at(positions)
     valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
-    mask = interval_valid_mask(
+    return interval_valid_mask(
         times,
-        positions,
-        env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
         start_bin=sample_bins,
+        # Complete-case rule, shared with env.occupancy: a gap counts only
+        # when both of its samples are inside the environment.
+        require_end_bin=True,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
         sample_valid=valid,
     )
-    # A missing (NaN) sample is bridged like a deleted row: the gap runs
-    # between the valid samples on either side. Complete-case rule: a gap
-    # counts only when both of those samples are inside the environment; one
-    # that ends outside is left out of the spike counts and the occupancy
-    # alike, rather than imputing where the animal was.
-    _, end, _ = gap_endpoints(valid)
-    return mask & (sample_bins[end] >= 0)
 
 
 def _resolve_spatial_time_support(

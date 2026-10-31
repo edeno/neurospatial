@@ -582,3 +582,134 @@ class TestSpikeInputBoundaries:
 
         with pytest.raises(ValueError, match="finite t_start and t_stop"):
             bin_spikes_in_time([np.array([0.05])], dt=0.25, t_stop=np.inf)
+
+
+class TestRastersAndZeroPadding:
+    """Raster values and zero padding must never be read as spike times."""
+
+    @pytest.mark.parametrize(
+        "spikes",
+        [
+            np.array([False, False, True, False, True]),
+            [True, False, True],
+            np.array([[False, True, False], [True, False, False]]),
+            {"u1": np.array([False, True, True])},
+            np.array([0, 0, 1, 0, 1]),
+            [0, 1, 1, 0],
+            [np.array([0.1, 0.5]), np.array([0, 1, 0])],
+            np.array([[0, 1, 0], [1, 0, 0]]),
+            np.array([0.0, 1.0, 1.0, 0.0]),
+        ],
+        ids=[
+            "bool 1-D",
+            "list of bools",
+            "bool 2-D",
+            "bool dict",
+            "int 1-D",
+            "list of ints",
+            "int in list of trains",
+            "int 2-D",
+            "float 0/1",
+        ],
+    )
+    def test_spike_raster_is_refused(self, spikes: object) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        with pytest.raises(
+            ValueError, match=r"(?s)spike raster.*times\[raster\.astype\(bool\)\]"
+        ):
+            as_spike_trains(spikes)
+
+    @pytest.mark.parametrize(
+        ("spikes", "expected"),
+        [
+            (np.array([0, 1]), [0.0, 1.0]),
+            (np.array([1]), [1.0]),
+            (np.array([0, 1, 2, 5]), [0.0, 1.0, 2.0, 5.0]),
+            (np.array([0.0, 0.0, 0.5]), [0.0, 0.0, 0.5]),
+        ],
+        ids=["distinct 0 and 1", "one spike", "integer seconds", "repeat at 0"],
+    )
+    def test_spike_times_near_zero_and_one_are_kept(
+        self, spikes: NDArray[np.float64], expected: list[float]
+    ) -> None:
+        """Only a train of 0s and 1s that repeats a value reads as a raster."""
+        from neurospatial._spikes import as_spike_trains
+
+        np.testing.assert_array_equal(as_spike_trains(spikes)[0], expected)
+
+    def test_zero_padded_rows_are_refused(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        padded = np.array([[10.0, 20.0, 0.0, 0.0], [5.0, 6.0, 7.0, 8.0]])
+        with pytest.raises(ValueError, match=r"(?s)row\(s\) \[0\] decrease.*zeros"):
+            as_spike_trains(padded)
+
+    def test_unsorted_list_of_trains_is_kept(self) -> None:
+        """Order within a train does not change counts, so lists need no sort."""
+        from neurospatial._spikes import as_spike_trains
+
+        (train,) = as_spike_trains([np.array([0.5, 0.1, 0.3])])
+        np.testing.assert_array_equal(train, [0.5, 0.1, 0.3])
+
+    def test_decoding_counts_refuse_raster_and_zero_padding(self) -> None:
+        from neurospatial.decoding import bin_spikes_in_time
+
+        raster = np.zeros(10, dtype=bool)
+        raster[[3, 7]] = True
+        with pytest.raises(ValueError, match="spike raster"):
+            bin_spikes_in_time([raster], dt=0.5, t_start=0.0, t_stop=5.0)
+        padded = np.array([[10.0, 20.0, 0.0, 0.0], [5.0, 6.0, 7.0, 8.0]])
+        with pytest.raises(ValueError, match="decrease"):
+            bin_spikes_in_time(padded, dt=1.0, t_start=0.0, t_stop=30.0)
+
+
+class TestLabelledSpikeContainers:
+    """Containers that carry unit ids keep them, whatever the id type."""
+
+    def test_series_of_trains_is_a_group_keyed_by_index(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        # As from units.to_dataframe()["spike_times"] or
+        # df.groupby("unit")["time"].apply(np.array).
+        series = pd.Series(
+            [np.array([0.1, 0.2]), np.array([0.3])], index=[7, 9], name="spike_times"
+        )
+        trains, ids, supplied = as_labelled_spike_trains(series, None, context="demo")
+        assert ids.tolist() == [7, 9]
+        assert supplied
+        np.testing.assert_array_equal(trains[0], [0.1, 0.2])
+        np.testing.assert_array_equal(trains[1], [0.3])
+
+    def test_groupby_long_table_round_trips(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        table = pd.DataFrame(
+            {"unit": ["b", "a", "b", "a", "a"], "time": [0.4, 0.1, 0.5, 0.2, 0.3]}
+        )
+        series = table.groupby("unit")["time"].apply(np.array)
+        trains, ids, _ = as_labelled_spike_trains(series, None, context="demo")
+        assert ids.tolist() == ["a", "b"]
+        np.testing.assert_array_equal(trains[0], [0.1, 0.2, 0.3])
+        np.testing.assert_array_equal(trains[1], [0.4, 0.5])
+
+    def test_tuple_unit_ids_stay_one_label_per_unit(self) -> None:
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        trains, ids, supplied = as_labelled_spike_trains(
+            {(1, 3): [0.1], (2, 5): [0.2, 0.3]}, None, context="demo"
+        )
+        assert ids.shape == (2,)
+        assert ids.tolist() == [(1, 3), (2, 5)]
+        assert supplied
+        np.testing.assert_array_equal(trains[1], [0.2, 0.3])
+
+    def test_tuple_unit_ids_can_be_passed_explicitly(self) -> None:
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        _, ids, _ = as_labelled_spike_trains(
+            [[0.1], [0.2, 0.3]], [(1, 3), (2, 5)], context="demo"
+        )
+        assert ids.tolist() == [(1, 3), (2, 5)]

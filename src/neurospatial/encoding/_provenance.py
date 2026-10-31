@@ -29,7 +29,7 @@ def rate_analysis_settings(
 ) -> dict[str, Any]:
     """Record resolved choices without retaining the input recording arrays."""
     return {
-        **support.analysis_settings(),
+        **support.temporal_settings(),
         "min_speed": None if min_speed is None else float(min_speed),
         "speed_source": None
         if min_speed is None

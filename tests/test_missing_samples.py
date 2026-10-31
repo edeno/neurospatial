@@ -61,9 +61,25 @@ def _with_nan(values, lost):
     return values
 
 
+# Rows also lost at the start and end of the recording, where no valid sample
+# bounds the gap on one side.
+LOST_ENDS = {"interior": [], "start": [0, 1, 2], "end": [-3, -2, -1]}
+LOST_ENDS["both"] = LOST_ENDS["start"] + LOST_ENDS["end"]
+
+
+def _lose_ends(lost, ends):
+    lost = lost.copy()
+    lost[LOST_ENDS[ends]] = True
+    return lost
+
+
+@pytest.mark.parametrize("ends", sorted(LOST_ENDS))
 @pytest.mark.parametrize("time_allocation", ["start", "linear"])
-def test_occupancy_with_nan_rows_equals_deleted_rows(env, tracking, time_allocation):
+def test_occupancy_with_nan_rows_equals_deleted_rows(
+    env, tracking, time_allocation, ends
+):
     times, positions, _, _, lost = tracking
+    lost = _lose_ends(lost, ends)
     kept = ~lost
     with_nan = env.occupancy(
         times, _with_nan(positions, lost), time_allocation=time_allocation
@@ -72,12 +88,16 @@ def test_occupancy_with_nan_rows_equals_deleted_rows(env, tracking, time_allocat
         times[kept], positions[kept], time_allocation=time_allocation
     )
     np.testing.assert_allclose(with_nan, deleted, rtol=0, atol=1e-12)
-    # Every gap is shorter than max_gap, so no tracked time is lost.
-    np.testing.assert_allclose(with_nan.sum(), times[-1] - times[0], rtol=1e-12)
+    # Every gap is shorter than max_gap, so the time from the first to the
+    # last valid sample is kept, and nothing outside it.
+    observed = times[kept]
+    np.testing.assert_allclose(with_nan.sum(), observed[-1] - observed[0], rtol=1e-12)
 
 
-def test_spatial_rate_with_nan_rows_equals_deleted_rows(env, tracking):
+@pytest.mark.parametrize("ends", sorted(LOST_ENDS))
+def test_spatial_rate_with_nan_rows_equals_deleted_rows(env, tracking, ends):
     times, positions, _, spikes, lost = tracking
+    lost = _lose_ends(lost, ends)
     kept = ~lost
     with_nan = compute_spatial_rate(
         env, spikes, times, _with_nan(positions, lost), method="binned"
@@ -95,8 +115,10 @@ def test_spatial_rate_with_nan_rows_equals_deleted_rows(env, tracking):
     )
 
 
-def test_directional_rate_with_nan_headings_equals_deleted_rows(tracking):
+@pytest.mark.parametrize("ends", sorted(LOST_ENDS))
+def test_directional_rate_with_nan_headings_equals_deleted_rows(tracking, ends):
     times, _, headings, spikes, lost = tracking
+    lost = _lose_ends(lost, ends)
     kept = ~lost
     with_nan = compute_directional_rate(spikes, times, _with_nan(headings, lost))
     deleted = compute_directional_rate(spikes, times[kept], headings[kept])
@@ -104,8 +126,10 @@ def test_directional_rate_with_nan_headings_equals_deleted_rows(tracking):
     np.testing.assert_allclose(with_nan.firing_rate, deleted.firing_rate, rtol=1e-12)
 
 
-def test_speed_and_running_bouts_with_nan_rows_equal_deleted_rows(tracking):
+@pytest.mark.parametrize("ends", sorted(LOST_ENDS))
+def test_speed_and_running_bouts_with_nan_rows_equal_deleted_rows(tracking, ends):
     times, positions, _, _, lost = tracking
+    lost = _lose_ends(lost, ends)
     kept = ~lost
     with_nan = _with_nan(positions, lost)
     speed = compute_speed(times, with_nan)
@@ -217,3 +241,59 @@ def test_decoding_skips_lost_tracking_like_deleted_rows(env, tracking, summary):
         np.testing.assert_allclose(missing.map_position, deleted.map_position)
     else:
         np.testing.assert_allclose(missing.posterior, deleted.posterior, atol=1e-12)
+
+
+def test_break_declared_on_a_missing_row_splits_like_on_the_next_kept_row(env):
+    """A break flagged at a NaN row still separates the two recordings.
+
+    Rows 100-102 are lost and the new recording is flagged at row 101. The
+    result equals that of the recording with those rows deleted and the break
+    on the first kept row, and differs from the same rows without a break.
+    """
+    from shapely.geometry import box
+
+    from neurospatial.behavior import detect_region_visits
+    from neurospatial.regions import Regions
+
+    builder = Regions(env.regions.values())
+    builder.add("east", polygon=box(78, 30, 100, 70))
+    region_env = env.with_regions(builder)
+    times = np.arange(200) / 10
+    positions = np.column_stack(
+        [50 + 40 * np.sin(2 * np.pi * times / 8), np.full(200, 50.0)]
+    )
+    lost = np.arange(100, 103)
+    with_nan = _with_nan(positions, lost)
+    breaks = np.zeros(200, dtype=bool)
+    breaks[101] = True
+    kept = np.setdiff1d(np.arange(200), lost)
+    deleted_breaks = np.zeros(kept.size, dtype=bool)
+    deleted_breaks[100] = True  # original row 103, the first kept row after
+
+    def analyses(t, p, break_before):
+        visits = detect_region_visits(
+            region_env.bin_at(p),
+            t,
+            region_env,
+            region_names=["east"],
+            break_before=break_before,
+        )
+        return (
+            region_env.occupancy(t, p, break_before=break_before),
+            region_env.transitions(
+                times=t, positions=p, break_before=break_before, normalize=False
+            ).toarray(),
+            [(v.start_time, v.end_time, v.run_id) for v in visits],
+        )
+
+    flagged = analyses(times, with_nan, breaks)
+    deleted = analyses(times[kept], positions[kept], deleted_breaks)
+    unbroken = analyses(times, with_nan, None)
+    np.testing.assert_allclose(flagged[0], deleted[0], rtol=0, atol=1e-12)
+    np.testing.assert_array_equal(flagged[1], deleted[1])
+    assert flagged[2] == deleted[2]
+    # The animal is in "east" across the lost rows (t = 10 s), so the break
+    # removes the 0.4 s gap's time and transition and splits that visit.
+    assert flagged[0].sum() == pytest.approx(unbroken[0].sum() - 0.4)
+    assert flagged[1].sum() == unbroken[1].sum() - 1
+    assert len(flagged[2]) == len(unbroken[2]) + 1

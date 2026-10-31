@@ -196,7 +196,13 @@ def annotate_video(
         If ``project_path`` exists and ``overwrite`` is False. Resume it with
         :func:`annotate_project` instead.
     FileNotFoundError
-        If the folder for ``project_path`` does not exist.
+        If the folder for ``project_path`` or the video file does not exist.
+    IndexError
+        If ``frame_index`` is outside the video's frames.
+    OSError
+        If OpenCV cannot decode the frame at ``frame_index`` (a corrupt
+        frame, a missing codec, or a frame count the container overstates);
+        re-encoding the video usually fixes it.
     RuntimeError
         If the drawn annotations cannot be saved, for example multiple
         environment boundaries with ``multiple_boundaries="error"``, and the
@@ -780,6 +786,8 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
         If video file does not exist.
     IndexError
         If frame_index is out of range.
+    OSError
+        If OpenCV cannot decode the frame although it is in range.
 
     """
     if not video_path.exists():
@@ -790,16 +798,17 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
     # Use the reader as a context manager so its resources (e.g. the prefetch
     # thread pool) are always released, even when frame_index is out of range.
     with _VideoReader(str(video_path)) as reader:
-        try:
-            return reader[frame_index]
-        except (IndexError, KeyError) as e:
+        # Check the range here: a frame inside it that fails to decode raises
+        # the reader's own OSError, which is not an indexing mistake.
+        if not 0 <= frame_index < reader.n_frames:
             raise IndexError(
                 f"frame_index={frame_index} is out of range. "
                 f"Video '{video_path.name}' contains {reader.n_frames} frames "
                 f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
                 f"frame_index specifies which video frame to use for annotation "
                 "(0 = first frame).",
-            ) from e
+            )
+        return reader[frame_index]
 
 
 def _process_initial_boundary(

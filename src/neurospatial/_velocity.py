@@ -1,17 +1,23 @@
 """One definition of velocity and speed for every speed gate in the package.
 
-Differencing raw positions turns tracking jitter into speed: 0.5 cm of camera
-noise reads as about 20 cm/s at 30 Hz and 200 cm/s at 500 Hz. The velocity
-vector is therefore smoothed with a Gaussian of ``smooth_window`` seconds
-before its magnitude is taken, as in non_local_detector's ``get_velocity`` and
-spyglass's position processing (whose speed smoothing default is 0.1 s).
+Differencing raw positions turns tracking jitter into speed: a still animal
+tracked with 0.5 cm of camera noise per coordinate reads as a mean speed of
+about 13 cm/s at 30 Hz and 220 cm/s at 500 Hz (centered secant). The velocity
+vector is therefore smoothed in time with a Gaussian of ``smooth_window``
+seconds before its magnitude is taken, as in non_local_detector's
+``get_velocity`` and spyglass's position processing (whose speed smoothing
+default is 0.1 s); after the default 0.1 s the same jitter reads as about
+1.3 cm/s at 30 Hz and 0.3 cm/s at 500 Hz.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d
+
+from neurospatial._exceptions import _format_error
 
 #: Gaussian standard deviation (seconds) of the default velocity smoothing.
 DEFAULT_SPEED_SMOOTHING = 0.1
@@ -40,8 +46,12 @@ def smoothed_velocity(
         side. Zero-duration intervals end a run, so it never spans a
         duplicate timestamp.
     smooth_window : float
-        Standard deviation, in seconds, of the Gaussian applied to each
-        velocity component. 0 keeps the unsmoothed centered-secant velocity.
+        Standard deviation, in seconds, of the Gaussian that averages each
+        velocity component over time within the run
+        (:func:`smooth_run_in_time`): samples are weighted by their time
+        difference, so the window stays ``smooth_window`` seconds wide across
+        irregular sampling and bridged gaps. 0 keeps the unsmoothed
+        centered-secant velocity.
 
     Returns
     -------
@@ -51,9 +61,22 @@ def smoothed_velocity(
     """
     from neurospatial._intervals import run_sample_bounds
 
-    if smooth_window < 0 or not np.isfinite(smooth_window):
+    if (
+        isinstance(smooth_window, (bool, np.bool_))
+        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
+        or not np.isfinite(smooth_window)
+        or smooth_window < 0
+    ):
         raise ValueError(
-            f"smooth_window must be a finite number of seconds >= 0, got {smooth_window}."
+            _format_error(
+                "smooth_window must be a finite number of seconds >= 0; got "
+                f"{smooth_window!r}.",
+                why="smooth_window is the standard deviation, in seconds, of "
+                "the Gaussian that averages the velocity over time.",
+                fix="pass smooth_window=0.0 for the unsmoothed velocity, or a "
+                "number of seconds such as the default "
+                f"smooth_window={DEFAULT_SPEED_SMOOTHING}.",
+            )
         )
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -71,12 +94,137 @@ def smoothed_velocity(
         run_times = times[run]
         run_velocity = _secant_velocity(run_times, positions[run])
         if smooth_window > 0:
-            sigma = smooth_window / float(np.median(np.diff(run_times)))
-            run_velocity = gaussian_filter1d(
-                run_velocity, sigma, axis=0, mode="nearest"
-            )
+            run_velocity = smooth_run_in_time(run_velocity, run_times, smooth_window)
         velocity[run] = run_velocity
     return velocity
+
+
+def gaussian_pair_weights(
+    times: NDArray[np.float64], sigma: float
+) -> Iterator[tuple[int, NDArray[np.float64]]]:
+    """Gaussian weights of every pair of samples within four standard deviations.
+
+    Weighting pairs by their time difference, not by how many samples lie
+    between them, keeps a smoothing window ``sigma`` seconds wide across
+    irregular sampling and bridged gaps of missing samples. A pair exactly
+    ``4 * sigma`` apart, as at 30 Hz with ``sigma = 0.1``, is kept whatever
+    the rounding of its timestamps, so the window stays symmetric and the
+    result does not depend on the clock's offset.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing, in seconds.
+    sigma : float
+        Positive standard deviation in seconds.
+
+    Yields
+    ------
+    lag : int
+        Sample lag ``k``, from 1 up to the widest lag of any pair at most
+        ``4 * sigma`` apart.
+    weight : NDArray[np.float64], shape (n_samples - lag,)
+        ``exp(-dt**2 / (2 * sigma**2))`` of the pair ``(i, i + lag)``, where
+        ``dt = times[i + lag] - times[i]``; 0 for pairs more than
+        ``4 * sigma`` apart.
+    """
+    # Each difference is exact to a few ulp of the timestamps' magnitude.
+    rounding = 8.0 * np.spacing(max(abs(times[0]), abs(times[-1])))
+    reach = 4.0 * sigma + rounding
+    # The widest reach of any sample, forward or backward, bounds the lags.
+    index = np.arange(times.size)
+    lo = np.searchsorted(times, times - reach, side="left")
+    hi = np.searchsorted(times, times + reach, side="right")
+    widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
+    for lag in range(1, widest + 1):
+        weight = times[lag:] - times[:-lag]
+        far = weight > reach
+        # In place: exp(-0.5 * (dt / sigma) ** 2), the costly step of smoothing.
+        weight /= sigma
+        np.square(weight, out=weight)
+        weight *= -0.5
+        np.exp(weight, out=weight)
+        weight[far] = 0.0
+        yield lag, weight
+
+
+def smooth_in_time(
+    values: NDArray[np.float64],
+    times: NDArray[np.float64],
+    run_bounds: NDArray[np.intp],
+    sigma: float,
+) -> NDArray[np.float64]:
+    """Gaussian-weighted mean in time of the finite rows of each run.
+
+    Runs are smoothed independently (:func:`smooth_run_in_time`).
+
+    Parameters
+    ----------
+    values : NDArray[np.float64], shape (n_samples,) or (n_samples, n_dims)
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing within each run, in seconds.
+    run_bounds : NDArray[np.intp], shape (n_runs, 2)
+        Inclusive first and last sample of each run.
+    sigma : float
+        Positive standard deviation in seconds.
+
+    Returns
+    -------
+    NDArray[np.float64], same shape as ``values``
+        NaN at non-finite rows and outside every run.
+    """
+    smoothed = np.full(values.shape, np.nan)
+    for first, last in run_bounds:
+        run = slice(first, last + 1)
+        smoothed[run] = smooth_run_in_time(values[run], times[run], sigma)
+    return smoothed
+
+
+def smooth_run_in_time(
+    values: NDArray[np.float64], times: NDArray[np.float64], sigma: float
+) -> NDArray[np.float64]:
+    """Gaussian-weighted mean in time of the finite rows of one run.
+
+    Each finite row becomes the mean of the finite rows, weighted by a
+    Gaussian of their time difference (standard deviation ``sigma`` seconds,
+    cut at four standard deviations; :func:`gaussian_pair_weights`). Rows
+    with a non-finite entry get no weight and stay NaN. Near the ends of the
+    run, and next to a bridged gap, the window holds fewer samples and the
+    weights are renormalized, so a constant stays constant; this one-sided
+    mean lags a changing value by up to ``sigma * sqrt(2 / pi)`` (about
+    ``0.8 * sigma``) seconds at the first and last samples.
+
+    Parameters
+    ----------
+    values : NDArray[np.float64], shape (n_samples,) or (n_samples, n_dims)
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing, in seconds.
+    sigma : float
+        Positive standard deviation in seconds.
+
+    Returns
+    -------
+    NDArray[np.float64], same shape as ``values``
+    """
+    table = values.reshape(values.shape[0], -1)
+    smoothed = np.full(table.shape, np.nan)
+    defined = np.all(np.isfinite(table), axis=1)
+    if defined.any():
+        # One row per column plus the weight row, contiguous in time.
+        weighted = np.vstack([np.where(defined[:, None], table, 0.0).T, defined])
+        sums = weighted.copy()
+        product = np.empty(table.shape[0])
+        # Each pair (i, i + k) within reach adds to both samples.
+        for k, w in gaussian_pair_weights(times, sigma):
+            buffer = product[: w.size]
+            for row, total in zip(weighted, sums, strict=True):
+                np.multiply(w, row[k:], out=buffer)
+                total[:-k] += buffer
+                np.multiply(w, row[:-k], out=buffer)
+                total[k:] += buffer
+        smoothed[defined] = (sums[:-1, defined] / sums[-1, defined]).T
+    result: NDArray[np.float64] = smoothed.reshape(values.shape)
+    return result
 
 
 def _secant_velocity(

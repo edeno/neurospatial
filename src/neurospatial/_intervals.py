@@ -16,7 +16,7 @@ import math
 import numbers
 import warnings
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -24,13 +24,6 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
-
-
-class _PositionBinLookup(Protocol):
-    """Map position samples to bin IDs for an optional interval-start gate."""
-
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
 
 _ACCEPTED_FORMS = (
     "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
@@ -112,8 +105,8 @@ class TimeSupport(ReadOnlyArraysMixin):
             break_sample_times(times, break_before),
         )
 
-    def analysis_settings(self) -> dict[str, Any]:
-        """Export independent, JSON-compatible temporal provenance."""
+    def temporal_settings(self) -> dict[str, Any]:
+        """The temporal part of a result's ``analysis_settings``, JSON-compatible."""
 
         def listed(array: NDArray[np.float64] | None) -> list[Any] | None:
             return None if array is None else array.tolist()
@@ -138,34 +131,41 @@ def validate_max_gap(max_gap: Any) -> float | None:
     ``max_gap`` is the longest stretch of missing tracking that is bridged:
     the time between two consecutive valid samples (a sample is missing when
     its row was dropped or its coordinates are NaN). A gap no longer than
-    ``max_gap`` is treated as observed, with its time held at the last valid
-    sample; a longer gap is excluded as a tracking loss. ``None`` bridges
-    every gap.
+    ``max_gap`` is treated as observed: its time goes to the last valid
+    sample, or, where an analysis allocates time along the path
+    (``time_allocation="linear"``), along the straight path to the next
+    valid sample. A longer gap is excluded as a tracking loss. ``None``
+    bridges every gap.
 
     Notes
     -----
-    The default, ``DEFAULT_MAX_GAP = 1.0`` s, is calibrated by simulation.
-    Scenarios: 15 min of running back and forth on a 200 cm linear track
-    (30-50 cm/s runs, 2-6 s pauses at the ends), tracked at 30, 60 and
-    120 Hz, with 1 % or 5 % isolated dropped frames, DeepLabCut-style
-    low-confidence NaN bursts (1-15 frames, about 3 % of frames, four times
-    as frequent during the pauses near the walls), three 2-5 s tracking
-    losses while running and one ~10 s pickup during a pause; 12 replicates
-    per scenario. ``max_gap`` was swept from 0.03 s to 10 s on a log grid,
-    and each value was scored on occupancy error against the true trajectory
-    (total variation and L1, 2 cm and 5 cm bins), the binned rate-map error
-    of a place cell, running-bout count and complete track traversals.
+    The default, ``DEFAULT_MAX_GAP = 1.0`` s, is calibrated by simulation
+    (``scripts/calibrate_max_gap.py``, about two minutes). Scenarios: about
+    15 min of running back and forth on a 200 cm linear track (30-50 cm/s
+    runs, 2-6 s pauses at the ends), tracked at 30, 60 and 120 Hz, with 1 %
+    or 5 % isolated dropped frames, DeepLabCut-style low-confidence NaN
+    bursts (1-15 frames, about 3 % of frames, four times as frequent during
+    the pauses at the ends), three 2-5 s tracking losses while running and a
+    10 s pickup during a pause; 12 replicates per scenario. ``max_gap`` is
+    swept from 0.03 s to 13 s on a log grid, and each value is scored
+    against the true trajectory on occupancy (total variation and L1, 2 cm
+    and 5 cm bins), the binned rate-map error of a place cell, and the
+    running-bout and complete-traversal counts.
 
-    Bout and traversal counts and the occupancy L1 error need ``max_gap``
-    longer than the longest routine low-confidence burst (15 frames at 30 Hz,
-    0.5 s), and every metric degrades once ``max_gap`` reaches the shortest
-    real loss (2 s). From 0.55 s to 2.0 s, 38 of the 42 scenario-metric pairs
-    stay within two Monte-Carlo standard errors of their best value; the
-    other four, occupancy total-variation errors, are within 26 % of their
-    best, because a bridged burst holds the last position while the animal
-    keeps running. 1.0 s is the round value nearest the geometric middle of
-    that plateau (1.05 s). 0.5 s lies just below it: at 30 Hz it splits
-    running bouts at the longest bursts.
+    Occupancy and bout counts need ``max_gap`` longer than the longest
+    routine low-confidence burst (15 frames at 30 Hz, 0.53 s): at 0.5 s the
+    bout-count error of 30 Hz recordings nearly doubles (1.0-1.2 against
+    0.6 bouts per session). Occupancy degrades once ``max_gap`` bridges the
+    real losses (2 s and longer), because a bridged gap's time goes to its
+    last valid sample while the animal keeps running. From 0.56 s to 2.0 s,
+    32 of the 42 scenario-metric pairs stay within two Monte-Carlo standard
+    errors of their best value, more than in any other range; the rate-map
+    error barely depends on ``max_gap``. The other ten are the six traversal
+    counts, three bout counts and one occupancy total variation (60 Hz, 2 cm
+    bins, 15 % above its best). Counts are best above 4 s, where the 2-5 s
+    losses are bridged and the runs they interrupt are whole again; at 1.0 s
+    each loss during a run costs about one traversal. 1.0 s is the round
+    value nearest the geometric middle of the 0.56-2.0 s range (1.06 s).
     """
     if max_gap is None:
         return None
@@ -602,13 +602,12 @@ def gap_endpoints(
 
 def interval_valid_mask(
     times: NDArray[np.float64],
-    positions: NDArray[np.float64] | None = None,
-    env: _PositionBinLookup | None = None,
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     start_bin: NDArray[np.intp] | None = None,
+    require_end_bin: bool = False,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
@@ -639,22 +638,29 @@ def interval_valid_mask(
         \\;\\wedge\\;
         (\\text{start\\_bin}_a \\ge 0)
         \\;\\wedge\\;
+        (\\neg\\,\\text{require\\_end\\_bin} \\text{ or } \\text{start\\_bin}_b \\ge 0)
+        \\;\\wedge\\;
         ([t_a, t_b) \\subseteq \\text{epochs})
         \\;\\wedge\\;
         ([t_a, t_b) \\subseteq \\text{spike\\_window})
         \\;\\wedge\\;
         \\neg\\,\\text{break\\_before}_{a+1..b}
 
-    where ``start_bin = env.bin_at(positions)``. A valid interval inside a
-    bridged gap belongs to the bin of sample ``a`` (:func:`hold_last_valid`),
-    so occupancy and spike counts equal those of the recording with the
-    missing rows deleted. Bounds are checked only when ``start_bin`` or
-    ``env`` is supplied. Window gates apply when given.
+    where ``start_bin`` is the bin of each sample (for example
+    ``env.bin_at(positions)``). Under the default ``time_allocation="start"``
+    a valid interval inside a bridged gap belongs to the bin of sample ``a``
+    (:func:`hold_last_valid`); under ``"linear"`` the gap's time is spread
+    along the straight path from ``a`` to ``b``
+    (:func:`fill_missing_positions`). Either way occupancy and spike counts
+    equal those of the recording with the missing rows deleted.
+    Bounds are checked only when ``start_bin`` is supplied. Window gates
+    apply when given.
 
     ``max_gap`` must sit above the sampling interval. Timestamps such as
     ``np.arange(n) / 30`` are not exact, so with ``max_gap`` equal to the
-    sampling interval about a quarter to a half of the intervals exceed it by
-    float rounding and are dropped. :func:`warn_excluded_intervals` names this
+    sampling interval a large fraction of the intervals (about a sixth to
+    a half, depending on frame rate and recording length) exceed it by float
+    rounding and are dropped. :func:`warn_excluded_intervals` names this
     case.
 
     Parameters
@@ -662,12 +668,6 @@ def interval_valid_mask(
     times : ndarray, shape (n_samples,)
         Trajectory timestamps in seconds (assumed sorted/finite; validated
         upstream).
-    positions : ndarray, shape (n_samples, n_dims), or None
-        Trajectory coordinates. Required with ``env`` unless ``start_bin``
-        has already been computed.
-    env : Environment or None
-        The spatial environment; ``env.bin_at`` maps each start sample to its
-        bin (``-1`` outside the active mask).
     speed : ndarray, shape (n_samples,), or None
         Per-sample speed, required with ``min_speed``; the gate uses the
         speed of each gap's start sample. Consumed as-is; never re-derived
@@ -680,10 +680,14 @@ def interval_valid_mask(
         ``None`` bridges every gap, on BOTH sides (spikes and occupancy) so
         they stay aligned.
     start_bin : ndarray of intp, shape (n_samples,), or None
-        Precomputed ``env.bin_at(positions)`` for the out-of-bounds-start
-        gate, so callers that already binned ``positions`` skip a second
-        ``bin_at``. It must come from the same ``positions``. When ``None``,
-        it is computed from ``env`` if given.
+        Bin of every sample (``-1`` outside the active bins), for the
+        out-of-bounds-start gate. ``None`` applies no bounds gate.
+    require_end_bin : bool, default=False
+        Also require each gap's end sample ``b`` to be in a bin: the
+        complete-case rule of spatial rate maps and ``env.occupancy``, where
+        the animal's place during an interval is known only when both of its
+        samples are inside the environment; one that ends outside is left
+        out rather than imputing where the animal was. Needs ``start_bin``.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept gap must lie wholly inside one row of each supplied
@@ -704,10 +708,15 @@ def interval_valid_mask(
     Raises
     ------
     ValueError
-        If ``max_gap`` is not None or a positive finite number, or if
-        ``min_speed`` is given without ``speed``.
+        If ``max_gap`` is not None or a positive finite number, if
+        ``min_speed`` is given without ``speed``, or if ``require_end_bin``
+        is set without ``start_bin``.
     """
     validate_max_gap(max_gap)
+    if require_end_bin and start_bin is None:
+        raise ValueError(
+            "require_end_bin=True needs start_bin, the bin of every sample."
+        )
     if min_speed is not None and speed is None:
         raise ValueError(
             _format_error(
@@ -741,13 +750,11 @@ def interval_valid_mask(
 
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
-    # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
-    # already computes bin_at(positions)); otherwise compute it here.
-    if start_bin is None and env is not None:
-        pos = np.asarray(positions, dtype=np.float64)
-        start_bin = env.bin_at(pos.reshape(-1, 1) if pos.ndim == 1 else pos)
     if start_bin is not None:
-        valid_mask &= np.asarray(start_bin)[start] >= 0
+        bins = np.asarray(start_bin)
+        valid_mask &= bins[start] >= 0
+        if require_end_bin:
+            valid_mask &= bins[end] >= 0
     for windows in (epochs, spike_window):
         if windows is not None:
             valid_mask &= intervals_contain(windows, t_start, t_end)
@@ -846,7 +853,9 @@ def fill_missing_positions(
     straight path between the bounding valid rows at its time, so the path
     is split exactly as the gap's single straight segment would be. Either
     way the result equals that of the recording with the missing rows
-    deleted. Rows before the first or after the last valid row stay NaN.
+    deleted. Rows before the first or after the last valid row stay NaN,
+    and so, under ``"linear"``, does a row whose bounding valid rows share
+    one timestamp.
 
     Parameters
     ----------
@@ -870,7 +879,11 @@ def fill_missing_positions(
     if time_allocation == "start":
         positions[missing] = positions[a]
     else:
-        weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
+        # A missing row between two samples at one instant (repeated
+        # timestamps) has weight 0/0 and stays NaN: its gap lasts no time,
+        # so it holds no time or spikes, and its NaN intervals are excluded.
+        with np.errstate(invalid="ignore"):
+            weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
         positions[missing] = (1 - weight) * positions[a] + weight * positions[b]
     return positions
 
@@ -986,7 +999,8 @@ def warn_excluded_intervals(
 
     - When every interval is excluded, the message names the active gates and
       how to fix each one, so an empty result is not mistaken for a
-      measurement.
+      measurement. When fewer than two samples are observed at all, it names
+      the missing samples instead, since no gate is to blame.
     - Otherwise, when most sampling intervals exceed ``max_gap``, they count
       as recording gaps. That usually means ``times`` are not in seconds (for
       example milliseconds), and the message says so.
@@ -1066,6 +1080,20 @@ def warn_excluded_intervals(
             )
         else:
             return
+        warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
+        return
+
+    if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
+        # No interval has an observed sample on each side: the missing samples
+        # leave nothing to gate, whatever the gates are.
+        n_observed = int(np.count_nonzero(sample_valid))
+        message = (
+            "Interval filtering excluded ALL trajectory intervals: only "
+            f"{n_observed} of {times.size} samples are observed, and an interval "
+            f"needs an observed sample on each side, so {result}. Fix: check "
+            "that the samples are finite, observed values (NaN marks a missing "
+            f"sample). {suppress_hint}"
+        )
         warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
         return
 

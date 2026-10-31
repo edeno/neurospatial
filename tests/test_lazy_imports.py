@@ -13,6 +13,7 @@ import sys
 from types import ModuleType
 
 import pytest
+from test_public_api_snapshot import NAMESPACES
 
 import neurospatial as ns
 
@@ -63,6 +64,21 @@ def test_lazy_submodule_access(name: str) -> None:
     submodule = getattr(ns, name)
     assert isinstance(submodule, ModuleType)
     assert submodule.__name__ == f"neurospatial.{name}"
+
+
+_PUBLIC_DOMAINS = tuple(
+    namespace.removeprefix("neurospatial.")
+    for namespace in NAMESPACES
+    if namespace.count(".") == 1
+)
+
+
+@pytest.mark.parametrize("name", _PUBLIC_DOMAINS)
+def test_every_public_domain_is_an_attribute_of_the_package(name: str) -> None:
+    """``import neurospatial; neurospatial.<domain>`` works for every public domain."""
+    assert name in ns.__all__
+    assert name in dir(ns)
+    assert getattr(ns, name).__name__ == f"neurospatial.{name}"
 
 
 def test_dir_lists_submodules() -> None:

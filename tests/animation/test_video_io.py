@@ -91,10 +91,8 @@ class TestVideoReaderBasics:
         reader = _VideoReader(tiny_video_path)
 
         assert reader.n_frames == 5
-        assert reader.fps == pytest.approx(10.0, rel=0.1)
         assert reader.frame_size_px == (8, 8)  # (width, height)
         assert reader.original_size_px == (8, 8)
-        assert reader.duration == pytest.approx(0.5, rel=0.1)  # 5 frames / 10 fps
 
     def test_reader_lazy_loading(self, tiny_video_path: Path):
         """Test that _VideoReader does not load frames until accessed."""
@@ -161,12 +159,24 @@ class TestVideoReaderCaching:
         _ = reader[3]
         assert reader.cache_info().currsize == 3
 
-        # Access frame 0 again (cache miss, re-read from disk)
+        # Frame 3 evicted frame 0, so reading it again is a miss too.
         _ = reader[0]
-        # Frame 1 should have been evicted
         info = reader.cache_info()
-        assert info.hits >= 0  # At least some hits from previous accesses
-        assert info.misses >= 5  # All initial accesses + evicted frame
+        assert info.hits == 0
+        assert info.misses == 5
+        _ = reader[0]
+        assert reader.cache_info().hits == 1
+
+    def test_cached_frame_is_read_only(self, tiny_video_path: Path):
+        """Editing a returned frame cannot change what the next read returns."""
+        reader = _VideoReader(tiny_video_path)
+        frame = reader[0]
+        expected = frame.copy()
+
+        with pytest.raises(ValueError, match="read-only"):
+            frame[:] = 255
+        np.testing.assert_array_equal(reader[0], expected)
+        assert reader.cache_info().hits == 1
 
     def test_reader_cache_size_parameter(self, tiny_video_path: Path):
         """Test that cache_size parameter is respected."""
@@ -200,7 +210,6 @@ class TestVideoReaderPickle:
 
         # Restored reader should work
         assert restored.n_frames == 5
-        assert restored.fps == pytest.approx(10.0, rel=0.1)
 
         # Cache should be empty after unpickling (dropped for pickle safety)
         assert restored.cache_info().currsize == 0
@@ -224,39 +233,6 @@ class TestVideoReaderPickle:
         # Settings should be preserved
         assert restored._downsample == 2
         assert restored._crop == (4, 4, 16, 16)
-
-
-class TestVideoReaderTimestamps:
-    """Test timestamp retrieval functionality."""
-
-    def test_reader_timestamps_length(self, tiny_video_path: Path):
-        """Test that get_timestamps returns correct number of timestamps."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        assert len(timestamps) == 5
-        assert timestamps.dtype == np.float64
-
-    def test_reader_timestamps_monotonic(self, tiny_video_path: Path):
-        """Test that timestamps are monotonically increasing."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        # Check monotonicity
-        assert np.all(np.diff(timestamps) > 0)
-
-    def test_reader_timestamps_spacing(self, tiny_video_path: Path):
-        """Test that timestamps have correct spacing based on fps."""
-        reader = _VideoReader(tiny_video_path)
-
-        timestamps = reader.get_timestamps()
-
-        # At 10 fps, frames should be 0.1s apart
-        expected_spacing = 1.0 / 10.0
-        actual_spacing = np.diff(timestamps)
-        assert np.allclose(actual_spacing, expected_spacing, rtol=0.1)
 
 
 class TestVideoReaderCropDownsample:
@@ -316,6 +292,59 @@ class TestVideoReaderErrorHandling:
 
         error_msg = str(exc_info.value)
         assert "crop" in error_msg.lower()
+
+    def test_reader_frame_that_cannot_be_decoded_raises_oserror(
+        self, tiny_video_path: Path, monkeypatch
+    ):
+        """An in-range frame OpenCV cannot decode is not reported as out of range."""
+        import cv2
+
+        real_capture = cv2.VideoCapture
+
+        class UndecodableCapture:
+            def __init__(self, path):
+                self._capture = real_capture(path)
+
+            def read(self):
+                return False, None
+
+            def __getattr__(self, name):
+                return getattr(self._capture, name)
+
+        monkeypatch.setattr(cv2, "VideoCapture", UndecodableCapture)
+        reader = _VideoReader(tiny_video_path)
+
+        with pytest.raises(OSError) as exc_info:
+            reader[2]
+        assert not isinstance(exc_info.value, IndexError)
+        message = str(exc_info.value)
+        assert "frame 2" in message
+        assert tiny_video_path.name in message
+        assert "reports 5 frames" in message
+        assert "Fix:" in message
+
+    @pytest.mark.parametrize(
+        "crop",
+        [
+            (0, 0, 16),
+            (0, 0, 16, 16, 1),
+            (-1, 0, 8, 8),
+            (0, 0, 0, 8),
+            (0, 0, 8, -2),
+            (0.5, 0, 8, 8),
+            (20, 0, 16, 8),
+        ],
+    )
+    def test_reader_malformed_crop_explains_the_expected_form(
+        self, larger_video_path: Path, crop
+    ):
+        """A malformed crop names the (x, y, width, height) form and the frame."""
+        with pytest.raises(ValueError) as exc_info:
+            _VideoReader(larger_video_path, crop=crop)
+        message = str(exc_info.value)
+        assert "crop must be (x, y, width, height)" in message
+        assert "32x32" in message
+        assert "Fix:" in message
 
     def test_reader_invalid_downsample_raises(self, larger_video_path: Path):
         """Test that invalid downsample raises ValueError."""

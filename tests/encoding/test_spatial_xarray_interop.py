@@ -360,13 +360,43 @@ def test_spatial_rates_to_xarray_without_xarray_raises(rates_result, monkeypatch
 
     def _fake_import(name, *args, **kwargs):
         if name == "xarray":
-            raise ImportError("No module named 'xarray'")
+            raise ModuleNotFoundError("No module named 'xarray'", name="xarray")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", _fake_import)
 
     with pytest.raises(ImportError, match="neurospatial\\[xarray\\]"):
         rates_result.to_xarray()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ImportError("cannot import name 'thing' from partially initialized module"),
+        ModuleNotFoundError("No module named 'numbagg'", name="numbagg"),
+    ],
+    ids=["broken-xarray", "missing-xarray-dependency"],
+)
+def test_broken_xarray_install_is_not_reported_as_missing(
+    rates_result, monkeypatch, error
+):
+    """An error inside an installed xarray reaches the caller unchanged.
+
+    Reporting it as "xarray is not installed" would send the scientist to
+    reinstall a package that is installed, hiding the real failure.
+    """
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "xarray":
+            raise error
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    with pytest.raises(ImportError) as excinfo:
+        rates_result.to_xarray()
+    assert excinfo.value is error
 
 
 def test_build_population_dataset_rejects_duplicate_unit_ids():

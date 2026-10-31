@@ -8,17 +8,17 @@ never shifted, rescaled, or aligned.
 The main function is `as_spike_trains()`, which accepts:
 
 - 1D array (single neuron) → wrapped in list
-- 2D array (n_neurons, max_spikes) with trailing NaN padding → split, padding
-  removed
+- 2D array (n_neurons, max_spikes), each row in time order with trailing NaN
+  padding → split, padding removed
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 - one unit's train (pynapple ``Ts``, pandas ``Series``) → wrapped in list
-- a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains) →
-  one train per unit
+- a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains, pandas
+  ``Series`` of per-unit arrays) → one train per unit
 
-Every spike time must be finite. This coercion happens at the entry point of encoding, decoding and peri-event
-functions, ensuring consistent internal handling regardless of how the user
-provides spike data.
+Every spike time must be finite. This coercion happens at the entry point of
+encoding, decoding and peri-event functions, ensuring consistent internal
+handling regardless of how the user provides spike data.
 """
 
 from __future__ import annotations
@@ -55,15 +55,17 @@ def as_spike_trains(
 
         - 1D array (single neuron) → wrapped in list
         - 2D array (n_neurons, max_spikes) → split along axis 0, trailing NaN
-          padding removed from each row
+          padding removed from each row; each row must be in time order, so
+          zero padding is refused rather than read as spikes at 0 s
         - List/tuple of scalars (single neuron) → converted to 1D array,
           wrapped in list (e.g., ``[0.1, 0.5, 1.2]``)
         - List/tuple of 1D arrays (canonical format) → each element converted
           to float64 array
         - One unit's train (pynapple ``Ts``/``Tsd``, pandas ``Series``) →
           its timestamps (``.t``) or values, wrapped in list
-        - A spike group (pynapple ``TsGroup``, ``SpikeTrains``, or a dict
-          mapping unit id to train) → one train per unit, in the group's order
+        - A spike group (pynapple ``TsGroup``, ``SpikeTrains``, a dict
+          mapping unit id to train, or a pandas ``Series`` of per-unit arrays
+          indexed by unit id) → one train per unit, in the group's order
 
     Returns
     -------
@@ -76,8 +78,11 @@ def as_spike_trains(
     ValueError
         If a spike time is NaN or infinite (other than trailing padding of a
         2D array), if the input is a ragged object array, a DataFrame, a
-        scalar or more than 2D, if a train is not 1D, or if a 2D array is a
-        ``(n, 1)`` column or has its units in columns.
+        scalar or more than 2D, if a train is not 1D, if a 2D array is a
+        ``(n, 1)`` column, has its units in columns or has a decreasing row
+        (zero padding), or if the input is a spike raster rather than spike
+        times (a train of only 0s and 1s that repeats a value, as a boolean
+        or 0/1 raster gives).
 
     Examples
     --------
@@ -132,6 +137,37 @@ _SPIKE_FORMS = (
 )
 
 
+def _refuse_spike_raster(arr: NDArray[np.float64], unit: int | None) -> None:
+    """Refuse a spike raster passed where spike times are expected.
+
+    A raster marks spikes per time sample (boolean, or 0/1 integers or
+    floats); its values are not times, and read as seconds they put every
+    spike at 0 s or 1 s. The test is on values, so it holds whatever the input
+    dtype was: a train (the last axis) whose values are all 0 or 1 and that
+    repeats a value is a raster, because one unit cannot fire twice at the
+    same instant. Distinct times such as ``[0, 1]`` or ``[0, 1, 2]`` are kept.
+    """
+    if not (
+        arr.ndim >= 1
+        and np.isin(arr, (0.0, 1.0)).all()
+        and np.any(np.diff(np.sort(arr, axis=-1), axis=-1) == 0)
+    ):
+        return
+    which = "spike_times" if unit is None else f"spike_times for unit {unit}"
+    raise ValueError(
+        _format_error(
+            f"{which} holds only 0s and 1s with repeats: a spike raster "
+            "(boolean or 0/1 per time sample), not spike times.",
+            why="Why: spike times are event times in seconds, and one unit "
+            "cannot fire twice at the same time; raster values read as times "
+            "would put every spike at 0 s or 1 s.",
+            fix="convert a raster sampled at times to spike times with "
+            "times[raster.astype(bool)], one array per unit (for a 2-D "
+            "raster: [times[row.astype(bool)] for row in raster]).",
+        )
+    )
+
+
 def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
     """Return one train as a 1-D float64 array.
 
@@ -148,6 +184,7 @@ def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
                 fix="pass one 1-D array of spike times per unit.",
             )
         )
+    _refuse_spike_raster(arr, unit)
     return arr
 
 
@@ -216,6 +253,7 @@ def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
 
 def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
     """Split a 2-D ``(n_units, max_spikes)`` array, removing trailing NaN."""
+    _refuse_spike_raster(arr, None)
     n_rows, n_cols = arr.shape
     if n_cols == 1 and n_rows > 1:
         raise ValueError(
@@ -242,6 +280,24 @@ def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
                 fix="if each column is one unit, pass spike_times.T.",
             )
         )
+    decreasing = np.flatnonzero((np.diff(arr, axis=1) < 0).any(axis=1))
+    if decreasing.size:
+        row = int(decreasing[0])
+        col = int(np.flatnonzero(np.diff(arr[row]) < 0)[0])
+        raise ValueError(
+            _format_error(
+                f"spike_times row(s) {decreasing[:5].tolist()} decrease, first "
+                f"in row {row}: {float(arr[row, col])!r} -> "
+                f"{float(arr[row, col + 1])!r} at column {col + 1}.",
+                why="Why: a 2-D array is read as one unit per row, its spike "
+                "times in time order with trailing NaN padding. A row that "
+                "drops, often to 0, is usually padded with zeros (common in "
+                "MATLAB exports), and the padding would count as spikes.",
+                fix="pad shorter rows with NaN instead of 0, or pass a list of "
+                "1-D arrays, one per unit (e.g. [row[row != 0] for row in "
+                "spike_times] if 0 only pads).",
+            )
+        )
     present = ~np.isnan(arr)
     interior = np.flatnonzero((~present[:, :-1] & present[:, 1:]).any(axis=1))
     if interior.size:
@@ -264,7 +320,10 @@ def _single_train(obj: Any) -> Any | None:
     A pynapple ``Ts``/``Tsd`` exposes its timestamps as ``.t``; a pandas
     ``Series`` holds them as values. Both have a non-callable ``.index``
     (timestamps or row labels), so they must be recognized before a spike
-    group, whose ``.index`` holds unit ids.
+    group, whose ``.index`` holds unit ids. A ``Series`` whose values are
+    arrays (``units.to_dataframe()["spike_times"]``,
+    ``df.groupby("unit")["time"].apply(np.array)``) holds one train per unit
+    keyed by its index, so it is a spike group, not one train.
     """
     if isinstance(obj, Mapping):
         return None
@@ -273,7 +332,10 @@ def _single_train(obj: Any) -> Any | None:
         if t is not None and np.ndim(t) == 1:
             return t
     if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
-        return obj.to_numpy()
+        values = obj.to_numpy()
+        if values.dtype == object and any(np.ndim(v) > 0 for v in values):
+            return None
+        return values
     return None
 
 

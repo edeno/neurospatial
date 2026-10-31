@@ -156,12 +156,6 @@ class ObservationSupport(ReadOnlyArraysMixin):
             break_before=self.break_before,
         )
 
-    @property
-    def isolated(self) -> NDArray[np.bool_]:
-        """Valid samples that touch no usable interval, shape (n_samples,)."""
-        isolated: NDArray[np.bool_] = self.sample_valid & (self.run_ids == -1)
-        return isolated
-
     def run_samples(self) -> list[NDArray[np.intp]]:
         """Indices of the valid samples of each run, in time order."""
         return [
@@ -262,7 +256,9 @@ def resolve_observation_support(
     times : ndarray, shape (n_samples,)
         Seconds; already validated and strictly increasing.
     positions : ndarray, shape (n_samples, n_dims)
-        Float coordinates; NaN or infinite entries mark a missing sample.
+        Float coordinates; NaN entries mark a missing sample. Infinite
+        entries are refused by the public entry points
+        (:func:`refuse_infinite`).
     max_gap, epochs
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
@@ -389,7 +385,8 @@ def sample_feature(
     interpolation : {"linear", "circular", "previous"}
         ``"linear"``: straight line between the bracketing samples.
         ``"circular"``: shorter arc in radians; an exact half-turn goes the
-        positive way. ``"previous"``: the value of the preceding sample.
+        positive way. ``"previous"``: the value of the last valid sample at
+        or before the query.
     kind : {"linear", "circular", "categorical"}
         The feature's value kind. Every sampled value of a circular feature is
         wrapped to ``(-pi, pi]``, whatever the interpolation.
@@ -570,7 +567,8 @@ def validated_observations(
     times : array-like, shape (n_samples,)
         Seconds; finite and strictly increasing.
     positions : array-like, shape (n_samples, n_dims) or (n_samples,)
-        Coordinates; NaN rows are missing samples.
+        Coordinates; NaN rows are missing samples. Infinite values are
+        refused.
     call : str
         Public function name, used in messages.
     max_gap, epochs, break_before
@@ -594,8 +592,9 @@ def validated_observations(
     ------
     ValueError
         If the inputs are malformed or empty (zero samples), if ``times``
-        are not strictly increasing, if ``max_gap`` or ``break_before`` is
-        invalid, or if ``positions`` lacks the ``columns``. One sample is
+        are not strictly increasing, if ``positions`` hold an infinite value,
+        if ``max_gap`` or ``break_before`` is invalid, or if ``positions``
+        lacks the ``columns``. One sample is
         valid input: it has a position but no observed interval.
     """
     t, p = validate_times_positions(times, positions, call=call)
@@ -606,6 +605,7 @@ def validated_observations(
         _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
         p = p[:, None]
+    refuse_infinite(p, name="positions", call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
     support = resolve_observation_support(
@@ -669,6 +669,51 @@ def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
                 "pass at least one sample; if the arrays came from an epoch or "
                 "trial selection, check that the selection kept any samples."
             ),
+        )
+    )
+
+
+def refuse_infinite(values: NDArray[np.float64], *, name: str, call: str) -> None:
+    """Refuse infinite entries; NaN is the only marker of a missing sample.
+
+    Parameters
+    ----------
+    values : ndarray of float64, shape (n_samples, n_columns)
+        Per-sample values such as positions or signals.
+    name : str
+        Argument name, used in the message.
+    call : str
+        Public function name, used in the message.
+
+    Raises
+    ------
+    ValueError
+        If any entry is infinite, naming how many and the first one.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> refuse_infinite(np.array([[0.0, np.nan]]), name="positions", call="f")
+    >>> refuse_infinite(np.array([[0.0, np.inf]]), name="positions", call="f")
+    Traceback (most recent call last):
+    ...
+    ValueError: f() got 1 infinite value(s) in positions, first at row 0, column 1 (inf).
+    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
+    Fix: correct the step that produced it, or mark those samples missing with positions[np.isinf(positions)] = np.nan.
+    """
+    infinite = np.isinf(values)
+    if not infinite.any():
+        return
+    row, column = (int(i) for i in np.argwhere(infinite)[0])
+    raise ValueError(
+        _format_error(
+            f"{call}() got {int(infinite.sum())} infinite value(s) in {name}, "
+            f"first at row {row}, column {column} ({float(values[row, column])}).",
+            why="NaN marks a missing sample, but an infinite value is not a "
+            "measurement; it usually comes from a division by zero in a "
+            "calibration or unit conversion, so it is not treated as missing.",
+            fix="correct the step that produced it, or mark those samples "
+            f"missing with {name}[np.isinf({name})] = np.nan.",
         )
     )
 
@@ -840,14 +885,16 @@ def validated_signals(
     Features share one clock, so the ``max_gap``, ``epochs`` and ``break_before``
     gates are resolved once (one excluded-interval warning). Validity differs
     by feature: sample ``i`` of feature ``f`` is valid when
-    ``isfinite(signals[i, f])`` and ``valid[i, f]``. A finite zero is valid.
+    ``signals[i, f]`` is not NaN and ``valid[i, f]``. A finite zero is valid;
+    an infinite value is refused.
 
     Parameters
     ----------
     times : array-like, shape (n_samples,)
         Seconds; finite, strictly increasing, non-empty.
     signals : array-like, shape (n_samples, n_features) or (n_samples,)
-        Real values; NaN or infinity marks a missing sample of that feature.
+        Real values; NaN marks a missing sample of that feature. Infinite
+        values are refused.
     valid : array-like of bool, shape (n_samples,) or (n_samples, n_features), or None
         Extra validity for every feature (1-D) or per feature (2-D).
     call : str
@@ -868,10 +915,12 @@ def validated_signals(
     Raises
     ------
     ValueError
-        If the inputs are malformed, empty or repeat a timestamp.
+        If the inputs are malformed, empty, hold an infinite value or repeat
+        a timestamp.
     """
     t = _validated_signal_times(times, call=call)
     sig = _validated_signal_array(signals, t.size, call=call)
+    refuse_infinite(sig, name="signals", call=call)
     flags = _validated_sample_flags(valid, t.size, sig.shape[1], call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)

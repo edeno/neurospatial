@@ -5,7 +5,8 @@ headline metrics and a concise ``__repr__``/``_repr_html_`` built from it,
 instead of the default dataclass repr that dumps every array. Results add the
 other terminal verbs they support (``to_dataframe()``, ``summary_table()``,
 ``to_xarray()``, ``plot()``); a verb a result does not define is an
-``AttributeError``, not a stub that raises.
+``AttributeError``, not a stub that raises, except ``summary()``, which
+every result must specialize.
 
 The module also holds the pieces results share: read-only array ownership
 (:class:`ReadOnlyArraysMixin`, :func:`read_only_copy`), owned
@@ -37,6 +38,31 @@ def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     return owned
 
 
+def mark_read_only(value: object) -> None:
+    """Mark an array, or the arrays in a (named, nested) tuple, read-only in place."""
+    if isinstance(value, np.ndarray):
+        value.setflags(write=False)
+    elif isinstance(value, tuple):
+        for item in value:
+            mark_read_only(item)
+
+
+def _read_only_owned(value: Any) -> Any:
+    """A read-only copy of an array, or of the arrays in a (nested) tuple.
+
+    Anything else, and a tuple holding no arrays, is returned as given; a
+    named tuple keeps its type.
+    """
+    if isinstance(value, np.ndarray):
+        return read_only_copy(value)
+    if not isinstance(value, tuple):
+        return value
+    items = [_read_only_owned(item) for item in value]
+    if all(new is old for new, old in zip(items, value, strict=True)):
+        return value
+    return value._make(items) if hasattr(value, "_make") else type(value)(items)
+
+
 def as_label_array(labels: Any) -> NDArray[Any]:
     """Convert unit labels to an array without changing any label's type.
 
@@ -44,11 +70,17 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
     label a unit is reported, looked up and seeded under. Labels of more than
     one kind are kept in an object array; homogeneous labels keep their
-    natural dtype. An ``ndarray`` is returned as given, without a copy.
+    natural dtype. Tuple labels such as ``(shank, cluster)`` are one label
+    each, kept in a 1-D object array rather than read as array rows. An
+    ``ndarray`` is returned as given, without a copy.
     """
     if isinstance(labels, np.ndarray):
         return labels
     values = list(labels)
+    if any(isinstance(v, tuple) for v in values):
+        array = np.empty(len(values), dtype=object)
+        array[:] = values
+        return array
     array = np.asarray(values)
     if array.ndim == 1 and len({np.asarray(v).dtype.kind for v in values}) > 1:
         array = np.empty(len(values), dtype=object)
@@ -95,17 +127,22 @@ def _missing_label_positions(labels: Sequence[Any]) -> list[int]:
     ]
 
 
-def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
-    """Whether two label arrays hold equal labels of the same kind, in order.
+def _same_label(a: Any, b: Any) -> bool:
+    """Whether two unit labels are equal and of the same kind.
 
-    ``1`` and ``1.0`` compare equal but are different labels: shuffle streams
-    and lookups are keyed by the label itself.
+    ``1``, ``1.0`` and ``True`` compare equal in Python but are different
+    labels: shuffle streams and lookups are keyed by the label itself. NumPy
+    and plain scalars of one kind (``np.int64(1)`` and ``1``) are the same.
     """
+    return bool(a == b) and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
+
+
+def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
+    """Whether two label arrays hold the same labels (:func:`_same_label`), in order."""
     if given.shape != carried.shape:
         return False
     return all(
-        a == b and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
-        for a, b in zip(given.tolist(), carried.tolist(), strict=True)
+        _same_label(a, b) for a, b in zip(given.tolist(), carried.tolist(), strict=True)
     )
 
 
@@ -219,22 +256,24 @@ class ReadOnlyArraysMixin:
     Editing an array the result was built from then cannot change it, and
     editing an array read from it raises. Copy with ``np.array(...)`` to
     modify values. JAX arrays are immutable already and are kept as given.
-    Only direct array attributes are copied; a subclass owns arrays it keeps
-    inside containers.
+    Array attributes and arrays inside (nested) tuple attributes, such as one
+    spike train per unit, are copied; a subclass converts lists to tuples
+    first. Arrays in mappings are the subclass's to own (see
+    :func:`reduce_through_constructor`).
     """
 
     def _own_arrays(self) -> None:
-        """Replace every NumPy array attribute with a read-only copy."""
+        """Replace every array, directly or inside tuples, with a read-only copy."""
         for name, value in list(vars(self).items()):
-            if isinstance(value, np.ndarray):
-                object.__setattr__(self, name, read_only_copy(value))
+            owned = _read_only_owned(value)
+            if owned is not value:
+                object.__setattr__(self, name, owned)
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
         self.__dict__.update(state)
         for value in state.values():
-            if isinstance(value, np.ndarray):
-                value.flags.writeable = False
+            mark_read_only(value)
 
 
 _Unit_co = TypeVar("_Unit_co", covariant=True)
@@ -281,7 +320,8 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         Raises
         ------
         KeyError
-            If no unit has this label.
+            If no unit has this label. Labels match by value and kind, as in
+            ``resolve_unit_ids``: ``1.0`` and ``True`` do not select unit ``1``.
 
         Examples
         --------
@@ -294,22 +334,41 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         array([0.2, 0.3])
         """
         labels = np.asarray(self.unit_ids).tolist()
-        try:
-            position = labels.index(unit_id)
-        except ValueError:
-            shown = ", ".join(repr(label) for label in labels[:10])
-            more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
-            missing = plain_value(unit_id)
+        wanted = plain_value(unit_id)
+        for position, label in enumerate(labels):
+            if _same_label(label, wanted):
+                return self[position]
+        name = type(self).__name__
+        near = [label for label in labels if label == wanted]
+        if near:
             raise KeyError(
-                f"unit_id {missing!r} is not in this {type(self).__name__} "
-                f"(unit_ids: {shown}{more}). Pass one of these labels to "
-                "sel(), or use [i] to select the i-th unit by position."
-            ) from None
-        return self[position]
+                f"unit_id {wanted!r} ({type(wanted).__name__}) is not in this "
+                f"{name}, which has the {type(near[0]).__name__} label "
+                f"{near[0]!r}. Labels of different kinds are different units "
+                "(1, 1.0 and True are three labels); pass "
+                f"sel(unit_id={near[0]!r})."
+            )
+        shown = ", ".join(repr(label) for label in labels[:10])
+        more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
+        raise KeyError(
+            f"unit_id {wanted!r} is not in this {name} "
+            f"(unit_ids: {shown}{more}). Pass one of these labels to "
+            "sel(), or use [i] to select the i-th unit by position."
+        )
 
     def _unit_position(self: _UnitContainer[Any], index: Any) -> int:
         """Validate a positional ``[]`` index, pointing label lookups at ``sel``."""
         name = type(self).__name__
+        if isinstance(index, bool | np.bool_):
+            # operator.index(True) is 1, but x[True] is not "the unit at 1".
+            raise TypeError(
+                _format_error(
+                    f"{name}[{plain_value(index)!r}]: [] selects one unit by "
+                    "integer position, and a bool is not a position.",
+                    fix=f"pass an integer from {-len(self)} to {len(self) - 1}, "
+                    "or select a label with .sel(unit_id=...)",
+                )
+            )
         try:
             position = operator.index(index)
         except TypeError:
@@ -454,11 +513,56 @@ def resolve_unit_ids(
     return resolved
 
 
+def resolve_record_unit_ids(
+    record: Any,
+    n_units: int,
+    *,
+    context: str,
+    input_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> None:
+    """Resolve a frozen record's ``unit_ids`` field in place.
+
+    The one rule for generated labels: when neither the caller nor the input
+    (``input_ids``) supplies labels, the record is numbered ``0..n_units-1`` and its ``_unit_ids_generated``
+    flag is set. Generated labels are row positions, not identities the
+    caller supplied, so they pair units by position (for example with a
+    decoder's spike input) and the spike-input adapter does not carry them
+    into a later call as labels. ``dataclasses.replace`` passes the flag on.
+
+    Parameters
+    ----------
+    record : dataclass instance
+        A frozen record with ``unit_ids`` and ``_unit_ids_generated`` fields.
+    n_units : int
+        Number of units the labels must describe.
+    context : str
+        Class name for error messages.
+    input_ids : array-like, optional
+        Labels the input itself carries, such as a ``TsGroup``'s index; see
+        :func:`resolve_unit_ids`.
+
+    Raises
+    ------
+    ValueError
+        As :func:`resolve_unit_ids`.
+    """
+    given = record.unit_ids
+    if given is None and input_ids is None:
+        object.__setattr__(record, "_unit_ids_generated", True)
+    labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
+    object.__setattr__(record, "unit_ids", labels)
+
+
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
     """Align labelled metadata by identity; accept a plain RangeIndex by position.
 
-    A ``unit_id`` column or a non-default/named index declares unit identity.
-    Missing, extra or duplicate labels raise instead of selecting another unit.
+    A ``unit_id`` column or a named index declares unit identity, and rows are
+    reordered to match ``unit_ids``. An unnamed index is not an identity: it
+    may be row numbers left by ``sort_values`` or a filter. It is accepted
+    only when it already lists ``unit_ids`` in order (or is the default
+    ``RangeIndex``, read by position); otherwise the call raises rather than
+    reorder rows by it. Missing, extra or duplicate labels raise instead of
+    selecting another unit.
 
     Parameters
     ----------
@@ -479,7 +583,9 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
     ValueError
         If ``unit_table`` is not a DataFrame, has a row count other than
         ``len(unit_ids)``, or labels rows inconsistently, with repeated or
-        missing labels, or with labels other than ``unit_ids``.
+        missing labels, or with labels other than ``unit_ids``, or if an
+        unnamed index (without a ``unit_id`` column) lists the units in an
+        order other than ``unit_ids``.
     """
     import pandas as pd
 
@@ -531,6 +637,26 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
             )
         )
     order = labels.get_indexer(ids)
+    # An unnamed index without a unit_id column may be leftover row numbers
+    # (after sort_values or a filter), not unit labels: never reorder by it.
+    unnamed = "unit_id" not in unit_table.columns and labels.name is None
+    if unnamed and not np.array_equal(order, np.arange(len(ids))):
+        raise ValueError(
+            _format_error(
+                f"unit_table has an unnamed index {labels.tolist()[:10]} that "
+                f"does not list unit_ids={ids.tolist()[:10]} in order{where}.",
+                why="Why: an unnamed index (for example row numbers left by "
+                "sort_values or a filter) does not declare unit identity, so "
+                "matching rows by it could attach another unit's metadata to "
+                "each spike train.",
+                fix="If the rows are in spike-train order, pass unit_ids=df.index "
+                "to label each train by its row, or call "
+                "df.reset_index(drop=True) to number the units 0..n-1. If the "
+                "index holds unit labels, name it (df.index.name = 'unit_id') "
+                "or add a unit_id column so rows are matched to unit_ids by "
+                "label.",
+            )
+        )
     if np.any(order < 0):
         raise ValueError(
             _format_error(
@@ -551,11 +677,15 @@ def import_xarray() -> Any:
     Raises
     ------
     ImportError
-        If ``xarray`` is not installed, naming how to install it.
+        If ``xarray`` is not installed, naming how to install it. An error
+        raised inside an installed xarray (a broken install or a missing
+        dependency of xarray) propagates unchanged.
     """
     try:
         import xarray as xr
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        if exc.name != "xarray":
+            raise
         raise ImportError(
             "to_xarray() requires the optional 'xarray' dependency, which "
             "is not installed. Install it with "
@@ -634,15 +764,14 @@ _POLAR_COORD_NAMES = ("distance", "angle")
 
 
 def _coord_dim_names(env: Any) -> list[str]:
-    """Per-dimension coordinate column names for tidy decode dataframes.
+    """Per-dimension coordinate names, one rule for every export.
 
     Returns ``["distance", "angle"]`` for a polar egocentric environment,
     ``["x", "y", "z"][:n_dims]`` for ``n_dims <= 3`` and
-    ``["dim_0", "dim_1", ...]`` otherwise. Shared by
-    :meth:`DecodingResult.to_dataframe` and
-    :meth:`DecodingSummary.to_dataframe` so their coordinate column naming
-    (``map_x``/``mean_x``/... vs ``map_dim_0``/...) stays identical. The polar
-    names match the ``bin_center_*`` coordinates of :func:`_bin_center_coords`.
+    ``["dim_0", "dim_1", ...]`` otherwise. The decode tables
+    (``map_x``/``mean_x``/... or ``map_dim_0``/...) and the ``bin_center_*``
+    coordinates of :func:`_bin_center_coords` are named from it, so one axis
+    has one name in every table and Dataset.
 
     Parameters
     ----------
@@ -668,10 +797,12 @@ def _bin_center_coords(
     """Build non-index ``bin``-dimension coordinates from an environment.
 
     Returns a mapping of coordinate name to ``("bin", values)`` tuples giving
-    the per-bin center coordinates. Cartesian environments yield
-    ``bin_center_x`` (1-D), plus ``bin_center_y`` (2-D) and ``bin_center_z``
-    (3-D). Polar egocentric environments (whose ``bin_centers[:, 0]`` is
-    distance and ``bin_centers[:, 1]`` is angle in radians) yield
+    the per-bin center coordinates, named by :func:`_coord_dim_names`.
+    Cartesian environments yield ``bin_center_x`` (1-D), plus
+    ``bin_center_y`` (2-D) and ``bin_center_z`` (3-D), and
+    ``bin_center_dim_0``, ``bin_center_dim_1``, ... above three dimensions.
+    Polar egocentric environments (whose ``bin_centers[:, 0]`` is distance
+    and ``bin_centers[:, 1]`` is angle in radians) yield
     ``bin_center_distance`` and ``bin_center_angle`` instead.
 
     Parameters
@@ -699,7 +830,9 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    # A copy: the coordinates are the caller's to edit, the environment's
+    # bin centers are read-only.
+    bin_centers = np.array(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is
     # a real inconsistency between the result and its environment, not an
     # optional-coord situation. Raise loudly rather than silently dropping it.
@@ -728,17 +861,9 @@ def _bin_center_coords(
             )
         )
 
-    if getattr(env, "coordinate_kind", "cartesian") == "polar":
-        return {
-            f"bin_center_{name}": ("bin", bin_centers[:, i])
-            for i, name in enumerate(_POLAR_COORD_NAMES)
-        }
-
-    # x, y, z; axes past the third are bin_center_dim_3, ...
-    names = ["bin_center_x", "bin_center_y", "bin_center_z"]
     return {
-        (names[i] if i < 3 else f"bin_center_dim_{i}"): ("bin", bin_centers[:, i])
-        for i in range(bin_centers.shape[1])
+        f"bin_center_{name}": ("bin", bin_centers[:, i])
+        for i, name in enumerate(_coord_dim_names(env))
     }
 
 
@@ -811,7 +936,7 @@ def build_population_dataset(
     # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
-    ids = np.asarray(unit_ids)
+    ids = np.array(unit_ids)  # the result's labels are read-only
 
     # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
     # Count with a hash-based Counter: np.unique cannot sort a mixed int/str

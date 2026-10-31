@@ -156,3 +156,33 @@ def test_population_unit_table_wrong_length_raises(spike_trains, event_times):
             bin_size=0.5,
             unit_table=bad_table,
         )
+
+
+def test_population_unit_table_edits_stay_with_the_caller(spike_trains, event_times):
+    """In-place edits of the returned table cannot desynchronize rows from units."""
+    import copy
+    import pickle
+
+    import pandas as pd
+
+    table = pd.DataFrame({"unit_id": STR_IDS, "region": ["CA1", "CA1", "CA3"]})
+    result = population_peri_event_histogram(
+        spike_trains, event_times, (-0.5, 1.0), unit_ids=STR_IDS
+    )
+    result = PopulationPeriEventResult(
+        histograms=result.histograms,
+        sem=result.sem,
+        mean_sem=result.mean_sem,
+        n_events=result.n_events,
+        window=result.window,
+        bin_size=result.bin_size,
+        unit_ids=result.unit_ids,
+        unit_table=table,
+    )
+    result.unit_table.drop(index=0, inplace=True)
+    result.unit_table.loc[:, "region"] = "V1"
+    table.loc[:, "region"] = "PFC"
+    assert result.unit_table is not result.unit_table
+    for restored in (result, pickle.loads(pickle.dumps(result)), copy.deepcopy(result)):
+        assert restored.unit_table["unit_id"].tolist() == STR_IDS
+        assert restored.unit_table["region"].tolist() == ["CA1", "CA1", "CA3"]

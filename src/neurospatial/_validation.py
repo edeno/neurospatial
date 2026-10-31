@@ -46,8 +46,9 @@ def validate_finite(
     ValueError
         If ``a`` contains any infinite value, or any NaN value when
         ``allow_nan`` is False. The message names the argument, the
-        number of offending values, and the index and value of the
-        first one.
+        number of offending values, and the value of the first one with
+        its index (the flat, C-order index for an array of more than one
+        dimension).
 
     Examples
     --------
@@ -62,15 +63,16 @@ def validate_finite(
     if bad.any():
         n = int(bad.sum())
         first = int(np.argmax(bad))
+        index = "flat index" if arr.ndim > 1 else "index"
         if allow_nan:
             raise ValueError(
                 f"{name} contains {n} infinite value(s) "
-                f"(first at index {first}: {arr.flat[first]!r}). "
+                f"(first at {index} {first}: {arr.flat[first]!r}). "
                 "NaN marks a missing value; replace infinities with NaN."
             )
         raise ValueError(
             f"{name} contains {n} non-finite value(s) "
-            f"(first at index {first}: {arr.flat[first]!r}). "
+            f"(first at {index} {first}: {arr.flat[first]!r}). "
             f"Remove or mask them before calling."
         )
     return arr
@@ -125,17 +127,18 @@ def timestamps_of(values: Any, *, name: str) -> Any:
 
 
 def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
-    """Raise ValueError if the named 1-D arrays do not share a length.
+    """Raise ValueError if the named arrays do not share a first-axis length.
 
-    Lengths are compared exactly: arrays are neither reshaped nor
-    broadcast. A length-1 array among longer arrays is treated as a
-    mismatch, not as a broadcastable convenience.
+    Lengths along the first axis are compared exactly, so a 2-D
+    ``(n_samples, n_dims)`` array is compared by its ``n_samples``. Arrays
+    are neither reshaped nor broadcast: a length-1 array among longer arrays
+    is a mismatch, not a broadcastable convenience.
 
     Parameters
     ----------
     name_to_array : dict of str to array-like
-        Mapping from argument name to array. The length (``len``) of
-        each array is compared.
+        Mapping from argument name to array. The length (``len``, the first
+        axis) of each array is compared.
 
     Returns
     -------
@@ -145,8 +148,8 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
     Raises
     ------
     ValueError
-        If the arrays do not all share the same length. The message
-        lists each name and its length.
+        If the arrays do not all share the same first-axis length. The
+        message lists each name and its length.
 
     Examples
     --------
@@ -159,7 +162,17 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
     lengths = {k: len(np.asarray(v)) for k, v in name_to_array.items()}
     if len(set(lengths.values())) > 1:
         pairs = ", ".join(f"{k}={n}" for k, n in lengths.items())
-        raise ValueError(f"Length mismatch: {pairs}. These must agree.")
+        raise ValueError(
+            _format_error(
+                f"Length mismatch: {pairs}.",
+                why="Why: these arrays pair up entry by entry along their first "
+                "axis; they are never broadcast or truncated, so different "
+                "lengths mean they do not describe the same samples.",
+                fix="pass arrays with one entry per sample along the first axis; "
+                "check that none was filtered, resampled or trimmed without the "
+                "others.",
+            )
+        )
 
 
 def times_positions_problems(
@@ -189,8 +202,11 @@ def times_positions_problems(
                         f"at index {k}. To sort, index times and every per-sample "
                         'array with order = np.argsort(times, kind="stable").'
                     )
-    if p is not None and p.ndim not in (1, 2):
-        problems.append(f"positions must be (n_samples, n_dims), got shape {p.shape}.")
+    if p is not None and (p.ndim not in (1, 2) or (p.ndim == 2 and p.shape[1] == 0)):
+        problems.append(
+            "positions must be (n_samples,) or (n_samples, n_dims) with "
+            f"n_dims >= 1, got shape {p.shape}."
+        )
     if (
         t is not None
         and p is not None
@@ -202,8 +218,22 @@ def times_positions_problems(
             f"times and positions must have the same length; times has "
             f"{len(t)} samples, positions has {len(p)}."
         )
+    # Suggest a swap only on evidence: 2-D times are a trajectory, or times
+    # whose recorded values go backwards (as positions do) while positions
+    # would be valid times. Positions that never decrease alone are normal on
+    # a linear track, and a NaN in times says nothing about order.
+    times_go_back = (
+        t is not None and t.ndim == 1 and bool(np.any(np.diff(t[np.isfinite(t)]) < 0))
+    )
+    positions_are_times = (
+        p is not None
+        and p.ndim == 1
+        and p.size > 1
+        and bool(np.isfinite(p).all())
+        and bool(np.all(np.diff(p) >= 0))
+    )
     looks_swapped = (t is not None and t.ndim == 2) or (
-        p is not None and p.ndim == 1 and p.size > 1 and bool(np.all(np.diff(p) >= 0))
+        times_go_back and positions_are_times
     )
     return problems, looks_swapped
 

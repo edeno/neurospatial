@@ -50,7 +50,7 @@ from neurospatial._validation import (
     validate_strictly_increasing,
     validate_times_positions,
 )
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smooth_in_time
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior.epochs import _mask_in_intervals
 
@@ -360,7 +360,8 @@ def compute_speed(
     ValueError
         If ``times`` and ``positions`` are empty, swapped or misaligned; if
         ``times`` repeats or is not increasing; if ``max_gap`` or
-        ``break_before`` is invalid; or if ``smooth_window`` is negative.
+        ``break_before`` is invalid; or if ``smooth_window`` is not a finite
+        number of seconds >= 0.
 
     See Also
     --------
@@ -1090,64 +1091,10 @@ def compute_planar_turn_angles(
         )
     turns = signed_turns(a, b)
     if smooth_window > 0:
-        turns = _smooth_in_time(
+        turns = smooth_in_time(
             turns, t, support.run_sample_bounds, float(smooth_window)
         )
     return turns
-
-
-def _smooth_in_time(
-    values: NDArray[np.float64],
-    times: NDArray[np.float64],
-    run_bounds: NDArray[np.intp],
-    sigma: float,
-) -> NDArray[np.float64]:
-    """Gaussian-weighted mean in time of the finite values of each run.
-
-    Each finite value becomes the mean of the finite values of its run,
-    weighted by a Gaussian of their time difference (standard deviation
-    ``sigma`` seconds, cut at four standard deviations). Non-finite values get
-    no weight and stay NaN, and runs are smoothed independently.
-
-    Parameters
-    ----------
-    values : NDArray[np.float64], shape (n_samples,)
-    times : NDArray[np.float64], shape (n_samples,)
-        Strictly increasing, in seconds.
-    run_bounds : NDArray[np.intp], shape (n_runs, 2)
-        Inclusive first and last sample of each run.
-    sigma : float
-        Positive standard deviation in seconds.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples,)
-    """
-    reach = 4.0 * sigma
-    smoothed = np.full(values.shape, np.nan)
-    for first, last in run_bounds:
-        v = values[first : last + 1]
-        t = times[first : last + 1]
-        defined = np.isfinite(v)
-        if not defined.any():
-            continue
-        value = np.where(defined, v, 0.0)
-        weight = defined.astype(np.float64)
-        total = value.copy()
-        norm = weight.copy()
-        # The window is symmetric, so the widest forward reach bounds the lags.
-        hi = np.searchsorted(t, t + reach, side="right")
-        widest = int(np.max(hi - 1 - np.arange(t.size)))
-        # Each pair (i, i + k) within reach adds to both samples.
-        for k in range(1, widest + 1):
-            lag = t[k:] - t[:-k]
-            w = np.where(lag <= reach, np.exp(-0.5 * (lag / sigma) ** 2), 0.0)
-            total[:-k] += w * value[k:]
-            norm[:-k] += w * weight[k:]
-            total[k:] += w * value[:-k]
-            norm[k:] += w * weight[:-k]
-        smoothed[first : last + 1][defined] = total[defined] / norm[defined]
-    return smoothed
 
 
 @reads_pynapple_samples

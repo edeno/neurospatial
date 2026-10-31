@@ -336,20 +336,12 @@ class DatasetTestResult(ReadOnlyArraysMixin, ResultMixin):
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays, including the thresholds."""
-        owned = []
-        for values in self.thresholds:
-            array = np.array(values, dtype=np.float64)
-            array.flags.writeable = False
-            owned.append(array)
-        object.__setattr__(self, "thresholds", tuple(owned))
+        thresholds = tuple(
+            np.asarray(values, dtype=np.float64) for values in self.thresholds
+        )
+        object.__setattr__(self, "thresholds", thresholds)
         object.__setattr__(self, "labels", tuple(self.labels))
         self._own_arrays()
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping every array read-only."""
-        super().__setstate__(state)
-        for values in self.thresholds:
-            values.flags.writeable = False
 
     @property
     def grid_shape(self) -> tuple[int, ...]:
@@ -557,7 +549,7 @@ class DistributionTestResult(ResultMixin):
 
 
 @dataclass(frozen=True, repr=False, eq=False)
-class ShuffledDataset(ResultMixin):
+class ShuffledDataset(ReadOnlyArraysMixin, ResultMixin):
     """Every event of a data set, shuffled once.
 
     Attributes
@@ -588,18 +580,9 @@ class ShuffledDataset(ResultMixin):
         """Own read-only copies of the spike counts."""
         object.__setattr__(self, "events", tuple(self.events))
         if self.spike_counts is not None:
-            owned = []
-            for counts in self.spike_counts:
-                array = np.array(counts)
-                array.flags.writeable = False
-                owned.append(array)
-            object.__setattr__(self, "spike_counts", tuple(owned))
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the counts read-only."""
-        self.__dict__.update(state)
-        for counts in self.spike_counts or ():
-            counts.flags.writeable = False
+            counts = tuple(np.asarray(values) for values in self.spike_counts)
+            object.__setattr__(self, "spike_counts", counts)
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

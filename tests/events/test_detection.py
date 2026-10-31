@@ -376,13 +376,17 @@ class TestAddPositionsDegenerateTrajectory:
         with pytest.raises(ValueError, match=r"strictly increasing.*== 2 at index 2"):
             add_positions(events, times=times, positions=positions)
 
-    @pytest.mark.parametrize("n_dims", [0, 4])
-    def test_add_positions_refuses_other_than_1_to_3_dims(self, n_dims):
+    @pytest.mark.parametrize(
+        ("n_dims", "match"),
+        # No coordinate column is refused by the shared positions check.
+        [(0, "n_dims >= 1"), (4, "4 columns")],
+    )
+    def test_add_positions_refuses_other_than_1_to_3_dims(self, n_dims, match):
         """Only x, y and z are written; a 4th column was silently dropped."""
         from neurospatial.events.detection import add_positions
 
         times = np.arange(5.0)
-        with pytest.raises(ValueError, match=f"{n_dims} columns"):
+        with pytest.raises(ValueError, match=match):
             add_positions(
                 pd.DataFrame({"timestamp": [1.5]}),
                 times=times,

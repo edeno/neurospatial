@@ -149,7 +149,12 @@ from numpy.typing import NDArray
 from scipy import linalg, stats
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    resolve_record_unit_ids,
+    resolve_unit_ids,
+)
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_integer_at_least
 
@@ -328,10 +333,7 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         object.__setattr__(self, "weights", weights)
         object.__setattr__(self, "member_indices", members.astype(np.int64))
         object.__setattr__(self, "explained_variance_ratio", ratio)
-        if self.unit_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
-        labels = resolve_unit_ids(self.unit_ids, n_neurons, context="AssemblyPattern")
-        object.__setattr__(self, "unit_ids", labels)
+        resolve_record_unit_ids(self, n_neurons, context="AssemblyPattern")
         self._own_arrays()
 
     @property
@@ -469,14 +471,14 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
                 f"(n_time_bins, n_assemblies) with n_assemblies == "
                 f"len(patterns) == {len(patterns)}, got shape {activations.shape}."
             )
-        if self.unit_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
         # One eigenvalue per neuron, from the neurons' correlation matrix.
-        labels = resolve_unit_ids(
-            self.unit_ids, len(self.eigenvalues), context="AssemblyDetectionResult"
+        resolve_record_unit_ids(
+            self, len(self.eigenvalues), context="AssemblyDetectionResult"
         )
         for pattern in patterns:
-            if not np.array_equal(np.asarray(pattern.unit_ids), labels):
+            if not np.array_equal(
+                np.asarray(pattern.unit_ids), np.asarray(self.unit_ids)
+            ):
                 raise ValueError(
                     "AssemblyDetectionResult: every pattern must carry the "
                     "result's unit_ids, the labels of the detection counts' "
@@ -484,7 +486,6 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
                 )
         object.__setattr__(self, "patterns", patterns)
         object.__setattr__(self, "activations", activations)
-        object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:

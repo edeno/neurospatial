@@ -63,3 +63,55 @@ def test_contract_kit_gives_a_track_with_width_the_full_lookup_checks():
     with pytest.raises(AssertionError):
         # A position 50 cm off a 2 cm wide track has no bin.
         assert_environment_contract(track, [[1.0, 50.0]], [0])
+
+
+@pytest.fixture
+def two_bin_grid():
+    return Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0])),
+    )
+
+
+@pytest.mark.parametrize(
+    ("points", "expected_bins", "message"),
+    [
+        ([[0.5, 0.5], [1.5, 0.5]], [0.0, 1.0], "expected_bins must hold integer"),
+        ([[0.5, 0.5], [1.5, 0.5]], [0, 5], "expected_bins must lie in -1"),
+        ([[0.5, 0.5], [1.5, 0.5]], [0], "expected_bins must have shape (2,)"),
+        ([0.5, 0.5], [0], "points must have shape (n_points, 2)"),
+    ],
+)
+def test_contract_kit_explains_a_malformed_oracle(
+    two_bin_grid, points, expected_bins, message
+):
+    with pytest.raises(AssertionError) as caught:
+        assert_environment_contract(two_bin_grid, points, expected_bins)
+    assert message in str(caught.value)
+    assert "Fix:" in str(caught.value)
+
+
+def test_contract_kit_checks_survive_python_optimize_mode():
+    # ``python -O`` strips bare assert statements; the kit must still refuse a
+    # float oracle that happens to match the bins.
+    import subprocess
+    import sys
+
+    script = (
+        "import numpy as np\n"
+        "from neurospatial import Environment\n"
+        "from neurospatial.testing import assert_environment_contract\n"
+        "env = Environment.from_grid_mask(np.ones((2, 1), dtype=bool),"
+        " grid_edges=(np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0])))\n"
+        "try:\n"
+        "    assert_environment_contract(env, [[0.5, 0.5], [1.5, 0.5]], [0.0, 1.0])\n"
+        "except AssertionError:\n"
+        "    print('refused')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-O", "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "refused"

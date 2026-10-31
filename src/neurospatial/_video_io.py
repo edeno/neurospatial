@@ -16,14 +16,17 @@ from typing import NamedTuple, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 
 @runtime_checkable
 class VideoReaderProtocol(Protocol):
-    """Protocol defining the interface for video frame readers.
+    """Protocol defining the interface for lazy video frame readers.
 
-    This protocol enables type-safe handling of both _VideoReader instances
-    and pre-loaded numpy arrays in VideoData. Classes implementing this
-    protocol must provide frame count, frame dimensions, and indexed access.
+    :class:`_VideoReader` conforms. A pre-loaded frame array does not (it
+    has no ``n_frames`` or ``frame_size_px``), so ``VideoData.reader`` is
+    typed as an ndarray or a reader. Classes implementing this protocol
+    must provide frame count, frame dimensions, and indexed access.
 
     Attributes
     ----------
@@ -79,6 +82,78 @@ class VideoReaderProtocol(Protocol):
         ...
 
 
+def _validate_frame_processing(
+    frame_size_px: tuple[int, int],
+    crop: tuple[int, int, int, int] | None,
+    downsample: int,
+) -> None:
+    """Refuse a crop or downsample factor that does not fit the video frame.
+
+    Parameters
+    ----------
+    frame_size_px : tuple of (width, height)
+        Size of the decoded video frame in pixels.
+    crop : tuple of (x, y, width, height) or None
+        Region cut from each frame before downsampling, in pixels.
+    downsample : int
+        Factor by which the (cropped) frame is shrunk.
+
+    Raises
+    ------
+    ValueError
+        If ``downsample`` is not a positive integer, ``crop`` is not four
+        whole-pixel values with a non-negative corner and positive size
+        inside the frame, or the processed frame has no pixels.
+    """
+    width, height = frame_size_px
+    if (
+        isinstance(downsample, bool)
+        or not isinstance(downsample, (int, np.integer))
+        or downsample < 1
+    ):
+        raise ValueError(
+            _format_error(
+                f"downsample must be a positive integer; got {downsample!r}.",
+                why="the frame is shrunk by this whole-number factor in each direction.",
+                fix="pass downsample=1 to keep full resolution, or 2 to halve it.",
+            )
+        )
+    if crop is not None:
+        values = tuple(crop) if np.iterable(crop) else ()
+        if (
+            len(values) != 4
+            or any(
+                isinstance(value, bool) or not isinstance(value, (int, np.integer))
+                for value in values
+            )
+            or values[0] < 0
+            or values[1] < 0
+            or values[2] <= 0
+            or values[3] <= 0
+            or values[0] + values[2] > width
+            or values[1] + values[3] > height
+        ):
+            raise ValueError(
+                _format_error(
+                    "crop must be (x, y, width, height) in whole pixels, with a "
+                    "non-negative corner and positive size inside the "
+                    f"{width}x{height} video frame; got {crop!r}.",
+                    why="the crop is cut from each decoded frame before "
+                    "downsampling, measured from the top-left pixel.",
+                    fix=f"pass four integers that fit the frame, e.g. "
+                    f"crop=(0, 0, {width}, {height}) for the whole frame.",
+                )
+            )
+        width, height = values[2], values[3]
+    if width // downsample < 1 or height // downsample < 1:
+        raise ValueError(
+            _format_error(
+                "downsample leaves no video pixels.",
+                fix="use a smaller downsample factor or a larger crop.",
+            )
+        )
+
+
 class CacheInfo(NamedTuple):
     """Cache statistics for _VideoReader.
 
@@ -129,14 +204,10 @@ class _VideoReader:
     ----------
     n_frames : int
         Total number of frames in video.
-    fps : float
-        Frames per second of video.
     frame_size_px : tuple of (width, height)
         Size of returned frames after crop and downsample.
     original_size_px : tuple of (width, height)
         Original video frame size before any processing.
-    duration : float
-        Total video duration in seconds.
     crop_offset_px : tuple of (x, y)
         Offset of crop region from top-left corner.
     prefetch_ahead : int
@@ -145,9 +216,8 @@ class _VideoReader:
     Notes
     -----
     - Frames are returned in RGB format (OpenCV reads as BGR internally).
-    - Cache is dropped during pickling to ensure pickle safety for
-      parallel rendering workflows.
-    - The reader is pickle-safe: settings are preserved but cache is reset.
+    - Pickling keeps the settings and drops the cache and prefetch thread,
+      so a reader can be sent to parallel rendering workers.
 
     Examples
     --------
@@ -180,9 +250,6 @@ class _VideoReader:
         if not self._path.exists():
             raise FileNotFoundError(f"Video file not found: {self._path}")
 
-        # Validate downsample
-        if downsample < 1:
-            raise ValueError(f"downsample must be a positive integer, got {downsample}")
         self._downsample = downsample
         self._cache_size = cache_size
 
@@ -200,21 +267,16 @@ class _VideoReader:
 
         try:
             self._n_frames: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self._fps: float = float(cap.get(cv2.CAP_PROP_FPS))
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             self._original_size_px: tuple[int, int] = (width, height)
         finally:
             cap.release()
 
-        # Validate and store crop
+        _validate_frame_processing((width, height), crop, downsample)
         self._crop = crop
         if crop is not None:
             crop_x, crop_y, crop_w, crop_h = crop
-            if (crop_x + crop_w > width) or (crop_y + crop_h > height):
-                raise ValueError(
-                    f"Crop region {crop} extends beyond frame bounds ({width}x{height})"
-                )
             self._crop_offset_px = (crop_x, crop_y)
             effective_width = crop_w
             effective_height = crop_h
@@ -267,7 +329,25 @@ class _VideoReader:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             if not ret:
-                raise IndexError(f"Could not read frame {frame_idx}")
+                raise OSError(
+                    _format_error(
+                        f"Could not decode frame {frame_idx} of video '{self._path}'.",
+                        why=(
+                            "OpenCV read no image, although the video "
+                            f"reports {self._n_frames} frames. "
+                            "The frame may be corrupt, this OpenCV build may "
+                            "lack the codec, or the container may overstate "
+                            "its frame count (common for variable-frame-rate "
+                            "MP4 files)."
+                        ),
+                        fix=(
+                            "check that the video plays to this frame in a "
+                            "media player, or re-encode it at a constant frame "
+                            "rate, e.g. ffmpeg -i in.mp4 -c:v libx264 "
+                            "-fps_mode cfr out.mp4, then reopen it."
+                        ),
+                    )
+                )
 
             # Apply crop if specified
             if self._crop is not None:
@@ -285,6 +365,8 @@ class _VideoReader:
 
             # Cast for mypy (cv2 already returns uint8)
             result: NDArray[np.uint8] = frame.astype(np.uint8, copy=False)
+            # The cache hands this array to every later reader of the frame.
+            result.setflags(write=False)
             return result
         finally:
             cap.release()
@@ -300,12 +382,15 @@ class _VideoReader:
         Returns
         -------
         NDArray[np.uint8]
-            RGB frame array of shape (height, width, 3).
+            Read-only RGB frame array of shape (height, width, 3), shared
+            with the cache; copy it before editing.
 
         Raises
         ------
         IndexError
             If frame_idx is out of range or negative.
+        OSError
+            If OpenCV cannot decode a frame inside the reported range.
         """
         if frame_idx < 0 or frame_idx >= self._n_frames:
             raise IndexError(
@@ -371,28 +456,10 @@ class _VideoReader:
             currsize=info.currsize,
         )
 
-    def get_timestamps(self) -> NDArray[np.float64]:
-        """Get timestamps for all frames.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Array of timestamps in seconds, shape (n_frames,).
-        """
-        timestamps: NDArray[np.float64] = (
-            np.arange(self._n_frames, dtype=np.float64) / self._fps
-        )
-        return timestamps
-
     @property
     def n_frames(self) -> int:
         """Total number of frames in video."""
         return self._n_frames
-
-    @property
-    def fps(self) -> float:
-        """Frames per second."""
-        return self._fps
 
     @property
     def frame_size_px(self) -> tuple[int, int]:
@@ -408,11 +475,6 @@ class _VideoReader:
     def crop_offset_px(self) -> tuple[int, int]:
         """Crop offset (x, y) from top-left corner."""
         return self._crop_offset_px
-
-    @property
-    def duration(self) -> float:
-        """Total video duration in seconds."""
-        return float(self._n_frames) / self._fps
 
     @property
     def prefetch_ahead(self) -> int:

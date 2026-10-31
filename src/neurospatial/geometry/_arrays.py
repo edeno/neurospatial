@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import mark_read_only
 
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -271,15 +272,6 @@ def axis_ranges(
     return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
 
 
-def _mark_read_only(value: object) -> None:
-    """Mark an array, or the arrays in a (named) tuple, read-only in place."""
-    if isinstance(value, np.ndarray):
-        value.setflags(write=False)
-    elif isinstance(value, tuple):
-        for item in value:
-            _mark_read_only(item)
-
-
 class ReadOnlyState:
     """Restore read-only arrays when a frozen record is unpickled or deep-copied.
 
@@ -291,5 +283,5 @@ class ReadOnlyState:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         for name, value in state.items():
-            _mark_read_only(value)
+            mark_read_only(value)
             object.__setattr__(self, name, value)

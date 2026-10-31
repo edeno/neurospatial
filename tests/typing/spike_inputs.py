@@ -2,8 +2,9 @@
 
 Run with ``uv run mypy tests/typing/spike_inputs.py``. At runtime each
 population encoder, significance test, peri-event histogram and decoder accepts
-a list of per-unit arrays, a 1-D or NaN-padded 2-D array, a ``SpikeTrains``
-container and a pynapple ``TsGroup``-like group. These calls fail type-checking
+a list of per-unit arrays, a 1-D or NaN-padded 2-D array, a dict of unit id
+to spike times, a ``SpikeTrains`` container and a pynapple ``TsGroup``-like
+group. These calls fail type-checking
 when a signature rejects one of those documented inputs.
 """
 
@@ -38,6 +39,8 @@ if TYPE_CHECKING:
         list[NDArray[np.float64]]
         | tuple[NDArray[np.float64], ...]
         | NDArray[np.float64]
+        | dict[int, NDArray[np.float64]]
+        | dict[str, list[float]]
         | SpikeTrains
         | SpikeGroupLike
     )

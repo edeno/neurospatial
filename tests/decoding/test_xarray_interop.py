@@ -147,6 +147,42 @@ class TestToXarrayDims:
         )
         np.testing.assert_array_equal(ds["posterior"].values, posterior)
 
+    def test_high_dimensional_axes_share_one_name_in_every_export(self):
+        """A 4-D environment's axes are dim_0..dim_3 in tables and Datasets.
+
+        Naming the first three x, y, z in one export and dim_0.. in another
+        would make the same axis look like two different coordinates.
+        """
+        pytest.importorskip("xarray")
+        from neurospatial import Environment
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 10, (100, 4)), bin_size=5.0)
+        names = [f"dim_{i}" for i in range(4)]
+        decoded = DecodingResult(
+            posterior=np.full((3, env.n_bins), 1 / env.n_bins), env=env
+        )
+        rates = SpatialRatesResult(
+            firing_rates=np.ones((2, env.n_bins)),
+            occupancy=np.ones(env.n_bins),
+            env=env,
+            method="binned",
+            bandwidth=0.0,
+        )
+        decode_table = decoded.to_dataframe().columns
+        assert [f"map_{name}" for name in names] == [
+            c for c in decode_table if c.startswith("map_") and c != "map_bin"
+        ]
+        centers = [f"bin_center_{name}" for name in names]
+        for exported in (
+            decoded.to_xarray().coords,
+            rates.to_xarray().coords,
+            rates.to_dataframe().columns,
+            rates[0].to_dataframe().columns,
+        ):
+            assert [c for c in exported if str(c).startswith("bin_center_")] == centers
+
     def test_to_xarray_without_xarray_raises(self, small_2d_env, monkeypatch):
         """A failing xarray import raises a clear, actionable ImportError."""
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
@@ -156,7 +192,7 @@ class TestToXarrayDims:
 
         def _fake_import(name, *args, **kwargs):
             if name == "xarray":
-                raise ImportError("No module named 'xarray'")
+                raise ModuleNotFoundError("No module named 'xarray'", name="xarray")
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", _fake_import)

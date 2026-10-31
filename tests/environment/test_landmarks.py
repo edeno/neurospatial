@@ -96,6 +96,50 @@ def test_invalid_landmarks_are_refused(arguments, match):
         Landmark(*arguments)
 
 
+@pytest.mark.parametrize(
+    ("arguments", "match"),
+    [
+        (("monitor", "line", [(0.0, 0.0)]), "line needs at least 2 vertices"),
+        (("box", "polygon", [(0, 0), (1, 0)]), "polygon needs at least 3 vertices"),
+        # A closing vertex that repeats the first is not a new corner.
+        (
+            ("box", "polygon", [(0, 0), (1, 0), (0, 0)]),
+            "polygon needs at least 3 vertices",
+        ),
+        (("monitor", "line", [0.0, 1.0]), r"shape \(n_vertices, 2\)"),
+    ],
+)
+def test_too_few_vertices_are_explained(arguments, match):
+    with pytest.raises(ValueError, match=match) as caught:
+        Landmark(*arguments)
+    assert "Fix:" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("kind", "data", "alternative"),
+    [
+        ("polygon", LineString([(0, 0), (1, 0), (1, 1)]), "line"),
+        ("line", box(0, 0, 1, 1), "polygon"),
+        ("line", Point(0, 0), "point"),
+        ("polygon", Point(0, 0), "point"),
+    ],
+)
+def test_a_shape_of_another_kind_is_refused(kind, data, alternative):
+    # A line passed as a polygon used to be closed silently into a triangle.
+    with pytest.raises(TypeError, match=f'use kind="{alternative}"'):
+        Landmark("thing", kind, data)
+
+
+def test_line_vertices_must_be_numbers():
+    with pytest.raises(TypeError, match="must be numbers"):
+        Landmark("monitor", "line", [("a", "b"), ("c", "d")])
+
+
+def test_an_empty_selection_keeps_the_coordinate_columns(landmarks):
+    assert landmarks.positions([]).shape == (0, 2)
+    assert landmarks.nearest_points(np.zeros((3, 2)), []).shape == (3, 0, 2)
+
+
 def test_collections_refuse_repeated_names_and_name_missing_ones(landmarks):
     with pytest.raises(ValueError, match="Two landmarks are named 'cue'"):
         Landmarks([Landmark("cue", "point", [0, 0]), Landmark("cue", "point", [1, 1])])

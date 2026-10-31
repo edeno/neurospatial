@@ -19,6 +19,7 @@ import numpy as np
 import shapely
 from numpy.typing import ArrayLike, NDArray
 from shapely.geometry import LineString, Polygon, mapping, shape
+from shapely.geometry.base import BaseGeometry
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
@@ -37,6 +38,76 @@ Kind = Literal["point", "line", "polygon"]
 
 def _error(what: str, fix: str) -> ValueError:
     return ValueError(_format_error(what, fix=fix))
+
+
+_SHAPE_KINDS = {"Point": "point", "LineString": "line", "Polygon": "polygon"}
+_MIN_VERTICES = {"line": 2, "polygon": 3}
+
+
+def _owned_shape(
+    raw: object, *, kind: Literal["line", "polygon"], owner: str
+) -> LineString | Polygon:
+    """Build a line or polygon from its vertices, refusing another kind of shape."""
+    shape_type = LineString if kind == "line" else Polygon
+    vertices_hint = "pass its vertices as (x, y) pairs, such as [(0.0, 0.0), " + (
+        "(40.0, 0.0)]" if kind == "line" else "(40.0, 0.0), (40.0, 30.0)]"
+    )
+    if isinstance(raw, shape_type):
+        return raw
+    if isinstance(raw, BaseGeometry):
+        alternative = _SHAPE_KINDS.get(raw.geom_type)
+        raise TypeError(
+            _format_error(
+                f"{owner} has kind={kind!r}, but its data is a shapely "
+                f"{raw.geom_type}.",
+                fix=(
+                    f'use kind="{alternative}" for this shape, or '
+                    if alternative is not None
+                    else ""
+                )
+                + vertices_hint,
+            )
+        )
+    try:
+        vertices = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            _format_error(
+                f"{owner} {kind} vertices must be numbers, got {raw!r}.",
+                fix=vertices_hint,
+            )
+        ) from exc
+    if vertices.size == 0:
+        return shape_type()  # refused as empty with the other shape checks
+    if vertices.ndim != 2 or vertices.shape[1] not in (2, 3):
+        raise ValueError(
+            _format_error(
+                f"{owner} {kind} vertices must have shape (n_vertices, 2), got "
+                f"shape {vertices.shape}.",
+                fix=vertices_hint,
+            )
+        )
+    n_vertices = len(vertices)
+    if (
+        n_vertices > 1
+        and kind == "polygon"
+        and np.array_equal(vertices[0], vertices[-1])
+    ):
+        n_vertices -= 1  # the closing vertex repeats the first corner
+    if 0 < n_vertices < _MIN_VERTICES[kind]:
+        raise ValueError(
+            _format_error(
+                f"{owner} {kind} needs at least {_MIN_VERTICES[kind]} vertices, "
+                f"got {n_vertices}.",
+                fix=vertices_hint
+                + (
+                    '; use kind="point" for a single location'
+                    if n_vertices == 1
+                    else ""
+                ),
+            )
+        )
+    return shape_type(vertices)
 
 
 @dataclass(frozen=True, eq=False)
@@ -61,10 +132,13 @@ class Landmark:
     Raises
     ------
     ValueError
-        If the name is empty, the kind is unknown or the geometry is not
-        finite and valid.
+        If the name is empty, the kind is unknown, a line has fewer than 2
+        or a polygon fewer than 3 vertices, or the geometry is not finite
+        and valid.
     TypeError
-        If a point's data is another shapely shape or not numbers.
+        If the data is a shapely shape of another kind, such as a
+        ``LineString`` for ``kind="polygon"``, or its coordinates are not
+        numbers.
 
     Examples
     --------
@@ -93,8 +167,7 @@ class Landmark:
                 shape_kinds={"Polygon": "polygon", "LineString": "line"},
             )
         elif self.kind in ("line", "polygon"):
-            kind = LineString if self.kind == "line" else Polygon
-            data = self.data if isinstance(self.data, kind) else kind(self.data)
+            data = _owned_shape(self.data, kind=self.kind, owner=owner)
             _check_planar_geometry(data, owner=owner)
         else:
             raise _error(
@@ -124,7 +197,9 @@ class Landmark:
         """One representative point, shape ``(n_dims,)``.
 
         The point itself, the middle of a line along its length, or a
-        polygon's centroid.
+        polygon's centroid. The centroid of a non-convex footprint, such as
+        an L-shaped object, can lie outside it; use :meth:`nearest_points`
+        for distances to the object itself.
         """
         if isinstance(self.data, np.ndarray):
             return np.array(self.data, dtype=np.float64)
@@ -139,8 +214,8 @@ class Landmark:
         Parameters
         ----------
         positions : array-like, shape (n_time, n_dims)
-            Positions in the environment's coordinates. Rows with a NaN
-            coordinate are missing.
+            Positions in the environment's coordinates. Rows with a
+            non-finite (NaN or infinite) coordinate are missing.
 
         Returns
         -------
@@ -148,6 +223,11 @@ class Landmark:
             For a point, the point itself; for a line, the closest point on
             it; for a polygon, the closest point of its area (the position
             itself when inside). NaN rows for missing positions.
+
+        Raises
+        ------
+        ValueError
+            If ``positions`` does not have shape ``(n_time, n_dims)``.
         """
         query = np.asarray(positions, dtype=np.float64)
         if query.ndim != 2 or query.shape[1] != self.n_dims:
@@ -207,15 +287,47 @@ class Landmarks(Mapping[str, Landmark]):
 
     Examples
     --------
+    Store a cue card on the room wall just north of a 1 m arena and a monitor
+    along its south wall, then map a cell's firing relative to the cue card
+    by name:
+
     >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import compute_egocentric_rate
     >>> from neurospatial.landmarks import Landmark, Landmarks
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((10, 10), dtype=bool),
+    ...     grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+    ...     units="cm",
+    ... )
     >>> landmarks = Landmarks(
     ...     [
-    ...         Landmark("cue_card", "point", [50.0, 100.0]),
+    ...         Landmark("cue_card", "point", [50.0, 105.0]),
     ...         Landmark("monitor", "line", [(0.0, 0.0), (40.0, 0.0)]),
     ...     ]
     ... )
-    >>> landmarks.nearest_points(np.array([[10.0, 5.0]]), ["monitor"]).tolist()
+    >>> env = env.with_landmarks(landmarks)
+    >>> rng = np.random.default_rng(0)
+    >>> times = np.arange(0.0, 60.0, 0.02)  # 50 Hz tracking, seconds
+    >>> positions = rng.uniform(5.0, 95.0, (times.size, 2))  # cm
+    >>> headings = rng.uniform(-np.pi, np.pi, times.size)  # radians
+    >>> spike_times = np.sort(rng.uniform(0.0, 60.0, 200))
+    >>> rate = compute_egocentric_rate(
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     ["cue_card"],
+    ...     distance_range=(0.0, 100.0),
+    ...     distance_bin_size=20.0,
+    ... )
+    >>> rate.analysis_settings["objects"]
+    ['cue_card']
+
+    The monitor's nearest point to the animal, per sample:
+
+    >>> env.landmarks.nearest_points(np.array([[10.0, 5.0]]), ["monitor"]).tolist()
     [[[10.0, 0.0]]]
     """
 
@@ -272,11 +384,18 @@ class Landmarks(Mapping[str, Landmark]):
         """Representative points, shape ``(n_landmarks, n_dims)``.
 
         See :attr:`Landmark.position`. ``names`` selects and orders them;
-        every landmark by default.
+        every landmark by default. An empty selection has shape
+        ``(0, n_dims)``, and ``(0, 0)`` for a collection with no landmarks.
+
+        Raises
+        ------
+        KeyError
+            If a name is not a landmark in this collection.
         """
         selected = self._selected(names)
         if not selected:
-            return np.empty((0, 0))
+            n_dims = next(iter(self._items.values())).n_dims if self._items else 0
+            return np.empty((0, n_dims))
         return np.array([landmark.position for landmark in selected])
 
     @reads_pynapple_samples
@@ -297,6 +416,13 @@ class Landmarks(Mapping[str, Landmark]):
         ndarray of float64, shape (n_time, n_landmarks, n_dims)
             See :meth:`Landmark.nearest_points`. This is the per-sample form
             the egocentric operations and ``object_positions`` accept.
+
+        Raises
+        ------
+        KeyError
+            If a name is not a landmark in this collection.
+        ValueError
+            If ``positions`` does not have shape ``(n_time, n_dims)``.
         """
         selected = self._selected(names)
         query = np.asarray(positions, dtype=np.float64)
@@ -324,7 +450,15 @@ class Landmarks(Mapping[str, Landmark]):
         Returns
         -------
         ndarray of bool, shape (n_points,)
-            False for points with a NaN coordinate.
+            False for points with a non-finite (NaN or infinite) coordinate.
+
+        Raises
+        ------
+        KeyError
+            If ``name`` is not a landmark in this collection.
+        ValueError
+            If ``tolerance`` is negative or not finite, or ``points`` does not
+            have shape ``(n_points, n_dims)``.
         """
         if not np.isfinite(tolerance) or tolerance < 0:
             raise _error(

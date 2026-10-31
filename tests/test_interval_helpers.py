@@ -2,6 +2,7 @@
 
 import re
 import sys
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -321,7 +322,7 @@ def test_time_support_records_fractional_runs_when_given():
         max_gap=None,
         runs=np.array([[0.25, 1.75]]),
     )
-    assert support.analysis_settings()["observed_intervals"] == [[0.25, 1.75]]
+    assert support.temporal_settings()["observed_intervals"] == [[0.25, 1.75]]
 
 
 def test_touching_interval_sets_do_not_intersect():
@@ -372,3 +373,86 @@ def test_context_warnings_survive_an_error_in_the_block() -> None:
     ):
         warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
         raise ValueError("nothing left")
+
+
+def test_linear_fill_between_repeated_timestamps_is_silent_and_left_missing():
+    """A missing row between two samples at one instant has no place on a path.
+
+    Its gap lasts no time, so the row stays NaN and holds no time or spikes;
+    filling it must not leak a 0/0 RuntimeWarning.
+    """
+    from neurospatial._intervals import fill_missing_positions
+
+    times = np.array([0.0, 0.1, 0.2, 0.2, 0.2, 0.3, 0.4])
+    positions = np.c_[np.arange(7.0), np.zeros(7)]
+    positions[3] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        filled = fill_missing_positions(times, positions, time_allocation="linear")
+    assert np.isnan(filled[3]).all()
+    np.testing.assert_array_equal(
+        np.delete(filled, 3, axis=0), np.delete(positions, 3, axis=0)
+    )
+
+
+def test_linear_occupancy_with_a_missing_row_at_a_repeated_timestamp():
+    """Occupancy equals that of the recording with the missing row deleted."""
+    from neurospatial import Environment
+
+    env = Environment.from_samples(
+        np.c_[np.linspace(0, 10, 50), np.linspace(0, 10, 50)], bin_size=2.0
+    )
+    times = np.array([0.0, 0.1, 0.2, 0.2, 0.2, 0.3, 0.4])
+    positions = np.c_[np.linspace(1, 9, 7), np.linspace(1, 9, 7)]
+    missing = positions.copy()
+    missing[3] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        occupancy = env.occupancy(times, missing, time_allocation="linear")
+    deleted = env.occupancy(
+        np.delete(times, 3), np.delete(positions, 3, axis=0), time_allocation="linear"
+    )
+    np.testing.assert_allclose(occupancy, deleted, rtol=1e-12, atol=0)
+    assert occupancy.sum() == pytest.approx(0.4)
+
+
+def test_break_declared_on_a_missing_row_moves_to_the_next_kept_row():
+    from neurospatial._intervals import drop_missing_samples
+
+    index, breaks = drop_missing_samples(
+        np.array([True, True, False, True, True]),
+        np.array([False, False, True, False, False]),
+    )
+    np.testing.assert_array_equal(index, [0, 1, 3, 4])
+    np.testing.assert_array_equal(breaks, [False, False, True, False])
+
+
+def test_break_before_the_first_kept_row_is_dropped():
+    """No recording precedes the first kept row, so there is nothing to split."""
+    from neurospatial._intervals import drop_missing_samples
+
+    index, breaks = drop_missing_samples(
+        np.array([False, True, True]), np.array([False, True, False])
+    )
+    np.testing.assert_array_equal(index, [1, 2])
+    np.testing.assert_array_equal(breaks, [False, False])
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_merge_covers_exactly_the_union_of_its_rows(seed):
+    """A time is in the merged rows iff it is in some input row; rows stay apart."""
+    from neurospatial._intervals import _merge
+
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(1, 12))
+    # Integer grid endpoints make touching and nested rows common.
+    starts = rng.integers(0, 20, n).astype(float)
+    rows = np.column_stack([starts, starts + rng.integers(1, 6, n)])
+    merged = _merge(rows)
+
+    queries = np.unique(np.r_[rows.ravel(), rng.uniform(-1, 26, 200)])
+    inside_input = ((rows[:, :1] <= queries) & (queries < rows[:, 1:])).any(axis=0)
+    inside_merged = ((merged[:, :1] <= queries) & (queries < merged[:, 1:])).any(axis=0)
+    np.testing.assert_array_equal(inside_merged, inside_input)
+    assert (merged[:, 0] < merged[:, 1]).all()
+    assert (merged[:-1, 1] < merged[1:, 0]).all()

@@ -16,7 +16,16 @@ SPELLINGS = {
     "m": ["m", "meter", "Meters", "metre", "metres"],
     "cm": ["cm", "centimeter", "centimeters", "centimetre", " centimetres "],
     "mm": ["mm", "millimeter", "millimeters", "millimetre", "millimetres"],
-    "um": ["um", "µm", "micrometer", "micrometers", "micrometre", "micrometres"],
+    # Micro sign U+00B5 and Greek small mu U+03BC look identical.
+    "um": [
+        "um",
+        "\u00b5m",
+        "\u03bcm",
+        "micrometer",
+        "micrometers",
+        "micrometre",
+        "micrometres",
+    ],
     "px": ["px", "pixel", "pixels"],
 }
 
@@ -29,6 +38,14 @@ def test_spellings_share_one_canonical_unit_and_conversion(canonical):
         assert normalize_position_units(spelling) == canonical
         series = SimpleNamespace(unit=spelling)
         assert position_units_from_series(series) == canonical
+
+
+@pytest.mark.parametrize(
+    ("units", "per_centimeter"),
+    [("m", 0.01), ("cm", 1.0), ("mm", 10.0), ("um", 1e4)],
+)
+def test_units_per_centimeter_converts(units, per_centimeter):
+    assert units_per_centimeter(units) == pytest.approx(per_centimeter, rel=1e-12)
 
 
 def test_custom_units_are_kept_and_not_converted():

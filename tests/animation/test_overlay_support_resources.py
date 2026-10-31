@@ -131,9 +131,8 @@ def readers(monkeypatch):
     return opened
 
 
-@pytest.mark.parametrize(
-    "failure", ["times", "length", "calibration", "crop", "frame_count"]
-)
+# A bad crop is refused by the reader's constructor, before it is acquired.
+@pytest.mark.parametrize("failure", ["times", "length", "calibration", "frame_count"])
 def test_video_conversion_closes_acquired_reader_on_validation_failure(
     env, readers, failure
 ):
@@ -144,8 +143,6 @@ def test_video_conversion_closes_acquired_reader_on_validation_failure(
         overlay.times = np.array([0.0, 1.0])
     elif failure == "calibration":
         overlay.calibration = object()
-    elif failure == "crop":
-        overlay.crop = (0, 0, 10, 10)
     else:
         overlay.times = None
     frames = np.arange(2.0) if failure == "frame_count" else np.arange(3.0)

@@ -58,10 +58,10 @@ def test_velocity_heading_is_nan_where_not_moving():
 
 
 def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
-    from scipy.ndimage import gaussian_filter1d
-
     from neurospatial._intervals import observed_interval_mask
     from neurospatial.behavior._kinematics import _movement_heading_and_speed
+
+    from ._reference_velocity import reference_velocity
 
     r = two_epoch_recording
     headings, speed = _movement_heading_and_speed(
@@ -72,8 +72,7 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
         min_speed=0.0,
     )
     for run in (slice(0, 5000), slice(5000, 10000)):
-        velocity = np.gradient(r.positions[run], r.times[run], axis=0)
-        velocity = gaussian_filter1d(velocity, 2.0, axis=0, mode="nearest")
+        velocity = reference_velocity(r.times[run], r.positions[run], 0.04)
         expected_heading = np.arctan2(velocity[:, 1], velocity[:, 0])
         expected_speed = np.hypot(velocity[:, 0], velocity[:, 1])
         np.testing.assert_allclose(
@@ -114,12 +113,12 @@ def test_slow_samples_have_no_heading_in_either_run(two_epoch_recording):
     positions = np.c_[
         np.r_[0, 1, 2, 2, 2, 2, np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
     ]
-    # Smoothed speed in the first run falls from 32.7 to 13.7 cm/s as the
-    # animal stops; samples 4-5 are below 20 cm/s. The second run moves North
+    # Smoothed speed in the first run falls from 24.1 to 17.3 cm/s as the
+    # animal stops; samples 3-5 are below 20 cm/s. The second run moves North
     # at 50 cm/s throughout.
     headings = heading_from_velocity(times, positions, min_speed=20.0)
-    np.testing.assert_allclose(headings[:4], 0.0, atol=0)
-    assert np.isnan(headings[4:6]).all()
+    np.testing.assert_allclose(headings[:3], 0.0, atol=0)
+    assert np.isnan(headings[3:6]).all()
     np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
 
 
@@ -661,17 +660,26 @@ class TestHeadingFromVelocityGuards:
                 positions=positions, times=np.arange(len(positions)) * -0.1
             )
 
-    @pytest.mark.parametrize("missing", [np.nan, np.inf, -np.inf])
-    def test_heading_from_velocity_nonfinite_rows_have_no_heading(self, missing):
-        """A row with a non-finite coordinate is missing: NaN there, East elsewhere."""
+    def test_heading_from_velocity_nan_row_has_no_heading(self):
+        """A row with a NaN coordinate is missing: NaN there, East elsewhere."""
         from neurospatial.behavior import heading_from_velocity
 
         positions = np.c_[np.arange(6.0), np.zeros(6)]
-        positions[2, 0] = missing
+        positions[2, 0] = np.nan
         headings = heading_from_velocity(
             np.arange(6) * 0.1, positions, smooth_window=0.0
         )
         np.testing.assert_array_equal(headings, [0.0, 0.0, np.nan, 0.0, 0.0, 0.0])
+
+    @pytest.mark.parametrize("bad", [np.inf, -np.inf])
+    def test_heading_from_velocity_infinite_row_raises(self, bad):
+        """An infinite coordinate is a corrupt value, not a missing sample."""
+        from neurospatial.behavior import heading_from_velocity
+
+        positions = np.c_[np.arange(6.0), np.zeros(6)]
+        positions[2, 0] = bad
+        with pytest.raises(ValueError, match="infinite value"):
+            heading_from_velocity(np.arange(6) * 0.1, positions, smooth_window=0.0)
 
     def test_heading_from_velocity_descending_times_would_flip(self):
         """The timestamp guard blocks descending times that would rotate headings by pi.
@@ -727,13 +735,18 @@ def test_antipodal_turn_has_no_jump_to_zero():
 def test_heading_from_velocity_stop_has_no_heading():
     from neurospatial.behavior import compute_speed, heading_from_velocity
 
+    from ._reference_velocity import reference_speed
+
     # East, a 0.3 s stop, then West: the stop's direction is not observed, so
     # it gets no heading instead of one interpolated between East and West.
     positions = np.column_stack([[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)])
     times = np.arange(len(positions)) * 0.1
     speed = compute_speed(times, positions)
     np.testing.assert_allclose(
-        speed, [8.204, 4.977, 1.480, 1.480, 4.977, 8.204, 9.684], atol=6e-4
+        speed, reference_speed(times, positions, 0.1), rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        speed, [7.432, 4.664, 1.441, 1.480, 4.953, 8.092, 9.549], atol=6e-4
     )
     heading = heading_from_velocity(times, positions, min_speed=2.0)
     np.testing.assert_allclose(

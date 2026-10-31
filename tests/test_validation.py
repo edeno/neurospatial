@@ -22,6 +22,41 @@ def test_swapped_times_positions_names_swap():
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
+def test_swapped_one_dimensional_arguments_name_swap():
+    """Linear-track positions passed as times, and times passed as positions."""
+    from neurospatial._validation import validate_times_positions
+
+    track = [5.0, 7.0, 6.0, 9.0]
+    with pytest.raises(ValueError, match="did you pass positions before times"):
+        validate_times_positions(track, [0.0, 0.1, 0.2, 0.3], call="f")
+
+
+@pytest.mark.parametrize(
+    "times, positions",
+    [
+        ([0.0, np.nan, 0.2], [0.0, 1.0, 2.0]),
+        ([0.0, 0.1, 0.2], [0.0, 1.0, 2.0, 3.0]),
+        ([0.0, 0.2, 0.1], [[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]]),
+        ([0.0, 0.2, 0.1], [0.0, np.nan, 2.0]),
+    ],
+    ids=[
+        "nan time, track positions",
+        "length mismatch",
+        "unsorted, 2-D positions",
+        "unsorted, positions with nan",
+    ],
+)
+def test_swap_is_not_suggested_without_evidence(times, positions):
+    """Positions that never decrease are normal on a linear track."""
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(times, positions, call="f")
+    message = str(caught.value)
+    assert "positions before times" not in message
+    assert "Fix: pass times as a sorted 1-D array" in message
+
+
 def test_unsorted_times_reports_first_decrease():
     from neurospatial._validation import validate_times_positions
 
@@ -76,6 +111,22 @@ def test_conversion_errors_keep_other_argument_problems(
         validate_times_positions(times, positions, call="f")
     assert other_problem in str(caught.value)
     assert "numeric" in str(caught.value)
+
+
+def test_positions_without_coordinates_are_refused():
+    """(n, 0) positions have no coordinates; no sample can be valid."""
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError, match=r"got shape \(3, 0\)") as caught:
+        validate_times_positions([0.0, 0.1, 0.2], np.zeros((3, 0)), call="f")
+    assert "n_dims >= 1" in str(caught.value)
+
+
+def test_compute_speed_refuses_positions_without_coordinates():
+    from neurospatial.behavior import compute_speed
+
+    with pytest.raises(ValueError, match=r"got shape \(10, 0\)"):
+        compute_speed(np.arange(10) * 0.1, np.zeros((10, 0)))
 
 
 class TestValidateFinite:
@@ -144,7 +195,11 @@ class TestValidateFinite:
         message = str(exc_info.value)
         assert "grid" in message
         # Flattened index of the inf (row 1, col 1) is 3.
-        assert "index 3" in message
+        assert "flat index 3" in message
+
+    def test_one_dimensional_index_is_not_called_flat(self) -> None:
+        with pytest.raises(ValueError, match=r"first at index 1:"):
+            validate_finite([0.0, np.inf], name="x", allow_nan=True)
 
     def test_2d_clean_input_preserved(self) -> None:
         arr = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -215,6 +270,18 @@ class TestValidateLengths:
         assert "a=2" in message
         assert "b=3" in message
         assert "c=1" in message
+
+    def test_message_says_why_and_how_to_fix(self) -> None:
+        with pytest.raises(ValueError) as exc_info:
+            validate_lengths({"angles": np.zeros(4), "weights": np.zeros(3)})
+        lines = str(exc_info.value).splitlines()
+        assert lines[0] == "Length mismatch: angles=4, weights=3."
+        assert lines[1].startswith("Why: ")
+        assert lines[-1].startswith("Fix: ")
+
+    def test_compares_first_axis_of_two_dimensional_arrays(self) -> None:
+        with pytest.raises(ValueError, match="times=3, positions=2"):
+            validate_lengths({"times": np.zeros(3), "positions": np.zeros((2, 3))})
 
     def test_raises_valueerror_exact_type(self) -> None:
         with pytest.raises(ValueError):

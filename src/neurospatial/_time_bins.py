@@ -1,7 +1,4 @@
-"""Half-open time bins tiled inside windows and per-bin spike counts.
-
-Shared by time-binned decoding and peri-event histograms.
-"""
+"""Half-open time bins tiled inside windows and per-bin spike counts."""
 
 from __future__ import annotations
 
