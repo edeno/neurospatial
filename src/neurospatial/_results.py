@@ -44,11 +44,17 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
     label a unit is reported, looked up and seeded under. Labels of more than
     one kind are kept in an object array; homogeneous labels keep their
-    natural dtype. An ``ndarray`` is returned as given, without a copy.
+    natural dtype. Tuple labels such as ``(shank, cluster)`` are one label
+    each, kept in a 1-D object array rather than read as array rows. An
+    ``ndarray`` is returned as given, without a copy.
     """
     if isinstance(labels, np.ndarray):
         return labels
     values = list(labels)
+    if any(isinstance(v, tuple) for v in values):
+        array = np.empty(len(values), dtype=object)
+        array[:] = values
+        return array
     array = np.asarray(values)
     if array.ndim == 1 and len({np.asarray(v).dtype.kind for v in values}) > 1:
         array = np.empty(len(values), dtype=object)

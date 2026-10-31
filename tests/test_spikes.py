@@ -694,3 +694,22 @@ class TestLabelledSpikeContainers:
         assert ids.tolist() == ["a", "b"]
         np.testing.assert_array_equal(trains[0], [0.1, 0.2, 0.3])
         np.testing.assert_array_equal(trains[1], [0.4, 0.5])
+
+    def test_tuple_unit_ids_stay_one_label_per_unit(self) -> None:
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        trains, ids, supplied = as_labelled_spike_trains(
+            {(1, 3): [0.1], (2, 5): [0.2, 0.3]}, None, context="demo"
+        )
+        assert ids.shape == (2,)
+        assert ids.tolist() == [(1, 3), (2, 5)]
+        assert supplied
+        np.testing.assert_array_equal(trains[1], [0.2, 0.3])
+
+    def test_tuple_unit_ids_can_be_passed_explicitly(self) -> None:
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        _, ids, _ = as_labelled_spike_trains(
+            [[0.1], [0.2, 0.3]], [(1, 3), (2, 5)], context="demo"
+        )
+        assert ids.tolist() == [(1, 3), (2, 5)]
