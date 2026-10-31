@@ -131,34 +131,41 @@ def validate_max_gap(max_gap: Any) -> float | None:
     ``max_gap`` is the longest stretch of missing tracking that is bridged:
     the time between two consecutive valid samples (a sample is missing when
     its row was dropped or its coordinates are NaN). A gap no longer than
-    ``max_gap`` is treated as observed, with its time held at the last valid
-    sample; a longer gap is excluded as a tracking loss. ``None`` bridges
-    every gap.
+    ``max_gap`` is treated as observed: its time goes to the last valid
+    sample, or, where an analysis allocates time along the path
+    (``time_allocation="linear"``), along the straight path to the next
+    valid sample. A longer gap is excluded as a tracking loss. ``None``
+    bridges every gap.
 
     Notes
     -----
-    The default, ``DEFAULT_MAX_GAP = 1.0`` s, is calibrated by simulation.
-    Scenarios: 15 min of running back and forth on a 200 cm linear track
-    (30-50 cm/s runs, 2-6 s pauses at the ends), tracked at 30, 60 and
-    120 Hz, with 1 % or 5 % isolated dropped frames, DeepLabCut-style
-    low-confidence NaN bursts (1-15 frames, about 3 % of frames, four times
-    as frequent during the pauses near the walls), three 2-5 s tracking
-    losses while running and one ~10 s pickup during a pause; 12 replicates
-    per scenario. ``max_gap`` was swept from 0.03 s to 10 s on a log grid,
-    and each value was scored on occupancy error against the true trajectory
-    (total variation and L1, 2 cm and 5 cm bins), the binned rate-map error
-    of a place cell, running-bout count and complete track traversals.
+    The default, ``DEFAULT_MAX_GAP = 1.0`` s, is calibrated by simulation
+    (``scripts/calibrate_max_gap.py``, about two minutes). Scenarios: about
+    15 min of running back and forth on a 200 cm linear track (30-50 cm/s
+    runs, 2-6 s pauses at the ends), tracked at 30, 60 and 120 Hz, with 1 %
+    or 5 % isolated dropped frames, DeepLabCut-style low-confidence NaN
+    bursts (1-15 frames, about 3 % of frames, four times as frequent during
+    the pauses at the ends), three 2-5 s tracking losses while running and a
+    10 s pickup during a pause; 12 replicates per scenario. ``max_gap`` is
+    swept from 0.03 s to 13 s on a log grid, and each value is scored
+    against the true trajectory on occupancy (total variation and L1, 2 cm
+    and 5 cm bins), the binned rate-map error of a place cell, and the
+    running-bout and complete-traversal counts.
 
-    Bout and traversal counts and the occupancy L1 error need ``max_gap``
-    longer than the longest routine low-confidence burst (15 frames at 30 Hz,
-    0.5 s), and every metric degrades once ``max_gap`` reaches the shortest
-    real loss (2 s). From 0.55 s to 2.0 s, 38 of the 42 scenario-metric pairs
-    stay within two Monte-Carlo standard errors of their best value; the
-    other four, occupancy total-variation errors, are within 26 % of their
-    best, because a bridged burst holds the last position while the animal
-    keeps running. 1.0 s is the round value nearest the geometric middle of
-    that plateau (1.05 s). 0.5 s lies just below it: at 30 Hz it splits
-    running bouts at the longest bursts.
+    Occupancy and bout counts need ``max_gap`` longer than the longest
+    routine low-confidence burst (15 frames at 30 Hz, 0.53 s): at 0.5 s the
+    bout-count error of 30 Hz recordings nearly doubles (1.0-1.2 against
+    0.6 bouts per session). Occupancy degrades once ``max_gap`` bridges the
+    real losses (2 s and longer), because a bridged gap's time goes to its
+    last valid sample while the animal keeps running. From 0.56 s to 2.0 s,
+    32 of the 42 scenario-metric pairs stay within two Monte-Carlo standard
+    errors of their best value, more than in any other range; the rate-map
+    error barely depends on ``max_gap``. The other ten are the six traversal
+    counts, three bout counts and one occupancy total variation (60 Hz, 2 cm
+    bins, 15 % above its best). Counts are best above 4 s, where the 2-5 s
+    losses are bridged and the runs they interrupt are whole again; at 1.0 s
+    each loss during a run costs about one traversal. 1.0 s is the round
+    value nearest the geometric middle of the 0.56-2.0 s range (1.06 s).
     """
     if max_gap is None:
         return None
@@ -640,16 +647,20 @@ def interval_valid_mask(
         \\neg\\,\\text{break\\_before}_{a+1..b}
 
     where ``start_bin`` is the bin of each sample (for example
-    ``env.bin_at(positions)``). A valid interval inside a bridged gap belongs
-    to the bin of sample ``a`` (:func:`hold_last_valid`), so occupancy and
-    spike counts equal those of the recording with the missing rows deleted.
+    ``env.bin_at(positions)``). Under the default ``time_allocation="start"``
+    a valid interval inside a bridged gap belongs to the bin of sample ``a``
+    (:func:`hold_last_valid`); under ``"linear"`` the gap's time is spread
+    along the straight path from ``a`` to ``b``
+    (:func:`fill_missing_positions`). Either way occupancy and spike counts
+    equal those of the recording with the missing rows deleted.
     Bounds are checked only when ``start_bin`` is supplied. Window gates
     apply when given.
 
     ``max_gap`` must sit above the sampling interval. Timestamps such as
     ``np.arange(n) / 30`` are not exact, so with ``max_gap`` equal to the
-    sampling interval about a quarter to a half of the intervals exceed it by
-    float rounding and are dropped. :func:`warn_excluded_intervals` names this
+    sampling interval a large fraction of the intervals (about a sixth to
+    a half, depending on frame rate and recording length) exceed it by float
+    rounding and are dropped. :func:`warn_excluded_intervals` names this
     case.
 
     Parameters

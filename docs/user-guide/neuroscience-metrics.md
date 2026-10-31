@@ -618,8 +618,8 @@ tracking losses. To choose another value, make it longer than your routine
 dropped or low-confidence frames and shorter than real tracking losses or
 pickups. Keep it above the sampling interval: timestamps such as
 `np.arange(n) / 30` carry float rounding, so with `max_gap` equal to the
-sampling interval a quarter to a half of the intervals count as gaps; a
-warning says when this happens.
+sampling interval a large fraction of the intervals (about a sixth to a
+half) count as gaps; a warning says when this happens.
 
 ### Spatial maps conditioned on movement direction
 
