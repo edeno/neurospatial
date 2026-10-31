@@ -49,7 +49,7 @@ def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
     times = offset + np.arange(3) * step
     positions = np.full((3, 1), 20.0)
     spikes = times[1:]
-    mask = interval_valid_mask(times, positions, env_1d)
+    mask = interval_valid_mask(times, start_bin=env_1d.bin_at(positions))
     counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
         _bin_spike_train_with_stats(
             env_1d,
@@ -221,7 +221,7 @@ def test_max_gap_alignment_against_hand_masked_reference(
     occ = compute_occupancy(env_1d, times, positions)
 
     # --- Hand-masked reference: drop the gap interval from BOTH sides. ---
-    mask = interval_valid_mask(times, positions, env_1d)
+    mask = interval_valid_mask(times, start_bin=env_1d.bin_at(positions))
     # The gap interval is the dropped one.
     assert not mask[gap_interval]
     assert mask.sum() == len(mask) - 1
@@ -309,7 +309,7 @@ def test_oob_start_spike_excluded(env_1d, oob_trajectory) -> None:
     assert counts.sum() == 0.0
 
     # And occupancy excludes that interval's start bin (it is -1).
-    mask = interval_valid_mask(times, positions, env_1d)
+    mask = interval_valid_mask(times, start_bin=env_1d.bin_at(positions))
     assert not mask[oob_interval]
 
 
@@ -327,7 +327,7 @@ def test_oob_alignment_against_reference(env_1d, oob_trajectory) -> None:
     )[0][0]
     occ = compute_occupancy(env_1d, times, positions)
 
-    mask = interval_valid_mask(times, positions, env_1d)
+    mask = interval_valid_mask(times, start_bin=env_1d.bin_at(positions))
     assert not mask[oob_interval]
     # Complete-case rule: the interval's end sample must also be tracked.
     mask &= env_1d.bin_at(positions)[1:] >= 0
@@ -418,7 +418,10 @@ def test_combined_mask_alignment(env_1d) -> None:
     )
 
     mask = interval_valid_mask(
-        times, positions, env_1d, speed=resolved, min_speed=min_speed
+        times,
+        start_bin=env_1d.bin_at(positions),
+        speed=resolved,
+        min_speed=min_speed,
     )
     # Complete-case rule: the interval's end sample must also be tracked.
     mask &= env_1d.bin_at(positions)[1:] >= 0
@@ -463,7 +466,7 @@ def test_max_gap_none_aligned_and_matches_pre_fix(env_1d, gap_trajectory) -> Non
     )[0][0]
     occ = compute_occupancy(env_1d, times, positions, max_gap=None)
 
-    mask = interval_valid_mask(times, positions, env_1d, max_gap=None)
+    mask = interval_valid_mask(times, start_bin=env_1d.bin_at(positions), max_gap=None)
     # No interval dropped (all in-bounds, no speed filter).
     assert mask.all()
 

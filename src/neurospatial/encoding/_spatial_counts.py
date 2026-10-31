@@ -794,8 +794,6 @@ def _spatial_interval_mask(
     valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
     mask = interval_valid_mask(
         times,
-        positions,
-        env,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,

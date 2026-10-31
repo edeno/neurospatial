@@ -16,7 +16,7 @@ import math
 import numbers
 import warnings
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -24,13 +24,6 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
-
-
-class _PositionBinLookup(Protocol):
-    """Map position samples to bin IDs for an optional interval-start gate."""
-
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
-
 
 _ACCEPTED_FORMS = (
     "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
@@ -602,8 +595,6 @@ def gap_endpoints(
 
 def interval_valid_mask(
     times: NDArray[np.float64],
-    positions: NDArray[np.float64] | None = None,
-    env: _PositionBinLookup | None = None,
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -645,11 +636,12 @@ def interval_valid_mask(
         \\;\\wedge\\;
         \\neg\\,\\text{break\\_before}_{a+1..b}
 
-    where ``start_bin = env.bin_at(positions)``. A valid interval inside a
-    bridged gap belongs to the bin of sample ``a`` (:func:`hold_last_valid`),
-    so occupancy and spike counts equal those of the recording with the
-    missing rows deleted. Bounds are checked only when ``start_bin`` or
-    ``env`` is supplied. Window gates apply when given.
+    where ``start_bin`` is the bin of each sample (for example
+    ``env.bin_at(positions)``). A valid interval inside a bridged gap belongs
+    to the bin of sample ``a`` (:func:`hold_last_valid`), so occupancy and
+    spike counts equal those of the recording with the missing rows deleted.
+    Bounds are checked only when ``start_bin`` is supplied. Window gates
+    apply when given.
 
     ``max_gap`` must sit above the sampling interval. Timestamps such as
     ``np.arange(n) / 30`` are not exact, so with ``max_gap`` equal to the
@@ -662,12 +654,6 @@ def interval_valid_mask(
     times : ndarray, shape (n_samples,)
         Trajectory timestamps in seconds (assumed sorted/finite; validated
         upstream).
-    positions : ndarray, shape (n_samples, n_dims), or None
-        Trajectory coordinates. Required with ``env`` unless ``start_bin``
-        has already been computed.
-    env : Environment or None
-        The spatial environment; ``env.bin_at`` maps each start sample to its
-        bin (``-1`` outside the active mask).
     speed : ndarray, shape (n_samples,), or None
         Per-sample speed, required with ``min_speed``; the gate uses the
         speed of each gap's start sample. Consumed as-is; never re-derived
@@ -680,10 +666,8 @@ def interval_valid_mask(
         ``None`` bridges every gap, on BOTH sides (spikes and occupancy) so
         they stay aligned.
     start_bin : ndarray of intp, shape (n_samples,), or None
-        Precomputed ``env.bin_at(positions)`` for the out-of-bounds-start
-        gate, so callers that already binned ``positions`` skip a second
-        ``bin_at``. It must come from the same ``positions``. When ``None``,
-        it is computed from ``env`` if given.
+        Bin of every sample (``-1`` outside the active bins), for the
+        out-of-bounds-start gate. ``None`` applies no bounds gate.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept gap must lie wholly inside one row of each supplied
@@ -741,11 +725,6 @@ def interval_valid_mask(
 
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
-    # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
-    # already computes bin_at(positions)); otherwise compute it here.
-    if start_bin is None and env is not None:
-        pos = np.asarray(positions, dtype=np.float64)
-        start_bin = env.bin_at(pos.reshape(-1, 1) if pos.ndim == 1 else pos)
     if start_bin is not None:
         valid_mask &= np.asarray(start_bin)[start] >= 0
     for windows in (epochs, spike_window):

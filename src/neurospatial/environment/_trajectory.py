@@ -213,7 +213,6 @@ def _occupancy(
     finite = _finite_rows(positions)
     valid_mask = interval_valid_mask(
         times,
-        positions,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,

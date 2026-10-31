@@ -156,12 +156,6 @@ class ObservationSupport(ReadOnlyArraysMixin):
             break_before=self.break_before,
         )
 
-    @property
-    def isolated(self) -> NDArray[np.bool_]:
-        """Valid samples that touch no usable interval, shape (n_samples,)."""
-        isolated: NDArray[np.bool_] = self.sample_valid & (self.run_ids == -1)
-        return isolated
-
     def run_samples(self) -> list[NDArray[np.intp]]:
         """Indices of the valid samples of each run, in time order."""
         return [

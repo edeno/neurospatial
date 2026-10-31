@@ -76,7 +76,8 @@ def test_nan_row_is_bridged_like_a_deleted_row():
     np.testing.assert_array_equal(s.run_sample_bounds, [[0, 4]])
     np.testing.assert_allclose(s.run_time_bounds, deleted.run_time_bounds)
     assert not s.sample_valid[2]
-    assert not s.isolated.any()
+    # Every valid sample is in a run.
+    assert (s.run_ids[s.sample_valid] >= 0).all()
 
 
 def test_nan_row_gap_longer_than_max_gap_breaks_the_path():
@@ -149,7 +150,7 @@ def test_isolated_finite_sample():
     s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
     assert s.sample_valid[2]
-    np.testing.assert_array_equal(s.isolated, [False, False, True, False, False])
+    np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
 
 
 def test_stationary_interval_is_usable():
