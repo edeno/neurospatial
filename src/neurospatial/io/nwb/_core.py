@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from neurospatial._optional import require_optional
+
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
@@ -104,87 +106,18 @@ class _MissingObjectError(KeyError):
 
 
 def _require_pynwb() -> Any:
-    """
-    Lazily import pynwb, raising ImportError with helpful message if not installed.
-
-    Returns
-    -------
-    module
-        The pynwb module.
-
-    Raises
-    ------
-    ImportError
-        If pynwb is not installed. Any other import failure, such as a
-        missing or broken pynwb dependency, propagates unchanged.
-    """
-    try:
-        import pynwb
-
-        return pynwb
-    except ModuleNotFoundError as e:
-        if e.name != "pynwb":
-            raise
-        raise ImportError(
-            "pynwb is required for NWB integration. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+    """Import pynwb, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("pynwb", extra="nwb", purpose="NWB integration")
 
 
 def _require_ndx_pose() -> Any:
-    """
-    Lazily import ndx_pose, raising ImportError with helpful message if not installed.
-
-    Returns
-    -------
-    module
-        The ndx_pose module.
-
-    Raises
-    ------
-    ImportError
-        If ndx-pose is not installed. Any other import failure, such as a
-        missing or broken ndx-pose dependency, propagates unchanged.
-    """
-    try:
-        import ndx_pose
-
-        return ndx_pose
-    except ModuleNotFoundError as e:
-        if e.name != "ndx_pose":
-            raise
-        raise ImportError(
-            "ndx-pose is required for pose data. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+    """Import ndx_pose, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("ndx_pose", extra="nwb", purpose="NWB pose data")
 
 
 def _require_ndx_events() -> Any:
-    """
-    Lazily import ndx_events, raising ImportError with helpful message if not installed.
-
-    Returns
-    -------
-    module
-        The ndx_events module.
-
-    Raises
-    ------
-    ImportError
-        If ndx-events is not installed. Any other import failure, such as a
-        missing or broken ndx-events dependency, propagates unchanged.
-    """
-    try:
-        import ndx_events
-
-        return ndx_events
-    except ModuleNotFoundError as e:
-        if e.name != "ndx_events":
-            raise
-        raise ImportError(
-            "ndx-events is required for event data. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+    """Import ndx_events, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("ndx_events", extra="nwb", purpose="NWB event data")
 
 
 def _find_containers_by_type(

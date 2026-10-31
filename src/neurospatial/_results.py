@@ -29,6 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._optional import require_optional
 
 
 def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
@@ -672,26 +673,8 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
 
 
 def import_xarray() -> Any:
-    """Import the optional ``xarray`` dependency for a ``to_xarray()`` export.
-
-    Raises
-    ------
-    ImportError
-        If ``xarray`` is not installed, naming how to install it. An error
-        raised inside an installed xarray (a broken install or a missing
-        dependency of xarray) propagates unchanged.
-    """
-    try:
-        import xarray as xr
-    except ModuleNotFoundError as exc:
-        if exc.name != "xarray":
-            raise
-        raise ImportError(
-            "to_xarray() requires the optional 'xarray' dependency, which "
-            "is not installed. Install it with "
-            "'pip install neurospatial[xarray]' or 'pip install xarray'."
-        ) from exc
-    return xr
+    """Import xarray for a ``to_xarray()`` export, or name the ``xarray`` extra."""
+    return require_optional("xarray", extra="xarray", purpose="to_xarray()")
 
 
 def software_version() -> str:

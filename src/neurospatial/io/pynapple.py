@@ -32,6 +32,7 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
     refuse_permuted_spatial_columns,
@@ -39,11 +40,6 @@ from neurospatial._pynapple import (
 from neurospatial._stacklevel import _external_stacklevel
 
 __all__ = ["from_pynapple", "to_pynapple"]
-
-_IMPORT_ERROR_MSG = (
-    "This function requires the optional 'pynapple' extra; install it with "
-    "`pip install neurospatial[pynapple]` (or `uv add neurospatial[pynapple]`)."
-)
 
 _DecodeQuantity = Literal["map_position", "mean_position", "posterior"]
 _DECODE_QUANTITIES = ("map_position", "mean_position", "posterior")
@@ -54,17 +50,8 @@ _NOT_METADATA = frozenset({"start_time", "end_time", "bins"})
 
 
 def _require_pynapple() -> Any:
-    """Import and return the ``pynapple`` module, or raise a clear ImportError.
-
-    The import is lazy so importing :mod:`neurospatial.io` never requires
-    pynapple. Raises a clear, actionable :class:`ImportError` naming the extra
-    when pynapple is absent.
-    """
-    try:
-        import pynapple
-    except ImportError as exc:  # pragma: no cover - exercised only when absent
-        raise ImportError(_IMPORT_ERROR_MSG) from exc
-    return pynapple
+    """Import pynapple on first use, so :mod:`neurospatial.io` never needs it."""
+    return require_optional("pynapple", extra="pynapple", purpose="pynapple conversion")
 
 
 def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
