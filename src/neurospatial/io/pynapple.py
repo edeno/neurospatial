@@ -218,7 +218,7 @@ or None, optional
         ``epochs=`` argument. Every timestamp must lie inside a row
         (pynapple would silently drop the others). Default ``None``: a
         decode result's ``time_support``, else pynapple's default, one
-        interval from the first to the last timestamp. For
+        interval from the first to the last timestamp (or crossing). For
         region crossings, pass the ``epochs`` they were detected in, or the
         recording span.
         Not accepted for interval records, which have no time support.
@@ -671,7 +671,15 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
     support = _checked_support(times, epochs)
     groups = sorted(set(keys))
     nap = _require_pynapple()
-    time_support = None if support is None else _interval_set(nap, support)
+    if support is not None:
+        time_support = _interval_set(nap, support)
+    elif times.max() > times.min():
+        # pynapple's group default, first to last crossing, given to every
+        # member too: a member with one crossing would otherwise get a
+        # support without duration.
+        time_support = nap.IntervalSet(start=times.min(), end=times.max())
+    else:
+        time_support = None
     members: dict[int, Any] = {}
     for index, key in enumerate(groups):
         rows = np.array([k == key for k in keys])

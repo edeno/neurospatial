@@ -412,6 +412,20 @@ def test_crossings_become_a_group_per_region_and_direction():
     assert len(entries) == 2
 
 
+@needs_pynapple
+@pytest.mark.pynapple
+def test_crossings_without_epochs_span_first_to_last_crossing():
+    import warnings
+
+    with warnings.catch_warnings():
+        # A group with a single crossing must not trigger pynapple's
+        # zero-duration and divide-by-zero warnings.
+        warnings.simplefilter("error")
+        group = to_pynapple(CROSSINGS)
+    np.testing.assert_array_equal(group.time_support.values, [[1.0, 3.0]])
+    np.testing.assert_array_equal(group[0].t, [2.5])
+
+
 def test_crossings_outside_epochs_are_refused():
     with pytest.raises(ValueError, match=r"1 of 4 timestamp\(s\) lie outside"):
         to_pynapple(CROSSINGS, epochs=(0.0, 3.0))

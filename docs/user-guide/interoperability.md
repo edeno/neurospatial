@@ -510,8 +510,9 @@ would hold; skip the export when nothing was detected.
 **Region crossings.** pynapple time series carry no per-event labels, so
 crossings become a `TsGroup` with one `Tsd` per region and direction. Its
 values are the bin index at each crossing, and the group has `region` and
-`direction` metadata. Pass the epochs the crossings were detected in, or the
-recording span, as its time support:
+`direction` metadata. Without `epochs=`, its time support runs from the first
+crossing to the last; pass the epochs the crossings were detected in, or the
+recording span, instead:
 
 ```python
 from neurospatial.behavior import detect_region_crossings
