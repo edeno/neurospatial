@@ -5,6 +5,8 @@ spike data to a set of time intervals (epochs). Epochs are plain
 ``(start, end)`` arrays, so this stays array-first and never imports pynapple;
 a pynapple ``IntervalSet`` is nonetheless accepted **transparently** because it
 is *duck-typed* (it exposes ``.start`` / ``.end`` arrays), not ``isinstance``-d.
+Its inclusive ends become half-open stops, so the default ``closed="left"``
+keeps the same samples as pynapple's ``restrict``.
 
 Functions
 ---------
@@ -176,7 +178,9 @@ def in_epochs(
         stop``, the half-open windows of every analysis ``epochs=`` and
         ``spike_window=`` argument, so a spike exactly at the stop of one
         window and the start of the next lands in exactly one of them.
-        ``"both"`` matches pynapple's inclusive ``restrict``. Touching rows
+        A pynapple ``IntervalSet``'s inclusive ends become half-open stops,
+        so the default already matches pynapple's ``restrict``; use ``"both"``
+        for plain arrays of pynapple bounds. Touching rows
         merge first, so a boundary shared by two rows is inside the merged
         window for every ``closed`` value.
 
@@ -266,8 +270,9 @@ def restrict(
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
         ``"left"``: ``start <= t < stop``, the half-open windows of every
-        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
-        inclusive ``restrict``.
+        analysis ``epochs=`` argument. A pynapple ``IntervalSet`` already
+        matches pynapple's ``restrict`` under the default; use ``"both"`` for
+        plain arrays of pynapple bounds.
 
     Returns
     -------
@@ -370,8 +375,9 @@ def restrict_spike_trains(
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
         ``"left"``: ``start <= t < stop``, the half-open windows of every
-        analysis ``epochs=`` argument. ``"both"`` matches pynapple's
-        inclusive ``restrict``.
+        analysis ``epochs=`` argument. A pynapple ``IntervalSet`` already
+        matches pynapple's ``restrict`` under the default; use ``"both"`` for
+        plain arrays of pynapple bounds.
 
     Returns
     -------
