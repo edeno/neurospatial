@@ -11,7 +11,8 @@
   `epochs=[[0, 50], [70, 120]]` records those two windows, less tracking gaps,
   time outside `spike_window` and remainders shorter than one bin. The array
   decoders record the windows of the bins `[t - dt/2, t + dt/2)` around
-  `times`. `summary()` reports the `decoded_duration` in seconds and
+  `times`; bins no more than `dt/2` apart join, so timestamp jitter does not
+  split a window but a missing bin does. `summary()` reports the `decoded_duration` in seconds and
   `to_xarray()` attrs the windows.
 - `to_pynapple(result, quantity=...)` exports the MAP track (default), the
   posterior mean (`"mean_position"`) or the posterior (`"posterior"`). The

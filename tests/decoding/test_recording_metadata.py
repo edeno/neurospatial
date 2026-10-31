@@ -169,3 +169,39 @@ def test_time_support_survives_pickle_and_xarray(continuous_recording):
     np.testing.assert_array_equal(
         result.to_xarray().attrs["time_support"], [0.0, 50.0, 70.0, 120.0]
     )
+
+
+@pytest.mark.parametrize("jitter", ["normal", "float32"])
+def test_array_decode_time_support_tolerates_timestamp_jitter(jitter):
+    """Bin centers off the ideal grid by far less than a bin still touch."""
+    from neurospatial import Environment
+    from neurospatial.decoding import decode_position
+
+    dt = 1 / 30
+    centers = 1000.0 + np.arange(600) * dt
+    if jitter == "normal":
+        # 0.1 ms timestamp jitter, as from a camera or acquisition clock.
+        centers = centers + np.random.default_rng(0).normal(0.0, 1e-4, 600)
+    else:
+        centers = centers.astype(np.float32).astype(np.float64)
+    env = Environment.from_samples(np.array([[0.0, 0.0], [10.0, 10.0]]), bin_size=5.0)
+    counts = np.ones((600, 1), dtype=np.int64)
+    rates = np.full((1, env.n_bins), 2.0)
+    result = decode_position(env, counts, rates, dt=dt, times=centers)
+
+    assert result.time_support.shape == (1, 2)
+    np.testing.assert_allclose(
+        result.time_support, [[centers[0] - dt / 2, centers[-1] + dt / 2]]
+    )
+
+    # A genuinely missing bin leaves a gap of about dt and still splits.
+    dropped = np.delete(centers, 300)
+    result = decode_position(
+        env, np.delete(counts, 300, axis=0), rates, dt=dt, times=dropped
+    )
+    assert result.time_support.shape == (2, 2)
+    np.testing.assert_allclose(
+        result.time_support[:, 1] - result.time_support[:, 0],
+        [300 * dt, 299 * dt],
+        atol=1e-3,
+    )
