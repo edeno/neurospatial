@@ -420,9 +420,12 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         - 0 to 0.5: Weak goal-directed with some wandering
         - < 0: Net movement away from goal
     mean_approach_rate : float
-        Mean rate of distance change in environment units per second.
-        Negative values indicate approaching the goal.
-        Interpretation: -10 cm/s means closing 10 cm per second on average.
+        Mean rate of distance change in environment units per second,
+        averaged over the observed time: the change of distance over the
+        usable intervals divided by their total duration, so it does not
+        depend on the sampling rate. Negative values indicate approaching
+        the goal. Interpretation: -10 cm/s means closing 10 cm per second on
+        average.
     time_to_reach_goal : float or None
         Seconds from the first measured sample to the first sample within
         ``goal_radius`` of the goal. None when no ``goal_radius`` was given
@@ -4421,23 +4424,35 @@ def approach_rate(
     return _distance_rates(times, distances, support)
 
 
+def _interval_distance_rates(
+    times: NDArray[np.float64],
+    distances: NDArray[np.float64],
+    support: ObservationSupport,
+) -> NDArray[np.float64]:
+    """Change of ``distances`` per second over each interval, shape (n - 1,).
+
+    NaN for an unusable interval. Every interval inside a bridged gap of
+    missing distances carries that gap's rate.
+    """
+    from neurospatial.behavior._kinematics import interval_velocity
+
+    support = support.restricted(times, np.isfinite(distances))
+    return interval_velocity(times, distances[:, None], support.interval_mask)[:, 0]
+
+
 def _distance_rates(
     times: NDArray[np.float64],
     distances: NDArray[np.float64],
     support: ObservationSupport,
 ) -> NDArray[np.float64]:
-    """Change of ``distances`` per second over each usable interval.
+    """Change of ``distances`` per second, at the sample ending each interval.
 
     A sample whose distance is not finite (a position outside the
     environment, or disconnected from the goal) is missing for the rate, so
     its gap is gated again like a deleted row's.
     """
-    from neurospatial.behavior._kinematics import interval_velocity
-
-    support = support.restricted(times, np.isfinite(distances))
-    velocity = interval_velocity(times, distances[:, None], support.interval_mask)
     rates = np.full(len(distances), np.nan)
-    rates[1:] = velocity[:, 0]
+    rates[1:] = _interval_distance_rates(times, distances, support)
     # A bridged gap's rate belongs to the valid sample that ends it.
     rates[~np.isfinite(distances)] = np.nan
 
@@ -4648,8 +4663,14 @@ def compute_goal_directed_metrics(
     )
 
     distances = _goal_distances(positions, goal, paths=paths, call=call)
-    rates = _distance_rates(times, distances, support)
-    mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
+    # Weighting each interval's rate by its duration averages over observed
+    # time: the net change of distance divided by the usable time.
+    rates = _interval_distance_rates(times, distances, support)
+    usable = ~np.isnan(rates)
+    durations = np.diff(times)[usable]
+    mean_rate = (
+        float(rates[usable] @ durations / durations.sum()) if usable.any() else np.nan
+    )
 
     # Samples measured for the distance summaries: observed (and, with the
     # geodesic metric, inside the environment) and inside ``epochs``.

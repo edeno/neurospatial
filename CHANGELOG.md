@@ -21,6 +21,12 @@
   sees do not change the rate at a visited bin, so the bias counts only the
   visited modes: `(visited bins - 1)` instead of `rank - 1`, and 0 when the
   animal stayed in one bin.
+- `compute_goal_directed_metrics(...).mean_approach_rate` averages over
+  observed time, as its documentation says, instead of over samples: it is
+  the change of goal distance over the usable intervals divided by their
+  duration. A quick 10 cm step toward the goal followed by a slow step back
+  now averages to 0 cm/s instead of -495 cm/s, and the value no longer
+  depends on the sampling rate.
 
 ### Exporting decoding and behavior results to pynapple
 
