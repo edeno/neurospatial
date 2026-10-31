@@ -267,6 +267,18 @@ class TestValidateLengths:
         assert "b=3" in message
         assert "c=1" in message
 
+    def test_message_says_why_and_how_to_fix(self) -> None:
+        with pytest.raises(ValueError) as exc_info:
+            validate_lengths({"angles": np.zeros(4), "weights": np.zeros(3)})
+        lines = str(exc_info.value).splitlines()
+        assert lines[0] == "Length mismatch: angles=4, weights=3."
+        assert lines[1].startswith("Why: ")
+        assert lines[-1].startswith("Fix: ")
+
+    def test_compares_first_axis_of_two_dimensional_arrays(self) -> None:
+        with pytest.raises(ValueError, match="times=3, positions=2"):
+            validate_lengths({"times": np.zeros(3), "positions": np.zeros((2, 3))})
+
     def test_raises_valueerror_exact_type(self) -> None:
         with pytest.raises(ValueError):
             validate_lengths({"a": np.array([1.0]), "b": np.array([1.0, 2.0])})

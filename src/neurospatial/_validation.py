@@ -125,17 +125,18 @@ def timestamps_of(values: Any, *, name: str) -> Any:
 
 
 def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
-    """Raise ValueError if the named 1-D arrays do not share a length.
+    """Raise ValueError if the named arrays do not share a first-axis length.
 
-    Lengths are compared exactly: arrays are neither reshaped nor
-    broadcast. A length-1 array among longer arrays is treated as a
-    mismatch, not as a broadcastable convenience.
+    Lengths along the first axis are compared exactly, so a 2-D
+    ``(n_samples, n_dims)`` array is compared by its ``n_samples``. Arrays
+    are neither reshaped nor broadcast: a length-1 array among longer arrays
+    is a mismatch, not a broadcastable convenience.
 
     Parameters
     ----------
     name_to_array : dict of str to array-like
-        Mapping from argument name to array. The length (``len``) of
-        each array is compared.
+        Mapping from argument name to array. The length (``len``, the first
+        axis) of each array is compared.
 
     Returns
     -------
@@ -145,8 +146,8 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
     Raises
     ------
     ValueError
-        If the arrays do not all share the same length. The message
-        lists each name and its length.
+        If the arrays do not all share the same first-axis length. The
+        message lists each name and its length.
 
     Examples
     --------
@@ -159,7 +160,17 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
     lengths = {k: len(np.asarray(v)) for k, v in name_to_array.items()}
     if len(set(lengths.values())) > 1:
         pairs = ", ".join(f"{k}={n}" for k, n in lengths.items())
-        raise ValueError(f"Length mismatch: {pairs}. These must agree.")
+        raise ValueError(
+            _format_error(
+                f"Length mismatch: {pairs}.",
+                why="Why: these arrays pair up entry by entry along their first "
+                "axis; they are never broadcast or truncated, so different "
+                "lengths mean they do not describe the same samples.",
+                fix="pass arrays with one entry per sample along the first axis; "
+                "check that none was filtered, resampled or trimmed without the "
+                "others.",
+            )
+        )
 
 
 def times_positions_problems(
