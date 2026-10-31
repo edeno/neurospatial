@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Richer NWB readers and DANDI streaming
+
+**Added**
+
+- `read_units` returns `NWBUnits.unit_table`, a DataFrame indexed by
+  `unit_id` with every units-table column holding one value per unit (for
+  example `location`, `cell_type`) and, when units link electrodes,
+  `electrode_location` (brain region) and `electrode_group`. Pass it to
+  `SpikeTrains(..., unit_table=...)` to select cells by region. Lazy reads
+  keep spike times on disk.
+- `NWBUnits.resolution`: the units table's spike-time precision in seconds,
+  or `None` when the file does not state it.
+- `read_position(..., columns=)` and `environment_from_position(..., columns=)`
+  select the spatial columns of a series that also stores non-spatial
+  values, such as DANDI 000447's x, y and speed under the unit
+  `"centimeters; centimeters/second"`.
+- User guide: streaming a DANDI file with `fsspec`, `h5py` and `NWBHDF5IO`,
+  selecting units by brain region, and checking results against pynapple.
+
+**Changed**
+
+- `read_position` and `environment_from_position` refuse a position series
+  whose unit lists several units, or that has three or more columns under a
+  unit that is not one length or pixel unit, instead of binning every column
+  as space. The error quotes the series description; pass `columns=`.
+  `position_overlay_from_nwb` reads through `read_position` and refuses such
+  a series too.
+
 ### pynapple event times, empty NWB tables, pynwb 4
 
 **Fixed**
