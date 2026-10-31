@@ -242,26 +242,7 @@ See Also
 Environment : Core environment class with detailed documentation
 Region : Region of interest documentation
 neurospatial.environment : The Environment class and its coordinate systems
-    Environment, CartesianSystem, EgocentricPolarSystem, BinMapping.
-
-    >>> from neurospatial.environment import Environment, BinMapping
-
-regions : Regions of interest
-    Region, Regions, membership tests, CVAT/LabelMe/JSON loaders.
-
-    >>> from neurospatial.regions import Region, Regions, regions_from_json
-
-landmarks : Named landmarks
-    Landmark and Landmarks for cue cards, monitors and objects.
-
-    >>> from neurospatial.landmarks import Landmark, Landmarks
-
-arena : The physical apparatus around the bins
-    What lies outside the bins: an open arena, a track, a mask, or unknown.
-
-    >>> from neurospatial.arena import OpenArena, TrackArena, MaskArena
-
-encoding : Neural encoding analysis
+neurospatial.encoding : Neural encoding analysis
 neurospatial.decoding : Neural decoding
 neurospatial.behavior : Behavioral analysis
 
@@ -408,8 +389,8 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    """List eager exports plus lazily importable submodules for autocomplete."""
-    return sorted(set(__all__) | set(_LAZY_SUBMODULES) | set(_LAZY_ATTRS))
+    """List the public names, lazy ones included, for autocomplete."""
+    return sorted(__all__)
 
 
 __all__ = [
