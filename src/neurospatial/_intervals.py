@@ -12,8 +12,6 @@ keeping spike counts and occupancy on the same observed time support.
 
 from __future__ import annotations
 
-import math
-import numbers
 import warnings
 from dataclasses import dataclass, replace
 from typing import Any, Literal, overload
@@ -171,14 +169,12 @@ def validate_max_gap(max_gap: Any) -> float | None:
     each loss during a run costs about one traversal. 1.0 s is the round
     value nearest the geometric middle of the 0.56-2.0 s range (1.06 s).
     """
+    # Imported here: _validation imports this module.
+    from neurospatial._validation import is_finite_real
+
     if max_gap is None:
         return None
-    if (
-        isinstance(max_gap, bool)
-        or not isinstance(max_gap, numbers.Real)
-        or not math.isfinite(max_gap)
-        or max_gap <= 0
-    ):
+    if not is_finite_real(max_gap, positive=True):
         raise ValueError(
             _format_error(
                 "max_gap must be a positive finite number of seconds or None "

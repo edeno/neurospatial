@@ -9,10 +9,11 @@ into downstream computations.
 
 from __future__ import annotations
 
+import math
 import numbers
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -487,11 +488,7 @@ def validate_alpha(alpha: object, *, owner: str) -> None:
     ValueError
         If ``alpha`` is not a number in (0, 1).
     """
-    if (
-        isinstance(alpha, (bool, np.bool_))
-        or not isinstance(alpha, (int, float, np.integer, np.floating))
-        or not 0 < alpha < 1
-    ):
+    if not (is_finite_real(alpha, positive=True) and alpha < 1):
         raise ValueError(f"{owner}: alpha must be in (0, 1), got {alpha!r}.")
 
 
@@ -537,6 +534,34 @@ def validate_float_dtype(
     raise ValueError(message)
 
 
+def is_finite_real(value: object, *, positive: bool) -> TypeGuard[float]:
+    """Whether ``value`` is one finite real number, positive or nonnegative.
+
+    Python and NumPy numbers both count; booleans are not read as 0 or 1.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    positive : bool
+        Require ``value > 0``; otherwise ``value >= 0``.
+
+    Examples
+    --------
+    >>> is_finite_real(0.0, positive=False), is_finite_real(0.0, positive=True)
+    (True, False)
+    >>> (
+    ...     is_finite_real(True, positive=True),
+    ...     is_finite_real(float("nan"), positive=False),
+    ... )
+    (False, False)
+    """
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
+        return False
+    number = float(value)
+    return math.isfinite(number) and (number > 0 if positive else number >= 0)
+
+
 def validate_finite_scalar(
     value: Any, *, name: str, positive: bool, none_allowed: bool = False
 ) -> None:
@@ -562,12 +587,7 @@ def validate_finite_scalar(
     """
     if none_allowed and value is None:
         return
-    if (
-        isinstance(value, (bool, np.bool_))
-        or not isinstance(value, (int, float, np.integer, np.floating))
-        or not np.isfinite(value)
-        or (value <= 0 if positive else value < 0)
-    ):
+    if not is_finite_real(value, positive=positive):
         raise ValueError(
             f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
             f"{', or None' if none_allowed else ''}; got {value!r}."

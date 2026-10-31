@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_finite_real
 
 #: Gaussian standard deviation (seconds) of the default velocity smoothing.
 DEFAULT_SPEED_SMOOTHING = 0.1
@@ -61,12 +62,7 @@ def smoothed_velocity(
     """
     from neurospatial._intervals import valid_run_samples
 
-    if (
-        isinstance(smooth_window, (bool, np.bool_))
-        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
-        or not np.isfinite(smooth_window)
-        or smooth_window < 0
-    ):
+    if not is_finite_real(smooth_window, positive=False):
         raise ValueError(
             _format_error(
                 "smooth_window must be a finite number of seconds >= 0; got "

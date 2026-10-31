@@ -47,6 +47,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
+    is_finite_real,
     validate_strictly_increasing,
     validate_times_positions,
 )
@@ -1073,12 +1074,7 @@ def compute_planar_turn_angles(
         epochs=epochs,
         break_before=break_before,
     )
-    if (
-        isinstance(smooth_window, (bool, np.bool_))
-        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
-        or not np.isfinite(smooth_window)
-        or smooth_window < 0
-    ):
+    if not is_finite_real(smooth_window, positive=False):
         raise ValueError(
             _format_error(
                 f"compute_planar_turn_angles() needs smooth_window to be a "
