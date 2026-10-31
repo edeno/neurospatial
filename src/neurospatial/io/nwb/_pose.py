@@ -26,7 +26,6 @@ from neurospatial.io.nwb._adapters import (
     select_one,
     timestamps_from_series,
     timestamps_handle_from_series,
-    validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import (
     _find_containers_by_type,
@@ -137,23 +136,32 @@ def read_pose(
         nwbfile, PoseEstimationType, pose_estimation_name
     )
 
+    series_by_name = pose_estimation.pose_estimation_series
+    names = sorted(series_by_name)
+    if not names:
+        raise ValueError(
+            _format_error(
+                f"PoseEstimation '{pose_estimation.name}' has no PoseEstimationSeries.",
+                fix="add one PoseEstimationSeries per tracked bodypart.",
+            )
+        )
+    # Every bodypart is read on the first bodypart's clock.
+    first = series_by_name[names[0]]
+    read_times = timestamps_handle_from_series if lazy else timestamps_from_series
+    timestamps = read_times(first)
+    units = declared_units(first.unit)
+    frame = declared_frame(first.reference_frame)
+
     bodyparts: dict[str, NDArray[np.float64] | Any] = {}
     confidence: dict[str, NDArray[np.float64] | Any] = {}
-    timestamps: NDArray[np.float64] | Any | None = None
-    units: str | None = None
-    frame: str | None = None
-    clock_name: str | None = None
-
-    for series_name in sorted(pose_estimation.pose_estimation_series.keys()):
-        series = pose_estimation.pose_estimation_series[series_name]
+    for series_name in names:
+        series = series_by_name[series_name]
         if lazy:
             require_unscaled_for_lazy(series, context="read_pose")
             # h5py-backed handles without copy; they materialize on slice.
             bodyparts[series_name] = series.data
-            series_times = timestamps_handle_from_series(series)
         else:
             bodyparts[series_name] = data_from_series(series)
-            series_times = timestamps_from_series(series)
         if series.confidence is not None:
             confidence[series_name] = (
                 series.confidence
@@ -161,60 +169,18 @@ def read_pose(
                 else np.asarray(series.confidence[:], dtype=np.float64)
             )
 
-        if timestamps is None:
-            timestamps = series_times
-            clock_name = series_name
-        validate_handle_lengths(
-            {
-                "timestamps": len(timestamps),
-                f"timestamps[{series_name}]": len(series_times),
-            }
-        )
-        # Only timestamp slices are materialized; coordinate handles stay lazy.
-        previous_time: float | None = None
-        for start in range(0, len(timestamps), 65536):
-            stop = start + 65536
-            clock_chunk = np.asarray(series_times[start:stop], dtype=np.float64)
-            if (
-                not np.all(np.isfinite(clock_chunk))
-                or np.any(np.diff(clock_chunk) <= 0)
-                or (previous_time is not None and clock_chunk[0] <= previous_time)
-            ):
-                raise ValueError(
-                    _format_error(
-                        f"Pose bodypart {series_name!r} timestamps must be finite "
-                        "and strictly increasing.",
-                        fix="correct the source time axis before reading.",
-                    )
-                )
-            previous_time = float(clock_chunk[-1])
-            # Allow only floating-point roundoff, including clocks computed by
-            # equivalent explicit and rate-based expressions. A tolerance tied
-            # to sampling intervals would hide actual acquisition-clock shifts.
-            precision = 4 * np.finfo(np.float64).eps
-            if not np.allclose(
-                timestamps[start:stop],
-                clock_chunk,
-                rtol=precision,
-                atol=precision,
-            ):
-                raise ValueError(
-                    _format_error(
-                        f"Pose bodypart {series_name!r} timestamps do not match "
-                        f"bodypart {clock_name!r}.",
-                        why="Why: all bodyparts must share identical timestamps.",
-                        fix="explicitly align the bodypart series to a common "
-                        "clock before reading; no resampling is performed.",
-                    )
-                )
-
-        series_units = declared_units(series.unit)
-        series_frame = declared_frame(series.reference_frame)
+        if series is first:
+            _check_clock(series_name, timestamps)
+            continue
+        # ndx-pose links bodyparts to one stored clock; a linked clock is the
+        # first bodypart's own dataset and needs no second read.
+        if series.timestamps is None or series.timestamps is not first.timestamps:
+            _check_clock(series_name, read_times(series), timestamps, names[0])
         for label, declared, shared in (
-            ("units", series_units, units),
-            ("reference_frame", series_frame, frame),
+            ("units", declared_units(series.unit), units),
+            ("reference_frame", declared_frame(series.reference_frame), frame),
         ):
-            if series_name != clock_name and not same_coordinate_declaration(
+            if not same_coordinate_declaration(
                 label, declared, shared, undeclared_matches=False
             ):
                 raise ValueError(
@@ -226,18 +192,6 @@ def read_pose(
                         "before reading; coordinates are never silently rescaled.",
                     )
                 )
-        if series_units is not None:
-            units = series_units
-        if series_frame is not None:
-            frame = series_frame
-
-    if timestamps is None:
-        raise ValueError(
-            _format_error(
-                f"PoseEstimation '{pose_estimation.name}' has no PoseEstimationSeries.",
-                fix="add one PoseEstimationSeries per tracked bodypart.",
-            )
-        )
 
     ndx_skeleton = pose_estimation.skeleton
     return NWBPose(
@@ -248,6 +202,77 @@ def read_pose(
         frame=frame,
         confidence=confidence or None,
     )
+
+
+# Timestamps are compared in chunks of this many samples, so a lazy read
+# never holds a whole clock in memory.
+_CLOCK_CHUNK = 65536
+
+
+def _check_clock(
+    series_name: str,
+    series_times: Any,
+    clock: Any = None,
+    clock_name: str | None = None,
+) -> None:
+    """Refuse a bodypart clock that is not increasing or differs from ``clock``.
+
+    Parameters
+    ----------
+    series_name : str
+        The bodypart whose timestamps are checked.
+    series_times : NDArray[np.float64] or lazy handle
+        Its timestamps in seconds, shape (n_samples,).
+    clock : NDArray[np.float64] or lazy handle, optional
+        The shared timestamps to match; None checks only that
+        ``series_times`` are finite and strictly increasing.
+    clock_name : str, optional
+        The bodypart ``clock`` was read from, for messages.
+
+    Raises
+    ------
+    ValueError
+        If the timestamps are not finite and strictly increasing, or differ
+        from ``clock`` in length or beyond float64 roundoff.
+    """
+    if clock is not None and len(series_times) != len(clock):
+        raise ValueError(
+            f"Length mismatch: timestamps={len(clock)}, "
+            f"timestamps[{series_name}]={len(series_times)}. These must agree."
+        )
+    # Allow only floating-point roundoff, including clocks computed by
+    # equivalent explicit and rate-based expressions. A tolerance tied to
+    # sampling intervals would hide actual acquisition-clock shifts.
+    precision = 4 * np.finfo(np.float64).eps
+    previous_time: float | None = None
+    for start in range(0, len(series_times), _CLOCK_CHUNK):
+        stop = start + _CLOCK_CHUNK
+        chunk = np.asarray(series_times[start:stop], dtype=np.float64)
+        if (
+            not np.all(np.isfinite(chunk))
+            or np.any(np.diff(chunk) <= 0)
+            or (previous_time is not None and chunk[0] <= previous_time)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"Pose bodypart {series_name!r} timestamps must be finite "
+                    "and strictly increasing.",
+                    fix="correct the source time axis before reading.",
+                )
+            )
+        previous_time = float(chunk[-1])
+        if clock is not None and not np.allclose(
+            clock[start:stop], chunk, rtol=precision, atol=precision
+        ):
+            raise ValueError(
+                _format_error(
+                    f"Pose bodypart {series_name!r} timestamps do not match "
+                    f"bodypart {clock_name!r}.",
+                    why="Why: all bodyparts must share identical timestamps.",
+                    fix="explicitly align the bodypart series to a common "
+                    "clock before reading; no resampling is performed.",
+                )
+            )
 
 
 def _get_pose_estimation_container(
