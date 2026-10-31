@@ -775,6 +775,53 @@ class TestSpatialRatesRoundTrip:
             assert any(len(back.env.neighbors(bins=i)) > 0 for i in checked)
 
 
+@pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
+def test_unvisited_bins_stay_missing_on_disk(tmp_path, method):
+    """NaN rates in unvisited bins survive a file round trip as NaN, not zero."""
+    from pynwb import NWBHDF5IO
+
+    from neurospatial import Environment
+    from neurospatial.encoding import compute_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    from ._nwb_helpers import create_roundtrip_nwb
+
+    pytest.importorskip("ndx_events")
+    pytest.importorskip("ndx_pose")
+    # A 4 x 4 grid of 10 cm bins; the animal only visits the 2 x 2 corner.
+    edges = np.arange(5.0) * 10.0
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(edges, edges), units="cm"
+    )
+    rng = np.random.default_rng(0)
+    times = np.arange(0.0, 120.0, 1 / 30)
+    positions = rng.uniform(0.0, 20.0, (times.size, 2))
+    spikes = [np.sort(rng.uniform(0, 120, 200)), np.sort(rng.uniform(0, 120, 50))]
+    rates = compute_spatial_rates(
+        env, spikes, times, positions, method=method, bandwidth=10.0
+    )
+    visited = np.all(env.bin_centers < 20.0, axis=1)
+    assert visited.sum() == 4
+    np.testing.assert_array_equal(rates.spatial_support, visited)
+    assert np.isnan(rates.firing_rates[:, ~visited]).all()
+
+    nwbfile = create_roundtrip_nwb()
+    write_spatial_rates(nwbfile, rates)
+    path = tmp_path / "quadrant.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+    with NWBHDF5IO(str(path), "r") as io:
+        back = read_spatial_rates(io.read())
+
+    np.testing.assert_array_equal(
+        np.isnan(back.firing_rates), np.isnan(rates.firing_rates)
+    )
+    np.testing.assert_array_equal(back.firing_rates, rates.firing_rates)
+    np.testing.assert_array_equal(back.spatial_support, rates.spatial_support)
+    np.testing.assert_array_equal(back.occupancy, rates.occupancy)
+    assert back.min_occupancy == rates.min_occupancy
+
+
 class TestReadPositionLazy:
     """lazy=True on read_position returns h5py-backed handles."""
 
