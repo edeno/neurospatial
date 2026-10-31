@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from neurospatial import Regions
+from neurospatial import Environment, Regions
 
 
 def load_kinematic_recording(recording):
@@ -52,6 +52,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     # Unique visit counts avoid depending on an unstable sort's tied-bin order.
     home_bins = np.repeat(np.arange(20), np.arange(10, 30))
     home_times = r.times[: len(home_bins)]
+    home_env = Environment.from_samples(
+        np.arange(20.0)[:, None], bin_size=1.0, infer_active_bins=False
+    )
     env = r.env
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[4000]]))
@@ -105,8 +108,8 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "compute_goal_directed_metrics": compute_goal_directed_metrics(
             r.env, r.times, r.positions, goal, goal_radius=5
         ),
-        "compute_home_range": compute_home_range(home_bins, times=home_times),
-        "compute_home_range_no_times": compute_home_range(home_bins),
+        "compute_home_range": compute_home_range(home_bins, home_env, times=home_times),
+        "compute_home_range_no_times": compute_home_range(home_bins, home_env),
         "add_positions": add_positions(
             pd.DataFrame({"timestamp": [0.0, 50.005, 120.01, r.times[-1]]}),
             times=r.times,

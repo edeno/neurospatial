@@ -1650,6 +1650,7 @@ def compute_cumulative_distance(
 @reads_pynapple_samples
 def compute_home_range(
     position_bins: NDArray[np.int_],
+    env: Environment,
     *,
     times: NDArray[np.float64] | None = None,
     percentile: float = 95.0,
@@ -1658,12 +1659,13 @@ def compute_home_range(
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.int_]:
     """
-    Compute home range as the most-occupied bins holding a percent of time.
+    Compute home range as the most intensively used area holding a percent of time.
 
-    The home range is the set of most-occupied bins that together hold at
-    least ``percentile`` percent of the observed time (or samples): the
-    isopleth of the binned utilization distribution. It is not a minimum
-    convex polygon; it follows the shape of the occupied area, holes included.
+    The home range is the set of most intensively used bins, ranked by time
+    per unit area, that together hold at least ``percentile`` percent of the
+    observed time (or samples): the isopleth of the binned utilization
+    distribution. It is not a minimum convex polygon; it follows the shape of
+    the occupied area, holes included.
 
     Parameters
     ----------
@@ -1671,6 +1673,12 @@ def compute_home_range(
         Sequence of bin indices representing the trajectory. ``-1`` marks a
         sample outside the environment or missing; it is in no bin, so it
         adds nothing to the home range or to the total time.
+    env : Environment
+        The environment the bins belong to. Bins are ranked by occupancy
+        divided by ``env.bin_sizes``, so on bins of unequal size (hexagons
+        clipped at a wall, mesh triangles, track bins at junctions) a small
+        bin used as intensively as a large one ranks with it. On equal bins
+        this is the ranking by occupancy.
     times : NDArray[np.float64], shape (n_samples,), optional
         Finite, strictly increasing timestamps (seconds), one per sample.
         When provided, occupancy is time-weighted, as in ``env.occupancy``:
@@ -1706,14 +1714,16 @@ def compute_home_range(
     Returns
     -------
     NDArray[np.int_], shape (n_bins_in_range,)
-        Bin indices in the home range, sorted by occupancy (most visited first).
+        Bin indices in the home range, most intensively used (occupancy per
+        unit area) first. Their area is ``env.bin_sizes[home_range].sum()``.
 
     Raises
     ------
     TypeError
         If ``position_bins`` is not an integer array.
     ValueError
-        If ``position_bins`` holds a value below -1; if ``percentile`` is not
+        If ``position_bins`` holds a value below -1 or not below
+        ``env.n_bins``; if ``percentile`` is not
         in ``(1, 100]``; if ``times`` is not finite, strictly increasing and
         one per sample; if ``break_before`` is not a Boolean array with one
         entry per sample; or if ``max_gap``, ``epochs`` or ``break_before`` is
@@ -1737,22 +1747,32 @@ def compute_home_range(
 
     1. Computing occupancy per bin (visit counts, or time-weighted dwell time
        when ``times`` is provided).
-    2. Sorting bins by occupancy, most occupied first.
-    3. Finding the cutoff bin, where the cumulative occupancy first reaches
+    2. Dividing by each bin's area (``env.bin_sizes``): the utilization
+       density.
+    3. Sorting bins by density, most intensively used first.
+    4. Finding the cutoff bin, where the cumulative occupancy first reaches
        ``percentile`` percent of the total.
-    4. Keeping every bin with at least the cutoff bin's occupancy.
+    5. Keeping every bin with at least the cutoff bin's density.
 
-    Bins tied with the cutoff bin (equal occupancy share to 12 decimals, so
-    roundoff in summed dwell times does not break a tie) are all kept, so the
-    result is a level set of occupancy and never depends on the order of
-    tied bins; it can then hold more than ``percentile`` percent. Under
-    uniform use, for example, every visited bin is tied and the 50 % home
-    range is all of them. Tied bins are listed in ascending bin order.
+    Ranking by density rather than by occupancy makes the home range the
+    region where the animal spends the most time per unit area: ranked by
+    occupancy, a large bin used thinly could enter before a small bin used
+    intensively. In continuous space this region is the smallest area holding
+    the time; with bins it is so up to the last bin added.
+
+    Bins tied with the cutoff bin (equal density relative to the largest, to
+    12 decimals, so roundoff in summed dwell times does not break a tie) are
+    all kept, so the result is a level set of the density and never depends
+    on the order of tied bins; it can then hold more than ``percentile``
+    percent. Under uniform use, for example, every visited bin is tied and
+    the 50 % home range is all of them. Tied bins are listed in ascending
+    bin order.
 
     In movement ecology the utilization distribution (UD) is the probability
-    of finding the animal at each location, and the home range is the UD
-    isopleth holding a given probability mass (Worton 1989). Here the UD is
-    the binned occupancy, without kernel smoothing.
+    density of finding the animal at each location, and the home range is
+    the UD isopleth holding a given probability mass (Worton 1989): the
+    region of highest density. Here the UD is the binned occupancy per unit
+    area, without kernel smoothing.
 
     See Also
     --------
@@ -1761,7 +1781,11 @@ def compute_home_range(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.behavior.trajectory import compute_home_range
+    >>> env = Environment.from_samples(
+    ...     np.arange(4.0)[:, None], bin_size=1.0, infer_active_bins=False
+    ... )
     >>> # Trajectory with known distribution
     >>> position_bins = np.concatenate(
     ...     [
@@ -1771,7 +1795,7 @@ def compute_home_range(
     ...         np.repeat(3, 5),  # Bin 3: 5 visits
     ...     ]
     ... )
-    >>> home_range = compute_home_range(position_bins, percentile=95.0)
+    >>> home_range = compute_home_range(position_bins, env, percentile=95.0)
     >>> set(home_range) == {0, 1, 2}  # 95% includes bins 0, 1, 2
     True
 
@@ -1819,6 +1843,15 @@ def compute_home_range(
                 why="Bin indices are 0 or greater, and -1 marks a sample "
                 "outside the environment.",
                 fix="pass bins from env.bin_at(positions)",
+            )
+        )
+    if position_bins.size and (position_bins >= env.n_bins).any():
+        raise ValueError(
+            _format_error(
+                f"position_bins contains {int(position_bins.max())}, but the "
+                f"environment has {env.n_bins} bins.",
+                why="each index names a bin of env.",
+                fix="pass bins from env.bin_at(positions), on the same env",
             )
         )
     in_environment = position_bins >= 0
@@ -1872,19 +1905,21 @@ def compute_home_range(
             break_before=breaks,
         )
         warn_excluded_intervals(allocation.gates, result="the home range is empty")
-        dwell = allocation.occupancy(int(position_bins.max(initial=-1)) + 1)
+        dwell = allocation.occupancy(env.n_bins)
         unique_bins = np.flatnonzero(dwell)
         occupancy = dwell[unique_bins]
 
     total = float(np.sum(occupancy))
     if total == 0:
         return np.array([], dtype=np.intp)
-    # Occupancy shares equal to 12 decimals are ties: summed dwell times
-    # differ by roundoff even when the time spent is the same.
-    share = np.round(occupancy / total, 12)
-    # Most occupied first; ties in ascending bin order (np.unique sorted them).
-    order = np.lexsort((unique_bins, -share))
-    sorted_bins, sorted_share = unique_bins[order], share[order]
+    density = occupancy / np.asarray(env.bin_sizes, dtype=np.float64)[unique_bins]
+    # Densities equal to 12 decimals of the largest are ties: summed dwell
+    # times differ by roundoff even when the time spent is the same.
+    level = np.round(density / density.max(), 12)
+    # Most intensively used first; ties in ascending bin order (np.unique
+    # sorted them).
+    order = np.lexsort((unique_bins, -level))
+    sorted_bins, sorted_level = unique_bins[order], level[order]
     cumulative_pct = np.cumsum(occupancy[order]) / total * 100.0
     # First bin at which the cumulative share reaches the percentile, with
     # the same roundoff allowance.
@@ -1892,10 +1927,10 @@ def compute_home_range(
         int(np.searchsorted(cumulative_pct, percentile * (1 - 1e-9), side="left")),
         len(sorted_bins) - 1,
     )
-    # The home range is a level set of occupancy: every bin tied with the
+    # The home range is a level set of the density: every bin tied with the
     # cutoff bin is in it, so the result never depends on tie order.
     home_range: NDArray[np.intp] = sorted_bins[
-        sorted_share >= sorted_share[cutoff]
+        sorted_level >= sorted_level[cutoff]
     ].astype(np.intp)
     return home_range
 

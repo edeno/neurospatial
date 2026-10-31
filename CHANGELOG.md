@@ -183,6 +183,12 @@
   `[intercept, beta_sin, beta_cos]` (`model.cov_params()[:3, :3]`) and then
   draws the full pointwise interval of the rate. A 2x2 `[sin, cos]`
   covariance still draws the narrower band of the tuning's shape alone.
+- `compute_home_range(position_bins, env, ...)` takes the environment and
+  ranks bins by time per unit area (`env.bin_sizes`), the utilization
+  density whose isopleth is the home range. Ranked by occupancy, a large bin
+  used thinly entered before a small bin used intensively, which biased home
+  ranges on hexagonal, mesh, track and clipped bins; on equal bins the result
+  is unchanged. Bin indices beyond `env.n_bins` are refused.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

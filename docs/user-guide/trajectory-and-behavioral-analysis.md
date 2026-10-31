@@ -499,13 +499,13 @@ env = Environment.from_samples(positions, bin_size=5.0)
 position_bins = env.bin_at(positions)
 
 # Compute core territory (95th percentile)
-home_range_bins = compute_home_range(position_bins, times=times, percentile=95.0)
+home_range_bins = compute_home_range(position_bins, env, times=times, percentile=95.0)
 
 # Compute home range area
 home_range_area = env.bin_sizes[home_range_bins].sum()
 
 print(f"Home range: {home_range_area:.1f} cm²")
-core_bins = compute_home_range(position_bins, times=times, percentile=50.0)
+core_bins = compute_home_range(position_bins, env, times=times, percentile=50.0)
 print(f"Core area (50%): {env.bin_sizes[core_bins].sum():.1f} cm²")
 ```
 
@@ -1523,8 +1523,8 @@ if transition_idx is not None:
     explore_bins = position_bins[:transition_idx * hop_size]
     goal_bins = position_bins[transition_idx * hop_size:]
 
-    explore_home = compute_home_range(explore_bins, percentile=95)
-    goal_home = compute_home_range(goal_bins, percentile=95)
+    explore_home = compute_home_range(explore_bins, env, percentile=95)
+    goal_home = compute_home_range(goal_bins, env, percentile=95)
 
     print(f"Exploration home range: {len(explore_home)} bins")
     print(f"Goal-directed home range: {len(goal_home)} bins")

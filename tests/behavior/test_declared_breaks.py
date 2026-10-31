@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from neurospatial import Environment
 from neurospatial.behavior import (
     compute_goal_directed_metrics,
     compute_home_range,
@@ -29,6 +30,11 @@ from neurospatial.behavior import (
     running_direction_labels,
     segment_by_velocity,
     segment_trials,
+)
+
+# Equal one-unit bins: the home range ranks them by occupancy alone.
+_HOME_ENV = Environment.from_samples(
+    np.arange(1000.0)[:, None], bin_size=1.0, infer_active_bins=False
 )
 
 BREAK = 1000  # first sample of the second recording in both tracks
@@ -151,7 +157,7 @@ PAUSE_CASES: dict[str, Case] = {
         r.env, t, r.positions, GOAL, metric="geodesic", min_speed=5.0, **kw
     ),
     "compute_home_range": lambda r, t, kw: compute_home_range(
-        r.position_bins, times=t, percentile=100.0, **kw
+        r.position_bins, r.env, times=t, percentile=100.0, **kw
     ),
 }
 
@@ -294,7 +300,9 @@ def test_lap_spanning_break_is_dropped(laps):
 
 def test_home_range_refuses_breaks_without_times():
     with pytest.raises(ValueError, match="break_before without times"):
-        compute_home_range(np.array([0, 0, 1]), break_before=np.zeros(3, dtype=bool))
+        compute_home_range(
+            np.array([0, 0, 1]), _HOME_ENV, break_before=np.zeros(3, dtype=bool)
+        )
 
 
 def test_home_range_break_isolates_sample():
@@ -303,10 +311,11 @@ def test_home_range_break_isolates_sample():
     position_bins = np.array([0, 1, 1, 1])
     times = np.arange(4.0)
     assert compute_home_range(
-        position_bins, times=times, percentile=100.0, max_gap=None
+        position_bins, _HOME_ENV, times=times, percentile=100.0, max_gap=None
     ).tolist() == [1, 0]
     isolated = compute_home_range(
         position_bins,
+        _HOME_ENV,
         times=times,
         percentile=100.0,
         max_gap=None,

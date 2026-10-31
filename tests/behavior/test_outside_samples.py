@@ -23,6 +23,11 @@ from neurospatial.behavior.segmentation import (
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial.regions import Regions
 
+# Equal one-unit bins: the home range ranks them by occupancy alone.
+_HOME_ENV = Environment.from_samples(
+    np.arange(1000.0)[:, None], bin_size=1.0, infer_active_bins=False
+)
+
 
 @pytest.fixture(scope="module")
 def env() -> Environment:
@@ -100,7 +105,9 @@ def test_home_range_leaves_out_outside_samples(timed, expected):
     position_bins = np.array([-1] * 50 + [3] * 5 + [4] * 6)
     times = np.arange(len(position_bins)) * 0.1 if timed else None
 
-    home_range = compute_home_range(position_bins, times=times, percentile=100.0)
+    home_range = compute_home_range(
+        position_bins, _HOME_ENV, times=times, percentile=100.0
+    )
 
     np.testing.assert_array_equal(home_range, expected)
 
@@ -116,14 +123,14 @@ def test_home_range_dwell_matches_occupancy_across_an_excursion():
     occupancy = env.occupancy(times, positions)
     assert occupancy.sum() == pytest.approx(9.6)
     home_range = compute_home_range(
-        env.bin_at(positions), times=times, percentile=100.0
+        env.bin_at(positions), env, times=times, percentile=100.0
     )
     np.testing.assert_array_equal(np.sort(home_range), np.flatnonzero(occupancy))
 
 
 def test_home_range_refuses_negative_indices_other_than_minus_one():
     with pytest.raises(ValueError, match="not a bin"):
-        compute_home_range(np.array([-2, 3, 4]))
+        compute_home_range(np.array([-2, 3, 4]), _HOME_ENV)
 
 
 @pytest.fixture(scope="module")
