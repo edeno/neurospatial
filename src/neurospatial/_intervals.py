@@ -765,8 +765,8 @@ def interval_valid_mask(
         if windows is not None:
             valid_mask &= intervals_contain(windows, t_start, t_end)
     if break_before is not None:
-        n_breaks = np.cumsum(np.r_[False, np.asarray(break_before, dtype=bool)[1:]])
-        valid_mask &= n_breaks[end] == n_breaks[start]
+        recording = recording_index(np.asarray(break_before, dtype=bool))
+        valid_mask &= recording[end] == recording[start]
 
     return valid_mask
 
@@ -837,9 +837,9 @@ def drop_missing_samples(
     index = np.flatnonzero(sample_valid).astype(np.intp)
     if break_before is None:
         return index, None
-    n_breaks = np.cumsum(np.r_[False, np.asarray(break_before, dtype=bool)[1:]])
+    recording = recording_index(np.asarray(break_before, dtype=bool))
     kept = np.zeros(index.size, dtype=bool)
-    kept[1:] = n_breaks[index[1:]] != n_breaks[index[:-1]]
+    kept[1:] = recording[index[1:]] != recording[index[:-1]]
     return index, kept
 
 

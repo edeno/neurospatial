@@ -8,7 +8,7 @@ from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._intervals import DEFAULT_MAX_GAP, recording_index
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_train
 from neurospatial._validation import validate_finite, validate_finite_scalar
@@ -613,11 +613,12 @@ def _held_movement_heading(
         )
     defined = np.isfinite(heading)
     n = heading.size
-    breaks = np.zeros(n, dtype=bool)
-    if break_before is not None:
-        breaks[:] = break_before
-    breaks[0] = False
-    recording = np.cumsum(breaks)
+    breaks = (
+        np.zeros(n, dtype=bool)
+        if break_before is None
+        else np.asarray(break_before, dtype=bool)
+    )
+    recording = recording_index(breaks)
     starts = np.flatnonzero(np.r_[True, breaks[1:]])
     ends = np.r_[starts[1:], n]
     idx = np.arange(n)
