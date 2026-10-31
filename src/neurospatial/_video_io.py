@@ -21,11 +21,12 @@ from neurospatial._exceptions import _format_error
 
 @runtime_checkable
 class VideoReaderProtocol(Protocol):
-    """Protocol defining the interface for video frame readers.
+    """Protocol defining the interface for lazy video frame readers.
 
-    This protocol enables type-safe handling of both _VideoReader instances
-    and pre-loaded numpy arrays in VideoData. Classes implementing this
-    protocol must provide frame count, frame dimensions, and indexed access.
+    :class:`_VideoReader` conforms. A pre-loaded frame array does not (it
+    has no ``n_frames`` or ``frame_size_px``), so ``VideoData.reader`` is
+    typed as an ndarray or a reader. Classes implementing this protocol
+    must provide frame count, frame dimensions, and indexed access.
 
     Attributes
     ----------
@@ -215,9 +216,8 @@ class _VideoReader:
     Notes
     -----
     - Frames are returned in RGB format (OpenCV reads as BGR internally).
-    - Cache is dropped during pickling to ensure pickle safety for
-      parallel rendering workflows.
-    - The reader is pickle-safe: settings are preserved but cache is reset.
+    - Pickling keeps the settings and drops the cache and prefetch thread,
+      so a reader can be sent to parallel rendering workers.
 
     Examples
     --------
