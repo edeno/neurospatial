@@ -37,15 +37,18 @@ def _warnings_with_context(context: str) -> Iterator[None]:
     """Re-emit the warnings raised in the block with ``context`` in front.
 
     The warnings are attributed to the caller of the function that opened
-    the block.
+    the block. They are re-emitted even when the block raises, since a
+    warning often explains the error that follows it.
     """
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    for caught_warning in caught:
-        # Frames: this generator, contextlib's __exit__, then the caller.
-        warnings.warn(
-            f"{context}: {caught_warning.message}",
-            caught_warning.category,
-            stacklevel=_external_stacklevel(skip=2),
-        )
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            yield
+    finally:
+        for caught_warning in caught:
+            # Frames: this generator, contextlib's __exit__, then the caller.
+            warnings.warn(
+                f"{context}: {caught_warning.message}",
+                caught_warning.category,
+                stacklevel=_external_stacklevel(skip=2),
+            )

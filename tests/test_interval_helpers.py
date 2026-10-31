@@ -358,3 +358,17 @@ def test_starts_and_stops_as_rows_get_a_column_stack_hint() -> None:
     ):
         as_intervals(np.array([[0.0, 10.0, 20.0], [5.0, 15.0, 25.0]]), name="epochs")
 
+
+def test_context_warnings_survive_an_error_in_the_block() -> None:
+    """A warning raised before an error often explains it, so it is kept."""
+    import warnings
+
+    from neurospatial._stacklevel import _warnings_with_context
+
+    with (
+        pytest.warns(UserWarning, match="ctx: all intervals excluded"),
+        pytest.raises(ValueError, match="nothing left"),
+        _warnings_with_context("ctx"),
+    ):
+        warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
+        raise ValueError("nothing left")
