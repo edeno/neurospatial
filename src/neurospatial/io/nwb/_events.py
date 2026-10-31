@@ -20,8 +20,8 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.io.nwb._adapters import events_table_to_dataframe
 from neurospatial.io.nwb._core import (
+    _clear_for_write,
     _get_or_create_processing_module,
-    _refuse_in_place_replacement,
     _require_ndx_events,
     _require_pynwb,
     logger,
@@ -156,16 +156,13 @@ def _add_events_table(
             nwbfile, processing_module, module_description
         )
     )
-    removed = module is not None and name in module.data_interfaces
-    if removed:
-        if not overwrite:
-            raise ValueError(
-                f"EventsTable '{name}' already exists in processing/"
-                f"{processing_module}. Use overwrite=True to replace it."
-            )
-        _refuse_in_place_replacement(nwbfile, f"events table '{name}'")
-        del module.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
+    removed = module is not None and _clear_for_write(
+        nwbfile,
+        module.data_interfaces,
+        name,
+        overwrite=overwrite,
+        what=f"events table '{name}' in processing/{processing_module}",
+    )
     if empty:
         _warn_nothing_written(
             call, records, name, removed=removed, reader="read_events"
@@ -661,16 +658,13 @@ def write_laps(
 
     table = _build_time_intervals(name, description, start, stop, columns)
 
-    removed = name in nwbfile.intervals
-    if removed:
-        if not overwrite:
-            raise ValueError(
-                f"TimeIntervals '{name}' already exists. Use overwrite=True to "
-                "replace it."
-            )
-        _refuse_in_place_replacement(nwbfile, f"laps table '{name}'")
-        del nwbfile.intervals[name]
-        logger.info("Overwriting existing TimeIntervals '%s'", name)
+    removed = _clear_for_write(
+        nwbfile,
+        nwbfile.intervals,
+        name,
+        overwrite=overwrite,
+        what=f"laps table '{name}'",
+    )
     if start.size == 0:
         _warn_nothing_written(
             "write_laps", "laps", name, removed=removed, reader="read_intervals"
@@ -1083,8 +1077,9 @@ def write_trials(
         logger.info("Overwriting existing trials table")
     if start.size:
         nwbfile.trials = table
-    if overwrite:
-        # all_children() rebuilt pynwb's object cache with the old table in it.
+    if removed:
+        # The referrer search cached pynwb's objects with the old table in
+        # them; walk the file again to drop it.
         nwbfile.all_children()
     if start.size == 0:
         _warn_nothing_written(
