@@ -760,25 +760,18 @@ def interval_valid_mask(
     Raises
     ------
     ValueError
-        If ``max_gap`` is not None or a positive finite number, if
-        ``min_speed`` is given without ``speed``, or if ``require_end_bin``
-        is set without ``start_bin``.
+        If ``max_gap`` is not None or a positive finite number, if ``speed``
+        and ``min_speed`` are not given together with one speed per sample
+        (:func:`validate_speed_gate`), or if ``require_end_bin`` is set
+        without ``start_bin``.
     """
     validate_max_gap(max_gap)
     if require_end_bin and start_bin is None:
         raise ValueError(
             "require_end_bin=True needs start_bin, the bin of every sample."
         )
-    if min_speed is not None and speed is None:
-        raise ValueError(
-            _format_error(
-                f"min_speed={min_speed} was given without speed.",
-                why="Why: the speed gate compares each interval's start-sample "
-                "speed with min_speed.",
-                fix="pass speed= (one value per sample), or min_speed=None.",
-            )
-        )
     times = np.asarray(times, dtype=np.float64)
+    speed = validate_speed_gate(speed, min_speed, times.size)
     if len(times) < 2:
         return np.zeros(0, dtype=bool)
     return gated_intervals(
@@ -838,9 +831,8 @@ def gated_intervals(
         valid_mask &= t_end - t_start <= max_gap
 
     # Filter by min_speed (speed of each gap's starting sample).
-    if min_speed is not None:
-        speed = np.asarray(speed, dtype=np.float64)
-        valid_mask &= speed[start] >= min_speed
+    if min_speed is not None and speed is not None:
+        valid_mask &= np.asarray(speed, dtype=np.float64)[start] >= min_speed
 
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
@@ -1077,6 +1069,153 @@ def fill_missing_positions(
         weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
         positions[missing] = (1 - weight) * positions[a] + weight * positions[b]
     return positions
+
+
+def validate_speed_gate(
+    speed: Any, min_speed: float | None, n_samples: int
+) -> NDArray[np.float64] | None:
+    """Return ``speed`` as float64 when the speed gate is complete, else None.
+
+    The speed gate needs both a threshold and one speed per sample; either
+    one alone would be silently ignored or could not be applied.
+
+    Parameters
+    ----------
+    speed : array-like, shape (n_samples,), or None
+    min_speed : float or None
+    n_samples : int
+
+    Returns
+    -------
+    ndarray of float64, shape (n_samples,), or None
+        None when neither is given.
+
+    Raises
+    ------
+    ValueError
+        If only one of ``speed`` and ``min_speed`` is given, or ``speed``
+        does not have one value per sample.
+    """
+    if speed is None and min_speed is None:
+        return None
+    if speed is None:
+        raise ValueError(
+            _format_error(
+                f"min_speed={min_speed} was given without speed.",
+                why="the speed gate compares each interval's start-sample "
+                "speed with min_speed.",
+                fix="pass speed= (one value per sample), or min_speed=None.",
+            )
+        )
+    if min_speed is None:
+        raise ValueError(
+            _format_error(
+                "speed was given without min_speed, so it would be ignored.",
+                why="speed only gates intervals against a min_speed threshold.",
+                fix="pass min_speed=<threshold> to gate by speed, or omit speed.",
+            )
+        )
+    values = np.asarray(speed, dtype=np.float64)
+    if values.shape != (n_samples,):
+        raise ValueError(
+            _format_error(
+                f"speed has shape {values.shape}, but times has {n_samples} samples.",
+                why="the speed gate reads the speed of each interval's start sample.",
+                fix="pass one speed per sample, e.g. compute_speed(times, positions).",
+            )
+        )
+    return values
+
+
+@dataclass(frozen=True, eq=False)
+class StartAllocation:
+    """Spatial support of start-allocated occupancy, shared with spike counts.
+
+    Attributes
+    ----------
+    bins : ndarray of intp, shape (n_samples,)
+        Bin of each sample; -1 outside the environment or at a missing one.
+    held_bins : ndarray of intp, shape (n_samples,)
+        ``bins`` with each missing sample holding the last valid sample's
+        bin (:func:`hold_last_valid`), so a bridged gap's time and spikes go
+        to the bin where it started.
+    gates : IntervalGates
+        The interval mask: every gate of :func:`interval_gates`, and the
+        complete-case rule that both samples bounding an interval's gap are
+        in a bin.
+    """
+
+    bins: NDArray[np.intp]
+    held_bins: NDArray[np.intp]
+    gates: IntervalGates
+
+    def occupancy(
+        self, n_bins: int, *, return_seconds: bool = True
+    ) -> NDArray[np.float64]:
+        """Seconds (or intervals) in each bin, shape (n_bins,)."""
+        return start_allocated_occupancy(
+            self.held_bins,
+            np.diff(self.gates.times),
+            self.gates.mask,
+            n_bins,
+            return_seconds=return_seconds,
+        )
+
+
+def start_allocation(
+    times: NDArray[np.float64],
+    bins: NDArray[np.intp],
+    sample_valid: NDArray[np.bool_] | None,
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
+) -> StartAllocation:
+    """Resolve start-allocated spatial support for occupancy and spike counts.
+
+    One definition for ``env.occupancy``, spatial rate maps and the
+    behavior analyses that bin dwell: an interval counts when its gap passes
+    the gates of :func:`interval_valid_mask` and both samples bounding the
+    gap are in a bin (the complete-case rule: where the animal was during an
+    interval is known only when both of its samples are inside), and its
+    time goes to the bin of the gap's first sample.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Strictly increasing, in seconds.
+    bins : ndarray of intp, shape (n_samples,)
+        Bin of each sample (for example ``env.bin_at(positions)``); -1
+        outside the environment or at a missing sample.
+    sample_valid : ndarray of bool, shape (n_samples,), or None
+        False at missing samples (such as NaN positions), which are bridged
+        like deleted rows. None makes every sample with bin -1 unobserved
+        rather than missing.
+    speed, min_speed, max_gap, epochs, spike_window, break_before
+        The gates of :func:`interval_valid_mask`; ``speed`` and
+        ``min_speed`` go together (:func:`validate_speed_gate`).
+
+    Returns
+    -------
+    StartAllocation
+    """
+    bins = np.asarray(bins, dtype=np.intp)
+    gates = interval_gates(
+        times,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        start_bin=bins,
+        require_end_bin=True,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
+        sample_valid=sample_valid,
+    )
+    return StartAllocation(bins, hold_last_valid(bins, sample_valid, fill=-1), gates)
 
 
 def start_allocated_occupancy(

@@ -1903,8 +1903,9 @@ class Environment(Generic[_C]):
             With ``time_allocation='linear'`` an interval with an end outside
             the environment adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
-            Instantaneous speed at each sample. If provided with min_speed,
-            samples below threshold are excluded from occupancy calculation.
+            Instantaneous speed at each sample, required with min_speed and
+            refused without it (it would be ignored). Samples below the
+            threshold are excluded from occupancy calculation.
         min_speed : float, optional
             Minimum speed threshold in physical units per second. Requires
             speed parameter. Samples with speed < min_speed are excluded.
@@ -1959,7 +1960,7 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If times and positions have different lengths, if arrays are
-            inconsistent, or if min_speed is provided without speed.
+            inconsistent, or if only one of speed and min_speed is given.
         ValueError
             If positions have wrong number of dimensions.
         ValueError

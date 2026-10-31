@@ -40,7 +40,9 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
     start_allocated_occupancy,
+    start_allocation,
     times_in_intervals,
+    validate_speed_gate,
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
@@ -294,33 +296,14 @@ def resolve_speed(
     pass the gate. Pass ``speed=`` to use another definition, for example
     speed along a linearized track.
     """
-    if min_speed is None:
-        if speed is not None:
-            # Asymmetric footgun: a caller passing `speed` without `min_speed`
-            # would otherwise have it silently ignored (no filtering applied).
-            # env.occupancy raises the mirror case (min_speed without speed),
-            # so raise here too rather than swallow `speed`.
-            raise ValueError(
-                "speed was provided without min_speed; pass "
-                "min_speed=<threshold> to enable speed filtering, or omit "
-                "speed."
-            )
-        # No filtering requested: callers pass no speed gate.
-        return None
-
     times = np.asarray(times, dtype=np.float64)
+    if speed is not None or min_speed is None:
+        # The shared check of the speed gate: speed without min_speed would
+        # be silently ignored.
+        return validate_speed_gate(speed, min_speed, len(times))
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
-
-    if speed is not None:
-        speed_arr = np.asarray(speed, dtype=np.float64)
-        if len(speed_arr) != len(times):
-            raise ValueError(
-                f"speed length ({len(speed_arr)}) must match times length "
-                f"({len(times)})."
-            )
-        return speed_arr
 
     from neurospatial._intervals import interval_valid_mask
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
@@ -406,10 +389,12 @@ def _start_frame_bins(
 ) -> NDArray[np.intp]:
     """Bin of each frame under ``"start"`` allocation, shape (n_samples,).
 
-    A missing frame holds the last valid position, so a bridged gap's dwell
-    time and spikes go to the bin where it started.
+    A missing frame holds the last valid frame's bin
+    (:func:`~neurospatial._intervals.hold_last_valid`), so a bridged gap's
+    dwell time and spikes go to the bin where it started.
     """
-    return env.bin_at(fill_missing_positions(times, positions, time_allocation="start"))
+    finite = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    return hold_last_valid(env.bin_at(positions), finite, fill=-1)
 
 
 def _spike_track(
@@ -771,22 +756,17 @@ def _spatial_interval_gates(
         Shared validity, shape (n_samples - 1,) (empty when fewer than two
         samples form an interval), with the gates that built it.
     """
-    sample_bins = env.bin_at(positions)
-    valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
-    return interval_gates(
+    return start_allocation(
         times,
+        env.bin_at(positions),
+        np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=sample_bins,
-        # Complete-case rule, shared with env.occupancy: a gap counts only
-        # when both of its samples are inside the environment.
-        require_end_bin=True,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
-        sample_valid=valid,
-    )
+    ).gates
 
 
 def _resolve_spatial_time_support(

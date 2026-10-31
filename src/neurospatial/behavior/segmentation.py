@@ -86,8 +86,8 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     EMPTY_RESULT,
     as_intervals,
-    interval_gates,
     run_sample_bounds,
+    start_allocation,
     times_in_intervals,
     warn_excluded_intervals,
 )
@@ -3339,14 +3339,14 @@ def detect_goal_directed_runs(
     )
     # Complete-case rule, as in env.occupancy: an interval is observed only
     # when both of its samples are in the environment.
-    gates = interval_gates(
+    gates = start_allocation(
         times,
+        position_bins,
+        None,
         max_gap=max_gap,
-        start_bin=position_bins,
-        require_end_bin=True,
         epochs=as_intervals(epochs, name="epochs"),
         break_before=breaks,
-    )
+    ).gates
     warn_excluded_intervals(gates)
     results: list[tuple[float, float]] = []
     for first, last in run_sample_bounds(gates.mask):

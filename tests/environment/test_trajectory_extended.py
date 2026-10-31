@@ -141,8 +141,13 @@ class TestOccupancy:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.tile(small_2d_env.bin_centers[0:1], (3, 1))
 
-        with pytest.raises(ValueError, match="min_speed parameter requires speed"):
+        with pytest.raises(ValueError, match=r"min_speed=2\.0 was given without speed"):
             small_2d_env.occupancy(times, positions, min_speed=2.0)
+        # The other half of the pair: speed alone would be silently ignored.
+        with pytest.raises(ValueError, match="speed was given without min_speed"):
+            small_2d_env.occupancy(times, positions, speed=np.ones(3))
+        with pytest.raises(ValueError, match="one speed per sample"):
+            small_2d_env.occupancy(times, positions, speed=np.ones(2), min_speed=1.0)
 
     def test_occupancy_with_kernel_smoothing(self, medium_2d_env):
         """Test occupancy with kernel smoothing."""

@@ -162,7 +162,9 @@ class TestOccupancyEdgeCases:
         positions = np.tile(small_2d_env.bin_centers[0:1], (3, 1))
         speeds = np.array([1.0, 2.0])  # Too short
 
-        with pytest.raises(ValueError, match="same length"):
+        with pytest.raises(
+            ValueError, match=r"speed has shape \(2,\), but times has 3 samples"
+        ):
             small_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
 
     def test_occupancy_validates_time_allocation_parameter(self, small_2d_env):

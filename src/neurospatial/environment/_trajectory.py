@@ -28,10 +28,10 @@ from neurospatial._intervals import (
     as_intervals,
     drop_missing_samples,
     fill_missing_positions,
-    hold_last_valid,
     interval_gates,
     observed_interval_mask,
-    start_allocated_occupancy,
+    start_allocation,
+    validate_speed_gate,
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
@@ -131,20 +131,7 @@ def _occupancy(
     # Before the empty and single-sample returns, which never look positions up.
     require_position_columns(positions, n_dims, call="Environment.occupancy")
 
-    # Validate speed parameters
-    if min_speed is not None and speed is None:
-        raise ValueError(
-            "min_speed parameter requires speed array to be provided. "
-            "Pass speed=<array> along with min_speed=<threshold>."
-        )
-
-    if speed is not None:
-        speed = np.asarray(speed, dtype=np.float64)
-        if len(speed) != len(times):
-            raise ValueError(
-                f"speed and times must have same length. "
-                f"Got speed: {len(speed)}, times: {len(times)}"
-            )
+    speed = validate_speed_gate(speed, min_speed, len(times))
     breaks = validate_break_before(
         break_before, len(times), call="Environment.occupancy"
     )
@@ -197,64 +184,49 @@ def _occupancy(
     # correctly flagged the same sample as -1.
     bin_indices = locate(binning, arena, positions, cache, call="Environment.occupancy")
 
-    # Compute time intervals
-    dt = np.diff(times)
-
-    # Default start allocation shares every interval gate with spike binning.
-    # Linear allocation keeps observation validity separate from geometric
-    # support, so an interval that enters, leaves or re-enters the environment
-    # keeps the time its straight path spends inside.
-    observation_only = time_allocation == "linear"
     resolved_epochs = as_intervals(epochs, name="epochs")
     # A missing (NaN) sample is bridged like a deleted row, by the same rule
     # spike binning uses: the gap between the valid samples on either side
-    # passes the gates, and the missing rows are filled from those samples.
+    # passes the gates.
     finite = _finite_rows(positions)
-    gates = interval_gates(
-        times,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        start_bin=None if observation_only else bin_indices,
-        # Complete-case rule, shared with spike binning: the animal's place
-        # during a gap is known only when both of its samples are inside.
-        require_end_bin=not observation_only,
-        epochs=resolved_epochs,
-        break_before=breaks,
-        sample_valid=finite,
-    )
-    valid_mask = gates.mask
-    positions = fill_missing_positions(
-        times,
-        positions.reshape(len(times), -1),
-        time_allocation=time_allocation,
-    )
     if time_allocation == "start":
-        bin_indices = hold_last_valid(bin_indices, finite, fill=-1)
+        # Shared with spike binning, including the complete-case rule.
+        allocation = start_allocation(
+            times,
+            bin_indices,
+            finite,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=breaks,
+        )
+        occupancy = allocation.occupancy(n_bins, return_seconds=return_seconds)
+        retained = allocation.gates
     else:
+        # Linear allocation keeps observation validity separate from
+        # geometric support, so an interval that enters, leaves or re-enters
+        # the environment keeps the time its straight path spends inside; an
+        # interval whose path never enters it (outside, or with a NaN end) is
+        # excluded only by the geometry. Missing rows lie on the straight
+        # path between the valid rows around them.
+        gates = interval_gates(
+            times,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=breaks,
+            sample_valid=finite,
+        )
+        valid_mask = gates.mask
+        dt = np.diff(times)
+        positions = fill_missing_positions(
+            times, positions.reshape(len(times), -1), time_allocation="linear"
+        )
         bin_indices = locate(
             binning, arena, positions, cache, call="Environment.occupancy"
         )
-    # Intervals that kept time; linear allocation narrows these below.
-    retained = gates
-
-    # Initialize occupancy array
-    occupancy = np.zeros(n_bins, dtype=np.float64)
-
-    # Dispatch to appropriate time allocation method
-    if time_allocation == "start":
-        occupancy = start_allocated_occupancy(
-            bin_indices,
-            dt,
-            valid_mask,
-            n_bins,
-            return_seconds=return_seconds,
-        )
-
-    elif time_allocation == "linear":
-        # The observation mask has no bounds gate here, so an interval whose
-        # path never enters the environment (outside, or with a NaN end) is
-        # excluded only by the geometry.
         if polygon_allocation:
             pieces, occupancy = _polygon_linear_occupancy(
                 binning,

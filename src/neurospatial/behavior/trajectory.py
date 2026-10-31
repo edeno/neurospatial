@@ -34,9 +34,8 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     gap_endpoints,
-    interval_gates,
     observed_interval_mask,
-    start_allocated_occupancy,
+    start_allocation,
     validate_max_gap,
     warn_excluded_intervals,
 )
@@ -1864,21 +1863,16 @@ def compute_home_range(
         # Dwell is start-allocated occupancy under the complete-case rule of
         # env.occupancy: an interval counts when both of its samples are in
         # the environment, and its time goes to the bin of its first sample.
-        gates = interval_gates(
+        allocation = start_allocation(
             times,
+            position_bins,
+            None,
             max_gap=max_gap,
-            start_bin=position_bins,
-            require_end_bin=True,
             epochs=as_intervals(epochs, name="epochs"),
             break_before=breaks,
         )
-        warn_excluded_intervals(gates, result="the home range is empty")
-        dwell = start_allocated_occupancy(
-            position_bins,
-            np.diff(times),
-            gates.mask,
-            int(position_bins.max(initial=-1)) + 1,
-        )
+        warn_excluded_intervals(allocation.gates, result="the home range is empty")
+        dwell = allocation.occupancy(int(position_bins.max(initial=-1)) + 1)
         unique_bins = np.flatnonzero(dwell)
         occupancy = dwell[unique_bins]
 

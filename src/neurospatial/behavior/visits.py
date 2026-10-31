@@ -18,7 +18,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
-    interval_gates,
+    start_allocation,
     times_in_intervals,
     validate_max_gap,
     warn_excluded_intervals,
@@ -364,14 +364,9 @@ def detect_region_visits(
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    gates = interval_gates(
-        clock,
-        max_gap=max_gap,
-        start_bin=bins,
-        require_end_bin=True,
-        epochs=windows,
-        break_before=breaks,
-    )
+    gates = start_allocation(
+        clock, bins, None, max_gap=max_gap, epochs=windows, break_before=breaks
+    ).gates
     warn_excluded_intervals(gates, result="every visit ends at its first sample")
     continuous = gates.mask
     connected = continuous & selected[:-1] & selected[1:]
