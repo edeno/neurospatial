@@ -720,22 +720,25 @@ epochs from `read_intervals` as `spike_window=` if you know them. Import
 ### Round-tripping rate maps
 
 `write_spatial_rates` persists a population `SpatialRatesResult` — the per-unit
-firing-rate maps, shared occupancy, `unit_ids`, optional `unit_table`, and a
-connected copy of the `Environment` — and `read_spatial_rates` reconstructs an
-equal result. Because the environment round-trips with its connectivity intact,
-graph operations work on the restored env with no `env=` argument.
+firing-rate maps, shared occupancy, `unit_ids`, optional `unit_table`, and the
+`Environment` the maps were estimated on — and `read_spatial_rates`
+reconstructs an equal result. Because the environment round-trips with its
+connectivity intact, graph operations work on the restored env with no `env=`
+argument.
 
 ```python
 from pynwb import NWBHDF5IO
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.io.nwb import write_spatial_rates, read_spatial_rates
 
-rates = compute_spatial_rates(env, spike_times, times, positions)
+ca1 = compute_spatial_rates(env, ca1_spike_times, times, positions)
+ca3 = compute_spatial_rates(env, ca3_spike_times, times, positions)
 
-# Write.
+# Write. Rates estimated on one environment share one saved copy of it.
 with NWBHDF5IO("session.nwb", "r+") as io:
     nwbfile = io.read()
-    write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
+    write_spatial_rates(nwbfile, ca1, name="ca1_place_fields", environment_name="open_field")
+    write_spatial_rates(nwbfile, ca3, name="ca3_place_fields", environment_name="open_field")
     io.write(nwbfile)
 
 # Read back (env restored from the file; an env= you pass must equal it).
@@ -745,12 +748,43 @@ with NWBHDF5IO("session.nwb", "r") as io:
     restored.firing_rates.shape   # (n_units, n_bins)
 ```
 
-The record is a table in the processing module `analysis`, plus its occupancy
-(seconds) and a saved copy of the environment. To replace a record, open the
-file with `"r"`, call `write_spatial_rates(..., overwrite=True)`, and save a
-copy with `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb
-cannot delete objects already written to a file opened with `"r+"`, so
-`overwrite=True` refuses such files.
+Without `environment_name=`, each record saves its environment as
+`f"{name}_environment"`. A record that already holds exactly the same
+environment (bins, arena, regions, landmarks, units, frame and name) is
+reused; a different environment under that name raises, so a rate map is
+never read with bins it was not estimated on. To link rates to an environment
+saved with `write_environment(nwbfile, env, name="open_field")`, pass
+`environment_name="open_field"`.
+
+To replace a record, open the file with `"r"`, call
+`write_spatial_rates(..., overwrite=True)`, and save a copy with
+`NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb cannot
+delete objects already written to a file opened with `"r+"`, so
+`overwrite=True` refuses such files. An environment record that other rates
+use is never replaced.
+
+### What other NWB tools see
+
+Saved environments and rate maps are standard `DynamicTable`s in the file's
+top-level `/analysis` group, which NWB provides for shareable analysis
+results. Any NWB reader (pynwb, MatNWB, NWB Widgets, DANDI) can open them
+without neurospatial:
+
+| Path | Contents |
+| --- | --- |
+| `/analysis/ca1_place_fields` | One row per unit: `unit_id`, `firing_rate` `(n_units, n_bins)` in Hz, any `unit_table` columns. Its description is JSON metadata, including `environment_name`. |
+| `/analysis/ca1_place_fields/units` | Written when every `unit_id` is an id of `nwbfile.units`: a link from each row to that unit's row, so a rate map joins its spike times, electrodes and quality metrics. |
+| `/analysis/ca1_place_fields_occupancy` | One row per bin: `occupancy` in seconds. |
+| `/analysis/open_field` | The environment: one row, one column per array. |
+
+In the environment record each column is named by its array, for example
+`bin_centers` `(n_bins, n_dims)` and `binning.bins.sizes` (bin area or
+length). Arrays are stored flat; the table description lists each array's
+shape and dtype under `array_specs`. Bin adjacency is
+`binning.connections.all_pairs` (pairs of bin indices) with
+`binning.connections.all_distances`; `binning.connections.is_open` is False
+where a wall closes the pair. No connectivity graph is stored: neurospatial
+rebuilds it from these arrays when it reads the record.
 
 ### Trials, laps, crossings and events
 
