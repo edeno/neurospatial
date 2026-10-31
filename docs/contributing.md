@@ -718,11 +718,15 @@ Documentation is at [https://edeno.github.io/neurospatial/](https://edeno.github
 
 (For maintainers)
 
-1. Update version in `pyproject.toml`
-2. Update `CHANGELOG.md`
-3. Create git tag: `git tag v0.2.0`
-4. Push tag: `git push origin v0.2.0`
-5. GitHub Actions handles PyPI release
+The version comes from the git tag; `pyproject.toml` has no version to edit.
+
+1. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [0.7.0] - YYYY-MM-DD`
+   and start a new empty `## [Unreleased]` above it; merge that to `main`.
+2. Tag the merge commit and push the tag: `git tag v0.7.0 && git push origin v0.7.0`.
+3. The `Publish to PyPI` workflow runs the full test suite, builds and checks
+   the sdist and wheel, installs each and runs a smoke test, publishes to PyPI
+   with trusted publishing and build attestations, and creates the GitHub
+   release with that version's CHANGELOG section as its notes.
 
 ## Getting Help
 

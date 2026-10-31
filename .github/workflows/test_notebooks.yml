@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - main
-      - feat/researcher-first
   # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
 
 # Execute every tutorial in a fresh kernel. Optional desktop viewers and long
 # video exports remain opt-in inside the notebooks; the synthetic video and NWB
 # tutorials receive their required extras in the corresponding matrix groups.
+permissions:
+  contents: read
+
 # Only the latest commit of each PR needs to finish its checks.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -37,18 +39,22 @@ jobs:
             notebooks: examples/09_*.ipynb
             extras: --extra nwb
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra notebooks ${{ matrix.extras }}
+        env:
+          EXTRAS: ${{ matrix.extras }}
+        run: uv sync --locked --group notebooks $EXTRAS
 
       - name: Check notebook sources, links and scientific boundaries
         run: >-
@@ -60,7 +66,7 @@ jobs:
 
       - name: Cache the pinned public recording
         if: matrix.group == 'real-data'
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: data/j1620210710_02_r1_figure04_inputs.npz
           key: j16-60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3
@@ -68,10 +74,11 @@ jobs:
       - name: Execute ${{ matrix.group }} notebooks
         env:
           MPLBACKEND: Agg
+          NOTEBOOKS: ${{ matrix.notebooks }}
         run: |
           uv run jupyter nbconvert \
             --to notebook \
             --execute \
             --inplace \
             --ExecutePreprocessor.timeout=600 \
-            ${{ matrix.notebooks }}
+            $NOTEBOOKS

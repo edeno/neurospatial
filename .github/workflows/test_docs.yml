@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
-      - feat/researcher-first
   # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
+
+permissions:
+  contents: read
 
 # Only the latest commit of each PR needs to finish its checks.
 concurrency:
@@ -29,17 +31,17 @@ jobs:
       # selected by this matrix rather than running both jobs on Python 3.13.
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: latest
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
 
       - name: Install dependencies
         # nwb + jax extras let the NWB/JAX docstring examples execute headlessly.
@@ -47,7 +49,7 @@ jobs:
         # dedicated napari job in test.yml, so they are ignored below.
         # The executable widget example needs ipywidgets headlessly.
         run: |
-          uv sync --extra dev --extra nwb --extra jax
+          uv sync --locked --extra nwb --extra jax
           uv pip install "ipywidgets>=8.0,<9.0"
 
       - name: Report test interpreter
@@ -56,7 +58,7 @@ jobs:
       - name: Run module doctests
         env:
           MPLBACKEND: Agg
-        # ``-n0`` disables xdist (pytest.ini sets ``-n auto`` in addopts).
+        # ``-n0`` disables xdist (pyproject addopts set ``-n auto``).
         # ``--doctest-modules`` imports every module to collect doctests, so each
         # xdist worker holds a full copy of the library + JAX in memory; running
         # the heavy simulation-session example doctests across 4 such workers
