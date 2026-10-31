@@ -141,7 +141,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, NamedTuple
 
 import numpy as np
@@ -558,16 +558,7 @@ class AssemblyReactivationResult(ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {
-            "mean_activation_difference": self.mean_activation_difference,
-            "control_mean_activation": self.control_mean_activation,
-            "match_mean_activation": self.match_mean_activation,
-            "control_threshold": self.control_threshold,
-            "fraction_above_control_threshold": (self.fraction_above_control_threshold),
-            "percentile": self.percentile,
-            "n_control_bins": self.n_control_bins,
-            "n_match_bins": self.n_match_bins,
-        }
+        return asdict(self)
 
 
 @dataclass(frozen=True, repr=False)
@@ -653,15 +644,7 @@ class ExplainedVarianceResult(ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {
-            "explained_variance": self.explained_variance,
-            "reversed_explained_variance": self.reversed_explained_variance,
-            "partial_correlation": self.partial_correlation,
-            "semipartial_correlation": self.semipartial_correlation,
-            "p_value": self.p_value,
-            "n_pairs": self.n_pairs,
-            "n_controls": self.n_controls,
-        }
+        return asdict(self)
 
 
 def _validated_counts(
