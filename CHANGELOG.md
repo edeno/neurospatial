@@ -29,9 +29,13 @@
   `cov_matrix` is given. `plot_circular_basis_tuning(show_ci=True)` checks
   `cov_matrix` like the Wald test does (2x2, finite, symmetric positive
   semi-definite) instead of clamping negative variances.
+- The test direction is `alternative` everywhere, as in replay and scipy:
+  `compute_shuffle_pvalue(..., alternative=)`,
+  `ShuffleTestResult.from_null(..., alternative=)` and
+  `ShuffleTestResult.alternative` (and its `summary()` key) replace `tail`.
 - `ShuffleTestResult` takes `observed_score`, `null_scores`, `p_value`,
-  `shuffle_type` and `tail`; `z_score` and `n_shuffles` are derived from the
-  null scores.
+  `shuffle_type` and `alternative`; `z_score` and `n_shuffles` are derived
+  from the null scores.
 - `ShuffleTestResult.from_null` no longer takes `decimals`. Rank-order replay
   scores the event with the same Spearman formula as its shuffles, so a
   shuffle with the event's correlation ties with it exactly.

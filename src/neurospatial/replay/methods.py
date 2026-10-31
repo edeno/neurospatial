@@ -64,7 +64,6 @@ from neurospatial.replay.sequence_bias import (
     BiasSequenceMethod,
 )
 from neurospatial.replay.significance import (
-    _ALTERNATIVES,
     _COUNT_CHANGING_NULLS,
     _DECODING_NULLS,
     _NULLS,
@@ -83,6 +82,7 @@ from neurospatial.replay.trajectory import (
     fit_linear_trajectory,
     regression_line_score,
 )
+from neurospatial.stats import _ALTERNATIVES
 from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:

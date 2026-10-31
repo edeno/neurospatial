@@ -41,7 +41,7 @@ from neurospatial.replay.rank_order import (
     _spikes_in,
     _validated_interval,
 )
-from neurospatial.replay.significance import _ALTERNATIVES
+from neurospatial.stats import _ALTERNATIVES
 
 if TYPE_CHECKING:
     from neurospatial.replay.methods import (
@@ -871,7 +871,7 @@ def _significance(
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray
         p_value = compute_shuffle_pvalue(
-            float(statistic(observed)), statistic(defined), tail=alternative
+            float(statistic(observed)), statistic(defined), alternative=alternative
         )
     else:
         p_value = np.nan

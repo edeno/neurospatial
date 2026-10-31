@@ -69,11 +69,11 @@ from neurospatial.replay.methods import (
 )
 from neurospatial.replay.rank_order import _spearman_rows
 from neurospatial.replay.significance import (
-    _ALTERNATIVES,
     _NULL_SPECS,
     _NULLS,
     _score_specs,
 )
+from neurospatial.stats import _ALTERNATIVES
 from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:

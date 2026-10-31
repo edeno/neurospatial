@@ -708,7 +708,7 @@ neurospatial.stats.circular_circular_correlation(angles1, angles2, *, angle_unit
 neurospatial.stats.circular_linear_correlation(angles, linear_values, *, angle_unit='rad')
 neurospatial.stats.circular_mean(angles, *, angle_unit='rad', weights=None)
 neurospatial.stats.circular_variance(angles, *, angle_unit='rad', weights=None)
-neurospatial.stats.compute_shuffle_pvalue(observed, null_scores, *, tail='greater')
+neurospatial.stats.compute_shuffle_pvalue(observed, null_scores, *, alternative='greater')
 neurospatial.stats.compute_shuffle_zscore(observed, null_scores)
 neurospatial.stats.generate_inhomogeneous_poisson_surrogates(spike_counts, *, smoothing_window=3, n_surrogates=1000, rng=None)
 neurospatial.stats.generate_jittered_spikes(spike_times, *, jitter_std, n_surrogates=1000, rng=None, window=None)

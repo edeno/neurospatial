@@ -377,7 +377,7 @@ class TestShufflePvalueCalibration:
         return {
             tail: np.array(
                 [
-                    compute_shuffle_pvalue(score, scores, tail=tail)
+                    compute_shuffle_pvalue(score, scores, alternative=tail)
                     for score, scores in zip(observed, null, strict=True)
                 ]
             )
@@ -415,7 +415,7 @@ class TestComputeShufflePvalue:
 
         observed = 10.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All less than observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="greater")
         # Monte Carlo correction: (k + 1) / (n + 1) where k=0 (no null >= observed)
         assert p == (0 + 1) / (4 + 1)
         assert p == 0.2
@@ -426,7 +426,7 @@ class TestComputeShufflePvalue:
 
         observed = 0.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All greater than observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="less")
         # (k + 1) / (n + 1) where k=0 (no null <= observed)
         assert p == (0 + 1) / (4 + 1)
         assert p == 0.2
@@ -437,7 +437,7 @@ class TestComputeShufflePvalue:
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 5.0, 6.0, 10.0 >= observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="greater")
         # k=3 (three values >= 5.0), n=5
         assert p == (3 + 1) / (5 + 1)
         assert np.isclose(p, 4 / 6)
@@ -448,7 +448,7 @@ class TestComputeShufflePvalue:
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 1.0, 2.0, 5.0 <= observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="less")
         # k=3 (three values <= 5.0), n=5
         assert p == (3 + 1) / (5 + 1)
         assert np.isclose(p, 4 / 6)
@@ -462,7 +462,7 @@ class TestComputeShufflePvalue:
         # Greater: k=0 (no null >= 8.0), p_greater = 1/6
         # Less: k=5 (all null <= 8.0), p_less = 6/6 = 1.0
         # Two-sided: 2 * min(1/6, 1.0) = 2/6 = 1/3
-        p = compute_shuffle_pvalue(observed, null_scores, tail="two-sided")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="two-sided")
         expected = 2 * (1 / 6)
         assert np.isclose(p, expected)
 
@@ -475,7 +475,7 @@ class TestComputeShufflePvalue:
         # Greater: k=3 (3.0, 4.0, 5.0 >= 3.0), p_greater = 4/6
         # Less: k=3 (1.0, 2.0, 3.0 <= 3.0), p_less = 4/6
         # Two-sided: 2 * min(4/6, 4/6) = 8/6 -> capped to 1.0
-        p = compute_shuffle_pvalue(observed, null_scores, tail="two-sided")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="two-sided")
         assert p <= 1.0
         assert np.isclose(p, 1.0)
 
@@ -485,7 +485,7 @@ class TestComputeShufflePvalue:
 
         observed = 5.0
         null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="greater")
         # k=3 (all >= 5.0), n=3
         assert p == (3 + 1) / (3 + 1)
         assert p == 1.0
@@ -496,7 +496,7 @@ class TestComputeShufflePvalue:
 
         observed = 5.0
         null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
-        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="less")
         # k=3 (all <= 5.0), n=3
         assert p == (3 + 1) / (3 + 1)
         assert p == 1.0
@@ -507,12 +507,12 @@ class TestComputeShufflePvalue:
 
         observed = 5.0
         null_scores = np.array([3.0])
-        p_greater = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        p_greater = compute_shuffle_pvalue(observed, null_scores, alternative="greater")
         # k=0 (no null >= 5.0), n=1
         assert p_greater == (0 + 1) / (1 + 1)
         assert p_greater == 0.5
 
-        p_less = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        p_less = compute_shuffle_pvalue(observed, null_scores, alternative="less")
         # k=1 (3.0 <= 5.0), n=1
         assert p_less == (1 + 1) / (1 + 1)
         assert p_less == 1.0
@@ -525,7 +525,7 @@ class TestComputeShufflePvalue:
         null_scores = rng.normal(0, 1, 10000)
         observed = 3.0  # Far in the tail
 
-        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        p = compute_shuffle_pvalue(observed, null_scores, alternative="greater")
         # Should be small (around 0.001 for z=3)
         assert 0 < p < 0.01
 
@@ -543,17 +543,17 @@ class TestComputeShufflePvalue:
             (2.0, np.array([1.0, 2.0, 3.0]), "two-sided"),
         ]
         for observed, null, tail in test_cases:
-            p = compute_shuffle_pvalue(observed, null, tail=tail)
+            p = compute_shuffle_pvalue(observed, null, alternative=tail)
             assert 0 < p <= 1.0, f"p={p} out of range for {observed}, {null}, {tail}"
 
-    def test_invalid_tail_raises_error(self) -> None:
-        """Invalid tail parameter should raise ValueError."""
+    def test_invalid_alternative_raises_error(self) -> None:
+        """Invalid alternative parameter should raise ValueError."""
         from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0])
-        with pytest.raises(ValueError, match="tail"):
-            compute_shuffle_pvalue(observed, null_scores, tail="invalid")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="alternative"):
+            compute_shuffle_pvalue(observed, null_scores, alternative="invalid")  # type: ignore[arg-type]
 
 
 # =============================================================================

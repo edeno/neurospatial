@@ -20,7 +20,7 @@ from scipy import stats
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_integer_at_least
-from neurospatial.replay.significance import _ALTERNATIVES
+from neurospatial.stats import _ALTERNATIVES
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -731,7 +731,7 @@ def _cell_order_test(
         score,
         _permuted_correlations(pairs, permutations),
         shuffle_type="cell_order",
-        tail=alternative,
+        alternative=alternative,
     )
 
 

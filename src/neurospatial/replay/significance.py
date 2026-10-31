@@ -48,7 +48,7 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     regression_line_score,
 )
-from neurospatial.stats import _TAILS
+from neurospatial.stats import _ALTERNATIVES
 
 if TYPE_CHECKING:
     from neurospatial.decoding.likelihood import _PoissonRates
@@ -151,7 +151,6 @@ _COUNT_CHANGING_NULLS = tuple(
 )
 _POOL_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.needs == "pool")
 _DECODING_INPUTS = "spike_counts, encoding_models and dt"
-_ALTERNATIVES = _TAILS
 
 
 class _UndefinedScoreError(ValueError):
@@ -1084,7 +1083,7 @@ def _shuffle_tests(
                 null=name,
             )
         shuffles[name] = ShuffleTestResult.from_null(
-            observed, statistic, shuffle_type=name, tail=alternative
+            observed, statistic, shuffle_type=name, alternative=alternative
         )
     return shuffles
 

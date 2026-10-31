@@ -38,7 +38,7 @@ from neurospatial.stats.circular import (
     wrap_angle,
 )
 from neurospatial.stats.circular import _validate_paired_input as _validate_paired_input
-from neurospatial.stats.shuffle import _TAILS as _TAILS
+from neurospatial.stats.shuffle import _ALTERNATIVES as _ALTERNATIVES
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,

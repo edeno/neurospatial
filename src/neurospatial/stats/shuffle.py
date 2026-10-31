@@ -408,7 +408,7 @@ def shuffle_time_bins_coherent(
 # =============================================================================
 
 
-_TAILS = ("greater", "less", "two-sided")
+_ALTERNATIVES = ("greater", "less", "two-sided")
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -429,11 +429,11 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     p_value : float
         Monte Carlo p-value (k + 1) / (n + 1) in (0, 1], where k counts the
         defined null scores at least as extreme as observed in the direction
-        of ``tail`` and n is ``n_shuffles_used``. NaN when the test is
+        of ``alternative`` and n is ``n_shuffles_used``. NaN when the test is
         undefined: a non-finite observed score or no defined null score.
     shuffle_type : str
         Name of the shuffle method used (e.g., "time_bins", "cell_identity").
-    tail : {"greater", "less", "two-sided"}, default="greater"
+    alternative : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test the p-value belongs to.
 
     Attributes
@@ -453,7 +453,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     ------
     ValueError
         If ``null_scores`` is not 1-D, ``p_value`` is neither in (0, 1] nor
-        NaN, or ``tail`` is unknown.
+        NaN, or ``alternative`` is unknown.
 
     Examples
     --------
@@ -480,7 +480,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     null_scores: NDArray[np.float64]
     p_value: float
     shuffle_type: str
-    tail: Literal["greater", "less", "two-sided"] = "greater"
+    alternative: Literal["greater", "less", "two-sided"] = "greater"
 
     def __post_init__(self) -> None:
         """Check the fields agree, then own the null as a read-only copy."""
@@ -490,8 +490,10 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             problems.append(f"null_scores must be 1-D, got shape {null.shape}")
         if not (np.isnan(self.p_value) or 0.0 < self.p_value <= 1.0):
             problems.append(f"p_value={self.p_value!r} must be in (0, 1] or NaN")
-        if self.tail not in _TAILS:
-            problems.append(f"tail={self.tail!r} must be one of {_TAILS}")
+        if self.alternative not in _ALTERNATIVES:
+            problems.append(
+                f"alternative={self.alternative!r} must be one of {_ALTERNATIVES}"
+            )
         if problems:
             raise ValueError(
                 _format_error(
@@ -511,7 +513,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         null_scores: NDArray[np.float64],
         *,
         shuffle_type: str,
-        tail: Literal["greater", "less", "two-sided"] = "greater",
+        alternative: Literal["greater", "less", "two-sided"] = "greater",
     ) -> ShuffleTestResult:
         """Test an observed score against the scores of its shuffles.
 
@@ -525,7 +527,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             warning; ``n_shuffles_used`` counts the rest.
         shuffle_type : str
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
-        tail : {"greater", "less", "two-sided"}, default="greater"
+        alternative : {"greater", "less", "two-sided"}, default="greater"
             Direction of the test, as for :func:`compute_shuffle_pvalue`.
 
         Returns
@@ -538,7 +540,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         ------
         ValueError
             If ``observed_score`` is not finite, no null score is defined,
-            ``tail`` is unknown, or ``null_scores`` is not 1-D.
+            ``alternative`` is unknown, or ``null_scores`` is not 1-D.
 
         Examples
         --------
@@ -561,13 +563,15 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        p_value = compute_shuffle_pvalue(observed_score, defined, tail=tail)
+        p_value = compute_shuffle_pvalue(
+            observed_score, defined, alternative=alternative
+        )
         return cls(
             observed_score=observed_score,
             null_scores=null,
             p_value=p_value,
             shuffle_type=shuffle_type,
-            tail=tail,
+            alternative=alternative,
         )
 
     @property
@@ -607,7 +611,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             "observed_score": float(self.observed_score),
             "p_value": float(self.p_value),
             "z_score": float(self.z_score),
-            "tail": self.tail,
+            "alternative": self.alternative,
             "shuffle_type": self.shuffle_type,
             "n_shuffles": self.n_shuffles,
             "n_shuffles_used": self.n_shuffles_used,
@@ -617,7 +621,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         """Plot the null distribution with observed score.
 
         Creates a histogram of the finite null scores with a vertical line
-        showing the observed score and annotations for the p-value, its tail
+        showing the observed score and annotations for the p-value, its alternative
         and the z-score. Undefined (NaN) and infinite null scores cannot be
         drawn; the title gives how many are left out.
 
@@ -676,7 +680,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         n_hidden = self.n_shuffles - finite.size
         hidden = f", {n_hidden} non-finite not drawn" if n_hidden else ""
         ax.set_title(
-            f"Shuffle Test ({self.shuffle_type}, {self.tail})\n"
+            f"Shuffle Test ({self.shuffle_type}, {self.alternative})\n"
             f"p = {self.p_value:.4f}{sig_marker}, z = {self.z_score:.2f}{hidden}"
         )
         ax.set_xlabel("Score")
@@ -690,7 +694,7 @@ def compute_shuffle_pvalue(
     observed: float,
     null_scores: NDArray[np.float64],
     *,
-    tail: Literal["greater", "less", "two-sided"] = "greater",
+    alternative: Literal["greater", "less", "two-sided"] = "greater",
 ) -> float:
     """Compute Monte Carlo p-value with Phipson-Smyth correction.
 
@@ -706,7 +710,7 @@ def compute_shuffle_pvalue(
         finite.
     null_scores : NDArray[np.float64]
         Array of scores from shuffled data, forming the null distribution.
-    tail : {"greater", "less", "two-sided"}, default="greater"
+    alternative : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test:
 
         - "greater": Tests if observed is significantly greater than null
@@ -725,7 +729,7 @@ def compute_shuffle_pvalue(
     Raises
     ------
     ValueError
-        If ``observed`` is not finite, ``tail`` is unknown, or no null score
+        If ``observed`` is not finite, ``alternative`` is unknown, or no null score
         is defined (all NaN or empty).
 
     Notes
@@ -759,11 +763,11 @@ def compute_shuffle_pvalue(
     >>> # Observed score higher than all null values
     >>> observed = 10.0
     >>> null = np.array([1.0, 2.0, 3.0, 4.0])
-    >>> compute_shuffle_pvalue(observed, null, tail="greater")
+    >>> compute_shuffle_pvalue(observed, null, alternative="greater")
     0.2
 
     >>> # Two-sided test
-    >>> compute_shuffle_pvalue(observed, null, tail="two-sided")
+    >>> compute_shuffle_pvalue(observed, null, alternative="two-sided")
     0.4
 
     See Also
@@ -777,7 +781,9 @@ def compute_shuffle_pvalue(
             "observed score makes all comparisons against the null False, which "
             "would silently return the floor p-value 1/(n+1)."
         )
-    validate_choice(tail, _TAILS, name="tail", owner="compute_shuffle_pvalue()")
+    validate_choice(
+        alternative, _ALTERNATIVES, name="alternative", owner="compute_shuffle_pvalue()"
+    )
 
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     undefined = np.isnan(null_scores)
@@ -794,10 +800,10 @@ def compute_shuffle_pvalue(
             category=UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return float(_shuffle_p_values(observed, null_scores, tail))
+    return float(_shuffle_p_values(observed, null_scores, alternative))
 
 
-def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
+def _shuffle_p_values(observed: Any, null: Any, alternative: str) -> Any:
     """Monte Carlo p-values over the defined null scores, elementwise.
 
     Parameters
@@ -807,7 +813,7 @@ def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
     null : NDArray[np.float64], shape (n_shuffles, ...)
         Null scores along the first axis. NaN scores are left out of ``n``;
         infinite scores are counted like any other.
-    tail : {"greater", "less", "two-sided"}
+    alternative : {"greater", "less", "two-sided"}
         Direction of the test.
 
     Returns
@@ -820,7 +826,10 @@ def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
     null = np.asarray(null, dtype=np.float64)
     n = np.sum(~np.isnan(null), axis=0)
     p = _tail_p_values(
-        np.sum(null >= observed, axis=0), np.sum(null <= observed, axis=0), n, tail
+        np.sum(null >= observed, axis=0),
+        np.sum(null <= observed, axis=0),
+        n,
+        alternative,
     )
     return np.where(np.isfinite(observed) & (n > 0), p, np.nan)
 
