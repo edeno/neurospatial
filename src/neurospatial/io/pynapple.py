@@ -681,6 +681,8 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
     keys = [(c.region, c.direction) for c in crossings]
     support = _checked_support(times, epochs)
     groups = sorted(set(keys))
+    code = {key: index for index, key in enumerate(groups)}
+    codes = np.array([code[key] for key in keys], dtype=np.intp)
     nap = _require_pynapple()
     if support is not None:
         time_support = interval_set(nap, support)
@@ -691,13 +693,20 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
         time_support = nap.IntervalSet(start=times.min(), end=times.max())
     else:
         time_support = None
-    members: dict[int, Any] = {}
-    for index, key in enumerate(groups):
-        rows = np.array([k == key for k in keys])
-        order = np.argsort(times[rows], kind="stable")
-        members[index] = nap.Tsd(
-            t=times[rows][order], d=bins[rows][order], time_support=time_support
+    # Sort by group, then time; lexsort is stable, so equal times keep
+    # their input order. Every group has at least one crossing.
+    order = np.lexsort((times, codes))
+    bounds = np.cumsum(np.bincount(codes))[:-1]
+    members = {
+        index: nap.Tsd(t=t, d=d, time_support=time_support)
+        for index, (t, d) in enumerate(
+            zip(
+                np.split(times[order], bounds),
+                np.split(bins[order], bounds),
+                strict=True,
+            )
         )
+    }
     return nap.TsGroup(
         members,
         time_support=time_support,
