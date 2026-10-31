@@ -189,8 +189,11 @@ def times_positions_problems(
                         f"at index {k}. To sort, index times and every per-sample "
                         'array with order = np.argsort(times, kind="stable").'
                     )
-    if p is not None and p.ndim not in (1, 2):
-        problems.append(f"positions must be (n_samples, n_dims), got shape {p.shape}.")
+    if p is not None and (p.ndim not in (1, 2) or (p.ndim == 2 and p.shape[1] == 0)):
+        problems.append(
+            "positions must be (n_samples,) or (n_samples, n_dims) with "
+            f"n_dims >= 1, got shape {p.shape}."
+        )
     if (
         t is not None
         and p is not None

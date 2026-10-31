@@ -78,6 +78,22 @@ def test_conversion_errors_keep_other_argument_problems(
     assert "numeric" in str(caught.value)
 
 
+def test_positions_without_coordinates_are_refused():
+    """(n, 0) positions have no coordinates; no sample can be valid."""
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError, match=r"got shape \(3, 0\)") as caught:
+        validate_times_positions([0.0, 0.1, 0.2], np.zeros((3, 0)), call="f")
+    assert "n_dims >= 1" in str(caught.value)
+
+
+def test_compute_speed_refuses_positions_without_coordinates():
+    from neurospatial.behavior import compute_speed
+
+    with pytest.raises(ValueError, match=r"got shape \(10, 0\)"):
+        compute_speed(np.arange(10) * 0.1, np.zeros((10, 0)))
+
+
 class TestValidateFinite:
     """Tests for ``validate_finite``."""
 
