@@ -214,3 +214,27 @@ def test_smoothing_window_is_in_seconds_across_a_bridged_gap():
     assert np.isnan(speed[lost]).all()
     at = int(np.argmin(np.abs(times - 1.4)))
     assert speed[at] < 5.0
+
+
+def test_one_mistracked_frame_is_local_and_removed_by_marking_it_missing():
+    """A one-frame jump changes speed only within four smoothing widths.
+
+    A still animal at 30 Hz with one frame tracked 30 cm away reads as moving
+    around the jump and exactly still beyond 4 * 0.1 s of it. Marking that
+    frame missing (NaN), as for a low-likelihood pose frame, leaves the
+    animal exactly still everywhere.
+    """
+    times = np.arange(0.0, 3.0, 1.0 / 30.0)
+    positions = np.zeros((times.size, 2))
+    jump = 45
+    positions[jump] = [30.0, 0.0]
+    speed = compute_speed(times, positions, smooth_window=0.1)
+
+    near = np.abs(times - times[jump]) <= 0.4 + 1e-9
+    assert np.all(speed[~near] == 0.0)
+    assert np.mean(speed[near] > 4.0) > 0.5
+
+    positions[jump] = np.nan
+    speed = compute_speed(times, positions, smooth_window=0.1)
+    assert np.isnan(speed[jump])
+    assert np.all(np.delete(speed, jump) == 0.0)

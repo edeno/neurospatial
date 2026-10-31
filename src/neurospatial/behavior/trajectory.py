@@ -317,6 +317,12 @@ def compute_speed(
     around it are within ``max_gap``. Speed is never smoothed across a longer
     gap, the edge of an ``epochs`` window or a declared break.
 
+    One mistracked frame (a keypoint jump in pose tracking) changes the speed
+    of every sample within ``4 * smooth_window`` seconds of it: 30 cm of error
+    makes a still animal read faster than 4 cm/s for most of that window.
+    Set low-likelihood frames to NaN before calling; a missing frame is
+    skipped, not smoothed in.
+
     All coordinate columns enter the speed: for 3-D tracking it is the 3-D
     speed. ``heading_from_velocity`` uses x and y only; pass
     ``positions[:, :2]`` for the horizontal speed.
