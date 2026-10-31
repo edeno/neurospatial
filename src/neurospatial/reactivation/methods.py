@@ -2358,15 +2358,14 @@ def _fraction_above_cell_shuffle(
     """
     actual = _activation_strength(z, weights)
     n_bins, n_units = z.shape
-    squared = weights**2
     above = np.zeros(len(weights))
     # Bins per block so a block's shuffles hold about 4 million values.
     block = max(1, 4_000_000 // max(1, n_shuffles * n_units))
     for first in range(0, n_bins, block):
-        values = np.repeat(z[first : first + block, None, :], n_shuffles, axis=1)
-        shuffled = generator.permuted(values, axis=2)
+        shuffled = np.repeat(z[first : first + block, None, :], n_shuffles, axis=1)
+        generator.permuted(shuffled, axis=2, out=shuffled)
         # Shape (n_block_bins, n_shuffles, n_components).
-        strength = (shuffled @ weights.T) ** 2 - shuffled**2 @ squared.T
+        strength = _activation_strength(shuffled, weights)
         bound = np.percentile(strength, percentile, axis=1)
         above += np.sum(actual[first : first + block] > bound, axis=0)
     shares: NDArray[np.float64] = above / n_bins
