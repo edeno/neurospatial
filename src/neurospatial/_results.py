@@ -5,7 +5,8 @@ headline metrics and a concise ``__repr__``/``_repr_html_`` built from it,
 instead of the default dataclass repr that dumps every array. Results add the
 other terminal verbs they support (``to_dataframe()``, ``summary_table()``,
 ``to_xarray()``, ``plot()``); a verb a result does not define is an
-``AttributeError``, not a stub that raises.
+``AttributeError``, not a stub that raises, except ``summary()``, which
+every result must specialize.
 
 The module also holds the pieces results share: read-only array ownership
 (:class:`ReadOnlyArraysMixin`, :func:`read_only_copy`), owned
