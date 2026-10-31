@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Exporting decoding and behavior results to pynapple
+
+**Added**
+
+- `DecodingResult.time_support` and `DecodingSummary.time_support`: the
+  half-open windows covered by the decoded time bins, read-only. Decoding over
+  `epochs=[[0, 50], [70, 120]]` records those two windows, less tracking gaps,
+  time outside `spike_window` and remainders shorter than one bin. The array
+  decoders record the windows of the bins `[t - dt/2, t + dt/2)` around
+  `times`; bins no more than `dt/2` apart join, so timestamp jitter does not
+  split a window but a missing bin does. `summary()` reports the `decoded_duration` in seconds and
+  `to_xarray()` attrs the windows.
+- `to_pynapple(result, quantity=...)` exports the MAP track (default), the
+  posterior mean (`"mean_position"`) or the posterior (`"posterior"`). The
+  posterior is a `TsdFrame` with one column per environment bin holding
+  probability mass, and the bin centers as column metadata
+  (`bin_center_x`, ...).
+- `to_pynapple` exports behavior records. Laps, trials, runs, region visits
+  and region transitions become an `IntervalSet` with one interval per record
+  and its fields as metadata columns; a `LabelEpochsResult` becomes an
+  `IntervalSet` with a `label` column; region crossings become a `TsGroup`
+  with one `Tsd` of bin indices per region and direction. Intervals end one
+  float below each record's `end_time`, so `restrict` selects the samples
+  `in_epochs` selects. Records without duration are dropped with a warning;
+  overlapping records and empty lists are refused.
+
+**Changed**
+
+- `to_pynapple(result)` takes its time support from `result.time_support`
+  instead of `result.spike_window`, so a decode over separate epochs no longer
+  spans the gaps between them. A decoded track's columns are named for the
+  environment's axes (`x`, `y`). The first argument is renamed `data`.
+- `Animation.from_decoding` limits the posterior to `result.time_support`, so
+  time between decoded epochs is blank rather than held from the last bin.
+  A result without `time_support` is still limited to its `spike_window`.
+- The `pynapple` extra requires pynapple 0.11.3 or later. Earlier releases
+  round interval bounds to 1 ns, which moves each exported interval end back
+  onto the half-open stop, so `restrict` kept a sample exactly at a window's
+  stop that neurospatial excludes.
+
 ### pynapple inputs keep their metadata and time support
 
 **Changed**

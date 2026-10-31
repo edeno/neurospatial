@@ -94,11 +94,11 @@ def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
     ]
 
 
-def _owned_spike_window(spike_window: Any) -> NDArray[np.float64]:
-    """Sorted, merged, read-only ``(n_windows, 2)`` spike-recording windows."""
+def _owned_windows(value: Any, name: str) -> NDArray[np.float64]:
+    """Sorted, merged, read-only ``(n_windows, 2)`` half-open windows."""
     from neurospatial._intervals import as_intervals
 
-    window = as_intervals(spike_window, name="spike_window")
+    window = as_intervals(value, name=name)
     assert window is not None  # as_intervals returns None only for None
     return _read_only(window)
 
@@ -257,11 +257,12 @@ def _align_true_positions(
 
 
 class _DecodeRecordMixin:
-    """Spike-window provenance and xarray metadata of a decode result."""
+    """Recording windows, decoded time support and xarray metadata of a decode."""
 
     env: Environment
     times: NDArray[np.float64] | None
     spike_window: NDArray[np.float64] | None
+    time_support: NDArray[np.float64] | None
 
     if TYPE_CHECKING:
 
@@ -277,6 +278,49 @@ class _DecodeRecordMixin:
         coverage.
         """
         return self.spike_window is None
+
+    def _own_windows(self) -> None:
+        """Replace ``spike_window`` and ``time_support`` with owned windows."""
+        for name in ("spike_window", "time_support"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _owned_windows(value, name))
+
+    def _time_support_problems(self) -> list[str]:
+        """Describe times that ``time_support`` does not hold.
+
+        Call only after ``times`` passed :func:`_times_problems`.
+        """
+        from neurospatial._intervals import times_in_intervals
+
+        if self.time_support is None:
+            return []
+        if self.times is None:
+            return [
+                "time_support was given without times; it bounds the decoded "
+                "time bins, so each bin needs its time"
+            ]
+        outside = np.flatnonzero(~times_in_intervals(self.time_support, self.times))
+        if not outside.size:
+            return []
+        i = int(outside[0])
+        return [
+            f"{outside.size} of {self.times.size} times lie outside "
+            f"time_support, first times[{i}] = {self.times[i]}"
+        ]
+
+    def _window_summary(self) -> dict[str, Any]:
+        """The recording-window entries shared by both ``summary()`` methods."""
+        support = self.time_support
+        return {
+            "spike_window_assumed": self.spike_window_assumed,
+            "spike_window": None
+            if self.spike_window is None
+            else self.spike_window.tolist(),
+            "decoded_duration": float("nan")
+            if support is None
+            else float(np.sum(support[:, 1] - support[:, 0])),
+        }
 
     def _time_coord(self) -> NDArray[Any]:
         """The xarray ``time`` coordinate: ``times``, or the row index without."""
@@ -298,6 +342,8 @@ class _DecodeRecordMixin:
         }
         if self.spike_window is not None:
             attrs["spike_window"] = self.spike_window.ravel()
+        if self.time_support is not None:
+            attrs["time_support"] = self.time_support.ravel()
         return attrs
 
 
@@ -328,6 +374,13 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         ``start < stop``; stored sorted, merged and read-only. ``None``
         records the assumption that spikes were observed wherever position
         was.
+    time_support : array-like, shape (n_windows, 2), or None, optional
+        The decoded time: half-open ``[start, stop)`` windows in seconds that
+        the time bins cover, stored sorted, merged and read-only. Time
+        between windows was not decoded (outside the epochs, a tracking gap,
+        outside the spike window, or a remainder shorter than one bin).
+        Every time in ``times`` must lie inside a window. The decoders record
+        it; ``None`` means the decoded time is unknown.
 
     Attributes
     ----------
@@ -339,6 +392,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         Optional time bin centers (seconds).
     spike_window : NDArray[np.float64] | None
         Read-only spike-recording windows, or ``None`` for assumed coverage.
+    time_support : NDArray[np.float64] | None
+        Read-only decoded windows, or ``None`` when unknown.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed.
 
@@ -348,8 +403,9 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         If the posterior is not 2-D with one column per environment bin, if
         a row is negative, contains Inf, is only partly NaN or does not sum
         to 1, if ``times`` is not finite, strictly increasing and one per
-        row, or if ``spike_window`` has a row that is not a finite
-        ``start < stop`` pair.
+        row, if ``spike_window`` or ``time_support`` has a row that is not a
+        finite ``start < stop`` pair, or if ``time_support`` is given without
+        ``times`` or leaves a time outside its windows.
 
     Examples
     --------
@@ -397,6 +453,9 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+    time_support: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Take ownership of input arrays as read-only copies and validate them."""
@@ -404,13 +463,10 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         self._own_and_validate()
 
     def _own_and_validate(self) -> None:
-        """Copy ``times`` and ``spike_window`` read-only and enforce invariants."""
+        """Copy ``times`` and the windows read-only and enforce invariants."""
         if self.times is not None:
             object.__setattr__(self, "times", read_only_copy(self.times, np.float64))
-        if self.spike_window is not None:
-            object.__setattr__(
-                self, "spike_window", _owned_spike_window(self.spike_window)
-            )
+        self._own_windows()
         problems = []
         if self.posterior.ndim != 2:
             problems.append(
@@ -425,8 +481,12 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
                 )
             else:
                 problems += _posterior_value_problems(self.posterior)
-            if self.times is not None:
-                problems += _times_problems(self.times, self.posterior.shape[0])
+            times_problems = (
+                []
+                if self.times is None
+                else _times_problems(self.times, self.posterior.shape[0])
+            )
+            problems += times_problems or self._time_support_problems()
         if problems:
             raise ValueError(
                 _format_error(
@@ -440,7 +500,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
                     ),
                     fix=(
                         "pass the env the posterior was decoded on, one "
-                        "increasing time per posterior row, and rows normalized "
+                        "increasing time per posterior row (inside "
+                        "time_support, when given), and rows normalized "
                         "with posterior / posterior.sum(axis=1, keepdims=True); "
                         "set an undecodable row entirely to NaN"
                     ),
@@ -910,8 +971,9 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             NaN when none was decoded), and ``max_entropy`` (float, bits) --
             the latter being ``log2(n_bins)``, the entropy of a uniform
             posterior on equal bins.
-            Also includes ``spike_window_assumed`` (bool) and ``spike_window``
-            (a list of interval pairs, or ``None``).
+            Also includes ``spike_window_assumed`` (bool), ``spike_window``
+            (a list of interval pairs, or ``None``) and ``decoded_duration``
+            (float, seconds inside ``time_support``; NaN when unknown).
 
         Examples
         --------
@@ -923,7 +985,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> result = DecodingResult(posterior=posterior, env=env)
         >>> sorted(result.summary())
-        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
+        ['decoded_duration', 'max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
         """
         n_bins = int(self.posterior.shape[1])
         decoded = self._decoded_rows
@@ -933,10 +995,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             "n_bins": n_bins,
             "mean_entropy": _mean_over(self.posterior_entropy, decoded),
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
-            "spike_window_assumed": self.spike_window_assumed,
-            "spike_window": self.spike_window.tolist()
-            if self.spike_window is not None
-            else None,
+            **self._window_summary(),
         }
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -1027,8 +1086,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             - non-index ``bin_center_*`` coords on ``bin``.
             - ``attrs``: ``units`` (when set), ``env`` fingerprint,
               ``software_version``, ``spike_window_assumed`` (0 or 1) and,
-              when windows were recorded, ``spike_window`` (the
-              ``(n_windows, 2)`` windows flattened row by row).
+              when recorded, ``spike_window`` and ``time_support`` (each
+              ``(n_windows, 2)`` array flattened row by row).
 
         Raises
         ------
@@ -1257,6 +1316,13 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         ``start < stop``; stored sorted, merged and read-only. ``None``
         records the assumption that spikes were observed wherever position
         was.
+    time_support : array-like, shape (n_windows, 2), or None, optional
+        The decoded time: half-open ``[start, stop)`` windows in seconds that
+        the time bins cover, stored sorted, merged and read-only. Time
+        between windows was not decoded (outside the epochs, a tracking gap,
+        outside the spike window, or a remainder shorter than one bin).
+        Every time in ``times`` must lie inside a window. The decoders record
+        it; ``None`` means the decoded time is unknown.
 
     Raises
     ------
@@ -1264,8 +1330,10 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         If the per-time fields disagree in length, ``map_bin`` is not an
         integer bin index of ``env`` or -1, ``peak_probability`` is not in
         ``[0, 1]`` for a decoded bin or not NaN where ``map_bin`` is -1,
-        ``times`` is not finite and strictly increasing, or
-        ``spike_window`` has a row that is not a finite ``start < stop`` pair.
+        ``times`` is not finite and strictly increasing, ``spike_window`` or
+        ``time_support`` has a row that is not a finite ``start < stop``
+        pair, or ``time_support`` is given without ``times`` or leaves a time
+        outside its windows.
 
     Notes
     -----
@@ -1286,6 +1354,9 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+    time_support: NDArray[np.float64] | None = field(
+        default=None, kw_only=True, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Take ownership of the inputs as read-only copies and validate them."""
@@ -1297,7 +1368,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
         Internal use only: ``mean_position``, ``posterior_entropy``,
         ``peak_probability`` and ``map_bin`` are marked read-only instead of
-        copied; ``times`` and ``spike_window`` are copied. ``fields`` must name
+        copied; ``times`` and the windows are copied. ``fields`` must name
         every dataclass field. Validation matches the public constructor.
         """
         obj = cls.__new__(cls)
@@ -1335,10 +1406,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             object.__setattr__(
                 self, "times", own(self.times, np.float64, always_copy=True)
             )
-        if self.spike_window is not None:
-            object.__setattr__(
-                self, "spike_window", _owned_spike_window(self.spike_window)
-            )
+        self._own_windows()
 
         n_time = self.map_bin.shape[0] if self.map_bin.ndim == 1 else -1
         n_dims = self.env.n_dims
@@ -1360,8 +1428,11 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
                     + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
                     + ")"
                 )
-        if n_time >= 0 and self.times is not None:
-            problems += _times_problems(self.times, n_time)
+        if n_time >= 0:
+            times_problems = (
+                [] if self.times is None else _times_problems(self.times, n_time)
+            )
+            problems += times_problems or self._time_support_problems()
         undecodable = self.map_bin == _UNDECODABLE_BIN
         outside = np.flatnonzero(
             ~undecodable & ((self.map_bin < 0) | (self.map_bin >= self.env.n_bins))
@@ -1482,8 +1553,9 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             ``max_entropy`` (float, bits = ``log2(n_bins)``), and
             ``mean_peak_probability`` (float). Means are over the decoded time
             bins and NaN when none was decoded.
-            Also includes ``spike_window_assumed`` (bool) and ``spike_window``
-            (a list of interval pairs, or ``None``).
+            Also includes ``spike_window_assumed`` (bool), ``spike_window``
+            (a list of interval pairs, or ``None``) and ``decoded_duration``
+            (float, seconds inside ``time_support``; NaN when unknown).
 
         Notes
         -----
@@ -1501,10 +1573,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             "mean_entropy": _mean_over(self.posterior_entropy, decoded),
             "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
             "mean_peak_probability": _mean_over(self.peak_probability, decoded),
-            "spike_window_assumed": self.spike_window_assumed,
-            "spike_window": self.spike_window.tolist()
-            if self.spike_window is not None
-            else None,
+            **self._window_summary(),
         }
 
     def plot(
@@ -1592,8 +1661,8 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
             carry ``units`` (when set), an ``env`` fingerprint,
             ``software_version``, ``spike_window_assumed`` (0 or 1) and, when
-            windows were recorded, ``spike_window`` (the ``(n_windows, 2)``
-            windows flattened row by row). All arrays, coordinates and array
+            recorded, ``spike_window`` and ``time_support`` (each
+            ``(n_windows, 2)`` array flattened row by row). All arrays, coordinates and array
             metadata are independent writable copies.
 
         Raises

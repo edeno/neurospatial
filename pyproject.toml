@@ -131,7 +131,7 @@ xarray = ["xarray"]
 # Enables `neurospatial.io.from_pynapple` / `to_pynapple`. pynapple is imported
 # lazily inside those functions, never at import time; the scientific core stays
 # array-first and never imports pynapple.
-pynapple = ["pynapple>=0.6.0"]
+pynapple = ["pynapple>=0.11.3"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

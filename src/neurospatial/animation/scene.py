@@ -432,12 +432,15 @@ class Animation:
 
     @classmethod
     def from_decoding(cls, result: DecodingResult, **kwargs: Any) -> Animation:
-        """Build a probability animation on its decoding clock and recording support.
+        """Build a probability animation on its decoding clock and decoded time.
 
-        Known ``result.spike_window`` always intersects ``epochs`` supplied
-        here. Neither wider epochs nor ``max_gap=None`` can fill known
-        recording gaps. Held intervals must fit wholly inside one resulting
-        half-open window; supported isolated samples remain visible exactly.
+        The decoded time is ``result.time_support``, the windows the decode's
+        time bins cover; for a result built without it, the spike-recording
+        windows ``result.spike_window`` bound it instead. It always
+        intersects ``epochs`` supplied here, so neither wider epochs nor
+        ``max_gap=None`` can fill time that was not decoded. Held intervals
+        must fit wholly inside one resulting half-open window; supported
+        isolated samples remain visible exactly.
         """
         if result.times is None:
             raise ValueError(
@@ -456,7 +459,8 @@ class Animation:
             )
             if name in kwargs
         }
-        known = as_intervals(result.spike_window, name="spike_window")
+        name = "time_support" if result.time_support is not None else "spike_window"
+        known = as_intervals(getattr(result, name), name=name)
         selected = as_intervals(field_options.get("epochs"), name="epochs")
         if known is not None:
             selected = (
@@ -464,8 +468,8 @@ class Animation:
             )
             if not len(selected):
                 raise ValueError(
-                    "epochs does not overlap the decoding result's known recording "
-                    "support (spike_window). Select epochs inside that support."
+                    "epochs does not overlap the decoding result's known decoded "
+                    f"time ({name}). Select epochs inside that support."
                 )
         field_options["epochs"] = selected
         field_options.setdefault("label", "Probability")
