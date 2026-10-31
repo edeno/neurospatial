@@ -34,6 +34,7 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _columns_by_label,
     _label_order,
+    _one_control_ev,
     _pairwise_correlations,
     _validated_counts,
     explained_variance_reactivation,
@@ -980,8 +981,7 @@ def explained_variance_contributions(
         c = vectors[2][valid]
         r_tc = _leave_one_out_correlations(t, c)
         r_mc = _leave_one_out_correlations(m, c)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            without = (r_tm - r_tc * r_mc) ** 2 / ((1 - r_tc**2) * (1 - r_mc**2))
+        without = _one_control_ev(r_tm, r_tc, r_mc)
     pair_contributions = np.full(n_pairs, np.nan)
     pair_contributions[valid] = total - without
     first, second = np.triu_indices(n_units, k=1)

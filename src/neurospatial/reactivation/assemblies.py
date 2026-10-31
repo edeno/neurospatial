@@ -3241,6 +3241,33 @@ def _semipartial_correlation(
     return float(residual[0, 1] / np.sqrt(residual[1, 1]))
 
 
+def _one_control_ev(
+    r_xy: NDArray[np.float64], r_xz: NDArray[np.float64], r_yz: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Squared partial correlation of x and y controlling for one z.
+
+    EV is ``_one_control_ev(r_tm, r_tc, r_mc)`` and REV is
+    ``_one_control_ev(r_tc, r_tm, r_mc)`` for template t, match m and
+    control c.
+
+    Parameters
+    ----------
+    r_xy, r_xz, r_yz : ndarray
+        Correlations of the three pairs, broadcast together.
+
+    Returns
+    -------
+    ndarray
+        ``(r_xy - r_xz r_yz)**2 / ((1 - r_xz**2) (1 - r_yz**2))``; NaN or
+        infinite where a correlation is NaN or ``|r_xz|`` or ``|r_yz|`` is 1.
+    """
+    with np.errstate(invalid="ignore", divide="ignore"):
+        explained: NDArray[np.float64] = (r_xy - r_xz * r_yz) ** 2 / (
+            (1 - r_xz**2) * (1 - r_yz**2)
+        )
+    return explained
+
+
 def _partial_correlation_p_value(correlation: float, df: int) -> float:
     """Two-sided t-test p-value of a (partial) correlation.
 
