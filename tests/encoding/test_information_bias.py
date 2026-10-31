@@ -117,6 +117,43 @@ def test_unpenalized_glm_bias_counts_the_basis_modes(box):
     np.testing.assert_allclose(rates.spatial_information_bias(), expected, rtol=1e-6)
 
 
+@pytest.mark.parametrize("n_visited", [1, 3])
+def test_unpenalized_glm_bias_counts_only_the_visited_modes(n_visited):
+    """With fewer visited bins than basis modes, only visited modes count.
+
+    The unvisited modes are not identified, but they do not change the rate
+    at a visited bin, so K = (visited bins) - 1 instead of rank - 1; one
+    visited bin carries no spatial information at all.
+    """
+    env = Environment.from_samples(
+        np.arange(8.0)[:, None], bin_size=1, infer_active_bins=False, units="cm"
+    )
+    times = np.arange(1001) * 0.01
+    positions = np.resize(env.bin_centers[:n_visited], (len(times), 1))
+    spike_times = [np.arange(0.005, 10.0, 0.02)]
+    with pytest.warns(UserWarning, match="not identifiable"):
+        rates = compute_spatial_rates(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="glm",
+            penalty=0.0,
+            rank=8,
+            min_speed=0,
+        )
+    occupancy = np.asarray(rates.occupancy)
+    support = rates.spatial_support
+    assert support.sum() == n_visited
+    mean_rate = (
+        rates.firing_rates[:, support] @ occupancy[support] / occupancy[support].sum()
+    )
+    expected = (n_visited - 1) / (2 * np.log(2) * mean_rate * occupancy.sum())
+    np.testing.assert_allclose(
+        rates.spatial_information_bias(), expected, rtol=1e-6, atol=1e-12
+    )
+
+
 def test_screens_share_one_probe_pass(box, monkeypatch):
     """classify, label_cell_types and summary_table reuse the probed bias."""
     import copy

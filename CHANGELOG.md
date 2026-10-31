@@ -107,6 +107,12 @@
   finite-volume operations always did. Saved environments store
   `open_fraction`, so files written by earlier versions must be rebuilt
   from their source geometry.
+- `spatial_information_bias()` of an unpenalized GLM (`penalty=0`) whose
+  basis has more modes than the animal visited bins no longer raises
+  `LinAlgError` or returns a value set by roundoff. The modes no visited bin
+  sees do not change the rate at a visited bin, so the bias counts only the
+  visited modes: `(visited bins - 1)` instead of `rank - 1`, and 0 when the
+  animal stayed in one bin.
 
 ### Exporting decoding and behavior results to pynapple
 
