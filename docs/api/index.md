@@ -574,11 +574,16 @@ pynwb.
   `read_head_direction(...)` → `NWBHeadDirection(times, headings, *, frame)`
   and `read_pose(...)` → `NWBPose(bodyparts, times, skeleton, *, units,
   frame, confidence)`. Several matching series or containers raise; choose
-  one by name or path.
+  one by name or path. `read_position(..., columns=[0, 1])` and
+  `environment_from_position(..., columns=[0, 1])` keep the spatial columns
+  of a series that also stores speed or other values.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
-  `NWBUnits(spike_times, unit_ids, obs_intervals)`. Unit labels are unique
-  table IDs; the derived `spike_window` intersects the selected units'
-  acquisition coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
+  `NWBUnits(spike_times, unit_ids, obs_intervals, *, unit_table, resolution)`.
+  Unit labels are unique table IDs; the derived `spike_window` intersects the
+  selected units' acquisition coverage. `unit_table` holds per-unit metadata
+  such as brain region (`electrode_location`) and cell type, ready for
+  `SpikeTrains(..., unit_table=...)`. Choose analysis epochs with
+  `read_intervals(nwbfile, interval_name="epochs")`.
 - Holders are frozen and cannot be tuple-unpacked. Position units describe
   converted values; missing declarations are `None`. `read_position` /
   `read_pose` / `read_units` accept `lazy=True` (handles valid only while the
