@@ -740,6 +740,10 @@ def detect_runs_between_regions(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        For counting, the trade-off differs: a loss longer than ``max_gap``
+        in the middle of a run splits it in two, so recordings with
+        multi-second losses during runs count runs better with a larger
+        value (``scripts/calibrate_max_gap.py``).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
@@ -1102,6 +1106,10 @@ def segment_by_velocity(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        For counting, the trade-off differs: a loss longer than ``max_gap``
+        in the middle of a run splits it in two, so recordings with
+        multi-second losses during runs count runs better with a larger
+        value (``scripts/calibrate_max_gap.py``).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
@@ -1378,6 +1386,10 @@ def detect_laps(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        For counting, the trade-off differs: a loss longer than ``max_gap``
+        in the middle of a run splits it in two, so recordings with
+        multi-second losses during runs count runs better with a larger
+        value (``scripts/calibrate_max_gap.py``).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
@@ -3145,6 +3157,10 @@ def detect_goal_directed_runs(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
+        For counting, the trade-off differs: a loss longer than ``max_gap``
+        in the middle of a run splits it in two, so recordings with
+        multi-second losses during runs count runs better with a larger
+        value (``scripts/calibrate_max_gap.py``).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples

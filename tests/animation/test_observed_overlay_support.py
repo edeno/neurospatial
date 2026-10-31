@@ -517,3 +517,17 @@ def test_single_sample_object_rate_keeps_its_time_axis(env):
     ).convert_to_data(np.array([0.0]), 1, env)
     assert data.firing_rates.shape == (1,)
     np.testing.assert_array_equal(data.firing_rates, [2.0])
+
+
+@pytest.mark.parametrize("kind", ["position", "bodypart", "heading"])
+def test_infinite_overlay_values_are_refused_like_analysis_inputs(env, kind):
+    """NaN marks a missing row; an infinite value is refused, not skipped."""
+    times = np.array([0.0, 0.2, 0.4])
+    rows = np.array([[1.0, 1.0], [np.inf, 1.0], [2.0, 2.0]])
+    overlay = {
+        "position": lambda: PositionOverlay(rows, times),
+        "bodypart": lambda: BodypartOverlay({"nose": rows}, times),
+        "heading": lambda: HeadDirectionOverlay(np.array([0.0, np.inf, 1.0]), times),
+    }[kind]()
+    with pytest.raises(ValueError, match="1 infinite value"):
+        overlay.convert_to_data(times, 3, env)
