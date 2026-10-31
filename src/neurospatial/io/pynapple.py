@@ -35,6 +35,7 @@ from numpy.typing import NDArray
 from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
+    interval_set,
     refuse_permuted_spatial_columns,
 )
 from neurospatial._stacklevel import _external_stacklevel
@@ -428,13 +429,6 @@ def _checked_support(
     return support
 
 
-def _interval_set(nap: Any, support: NDArray[np.float64]) -> Any:
-    """A pynapple ``IntervalSet`` holding the same floats as half-open rows."""
-    from neurospatial._intervals import stop_to_pynapple_end
-
-    return nap.IntervalSet(start=support[:, 0], end=stop_to_pynapple_end(support[:, 1]))
-
-
 def _series_to_pynapple(
     times: NDArray[np.float64],
     values: NDArray[Any],
@@ -502,7 +496,7 @@ def _series_to_pynapple(
 
     # Import only after validation, so invalid input never reaches pynapple.
     nap = _require_pynapple()
-    time_support = None if support is None else _interval_set(nap, support)
+    time_support = None if support is None else interval_set(nap, support)
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values, time_support=time_support)
     return nap.TsdFrame(
@@ -659,7 +653,7 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
     groups = sorted(set(keys))
     nap = _require_pynapple()
     if support is not None:
-        time_support = _interval_set(nap, support)
+        time_support = interval_set(nap, support)
     elif times.max() > times.min():
         # pynapple's group default, first to last crossing, given to every
         # member too: a member with one crossing would otherwise get a

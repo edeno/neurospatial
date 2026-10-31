@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import _is_pynapple_object, pynapple_end_to_stop
+from neurospatial._intervals import (
+    _is_pynapple_object,
+    pynapple_end_to_stop,
+    stop_to_pynapple_end,
+)
 from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
@@ -86,6 +90,26 @@ def interval_rows(intervals: Any) -> NDArray[np.float64]:
             pynapple_end_to_stop(np.asarray(intervals.end, dtype=np.float64)),
         ]
     )
+
+
+def interval_set(nap: Any, rows: NDArray[np.float64]) -> Any:
+    """Return half-open ``(n, 2)`` rows as a pynapple ``IntervalSet``.
+
+    The inverse of :func:`interval_rows`: each ``stop`` becomes the float
+    just below it, so the interval holds the same timestamps.
+
+    Parameters
+    ----------
+    nap : module
+        The imported ``pynapple`` module.
+    rows : ndarray of float64, shape (n_intervals, 2)
+        ``[start, stop)`` rows in seconds.
+
+    Returns
+    -------
+    pynapple.IntervalSet
+    """
+    return nap.IntervalSet(start=rows[:, 0], end=stop_to_pynapple_end(rows[:, 1]))
 
 
 def tsgroup_unit_table(group: Any) -> pd.DataFrame | None:
