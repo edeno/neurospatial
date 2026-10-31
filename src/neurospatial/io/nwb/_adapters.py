@@ -24,22 +24,21 @@ DEFAULT_STARTING_TIME: float = 0.0
 
 
 def position_units_from_series(series: Any) -> str | None:
-    """Return declared position units without assuming a fallback or rescaling."""
-    unit = getattr(series, "unit", None)
-    if unit is None or not str(unit).strip():
-        return None
-    from neurospatial._units import _UNIT_SPELLINGS
+    """Return declared coordinate units without assuming a fallback or rescaling.
 
-    # NWB spells units out ("meters" is pynwb's default); keep a custom unit
-    # verbatim.
-    declaration = str(unit)
-    return _UNIT_SPELLINGS.get(declaration.strip().lower(), declaration)
+    Recognized spellings are canonical (pynwb's default ``"meters"`` is
+    ``"m"``); other declarations are kept without surrounding whitespace.
+    """
+    from neurospatial.io.nwb._holders import _declared_units
+
+    return _declared_units(getattr(series, "unit", None))
 
 
 def position_frame_from_series(series: Any) -> str | None:
     """Preserve a nonempty reference-frame description without interpretation."""
-    frame = getattr(series, "reference_frame", None)
-    return str(frame) if frame is not None and str(frame).strip() else None
+    from neurospatial.io.nwb._holders import _declared_frame
+
+    return _declared_frame(getattr(series, "reference_frame", None))
 
 
 def merge_overlay_coordinate_metadata(

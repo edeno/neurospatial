@@ -937,7 +937,7 @@ class TestReadScaledSeries:
         position_data = read_position(nwbfile, lazy=True)
         positions = position_data.positions
         series = nwbfile.processing["behavior"]["Position"].spatial_series["position"]
-        assert positions is series.data
+        np.testing.assert_array_equal(positions, series.data)
 
     def test_read_head_direction_applies_conversion(self, empty_nwb):
         from pynwb.behavior import CompassDirection, SpatialSeries

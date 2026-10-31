@@ -184,3 +184,91 @@ def test_units_holder_rejects_misaligned_fields(unit_ids, obs_intervals):
 
     with pytest.raises(ValueError, match="one-to-one"):
         NWBUnits([np.array([0.1])], unit_ids, obs_intervals, None)
+
+
+@pytest.mark.parametrize(
+    ("holder", "kwargs", "fragment"),
+    [
+        (
+            NWBPosition,
+            {"times": np.arange(3.0), "positions": np.zeros((2, 2)), "units": "cm"},
+            "Length mismatch: positions=2, times=3",
+        ),
+        (
+            NWBPosition,
+            {"times": np.zeros((3, 1)), "positions": np.zeros((3, 2)), "units": "cm"},
+            "NWBPosition times must be 1-D, got shape (3, 1)",
+        ),
+        (
+            NWBHeadDirection,
+            {"times": np.arange(3.0), "headings": np.zeros((3, 2))},
+            "NWBHeadDirection headings must have 1 dimension(s), got shape (3, 2)",
+        ),
+        (
+            NWBHeadDirection,
+            {"times": np.arange(3.0), "headings": np.zeros(4)},
+            "Length mismatch: headings=4, times=3",
+        ),
+    ],
+)
+def test_behavior_holders_check_shapes(holder, kwargs, fragment):
+    with pytest.raises(ValueError) as caught:
+        holder(**kwargs)
+    assert fragment in str(caught.value)
+    assert "Fix:" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("units", "expected"),
+    [("micrometers", "um"), (" Centimeters ", "cm"), (" Arena ", "Arena"), ("", None)],
+)
+def test_position_holder_normalizes_declarations(units, expected):
+    pos = NWBPosition(np.arange(2.0), np.zeros((2, 2)), units, frame="  ")
+    assert pos.units == expected
+    assert pos.frame is None
+
+
+def test_behavior_holders_own_read_only_arrays():
+    times = np.arange(3.0)
+    positions = np.zeros((3, 2))
+    headings = np.zeros(3)
+    pos = NWBPosition(times, positions, "cm")
+    hd = NWBHeadDirection(times, headings, frame="")
+    positions[0, 0] = 99.0
+    times[0] = 99.0
+    assert pos.positions[0, 0] == 0.0
+    assert pos.times[0] == hd.times[0] == 0.0
+    assert hd.frame is None
+    for array in (pos.times, pos.positions, hd.times, hd.headings):
+        with pytest.raises(ValueError, match="read-only"):
+            array[0] = 1.0
+
+
+def test_eager_position_keeps_nan_rows_after_file_closes(empty_nwb, tmp_path):
+    """Untracked samples stay NaN through conversion and offset, on disk."""
+    from pynwb.behavior import Position, SpatialSeries
+
+    stored = np.array([[0.0, 10.0], [np.nan, np.nan], [20.0, 30.0]])
+    position = Position(name="Position")
+    position.add_spatial_series(
+        SpatialSeries(
+            name="position",
+            data=stored,
+            timestamps=np.arange(3) / 30.0,
+            reference_frame="arena corner",
+            unit="pixels",
+            conversion=0.5,
+            offset=1.0,
+        )
+    )
+    empty_nwb.create_processing_module("behavior", "Behavior").add(position)
+    path = tmp_path / "nan_position.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with pynwb.NWBHDF5IO(str(path), "r") as io:
+        pos = read_position(io.read())
+    np.testing.assert_array_equal(
+        pos.positions, [[1.0, 6.0], [np.nan, np.nan], [11.0, 16.0]]
+    )
+    np.testing.assert_allclose(pos.times, np.arange(3) / 30.0)
+    assert (pos.units, pos.frame) == ("px", "arena corner")

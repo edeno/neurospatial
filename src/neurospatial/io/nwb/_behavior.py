@@ -10,17 +10,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
-    position_frame_from_series,
-    position_units_from_series,
     require_unscaled_for_lazy,
     timestamps_from_series,
     timestamps_handle_from_series,
-    validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
 from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
@@ -28,13 +24,6 @@ from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 if TYPE_CHECKING:
     from pynwb import NWBFile
     from pynwb.behavior import CompassDirection, Position, SpatialSeries
-
-# =============================================================================
-# Constants for behavior data
-# =============================================================================
-
-# Fallback units for position data when not specified
-DEFAULT_POSITION_UNITS: str = "cm"
 
 
 @keyword_hint("processing_module", "position_name")
@@ -74,7 +63,7 @@ def read_position(
         Frozen, non-iterable holder with ``times`` in seconds, ``positions``
         in the declared physical ``units`` after conversion and offset, and
         ``units=None`` when no unit is declared. Recognized unit aliases are
-        normalized to m/cm/mm/px without rescaling values. Arrays are eager
+        normalized to m/cm/mm/um/px without rescaling values. Arrays are eager
         float64 by default; lazy handles remain inside the holder. ``frame``
         preserves a nonempty SpatialSeries ``reference_frame`` verbatim,
         or is None when undeclared. No coordinate transform is inferred.
@@ -94,13 +83,11 @@ def read_position(
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
     block; accessing them after the file is closed raises an error from the HDF5
-    layer. ``lazy=False`` returns fully-materialized arrays as before and is safe
-    to use after the file closes.
+    layer. ``lazy=False`` returns read-only, fully-materialized arrays that
+    remain valid after the file closes.
 
-    Length validation (positions vs. timestamps) runs on **both** paths: the lazy
-    path compares the handles' ``.shape[0]`` (which an ``h5py.Dataset`` exposes
-    without materializing values), so a mismatch raises the same ``ValueError``
-    the eager path raises.
+    Positions and timestamps must have the same length on both paths; the lazy
+    path compares the handles' ``.shape[0]`` without materializing values.
 
     ``lazy=True`` returns the **stored** dtype (whatever the SpatialSeries was
     written with, e.g. ``float32``), whereas ``lazy=False`` casts to
@@ -154,38 +141,18 @@ def read_position(
 
     if lazy:
         require_unscaled_for_lazy(spatial_series, context="read_position")
-        # Return the h5py-backed handles without copying; they materialize on
-        # slice / np.asarray. Validate lengths using the handles' .shape[0]
-        # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
-        # stays lazy) so the lazy path raises the SAME ValueError the eager path
-        # raises on a positions/timestamps length mismatch.
-        data_handle = spatial_series.data
-        timestamps_handle = timestamps_handle_from_series(spatial_series)
-        validate_handle_lengths(
-            {
-                "positions": int(data_handle.shape[0]),
-                "timestamps": int(timestamps_handle.shape[0]),
-            }
-        )
-        return NWBPosition(
-            timestamps_handle,
-            data_handle,
-            position_units_from_series(spatial_series),
-            frame=position_frame_from_series(spatial_series),
-        )
-
-    # Extract position data and timestamps
-    positions = data_from_series(spatial_series)
-    timestamps = _get_timestamps(spatial_series)
-
-    from neurospatial._validation import validate_lengths
-
-    validate_lengths({"positions": positions, "timestamps": timestamps})
+        # The h5py-backed handles materialize on slice / np.asarray; the
+        # holder checks their lengths from .shape without reading values.
+        timestamps = timestamps_handle_from_series(spatial_series)
+        positions = spatial_series.data
+    else:
+        timestamps = timestamps_from_series(spatial_series)
+        positions = data_from_series(spatial_series)
     return NWBPosition(
         timestamps,
         positions,
-        position_units_from_series(spatial_series),
-        frame=position_frame_from_series(spatial_series),
+        spatial_series.unit,
+        frame=spatial_series.reference_frame,
     )
 
 
@@ -323,25 +290,6 @@ def _get_spatial_series(
     return container.spatial_series[available_series[0]]
 
 
-def _get_timestamps(spatial_series: SpatialSeries) -> NDArray[np.float64]:
-    """
-    Get timestamps from a SpatialSeries.
-
-    If explicit timestamps are not available, computes them from rate and starting_time.
-
-    Parameters
-    ----------
-    spatial_series : SpatialSeries
-        The spatial series object.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Timestamps in seconds.
-    """
-    return timestamps_from_series(spatial_series)
-
-
 @keyword_hint("processing_module", "compass_name")
 def read_head_direction(
     nwbfile: NWBFile,
@@ -405,7 +353,7 @@ def read_head_direction(
     # series; handle both. Angles are returned in the allocentric convention
     # (0 = East, increasing counterclockwise).
     raw = data_from_series(spatial_series)
-    timestamps = _get_timestamps(spatial_series)
+    timestamps = timestamps_from_series(spatial_series)
 
     if raw.ndim == 2 and raw.shape[1] == 2:
         # (n, 2) heading vectors -> angle via arctan2 (already radians, 0=East).
@@ -418,9 +366,5 @@ def read_head_direction(
         unit = getattr(spatial_series, "unit", None)
         if isinstance(unit, str) and unit.strip().lower().startswith("deg"):
             angles = np.deg2rad(angles)
-
-    from neurospatial._validation import validate_lengths
-
-    validate_lengths({"angles": angles, "timestamps": timestamps})
 
     return NWBHeadDirection(timestamps, angles)
