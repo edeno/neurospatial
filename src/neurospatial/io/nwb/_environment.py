@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -27,9 +28,13 @@ if TYPE_CHECKING:
 
 ENVIRONMENT_SCHEMA_VERSION: str = "4.0"
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
-# Metadata that records when and by which release a record was written, not
-# the environment it describes.
-_WRITE_DETAILS = ("schema_version", "library_version", "created_at")
+# The "format" each /analysis record this package writes declares in its
+# description JSON; records are identified by it, never by column names.
+ENVIRONMENT_FORMAT: str = "neurospatial.Environment"
+SPATIAL_RATES_FORMAT: str = "neurospatial.SpatialRates"
+# Metadata that says what kind of record it is and when and by which release
+# it was written, not the environment it describes.
+_RECORD_DETAILS = ("format", "schema_version", "library_version", "created_at")
 
 
 @keyword_hint("name")
@@ -58,17 +63,20 @@ def write_environment(
     name : str, default "spatial_environment"
         Record name in ``nwbfile.analysis``.
     overwrite : bool, default False
-        Replace an existing environment record with the same name. pynwb
-        cannot delete a record already written to disk, so replace one in a
-        file opened with ``mode="r"`` and save a copy with
+        Replace an existing environment record with the same name. A record
+        that spatial rates use is replaced only by the identical environment,
+        so the rates are never read with other bins. pynwb cannot delete a
+        record already written to disk, so replace one in a file opened with
+        ``mode="r"`` and save a copy with
         ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``.
 
     Raises
     ------
     ValueError
         If the name exists and overwrite is false, the name belongs to an
-        ``/analysis`` object that is not an environment record, or a
-        component has no codec.
+        ``/analysis`` object that is not an environment record, spatial
+        rates use the record and ``env`` differs from it (the message names
+        them), or a component has no codec.
     NotImplementedError
         If ``overwrite=True`` would replace a record in a file opened with
         ``mode="r+"`` or ``"a"``.
@@ -80,9 +88,10 @@ def write_environment(
     The record is a one-row ``DynamicTable``. Each numerical array is one
     ragged column named by its key with ``/`` replaced by ``.`` (for
     example ``binning.bins.centers``), stored flat, gzip-compressed and
-    without padding. The table description is one JSON attribute holding the
-    remaining metadata and, under ``array_specs``, each array's column, shape
-    and dtype. Other tools read bin adjacency from the
+    without padding. The table description is one JSON attribute holding
+    ``"format": "neurospatial.Environment"``, which identifies the record,
+    the remaining metadata and, under ``array_specs``, each array's column,
+    shape and dtype. Other tools read bin adjacency from the
     ``binning.connections.all_pairs`` (bin index pairs), ``all_distances``,
     ``is_open`` (False where a wall closes the pair) and ``closed_by``
     columns.
@@ -109,23 +118,35 @@ def write_environment(
             f"Environment '{name}' already exists in /analysis. Use "
             "overwrite=True to replace it."
         )
-    record = _environment_record(env, name)
+    record, fingerprint = _environment_record(env, name)
     # Construct the replacement before removing a valid existing record.
     if name in nwbfile.analysis:
+        _refuse_replacing_a_used_environment(nwbfile, name, fingerprint)
         _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
         del nwbfile.analysis[name]
         logger.info("Overwriting existing environment '%s'", name)
     nwbfile.add_analysis(record)
 
 
-def _environment_record(env: Environment, name: str) -> DynamicTable:
-    """Build the one-row table that stores ``env``; see ``write_environment``."""
+def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]:
+    """Build the one-row table that stores ``env``; see ``write_environment``.
+
+    Returns
+    -------
+    record : DynamicTable
+        The record to add to ``nwbfile.analysis``.
+    fingerprint : str
+        The record's content fingerprint; see ``_record_fingerprint``.
+    """
     from hdmf.backends.hdf5 import H5DataIO
     from hdmf.common import DynamicTable, VectorData, VectorIndex
 
     from neurospatial.io.files import _environment_payload
 
     metadata, arrays = _environment_payload(env)
+    metadata = json.loads(json.dumps(metadata))
+    fingerprint = _payload_fingerprint(metadata, arrays)
+    metadata["format"] = ENVIRONMENT_FORMAT
     metadata["schema_version"] = ENVIRONMENT_SCHEMA_VERSION
     columns: list[Any] = []
     for key, array in sorted(arrays.items()):
@@ -147,21 +168,117 @@ def _environment_record(env: Environment, name: str) -> DynamicTable:
             ]
         )
         metadata["array_specs"][key]["column"] = column_name
-    return DynamicTable(
+    record = DynamicTable(
         name=name,
         description=json.dumps(metadata),
         columns=columns,
         id=[0],
     )
+    return record, fingerprint
+
+
+def _payload_fingerprint(
+    metadata: dict[str, Any], arrays: Mapping[str, np.ndarray]
+) -> str:
+    """SHA-256 of what a record says about its environment.
+
+    Covers every array (key, dtype, shape and values) and every metadata
+    entry except ``_RECORD_DETAILS`` and the NWB column names, so two records
+    of the same environment written at different times, or one read back
+    from disk, have the same fingerprint.
+
+    Parameters
+    ----------
+    metadata : dict
+        JSON-normalized record metadata, with ``array_specs``.
+    arrays : Mapping[str, ndarray]
+        The arrays ``array_specs`` describes, in any shape with C-order
+        values (flattened NWB columns are accepted).
+    """
+    described = {k: v for k, v in metadata.items() if k not in _RECORD_DETAILS}
+    described["array_specs"] = {
+        key: {"shape": list(spec["shape"]), "dtype": spec["dtype"]}
+        for key, spec in metadata["array_specs"].items()
+    }
+    digest = hashlib.sha256(json.dumps(described, sort_keys=True).encode())
+    for key in sorted(arrays):
+        digest.update(key.encode())
+        digest.update(np.ascontiguousarray(arrays[key]).reshape(-1).tobytes())
+    return digest.hexdigest()
+
+
+def _record_fingerprint(record: Any) -> str | None:
+    """Content fingerprint of a stored environment record; None if unreadable."""
+    metadata = _record_metadata(record)
+    if metadata is None:
+        return None
+    try:
+        arrays = {
+            key: np.asarray(record[spec["column"]][0])
+            for key, spec in metadata["array_specs"].items()
+        }
+        return _payload_fingerprint(metadata, arrays)
+    except (KeyError, TypeError, ValueError, IndexError, AttributeError):
+        return None
+
+
+def _environment_fingerprint(env: Environment) -> str:
+    """Fingerprint of the record ``write_environment`` would store for ``env``."""
+    from neurospatial.io.files import _environment_payload
+
+    metadata, arrays = _environment_payload(env)
+    return _payload_fingerprint(json.loads(json.dumps(metadata)), arrays)
+
+
+def _record_metadata(record: object) -> dict[str, Any] | None:
+    """The JSON description of an ``/analysis`` object, or None."""
+    try:
+        metadata = json.loads(record.description)  # type: ignore[attr-defined]
+    except (AttributeError, TypeError, ValueError, RecursionError):
+        return None
+    return metadata if isinstance(metadata, dict) else None
 
 
 def _is_environment_record(record: object) -> bool:
-    """Whether an ``/analysis`` object is a record ``write_environment`` made.
+    """Whether an ``/analysis`` object is a record ``write_environment`` made."""
+    metadata = _record_metadata(record)
+    return metadata is not None and metadata.get("format") == ENVIRONMENT_FORMAT
 
-    Every such record has a ``bin_centers`` column; other analysis results
-    are told apart without parsing their descriptions.
-    """
-    return "bin_centers" in getattr(record, "colnames", ())
+
+def _spatial_rates_using(nwbfile: NWBFile, env_name: str) -> list[str]:
+    """Names of the spatial-rates records in ``/analysis`` that use ``env_name``."""
+    users = []
+    for table_name, table in nwbfile.analysis.items():
+        metadata = _record_metadata(table)
+        if (
+            metadata is not None
+            and metadata.get("format") == SPATIAL_RATES_FORMAT
+            and metadata.get("environment_name") == env_name
+        ):
+            users.append(table_name)
+    return sorted(users)
+
+
+def _refuse_replacing_a_used_environment(
+    nwbfile: NWBFile, name: str, fingerprint: str
+) -> None:
+    """Refuse to replace a record spatial rates use with a different environment."""
+    from neurospatial._exceptions import _format_error
+
+    users = _spatial_rates_using(nwbfile, name)
+    if users and _record_fingerprint(nwbfile.analysis[name]) != fingerprint:
+        raise ValueError(
+            _format_error(
+                f"Cannot replace environment {name!r}: spatial rates use it "
+                f"({users}), and this environment differs from it.",
+                why="Why: the rates would be read with bins they were not "
+                "estimated on, so every map would be placed at the wrong "
+                "positions or in the wrong units.",
+                fix="save this environment under another name, or recompute "
+                f"the rates {users} on it and rewrite them with "
+                "write_spatial_rates(..., overwrite=True)",
+            )
+        )
 
 
 def _check_environment_name(nwbfile: NWBFile, name: str) -> None:
@@ -179,42 +296,6 @@ def _check_environment_name(nwbfile: NWBFile, name: str) -> None:
                 fix="store the environment under another name",
             )
         )
-
-
-def _stored_environment_matches(nwbfile: NWBFile, name: str, env: Environment) -> bool:
-    """Whether ``/analysis/name`` stores exactly ``env``.
-
-    Every array and every metadata entry except when and by which release the
-    record was written must be equal, so reusing the record loses nothing:
-    bins, arena, regions, landmarks, units, frame and name all match.
-    """
-    from neurospatial.io.files import _environment_payload
-
-    record = nwbfile.analysis[name]
-    try:
-        stored = json.loads(record.description)
-    except (TypeError, ValueError, RecursionError):
-        return False
-    metadata, arrays = _environment_payload(env)
-    specs = stored.get("array_specs") if isinstance(stored, dict) else None
-    if not isinstance(specs, dict) or set(specs) != set(arrays):
-        return False
-    for key, array in arrays.items():
-        values = np.asarray(record[specs[key]["column"]][0])
-        if values.dtype != array.dtype or not np.array_equal(
-            values, array.reshape(-1), equal_nan=array.dtype.kind == "f"
-        ):
-            return False
-
-    def described(meta: dict[str, Any]) -> str:
-        kept = {k: v for k, v in meta.items() if k not in _WRITE_DETAILS}
-        kept["array_specs"] = {
-            key: {"shape": spec["shape"], "dtype": spec["dtype"]}
-            for key, spec in meta["array_specs"].items()
-        }
-        return json.dumps(kept, sort_keys=True)
-
-    return described(stored) == described(json.loads(json.dumps(metadata)))
 
 
 def _environment_record_names(nwbfile: NWBFile) -> list[str]:
@@ -340,19 +421,8 @@ def read_environment(
         raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
     record = nwbfile.analysis[name]
     source = f"NWB analysis/{name}"
-    if not _is_environment_record(record):
-        stored = _environment_record_names(nwbfile)
-        raise ValueError(
-            _format_error(
-                f"/analysis/{name} is not an environment record "
-                f"(saved environments: {stored or 'none'}).",
-                why="Why: it has no bin_centers column, which every record "
-                "written by write_environment contains.",
-                fix=f"pass name= one of {stored}"
-                if stored
-                else "save the environment with write_environment first",
-            )
-        )
+    stored = _environment_record_names(nwbfile)
+    choose = f"pass name= one of {stored}, or " if stored else ""
     try:
         metadata = json.loads(record.description)
         if not isinstance(metadata, dict):
@@ -368,10 +438,25 @@ def read_environment(
         raise ValueError(
             _format_error(
                 f"Invalid environment metadata in {source}: {error}",
-                why="Why: the record must contain complete JSON metadata without excessive nesting.",
-                fix="restore the original environment record, or re-save the original environment",
+                why="Why: an environment record's description is its complete "
+                "JSON metadata, without excessive nesting.",
+                fix=f"{choose}restore the original environment record, or "
+                "re-save the original environment",
             )
         ) from error
+    if metadata.get("format") != ENVIRONMENT_FORMAT:
+        raise ValueError(
+            _format_error(
+                f"/analysis/{name} is not an environment record "
+                f"(saved environments: {stored or 'none'}).",
+                why=f"Why: its description does not declare format "
+                f"{ENVIRONMENT_FORMAT!r}, as every record written by "
+                "write_environment does.",
+                fix=f"pass name= one of {stored}"
+                if stored
+                else "save the environment with write_environment first",
+            )
+        )
     version = metadata.get("schema_version")
     if version != ENVIRONMENT_SCHEMA_VERSION:
         raise ValueError(

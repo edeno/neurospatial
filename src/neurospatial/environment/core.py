@@ -5356,13 +5356,15 @@ class Environment(Generic[_C]):
             Name for the environment in ``/analysis``. Use this name when loading
             with ``Environment.from_nwb(nwbfile, name=name)``.
         overwrite : bool, default False
-            If True, replace existing environment with the same name.
-            If False, raise ValueError on duplicate name.
+            If True, replace existing environment with the same name; a record
+            that spatial rates use is replaced only by the identical
+            environment. If False, raise ValueError on duplicate name.
 
         Raises
         ------
         ValueError
-            If environment with same name exists and overwrite=False.
+            If environment with same name exists and overwrite=False, or
+            spatial rates use it and this environment differs.
         NotImplementedError
             If ``overwrite=True`` would replace a record in a file opened with
             ``mode="r+"`` or ``"a"``; see

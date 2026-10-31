@@ -754,14 +754,19 @@ environment (bins, arena, regions, landmarks, units, frame and name) is
 reused; a different environment under that name raises, so a rate map is
 never read with bins it was not estimated on. To link rates to an environment
 saved with `write_environment(nwbfile, env, name="open_field")`, pass
-`environment_name="open_field"`.
+`environment_name="open_field"`. The rates also store a fingerprint of the
+environment record (`environment_sha256`), and `read_spatial_rates` refuses
+them if the record has changed since.
 
 To replace a record, open the file with `"r"`, call
 `write_spatial_rates(..., overwrite=True)`, and save a copy with
 `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb cannot
 delete objects already written to a file opened with `"r+"`, so
-`overwrite=True` refuses such files. An environment record that other rates
-use is never replaced.
+`overwrite=True` refuses such files. An environment record that rates use is
+never replaced by a different environment, by `write_spatial_rates` or by
+`write_environment(..., overwrite=True)`. When replacement rates name another
+environment, the replaced rates' default `f"{name}_environment"` record is
+removed if nothing else uses it.
 
 ### What other NWB tools see
 
@@ -772,10 +777,10 @@ without neurospatial:
 
 | Path | Contents |
 | --- | --- |
-| `/analysis/ca1_place_fields` | One row per unit: `unit_id`, `firing_rate` `(n_units, n_bins)` in Hz, any `unit_table` columns. Its description is JSON metadata, including `environment_name`. |
+| `/analysis/ca1_place_fields` | One row per unit: `unit_id`, `firing_rate` `(n_units, n_bins)` in Hz, any `unit_table` columns. Its description is JSON metadata, with `"format": "neurospatial.SpatialRates"` and `environment_name`. |
 | `/analysis/ca1_place_fields/units` | Written when every `unit_id` is an id of `nwbfile.units`: a link from each row to that unit's row, so a rate map joins its spike times, electrodes and quality metrics. |
 | `/analysis/ca1_place_fields_occupancy` | One row per bin: `occupancy` in seconds. |
-| `/analysis/open_field` | The environment: one row, one column per array. |
+| `/analysis/open_field` | The environment: one row, one column per array. Its description is JSON metadata with `"format": "neurospatial.Environment"`. |
 
 In the environment record each column is named by its array, for example
 `bin_centers` `(n_bins, n_dims)` and `binning.bins.sizes` (bin area or

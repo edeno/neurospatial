@@ -2346,13 +2346,28 @@ def test_writer_never_replaces_another_analysis_object(
 def test_reader_names_a_non_environment_record_and_lists_environments(
     empty_nwb, sample_environment
 ):
+    from hdmf.common import DynamicTable, VectorData
+
     from neurospatial.io.nwb import read_environment, write_environment
 
     empty_nwb.add_analysis(_other_analysis_table("quality"))
+    empty_nwb.add_analysis(
+        DynamicTable(
+            name="tagged",
+            description=json.dumps({"format": "another.tool", "version": 1}),
+            columns=[VectorData(name="bin_centers", description="x", data=[1.0])],
+        )
+    )
     write_environment(empty_nwb, sample_environment, name="open_field")
 
-    with pytest.raises(ValueError, match="/analysis/quality is not an environment"):
+    # A JSON description without the environment format is another record,
+    # even with a bin_centers column.
+    with pytest.raises(ValueError, match="/analysis/tagged is not an environment"):
+        read_environment(empty_nwb, name="tagged")
+    # A description that is not JSON at all cannot say what it is.
+    with pytest.raises(ValueError, match="Invalid environment metadata") as error:
         read_environment(empty_nwb, name="quality")
+    assert "Fix: pass name= one of ['open_field']" in str(error.value)
     with pytest.raises(KeyError) as missing:
         read_environment(empty_nwb, name="absent")
     assert "saved environments: ['open_field']" in str(missing.value)

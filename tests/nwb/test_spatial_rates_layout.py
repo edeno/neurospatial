@@ -363,3 +363,162 @@ def test_unit_table_column_named_units_is_reserved(empty_nwb, sample_environment
     )
     with pytest.raises(ValueError, match=r"reserved column name\(s\) \['units'\]"):
         write_spatial_rates(empty_nwb, rates)
+
+
+def _shifted(env):
+    """Same bins and units, every center moved 1000 cm: same n_bins, other places."""
+    from neurospatial.ops.transforms import translate
+
+    return env.apply_transform(translate(1000.0, 0.0))
+
+
+@pytest.mark.parametrize("route", ["write_environment", "to_nwb"])
+@pytest.mark.parametrize("change", ["shifted", "relabelled"])
+def test_environment_writers_never_replace_a_record_rates_use(
+    empty_nwb, sample_environment, route, change
+):
+    """Replacing it would silently relabel the bins of the rates that use it."""
+    from neurospatial.io.nwb import (
+        read_spatial_rates,
+        write_environment,
+        write_spatial_rates,
+    )
+
+    env = sample_environment
+    other = _shifted(env) if change == "shifted" else env.with_metadata(units="m")
+    write_spatial_rates(empty_nwb, _rates(env), name="ca1", environment_name="arena")
+    write_spatial_rates(empty_nwb, _rates(env), name="ca3", environment_name="arena")
+    record = empty_nwb.analysis["arena"]
+
+    with pytest.raises(ValueError, match="spatial rates use it") as error:
+        if route == "to_nwb":
+            other.to_nwb(empty_nwb, name="arena", overwrite=True)
+        else:
+            write_environment(empty_nwb, other, name="arena", overwrite=True)
+    assert "['ca1', 'ca3']" in str(error.value)
+    assert "Fix:" in str(error.value)
+    assert empty_nwb.analysis["arena"] is record
+    np.testing.assert_array_equal(
+        read_spatial_rates(empty_nwb, name="ca1").env.bin_centers, env.bin_centers
+    )
+
+
+def test_rewriting_the_same_environment_a_record_rates_use_is_allowed(
+    empty_nwb, sample_environment
+):
+    from neurospatial.io.nwb import (
+        read_spatial_rates,
+        write_environment,
+        write_spatial_rates,
+    )
+
+    write_spatial_rates(empty_nwb, _rates(sample_environment), environment_name="arena")
+    write_environment(empty_nwb, sample_environment, name="arena", overwrite=True)
+    back = read_spatial_rates(empty_nwb)
+    np.testing.assert_array_equal(back.env.bin_centers, sample_environment.bin_centers)
+
+
+@pytest.mark.parametrize("with_env", [False, True])
+def test_reader_refuses_rates_whose_environment_record_was_swapped(
+    empty_nwb, sample_environment, with_env
+):
+    """Any route that swaps the record (here, direct pynwb edits) is caught on read."""
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+    from neurospatial.io.nwb._environment import _environment_record
+
+    env = sample_environment
+    write_spatial_rates(empty_nwb, _rates(env), environment_name="arena")
+    del empty_nwb.analysis["arena"]
+    empty_nwb.add_analysis(_environment_record(_shifted(env), "arena")[0])
+
+    with pytest.raises(ValueError, match="changed since these rates were written"):
+        read_spatial_rates(empty_nwb, env=env if with_env else None)
+
+
+def test_overwrite_removes_the_default_environment_record_it_no_longer_uses(
+    empty_nwb, sample_environment
+):
+    from neurospatial.io.nwb import write_environment, write_spatial_rates
+
+    env = sample_environment
+    write_environment(empty_nwb, env, name="open_field")
+    write_spatial_rates(empty_nwb, _rates(env), name="ca1")
+    assert "ca1_environment" in empty_nwb.analysis
+
+    write_spatial_rates(
+        empty_nwb,
+        _rates(env, seed=1),
+        name="ca1",
+        environment_name="open_field",
+        overwrite=True,
+    )
+    assert _environment_records(empty_nwb) == ["open_field"]
+
+
+@pytest.mark.parametrize("old_name", ["standalone", "shared_default"])
+def test_overwrite_keeps_an_environment_record_saved_or_used_elsewhere(
+    empty_nwb, sample_environment, old_name
+):
+    from neurospatial.io.nwb import (
+        read_spatial_rates,
+        write_environment,
+        write_spatial_rates,
+    )
+
+    env = sample_environment
+    if old_name == "standalone":
+        write_environment(empty_nwb, env, name="arena")
+        write_spatial_rates(
+            empty_nwb, _rates(env), name="ca1", environment_name="arena"
+        )
+        kept = "arena"
+    else:
+        write_spatial_rates(empty_nwb, _rates(env), name="ca1")
+        write_spatial_rates(
+            empty_nwb, _rates(env), name="ca3", environment_name="ca1_environment"
+        )
+        kept = "ca1_environment"
+    write_spatial_rates(
+        empty_nwb,
+        _rates(env, seed=1),
+        name="ca1",
+        environment_name="other",
+        overwrite=True,
+    )
+    assert kept in _environment_records(empty_nwb)
+    assert "other" in _environment_records(empty_nwb)
+    if old_name == "shared_default":
+        read_spatial_rates(empty_nwb, name="ca3")
+
+
+def test_rates_with_a_bin_centers_unit_column_are_not_environment_records(
+    empty_nwb, sample_environment
+):
+    """Records are identified by their declared format, not a column name."""
+    import pandas as pd
+
+    from neurospatial.encoding.spatial import SpatialRatesResult
+    from neurospatial.io.nwb import (
+        read_environment,
+        write_environment,
+        write_spatial_rates,
+    )
+
+    base = _rates(sample_environment)
+    rates = SpatialRatesResult(
+        firing_rates=base.firing_rates,
+        occupancy=base.occupancy,
+        env=sample_environment,
+        method="diffusion_kde",
+        bandwidth=5.0,
+        unit_table=pd.DataFrame({"bin_centers": [1.0, 2.0, 3.0]}),
+    )
+    write_spatial_rates(empty_nwb, rates, name="ca1")
+
+    with pytest.raises(KeyError) as missing:
+        read_environment(empty_nwb, name="absent")
+    assert "saved environments: ['ca1_environment']" in str(missing.value)
+    with pytest.raises(ValueError, match="not an environment record"):
+        write_environment(empty_nwb, sample_environment, name="ca1", overwrite=True)
+    with pytest.raises(ValueError, match="/analysis/ca1 is not an environment record"):
+        read_environment(empty_nwb, name="ca1")
