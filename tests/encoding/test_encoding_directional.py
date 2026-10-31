@@ -1017,12 +1017,12 @@ class TestTuningPvalue:
         result = self._result(counts, np.full(n, 0.4))
 
         n_spikes = counts.sum()
-        assert n_spikes >= 50  # Rayleigh's small-sample correction is off
         r = mean_resultant_length(centers, weights=counts)
         expected = np.exp(-n_spikes * r**2)
         assert result.tuning_pvalue() == pytest.approx(expected, rel=1e-10)
-        _, rayleigh_p = rayleigh_test(centers[counts > 0], weights=counts[counts > 0])
-        assert result.tuning_pvalue() == pytest.approx(rayleigh_p, rel=1e-10)
+        # rayleigh_test adds Zar's small-sample correction to the same z.
+        z, _ = rayleigh_test(centers[counts > 0], weights=counts[counts > 0])
+        assert z == pytest.approx(n_spikes * r**2, rel=1e-10)
 
     def test_occupancy_scale_does_not_change_pvalue(self) -> None:
         """Doubling every bin's time with the same counts tests the same tuning."""

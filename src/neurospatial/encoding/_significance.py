@@ -6,7 +6,7 @@ import hashlib
 import warnings
 from collections.abc import Callable, Hashable, Sequence
 from types import MappingProxyType
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -17,7 +17,13 @@ from neurospatial._results import plain_value, resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
-from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
+from neurospatial.stats._utils import _entropy
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    _shuffle_p_values,
+    compute_shuffle_zscore,
+    shuffle_spike_times_circular,
+)
 
 # Shuffle settings every cell-type shuffle test shares. The ``*_significance``
 # signatures spell ``n_shuffles`` and ``min_shift`` out so the API reference
@@ -31,14 +37,6 @@ def _stream_key(label: Hashable) -> int:
     """Stable key shared by Python and NumPy scalar representations."""
     value = np.asarray(label).item()
     return int.from_bytes(hashlib.sha256(repr(value).encode()).digest()[:8], "little")
-
-
-def _entropy(rng: np.random.Generator | int | None) -> int:
-    if isinstance(rng, np.random.Generator):
-        return int(rng.integers(2**63))
-    if rng is None:
-        return int(cast("int", np.random.SeedSequence().entropy))
-    return int(rng)
 
 
 def resolve_shuffle_settings(
@@ -227,16 +225,13 @@ def shuffle_information_verdict(
 def shuffle_pvalues(
     observed: NDArray[np.float64], null: NDArray[np.float64]
 ) -> NDArray[np.float64]:
-    """Correct upper-tail Monte Carlo ranks over finite null scores.
+    """Upper-tail Monte Carlo p-values over the defined (non-NaN) null scores.
 
     The p-value is NaN when the observed score is not finite or no null score
-    is finite: there is nothing to rank against.
+    is defined: there is nothing to rank against.
     """
-    finite = np.isfinite(null)
-    n_finite = np.sum(finite, axis=0)
-    exceed = np.sum(finite & (null >= observed[None]), axis=0)
-    p = (1.0 + exceed) / (1.0 + n_finite)
-    return np.where(np.isfinite(observed) & (n_finite > 0), p, np.nan)
+    p_values: NDArray[np.float64] = _shuffle_p_values(observed, null, "greater")
+    return p_values
 
 
 def to_shuffle_results(
@@ -246,21 +241,21 @@ def to_shuffle_results(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Return independent per-unit score arrays in caller label order.
 
-    Warns, naming the units, when non-finite null scores were left out of a
-    unit's p-value; units whose observed score is undefined are not named.
+    Warns, naming the units, when undefined (NaN) null scores were left out
+    of a unit's p-value; units whose observed score is undefined are not named.
     """
     p = shuffle_pvalues(observed, null)
-    n_dropped = np.sum(~np.isfinite(null), axis=0)[:, 0]
+    n_dropped = np.sum(np.isnan(null), axis=0)[:, 0]
     affected = np.flatnonzero((n_dropped > 0) & np.isfinite(observed[:, 0]))
     if affected.size:
         details = ", ".join(
             f"unit {plain_value(unit_ids[i])!r}: {int(n_dropped[i])}" for i in affected
         )
         warnings.warn(
-            f"Dropped {int(n_dropped[affected].sum())} non-finite null score(s) "
-            f"out of {null.shape[0]} per unit before computing p-values ({details}). "
-            "Each p-value uses only its unit's finite null scores; a unit with "
-            "none gets p_value=NaN. Shifted spike trains that leave no spikes in "
+            f"Dropped {int(n_dropped[affected].sum())} undefined (NaN) null "
+            f"score(s) out of {null.shape[0]} per unit before computing p-values "
+            f"({details}). Each p-value uses only its unit's defined null scores; "
+            "a unit with none gets p_value=NaN. Shifted spike trains that leave no spikes in "
             "the analyzed bins give undefined scores; more spikes or a longer "
             "recording reduce them.",
             UserWarning,
@@ -279,22 +274,14 @@ def to_shuffle_results(
 def shuffle_test_result(
     observed: float, null_scores: NDArray[np.float64], p_value: float
 ) -> ShuffleTestResult:
-    """One unit's circular-shift test, with a z-score over finite null scores."""
-    scores = np.array(null_scores, dtype=np.float64, copy=True)
-    finite = scores[np.isfinite(scores)]
-    std = float(np.std(finite)) if finite.size else float("nan")
-    z = (
-        (observed - float(np.mean(finite))) / std
-        if finite.size and std > 0
-        else float("nan")
-    )
+    """One unit's upper-tail circular-shift test from its precomputed p-value."""
     return ShuffleTestResult(
         observed_score=observed,
-        null_scores=scores,
+        null_scores=null_scores,
         p_value=p_value,
-        z_score=z,
+        z_score=compute_shuffle_zscore(observed, null_scores),
         shuffle_type="circular_time_shift",
-        n_shuffles=len(scores),
+        n_shuffles=len(null_scores),
     )
 
 

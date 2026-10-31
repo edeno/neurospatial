@@ -63,6 +63,74 @@
 - `bodypart_overlay_from_nwb` refuses skeleton nodes that are not bodypart
   series names when it is built.
 
+### Statistics: correct small-sample p-values, undefined results are NaN
+
+**Fixed**
+
+- `rayleigh_test` returned p = 0.0 for tightly clustered small samples
+  (n = 8 identical angles), and from n = 11 to 14 p could rise as clustering
+  tightened. It now uses Zar's approximation, as CircStat does: p is positive,
+  falls as R grows, and agrees with Monte Carlo tail probabilities within 15%
+  for n >= 6.
+- An unknown `angle_unit` (such as `"degrees"`) was read as radians, so
+  degree values were analysed as radians. Every circular function now raises.
+- Shuffle p-values dropped infinite null scores, which biased them toward
+  significance: a null of 500 `+inf` and 500 ones gave p = 0.002 for an
+  observed 10 instead of 0.50. Only undefined (NaN) null scores are left out
+  now; infinite scores are ranked like any other. The z-score is NaN when a
+  null score is infinite.
+- `shuffle_trials` permuted single samples, scattering each trial across
+  time, which makes the null anti-conservative for trial-level effects. It
+  now permutes labels across trials (runs of consecutive samples with one
+  label) and keeps each trial's samples together.
+- `generate_jittered_spikes(window=...)` clipped spikes that jittered out of
+  the window onto its edges, creating identical spike times across
+  surrogates (17-23% of spikes in a 1 s window). The jitter is now a
+  Gaussian truncated to the half-open window.
+- `circular_mean`, `circular_variance` and `mean_resultant_length` returned
+  NaN for a NaN angle without weights but dropped it with weights. Both now
+  drop NaN angles with a warning.
+- The `stats.circular` module docstring gave the GLM design-matrix columns
+  as `[cos, sin]`; they are `[sin, cos]`. Its GLM example now fits per time
+  bin with a `log(dt)` offset.
+- `circular_circular_correlation` cited Fisher & Lee (1983); it computes the
+  Jammalamadaka & Sarma (1988) coefficient.
+
+**Changed**
+
+- Undefined results are NaN instead of plausible numbers:
+  `circular_linear_correlation`, `phase_position_correlation` and
+  `circular_circular_correlation` return `(nan, nan)` with a warning for
+  constant inputs instead of `(0.0, 1.0)`, and `circular_mean` is NaN when
+  the mean direction is undefined (zero resultant, e.g. two opposite angles)
+  or no angle carries weight.
+- `circular_linear_correlation` is computed as the least-squares multiple
+  correlation of the linear variable on cos and sin. Values are unchanged for
+  ordinary data; when cos and sin are collinear (angles taking two values)
+  it is now defined, with a one-degree-of-freedom p-value.
+- `rayleigh_test` refuses weights that are not whole-number counts:
+  occupancy or rate weights made its p-value depend on their units.
+- `ShuffleTestResult` checks that its fields agree (1-D null, `n_shuffles`
+  equal to its length, `p_value` in (0, 1] or NaN), records the test's
+  `tail`, reports `n_shuffles_used`, has `summary()` and a short repr, and
+  `is_significant` is now a method, `is_significant(alpha=0.05)`, as on
+  `PhasePrecessionResult`. `ShuffleTestResult.from_null` warns when it leaves
+  out undefined shuffles. Its `plot()` draws nulls containing infinite scores.
+- `CircularBasisResult` stores only `angles`; `sin_component` and
+  `cos_component` are derived properties. `circular_basis` refuses
+  non-1-D or non-finite angles.
+- `circular_basis_metrics` and `is_modulated` refuse non-finite coefficients
+  and covariance matrices that are not symmetric positive semi-definite,
+  instead of returning p = 1 or `False`.
+- The shuffle and surrogate generators check their inputs when called:
+  counts must be positive integers, `shuffle_spikes_isi` needs sorted finite
+  spike times (and warns when there is at most one interval), Poisson
+  surrogates need whole-number counts, and `generate_jittered_spikes` needs a
+  positive `jitter_std` and a window that contains every spike.
+  `shuffle_spike_times_circular` warns when no spike falls in the windows.
+- Encoding cell-type significance computes its p-values and z-scores with
+  the `stats.shuffle` functions instead of its own copies.
+
 ### Reactivation: less repeated work, shared cores
 
 **Changed**

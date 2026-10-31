@@ -3343,7 +3343,7 @@ def _rank_order_verdict(
             test = _cell_order_test(
                 pairs, score, method.n_shuffles, method.alternative, rng
             )
-            n_shuffles_used = int(np.isfinite(test.null_scores).sum())
+            n_shuffles_used = test.n_shuffles_used
             p_value = test.p_value
             z_scores["cell_order"] = test.z_score
     n_templates = int(np.isfinite(positions).sum())

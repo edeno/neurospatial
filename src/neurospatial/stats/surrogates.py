@@ -49,8 +49,30 @@ from collections.abc import Generator
 import numpy as np
 from numpy.typing import NDArray
 
-# Import internal utilities from canonical location
+from neurospatial._exceptions import _format_error
 from neurospatial.stats._utils import _ensure_rng
+from neurospatial.stats.shuffle import _validate_draw_count
+
+
+def _validated_counts(spike_counts: NDArray[np.int64]) -> NDArray[np.float64]:
+    """Spike counts as a float array, refusing what is not a count matrix."""
+    counts = np.asarray(spike_counts, dtype=np.float64)
+    if (
+        counts.ndim != 2
+        or not np.all(np.isfinite(counts))
+        or np.any(counts < 0)
+        or np.any(counts != np.round(counts))
+    ):
+        raise ValueError(
+            _format_error(
+                f"spike_counts must be a 2-D array of non-negative whole-number "
+                f"counts, got shape {counts.shape}.",
+                why="Why: Poisson surrogates resample spike counts per time bin; "
+                "rates in Hz or NaN would change the surrogate's mean",
+                fix="pass integer spike counts with shape (n_time_bins, n_neurons)",
+            )
+        )
+    return counts
 
 
 def generate_poisson_surrogates(
@@ -93,47 +115,48 @@ def generate_poisson_surrogates(
     - Each time bin independently samples from Poisson(mean_count_per_neuron)
     - Destroys all temporal correlations and patterns
     - Preserves mean firing rates per neuron (statistically)
-    - More conservative than shuffle methods (generates truly independent counts)
+    - The least conservative null here: it removes all structure except each
+      neuron's mean count, so beating it only rules out a constant-rate
+      explanation.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` is not a 2-D array of non-negative whole-number
+        counts, or ``n_surrogates`` is not a positive integer.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.stats.surrogates import generate_poisson_surrogates
 
-    >>> spike_counts = np.array(
-    ...     [[0, 1], [2, 0], [1, 1]], dtype=np.int64
-    ... )  # doctest: +SKIP
-    >>> for i, surrogate in enumerate(  # doctest: +SKIP
+    >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
+    >>> for i, surrogate in enumerate(
     ...     generate_poisson_surrogates(spike_counts, n_surrogates=3, rng=42)
     ... ):
-    ...     print(f"Surrogate {i}: shape={surrogate.shape}, total={surrogate.sum()}")
-    Surrogate 0: shape=(3, 2), total=3
-    Surrogate 1: shape=(3, 2), total=5
-    Surrogate 2: shape=(3, 2), total=6
+    ...     print(f"Surrogate {i}: shape={surrogate.shape}")
+    Surrogate 0: shape=(3, 2)
+    Surrogate 1: shape=(3, 2)
+    Surrogate 2: shape=(3, 2)
 
     See Also
     --------
     generate_inhomogeneous_poisson_surrogates : Time-varying rate surrogates
     generate_jittered_spikes : Temporal jitter surrogates
     """
-    generator = _ensure_rng(rng)
-    n_time_bins, n_neurons = spike_counts.shape
+    counts = _validated_counts(spike_counts)
+    _validate_draw_count(n_surrogates, "n_surrogates")
+    # Each (time_bin, neuron) pair samples Poisson(mean count of its neuron).
+    lam = np.broadcast_to(counts.mean(axis=0) if len(counts) else 0.0, counts.shape)
+    return _poisson_draws(lam, n_surrogates, _ensure_rng(rng))
 
-    # Handle empty spike counts
-    if n_time_bins == 0:
-        for _ in range(n_surrogates):
-            yield np.zeros((0, n_neurons), dtype=np.int64)
-        return
 
-    # Compute mean spike count per neuron (averaged across time bins)
-    # This is the lambda parameter for our Poisson distribution
-    mean_counts = spike_counts.mean(axis=0)  # Shape: (n_neurons,)
-
+def _poisson_draws(
+    lam: NDArray[np.float64], n_surrogates: int, generator: np.random.Generator
+) -> Generator[NDArray[np.int64], None, None]:
+    """Yield Poisson count matrices with means ``lam``."""
     for _ in range(n_surrogates):
-        # Generate surrogate by sampling from Poisson with mean rate
-        # Each (time_bin, neuron) pair is sampled independently
-        surrogate = generator.poisson(lam=mean_counts, size=(n_time_bins, n_neurons))
-        yield surrogate.astype(np.int64)
+        yield generator.poisson(lam=lam).astype(np.int64)
 
 
 def generate_inhomogeneous_poisson_surrogates(
@@ -150,8 +173,8 @@ def generate_inhomogeneous_poisson_surrogates(
     preserves slow rate fluctuations while destroying fine temporal structure.
 
     **Tests that structure exceeds time-varying rate expectations.** More
-    conservative than homogeneous surrogates - controls for rate modulation
-    while testing for sequence-specific coding.
+    conservative than homogeneous surrogates: it keeps slow rate modulation,
+    so it tests for structure beyond it.
 
     Parameters
     ----------
@@ -184,6 +207,13 @@ def generate_inhomogeneous_poisson_surrogates(
     - More appropriate than homogeneous surrogates when rate modulation
       is a confound (e.g., ramping activity during replay events)
 
+    Raises
+    ------
+    ValueError
+        If ``spike_counts`` is not a 2-D array of non-negative whole-number
+        counts, ``smoothing_window`` is not a positive integer, or
+        ``n_surrogates`` is not a positive integer.
+
     Examples
     --------
     >>> import numpy as np
@@ -211,32 +241,16 @@ def generate_inhomogeneous_poisson_surrogates(
     """
     from scipy.ndimage import uniform_filter1d
 
-    generator = _ensure_rng(rng)
-    n_time_bins, n_neurons = spike_counts.shape
-
-    # Handle empty spike counts
-    if n_time_bins == 0:
-        for _ in range(n_surrogates):
-            yield np.zeros((0, n_neurons), dtype=np.int64)
-        return
-
-    # Compute smoothed rates (time-varying lambda for Poisson)
-    # Use uniform filter along time axis with 'nearest' mode for edge handling
-    smoothed_counts = uniform_filter1d(
-        spike_counts.astype(np.float64),
-        size=smoothing_window,
-        axis=0,
-        mode="nearest",
+    counts = _validated_counts(spike_counts)
+    _validate_draw_count(smoothing_window, "smoothing_window")
+    _validate_draw_count(n_surrogates, "n_surrogates")
+    # Time-varying Poisson means: counts smoothed along time, edges extended.
+    lam = (
+        uniform_filter1d(counts, size=smoothing_window, axis=0, mode="nearest")
+        if len(counts)
+        else counts
     )
-
-    # Ensure non-negative rates (should already be, but be safe)
-    smoothed_counts = np.maximum(smoothed_counts, 0.0)
-
-    for _ in range(n_surrogates):
-        # Generate surrogate by sampling from Poisson with time-varying rates
-        # Each (time_bin, neuron) pair uses its corresponding smoothed rate
-        surrogate = generator.poisson(lam=smoothed_counts)
-        yield surrogate.astype(np.int64)
+    return _poisson_draws(lam, n_surrogates, _ensure_rng(rng))
 
 
 def generate_jittered_spikes(
@@ -259,10 +273,10 @@ def generate_jittered_spikes(
     Parameters
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
-        Sorted array of spike times for a single neuron.
+        Finite spike times for a single neuron.
     jitter_std : float
         Standard deviation of the Gaussian jitter added to each spike time.
-        Units should match spike_times (typically seconds).
+        Must be positive; units should match spike_times (typically seconds).
     n_surrogates : int, default=1000
         Number of surrogate spike trains to generate.
     rng : np.random.Generator | int | None, default=None
@@ -272,8 +286,10 @@ def generate_jittered_spikes(
         - If int: Seed for ``np.random.default_rng()``
         - If None: Use default RNG (not reproducible)
     window : tuple[float, float] | None, default=None
-        If provided, clip spike times to stay within (min_time, max_time).
-        Useful to prevent spikes from jittering outside the recording period.
+        Half-open recording window ``[start, stop)`` the jittered spikes must
+        stay in. Each spike's jitter is then drawn from the Gaussian
+        truncated to the window, as if out-of-window draws were redrawn, so
+        no spikes pile up at the edges. Every spike must lie inside it.
 
     Yields
     ------
@@ -288,6 +304,14 @@ def generate_jittered_spikes(
     - Preserves approximate temporal distribution at scales > jitter_std
     - Destroys precise timing relationships at scales < jitter_std
     - Useful for testing phase locking, synchrony, or sequence timing
+
+    Raises
+    ------
+    ValueError
+        If ``spike_times`` is not a finite 1-D array, ``jitter_std`` is not
+        positive and finite, ``n_surrogates`` is not a positive integer, or
+        ``window`` is not a finite ``(start, stop)`` with start < stop that
+        contains every spike.
 
     Examples
     --------
@@ -310,28 +334,73 @@ def generate_jittered_spikes(
     generate_poisson_surrogates : Rate-matched surrogates (destroys all timing)
     neurospatial.stats.shuffle.shuffle_spikes_isi : ISI-preserving shuffle
     """
-    generator = _ensure_rng(rng)
-    n_spikes = len(spike_times)
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
+        raise ValueError(
+            _format_error(
+                f"spike_times must be a finite 1-D array, got shape "
+                f"{spike_times.shape}.",
+                why="Why: each spike time is jittered independently",
+                fix="pass spike_times[np.isfinite(spike_times)] for one neuron",
+            )
+        )
+    if not (np.isfinite(jitter_std) and jitter_std > 0):
+        raise ValueError(
+            _format_error(
+                f"jitter_std={jitter_std!r} must be positive and finite.",
+                why="Why: it is the standard deviation of the timing noise",
+                fix="pass jitter_std in the units of spike_times, e.g. 0.01 s",
+            )
+        )
+    _validate_draw_count(n_surrogates, "n_surrogates")
+    if window is not None:
+        start, stop = (float(v) for v in window)
+        outside = (spike_times < start) | (spike_times >= stop)
+        if not (np.isfinite(start) and np.isfinite(stop) and start < stop) or (
+            outside.any()
+        ):
+            raise ValueError(
+                _format_error(
+                    f"window={window!r} must be a finite (start, stop) with "
+                    f"start < stop that contains every spike; "
+                    f"{int(outside.sum())} spike(s) fall outside it.",
+                    why="Why: jittered spikes are kept inside the window, so "
+                    "spikes must start there",
+                    fix="drop spikes outside the recording window first, or "
+                    "pass the window the spikes were recorded in",
+                )
+            )
+        window = (start, stop)
+    return _jitter_draws(
+        spike_times, jitter_std, window, n_surrogates, _ensure_rng(rng)
+    )
 
-    # Handle empty spike array
-    if n_spikes == 0:
+
+def _jitter_draws(
+    spike_times: NDArray[np.float64],
+    jitter_std: float,
+    window: tuple[float, float] | None,
+    n_surrogates: int,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Yield sorted jittered trains, the jitter truncated to ``window``."""
+    if window is None:
         for _ in range(n_surrogates):
-            yield np.array([], dtype=np.float64)
+            yield np.sort(
+                spike_times + generator.normal(0.0, jitter_std, spike_times.size)
+            )
         return
+    from scipy.special import ndtr, ndtri
 
+    # Inverse-CDF sampling of N(0, jitter_std) truncated to the window. Each
+    # spike lies inside it, so [low, high] contains 0.5 and stays accurate.
+    low = ndtr((window[0] - spike_times) / jitter_std)
+    high = ndtr((window[1] - spike_times) / jitter_std)
+    last = np.nextafter(window[1], window[0])
     for _ in range(n_surrogates):
-        # Add Gaussian jitter to each spike time
-        jitter = generator.normal(0.0, jitter_std, size=n_spikes)
-        jittered_times = spike_times + jitter
-
-        # Clip to window if specified
-        if window is not None:
-            jittered_times = np.clip(jittered_times, window[0], window[1])
-
-        # Sort to maintain monotonicity
-        jittered_times = np.sort(jittered_times)
-
-        yield jittered_times
+        u = low + generator.uniform(size=spike_times.size) * (high - low)
+        jittered = spike_times + jitter_std * ndtri(u)
+        yield np.sort(np.clip(jittered, window[0], last))
 
 
 __all__ = [

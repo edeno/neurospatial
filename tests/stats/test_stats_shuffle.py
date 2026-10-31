@@ -1,21 +1,15 @@
 """Behavior tests for the shuffle generators and Monte Carlo p-value helpers.
 
-Covers the temporal, trial and ISI shuffles in ``neurospatial.stats.shuffle``
-and the replay shuffles in ``neurospatial.replay.nulls``.
+Covers the temporal, trial and ISI shuffles in ``neurospatial.stats.shuffle``,
+``ShuffleTestResult`` and its p-value and z-score helpers.
 """
+
+import warnings
 
 import numpy as np
 import pytest
-from environment_helpers import track_for
 from numpy.testing import assert_allclose
 
-from neurospatial.replay.nulls import (
-    shuffle_cell_identity,
-    shuffle_place_fields_circular,
-    shuffle_place_fields_circular_2d,
-    shuffle_posterior_circular,
-    shuffle_posterior_weighted_circular,
-)
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,
@@ -25,171 +19,6 @@ from neurospatial.stats.shuffle import (
     shuffle_time_bins_coherent,
     shuffle_trials,
 )
-
-
-class TestStatsShuffleBasicFunctionality:
-    """Basic functionality tests for stats.shuffle module."""
-
-    def test_shuffle_time_bins_preserves_sum(self):
-        """Test shuffle_time_bins preserves total spike count."""
-        spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
-        original_sum = spike_counts.sum()
-
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=5, rng=42):
-            assert shuffled.sum() == original_sum
-            assert shuffled.shape == spike_counts.shape
-
-    def test_shuffle_time_bins_changes_order(self):
-        """Test shuffle_time_bins actually changes temporal order."""
-        spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
-
-        # With enough shuffles, at least one should differ from original
-        any_different = False
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
-            if not np.array_equal(shuffled, spike_counts):
-                any_different = True
-                break
-        assert any_different
-
-    def test_shuffle_time_bins_coherent_preserves_rows(self):
-        """Test shuffle_time_bins_coherent preserves population vectors."""
-        spike_counts = np.array([[0, 1, 2], [2, 0, 1], [1, 2, 0]], dtype=np.int64)
-        original_rows = {tuple(row) for row in spike_counts}
-
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42):
-            shuffled_rows = {tuple(row) for row in shuffled}
-            assert original_rows == shuffled_rows
-
-    def test_coherent_matches_time_bins_for_fixed_seed(self):
-        """shuffle_time_bins_coherent equals shuffle_time_bins for a fixed seed.
-
-        The coherent variant is documented as the same permutation applied
-        to every neuron, which is exactly what shuffle_time_bins does. They
-        must produce byte-identical output for the same seed; this guards
-        against the two implementations silently diverging.
-        """
-        rng = np.random.default_rng(7)
-        spike_counts = rng.integers(0, 5, size=(8, 4)).astype(np.int64)
-
-        plain = list(shuffle_time_bins(spike_counts, n_shuffles=20, rng=2024))
-        coherent = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=20, rng=2024)
-        )
-
-        assert len(plain) == len(coherent) == 20
-        for a, b in zip(plain, coherent, strict=True):
-            np.testing.assert_array_equal(a, b)
-
-    def test_shuffle_cell_identity_preserves_counts(self):
-        """Test shuffle_cell_identity preserves spike counts."""
-        spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
-        encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-
-        for shuffled, models in shuffle_cell_identity(
-            spike_counts, encoding_models, n_shuffles=5, rng=42
-        ):
-            assert shuffled.sum() == spike_counts.sum()
-            assert models is encoding_models  # Same object
-
-    def test_shuffle_place_fields_circular_preserves_shape(self):
-        """Test shuffle_place_fields_circular preserves field shapes."""
-        encoding_models = np.array([[1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0]])
-
-        for shuffled in shuffle_place_fields_circular(
-            track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
-        ):
-            assert shuffled.shape == encoding_models.shape
-            # Each row should have same values, just shifted
-            for i in range(encoding_models.shape[0]):
-                assert set(shuffled[i]) == set(encoding_models[i])
-
-    def test_shuffle_posterior_circular_preserves_normalization(self):
-        """Test shuffle_posterior_circular preserves row normalization."""
-        raw = np.array(
-            [
-                [0.1, 0.2, 0.4, 0.2, 0.1],
-                [0.5, 0.3, 0.1, 0.05, 0.05],
-                [0.05, 0.1, 0.2, 0.4, 0.25],
-            ]
-        )
-
-        for shuffled in shuffle_posterior_circular(
-            track_for(raw), raw, n_shuffles=5, rng=42
-        ):
-            assert_allclose(shuffled.sum(axis=1), 1.0)
-
-    def test_shuffle_posterior_weighted_circular_preserves_normalization(self):
-        """Test shuffle_posterior_weighted_circular preserves row normalization."""
-        raw = np.random.default_rng(42).random((3, 10))
-        posterior = raw / raw.sum(axis=1, keepdims=True)
-
-        for shuffled in shuffle_posterior_weighted_circular(
-            track_for(posterior),
-            posterior,
-            posterior.mean(axis=0),
-            edge_exclusion=2.0,
-            n_shuffles=5,
-            rng=42,
-        ):
-            assert_allclose(shuffled.sum(axis=1), 1.0)
-
-    def test_compute_shuffle_pvalue_basic(self):
-        """Test compute_shuffle_pvalue with basic cases."""
-        # Observed higher than all null values
-        observed = 10.0
-        null = np.array([1.0, 2.0, 3.0, 4.0])
-        p = compute_shuffle_pvalue(observed, null, tail="greater")
-        assert_allclose(p, 0.2)  # (0 + 1) / (4 + 1)
-
-    def test_compute_shuffle_pvalue_less_tail(self):
-        """Test compute_shuffle_pvalue with less tail."""
-        observed = 0.5
-        null = np.array([1.0, 2.0, 3.0, 4.0])
-        p = compute_shuffle_pvalue(observed, null, tail="less")
-        assert_allclose(p, 0.2)  # (0 + 1) / (4 + 1)
-
-    def test_compute_shuffle_pvalue_two_sided(self):
-        """Test compute_shuffle_pvalue with two-sided test."""
-        observed = 10.0
-        null = np.array([1.0, 2.0, 3.0, 4.0])
-        p = compute_shuffle_pvalue(observed, null, tail="two-sided")
-        assert_allclose(p, 0.4)  # 2 * 0.2
-
-    def test_compute_shuffle_zscore_basic(self):
-        """Test compute_shuffle_zscore computation."""
-        null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        observed = 5.0
-        z = compute_shuffle_zscore(observed, null)
-        expected_z = (5.0 - 3.0) / np.std(null)
-        assert_allclose(z, expected_z)
-
-    def test_compute_shuffle_zscore_zero_variance(self):
-        """Test compute_shuffle_zscore returns NaN for zero variance."""
-        null = np.array([3.0, 3.0, 3.0])
-        z = compute_shuffle_zscore(5.0, null)
-        assert np.isnan(z)
-
-    def test_shuffle_test_result_is_significant(self):
-        """Test ShuffleTestResult.is_significant property."""
-        result_sig = ShuffleTestResult(
-            observed_score=5.0,
-            null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
-            p_value=0.01,
-            z_score=3.0,
-            shuffle_type="time_bins",
-            n_shuffles=4,
-        )
-        assert result_sig.is_significant
-
-        result_not_sig = ShuffleTestResult(
-            observed_score=3.0,
-            null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
-            p_value=0.5,
-            z_score=0.0,
-            shuffle_type="time_bins",
-            n_shuffles=4,
-        )
-        assert not result_not_sig.is_significant
 
 
 class TestNewShuffleFunctions:
@@ -256,80 +85,11 @@ class TestNewShuffleFunctions:
             assert_allclose(shuffled[0], spike_times[0])
 
 
-class TestShufflePlaceFieldsCircular2D:
-    """Tests for shuffle_place_fields_circular_2d with Environment."""
-
-    def test_shuffle_place_fields_circular_2d_basic(self):
-        """Test shuffle_place_fields_circular_2d with 2D environment."""
-        from neurospatial import Environment
-
-        # Create a 2D environment
-        positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        # Create encoding models matching grid size
-        n_neurons = 3
-        encoding_models = np.random.default_rng(42).random((n_neurons, env.n_bins))
-
-        # The function requires full grid (no masked bins)
-        # Skip if environment has inactive bins
-        if not hasattr(env, "grid_shape") or env.grid_shape is None:
-            pytest.skip("Environment doesn't have grid layout")
-
-        expected_bins = int(np.prod(env.grid_shape))
-        if env.n_bins != expected_bins:
-            pytest.skip("Environment has masked bins")
-
-        for shuffled in shuffle_place_fields_circular_2d(
-            env, encoding_models, n_shuffles=3, rng=42
-        ):
-            assert shuffled.shape == encoding_models.shape
-
-    def test_shuffle_place_fields_circular_2d_raises_for_1d(self):
-        """Test shuffle_place_fields_circular_2d raises for 1D environment."""
-        from neurospatial import Environment
-
-        # Create a 1D environment
-        positions = np.random.default_rng(42).uniform(0, 10, (100, 1))
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        encoding_models = np.random.default_rng(42).random((3, env.n_bins))
-
-        with pytest.raises(ValueError, match="requires a 2D environment"):
-            next(shuffle_place_fields_circular_2d(env, encoding_models, n_shuffles=1))
-
-
 class TestShufflePairingDestruction:
     """A shuffle is only a valid null if it preserves the marginal AND destroys
     the pairing it is meant to test. Existing tests check preservation; these
     add the pairing-destruction half.
     """
-
-    def test_cell_identity_preserves_marginal_and_destroys_pairing(self) -> None:
-        from neurospatial.replay.nulls import shuffle_cell_identity
-
-        rng = np.random.default_rng(0)
-        n_neurons = 20
-        spike_counts = rng.poisson(3.0, (100, n_neurons)).astype(np.int64)
-        encoding_models = rng.uniform(0.0, 10.0, (n_neurons, 30))
-        original_column_sums = np.sort(spike_counts.sum(axis=0))
-
-        moved = 0
-        n_shuffles = 200
-        for shuffled, _ in shuffle_cell_identity(
-            spike_counts, encoding_models, n_shuffles=n_shuffles, rng=42
-        ):
-            # Marginal preserved: the multiset of per-neuron column totals is
-            # unchanged (columns are permuted, not altered).
-            assert np.array_equal(np.sort(shuffled.sum(axis=0)), original_column_sums)
-            # Pairing destroyed: the spike-train column now paired with place
-            # field 0 differs from the original neuron-0 column.
-            if not np.array_equal(shuffled[:, 0], spike_counts[:, 0]):
-                moved += 1
-
-        # For a random permutation of N columns, P(column 0 fixed) = 1/N, so the
-        # fraction moved should be ~1 - 1/20 = 0.95; require >= 0.9.
-        assert moved / n_shuffles >= 0.9
 
     def test_isi_shuffle_destroys_isi_order(self) -> None:
         from neurospatial.stats.shuffle import shuffle_spikes_isi
@@ -357,20 +117,35 @@ class TestShufflePairingDestruction:
 
 
 def test_compute_shuffle_pvalue_drops_nan_nulls():
-    """Non-finite null scores are dropped (with a warning) and excluded from n."""
+    """Undefined (NaN) null scores are dropped (with a warning) and excluded from n."""
     null = np.array([1.0, 2.0, np.nan, 4.0])
-    with pytest.warns(UserWarning, match="non-finite"):
+    with pytest.warns(UserWarning, match="undefined \\(NaN\\)"):
         p = compute_shuffle_pvalue(10.0, null, tail="greater")
-    # n reduced to 3 finite values, none >= 10 -> (0 + 1) / (3 + 1) = 0.25.
+    # n reduced to 3 defined values, none >= 10 -> (0 + 1) / (3 + 1) = 0.25.
     assert_allclose(p, 0.25)
 
 
+@pytest.mark.parametrize(
+    ("tail", "expected"),
+    [("greater", 501 / 1001), ("less", 501 / 1001), ("two-sided", 1.0)],
+)
+def test_compute_shuffle_pvalue_ranks_infinite_nulls(tail, expected):
+    """Infinite null scores are extreme, defined scores: they are counted.
+
+    Half the null is +inf and half 1.0. For an observed 10, (k + 1) / (n + 1)
+    with n = 1000 gives k = 500 null scores >= 10 and 500 <= 10. Dropping
+    the infinite scores would give 1 / 501 for "greater", a false positive.
+    """
+    null = np.r_[np.full(500, np.inf), np.ones(500)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        p = compute_shuffle_pvalue(10.0, null, tail=tail)
+    assert p == pytest.approx(expected)
+
+
 def test_compute_shuffle_pvalue_all_nan_raises():
-    """An all-non-finite null distribution raises a ValueError."""
-    with (
-        pytest.warns(UserWarning, match="non-finite"),
-        pytest.raises(ValueError, match="no finite values"),
-    ):
+    """An all-NaN null distribution raises a ValueError."""
+    with pytest.raises(ValueError, match="no defined"):
         compute_shuffle_pvalue(5.0, np.full(4, np.nan))
 
 
@@ -395,22 +170,181 @@ def test_compute_shuffle_pvalue_finite_unchanged():
 # ---------------------------------------------------------------------------
 
 
-def test_shuffle_cell_identity_neuron_count_mismatch_raises():
-    """Mismatched neuron counts raise before yielding any shuffle."""
-    spike_counts = np.zeros((5, 3), dtype=np.int64)
-    encoding_models = np.zeros((4, 7), dtype=np.float64)
-    with pytest.raises(ValueError, match=r"3 neuron.*4"):
-        next(shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=2))
+# ---------------------------------------------------------------------------
+# ShuffleTestResult: invariants, from_null and plot.
+# ---------------------------------------------------------------------------
 
 
-def test_shuffle_cell_identity_matched_ok():
-    """Matched shapes still yield the right number/shape of arrays."""
-    spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
-    encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-    results = list(
-        shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=3, rng=42)
+def test_from_null_leaves_out_undefined_scores_with_a_warning():
+    """NaN shuffles are left out of p and z, with a warning naming the null."""
+
+    null = np.array([np.nan, 1.0, 2.0, 3.0])
+    with pytest.warns(UserWarning, match=r"time_bins: 1 of 4 shuffles"):
+        result = ShuffleTestResult.from_null(2.5, null, shuffle_type="time_bins")
+    defined = null[1:]
+    assert result.p_value == compute_shuffle_pvalue(2.5, defined)
+    assert result.z_score == compute_shuffle_zscore(2.5, defined)
+    assert result.n_shuffles == 4
+    assert result.n_shuffles_used == 3
+    assert result.tail == "greater"
+
+
+def test_from_null_decimals_ties_scores_equal_up_to_rounding():
+    null = np.array([0.30000000000000004, 0.1, 0.2])
+    exact = ShuffleTestResult.from_null(0.3, null, shuffle_type="x")
+    rounded = ShuffleTestResult.from_null(0.3, null, shuffle_type="x", decimals=6)
+    assert exact.p_value == pytest.approx(2 / 4)  # 0.30000000000000004 >= 0.3
+    assert rounded.p_value == pytest.approx(2 / 4)
+    below = ShuffleTestResult.from_null(
+        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x"
     )
-    assert len(results) == 3
-    for shuffled, models in results:
-        assert shuffled.shape == spike_counts.shape
-        assert models is encoding_models
+    assert below.p_value == pytest.approx(1 / 4)
+    tied = ShuffleTestResult.from_null(
+        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x", decimals=6
+    )
+    assert tied.p_value == pytest.approx(2 / 4)
+
+
+def test_from_null_records_tail():
+    result = ShuffleTestResult.from_null(
+        -5.0, np.arange(9.0), shuffle_type="x", tail="less"
+    )
+    assert result.tail == "less"
+    assert result.p_value == pytest.approx(1 / 10)
+    assert result.summary()["tail"] == "less"
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"p_value": 0.0}, "p_value"),
+        ({"p_value": 1.5}, "p_value"),
+        ({"n_shuffles": 5}, "n_shuffles"),
+        ({"null_scores": np.ones((2, 2)), "n_shuffles": 4}, "1-D"),
+        ({"tail": "up"}, "tail"),
+    ],
+)
+def test_shuffle_test_result_rejects_inconsistent_fields(changes, match):
+    """The constructor and dataclasses.replace check the fields agree."""
+    import dataclasses
+
+    result = ShuffleTestResult.from_null(5.0, np.arange(3.0), shuffle_type="x")
+    with pytest.raises(ValueError, match=match):
+        dataclasses.replace(result, **changes)
+
+
+def test_shuffle_test_result_allows_nan_p_value_and_has_short_repr():
+    result = ShuffleTestResult(
+        observed_score=np.nan,
+        null_scores=np.full(1000, 1.0),
+        p_value=np.nan,
+        z_score=np.nan,
+        shuffle_type="x",
+        n_shuffles=1000,
+    )
+    assert not result.is_significant()
+    assert len(repr(result)) < 300
+
+
+def test_shuffle_test_result_plot_with_infinite_nulls():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    with pytest.warns(UserWarning, match="undefined"):
+        result = ShuffleTestResult.from_null(
+            3.0, np.array([1.0, 2.0, np.inf, np.nan]), shuffle_type="x"
+        )
+    ax = result.plot()
+    assert "2 non-finite not drawn" in ax.get_title()
+    assert "greater" in ax.get_title()
+    plt.close("all")
+
+
+def test_zscore_is_nan_with_infinite_null():
+    """An infinite null score leaves the mean and SD undefined."""
+    assert np.isnan(compute_shuffle_zscore(1.0, np.array([0.0, 1.0, np.inf])))
+    assert compute_shuffle_zscore(2.0, np.array([0.0, np.nan, 2.0])) == pytest.approx(
+        1.0
+    )
+
+
+# ---------------------------------------------------------------------------
+# Generators: call-time validation, whole-trial and ISI shuffles.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda n: shuffle_time_bins(np.ones((3, 2)), n_shuffles=n),
+        lambda n: shuffle_time_bins_coherent(np.ones((3, 2)), n_shuffles=n),
+        lambda n: shuffle_trials(np.array([0, 0, 1]), n_shuffles=n),
+        lambda n: shuffle_spikes_isi(np.array([0.1, 0.2, 0.4]), n_shuffles=n),
+    ],
+)
+@pytest.mark.parametrize("n", [0, -3, 2.5, True])
+def test_generators_refuse_bad_counts_at_call_time(make, n):
+    """A count that would yield nothing raises before any draw is requested."""
+    with pytest.raises(ValueError, match="positive integer"):
+        make(n)
+
+
+def test_shuffle_trials_moves_whole_trials():
+    """Each trial keeps its samples together and takes another trial's label."""
+    labels = np.repeat([10, 11, 12, 13], [3, 2, 4, 1])
+    starts = np.array([0, 3, 5, 9])
+    seen = set()
+    for shuffled in shuffle_trials(labels, n_shuffles=200, rng=0):
+        runs = np.split(shuffled, starts[1:])
+        assert all(np.all(run == run[0]) for run in runs)
+        run_labels = tuple(run[0] for run in runs)
+        assert sorted(run_labels) == [10, 11, 12, 13]
+        seen.add(run_labels)
+    assert len(seen) == 24  # every ordering of the four trials appears
+
+
+def test_shuffle_trials_trial_types_keep_type_counts():
+    """With trial-type labels, the number of trials of each type is kept."""
+    labels = np.array([0, 0, 1, 1, 1, 0, 1, 1])  # trials: 0, 1, 0, 1
+    for shuffled in shuffle_trials(labels, n_shuffles=50, rng=1):
+        boundaries = np.flatnonzero(np.diff(labels)) + 1
+        run_labels = [run[0] for run in np.split(shuffled, boundaries)]
+        assert all(np.all(run == run[0]) for run in np.split(shuffled, boundaries))
+        assert sorted(run_labels) == [0, 0, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "spikes",
+    [np.array([0.5, 0.1, 0.9]), np.array([0.1, np.nan, 0.9]), np.ones((2, 2))],
+)
+def test_shuffle_spikes_isi_requires_sorted_finite_1d(spikes):
+    with pytest.raises(ValueError, match="sorted, finite 1-D"):
+        shuffle_spikes_isi(spikes)
+
+
+def test_shuffle_spikes_isi_warns_when_null_is_degenerate():
+    with pytest.warns(UserWarning, match="every shuffle equals the input"):
+        draws = list(shuffle_spikes_isi(np.array([0.1, 0.4]), n_shuffles=3))
+    assert all(np.array_equal(draw, [0.1, 0.4]) for draw in draws)
+
+
+def test_shuffle_spikes_isi_keeps_span_and_interval_multiset():
+    spikes = np.array([0.1, 0.15, 0.25, 0.4, 0.45, 0.7])
+    for shuffled in shuffle_spikes_isi(spikes, n_shuffles=20, rng=3):
+        assert shuffled[0] == spikes[0]
+        assert shuffled[-1] == pytest.approx(spikes[-1], abs=1e-12)
+        assert np.all(np.diff(shuffled) >= 0)
+        assert_allclose(np.sort(np.diff(shuffled)), np.sort(np.diff(spikes)))
+
+
+def test_circular_shift_warns_when_no_spike_is_in_the_windows():
+    """Spikes in ms against windows in s all fall outside: say so."""
+    from neurospatial.stats.shuffle import shuffle_spike_times_circular
+
+    with pytest.warns(UserWarning, match="none of the 2 spikes"):
+        draws = shuffle_spike_times_circular(
+            np.array([500.0, 600.0]), np.array([[0.0, 100.0]]), n_shuffles=2, rng=0
+        )
+    assert all(draw.size == 0 for draw in draws)

@@ -6274,8 +6274,7 @@ def place_cell_significance(
     recounted and smoothed with exactly the observed map's analyzed intervals,
     occupancy and bandwidth. Shuffles preserve counts on the compressed
     analyzed clock and never enter recording gaps.
-    The result's is_significant property uses 0.05; compare p_value < alpha
-    for another level.
+    Each result's is_significant(alpha=0.05) compares its p_value with alpha.
 
     A significant test is not a place verdict on its own: in a short
     recording about alpha of untuned units pass it by chance, with almost no
@@ -6901,8 +6900,12 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         )
 
     def _n_finite_null(self) -> NDArray[np.int64]:
-        """Finite null scores behind each p-value, shape (n_units, 3)."""
-        counts: NDArray[np.int64] = np.isfinite(self.null_scores).sum(axis=1)
+        """Null scores behind each p-value, shape (n_units, 3).
+
+        The p-values count the defined (non-NaN) null scores; these
+        statistics are bounded, so a defined score is finite.
+        """
+        counts: NDArray[np.int64] = (~np.isnan(self.null_scores)).sum(axis=1)
         return counts
 
     def label_cell_types(

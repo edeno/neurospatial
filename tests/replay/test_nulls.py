@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from environment_helpers import track_for
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial.replay.nulls import (
     shuffle_cell_identity,
@@ -807,3 +807,113 @@ def test_unit_identity_null_options_are_checked():
             nulls=("unit_identity",),
             null_options={"unit_identity": {"active_only": "yes"}},
         )
+
+
+# ---------------------------------------------------------------------------
+# Moved from the stats tests: replay shuffles.
+# ---------------------------------------------------------------------------
+
+
+def test_shuffle_cell_identity_preserves_counts():
+    """Test shuffle_cell_identity preserves spike counts."""
+    spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
+    encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+    for shuffled, models in shuffle_cell_identity(
+        spike_counts, encoding_models, n_shuffles=5, rng=42
+    ):
+        assert shuffled.sum() == spike_counts.sum()
+        assert models is encoding_models  # Same object
+
+
+def test_shuffle_place_fields_circular_preserves_shape():
+    """Test shuffle_place_fields_circular preserves field shapes."""
+    encoding_models = np.array([[1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0]])
+
+    for shuffled in shuffle_place_fields_circular(
+        track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
+    ):
+        assert shuffled.shape == encoding_models.shape
+        # Each row should have same values, just shifted
+        for i in range(encoding_models.shape[0]):
+            assert set(shuffled[i]) == set(encoding_models[i])
+
+
+def test_shuffle_posterior_circular_preserves_normalization():
+    """Test shuffle_posterior_circular preserves row normalization."""
+    raw = np.array(
+        [
+            [0.1, 0.2, 0.4, 0.2, 0.1],
+            [0.5, 0.3, 0.1, 0.05, 0.05],
+            [0.05, 0.1, 0.2, 0.4, 0.25],
+        ]
+    )
+
+    for shuffled in shuffle_posterior_circular(
+        track_for(raw), raw, n_shuffles=5, rng=42
+    ):
+        assert_allclose(shuffled.sum(axis=1), 1.0)
+
+
+def test_shuffle_posterior_weighted_circular_preserves_normalization():
+    """Test shuffle_posterior_weighted_circular preserves row normalization."""
+    raw = np.random.default_rng(42).random((3, 10))
+    posterior = raw / raw.sum(axis=1, keepdims=True)
+
+    for shuffled in shuffle_posterior_weighted_circular(
+        track_for(posterior),
+        posterior,
+        posterior.mean(axis=0),
+        edge_exclusion=2.0,
+        n_shuffles=5,
+        rng=42,
+    ):
+        assert_allclose(shuffled.sum(axis=1), 1.0)
+
+
+def test_cell_identity_preserves_marginal_and_destroys_pairing() -> None:
+    from neurospatial.replay.nulls import shuffle_cell_identity
+
+    rng = np.random.default_rng(0)
+    n_neurons = 20
+    spike_counts = rng.poisson(3.0, (100, n_neurons)).astype(np.int64)
+    encoding_models = rng.uniform(0.0, 10.0, (n_neurons, 30))
+    original_column_sums = np.sort(spike_counts.sum(axis=0))
+
+    moved = 0
+    n_shuffles = 200
+    for shuffled, _ in shuffle_cell_identity(
+        spike_counts, encoding_models, n_shuffles=n_shuffles, rng=42
+    ):
+        # Marginal preserved: the multiset of per-neuron column totals is
+        # unchanged (columns are permuted, not altered).
+        assert np.array_equal(np.sort(shuffled.sum(axis=0)), original_column_sums)
+        # Pairing destroyed: the spike-train column now paired with place
+        # field 0 differs from the original neuron-0 column.
+        if not np.array_equal(shuffled[:, 0], spike_counts[:, 0]):
+            moved += 1
+
+    # For a random permutation of N columns, P(column 0 fixed) = 1/N, so the
+    # fraction moved should be ~1 - 1/20 = 0.95; require >= 0.9.
+    assert moved / n_shuffles >= 0.9
+
+
+def test_shuffle_cell_identity_neuron_count_mismatch_raises():
+    """Mismatched neuron counts raise before yielding any shuffle."""
+    spike_counts = np.zeros((5, 3), dtype=np.int64)
+    encoding_models = np.zeros((4, 7), dtype=np.float64)
+    with pytest.raises(ValueError, match=r"3 neuron.*4"):
+        next(shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=2))
+
+
+def test_shuffle_cell_identity_matched_ok():
+    """Matched shapes still yield the right number/shape of arrays."""
+    spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
+    encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    results = list(
+        shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=3, rng=42)
+    )
+    assert len(results) == 3
+    for shuffled, models in results:
+        assert shuffled.shape == spike_counts.shape
+        assert models is encoding_models
