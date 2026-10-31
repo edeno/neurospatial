@@ -507,7 +507,7 @@ def _create_repeated_y_track_graph(
         edge_order.append((f"arm_{i}_tip", f"arm_{i}_fork_right"))
 
     # Create the 1D environment
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         bin_size=bin_size,
@@ -515,5 +515,3 @@ def _create_repeated_y_track_graph(
         name="repeated_y_maze_1d",
         units="cm",
     )
-
-    return env_track

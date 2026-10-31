@@ -24,8 +24,7 @@ def linear_track_env():
     g.add_edge(0, 1, distance=50.0)
     g.add_edge(1, 2, distance=50.0)
     env = Environment.from_graph(graph=g, edge_order=[(0, 1), (1, 2)], bin_size=2.0)
-    env = env.with_metadata(units="cm")
-    return env
+    return env.with_metadata(units="cm")
 
 
 @pytest.fixture(scope="module")

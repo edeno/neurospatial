@@ -61,7 +61,9 @@ class TestPopulationCoverageResult:
         assert result.fields_per_place_cell == pytest.approx(1.5)
         assert result.mean_redundancy == pytest.approx(5 / 4)
         text = str(result)
-        assert "80.0%" in text and "2/4" in text and "1 bins" in text
+        assert "80.0%" in text
+        assert "2/4" in text
+        assert "1 bins" in text
 
     def test_dataclass_frozen(self) -> None:
         result = _coverage_result([[np.array([0])]], [True, True])
@@ -803,7 +805,8 @@ class TestRateMapCorrelations:
         flat = 5.0 * (1.0 + 1e-15 * rng.standard_normal(50))
         assert flat.max() > flat.min()  # the trap: an exact check passes it
         corr_matrix = rate_map_correlations(np.vstack([varying[0], flat, varying[1]]))
-        assert np.isnan(corr_matrix[1]).all() and np.isnan(corr_matrix[:, 1]).all()
+        assert np.isnan(corr_matrix[1]).all()
+        assert np.isnan(corr_matrix[:, 1]).all()
         np.testing.assert_array_equal(
             corr_matrix[np.ix_([0, 2], [0, 2])], rate_map_correlations(varying)
         )
@@ -891,7 +894,8 @@ class TestPopulationVectorCorrelation:
         a = a.copy()
         a[:, 9] = np.nan  # a whole unvisited location
         pv = population_vector_correlation(a, c)
-        assert np.isnan(pv[5]) and np.isnan(pv[9])
+        assert np.isnan(pv[5])
+        assert np.isnan(pv[9])
         assert np.isfinite(np.delete(pv, [5, 9])).all()
 
     def test_location_outside_spatial_support_is_nan(self, random_maps) -> None:

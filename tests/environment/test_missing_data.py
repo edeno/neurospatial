@@ -279,12 +279,13 @@ def test_a_constant_field_with_holes_stays_constant(any_env):
 def test_extensive_modes_refuse_missing_bins_with_a_choice(any_env, mode, call):
     counts = np.ones(any_env.n_bins)
     counts[[0, 1]] = np.nan
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(ValueError, match=r"Cannot smooth a field with") as error:
         getattr(any_env, call)(counts, bandwidth=3.0, mode=mode)
     message = str(error.value)
     assert f"2 NaN (missing) bins in mode='{mode}'" in message
     assert "no defensible mass under a conserving operator" in message
-    assert "np.nan_to_num" in message and "mode='average'" in message
+    assert "np.nan_to_num" in message
+    assert "mode='average'" in message
 
 
 def test_concrete_jax_input_with_nan_is_refused(any_env):

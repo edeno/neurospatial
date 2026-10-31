@@ -24,8 +24,7 @@ def simple_grid_env():
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
 
-    env = Environment.from_samples(positions, bin_size=1.0)
-    return env
+    return Environment.from_samples(positions, bin_size=1.0)
 
 
 class TestDistanceToReward:

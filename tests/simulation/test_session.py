@@ -327,7 +327,8 @@ class TestSimulateSession:
         truths = list(session.ground_truth.values())
         grids = [t for t in truths if t["cell_type"] == "grid"]
         places = [t for t in truths if t["cell_type"] == "place"]
-        assert grids and places
+        assert grids
+        assert places
         assert all(t["grid_spacing"] == 30.0 for t in grids)
         assert all(t["grid_orientation"] == pytest.approx(0.2) for t in grids)
         assert all(t["width"] == 7.0 for t in places)
@@ -714,9 +715,9 @@ class TestSimulateSession:
             saw_grid |= isinstance(model, GridCellModel)
             saw_place |= isinstance(model, PlaceCellModel)
 
-        assert saw_place and saw_border and saw_grid, (
-            "mixed session should contain place, border, and grid cells"
-        )
+        assert saw_place, "mixed session should contain place, border, and grid cells"
+        assert saw_border, "mixed session should contain place, border, and grid cells"
+        assert saw_grid, "mixed session should contain place, border, and grid cells"
 
     def test_simulate_session_spike_stream_independent_of_trajectory(
         self, simple_2d_env

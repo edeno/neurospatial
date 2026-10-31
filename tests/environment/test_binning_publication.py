@@ -310,7 +310,8 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         publish_environment(layout=layout, layout_type_used=layout.layout_type)
     assert env._geometry is geometry
     assert env._binning is published
-    assert env._cache is cache and len(cache) == n_cached
+    assert env._cache is cache
+    assert len(cache) == n_cached
     np.testing.assert_array_equal(
         env.compute_kernel(bandwidth=1.0, mode="density"), kernel
     )

@@ -320,7 +320,7 @@ def _create_w_maze_track_graph(
         graph.add_edge(node1, node2, distance=float(distance))
 
     # Create the 1D environment
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         bin_size=bin_size,
@@ -328,5 +328,3 @@ def _create_w_maze_track_graph(
         name="w_maze_1d",
         units="cm",
     )
-
-    return env_track

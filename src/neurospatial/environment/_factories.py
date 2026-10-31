@@ -110,11 +110,12 @@ def _from_bins(
         )
 
     if not np.array_equal(result.edge_pairs, snapshot.connections.pairs):
-        raise ValueError(
+        msg = (
             "Supplied open neighbor pairs cross physical walls. Close those pairs "
             "(BinConnections.from_arrays(pairs, distances, is_open=...)) and drop "
             "their aligned face data explicitly before calling from_bins."
         )
+        raise ValueError(msg)
     return result
 
 
@@ -609,9 +610,8 @@ def _linear_track(
 ) -> Environment:
     """Implement Environment.linear_track using explicit construction inputs."""
     if endpoints is not None and node_positions is not None:
-        raise ValueError(
-            "Provide exactly one of `endpoints` or `node_positions`, not both."
-        )
+        msg = "Provide exactly one of `endpoints` or `node_positions`, not both."
+        raise ValueError(msg)
 
     if endpoints is not None:
         points = _track_points(endpoints, "endpoints")
@@ -634,12 +634,13 @@ def _linear_track(
     elif node_positions is not None:
         points = _track_points(node_positions, "node_positions")
         if len(points) < 2:
-            raise ValueError(
+            msg = (
                 "`node_positions` must contain at least two (x, y) waypoints "
                 f"for a piecewise-linear track. Got {len(points)} point(s)."
             )
+            raise ValueError(msg)
     else:
-        raise ValueError(
+        msg = (
             "linear_track requires an explicit topology: pass `endpoints` "
             "(two (x, y) points for a straight track) or `node_positions` "
             "(a sequence of (x, y) waypoints for a piecewise-linear track). "
@@ -647,6 +648,7 @@ def _linear_track(
             "cloud is indistinguishable from an open arena. For an open "
             "arena use Environment.open_field(positions, bin_size)."
         )
+        raise ValueError(msg)
 
     graph = nx.Graph()
     for i, pos in enumerate(points):
@@ -697,9 +699,8 @@ def _maze(
         )
 
     if track_graph is not None and node_positions is not None:
-        raise ValueError(
-            "Provide exactly one of `track_graph` or `node_positions`, not both."
-        )
+        msg = "Provide exactly one of `track_graph` or `node_positions`, not both."
+        raise ValueError(msg)
 
     if track_graph is not None:
         # `kind` is validated above but cannot be reconciled with an
@@ -732,13 +733,14 @@ def _maze(
         node_positions = dict(zip(node_positions, coordinates, strict=True))
         graph, edge_order = maze_track_graph(kind_normalized, node_positions)
     else:
-        raise ValueError(
+        msg = (
             f"maze({kind!r}) requires an explicit topology: pass a ready "
             "`track_graph` (a networkx.Graph with `pos` node attributes) or "
             "`node_positions` (a mapping of node label -> (x, y) coordinate) "
             "from which the standard topology is assembled. Raw positions "
             "cannot be used to infer maze topology."
         )
+        raise ValueError(msg)
 
     return _from_graph(
         cls,

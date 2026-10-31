@@ -56,14 +56,16 @@ class TestWuFoster:
         env, arms = y_maze
         path = np.r_[arms["center"][::-1], arms["left"]]
         result = _detect(y_maze, np.eye(env.n_bins)[path])
-        assert result.is_replay and result.template == "center+left"
+        assert result.is_replay
+        assert result.template == "center+left"
         assert result.score == pytest.approx(1.0)
         assert result.criteria["center+left: same sign as joint"]
 
     def test_one_arm_alone_is_a_single_arm_replay(self, y_maze):
         env, arms = y_maze
         result = _detect(y_maze, np.eye(env.n_bins)[arms["left"]])
-        assert result.is_replay and result.template == "left"
+        assert result.is_replay
+        assert result.template == "left"
         assert not result.criteria["center: duration >= 0.05"]
 
     def test_arms_replayed_the_wrong_way_round_are_not_joint(self, y_maze):
@@ -72,7 +74,8 @@ class TestWuFoster:
         path = np.r_[arms["center"], arms["left"]]
         result = _detect(y_maze, np.eye(env.n_bins)[path])
         assert not result.criteria["center+left: same sign as joint"]
-        assert result.is_replay and result.template == "center,left"
+        assert result.is_replay
+        assert result.template == "center,left"
 
     def test_two_joint_replays_cancel(self, y_maze):
         """Into the junction from the center, then out along left and right."""
@@ -84,7 +87,8 @@ class TestWuFoster:
         result = _detect(y_maze, posterior)
         assert result.criteria["center+left: |wc| > 0.5"]
         assert result.criteria["center+right: |wc| > 0.5"]
-        assert not result.is_replay and result.template is None
+        assert not result.is_replay
+        assert result.template is None
 
     def test_coverage_must_exceed_half_the_arm(self, y_maze):
         env, arms = y_maze
@@ -312,7 +316,8 @@ class TestBernersLee:
         env, arms = y_maze
         rows = np.r_[_sweep(arms["center"], 15, reverse=True), _sweep(arms["left"], 15)]
         result = _bl(y_maze, np.eye(env.n_bins)[rows])
-        assert result.is_replay and result.template == "center+left"
+        assert result.is_replay
+        assert result.template == "center+left"
 
     def test_the_joint_sign_is_not_checked(self, y_maze):
         """Left outward, then center inward: a sawtooth along the path.
@@ -376,7 +381,8 @@ class TestBernersLee:
     def test_a_fallback_arm_replay_is_flagged(self, y_maze):
         env, arms = y_maze
         result = _bl(y_maze, np.eye(env.n_bins)[_sweep(arms["left"][:4], 15)])
-        assert result.is_replay and not result.criteria["sequence"]
+        assert result.is_replay
+        assert not result.criteria["sequence"]
         sweep = _bl(y_maze, np.eye(env.n_bins)[_sweep(arms["right"], 20)])
         assert sweep.criteria["sequence"]
 
@@ -421,7 +427,8 @@ class TestBernersLee:
         rows = _sweep(arms["left"][:4], 15)
         result = _bl(y_maze, np.eye(env.n_bins)[rows])
         assert not result.criteria["left: coverage > 0.5"]
-        assert result.is_replay and result.template == "left"
+        assert result.is_replay
+        assert result.template == "left"
 
     def test_equally_strong_fallback_runs_give_no_replay(self, y_maze):
         """The same short sweep on the left and right arms at once."""
@@ -453,4 +460,5 @@ class TestBernersLee:
             "mean_range",
             "strongest_pair",
         )
-        assert not method.joint_same_sign and method.arm_fallback
+        assert not method.joint_same_sign
+        assert method.arm_fallback

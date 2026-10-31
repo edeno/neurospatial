@@ -101,7 +101,9 @@ class TestLinearTrack:
             Environment.linear_track(bin_size=5.0)
 
     def test_two_endpoints_required(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"takes the two ends of a straight track, got"
+        ):
             Environment.linear_track(endpoints=[(0, 0)], bin_size=5.0)
 
     def test_coincident_endpoints_raise(self):

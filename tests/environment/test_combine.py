@@ -46,7 +46,7 @@ def nearest(center, *, radius=None):
     )
 
 
-@pytest.mark.parametrize("shift,expected", [(3.0, 14), (5.0, 16)])
+@pytest.mark.parametrize(("shift", "expected"), [(3.0, 14), (5.0, 16)])
 @pytest.mark.parametrize("auto_bridge", [False, True])
 def test_combined_boundary_uses_exposed_cells_independently_of_bridges(
     shift, expected, auto_bridge
@@ -526,7 +526,7 @@ def test_unresolved_tiny_nearest_obstacle_refuses_automatic_bridges(direction):
 
 
 @pytest.mark.parametrize(
-    "vertical_shift,clear", [(-0.1, False), (0.0, True), (0.1, True)]
+    ("vertical_shift", "clear"), [(-0.1, False), (0.0, True), (0.1, True)]
 )
 def test_bounded_nearest_boundary_tangency_is_not_an_interior_crossing(
     vertical_shift, clear
@@ -690,7 +690,7 @@ def _with_child_arena(data, source, child=0):
 
 
 @pytest.mark.parametrize(
-    "wall,message",
+    ("wall", "message"),
     [
         # On child a's outer edge: it closes no pair of a, but the bridge from
         # a's bin at (1.5, 0.5) to b's bin at (4.5, 0.5) crosses it.
@@ -741,7 +741,9 @@ def test_saved_composition_rejects_inconsistent_geometry(corruption):
         for key in list(data["arrays"]):
             if key.startswith("arena/children/0/edges_0"):
                 data["arrays"][key] = [100.0, 101.0, 102.0]
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Why: a saved environment must be complete and internally"
+    ):
         Environment.from_dict(data)
 
 
@@ -1263,7 +1265,7 @@ def _unbounded_site_in(arena, center):
 
 
 @pytest.mark.parametrize(
-    "center,overlaps",
+    ("center", "overlaps"),
     # A unit square turned 45 degrees is a diamond reaching 0.71 from its
     # center. At (2.6, 1.3) its bounds meet the cell [1, 2] x [0, 1], but its
     # lower-left edge, x + y = 3.19, passes outside the cell corner (2, 1).
@@ -1295,7 +1297,7 @@ def test_rotated_polygon_arena_of_a_site_is_checked_against_grid_cells(
 
 
 @pytest.mark.parametrize(
-    "center,overlaps",
+    ("center", "overlaps"),
     # A unit cube turned 45 degrees about z reaches 0.71 from its center in
     # x and y. At (2.6, 1.3, 0.5) its bounds meet the cell [1, 2] x [0, 1] x
     # [0, 1], but its face x + y = 3.19 passes outside the cell edge at
@@ -1341,7 +1343,7 @@ def _bridged_cubes(conductance):
     )
 
 
-@pytest.mark.parametrize("conductance,scale", [(1e-300, 1e-30), (1e300, 1e30)])
+@pytest.mark.parametrize(("conductance", "scale"), [(1e-300, 1e-30), (1e300, 1e30)])
 def test_scaling_refuses_a_bridge_conductance_it_cannot_represent(conductance, scale):
     """A volume bridge's conductance scales with length; 0 or inf is refused.
 

@@ -423,7 +423,8 @@ def test_no_leakage_across_masked_wall():
     x = env.bin_centers[:, 0]
     left = x < 3.0
     right = x > 4.0
-    assert left.any() and right.any()
+    assert left.any()
+    assert right.any()
 
     kernel = diffusion_kernel(env, 2.0, mode="transition")
     src = nearest_bin(env.bin_centers, [2.5, 2.5])  # left, beside the wall

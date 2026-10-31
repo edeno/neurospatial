@@ -192,7 +192,7 @@ def test_track_bins_tile_the_track_at_their_bin_size():
 
 
 def test_create_layout_invalid_kind():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"cannot build layout"):
         create_layout("NotARealLayout", foo=1)
 
 
@@ -211,7 +211,7 @@ def test_create_layout_refuses_an_unexpected_keyword():
 
 
 def test_get_layout_parameters_invalid():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"cannot build layout"):
         get_layout_parameters("NotARealLayout")
 
 
@@ -739,7 +739,8 @@ def test_every_engine_refuses_a_build_with_no_active_bins(build):
     """
     with pytest.raises(ValueError, match="has no active bins") as error:
         _EMPTY_BUILDS[build]()
-    assert "Why:" in str(error.value) and "Fix:" in str(error.value)
+    assert "Why:" in str(error.value)
+    assert "Fix:" in str(error.value)
 
 
 def _sized_build_params(layout_kind, graph, size):
@@ -930,7 +931,8 @@ def test_a_missing_build_option_is_named_with_a_fix(build, missing):
         TypeError, match=rf"build\(\) is missing[^\n]*{missing}"
     ) as error:
         build()
-    assert "Why:" in str(error.value) and "Fix:" in str(error.value)
+    assert "Why:" in str(error.value)
+    assert "Fix:" in str(error.value)
 
 
 @pytest.mark.parametrize(

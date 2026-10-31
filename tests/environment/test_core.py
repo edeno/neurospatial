@@ -780,7 +780,8 @@ class TestDimensionality:
         )
         assert env.n_dims == 1
         assert not env.is_linearized_track  # RegularGrid layout is not flagged as is_linearized_track (which is for GraphLayout)
-        assert env.bin_centers.ndim == 2 and env.bin_centers.shape[1] == 1
+        assert env.bin_centers.ndim == 2
+        assert env.bin_centers.shape[1] == 1
         assert len(env.grid_edges) == 1
         assert len(env.grid_shape) == 1
         areas = env.bin_sizes  # Should be lengths

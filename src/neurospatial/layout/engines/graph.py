@@ -122,9 +122,11 @@ class GraphLayout(_NeighborPairsMixin):
         """
         self._begin_build()
         if not isinstance(graph_definition, nx.Graph):
-            raise TypeError("graph_definition must be a NetworkX graph.")
+            msg = "graph_definition must be a NetworkX graph."
+            raise TypeError(msg)
         if not edge_order:  # Empty edge_order means no path to linearize
-            raise ValueError("edge_order must not be empty.")
+            msg = "edge_order must not be empty."
+            raise ValueError(msg)
         validate_cell_size(bin_size, scalar_only=True)
         edge_spacing = resolve_edge_spacing(edge_spacing, edge_order)
 

@@ -267,7 +267,8 @@ class TestSpatialAutocorrelation:
         inner = autocorr[n_x // 2 : -(n_x // 2), n_y // 2 : -(n_y // 2)]
 
         assert np.all(np.isfinite(inner))
-        assert np.isnan(autocorr[0, 0]) and np.isnan(autocorr[-1, -1])
+        assert np.isnan(autocorr[0, 0])
+        assert np.isnan(autocorr[-1, -1])
 
 
 class TestGridScore:

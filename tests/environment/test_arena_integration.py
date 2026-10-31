@@ -33,7 +33,8 @@ def test_samples_and_image_masks_remain_first_class():
     points = np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]])
     env = Environment.from_samples(points, bin_size=1.0)
     assert isinstance(env.arena, MaskArena)
-    assert env.arena.domain_known and env.arena.outline is None
+    assert env.arena.domain_known
+    assert env.arena.outline is None
     assert not env.arena.walls
     mask = np.array([[True, False, True], [False, True, False]])
     image = Environment.from_pixel_mask(mask, pixel_size=(2.0, 3.0))
@@ -61,7 +62,8 @@ def test_explicit_sample_domain_selects_whole_bins_by_center():
         infer_active_bins=False,
         arena=OpenArena(box(0, 0, 2, 2)),
     )
-    assert np.all(env.bin_centers > 0) and np.all(env.bin_centers < 2)
+    assert np.all(env.bin_centers > 0)
+    assert np.all(env.bin_centers < 2)
     assert np.all(env.bin_sizes == 1)
 
 
@@ -190,7 +192,8 @@ def test_polygon_hole_is_not_filled_in_field_plot():
     )
     child = parent.clip(polygon)
     values = child.interpolate(np.ones(1), np.array([[0.5, 0.5], [0.2, 0.5], [2, 2]]))
-    assert np.isnan(values[0]) and np.isnan(values[2])
+    assert np.isnan(values[0])
+    assert np.isnan(values[2])
     assert values[1] == 1
     ax = child.plot_field(np.ones(1), colorbar=False)
     ax.figure.canvas.draw()

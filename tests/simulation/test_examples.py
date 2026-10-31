@@ -154,7 +154,8 @@ class TestLinearTrackSession:
         )
         centers = np.sort([t["center"][0] for t in session.ground_truth.values()])
         ends = session.env.bin_centers[:, 0].min(), session.env.bin_centers[:, 0].max()
-        assert centers[0] == ends[0] and centers[-1] == ends[1]
+        assert centers[0] == ends[0]
+        assert centers[-1] == ends[1]
         np.testing.assert_allclose(
             np.diff(centers), (ends[1] - ends[0]) / 39, atol=1.0
         )  # 1 cm bins

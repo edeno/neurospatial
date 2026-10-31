@@ -40,7 +40,8 @@ def test_unpicklable_attribute_is_refused_at_construction(where, key, value, ele
 
     message = str(error.value)
     assert f"Track graph {element} attribute {key!r}" in message
-    assert "pickle" in message and "to_file" in message
+    assert "pickle" in message
+    assert "to_file" in message
     assert message.splitlines()[-1].startswith(f"Fix: remove {key!r}")
 
 
@@ -64,7 +65,9 @@ def test_json_only_refusal_names_the_attribute_and_keeps_pickle(
     restored = pickle.loads(pickle.dumps(env))
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     for write in (env.to_dict, lambda: env.to_file(tmp_path / "track")):
-        with pytest.raises(ValueError) as error:
+        with pytest.raises(
+            ValueError, match=r"Why: to_file, to_dict and NWB store the track graph as"
+        ) as error:
             write()
         message = str(error.value)
         assert f"track graph {element} attribute {key!r}" in message
@@ -74,7 +77,8 @@ def test_json_only_refusal_names_the_attribute_and_keeps_pickle(
 
 class _RefusesPickle:
     def __reduce__(self):
-        raise ValueError("this object refuses to be pickled")
+        msg = "this object refuses to be pickled"
+        raise ValueError(msg)
 
 
 def test_any_pickling_failure_is_refused_with_the_attribute_named():

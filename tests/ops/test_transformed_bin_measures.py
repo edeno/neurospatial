@@ -60,7 +60,10 @@ def test_transformed_bent_track_keeps_similarity_lengths_and_refuses_anisotropy(
     twice = rotated.apply_transform(scale_2d(3))
     np.testing.assert_allclose(twice.bin_sizes, env.bin_sizes * 6)
     for candidate in (env, rotated):
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError,
+            match=r"Cannot apply axis-aligned scaling to embedded track bins",
+        ) as caught:
             candidate.apply_transform(scale_2d(2, 3))
         assert "Environment.from_graph" in str(caught.value)
         assert "Why:" in str(caught.value)

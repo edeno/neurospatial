@@ -392,7 +392,7 @@ def _create_radial_arm_track_graph(
         edge_order.append(("center", f"food_cup_{i}"))
 
     # Create the 1D environment
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         bin_size=bin_size,
@@ -400,5 +400,3 @@ def _create_radial_arm_track_graph(
         name="radial_arm_maze_1d",
         units="cm",
     )
-
-    return env_track

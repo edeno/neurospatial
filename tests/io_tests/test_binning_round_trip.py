@@ -182,7 +182,7 @@ def test_derived_from_loaded_environment(environment_round_trip, forbid_layout_b
 
 def test_old_environment_file_refused():
     path = Path(__file__).parent / "data/environment_v1"
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=r"Environment schema") as caught:
         from_file(path)
     text = str(caught.value)
     assert "Environment-v1" in text
@@ -247,7 +247,9 @@ def test_nonfinite_saved_centers_name_source(simple_saved_grid, tmp_path, transp
             return from_file(path)
 
         source = "invalid_geometry"
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Why: a saved environment must be complete and internally"
+    ) as caught:
         operation()
     assert "centers" in str(caught.value)
     assert source in str(caught.value)

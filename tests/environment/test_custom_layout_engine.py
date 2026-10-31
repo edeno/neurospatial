@@ -207,7 +207,8 @@ def test_point_engine_matches_explicit_bins() -> None:
     points = RNG.uniform(-12.0, 12.0, (500, 2))
     located = env.bin_at(points)
     np.testing.assert_array_equal(located, explicit.bin_at(points))
-    assert np.any(located == -1) and np.any(located >= 0)
+    assert np.any(located == -1)
+    assert np.any(located >= 0)
 
 
 @pytest.mark.parametrize(

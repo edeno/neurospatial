@@ -256,7 +256,7 @@ def _create_linear_track_graph(
     edge_order = [("well_left", "well_right")]
 
     # Create the 1D environment
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         bin_size=bin_size,
@@ -264,5 +264,3 @@ def _create_linear_track_graph(
         name="linear_track_1d",
         units="cm",
     )
-
-    return env_track

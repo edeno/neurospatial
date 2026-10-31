@@ -37,7 +37,8 @@ def test_lazy_source_is_not_materialized_and_metadata_is_owned(scene_env):
             return 1000
 
         def __array__(self, *args):
-            raise AssertionError("Must not materialize the source")
+            msg = "Must not materialize the source"
+            raise AssertionError(msg)
 
         def __getitem__(self, index):
             self.reads.append(index)
@@ -451,4 +452,5 @@ def test_object_vectors_without_object_markers_render_their_lines(scene_env):
             for artist in scene._renderer.figure.axes[0].collections
             if isinstance(artist, LineCollection) and len(artist.get_segments())
         ]
-        assert len(lines) == 1 and len(lines[0]) == 2
+        assert len(lines) == 1
+        assert len(lines[0]) == 2

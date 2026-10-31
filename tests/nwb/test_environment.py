@@ -1660,20 +1660,18 @@ def _create_regular_grid_env():
 
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 100, (1000, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
-    return env
+    return Environment.from_samples(positions, bin_size=5.0)
 
 
 def _create_hexagonal_env():
     """Create a Hexagonal layout environment for testing."""
     from neurospatial import Environment
 
-    env = Environment.from_layout(
+    return Environment.from_layout(
         create_layout(
             "Hexagonal", hexagon_width=5.0, dimension_ranges=[(0, 50), (0, 50)]
         )
     )
-    return env
 
 
 def _create_graph_env():
@@ -1689,10 +1687,9 @@ def _create_graph_env():
         graph.add_edge(i, i + 1, distance=20.0)
 
     edge_order = [(i, i + 1) for i in range(4)]
-    env = Environment.from_graph(
+    return Environment.from_graph(
         graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0, track_width=5.0
     )
-    return env
 
 
 def _create_masked_grid_env():
@@ -1703,8 +1700,7 @@ def _create_masked_grid_env():
     mask[2:8, 2:8] = True
     x_edges = np.linspace(0, 50, 11)
     y_edges = np.linspace(0, 50, 11)
-    env = Environment.from_grid_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
-    return env
+    return Environment.from_grid_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
 
 
 def _create_image_mask_env():
@@ -1715,8 +1711,7 @@ def _create_image_mask_env():
     center = (25, 25)
     radius = 20
     mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
-    env = Environment.from_pixel_mask(image_mask=mask, pixel_size=2.0)
-    return env
+    return Environment.from_pixel_mask(image_mask=mask, pixel_size=2.0)
 
 
 def _create_polygon_env():
@@ -1726,8 +1721,7 @@ def _create_polygon_env():
     from neurospatial import Environment
 
     boundary = Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)])
-    env = Environment.from_polygon(boundary, bin_size=5.0)
-    return env
+    return Environment.from_polygon(boundary, bin_size=5.0)
 
 
 def _create_triangular_mesh_env():
@@ -1737,10 +1731,9 @@ def _create_triangular_mesh_env():
     from neurospatial import Environment
 
     boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
-    env = Environment.from_layout(
+    return Environment.from_layout(
         create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=5.0)
     )
-    return env
 
 
 def _create_3d_grid_env():
@@ -1749,8 +1742,7 @@ def _create_3d_grid_env():
 
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 50, (500, 3))
-    env = Environment.from_samples(positions, bin_size=5.0)
-    return env
+    return Environment.from_samples(positions, bin_size=5.0)
 
 
 # Layout factory registry for parametrized tests
