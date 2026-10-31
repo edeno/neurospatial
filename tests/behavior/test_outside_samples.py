@@ -83,14 +83,37 @@ def test_similarity_refuses_an_index_that_is_not_a_bin(env):
         trajectory_similarity(np.array([env.n_bins]), np.array([0, 1]), env)
 
 
-@pytest.mark.parametrize("timed", [False, True])
-def test_home_range_leaves_out_outside_samples(timed):
+@pytest.mark.parametrize(("timed", "expected"), [(False, [4, 3]), (True, [3, 4])])
+def test_home_range_leaves_out_outside_samples(timed, expected):
+    """Outside samples add nothing; timed dwell is env.occupancy's.
+
+    Counted, bin 4 has six samples and bin 3 five. Timed, each observed
+    interval goes to the bin of its first sample: bin 3 holds its five
+    intervals (the last one ends in bin 4) and bin 4 five (its last sample
+    starts none), so they tie and are listed in ascending order.
+    """
     position_bins = np.array([-1] * 50 + [3] * 5 + [4] * 6)
     times = np.arange(len(position_bins)) * 0.1 if timed else None
 
     home_range = compute_home_range(position_bins, times=times, percentile=100.0)
 
-    np.testing.assert_array_equal(home_range, [4, 3])
+    np.testing.assert_array_equal(home_range, expected)
+
+
+def test_home_range_dwell_matches_occupancy_across_an_excursion():
+    """A 0.33 s excursion outside removes the same time from dwell and occupancy."""
+    env = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 100, (4000, 2)), bin_size=10.0
+    )
+    times = np.arange(300) / 30
+    positions = np.column_stack([np.linspace(10, 90, 300), np.full(300, 50.0)])
+    positions[100:110] = [500.0, 500.0]
+    occupancy = env.occupancy(times, positions)
+    assert occupancy.sum() == pytest.approx(9.6)
+    home_range = compute_home_range(
+        env.bin_at(positions), times=times, percentile=100.0
+    )
+    np.testing.assert_array_equal(np.sort(home_range), np.flatnonzero(occupancy))
 
 
 def test_home_range_refuses_negative_indices_other_than_minus_one():
@@ -115,25 +138,17 @@ def _approach(strip):
     return strip.bin_at(positions), np.linspace(0, 10, 40)
 
 
-def test_goal_directed_run_skips_an_outside_sample_like_a_deleted_row(strip):
+@pytest.mark.parametrize("max_gap", [1.0, None, "sampling"])
+def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
+    """As in env.occupancy, an interval touching an outside sample is not observed.
+
+    The approach splits at the outside sample whatever ``max_gap`` is: it is
+    not a missing row to bridge but a position outside the environment.
+    """
     position_bins, times = _approach(strip)
     position_bins[20] = -1
-    kept = np.delete(np.arange(len(times)), 20)
-
-    runs = detect_goal_directed_runs(
-        position_bins, times, strip, goal_region="goal", min_progress=10.0
-    )
-    deleted = detect_goal_directed_runs(
-        position_bins[kept], times[kept], strip, goal_region="goal", min_progress=10.0
-    )
-
-    assert runs.shape == (1, 2)
-    np.testing.assert_array_equal(runs, deleted)
-
-
-def test_goal_directed_run_ends_at_an_outside_sample_beyond_max_gap(strip):
-    position_bins, times = _approach(strip)
-    position_bins[20] = -1
+    if max_gap == "sampling":
+        max_gap = 1.5 * (times[1] - times[0])
 
     runs = detect_goal_directed_runs(
         position_bins,
@@ -141,7 +156,7 @@ def test_goal_directed_run_ends_at_an_outside_sample_beyond_max_gap(strip):
         strip,
         goal_region="goal",
         min_progress=10.0,
-        max_gap=1.5 * (times[1] - times[0]),
+        max_gap=max_gap,
     )
 
     np.testing.assert_array_equal(runs, [[times[0], times[19]], [times[21], times[-1]]])

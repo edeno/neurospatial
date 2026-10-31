@@ -86,8 +86,10 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     EMPTY_RESULT,
     as_intervals,
+    interval_gates,
     run_sample_bounds,
     times_in_intervals,
+    warn_excluded_intervals,
 )
 from neurospatial._observation import resolve_sample_support, validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
@@ -3210,11 +3212,13 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause. A sample in a part of the
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart. A sample in a part of the
     environment that is not connected to the goal has no distance to it and
     splits the recording the same way: no approach includes it, and the
     approaches before and after it are scored on their own.
@@ -3333,15 +3337,20 @@ def detect_goal_directed_runs(
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
-    results: list[tuple[float, float]] = []
-    for run in resolve_sample_support(
+    # Complete-case rule, as in env.occupancy: an interval is observed only
+    # when both of its samples are in the environment.
+    gates = interval_gates(
         times,
-        _located(position_bins),
         max_gap=max_gap,
-        epochs=epochs,
+        start_bin=position_bins,
+        require_end_bin=True,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=breaks,
-        result=EMPTY_RESULT,
-    ).run_samples():
+    )
+    warn_excluded_intervals(gates)
+    results: list[tuple[float, float]] = []
+    for first, last in run_sample_bounds(gates.mask):
+        run = slice(first, last + 1)
         results.extend(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],

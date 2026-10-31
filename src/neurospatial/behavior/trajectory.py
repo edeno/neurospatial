@@ -34,8 +34,11 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     gap_endpoints,
+    interval_gates,
     observed_interval_mask,
+    start_allocated_occupancy,
     validate_max_gap,
+    warn_excluded_intervals,
 )
 from neurospatial._observation import (
     ObservationSupport,
@@ -1645,30 +1648,6 @@ def compute_cumulative_distance(
     )
 
 
-def _sample_dwell_times(
-    times: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-    sample_valid: NDArray[np.bool_],
-) -> NDArray[np.float64]:
-    """Sample dwell from valid intervals, padding each run's final sample.
-
-    A bridged gap's time goes to the valid sample that starts it, and each
-    run's last sample receives the median gap of the run, as if the missing
-    rows were deleted.
-    """
-    from neurospatial._intervals import hold_last_valid, valid_run_samples
-
-    dt = np.diff(times)
-    held = hold_last_valid(np.arange(len(times)), sample_valid, fill=-1)[:-1]
-    used = interval_mask & (held >= 0)
-    weights: NDArray[np.float64] = np.bincount(
-        held[used], weights=dt[used], minlength=len(times)
-    ).astype(np.float64)
-    for run in valid_run_samples(interval_mask, sample_valid):
-        weights[run[-1]] = np.median(np.diff(times[run]))
-    return weights
-
-
 @reads_pynapple_samples
 def compute_home_range(
     position_bins: NDArray[np.int_],
@@ -1695,12 +1674,12 @@ def compute_home_range(
         adds nothing to the home range or to the total time.
     times : NDArray[np.float64], shape (n_samples,), optional
         Finite, strictly increasing timestamps (seconds), one per sample.
-        When provided, occupancy is time-weighted: each sample contributes its
-        observed interval dwell rather than a unit count. This is more
-        accurate for non-uniformly sampled trajectories. Each run's final sample is assigned
-        that run's median interval (it has no successor within the run). When ``None``
-        (default), occupancy is the visit count per bin, which is correct only
-        when sampling is uniform.
+        When provided, occupancy is time-weighted, as in ``env.occupancy``:
+        each observed interval adds its duration to the bin of its first
+        sample, rather than each sample a unit count. This is more accurate
+        for non-uniformly sampled trajectories. When ``None`` (default),
+        occupancy is the visit count per bin, which is correct only when
+        sampling is uniform.
     percentile : float, default=95.0
         Percent of observed time the home range holds, in ``(1, 100]``
         (percent, not a fraction). Common values:
@@ -1743,14 +1722,16 @@ def compute_home_range(
 
     Notes
     -----
-    When ``times`` is given, dwell comes only from valid intervals. A sample
-    outside the environment (bin ``-1``) is missing and is bridged like a
-    deleted row when the located samples around it are within ``max_gap``:
-    the gap's time goes to the located sample before it. Only a longer gap,
-    an ``epochs`` edge or a declared break splits a run. Each run's last
-    sample receives that run's median interval duration; samples in no run
-    receive zero dwell. Bins with zero observed dwell are omitted. No
-    observed dwell gives an empty home range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
+    When ``times`` is given, dwell is the start-allocated occupancy of
+    ``env.occupancy`` on the same samples: each interval passing the
+    ``max_gap``, ``epochs`` and ``break_before`` gates adds its duration to
+    the bin of its first sample. A sample at bin ``-1`` (outside the
+    environment, or missing) is not located, so, as in ``env.occupancy``, an
+    interval with either sample at ``-1`` adds no dwell. To bridge missing
+    samples instead, delete their rows before binning; a deleted row is
+    bridged when the samples around it are no more than ``max_gap`` apart.
+    Bins with zero observed dwell are omitted. No observed dwell gives an
+    empty home range. With ``times=None``, counts are used, and ``max_gap``, ``epochs``
     or ``break_before`` raise because they are judged on the clock.
 
     The home range is computed by:
@@ -1865,10 +1846,10 @@ def compute_home_range(
                 )
             )
         # Count-based occupancy (assumes uniform sampling).
-        unique_bins, occupancy = np.unique(
+        unique_bins, counts = np.unique(
             position_bins[in_environment], return_counts=True
         )
-        occupancy = occupancy.astype(np.float64)
+        occupancy = counts.astype(np.float64)
     else:
         # Time-weighted occupancy: each sample contributes its dwell time.
         from neurospatial._observation import _validated_signal_times
@@ -1880,24 +1861,26 @@ def compute_home_range(
                 f"Got {len(times)} and {len(position_bins)}."
             )
         breaks = validate_break_before(break_before, len(times), call=call)
-        interval_mask = observed_interval_mask(
+        # Dwell is start-allocated occupancy under the complete-case rule of
+        # env.occupancy: an interval counts when both of its samples are in
+        # the environment, and its time goes to the bin of its first sample.
+        gates = interval_gates(
             times,
             max_gap=max_gap,
-            epochs=epochs,
+            start_bin=position_bins,
+            require_end_bin=True,
+            epochs=as_intervals(epochs, name="epochs"),
             break_before=breaks,
-            sample_valid=in_environment,
         )
-        sample_weights = _sample_dwell_times(times, interval_mask, in_environment)[
-            in_environment
-        ]
-        # Sum dwell time per bin.
-        unique_bins, inverse = np.unique(
-            position_bins[in_environment], return_inverse=True
+        warn_excluded_intervals(gates, result="the home range is empty")
+        dwell = start_allocated_occupancy(
+            position_bins,
+            np.diff(times),
+            gates.mask,
+            int(position_bins.max(initial=-1)) + 1,
         )
-        occupancy = np.zeros(len(unique_bins), dtype=np.float64)
-        np.add.at(occupancy, inverse, sample_weights)
-        observed = occupancy != 0
-        unique_bins, occupancy = unique_bins[observed], occupancy[observed]
+        unique_bins = np.flatnonzero(dwell)
+        occupancy = dwell[unique_bins]
 
     total = float(np.sum(occupancy))
     if total == 0:

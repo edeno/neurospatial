@@ -272,15 +272,9 @@ def test_break_declared_on_a_missing_row_splits_like_on_the_next_kept_row(env):
     Rows 100-102 are lost and the new recording is flagged at row 101. The
     result equals that of the recording with those rows deleted and the break
     on the first kept row, and differs from the same rows without a break.
+    (Region visits take bins, where a NaN row is bin -1: not located, so it
+    ends a visit whether or not a break is declared there.)
     """
-    from shapely.geometry import box
-
-    from neurospatial.behavior import detect_region_visits
-    from neurospatial.regions import Regions
-
-    builder = Regions(env.regions.values())
-    builder.add("east", polygon=box(78, 30, 100, 70))
-    region_env = env.with_regions(builder)
     times = np.arange(200) / 10
     positions = np.column_stack(
         [50 + 40 * np.sin(2 * np.pi * times / 8), np.full(200, 50.0)]
@@ -294,19 +288,11 @@ def test_break_declared_on_a_missing_row_splits_like_on_the_next_kept_row(env):
     deleted_breaks[100] = True  # original row 103, the first kept row after
 
     def analyses(t, p, break_before):
-        visits = detect_region_visits(
-            region_env.bin_at(p),
-            t,
-            region_env,
-            region_names=["east"],
-            break_before=break_before,
-        )
         return (
-            region_env.occupancy(t, p, break_before=break_before),
-            region_env.transitions(
+            env.occupancy(t, p, break_before=break_before),
+            env.transitions(
                 times=t, positions=p, break_before=break_before, normalize=False
             ).toarray(),
-            [(v.start_time, v.end_time, v.run_id) for v in visits],
         )
 
     flagged = analyses(times, with_nan, breaks)
@@ -314,9 +300,6 @@ def test_break_declared_on_a_missing_row_splits_like_on_the_next_kept_row(env):
     unbroken = analyses(times, with_nan, None)
     np.testing.assert_allclose(flagged[0], deleted[0], rtol=0, atol=1e-12)
     np.testing.assert_array_equal(flagged[1], deleted[1])
-    assert flagged[2] == deleted[2]
-    # The animal is in "east" across the lost rows (t = 10 s), so the break
-    # removes the 0.4 s gap's time and transition and splits that visit.
+    # The break removes the 0.4 s gap's time and transition.
     assert flagged[0].sum() == pytest.approx(unbroken[0].sum() - 0.4)
     assert flagged[1].sum() == unbroken[1].sum() - 1
-    assert len(flagged[2]) == len(unbroken[2]) + 1

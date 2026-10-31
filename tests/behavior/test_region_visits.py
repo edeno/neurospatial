@@ -95,20 +95,22 @@ def test_reentries_preserved_and_last_source_entry_is_paired(region_env):
     assert (transition.start_index, transition.end_index) == (3, 5)
 
 
-def test_invalid_bins_are_bridged_like_deleted_rows(region_env):
+def test_unlocated_bins_censor_like_a_long_gap(region_env):
+    """An interval touching bin -1 is not observed, as in env.occupancy.
+
+    The visit around the unlocated sample is split into two censored visits,
+    exactly as a gap longer than ``max_gap`` splits it, and no exit is
+    fabricated at the unlocated sample.
+    """
     bins = np.array([1, 0, -1, 0, 1, 3])
     times = np.arange(6) / 10
     visits = detect_region_visits(bins, times, region_env, region_names=["A", "B"])
-    kept = [0, 1, 3, 4, 5]
-    deleted = detect_region_visits(
-        bins[kept], times[kept], region_env, region_names=["A", "B"]
+    long_gap = detect_region_visits(
+        bins, times, region_env, region_names=["A", "B"], max_gap=0.15
     )
-    as_times = [(v.region_name, v.start_time, v.end_time) for v in visits]
-    assert as_times == [(v.region_name, v.start_time, v.end_time) for v in deleted]
-    # The invalid sample is not an exit: one visit spans it.
-    assert visits[0].region_name == "A"
-    assert (visits[0].start_index, visits[0].stop_index) == (1, 4)
-    assert visits[0].entry_observed and visits[0].exit_observed
+    assert visits == long_gap
+    assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
+    assert not visits[0].exit_observed and not visits[1].entry_observed
 
 
 def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
