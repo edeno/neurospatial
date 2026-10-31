@@ -148,9 +148,11 @@ ndarray of shape (n_epochs, 2)
         )
 
     raise TypeError(
-        f"from_pynapple does not recognize {type(obj).__name__!r}.\n"
-        "Why: it converts the pynapple types with a spatial-analysis reading.\n"
-        "Fix: pass a pynapple Ts, Tsd, TsdFrame, TsGroup or IntervalSet."
+        _format_error(
+            f"from_pynapple does not recognize {type(obj).__name__!r}.",
+            why="it converts the pynapple types with a spatial-analysis reading.",
+            fix="pass a pynapple Ts, Tsd, TsdFrame, TsGroup or IntervalSet.",
+        )
     )
 
 
@@ -330,23 +332,27 @@ default="map_position"
     if values is None:
         if not (hasattr(data, "times") and hasattr(data, "map_position")):
             raise TypeError(
-                "to_pynapple(data) without values expects a decode result "
-                "(e.g. a neurospatial.decoding.DecodingResult), a list of "
-                "behavior records or a LabelEpochsResult; got "
-                f"{type(data).__name__!r}.\n"
-                "Why: only those inputs carry their own values; timestamps "
-                "need the values sampled at them.\n"
-                "Fix: to convert plain arrays, pass to_pynapple(times, values) "
-                "with an explicit `values` array."
+                _format_error(
+                    "to_pynapple(data) without values expects a decode result "
+                    "(e.g. a neurospatial.decoding.DecodingResult), a list of "
+                    "behavior records or a LabelEpochsResult; got "
+                    f"{type(data).__name__!r}.",
+                    why="only those inputs carry their own values; timestamps "
+                    "need the values sampled at them.",
+                    fix="to convert plain arrays, pass to_pynapple(times, values) "
+                    "with an explicit `values` array.",
+                )
             )
         return _decode_to_pynapple(data, columns, epochs, quantity)
 
     if quantity != "map_position":
         raise TypeError(
-            f"to_pynapple got quantity={quantity!r} with a values array.\n"
-            "Why: quantity selects which estimate of a decode result to "
-            "export; plain arrays are exported as given.\n"
-            "Fix: omit quantity=, or pass the decode result itself."
+            _format_error(
+                f"to_pynapple got quantity={quantity!r} with a values array.",
+                why="quantity selects which estimate of a decode result to "
+                "export; plain arrays are exported as given.",
+                fix="omit quantity=, or pass the decode result itself.",
+            )
         )
     times = np.asarray(data, dtype=np.float64)
     values = np.asarray(values, dtype=np.float64)
@@ -363,11 +369,12 @@ def _decode_to_pynapple(result: Any, columns: Any, epochs: Any, quantity: str) -
     )
     if result.times is None:
         raise ValueError(
-            "The decode result has no `times`.\n"
-            "Why: a pynapple Tsd/TsdFrame needs one timestamp per decoded "
-            "time bin.\n"
-            "Fix: decode with times=, or pass to_pynapple(bin_times, "
-            "result.map_position) with the time-bin centers in seconds."
+            _format_error(
+                "The decode result has no `times`.",
+                why="a pynapple Tsd/TsdFrame needs one timestamp per decoded time bin.",
+                fix="decode with times=, or pass to_pynapple(bin_times, "
+                "result.map_position) with the time-bin centers in seconds.",
+            )
         )
     times = np.array(result.times, dtype=np.float64)
     if epochs is None:
@@ -376,19 +383,23 @@ def _decode_to_pynapple(result: Any, columns: Any, epochs: Any, quantity: str) -
     if quantity == "posterior":
         if not hasattr(result, "posterior"):
             raise ValueError(
-                f"to_pynapple got quantity='posterior' for a "
-                f"{type(result).__name__}, which keeps no posterior.\n"
-                "Why: the summary decoders reduce each posterior block to "
-                "per-time estimates and discard it.\n"
-                "Fix: decode with decode_session (or decode_position) to keep "
-                "the posterior, or export quantity='map_position'."
+                _format_error(
+                    f"to_pynapple got quantity='posterior' for a "
+                    f"{type(result).__name__}, which keeps no posterior.",
+                    why="the summary decoders reduce each posterior block to "
+                    "per-time estimates and discard it.",
+                    fix="decode with decode_session (or decode_position) to "
+                    "keep the posterior, or export quantity='map_position'.",
+                )
             )
         if columns is not None:
             raise TypeError(
-                "to_pynapple got columns= with quantity='posterior'.\n"
-                "Why: posterior column j is environment bin j; its center is "
-                "in the bin_center_* column metadata.\n"
-                "Fix: omit columns=."
+                _format_error(
+                    "to_pynapple got columns= with quantity='posterior'.",
+                    why="posterior column j is environment bin j; its center "
+                    "is in the bin_center_* column metadata.",
+                    fix="omit columns=.",
+                )
             )
         values = np.array(result.posterior)
         columns = np.arange(values.shape[1])
@@ -418,13 +429,14 @@ def _checked_support(
     if outside.size:
         i = int(outside[0])
         raise ValueError(
-            f"{outside.size} of {len(times)} timestamp(s) lie outside "
-            f"`epochs` (first at index {i}, t={float(times[i])!r}).\n"
-            "Why: pynapple silently drops samples outside the time "
-            "support.\n"
-            "Fix: pass epochs that cover every timestamp, or select the "
-            "samples first, e.g. with neurospatial.behavior.restrict(times, "
-            "values, epochs=epochs)."
+            _format_error(
+                f"{outside.size} of {len(times)} timestamp(s) lie outside "
+                f"`epochs` (first at index {i}, t={float(times[i])!r}).",
+                why="pynapple silently drops samples outside the time support.",
+                fix="pass epochs that cover every timestamp, or select the "
+                "samples first, e.g. with neurospatial.behavior.restrict(times, "
+                "values, epochs=epochs).",
+            )
         )
     return support
 
@@ -443,54 +455,65 @@ def _series_to_pynapple(
     # deep inside nap.Tsd / nap.TsdFrame.
     if times.ndim != 1:
         raise ValueError(
-            f"`times` must be 1-D, got shape {times.shape}.\n"
-            "  WHY: pynapple indexes a Tsd/TsdFrame by a 1-D time axis.\n"
-            "  Fix: pass a 1-D array of timestamps."
+            _format_error(
+                f"`times` must be 1-D, got shape {times.shape}.",
+                why="pynapple indexes a Tsd/TsdFrame by a 1-D time axis.",
+                fix="pass a 1-D array of timestamps.",
+            )
         )
     if values.ndim not in (1, 2):
         raise ValueError(
-            f"`values` must be 1-D or 2-D, got {values.ndim}-D (shape "
-            f"{values.shape}).\n"
-            "  WHY: a Tsd holds 1-D values, a TsdFrame holds 2-D "
-            "(n_samples, n_columns) values.\n"
-            "  Fix: pass values shaped (n,) or (n, n_columns)."
+            _format_error(
+                f"`values` must be 1-D or 2-D, got {values.ndim}-D (shape "
+                f"{values.shape}).",
+                why="a Tsd holds 1-D values, a TsdFrame holds 2-D "
+                "(n_samples, n_columns) values.",
+                fix="pass values shaped (n,) or (n, n_columns).",
+            )
         )
     if len(times) != len(values):
         raise ValueError(
-            f"`times` and `values` must have the same length, got "
-            f"{len(times)} timestamps and {len(values)} value rows.\n"
-            "  WHY: each value (row) is sampled at one timestamp.\n"
-            "  Fix: pass times and values with matching first-axis length."
+            _format_error(
+                f"`times` and `values` must have the same length, got "
+                f"{len(times)} timestamps and {len(values)} value rows.",
+                why="each value (row) is sampled at one timestamp.",
+                fix="pass times and values with matching first-axis length.",
+            )
         )
     non_finite = np.flatnonzero(~np.isfinite(times))
     if non_finite.size:
         raise ValueError(
-            f"`times` must be finite, but {non_finite.size} timestamp(s) are NaN "
-            f"or infinite (first at index {int(non_finite[0])}).\n"
-            "Why: a non-finite timestamp has no place on a pynapple time axis.\n"
-            "Fix: keep = np.isfinite(times); to_pynapple(times[keep], "
-            "values[keep])"
+            _format_error(
+                f"`times` must be finite, but {non_finite.size} timestamp(s) "
+                f"are NaN or infinite (first at index {int(non_finite[0])}).",
+                why="a non-finite timestamp has no place on a pynapple time axis.",
+                fix="keep = np.isfinite(times); to_pynapple(times[keep], values[keep])",
+            )
         )
     non_increasing = np.flatnonzero(times[1:] <= times[:-1])
     if non_increasing.size:
         i = int(non_increasing[0])
         raise ValueError(
-            f"`times` must be strictly increasing, but timestamps at indices {i} "
-            f"and {i + 1} are {times[i]!r} and {times[i + 1]!r}.\n"
-            "Why: pynapple sorts timestamps without reordering the values, "
-            "which would pair each value with another sample's time; repeated "
-            "timestamps have no defined order.\n"
-            'Fix: order = np.argsort(times, kind="stable"); '
-            "to_pynapple(times[order], values[order]), after resolving any "
-            "repeated timestamps."
+            _format_error(
+                f"`times` must be strictly increasing, but timestamps at "
+                f"indices {i} and {i + 1} are {times[i]!r} and {times[i + 1]!r}.",
+                why="pynapple sorts timestamps without reordering the values, "
+                "which would pair each value with another sample's time; "
+                "repeated timestamps have no defined order.",
+                fix='order = np.argsort(times, kind="stable"); '
+                "to_pynapple(times[order], values[order]), after resolving any "
+                "repeated timestamps.",
+            )
         )
     if values.ndim == 2 and columns is not None and len(columns) != values.shape[1]:
         raise ValueError(
-            f"`columns` has {len(columns)} labels but values has "
-            f"{values.shape[1]} value columns.\n"
-            "Why: pynapple replaces a mismatched label list with integer "
-            "column names.\n"
-            f"Fix: pass exactly {values.shape[1]} labels, or omit columns=."
+            _format_error(
+                f"`columns` has {len(columns)} labels but values has "
+                f"{values.shape[1]} value columns.",
+                why="pynapple replaces a mismatched label list with integer "
+                "column names.",
+                fix=f"pass exactly {values.shape[1]} labels, or omit columns=.",
+            )
         )
     support = _checked_support(times, epochs)
 
@@ -638,12 +661,14 @@ def _intervals_to_pynapple(
     if overlap.size:
         i = int(overlap[0]) + 1
         raise ValueError(
-            f"{overlap.size} {kind} record(s) overlap an earlier one (first "
-            f"[{starts[i]!r}, {stops[i]!r}) in time order).\n"
-            "Why: pynapple merges overlapping intervals and then drops every "
-            "interval's metadata.\n"
-            "Fix: export overlapping records in separate calls, e.g. one "
-            "region at a time."
+            _format_error(
+                f"{overlap.size} {kind} record(s) overlap an earlier one (first "
+                f"[{starts[i]!r}, {stops[i]!r}) in time order).",
+                why="pynapple merges overlapping intervals and then drops every "
+                "interval's metadata.",
+                fix="export overlapping records in separate calls, e.g. one "
+                "region at a time.",
+            )
         )
     nap = _require_pynapple()
     return nap.IntervalSet(start=starts, end=ends, metadata=metadata)

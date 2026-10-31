@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     _is_pynapple_object,
     pynapple_end_to_stop,
@@ -61,11 +62,14 @@ def refuse_permuted_spatial_columns(columns: Any, *, fix: str) -> None:
     canonical = sorted(lowered)
     frame = f"tsdframe.loc[{sorted(labels, key=str.lower)}]"
     raise ValueError(
-        f"TsdFrame columns {labels} are spatial axes not in x, y, z order.\n"
-        "Why: neurospatial reads positions by column position, so these values "
-        f"would be used as ({', '.join(lowered)}) where every analysis expects "
-        f"({', '.join(canonical)}), silently swapping the axes.\n"
-        "Fix: reorder the columns first, " + fix.format(frame=frame) + "."
+        _format_error(
+            f"TsdFrame columns {labels} are spatial axes not in x, y, z order.",
+            why="neurospatial reads positions by column position, so these "
+            f"values would be used as ({', '.join(lowered)}) where every "
+            f"analysis expects ({', '.join(canonical)}), silently swapping the "
+            "axes.",
+            fix=f"reorder the columns first, {fix.format(frame=frame)}.",
+        )
     )
 
 
@@ -249,11 +253,13 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
     for name, other in others:
         if not np.array_equal(rows, other):
             raise ValueError(
-                f"{first} and {name} have different pynapple time supports, so "
-                "the epochs to analyze are ambiguous.\n"
-                "Why: with epochs=None each pynapple sample's time_support is "
-                "used as the epochs, and these disagree.\n"
-                f"Fix: pass epochs= explicitly, e.g. "
-                f"epochs={first}.time_support.intersect({name}.time_support)."
+                _format_error(
+                    f"{first} and {name} have different pynapple time supports, "
+                    "so the epochs to analyze are ambiguous.",
+                    why="with epochs=None each pynapple sample's time_support is "
+                    "used as the epochs, and these disagree.",
+                    fix="pass epochs= explicitly, e.g. "
+                    f"epochs={first}.time_support.intersect({name}.time_support).",
+                )
             )
     return rows
