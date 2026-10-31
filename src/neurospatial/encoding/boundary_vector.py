@@ -907,15 +907,11 @@ def compute_boundary_vector_rate(
     --------
     compute_boundary_vector_rates : The population version, with details.
     """
-    from neurospatial.encoding._validation import validate_spike_times
+    from neurospatial._spikes import as_spike_train
 
-    validate_spike_times(
-        np.asarray(spike_times, dtype=np.float64),
-        context="compute_boundary_vector_rate",
-    )
     population = _boundary_vector_rates(
         env,
-        [np.asarray(spike_times, dtype=np.float64)],
+        [as_spike_train(spike_times)],
         times,
         positions,
         headings,
@@ -993,7 +989,6 @@ def _boundary_vector_rates(
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_trains,
         validate_trajectory,
     )
     from neurospatial.encoding.egocentric import _require_planar_env
@@ -1026,7 +1021,6 @@ def _boundary_vector_rates(
     validate_trajectory(
         times, positions=positions, headings=headings, context=context, n_dims=2
     )
-    validate_spike_trains(spike_trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     _warn_if_population_silent(
         spike_trains,

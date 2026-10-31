@@ -349,13 +349,20 @@ class TestNormalizeSpikeTimesEdgeCases:
         assert len(result) == 1
         np.testing.assert_array_equal(result[0], [0.1, 0.5, 1.2])
 
-    def test_preserves_spike_order(self) -> None:
-        """Spike times should maintain their order."""
+    def test_sorts_a_train_given_out_of_order(self) -> None:
+        """A train merged from several sources comes back in time order."""
         from neurospatial._spikes import as_spike_trains
 
-        spikes = np.array([3.0, 1.0, 2.0, 0.5])  # Unsorted
+        spikes = np.array([3.0, 1.0, 2.0, 0.5])
         result = as_spike_trains(spikes)
-        np.testing.assert_array_equal(result[0], [3.0, 1.0, 2.0, 0.5])
+        np.testing.assert_array_equal(result[0], [0.5, 1.0, 2.0, 3.0])
+        np.testing.assert_array_equal(spikes, [3.0, 1.0, 2.0, 0.5])  # untouched
+
+    def test_sorted_train_is_not_copied(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        spikes = np.array([0.5, 1.0, 1.0, 2.0])
+        assert as_spike_trains(spikes)[0] is spikes
 
     def test_negative_spike_times(self) -> None:
         """Negative spike times should be preserved (e.g., relative to event)."""
@@ -642,12 +649,34 @@ class TestRastersAndZeroPadding:
         with pytest.raises(ValueError, match=r"(?s)row\(s\) \[0\] decrease.*zeros"):
             as_spike_trains(padded)
 
-    def test_unsorted_list_of_trains_is_kept(self) -> None:
-        """Order within a train does not change counts, so lists need no sort."""
-        from neurospatial._spikes import as_spike_trains
+    def test_unsorted_trains_are_sorted_with_their_labels(self) -> None:
+        """Each train is sorted in place of itself; labels stay with it."""
+        from neurospatial._spikes import as_labelled_spike_trains
 
-        (train,) = as_spike_trains([np.array([0.5, 0.1, 0.3])])
-        np.testing.assert_array_equal(train, [0.5, 0.1, 0.3])
+        trains, ids = as_labelled_spike_trains(
+            {"b": np.array([0.5, 0.1, 0.3]), "a": np.array([-2.0, -3.0])},
+            None,
+            context="demo",
+        )
+        assert ids.tolist() == ["b", "a"]
+        np.testing.assert_array_equal(trains[0], [0.1, 0.3, 0.5])
+        np.testing.assert_array_equal(trains[1], [-3.0, -2.0])
+
+    def test_spike_trains_container_stores_sorted_read_only_copies(self) -> None:
+        from neurospatial.encoding import SpikeTrains
+
+        given = np.array([0.5, 0.1, 0.3])
+        stored = SpikeTrains([given], unit_ids=["u"]).trains[0]
+        np.testing.assert_array_equal(stored, [0.1, 0.3, 0.5])
+        np.testing.assert_array_equal(given, [0.5, 0.1, 0.3])
+        assert not stored.flags.writeable
+
+    def test_single_train_is_sorted(self) -> None:
+        from neurospatial._spikes import as_spike_train
+
+        np.testing.assert_array_equal(as_spike_train([0.4, -0.1]), [-0.1, 0.4])
+        with pytest.raises(ValueError, match="1-D"):
+            as_spike_train(np.array([[0.1, 0.2], [0.3, 0.4]]))
 
     def test_decoding_counts_refuse_raster_and_zero_padding(self) -> None:
         from neurospatial.decoding import bin_spikes_in_time

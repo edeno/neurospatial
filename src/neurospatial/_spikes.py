@@ -16,9 +16,11 @@ The main function is `as_spike_trains()`, which accepts:
 - a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains, pandas
   ``Series`` of per-unit arrays) → one train per unit
 
-Every spike time must be finite. This coercion happens at the entry point of
-encoding, decoding and peri-event functions, ensuring consistent internal
-handling regardless of how the user provides spike data.
+Every spike time must be finite; times may be negative (before the recording's
+time origin) and in any order, and each 1-D train is returned in time order.
+This coercion happens at the entry point of encoding, decoding and peri-event
+functions, ensuring consistent internal handling regardless of how the user
+provides spike data.
 """
 
 from __future__ import annotations
@@ -70,7 +72,8 @@ def as_spike_trains(
     -------
     list[NDArray[np.float64]]
         List of 1D spike time arrays, one per neuron. Each array contains
-        the spike times for that neuron in float64 dtype.
+        the spike times for that neuron in float64 dtype, in time order: a
+        train given out of order is sorted, and negative times are kept.
 
     Raises
     ------
@@ -189,6 +192,23 @@ def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
     return arr
 
 
+def _refuse_non_finite(train: NDArray[np.float64], which: str) -> None:
+    """Refuse a train holding NaN or infinite spike times."""
+    bad = np.flatnonzero(~np.isfinite(train))
+    if bad.size:
+        raise ValueError(
+            _format_error(
+                f"{which} has {bad.size} NaN or infinite value(s), first at "
+                f"index {int(bad[0])}.",
+                why="Why: a spike time is an observed event; a missing one "
+                "cannot be counted in any time bin, so dropping it "
+                "silently would bias counts low.",
+                fix="remove missing spikes before the call, e.g. "
+                "train[np.isfinite(train)].",
+            )
+        )
+
+
 def require_finite_spike_times(
     trains: Sequence[NDArray[np.float64]], unit_ids: NDArray[Any] | None = None
 ) -> None:
@@ -202,20 +222,50 @@ def require_finite_spike_times(
         Labels used in the message; positions when None.
     """
     for i, train in enumerate(trains):
-        bad = np.flatnonzero(~np.isfinite(train))
-        if bad.size:
+        if not np.isfinite(train).all():
             label = i if unit_ids is None else plain_value(unit_ids[i])
-            raise ValueError(
-                _format_error(
-                    f"spike_times for unit {label!r} has {bad.size} NaN or "
-                    f"infinite value(s), first at index {int(bad[0])}.",
-                    why="Why: a spike time is an observed event; a missing one "
-                    "cannot be counted in any time bin, so dropping it "
-                    "silently would bias counts low.",
-                    fix="remove missing spikes before the call, e.g. "
-                    "train[np.isfinite(train)].",
-                )
-            )
+            _refuse_non_finite(train, f"spike_times for unit {label!r}")
+
+
+def in_time_order(train: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return a finite 1-D train sorted in time, or itself when already sorted.
+
+    Spike trains merged from several sources, or exported per channel, need
+    not be in time order; every analysis reads them sorted.
+    """
+    if np.any(train[1:] < train[:-1]):
+        return np.sort(train)
+    return train
+
+
+def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
+    """Coerce one unit's spike times to a finite 1-D float64 array in time order.
+
+    Parameters
+    ----------
+    spike_times : array-like or one-unit train
+        A 1-D array, a list of scalars, a pynapple ``Ts``/``Tsd`` or a pandas
+        ``Series`` of spike times in seconds.
+
+    Returns
+    -------
+    ndarray, shape (n_spikes,)
+
+    Raises
+    ------
+    ValueError
+        If the input is not 1-D, is a spike raster, or holds a NaN or
+        infinite value.
+
+    Examples
+    --------
+    >>> from neurospatial._spikes import as_spike_train
+    >>> as_spike_train([0.5, -0.2, 0.1])
+    array([-0.2,  0.1,  0.5])
+    """
+    train = _one_d_train(spike_times, None)
+    _refuse_non_finite(train, "spike_times")
+    return in_time_order(train)
 
 
 def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
@@ -458,7 +508,7 @@ def _as_spike_trains_with_ids(
     """
     trains, unit_ids = _coerce_spike_input(spike_times)
     require_finite_spike_times(trains, unit_ids)
-    return trains, unit_ids
+    return [in_time_order(train) for train in trains], unit_ids
 
 
 def as_labelled_spike_trains(
@@ -515,4 +565,4 @@ def as_labelled_spike_trains(
         )
     )
     require_finite_spike_times(trains, labels)
-    return trains, labels
+    return [in_time_order(train) for train in trains], labels

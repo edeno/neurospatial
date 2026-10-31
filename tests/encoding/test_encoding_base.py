@@ -539,104 +539,85 @@ class TestValidateTrajectoryRejectsBadTimes:
             compute_spatial_rate(env, np.array([0.5]), decreasing, positions)
 
 
-class TestValidateSpikeTimes:
-    """Regression: validate_spike_times rejects out-of-order / negative / NaN spikes.
+class TestSpikeTimeOrderAndSign:
+    """Spike times in any order and of any sign give the sorted-train result.
 
-    Internal binning paths use ``np.searchsorted`` against the spike-time
-    array, so an out-of-order spike train silently produces wrong bin
-    assignments. The public ``compute_*_rate(s)`` entry points should call
-    this once on user input.
+    Spike coercion sorts each train once, so the binning paths, which use
+    ``np.searchsorted`` against each train, always see time order.
     """
 
-    def test_empty_spike_train_accepted_by_default(self) -> None:
-        """A neuron with zero spikes is a valid input (silent neuron)."""
-        from neurospatial.encoding._validation import validate_spike_times
-
-        validate_spike_times(
-            np.empty(0, dtype=np.float64), context="compute_spatial_rate"
-        )  # does not raise
-
-    def test_empty_rejected_when_disallowed(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(ValueError, match=r"empty \(no spikes\)"):
-            validate_spike_times(
-                np.empty(0, dtype=np.float64),
-                allow_empty=False,
-                context="compute_spatial_rate",
-            )
-
-    def test_two_dim_rejected(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(ValueError, match=r"1-D"):
-            validate_spike_times(
-                np.array([[0.5, 1.0], [1.5, 2.0]]), context="compute_spatial_rate"
-            )
-
-    def test_nan_rejected(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(ValueError, match=r"finite"):
-            validate_spike_times(
-                np.array([0.0, np.nan, 1.0]), context="compute_spatial_rate"
-            )
-
-    def test_inf_rejected(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(ValueError, match=r"finite"):
-            validate_spike_times(
-                np.array([0.0, 1.0, np.inf]), context="compute_spatial_rate"
-            )
-
-    def test_negative_rejected(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(ValueError, match=r"non-negative"):
-            validate_spike_times(
-                np.array([-0.1, 0.5, 1.0]), context="compute_spatial_rate"
-            )
-
-    def test_decreasing_rejected_with_actionable_message(self) -> None:
-        from neurospatial.encoding._validation import validate_spike_times
-
-        with pytest.raises(
-            ValueError, match=r"(?s)monotonically non-decreasing.*np\.sort"
-        ):
-            validate_spike_times(
-                np.array([0.0, 2.0, 1.0, 3.0]), context="compute_spatial_rate"
-            )
-
-    def test_sorted_with_duplicates_accepted(self) -> None:
-        """Equal-valued adjacent samples (simultaneous spikes) are allowed."""
-        from neurospatial.encoding._validation import validate_spike_times
-
-        validate_spike_times(
-            np.array([0.0, 0.5, 0.5, 0.5, 1.0]), context="compute_spatial_rate"
-        )  # does not raise
-
-    def test_compute_spatial_rate_rejects_unsorted_spike_times(self) -> None:
-        """End-to-end: compute_spatial_rate inherits the spike-time validation."""
+    @pytest.fixture
+    def session(self):
         from neurospatial import Environment
+
+        rng = np.random.default_rng(3)
+        times = np.linspace(0.0, 20.0, 401)
+        positions = rng.uniform(0.0, 100.0, (times.size, 1))
+        env = Environment.from_samples(positions, bin_size=10.0)
+        return env, times, positions
+
+    def test_single_unit_unsorted_spikes_match_sorted(self, session) -> None:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
-        positions = np.linspace(0.0, 100.0, 10).reshape(-1, 1)
-        env = Environment.from_samples(positions, bin_size=10.0)
-        times = np.linspace(0.0, 1.0, 10)
-        unsorted_spikes = np.array([0.5, 0.1, 0.7])
-        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
-            compute_spatial_rate(env, unsorted_spikes, times, positions)
+        env, times, positions = session
+        spikes = np.array([5.0, 1.0, 7.0, 3.0, 3.0])
+        unsorted = compute_spatial_rate(env, spikes, times, positions)
+        ordered = compute_spatial_rate(env, np.sort(spikes), times, positions)
+        np.testing.assert_array_equal(unsorted.firing_rate, ordered.firing_rate)
 
-    def test_compute_directional_rate_rejects_unsorted_spike_times(self) -> None:
-        """End-to-end: compute_directional_rate inherits the validation."""
+    def test_population_keeps_each_train_with_its_label(self, session) -> None:
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        env, times, positions = session
+        trains = {"a": np.array([9.0, 2.0, 4.0]), "b": np.array([15.0, 11.0])}
+        unsorted = compute_spatial_rates(env, trains, times, positions)
+        ordered = compute_spatial_rates(
+            env, {k: np.sort(v) for k, v in trains.items()}, times, positions
+        )
+        assert unsorted.unit_ids.tolist() == ["a", "b"]
+        np.testing.assert_array_equal(unsorted.firing_rates, ordered.firing_rates)
+        assert not np.array_equal(
+            unsorted.sel(unit_id="a").firing_rate,
+            unsorted.sel(unit_id="b").firing_rate,
+            equal_nan=True,
+        )
+
+    def test_spikes_before_the_recording_are_accepted(self, session) -> None:
+        """A negative spike time lies before the first sample, outside support."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        env, times, positions = session
+        with_early = compute_spatial_rate(
+            env, np.array([-2.0, 1.0, 3.0]), times, positions
+        )
+        without = compute_spatial_rate(env, np.array([1.0, 3.0]), times, positions)
+        np.testing.assert_array_equal(with_early.firing_rate, without.firing_rate)
+
+    def test_directional_unsorted_spikes_match_sorted(self) -> None:
         from neurospatial.encoding.directional import compute_directional_rate
 
         times = np.linspace(0.0, 10.0, 100)
         headings = np.linspace(-np.pi, np.pi, 100)
-        unsorted_spikes = np.array([5.0, 1.0, 7.0])
-        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
-            compute_directional_rate(unsorted_spikes, times, headings)
+        spikes = np.array([5.0, 1.0, 7.0])
+        np.testing.assert_array_equal(
+            compute_directional_rate(spikes, times, headings).firing_rate,
+            compute_directional_rate(np.sort(spikes), times, headings).firing_rate,
+        )
+
+    @pytest.mark.parametrize(
+        ("spikes", "match"),
+        [
+            (np.array([[0.5, 1.0], [1.5, 2.0]]), "1-D"),
+            (np.array([0.0, np.nan, 1.0]), "NaN or infinite"),
+            (np.array([0.0, 1.0, np.inf]), "NaN or infinite"),
+        ],
+    )
+    def test_single_unit_refuses_non_trains(self, session, spikes, match) -> None:
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        env, times, positions = session
+        with pytest.raises(ValueError, match=match):
+            compute_spatial_rate(env, spikes, times, positions)
 
 
 class TestSummaryEmptyResult:

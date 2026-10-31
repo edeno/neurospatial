@@ -3508,7 +3508,7 @@ def _spatial_rate_maps(
         Rates of shape ``(n_units, n_bins)``, with ``n_units == 1`` when
         ``single_unit``.
     """
-    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial._validation import validate_float_dtype
     from neurospatial.encoding._backend import (
         _to_backend,
@@ -3520,11 +3520,7 @@ def _spatial_rate_maps(
         bin_spike_trains,
         tracked_samples,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     _check_spatial_env(env, time_allocation, context=context)
 
@@ -3548,7 +3544,7 @@ def _spatial_rate_maps(
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises. A standalone unit has no label.
     if single_unit:
-        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        spike_times_list = [as_spike_train(spike_times)]
         result_unit_ids = None
     else:
         spike_times_list, result_unit_ids = as_labelled_spike_trains(
@@ -3561,10 +3557,6 @@ def _spatial_rate_maps(
     positions = np.asarray(positions, dtype=np.float64)
 
     validate_trajectory(times, positions=positions, context=context, n_dims=env.n_dims)
-    if single_unit:
-        validate_spike_times(spike_times_list[0], context=context)
-    else:
-        validate_spike_trains(spike_times_list, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
 
     # The speed gate is resolved once for the population, so a gate that
@@ -5105,7 +5097,7 @@ def compute_directional_place_fields(
     >>> labels = np.array(
     ...     ["forward"] * 400 + [None] * 200 + ["backward"] * 400, dtype=object
     ... )
-    >>> spike_times = np.sort(rng.uniform(0, 100, 50))  # spikes must be sorted
+    >>> spike_times = np.sort(rng.uniform(0, 100, 50))
     >>>
     >>> # Compute directional place fields
     >>> result = compute_directional_place_fields(
@@ -7577,7 +7569,6 @@ def _spatial_shuffle(
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_trains,
         validate_trajectory,
     )
 
@@ -7624,7 +7615,6 @@ def _spatial_shuffle(
     _validate_env_argument(env, context=call, arguments="spike_times, times, positions")
     require_allocentric(env, f"{call}()")
     validate_trajectory(times, positions=positions, context=call, n_dims=env.n_dims)
-    validate_spike_trains(trains, context=call)
     options["break_before"] = validate_break_before(break_before, len(times), call=call)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     # The observed map resolves the estimator defaults, the analyzed

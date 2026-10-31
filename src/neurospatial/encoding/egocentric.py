@@ -3140,7 +3140,7 @@ def _object_vector_rates(
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._backend import (
         _to_backend,
         validate_and_resolve_backend,
@@ -3149,11 +3149,7 @@ def _object_vector_rates(
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     _check_object_vector_env(env, headings, context=context)
 
@@ -3169,7 +3165,7 @@ def _object_vector_rates(
 
     resolved_unit_ids: NDArray[Any] | None = None
     if single_unit:
-        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        spike_times_list = [as_spike_train(spike_times)]
     else:
         # Normalize spike times to canonical list-of-arrays format and resolve
         # the per-unit identity labels (defaults to arange). A labelled input
@@ -3204,10 +3200,6 @@ def _object_vector_rates(
         direction_bin_size=direction_bin_size,
         context=context,
     )
-    if single_unit:
-        validate_spike_times(spike_times_list[0], context=context)
-    else:
-        validate_spike_trains(spike_times_list, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
 
     if not single_unit:
@@ -4429,10 +4421,7 @@ def _object_vector_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     inputs = shuffle_inputs(
         spike_times,
@@ -4461,7 +4450,6 @@ def _object_vector_significance(
         n_dims=env.n_dims if env is not None else None,
     )
     _require_planar_positions(env, positions, context=context)
-    validate_spike_trains(trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     _validate_object_vector_metric(env, metric, context=context)
     units = env.units if env is not None else None

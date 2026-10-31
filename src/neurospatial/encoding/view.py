@@ -1384,17 +1384,13 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     -------
     _ViewSetup
     """
-    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         resolve_spatial_bandwidth,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_counts import prepare_view_binning
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -1413,7 +1409,7 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     _validate_smoothing_parameters(method, resolved_bandwidth)
 
     if single_unit:
-        trains = [np.asarray(spike_times, dtype=np.float64)]
+        trains = [as_spike_train(spike_times)]
         resolved_unit_ids = None
     else:
         # Canonical list-of-arrays trains and their identity labels (default
@@ -1434,10 +1430,6 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
         context=context,
         n_dims=env.n_dims,
     )
-    if single_unit:
-        validate_spike_times(trains[0], context=context)
-    else:
-        validate_spike_trains(trains, context=context)
     n_samples = len(times)
     breaks = validate_break_before(break_before, n_samples, call=context)
 

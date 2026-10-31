@@ -779,10 +779,17 @@ class TestAddModulation:
         ("spike_times", "match"),
         [
             (np.array([0.1, np.nan, 0.3]), "spike_times"),
-            (np.array([0.3, 0.1, 0.2]), "sorted"),
             (np.zeros((2, 2)), "1-D"),
         ],
     )
     def test_invalid_spike_times_raise(self, spike_times, match):
         with pytest.raises(ValueError, match=match):
             add_modulation(spike_times, modulation_freq=8.0)
+
+    def test_spikes_in_any_order_are_modulated_in_time_order(self):
+        spikes = np.linspace(0.0, 5.0, 200)
+        shuffled = np.random.default_rng(1).permutation(spikes)
+        np.testing.assert_array_equal(
+            add_modulation(shuffled, modulation_freq=8.0, seed=4),
+            add_modulation(spikes, modulation_freq=8.0, seed=4),
+        )

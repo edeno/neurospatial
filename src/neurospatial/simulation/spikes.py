@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._spikes import as_spike_train
 from neurospatial._validation import validate_finite, validate_finite_scalar
 from neurospatial.simulation._seeds import _stream_seeds
 from neurospatial.simulation.models.base import NeuralModel, _population_cache
@@ -664,7 +665,7 @@ def add_modulation(
     Parameters
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
-        Original spike times in seconds, finite and sorted in ascending order.
+        Original spike times in seconds, finite, in any order.
     modulation_freq : float
         Modulation frequency in Hz (e.g., 8 Hz for hippocampal theta,
         40 Hz for cortical gamma).
@@ -816,22 +817,7 @@ def add_modulation(
                 "the trough",
             )
         )
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if spike_times.ndim != 1:
-        raise ValueError(
-            _format_error(
-                f"spike_times must be 1-D, got shape {spike_times.shape}.",
-                fix="pass one neuron's spike times in seconds",
-            )
-        )
-    spike_times = validate_finite(spike_times, name="spike_times")
-    if np.any(np.diff(spike_times) < 0):
-        raise ValueError(
-            _format_error(
-                "spike_times must be sorted in ascending order.",
-                fix="pass np.sort(spike_times)",
-            )
-        )
+    spike_times = as_spike_train(spike_times)
 
     rng = np.random.default_rng(seed)
     phases = 2 * np.pi * modulation_freq * spike_times - modulation_phase
