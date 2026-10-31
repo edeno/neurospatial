@@ -48,13 +48,24 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, times_in_intervals
+from neurospatial._intervals import (
+    as_intervals,
+    intersect_intervals,
+    times_in_intervals,
+)
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
 from neurospatial.reactivation.assemblies import (
+    _MEMBER_RULES,
     AssemblyPattern,
     _activation_strength,
+    _selected_pairs,
     _z_scores,
     detect_assemblies,
     explained_variance_reactivation,
@@ -103,7 +114,6 @@ __all__ = [
 ]
 
 _CALL = "compare_reactivation_methods()"
-_MEASURES = ("explained_variance", "assembly", "member_cofiring")
 _PAIRS = ("all", "different_tetrodes", "different_shanks", "different_regions")
 # The unit_groups key each pair rule reads.
 _GROUP_OF_PAIRS = {
@@ -136,19 +146,9 @@ _TESTS = {
 }
 _DETECTIONS = ("pca", "ica")
 _BINS = ("fixed", "events")
-_MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
 _Z_MEMBER_RULES = ("abs_z", "positive_z")
 _DETECTION_UNITS = ("all", "each_region", "each_region_and_cross_region")
 _ZSCORE_OVER = ("period", "control_and_match", "all_periods")
-
-
-def _is_count(value: Any) -> bool:
-    """Whether ``value`` is a positive integer, not a bool or a float."""
-    return (
-        isinstance(value, (int, np.integer))
-        and not isinstance(value, bool)
-        and bool(value >= 1)
-    )
 
 
 @dataclass(frozen=True)
@@ -248,7 +248,7 @@ class ReactivationWindows:
                 "ReactivationWindows: clock must be 'concatenated' or 'wall', "
                 f"got {self.clock!r}."
             )
-        if self.count is not None and not _is_count(self.count):
+        if self.count is not None and not is_integer_at_least(self.count, 1):
             raise ValueError(
                 f"ReactivationWindows: count must be a positive integer or None, "
                 f"got {self.count!r}."
@@ -298,7 +298,8 @@ class ReactivationWindows:
             if self.clock == "concatenated":
                 pieces = _concatenated_pieces(starts, edges, max(low, 0.0), high)
             else:
-                pieces = _clipped(rows, starts[0] + max(low, 0.0), starts[0] + high)
+                window = starts[0] + np.array([[max(low, 0.0), high]])
+                pieces = intersect_intervals(rows, window)
             if len(pieces):
                 windows.append(pieces)
         return windows
@@ -329,14 +330,6 @@ def _concatenated_pieces(
     keep = end > begin
     offsets = starts - edges[:-1]
     return np.column_stack([begin[keep], end[keep]]) + offsets[keep, None]
-
-
-def _clipped(rows: NDArray[np.float64], low: float, high: float) -> NDArray[np.float64]:
-    """The parts of ``rows`` inside ``[low, high)``, shape (n_pieces, 2)."""
-    begin = np.maximum(rows[:, 0], low)
-    end = np.minimum(rows[:, 1], high)
-    keep = end > begin
-    return np.column_stack([begin[keep], end[keep]])
 
 
 @dataclass(frozen=True)
@@ -645,14 +638,48 @@ class ReactivationMethod:
             needed.extend(["control_events", "match_events"])
         return tuple(needed)
 
+    @property
+    def _needs_one_control(self) -> str | None:
+        """What makes the method compare one control window, or None.
+
+        None when the method averages its statistic over several control
+        windows (Tatsuno et al. 2006): an EV method without a test whose
+        statistic is not a partial or semipartial correlation.
+        """
+        if self.measure == "assembly":
+            return "an assembly method"
+        if self.measure == "member_cofiring":
+            return "a member co-firing method"
+        if self.test is not None:
+            return self.test
+        if self.statistic in _ONE_CONTROL_STATISTICS:
+            return self.statistic
+        return None
+
     def __post_init__(self) -> None:
         """Check that the options fit the measure."""
         where = f"ReactivationMethod {self.name!r}"
-        if self.measure not in _MEASURES:
+        self._check_choices(where)
+        self._check_bins(where)
+        self._check_measure_fit(where)
+        self._check_options_apply(where)
+        self._check_member_threshold(where)
+        if self.min_events is not None and (
+            not is_integer_at_least(self.min_events, 1) or not self.needs_events
+        ):
             raise ValueError(
-                f"{where}: measure must be one of {_MEASURES}, got {self.measure!r}."
+                f"{where}: min_events must be a positive integer for a method "
+                f"that counts or follows events, got {self.min_events!r}."
             )
+        self._check_sampling(where)
+        self._check_event_response(where)
+        self._check_test_settings(where)
+        self._check_rate_subsamples(where)
+
+    def _check_choices(self, where: str) -> None:
+        """Refuse an option outside its choices."""
         for name, choices in (
+            ("measure", _MEASURES),
             ("template_bins", _BINS),
             ("rest_bins", _BINS),
             ("member_rule", _MEMBER_RULES),
@@ -664,6 +691,9 @@ class ReactivationMethod:
                     f"{where}: {name} must be one of {choices}, got "
                     f"{getattr(self, name)!r}."
                 )
+
+    def _check_bins(self, where: str) -> None:
+        """Refuse event bins for an assembly method and a bin_size that does not fit."""
         assembly = self.measure == "assembly"
         if assembly and self.rest_bins == "events":
             raise ValueError(
@@ -690,6 +720,9 @@ class ReactivationMethod:
                 f"{where}: every period is counted in events, so bin_size must "
                 f"be None, got {self.bin_size!r}."
             )
+
+    def _check_measure_fit(self, where: str) -> None:
+        """Refuse a pair rule, statistic, test or detection the measure lacks."""
         if self.pairs not in _PAIRS:
             raise ValueError(
                 f"{where}: pairs must be one of {_PAIRS}, got {self.pairs!r}."
@@ -710,33 +743,44 @@ class ReactivationMethod:
                 f"{where}: a {self.measure} method needs detection='pca' or "
                 f"'ica', got {self.detection!r}."
             )
-        assembly_only = (
-            "smoothing_bandwidth",
-            "activation_step",
-            "activation_threshold",
-            "percentile",
-            "event_response",
-        )
-        given = [name for name in assembly_only if getattr(self, name) is not None]
-        if not assembly and self.zscore_over != "period":
-            given.append("zscore_over")
-        if not patterns:
-            given += [name for name in ("detection",) if self.detection is not None]
-            if self.member_rule != "abs_z" or self.detection_units != "all":
-                given += ["member_rule", "detection_units"]
-        if not assembly and given:
-            raise ValueError(
-                _format_error(
-                    f"{where}: {given} do not apply to {self.measure} methods.",
-                    why=f"Why: a {self.measure} method would ignore them.",
-                    fix="drop them, or use measure='assembly'",
+
+    def _check_options_apply(self, where: str) -> None:
+        """Refuse assembly or pattern options given to another measure."""
+        if self.measure != "assembly":
+            given = [
+                name
+                for name in (
+                    "smoothing_bandwidth",
+                    "activation_step",
+                    "activation_threshold",
+                    "percentile",
+                    "event_response",
                 )
-            )
+                if getattr(self, name) is not None
+            ]
+            if self.zscore_over != "period":
+                given.append("zscore_over")
+            if self.measure == "explained_variance":
+                if self.detection is not None:
+                    given.append("detection")
+                if self.member_rule != "abs_z" or self.detection_units != "all":
+                    given += ["member_rule", "detection_units"]
+            if given:
+                raise ValueError(
+                    _format_error(
+                        f"{where}: {given} do not apply to {self.measure} methods.",
+                        why=f"Why: a {self.measure} method would ignore them.",
+                        fix="drop them, or use measure='assembly'",
+                    )
+                )
         if self.measure != "explained_variance" and self.pairs != "all":
             raise ValueError(
                 f"{where}: pairs={self.pairs!r} applies only to EV methods; "
                 f"a {self.measure} method uses every unit."
             )
+
+    def _check_member_threshold(self, where: str) -> None:
+        """Require a threshold for the z-score member rules and none otherwise."""
         z_rule = self.member_rule in _Z_MEMBER_RULES
         if z_rule and not (
             self.member_threshold is not None and np.isfinite(self.member_threshold)
@@ -750,13 +794,9 @@ class ReactivationMethod:
                 f"{where}: member_rule={self.member_rule!r} sets its own cutoff; "
                 "pass member_threshold=None."
             )
-        if self.min_events is not None and (
-            not _is_count(self.min_events) or not self.needs_events
-        ):
-            raise ValueError(
-                f"{where}: min_events must be a positive integer for a method "
-                f"that counts or follows events, got {self.min_events!r}."
-            )
+
+    def _check_sampling(self, where: str) -> None:
+        """Refuse a smoothing or R(t) step that is not positive or does not fit."""
         for name in ("smoothing_bandwidth", "activation_step"):
             value = getattr(self, name)
             if value is not None and not (np.isfinite(value) and value > 0):
@@ -772,6 +812,9 @@ class ReactivationMethod:
                     f"({self.activation_step:g} s) must divide bin_size "
                     f"({self.bin_size:g} s) into a whole number of steps."
                 )
+
+    def _check_event_response(self, where: str) -> None:
+        """Refuse a missing event response and windows that hold no lag."""
         if self.statistic in _EVENT_RESPONSE_STATISTICS and self.event_response is None:
             raise ValueError(
                 f"{where}: statistic {self.statistic!r} needs "
@@ -801,6 +844,9 @@ class ReactivationMethod:
                 "response with its baseline; pass "
                 "event_response=EventResponse(baseline_window=(start, stop))."
             )
+
+    def _check_test_settings(self, where: str) -> None:
+        """Refuse a percentile, shuffle count or alpha the test cannot use."""
         if self.percentile is not None and not 0 < self.percentile < 100:
             raise ValueError(
                 f"{where}: percentile must be in (0, 100), got {self.percentile!r}."
@@ -810,55 +856,53 @@ class ReactivationMethod:
                 f"{where}: the cell-identity shuffle compares each bin with a "
                 "percentile of its shuffles; pass percentile=."
             )
-        if not _is_count(self.n_shuffles):
-            raise ValueError(
-                f"{where}: n_shuffles must be a positive integer, got "
-                f"{self.n_shuffles!r}."
-            )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{where}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_integer_at_least(self.n_shuffles, 1, name="n_shuffles", owner=where)
+        validate_alpha(self.alpha, owner=where)
+
+    def _check_rate_subsamples(self, where: str) -> None:
+        """Refuse rate subsampling where Giri et al. (2019)'s control does not fit."""
         subsamples = self.n_rate_subsamples
-        if subsamples is not None:
-            if not _is_count(subsamples):
-                raise ValueError(
-                    f"{where}: n_rate_subsamples must be a positive integer or "
-                    f"None, got {subsamples!r}."
+        if subsamples is None:
+            return
+        if not is_integer_at_least(subsamples, 1):
+            raise ValueError(
+                f"{where}: n_rate_subsamples must be a positive integer or "
+                f"None, got {subsamples!r}."
+            )
+        if self.measure != "explained_variance":
+            raise ValueError(
+                _format_error(
+                    f"{where}: n_rate_subsamples applies only to EV methods.",
+                    why="Why: Giri et al. (2019) equalized rates for the "
+                    "pair correlations of fixed time bins; activation "
+                    "strength and member co-firing z-score each period on "
+                    "its own.",
+                    fix="drop n_rate_subsamples, or use measure='explained_variance'",
                 )
-            if self.measure != "explained_variance":
-                raise ValueError(
-                    _format_error(
-                        f"{where}: n_rate_subsamples applies only to EV methods.",
-                        why="Why: Giri et al. (2019) equalized rates for the "
-                        "pair correlations of fixed time bins; activation "
-                        "strength and member co-firing z-score each period on "
-                        "its own.",
-                        fix="drop n_rate_subsamples, or use measure="
-                        "'explained_variance'",
-                    )
+            )
+        if self.rest_bins == "events":
+            raise ValueError(
+                _format_error(
+                    f"{where}: n_rate_subsamples needs rest_bins='fixed'.",
+                    why="Why: it equalizes each unit's spikes per bin; "
+                    "events of different durations make spikes per event "
+                    "and spikes per second disagree, and Giri et al. "
+                    "(2019) equalized fixed 250 ms bins.",
+                    fix="drop n_rate_subsamples, or bin rest periods with "
+                    "rest_bins='fixed' and bin_size=",
                 )
-            if self.rest_bins == "events":
-                raise ValueError(
-                    _format_error(
-                        f"{where}: n_rate_subsamples needs rest_bins='fixed'.",
-                        why="Why: it equalizes each unit's spikes per bin; "
-                        "events of different durations make spikes per event "
-                        "and spikes per second disagree, and Giri et al. "
-                        "(2019) equalized fixed 250 ms bins.",
-                        fix="drop n_rate_subsamples, or bin rest periods with "
-                        "rest_bins='fixed' and bin_size=",
-                    )
+            )
+        if self.test == "pair_bootstrap":
+            raise ValueError(
+                _format_error(
+                    f"{where}: n_rate_subsamples cannot be combined with "
+                    "the pair bootstrap.",
+                    why="Why: the bootstrap resamples one set of pair "
+                    "correlations, and each rate subsample has its own.",
+                    fix="use test='partial_correlation_t' or None with "
+                    "n_rate_subsamples",
                 )
-            if self.test == "pair_bootstrap":
-                raise ValueError(
-                    _format_error(
-                        f"{where}: n_rate_subsamples cannot be combined with "
-                        "the pair bootstrap.",
-                        why="Why: the bootstrap resamples one set of pair "
-                        "correlations, and each rate subsample has its own.",
-                        fix="use test='partial_correlation_t' or None with "
-                        "n_rate_subsamples",
-                    )
-                )
+            )
 
 
 # =============================================================================
@@ -1167,27 +1211,18 @@ def compare_reactivation_methods(
             )
         )
     groups = _checked_groups(unit_groups, methods, n_units)
-    n_pairs = n_units * (n_units - 1) // 2
-    selected = np.ones(n_pairs, dtype=bool)
-    if pair_mask is not None:
-        mask = np.asarray(pair_mask)
-        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
-            raise ValueError(
-                _format_error(
-                    f"{_CALL}: pair_mask must be a boolean array with one entry "
-                    f"per pair ({n_pairs} for {n_units} units), got dtype "
-                    f"{mask.dtype} and shape {mask.shape}.",
-                    fix="pass a boolean array in np.triu_indices(n_units, k=1) order",
-                )
-            )
-        selected = mask.copy()
+    selected = _selected_pairs(
+        n_units * (n_units - 1) // 2, None, pair_mask, call=_CALL
+    )
 
     entropy = _entropy(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
         assert control is not None  # every method needs one, checked above
-        session = _Session(trains, template, control, match, events, labels, groups)
+        session = _Session(
+            trains, template, control, match, events, labels, groups, selected
+        )
     for method in methods:
         key = _name_key(method.name)
 
@@ -1196,19 +1231,7 @@ def compare_reactivation_methods(
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:
-                if method.measure == "explained_variance":
-                    pair_rule = selected.copy()
-                    if method.pairs != "all":
-                        unit_group = groups[_GROUP_OF_PAIRS[method.pairs]]
-                        first, second = np.triu_indices(n_units, k=1)
-                        pair_rule &= unit_group[first] != unit_group[second]
-                    method_rows = _explained_variance_rows(
-                        method, session, pair_rule, stream
-                    )
-                elif method.measure == "assembly":
-                    method_rows = _assembly_rows(method, session, stream)
-                else:
-                    method_rows = _member_cofiring_rows(method, session, stream)
+                method_rows = _ROW_BUILDERS[method.measure](method, session, stream)
             except _MethodError as failure:
                 method_rows = [{"error": str(failure)}]
         rows.extend({"method": method.name, **row} for row in method_rows)
@@ -1238,6 +1261,7 @@ class _Session:
     events: dict[str, NDArray[np.float64] | None]
     labels: NDArray[Any]
     groups: dict[str, NDArray[Any]]
+    pair_mask: NDArray[np.bool_]  # pairs every EV method may use
 
 
 def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
@@ -1314,7 +1338,7 @@ def _rest_counts(
     """
     if method.rest_bins == "fixed":
         assert method.bin_size is not None
-        return _counts(session.trains, window, method.bin_size), None
+        return _binned(session.trains, window, method.bin_size)[0], None
     events = _events_in(session.events[f"{period}_events"], window)
     _check_min_events(method, events.shape[0], period)
     return _event_counts(session.trains, events), events.shape[0]
@@ -1345,7 +1369,7 @@ def _template_counts(
             raise _MethodError("no template event starts inside template_epochs")
         return _event_counts(session.trains, events)
     assert method.bin_size is not None
-    return _counts(session.trains, session.template, method.bin_size)
+    return _binned(session.trains, session.template, method.bin_size)[0]
 
 
 class _MethodError(ValueError):
@@ -1411,13 +1435,6 @@ def _checked_groups(
             )
         checked[kind] = array
     return checked
-
-
-def _counts(
-    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], bin_size: float
-) -> NDArray[np.float64]:
-    """Spike counts in ``bin_size`` bins inside ``windows``, (n_bins, n_units)."""
-    return _binned(trains, windows, bin_size)[0]
 
 
 def _binned(
@@ -1508,18 +1525,24 @@ def _match_window_rows(
 
 
 def _explained_variance_rows(
-    method: ReactivationMethod,
-    session: _Session,
-    pair_rule: NDArray[np.bool_],
-    stream: Any,
+    method: ReactivationMethod, session: _Session, stream: Any
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
-    n_units = len(session.trains)
-    if pair_rule.size < 3:
+    n_pairs = session.pair_mask.size
+    if n_pairs < 3:
         raise _MethodError(
-            f"EV needs at least 3 pairs of units; {n_units} units hold "
-            f"{pair_rule.size} pair{'s' * (pair_rule.size != 1)}"
+            f"EV needs at least 3 pairs of units; {len(session.trains)} units "
+            f"hold {n_pairs} pair{'s' * (n_pairs != 1)}"
         )
+    # The method's pairs rule, on top of the call's pair_mask.
+    pair_rule = _selected_pairs(
+        n_pairs,
+        None
+        if method.pairs == "all"
+        else session.groups[_GROUP_OF_PAIRS[method.pairs]],
+        session.pair_mask,
+        call=_CALL,
+    )
     template_correlations = _pair_correlations(_template_counts(method, session))
     control_counts = []
     control_events = []
@@ -1529,10 +1552,8 @@ def _explained_variance_rows(
         control_events.append(n_events)
     control_correlations = [_pair_correlations(counts) for counts in control_counts]
     n_controls = len(control_correlations)
-    if (
-        method.test is not None or method.statistic in _ONE_CONTROL_STATISTICS
-    ) and n_controls != 1:
-        needs = method.test if method.test is not None else method.statistic
+    needs = method._needs_one_control
+    if needs is not None and n_controls != 1:
         raise _MethodError(f"{needs} needs one control window, got {n_controls}")
 
     def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
@@ -1571,10 +1592,8 @@ def _explained_variance_rows(
         if method.test == "partial_correlation_t":
             p_value = summary["p_value"]
             row["p_value"] = p_value
-            row["is_reactivated"] = (
-                bool(p_value < method.alpha and summary["partial_correlation"] > 0)
-                if np.isfinite(p_value)
-                else _missing()
+            row["is_reactivated"] = _verdict(
+                p_value, summary["partial_correlation"], method.alpha
             )
         elif method.test == "pair_bootstrap":
             valid = (
@@ -1597,7 +1616,7 @@ def _explained_variance_rows(
                 row["ev_minus_rev_lower"] = lower
                 row["is_reactivated"] = lower > 0
             else:
-                row["is_reactivated"] = _missing()
+                row["is_reactivated"] = None
         return [row]
 
     return _match_window_rows(method, session, window_rows)
@@ -1733,6 +1752,11 @@ def _missing() -> Any:
     import pandas as pd
 
     return pd.NA
+
+
+def _verdict(p_value: float, effect: float, alpha: float) -> bool | None:
+    """Reactivated when ``p_value < alpha`` and ``effect > 0``; missing for a NaN p."""
+    return bool(p_value < alpha and effect > 0) if np.isfinite(p_value) else None
 
 
 def _nanmean(values: Sequence[float]) -> float:
@@ -2354,6 +2378,18 @@ def _fraction_above_cell_shuffle(
         above += np.sum(actual[first : first + block] > bound, axis=0)
     shares: NDArray[np.float64] = above / n_bins
     return shares
+
+
+# The rows of each measure's methods; defined before the recipes below, whose
+# construction checks the measure against _MEASURES.
+_ROW_BUILDERS: dict[
+    str, Callable[[ReactivationMethod, _Session, Any], list[dict[str, Any]]]
+] = {
+    "explained_variance": _explained_variance_rows,
+    "assembly": _assembly_rows,
+    "member_cofiring": _member_cofiring_rows,
+}
+_MEASURES = tuple(_ROW_BUILDERS)
 
 
 # =============================================================================

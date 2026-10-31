@@ -558,6 +558,27 @@ def test_input_errors(reactivated) -> None:
         )
 
 
+@pytest.mark.parametrize("unknown", [np.nan, None])
+def test_a_pairs_rule_refuses_missing_groups(reactivated, unknown) -> None:
+    """A unit without a tetrode is refused, as explained_variance_reactivation
+    refuses it: NaN differs from every group, so the unit would pair with its
+    own tetrode's cells."""
+    spike_times, template, match, control = reactivated
+    tetrodes = np.asarray(UNIT_GROUPS["tetrode"], dtype=object)
+    tetrodes[2] = unknown
+    with pytest.raises(
+        ValueError, match=r"missing or non-finite group for units \[2\]"
+    ):
+        compare_reactivation_methods(
+            spike_times,
+            template,
+            match,
+            control,
+            reactivation_methods=[KUDRIMOTI_1999],
+            unit_groups={"tetrode": tetrodes},
+        )
+
+
 def test_assembly_rows_name_members_by_unit_id(reactivated) -> None:
     spike_times, template, match, control = reactivated
     labels = np.arange(100, 100 + N_UNITS)
