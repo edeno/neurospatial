@@ -61,6 +61,7 @@ from neurospatial.reactivation.assemblies import (
 )
 from neurospatial.reactivation.calibration import equalize_firing_rates
 from neurospatial.reactivation.coactivity import (
+    _checked_event_windows,
     _in_lag_window,
     _lags,
     _peri_event_values,
@@ -380,31 +381,9 @@ class EventResponse:
 
     def __post_init__(self) -> None:
         """Check the windows."""
-        windows = {
-            "window": self.window,
-            "response_window": self.response_window,
-            "baseline_window": self.baseline_window,
-        }
-        for name, value in windows.items():
-            if value is None:
-                continue
-            pair = np.asarray(value, dtype=np.float64)
-            if (
-                pair.shape != (2,)
-                or not np.all(np.isfinite(pair))
-                or pair[0] >= pair[1]
-            ):
-                raise ValueError(
-                    f"EventResponse: {name} must be (start, stop) in seconds with "
-                    f"start < stop, got {value!r}."
-                )
-            if name != "window" and (
-                pair[0] < self.window[0] or pair[1] > self.window[1]
-            ):
-                raise ValueError(
-                    f"EventResponse: {name}={value} must lie inside "
-                    f"window={self.window}."
-                )
+        _checked_event_windows(
+            self.window, self.response_window, self.baseline_window, "EventResponse"
+        )
         if self.reduce not in ("mean", "peak"):
             raise ValueError(
                 f"EventResponse: reduce must be 'mean' or 'peak', got {self.reduce!r}."

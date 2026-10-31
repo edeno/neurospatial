@@ -516,19 +516,81 @@ class AssemblyEventResponseResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-def _checked_window(value: Any, name: str, call: str) -> tuple[float, float]:
-    """A ``(start, stop)`` pair in seconds with ``start < stop``."""
-    window = np.asarray(value, dtype=np.float64)
-    if (
-        window.shape != (2,)
-        or not np.all(np.isfinite(window))
-        or window[0] >= window[1]
+def _checked_event_windows(
+    window: Any,
+    response_window: Any,
+    baseline_window: Any,
+    owner: str,
+    step: float | None = None,
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float] | None]:
+    """Check the peri-event windows of an event response.
+
+    Each window must be ``(start, stop)`` seconds with ``start < stop``, and
+    the response and baseline windows must lie inside ``window``.
+
+    Parameters
+    ----------
+    window, response_window : array-like, shape (2,)
+    baseline_window : array-like, shape (2,), or None
+    owner : str
+        Start of each message: ``"EventResponse"`` or the function call.
+    step : float, optional
+        Sample step of the R(t) trace a function call measures. Given, the
+        response and baseline windows must also hold one of its lags, and
+        the messages name the events and the step.
+
+    Returns
+    -------
+    window, response_window, baseline_window : tuple of float, or None
+    """
+    relative = "" if step is None else " relative to the events"
+
+    def pair(name: str, value: Any) -> tuple[float, float]:
+        array = np.asarray(value, dtype=np.float64)
+        if (
+            array.shape != (2,)
+            or not np.all(np.isfinite(array))
+            or array[0] >= array[1]
+        ):
+            raise ValueError(
+                f"{owner}: {name} must be (start, stop) in seconds{relative} with "
+                f"start < stop, got {value!r}."
+            )
+        return float(array[0]), float(array[1])
+
+    full = pair("window", window)
+    response = pair("response_window", response_window)
+    baseline = (
+        None if baseline_window is None else pair("baseline_window", baseline_window)
+    )
+    for name, value, part in (
+        ("response_window", response_window, response),
+        ("baseline_window", baseline_window, baseline),
     ):
-        raise ValueError(
-            f"{call}: {name} must be (start, stop) in seconds relative to the "
-            f"events with start < stop, got {value!r}."
-        )
-    return float(window[0]), float(window[1])
+        if part is None:
+            continue
+        inside = full[0] <= part[0] and part[1] <= full[1]
+        if step is None:
+            if not inside:
+                raise ValueError(
+                    f"{owner}: {name}={value} must lie inside window={window}."
+                )
+        elif not inside or not _window_holds_lag(full, part, step):
+            raise ValueError(
+                _format_error(
+                    f"{owner}: {name}={part} must lie inside window={full} and "
+                    f"hold at least one lag of the {step:g} s sample step.",
+                    fix=f"widen window= or choose a {name} inside it",
+                )
+            )
+    return full, response, baseline
+
+
+def _window_holds_lag(
+    window: tuple[float, float], part: tuple[float, float], step: float
+) -> bool:
+    """Whether ``part`` holds one of the lags of ``window`` sampled every ``step``."""
+    return bool(_in_lag_window(_lags(window, step), part, step).any())
 
 
 def _lags(window: tuple[float, float], step: float) -> NDArray[np.float64]:
@@ -742,29 +804,16 @@ def assembly_event_response(
         raise ValueError(f"{call}: event_times must be a 1-D array of finite times.")
     if reduce not in ("mean", "peak"):
         raise ValueError(f"{call}: reduce must be 'mean' or 'peak', got {reduce!r}.")
-    full = _checked_window(window, "window", call)
-    response = _checked_window(response_window, "response_window", call)
-    baseline = (
-        None
-        if baseline_window is None
-        else _checked_window(baseline_window, "baseline_window", call)
-    )
     step = float(np.median(np.diff(sample_times)))
+    full, response, baseline = _checked_event_windows(
+        window, response_window, baseline_window, call, step
+    )
     lags = _lags(full, step)
-    masks = {}
-    for name, part in (("response_window", response), ("baseline_window", baseline)):
-        if part is None:
-            continue
-        mask = _in_lag_window(lags, part, step)
-        if part[0] < full[0] or part[1] > full[1] or not mask.any():
-            raise ValueError(
-                _format_error(
-                    f"{call}: {name}={part} must lie inside window={full} and "
-                    f"hold at least one lag of the {step:g} s sample step.",
-                    fix=f"widen window= or choose a {name} inside it",
-                )
-            )
-        masks[name] = mask
+    masks = {
+        name: _in_lag_window(lags, part, step)
+        for name, part in (("response_window", response), ("baseline_window", baseline))
+        if part is not None
+    }
     values = _peri_event_values(sample_times, strength[:, None], step, events, lags)[
         :, :, 0
     ]
