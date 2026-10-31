@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
     "alphashape>=1.3.0",
+    "joblib>=1.1.1",  # parallel n_jobs paths in encoding; the scikit-learn 1.2 floor
     "matplotlib>=3.7.0",
     "networkx>=3.0",
     "numpy>=1.24.0",

@@ -3908,6 +3908,7 @@ version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "alphashape" },
+    { name = "joblib" },
     { name = "matplotlib" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4017,6 +4018,7 @@ requires-dist = [
     { name = "ipywidgets", marker = "extra == 'animation'", specifier = ">=8.0,<9.0" },
     { name = "jax", marker = "extra == 'jax'", specifier = ">=0.4.30" },
     { name = "jaxlib", marker = "extra == 'jax'", specifier = ">=0.4.30" },
+    { name = "joblib", specifier = ">=1.1.1" },
     { name = "jupyter", marker = "extra == 'notebooks'", specifier = ">=1.1.1" },
     { name = "jupyter-rfb", marker = "python_full_version >= '3.11' and extra == 'fastplotlib'", specifier = ">=0.5.1" },
     { name = "jupytext", marker = "extra == 'docs'", specifier = ">=1.16.0" },
