@@ -233,3 +233,104 @@ def smoothed_speed(
     )
     speed: NDArray[np.float64] = np.linalg.norm(velocity, axis=1)
     return speed
+
+
+def time_smoothed_positions(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    sigma: float = DEFAULT_SPEED_SMOOTHING,
+) -> NDArray[np.float64]:
+    """Positions smoothed by Gaussian-weighted local linear fits in time.
+
+    Each valid sample is replaced by the value at its own time of a straight
+    line fitted, within its observed run, to the samples weighted by a
+    Gaussian of their time difference (standard deviation ``sigma``
+    seconds, cut at four standard deviations).
+    A local linear fit leaves motion at constant velocity unchanged, also at
+    the ends of a run, and averages tracking jitter away. Weighting by time
+    rather than sample distance means a bridged gap much longer than the
+    kernel is not smoothed across. Missing rows stay NaN.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        ``ObservationSupport.interval_mask``.
+    sigma : float, default=DEFAULT_SPEED_SMOOTHING
+        Standard deviation of the Gaussian, in seconds; 0 returns a copy of
+        ``positions``.
+
+    Returns
+    -------
+    ndarray, shape (n_samples, n_dims)
+    """
+    from neurospatial._intervals import valid_run_samples
+
+    finite = np.all(np.isfinite(positions), axis=1)
+    smoothed = positions.astype(np.float64, copy=True)
+    if sigma == 0:
+        return smoothed
+    for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
+        if run.size < 2:
+            continue
+        t, p = times[run], positions[run]
+        # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
+        # in differences from each sample so a still animal stays exactly still.
+        # Each sample weighs itself by 1; each pair (i, i + k) within reach
+        # adds to both samples, with lag and deviation negated for the later.
+        s0 = np.ones(run.size)
+        s1 = np.zeros(run.size)
+        s2 = np.zeros(run.size)
+        m0 = np.zeros_like(p)
+        m1 = np.zeros_like(p)
+        for k, weight in gaussian_pair_weights(t, sigma):
+            lag = t[k:] - t[:-k]
+            weighted_lag = weight * lag
+            weighted_square = weighted_lag * lag
+            deviation = p[k:] - p[:-k]
+            weighted_deviation = weight[:, None] * deviation
+            lagged_deviation = weighted_lag[:, None] * deviation
+            s0[:-k] += weight
+            s0[k:] += weight
+            s1[:-k] += weighted_lag
+            s1[k:] -= weighted_lag
+            s2[:-k] += weighted_square
+            s2[k:] += weighted_square
+            m0[:-k] += weighted_deviation
+            m0[k:] -= weighted_deviation
+            m1[:-k] += lagged_deviation
+            m1[k:] += lagged_deviation
+        det = s0 * s2 - s1**2
+        # A sample alone in its window (det ~ 0) keeps its own position.
+        fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
+        shift = np.where(
+            fitted[:, None],
+            (s2[:, None] * m0 - s1[:, None] * m1) / np.where(fitted, det, 1.0)[:, None],
+            0.0,
+        )
+        smoothed[run] = p + shift
+    return smoothed
+
+
+def validated_smooth_window(smooth_window: float, *, call: str) -> float:
+    """A finite ``smooth_window`` of seconds >= 0, as a float."""
+    if (
+        isinstance(smooth_window, (bool, np.bool_))
+        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
+        or not np.isfinite(smooth_window)
+        or smooth_window < 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs smooth_window to be a finite number of seconds "
+                f">= 0; got {smooth_window!r}.",
+                why="smooth_window is the standard deviation, in seconds, of the "
+                "Gaussian that smooths positions in time before distance is "
+                "measured.",
+                fix="pass smooth_window=0.0 for raw steps, or a number of "
+                f"seconds such as the default smooth_window={DEFAULT_SPEED_SMOOTHING}.",
+            )
+        )
+    return float(smooth_window)

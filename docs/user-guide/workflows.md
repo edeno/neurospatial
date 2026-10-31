@@ -1417,9 +1417,14 @@ four times as many seconds. A distance no pass reached has no rate (NaN),
 not zero.
 
 For your own recording, pass the unit's spike times, the event times, and the
-tracked `times` and `positions` (in cm). Tracking gaps longer than `max_gap`
-end the distance axis, and `spike_window` keeps time without spike recording
-from being read as silence.
+tracked `times` and `positions` (in cm). Positions are used as given. Smooth
+raw tracking first, for example with
+`positions = smooth_positions(times, positions)` from
+`neurospatial.behavior`: summing raw frame-to-frame steps turns tracking
+jitter during a stop at the reward into a metre or more of distance. Pass
+`min_speed` (for example 2.0 cm/s) to keep a stop at exactly one distance. Tracking gaps longer than `max_gap` end the distance
+axis, and `spike_window` keeps time without spike recording from being read
+as silence.
 
 ## Common Patterns
 

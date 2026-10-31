@@ -288,6 +288,7 @@ def peri_event_distance_histogram(
     epochs: Any = None,
     break_before: Any = None,
     spike_window: Any = None,
+    min_speed: float | None = None,
 ) -> PeriEventDistanceResult:
     """Firing rate by distance travelled from each event.
 
@@ -330,6 +331,11 @@ def peri_event_distance_histogram(
     spike_window : same forms as ``epochs``, or None
         When the spikes were recorded. Time outside it is not counted, so it
         is never read as silence.
+    min_speed : float or None, default=None
+        Speed, in position units per second, below which a step between
+        samples adds no distance, so a stop stays at one distance. Use it on
+        smoothed positions: raw tracking jitter alone moves faster than a
+        few cm/s at video rates. None keeps every step.
 
     Returns
     -------
@@ -340,8 +346,9 @@ def peri_event_distance_histogram(
     Raises
     ------
     ValueError
-        If ``window`` or ``bin_size`` is invalid, ``event_times`` is empty,
-        or no event falls on tracked time.
+        If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
+        or not finite, ``event_times`` is empty, or no event falls on tracked
+        time.
 
     Notes
     -----
@@ -349,8 +356,11 @@ def peri_event_distance_histogram(
     speed, so an interval's time is spread over the distance bins it crosses
     in proportion to the distance covered in each; an interval without
     movement puts all its time at one distance. Distance is the length of the
-    straight segments between samples, so tracking jitter adds distance;
-    smooth or downsample positions first if that matters.
+    straight segments between the positions as given, so tracking jitter
+    adds distance: with 0.5 cm of jitter, a 5 s stop at a reward adds about
+    130 cm at 30 Hz (580 cm at 125 Hz). Smooth raw tracking first with
+    :func:`~neurospatial.behavior.smooth_positions`, which brings the stop
+    to a few cm.
 
     A spike counts for every event whose path it falls on, so with events
     closer together than the window, a spike can count for two events, as
@@ -376,6 +386,16 @@ def peri_event_distance_histogram(
     from neurospatial.behavior.trajectory import compute_cumulative_distance
 
     window = _validated_distance_window(window, bin_size)
+    if min_speed is not None and not (np.isfinite(min_speed) and min_speed >= 0):
+        raise ValueError(
+            _format_error(
+                f"peri_event_distance_histogram: min_speed={min_speed!r} must be "
+                "a finite speed >= 0.",
+                why="min_speed is the speed, in position units per second, below "
+                "which a step adds no distance.",
+                fix="pass min_speed=None, or a speed such as min_speed=2.0 for 2 cm/s.",
+            )
+        )
     edges = _make_bin_edges(window, bin_size)
     spikes = np.sort(_finite_times(spike_times, "spike_times"))
     events = _finite_times(event_times, "event_times", non_empty=True)
@@ -386,17 +406,26 @@ def peri_event_distance_histogram(
     elif recorded is not None:
         analyzed = intersect_intervals(analyzed, recorded)
     path = compute_cumulative_distance(
-        times, positions, max_gap=max_gap, epochs=analyzed, break_before=break_before
+        times,
+        positions,
+        max_gap=max_gap,
+        epochs=analyzed,
+        break_before=break_before,
     )
     times = np.asarray(times, dtype=np.float64)
     n_bins = edges.size - 1
+    paths: dict[int, tuple[NDArray[np.float64], NDArray[np.float64]]] = {}
     counts, occupancy, kept = [], [], []
     for index, event in enumerate(events):
         run = _run_at(path.run_time_bounds, event)
         if run < 0:
             continue
-        samples = np.flatnonzero(path.run_ids == run)
-        t, s = times[samples], path.run_distance[samples]
+        if run not in paths:
+            samples = np.flatnonzero(path.run_ids == run)
+            paths[run] = _run_path_length(
+                times[samples], path.run_distance[samples], min_speed
+            )
+        t, s = paths[run]
         distance = s - np.interp(event, t, s)
         occupancy.append(_time_per_bin(t, distance, edges))
         # Half-open [first, last) sample times: the last sample ends the path.
@@ -467,3 +496,20 @@ def _time_per_bin(
         inside = (bins >= 0) & (bins < edges.size - 1)
         np.add.at(seconds, bins[inside], dt[still][inside])
     return seconds
+
+
+def _run_path_length(
+    t: NDArray[np.float64],
+    run_distance: NDArray[np.float64],
+    min_speed: float | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Times and path length from the start of one tracked run.
+
+    ``run_distance`` is already measured on the smoothed path; a step slower
+    than ``min_speed`` adds nothing.
+    """
+    if min_speed is None:
+        return t, run_distance
+    steps = np.diff(run_distance)
+    steps = np.where(steps / np.diff(t) < min_speed, 0.0, steps)
+    return t, np.concatenate([[0.0], np.cumsum(steps)])

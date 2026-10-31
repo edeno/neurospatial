@@ -108,6 +108,7 @@ from neurospatial.behavior.trajectory import (
     heading_from_body_orientation,
     heading_from_velocity,
     mean_square_displacement,
+    smooth_positions,
 )
 from neurospatial.behavior.visits import (
     RegionTransition,
@@ -223,4 +224,5 @@ __all__ = [  # noqa: RUF022
     "heading_from_body_orientation",
     "heading_from_velocity",
     "mean_square_displacement",
+    "smooth_positions",
 ]

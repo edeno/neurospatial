@@ -3270,7 +3270,7 @@ def _smoothed_steps(
 
     A step joins consecutive valid samples (a bridged stretch of missing
     samples is one step), measured on positions smoothed over time by
-    :func:`_time_smoothed_positions`.
+    :func:`~neurospatial._velocity.time_smoothed_positions`.
 
     Parameters
     ----------
@@ -3288,83 +3288,11 @@ def _smoothed_steps(
     starts, steps : ndarray, shape (n_steps, n_dims)
     """
     if smoothed is None:
-        smoothed = _time_smoothed_positions(times, positions, interval_mask)
+        from neurospatial._velocity import time_smoothed_positions
+
+        smoothed = time_smoothed_positions(times, positions, interval_mask)
     starts, ends = _observed_steps(smoothed, sample_valid, interval_mask)
     return starts, ends - starts
-
-
-def _time_smoothed_positions(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-) -> NDArray[np.float64]:
-    """Positions smoothed by Gaussian-weighted local linear fits in time.
-
-    Each valid sample is replaced by the value at its own time of a straight
-    line fitted, within its observed run, to the samples weighted by a
-    Gaussian of their time difference (standard deviation
-    ``DEFAULT_SPEED_SMOOTHING`` seconds, cut at four standard deviations).
-    A local linear fit leaves motion at constant velocity unchanged, also at
-    the ends of a run, and averages tracking jitter away. Weighting by time
-    rather than sample distance means a bridged gap much longer than the
-    kernel is not smoothed across. Missing rows stay NaN.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-    positions : ndarray, shape (n_samples, n_dims)
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        ``ObservationSupport.interval_mask``.
-
-    Returns
-    -------
-    ndarray, shape (n_samples, n_dims)
-    """
-    from neurospatial._intervals import valid_run_samples
-    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, gaussian_pair_weights
-
-    finite = np.all(np.isfinite(positions), axis=1)
-    smoothed = positions.astype(np.float64, copy=True)
-    for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
-        if run.size < 2:
-            continue
-        t, p = times[run], positions[run]
-        # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
-        # in differences from each sample so a still animal stays exactly still.
-        # Each sample weighs itself by 1; each pair (i, i + k) within reach
-        # adds to both samples, with lag and deviation negated for the later.
-        s0 = np.ones(run.size)
-        s1 = np.zeros(run.size)
-        s2 = np.zeros(run.size)
-        m0 = np.zeros_like(p)
-        m1 = np.zeros_like(p)
-        for k, weight in gaussian_pair_weights(t, DEFAULT_SPEED_SMOOTHING):
-            lag = t[k:] - t[:-k]
-            weighted_lag = weight * lag
-            weighted_square = weighted_lag * lag
-            deviation = p[k:] - p[:-k]
-            weighted_deviation = weight[:, None] * deviation
-            lagged_deviation = weighted_lag[:, None] * deviation
-            s0[:-k] += weight
-            s0[k:] += weight
-            s1[:-k] += weighted_lag
-            s1[k:] -= weighted_lag
-            s2[:-k] += weighted_square
-            s2[k:] += weighted_square
-            m0[:-k] += weighted_deviation
-            m0[k:] -= weighted_deviation
-            m1[:-k] += lagged_deviation
-            m1[k:] += lagged_deviation
-        det = s0 * s2 - s1**2
-        # A sample alone in its window (det ~ 0) keeps its own position.
-        fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
-        shift = np.where(
-            fitted[:, None],
-            (s2[:, None] * m0 - s1[:, None] * m1) / np.where(fitted, det, 1.0)[:, None],
-            0.0,
-        )
-        smoothed[run] = p + shift
-    return smoothed
 
 
 def _observed_steps(
@@ -3561,7 +3489,9 @@ def subgoal_efficiency(
         break_before=break_before,
         result="no path was observed",
     )
-    smoothed = _time_smoothed_positions(times_arr, positions_arr, support.interval_mask)
+    from neurospatial._velocity import time_smoothed_positions
+
+    smoothed = time_smoothed_positions(times_arr, positions_arr, support.interval_mask)
     n_dims = positions_arr.shape[1]
     subgoal_arr = np.asarray(subgoals, dtype=float)
     if subgoal_arr.ndim == 1:

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Smoothing tracked positions
+
+**Added**
+
+- `smooth_positions(times, positions, *, smooth_window=0.1)` in
+  `neurospatial.behavior`: smooths tracked positions in time with a
+  Gaussian-weighted local linear fit within each run of continuous
+  observation, never across a tracking loss (`max_gap`), a declared break or
+  an epoch edge. Neurospatial uses positions as given; smooth raw tracking
+  once with this function and pass the result to every analysis. Summing
+  raw frame-to-frame steps counts jitter as running: with 0.5 cm of jitter,
+  a 5 s stop on a 100 cm path reads as 274 cm at 30 Hz and 968 cm at 120 Hz,
+  and about 100 cm after `smooth_positions`. Motion at constant velocity is
+  unchanged; a 10 cm out-and-back over 0.4 s keeps about 60% of its length.
+
 ### Firing by distance from an event
 
 **Added**
@@ -11,7 +26,10 @@
   path length travelled from each event, negative before it. Each distance
   bin's spikes are divided by the time spent there, pooled over events, so a
   slow and a fast pass give the same rate and a pause adds time at one
-  distance. Distance stops at tracking gaps and breaks; time outside
+  distance. Positions are used as given: smooth raw tracking with
+  `smooth_positions` first, since summing raw frame-to-frame steps turns
+  0.5 cm of jitter during a 5 s stop into 130 cm (30 Hz) to 520 cm
+  (120 Hz). `min_speed` keeps stops at one distance. Distance stops at tracking gaps and breaks; time outside
   `spike_window` is not counted; a bin no pass reached is NaN. The result has
   `to_dataframe`, `summary_table` (peak rate, peak distance, baseline rate
   before the event), `summary` and `plot`.
