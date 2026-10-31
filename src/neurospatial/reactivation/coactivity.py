@@ -37,6 +37,7 @@ from neurospatial.reactivation.assemblies import (
     _n_units_from_pairs,
     _one_control_ev,
     _pairwise_correlations,
+    _selected_pairs,
     _validated_counts,
     explained_variance_reactivation,
 )
@@ -952,15 +953,7 @@ def explained_variance_contributions(
             "number of units; pass pairwise_correlations() output."
         )
     labels = resolve_unit_ids(unit_ids, n_units, context=call)
-    valid = np.ones(n_pairs, dtype=bool)
-    if pair_mask is not None:
-        mask = np.asarray(pair_mask)
-        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
-            raise ValueError(
-                f"{call}: pair_mask must be a boolean array with one entry per "
-                f"pair ({n_pairs}), got dtype {mask.dtype} and shape {mask.shape}."
-            )
-        valid &= mask
+    valid = _selected_pairs(n_pairs, None, pair_mask, call=call)
     for vector in vectors:
         valid &= np.isfinite(vector)
     n_valid = int(valid.sum())
@@ -986,11 +979,12 @@ def explained_variance_contributions(
     pair_contributions = np.full(n_pairs, np.nan)
     pair_contributions[valid] = total - without
     first, second = np.triu_indices(n_units, k=1)
-    sums = np.zeros(n_units)
-    counts = np.zeros(n_units)
-    for units in (first[valid], second[valid]):
-        np.add.at(sums, units, pair_contributions[valid])
-        np.add.at(counts, units, 1)
+    # Each pair counts toward both of its units.
+    units = np.concatenate([first[valid], second[valid]])
+    sums = np.bincount(
+        units, weights=np.tile(pair_contributions[valid], 2), minlength=n_units
+    )
+    counts = np.bincount(units, minlength=n_units)
     with np.errstate(invalid="ignore", divide="ignore"):
         unit_contributions = np.where(counts > 0, sums / counts, np.nan)
     return ExplainedVarianceContributionResult(
