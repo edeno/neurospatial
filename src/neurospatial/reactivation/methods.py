@@ -1452,6 +1452,21 @@ def _pair_correlations(counts: NDArray[np.float64]) -> NDArray[np.float64]:
     return _pairwise_correlations(counts)[0]
 
 
+def _one_control_window(
+    method: ReactivationMethod, session: _Session
+) -> NDArray[np.float64]:
+    """The method's single control window; a method error for any other count."""
+    control_windows = _windows_or_error(
+        method.control_windows, session.control, "control"
+    )
+    if len(control_windows) != 1:
+        raise _MethodError(
+            f"{method._needs_one_control} needs one control window, "
+            f"got {len(control_windows)}"
+        )
+    return control_windows[0]
+
+
 def _windows_or_error(
     rule: ReactivationWindows, epochs: NDArray[np.float64], period: str
 ) -> list[NDArray[np.float64]]:
@@ -1877,14 +1892,7 @@ def _assembly_rows(
     patterns = _detected_patterns(
         method, _template_counts(method, session), session, stream
     )
-    control_windows = _windows_or_error(
-        method.control_windows, session.control, "control"
-    )
-    if len(control_windows) != 1:
-        raise _MethodError(
-            f"an assembly method compares one control window, got {len(control_windows)}"
-        )
-    control_window = control_windows[0]
+    control_window = _one_control_window(method, session)
     control_samples = _period_samples(method, session.trains, control_window)
     template_samples = (
         _period_samples(method, session.trains, session.template)
@@ -2217,16 +2225,8 @@ def _member_cofiring_rows(
     patterns = _detected_patterns(
         method, _template_counts(method, session), session, stream
     )
-    control_windows = _windows_or_error(
-        method.control_windows, session.control, "control"
-    )
-    if len(control_windows) != 1:
-        raise _MethodError(
-            "a member co-firing method compares one control window, got "
-            f"{len(control_windows)}"
-        )
     control_counts, n_control_events = _rest_counts(
-        method, session, control_windows[0], "control"
+        method, session, _one_control_window(method, session), "control"
     )
 
     def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
