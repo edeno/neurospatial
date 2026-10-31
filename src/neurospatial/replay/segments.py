@@ -18,13 +18,13 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_choice
+from neurospatial.replay._compare import _compare
+from neurospatial.replay._inputs import _STEP_WHY, _posterior_times
 from neurospatial.replay.criteria import (
-    _bin_distance_lookup,
     _check_metric,
-    _increasing_times,
     _trajectory_metrics,
 )
 
@@ -99,22 +99,43 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
     segments: NDArray[np.int64]
     start_times: NDArray[np.float64]
     end_times: NDArray[np.float64]
-    durations: NDArray[np.float64]
-    time_bin_counts: NDArray[np.int64]
     dispersions: NDArray[np.float64]
     start_to_end_distances: NDArray[np.float64]
     path_lengths: NDArray[np.float64]
     trajectory_time_bins: NDArray[np.bool_]
-    longest: int | None
     method: str
     jump_rule: str
     metric: str
     units: str | None
-    n_time_bins: int
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
         self._own_arrays()
+
+    @property
+    def durations(self) -> NDArray[np.float64]:
+        """``end_times - start_times``, shape (n_segments,)."""
+        durations = self.end_times - self.start_times
+        durations.flags.writeable = False
+        return durations
+
+    @property
+    def time_bin_counts(self) -> NDArray[np.int64]:
+        """Rows each segment spans, ``stop - start``, shape (n_segments,)."""
+        counts = np.diff(self.segments, axis=1)[:, 0]
+        counts.flags.writeable = False
+        return counts
+
+    @property
+    def longest(self) -> int | None:
+        """Index of the segment spanning the most time bins; None without segments."""
+        counts = self.time_bin_counts
+        return int(np.argmax(counts)) if len(counts) else None
+
+    @property
+    def n_time_bins(self) -> int:
+        """Number of time bins in the event."""
+        return len(self.trajectory_time_bins)
 
     @property
     def n_segments(self) -> int:
@@ -531,7 +552,7 @@ def replay_segments(
     min_time_bins = checked["min_time_bins"]
     min_dispersion = checked["min_dispersion"]
 
-    metrics = _trajectory_metrics(
+    metrics, map_distances = _trajectory_metrics(
         env,
         posterior,
         times,
@@ -539,9 +560,11 @@ def replay_segments(
         metric=metric,
         operation=_OPERATION,
     )
-    times = _increasing_times(times, metrics.n_time_bins, _OPERATION)
+    times = _posterior_times(
+        times, metrics.n_time_bins, _OPERATION, why=_STEP_WHY, increasing=True
+    )
     n_time_bins = metrics.n_time_bins
-    distance = _distance_function(env, metrics, method)
+    distance = _distance_function(metrics, method, map_distances)
     jumps = metrics.map_jumps if method == "map" else metrics.mean_jumps
 
     valid = (
@@ -551,11 +574,11 @@ def replay_segments(
     )
     accepted = valid.copy()
     if max_spread is not None:
-        accepted &= _below(metrics.spread, max_spread)
+        accepted &= _compare(metrics.spread, "<", max_spread)
     if min_peak_probability is not None:
-        accepted &= _above(metrics.peak_probability, min_peak_probability)
+        accepted &= _compare(metrics.peak_probability, ">", min_peak_probability)
     if jump_rule == "drop_earlier":
-        accepted[:-1] &= _below(jumps, max_jump) & valid[1:]
+        accepted[:-1] &= _compare(jumps, "<", max_jump) & valid[1:]
 
     # The bin each time bin's segment continues to: the earliest accepted
     # bin within reach, or -1. Writing the farthest offset first lets the
@@ -565,7 +588,7 @@ def replay_segments(
         earlier = np.arange(n_time_bins - offset)
         later = earlier + offset
         reach = accepted[earlier] & accepted[later]
-        reach[reach] = _below(distance(earlier[reach], later[reach]), max_jump)
+        reach[reach] = _compare(distance(earlier[reach], later[reach]), "<", max_jump)
         successor[earlier[reach]] = later[reach]
 
     on_trajectory = np.zeros(n_time_bins, dtype=bool)
@@ -594,8 +617,8 @@ def replay_segments(
     ):
         last = bounds[:-1, 1] - 1
         first = bounds[1:, 0]
-        join = _below(times[first] - times[last], merge_max_time_gap) & _below(
-            distance(last, first), merge_max_distance
+        join = _compare(times[first] - times[last], "<", merge_max_time_gap) & _compare(
+            distance(last, first), "<", merge_max_distance
         )
         bounds = np.column_stack(
             [bounds[np.r_[True, ~join], 0], bounds[np.r_[~join, True], 1]]
@@ -607,7 +630,9 @@ def replay_segments(
             span = np.searchsorted(bounds[:, 0], lone, side="right") - 1
             inside = (span >= 0) & (lone < bounds[np.maximum(span, 0), 1])
             lone = lone[inside]
-            on_trajectory[lone[_below(distance(lone, lone + 1), max_jump)]] = True
+            on_trajectory[lone[_compare(distance(lone, lone + 1), "<", max_jump)]] = (
+                True
+            )
 
     starts, stops = bounds[:, 0], bounds[:, 1]
     durations = times[stops - 1] - times[starts]
@@ -617,32 +642,27 @@ def replay_segments(
     )
     keep = np.ones(len(bounds), dtype=bool)
     if min_duration is not None:
-        keep &= _at_least(durations, min_duration)
+        keep &= _compare(durations, ">=", min_duration)
     if min_time_bins is not None:
         keep &= counts >= min_time_bins
     if min_dispersion is not None:
-        keep &= _at_least(dispersions, min_dispersion)
+        keep &= _compare(dispersions, ">=", min_dispersion)
     for start, stop in bounds[~keep]:
         on_trajectory[start:stop] = False
     bounds, starts, stops = bounds[keep], starts[keep], stops[keep]
-    counts = counts[keep]
 
     return ReplaySegmentsResult(
         segments=bounds,
         start_times=times[starts],
         end_times=times[stops - 1],
-        durations=durations[keep],
-        time_bin_counts=counts,
         dispersions=dispersions[keep],
         start_to_end_distances=distance(starts, stops - 1),
         path_lengths=path_lengths[keep],
         trajectory_time_bins=on_trajectory,
-        longest=int(np.argmax(counts)) if len(counts) else None,
         method=method,
         jump_rule=jump_rule,
         metric=metrics.metric,
         units=metrics.units,
-        n_time_bins=n_time_bins,
     )
 
 
@@ -664,10 +684,16 @@ def _valid_time_bins(
     return valid
 
 
-def _distance_function(env: Environment, metrics: Any, method: str) -> Any:
+def _distance_function(
+    metrics: Any,
+    method: str,
+    map_distances: tuple[NDArray[np.float64], NDArray[np.intp]],
+) -> Any:
     """Distance between the decoded positions of time bins ``first`` and ``second``.
 
-    MAP positions use the event's metric; posterior means are Euclidean.
+    MAP positions use the event's metric, read from ``map_distances``, the
+    :func:`_bin_distance_lookup` of the MAP bins; posterior means are
+    Euclidean.
     """
     if method == "expected":
         means = metrics.mean_positions
@@ -681,7 +707,7 @@ def _distance_function(env: Environment, metrics: Any, method: str) -> Any:
             )
 
         return between_means
-    between, rows_of = _bin_distance_lookup(env, metrics.map_bins, metrics.metric)
+    between, rows_of = map_distances
 
     def between_map_bins(
         first: NDArray[np.intp], second: NDArray[np.intp]
@@ -723,29 +749,6 @@ def _per_segment(
     return dispersions, path_lengths.astype(np.float64)
 
 
-def _tolerance(threshold: float) -> float:
-    """Distance from ``threshold`` within which a value counts as equal."""
-    return ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(threshold)
-
-
-def _below(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """Strictly below ``threshold``; a value equal within tolerance is not."""
-    below: NDArray[np.bool_] = values < threshold - _tolerance(threshold)
-    return below
-
-
-def _above(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """Strictly above ``threshold``; a value equal within tolerance is not."""
-    above: NDArray[np.bool_] = values > threshold + _tolerance(threshold)
-    return above
-
-
-def _at_least(values: NDArray[np.float64], threshold: float) -> NDArray[np.bool_]:
-    """At or above ``threshold``, counting values equal within tolerance."""
-    reached: NDArray[np.bool_] = values >= threshold - _tolerance(threshold)
-    return reached
-
-
 def _checked_options(
     operation: str,
     *,
@@ -767,10 +770,7 @@ def _checked_options(
     Thresholds come back as floats and counts as ints; errors name
     ``operation``.
     """
-    if method not in _METHODS:
-        raise ValueError(
-            f"{operation}: method must be one of {_METHODS}, got {method!r}."
-        )
+    validate_choice(method, _METHODS, name="method", owner=operation)
     if jump_rule not in _JUMP_RULES:
         raise ValueError(
             _format_error(
@@ -885,11 +885,7 @@ def _optional_threshold(
 
 def _count(name: str, value: Any, *, minimum: int, operation: str) -> int:
     """An integer of at least ``minimum``."""
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, np.integer))
-        or value < minimum
-    ):
+    if not is_integer_at_least(value, minimum):
         raise ValueError(
             f"{operation}: {name} must be an integer >= {minimum}, got {value!r}."
         )

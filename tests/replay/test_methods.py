@@ -1675,7 +1675,8 @@ class TestRankOrderMethods:
             rank_order_method=DIBA_BUZSAKI_2007,
         )
         assert np.isnan(result.score) and np.isnan(result.p_value)
-        assert not result.is_replay
+        assert not result.is_replay and not any(result.criteria.values())
+        assert result.error.startswith("rank-order correlation undefined")
 
     def test_compare_scores_spikes_over_each_events_windows(self, place_code):
         env, rates = place_code
@@ -1706,7 +1707,7 @@ class TestRankOrderMethods:
             rng=0,
         )
         assert table["score"].iloc[1] == pytest.approx(expected.score)
-        with pytest.raises(ValueError, match="need \\['spike_times'\\]"):
+        with pytest.raises(ValueError, match="need spike_times=\\."):
             compare_replay_methods(
                 env,
                 [decoded],

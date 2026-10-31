@@ -36,6 +36,7 @@ every value and the choices the paper does not state.
 from __future__ import annotations
 
 import dataclasses
+import functools
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -44,20 +45,36 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.replay.correlation import weighted_correlation
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_integer_at_least,
+)
+from neurospatial.replay._compare import (
+    _check_criterion_settings,
+    _compare,
+    _criterion_label,
+)
+from neurospatial.replay.criteria import _TRAJECTORY_SCALARS
 from neurospatial.replay.methods import (
-    _COMPARISONS,
+    _SPIKE_QUANTITIES,
     FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
     RankOrderMethod,
-    ReplayCriterion,
     ReplayMethod,
 )
-from neurospatial.replay.significance import _ALTERNATIVES, _DECODING_NULLS
+from neurospatial.replay.rank_order import _spearman_rows
+from neurospatial.replay.significance import (
+    _ALTERNATIVES,
+    _NULL_SPECS,
+    _NULLS,
+    _score_specs,
+)
+from neurospatial.stats._utils import _entropy, _stream
+from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -91,35 +108,17 @@ __all__ = [
     "template_correlation_test",
 ]
 
-# Elementwise comparisons of CriterionGrid.
-_ARRAY_COMPARISONS: dict[str, Callable[[Any, Any], Any]] = {
-    "<": np.less,
-    "<=": np.less_equal,
-    ">": np.greater,
-    ">=": np.greater_equal,
-}
-# Nulls that shuffle the decoded posterior of each event.
-_POSTERIOR_NULLS = (
-    "column_cycle",
-    "column_cycle_weighted",
-    "time_bin_permutation",
-    "pseudo_event",
+# Nulls whose one draw can be shared by every event of a data set: the
+# shareable nulls of replay_significance and the rank-order cell_order.
+_SHAREABLE_NULLS = (
+    *(name for name, spec in _NULL_SPECS.items() if spec.shareable),
+    "cell_order",
 )
-_EVENT_NULLS = _POSTERIOR_NULLS + _DECODING_NULLS
-# Nulls whose one draw (a permutation of cells, a set of shifted rate maps)
-# can be shared by every event of a data set.
-_SHAREABLE_NULLS = ("unit_identity", "place_field_circular", "cell_order")
-# Posterior nulls whose shuffles are a row order and a circular shift per row.
-_ROLLING_NULLS = ("column_cycle", "column_cycle_weighted", "time_bin_permutation")
-# Posterior nulls that shift rows along a track, so need a linearized track.
-_COLUMN_CYCLE_NULLS = ("column_cycle", "column_cycle_weighted")
 # Quantities the moment-table fast path computes; the others go through
 # detect_replay.
 _FAST_QUANTITIES = (
     "score",
-    "n_active_cells",
-    "active_fraction",
-    "n_spikes",
+    *_SPIKE_QUANTITIES,
     "n_time_bins",
     "duration",
     "track_length",
@@ -212,27 +211,19 @@ class CriterionGrid:
             )
         thresholds.flags.writeable = False
         object.__setattr__(self, "thresholds", thresholds)
-        if self.comparison not in _COMPARISONS:
-            raise ValueError(
-                f"{prefix}: comparison must be one of {list(_COMPARISONS)}, got "
-                f"{self.comparison!r}."
-            )
-        if self.relative_to not in (None, "track_length"):
-            raise ValueError(
-                f"{prefix}: relative_to must be None or 'track_length', got "
-                f"{self.relative_to!r}."
-            )
-        if not isinstance(self.absolute, (bool, np.bool_)):
-            raise ValueError(
-                f"{prefix}: absolute must be True or False, got {self.absolute!r}."
-            )
+        _check_criterion_settings(
+            prefix, self.comparison, self.relative_to, self.absolute
+        )
 
     @property
     def label(self) -> str:
         """A readable form without the thresholds, such as ``"|score| >"``."""
-        name = f"|{self.quantity}|" if self.absolute else self.quantity
-        scale = " x track_length" if self.relative_to else ""
-        return f"{name} {self.comparison}{scale}"
+        return _criterion_label(
+            self.quantity,
+            self.comparison,
+            absolute=self.absolute,
+            relative_to=self.relative_to,
+        )
 
     def passes(self, table: pd.DataFrame) -> NDArray[np.bool_]:
         """Whether each row of ``table`` passes each threshold.
@@ -277,19 +268,7 @@ class CriterionGrid:
             else np.ones(len(values))
         )
         thresholds = np.atleast_1d(self.thresholds)[None, :] * scale[:, None]
-        values = np.broadcast_to(values[:, None], thresholds.shape)
-        with np.errstate(invalid="ignore"):
-            close = np.abs(values - thresholds) <= ABSOLUTE_TOLERANCE + (
-                RELATIVE_TOLERANCE * np.abs(thresholds)
-            )
-            compared = np.where(close, thresholds, values)
-            result = _ARRAY_COMPARISONS[self.comparison](compared, thresholds)
-        passed: NDArray[np.bool_] = (
-            np.asarray(result, dtype=bool)
-            & np.isfinite(values)
-            & np.isfinite(thresholds)
-        )
-        return passed
+        return _compare(values[:, None], self.comparison, thresholds)
 
 
 # --------------------------------------------------------------------------
@@ -897,7 +876,7 @@ def _dataset_values(
 ) -> pd.DataFrame:
     """:func:`dataset_values`, with the moment-table fast path optional."""
     operation = "dataset_values()"
-    _positive_integer(n_datasets, "n_datasets", operation)
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     if null is None and (n_datasets != 1 or shared):
         raise ValueError(
             f"{operation}: n_datasets and shared apply to null data sets; with "
@@ -967,18 +946,6 @@ def _dataset_values(
     return table
 
 
-def _entropy(rng: np.random.Generator | int | None) -> int:
-    """The entropy every random stream of a call derives from."""
-    if isinstance(rng, np.random.Generator):
-        return int(rng.integers(2**63))
-    return int(np.random.SeedSequence(rng).entropy)  # type: ignore[arg-type]
-
-
-def _stream(entropy: int, *key: int) -> np.random.Generator:
-    """A random stream derived from the table's entropy and ``key``."""
-    return np.random.default_rng(np.random.SeedSequence(entropy, spawn_key=key))
-
-
 # Spawn keys of the random streams: per event, shared draws, real events.
 _EVENT_KEY = 0
 _SHARED_KEY = 1
@@ -1008,11 +975,11 @@ def _replay_values(
     """The table of :func:`dataset_values` for a decoded method."""
     import pandas as pd
 
-    from neurospatial.replay.methods import _criterion_quantities
+    from neurospatial.replay.trajectory import _reusing_replay_lines
 
-    if null is not None and null not in _EVENT_NULLS:
+    if null is not None and null not in _NULLS:
         raise ValueError(
-            f"{operation}: null must be None or one of {list(_EVENT_NULLS)} for a "
+            f"{operation}: null must be None or one of {list(_NULLS)} for a "
             f"replay method, got {null!r}; 'cell_order' is a rank-order null."
         )
     if template is not None:
@@ -1028,21 +995,14 @@ def _replay_values(
         )
     decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
-    scalars = [
-        name
-        for name in _criterion_quantities()
-        if name not in ("score", "n_active_cells", "active_fraction", "n_spikes")
-        and not name.startswith("segment")
-        and name not in ("template_fraction",)
-    ]
-    unknown = [name for name in quantities if name not in scalars]
+    unknown = [name for name in quantities if name not in _TRAJECTORY_SCALARS]
     if unknown:
         raise ValueError(
             f"{operation}: quantities {unknown} are not scalars of "
-            f"TrajectoryMetrics; choose from {scalars}."
+            f"TrajectoryMetrics; choose from {list(_TRAJECTORY_SCALARS)}."
         )
-    variant, labels = _measuring_method(method, quantities)
-    if counts is None and _counts_spikes(variant):
+    quantity_columns = _measured_quantities(method, quantities)
+    if counts is None and method._needs_spike_counts:
         raise ValueError(
             _format_error(
                 f"{operation}: method {method.name!r} needs spike_counts.",
@@ -1055,7 +1015,7 @@ def _replay_values(
         )
     options_of = _null_options_of(null, null_options, operation)
     track_length = _track_length_or_nan(env)
-    columns = list(dict.fromkeys(labels.values()))
+    columns = list(quantity_columns)
     if counts is not None and "n_active_cells" not in columns:
         columns.append("n_active_cells")
     rows: dict[str, list[NDArray[Any]]] = {
@@ -1081,8 +1041,8 @@ def _replay_values(
                 np.asarray(event.posterior),
                 np.asarray(event.times),
                 event_counts,
-                variant,
-                labels,
+                method,
+                quantity_columns,
                 _stream(entropy, _REAL_KEY, index),
             )
             add(index, np.zeros(1, dtype=np.intp), measured)
@@ -1102,7 +1062,7 @@ def _replay_values(
             entropy=entropy,
             operation=operation,
         )
-        use_tables = fast and _fast_path_applies(variant, null, labels)
+        use_tables = fast and _fast_path_applies(method, null, quantity_columns)
         datasets = np.arange(n_datasets, dtype=np.intp)
         for index, event in enumerate(decoded):
             event_counts = None if counts is None else counts[index]
@@ -1111,7 +1071,7 @@ def _replay_values(
             if use_tables and np.isfinite(posterior).all():
                 draws = context.rolls(index, posterior)
                 values = _MomentTables(context, posterior, times, event_counts).values(
-                    draws, variant, labels
+                    draws, method, quantity_columns
                 )
                 add(index, datasets, values)
                 continue
@@ -1119,14 +1079,23 @@ def _replay_values(
                 name: [] for name in ("score", *columns)
             }
             stream = _stream(entropy, _EVENT_KEY, index, 1)
-            for shuffled, shuffled_counts in context.shuffles(
-                index, posterior, times, event_counts
-            ):
-                measured = _measure(
-                    env, shuffled, times, shuffled_counts, variant, labels, stream
-                )
-                for name in measured_rows:
-                    measured_rows[name].append(measured.get(name, np.nan))
+            # The shuffles of an event share its times, so a replay line
+            # search is built once for all of them.
+            with _reusing_replay_lines():
+                for shuffled, shuffled_counts in context.shuffles(
+                    index, posterior, event_counts
+                ):
+                    measured = _measure(
+                        env,
+                        shuffled,
+                        times,
+                        shuffled_counts,
+                        method,
+                        quantity_columns,
+                        stream,
+                    )
+                    for name in measured_rows:
+                        measured_rows[name].append(measured.get(name, np.nan))
             add(
                 index,
                 datasets,
@@ -1143,61 +1112,13 @@ def _replay_values(
     return table
 
 
-def _measuring_method(
-    method: ReplayMethod, quantities: Sequence[str]
-) -> tuple[ReplayMethod, dict[str, str]]:
-    """The method without its shuffle test, and each criterion's quantity.
+def _measured_quantities(method: ReplayMethod, quantities: Sequence[str]) -> list[str]:
+    """The quantities of the method's criteria, then the further ``quantities``.
 
-    The extra ``quantities`` become criteria every value meets, so that
-    :func:`detect_replay` measures them on the method's rows. Returns the
-    method and a mapping from criterion label to the quantity's column
-    (``"score"`` criteria are reported as the score).
+    Each is named once; the score has its own column.
     """
-    criteria = list(method.criteria)
-    present = {criterion.quantity for criterion in criteria}
-    for name in quantities:
-        if name not in present:
-            criteria.append(ReplayCriterion(name, "<=", float(np.finfo(float).max)))
-            present.add(name)
-    labels = {
-        criterion.label: criterion.quantity
-        for criterion in criteria
-        if criterion.quantity != "score"
-    }
-    if not criteria and method.segmentation is None:
-        # A criterion every event meets, so the method tests something.
-        criteria.append(ReplayCriterion("n_time_bins", ">=", 0))
-    variant = dataclasses.replace(
-        method,
-        nulls=(),
-        null_options={},
-        tested_quantities={},
-        template_choice=None
-        if method.template_choice in ("smallest_p", "max_score")
-        else method.template_choice,
-        criteria=tuple(criteria),
-    )
-    # Keep the first label of each quantity.
-    first: dict[str, str] = {}
-    for label, quantity in labels.items():
-        first.setdefault(quantity, label)
-    return variant, {label: quantity for quantity, label in first.items()}
-
-
-def _counts_spikes(method: ReplayMethod) -> bool:
-    """Whether ``detect_replay`` needs spike counts to apply ``method``."""
-    segmentation = method.segmentation
-    return (
-        method.empty_time_bins != "keep"
-        or any(
-            criterion.quantity in ("n_active_cells", "active_fraction", "n_spikes")
-            for criterion in method.criteria
-        )
-        or (
-            segmentation is not None
-            and segmentation.min_active_cells_per_time_bin is not None
-        )
-    )
+    names = [c.quantity for c in method.criteria if c.quantity != "score"]
+    return list(dict.fromkeys([*names, *quantities]))
 
 
 def _measure(
@@ -1205,33 +1126,48 @@ def _measure(
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     counts: NDArray[np.int64] | None,
-    variant: ReplayMethod,
-    labels: Mapping[str, str],
+    method: ReplayMethod,
+    measured: Sequence[str],
     rng: np.random.Generator,
 ) -> dict[str, float]:
-    """One event's score and quantities, as compare_replay_methods measures it."""
-    from neurospatial.replay.methods import detect_replay
+    """One event's score and ``measured`` quantities, as compare_replay_methods measures it.
+
+    The event is measured as :func:`~neurospatial.replay.detect_replay`
+    measures it before its shuffle test. Without a segment, or with an
+    undefined score that the method thresholds, every value is NaN.
+    """
+    from neurospatial.replay.methods import (
+        ReplayDetectionResult,
+        _detection_event,
+        _event_quantities,
+        _measure_event,
+        _scorable_times,
+    )
 
     values: dict[str, float] = {}
     if counts is not None:
         values["n_active_cells"] = float(np.sum(np.asarray(counts).sum(axis=0) > 0))
-    usable = times
-    if variant.empty_time_bins != "keep" and counts is not None:
-        usable = times[np.asarray(counts).sum(axis=1) > 0]
-    if np.unique(usable).size < 2:
+    if not _scorable_times(method, times, counts):
         values.pop("n_active_cells", None)
         return values
-    result = detect_replay(
+    event = _detection_event(
         env,
         posterior,
         times,
-        replay_method=variant,
+        method,
         spike_counts=counts,
-        rng=rng,
+        encoding_models=None,
+        dt=None,
+        prior=None,
+        template=None,
+        pseudo_event_pool=None,
+        valid_time_bins=None,
     )
-    values["score"] = float(result.score)
-    for label, quantity in labels.items():
-        values[quantity] = float(result.values[label])
+    result = _measure_event(method, event, rng, test=False)
+    if isinstance(result, ReplayDetectionResult):
+        values.update(dict.fromkeys(["score", *measured], np.nan))
+    else:
+        values.update(_event_quantities(["score", *measured], result))
     return values
 
 
@@ -1255,7 +1191,7 @@ def _decoded_events(
     not compare it.
     """
     from neurospatial.decoding import DecodingResult
-    from neurospatial.replay.methods import _environment_mismatch
+    from neurospatial.replay.methods import _check_decoded_environment
 
     decoded = list(events)
     if not decoded:
@@ -1278,17 +1214,7 @@ def _decoded_events(
                 f"{operation}: event {index} has no times; decode with times=."
             )
         if not isinstance(env, Mapping):
-            mismatch = _environment_mismatch(env, event.env)
-            if mismatch is not None:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: event {index} was decoded on an "
-                        f"environment that differs from env in {mismatch}.",
-                        why="distances, jumps and positions would be read on "
-                        "bins the event was not decoded on",
-                        fix="pass the environment the events were decoded on",
-                    )
-                )
+            _check_decoded_environment(env, event.env, index, operation)
     return decoded
 
 
@@ -1339,22 +1265,47 @@ def _null_options_of(
     return checked.get(null, {})
 
 
+@dataclass(eq=False)
 class _NullContext:
-    """What every event's shuffles need: inputs, options and shared draws."""
+    """What every event's shuffles need: inputs, options and shared draws.
 
-    def __init__(self) -> None:
-        self.env: Any = None
-        self.null = ""
-        self.options: dict[str, Any] = {}
-        self.n_datasets = 0
-        self.entropy = 0
-        self.order: NDArray[np.intp] = np.empty(0, dtype=np.intp)
-        self.probabilities: NDArray[np.float64] | None = None
-        self.pool: NDArray[np.float64] | None = None
-        self.decoder: Any = None
-        self.shared_draws: list[Any] | None = None
-        self._environment_tables: dict[str, Any] | None = None
+    Attributes
+    ----------
+    env : Environment
+        The environment the events were decoded on.
+    null : str
+        The null.
+    options : dict[str, Any]
+        The null's options, with defaults.
+    n_datasets : int
+        Null data sets; each shuffles every event once.
+    entropy : int
+        The entropy every event's random stream derives from.
+    order : NDArray[np.intp], shape (n_bins,)
+        Bin numbers in track order for the nulls that shift rows along the
+        track; otherwise bin numbering.
+    probabilities : NDArray[np.float64] or None, shape (n_bins,)
+        Where the weighted column cycle puts each peak, in track order.
+    pool : NDArray[np.float64] or None, shape (n_pool, n_bins)
+        The checked pool of the nulls that draw from it.
+    decoder : _EventDecoder or None
+        Decodes the events again, for the nulls that do.
+    shared_draws : list or None
+        One draw per data set that every event shares (``shared=True``).
+    """
 
+    env: Any
+    null: str
+    options: dict[str, Any]
+    n_datasets: int
+    entropy: int
+    order: NDArray[np.intp]
+    probabilities: NDArray[np.float64] | None = None
+    pool: NDArray[np.float64] | None = None
+    decoder: Any = None
+    shared_draws: list[Any] | None = None
+
+    @functools.cached_property
     def environment_tables(self) -> dict[str, Any]:
         """Per-environment tables of the fast path, computed once.
 
@@ -1364,24 +1315,22 @@ class _NullContext:
         and each bin's position along an unbranched track (None on a
         branched one).
         """
-        if self._environment_tables is None:
-            from neurospatial.environment import _track_extents
-            from neurospatial.replay.correlation import _track_bin_centers
-            from neurospatial.replay.criteria import _along_track, _bin_distance_lookup
+        from neurospatial.environment import _track_extents
+        from neurospatial.replay.correlation import _track_bin_centers
+        from neurospatial.replay.criteria import _along_track, _bin_distance_lookup
 
-            env = self.env
-            positions = _track_bin_centers(env, "dataset_values()")
-            extents = _track_extents(env)
-            assert extents is not None  # _track_bin_centers refused other envs
-            starts, stops = (np.asarray(values) for values in extents)
-            between, _ = _bin_distance_lookup(env, np.arange(env.n_bins), "geodesic")
-            self._environment_tables = {
-                "positions": positions - (positions.min() + positions.max()) / 2.0,
-                "distances": between,
-                "track_length": float(np.sum(stops - starts)),
-                "along": _along_track(env, starts, stops),
-            }
-        return self._environment_tables
+        env = self.env
+        positions = _track_bin_centers(env, "dataset_values()")
+        extents = _track_extents(env)
+        assert extents is not None  # _track_bin_centers refused other envs
+        starts, stops = (np.asarray(values) for values in extents)
+        between, _ = _bin_distance_lookup(env, np.arange(env.n_bins), "geodesic")
+        return {
+            "positions": positions - (positions.min() + positions.max()) / 2.0,
+            "distances": between,
+            "track_length": float(np.sum(stops - starts)),
+            "along": _along_track(env, starts, stops),
+        }
 
     @classmethod
     def build(
@@ -1408,18 +1357,15 @@ class _NullContext:
         )
         from neurospatial.replay.significance import (
             _EventDecoder,
+            _missing_decoding_inputs,
+            _refuse_missing_decoding_inputs,
             _require_contiguous_time_bins,
             _validated_pool,
         )
 
-        context = cls()
-        context.env = env
-        context.null = null
-        context.options = options
-        context.n_datasets = n_datasets
-        context.entropy = entropy
-        if null in _COLUMN_CYCLE_NULLS:
-            context.order = _track_order(
+        spec = _NULL_SPECS[null]
+        if spec.along_track:
+            order = _track_order(
                 env,
                 np.asarray(events[0].posterior),
                 operation,
@@ -1428,45 +1374,29 @@ class _NullContext:
         else:
             # The other nulls (permuting time bins, drawing pool rows) need
             # no order along a track: the bins keep their numbering.
-            context.order = np.arange(env.n_bins)
-        if null in ("pseudo_event", "column_cycle_weighted"):
-            pool = (
+            order = np.arange(env.n_bins)
+        pool = probabilities = decoder = shared_draws = None
+        if spec.needs == "pool":
+            pool = _validated_pool(
                 np.vstack([np.asarray(event.posterior) for event in events])
                 if pseudo_event_pool is None
-                else pseudo_event_pool
+                else pseudo_event_pool,
+                env,
             )
-            context.pool = _validated_pool(pool, env)
             if null == "column_cycle_weighted":
-                context.probabilities = _peak_probabilities(
+                probabilities = _peak_probabilities(
                     env,
-                    context.order,
-                    context.pool.mean(axis=0),
+                    order,
+                    pool.mean(axis=0),
                     options.get("edge_exclusion", 0.0),
                     operation,
                 )
-        if null in _DECODING_NULLS:
-            missing = [
-                name
-                for name, value in (
-                    ("spike_counts", counts),
-                    ("encoding_models", encoding_models),
-                    ("dt", dt),
-                )
-                if value is None
-            ]
+        if spec.needs == "decoding":
+            missing = _missing_decoding_inputs(counts, encoding_models, dt)
             if missing:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: the {null} null decodes the events again "
-                        f"and needs {missing}.",
-                        why="it decodes shuffled spike counts or shifted rate "
-                        "maps the way the events were decoded",
-                        fix="pass spike_counts, encoding_models and dt (and "
-                        "prior if the decode used one)",
-                    )
-                )
+                _refuse_missing_decoding_inputs(operation, [null], missing)
             assert dt is not None and counts is not None
-            if null in ("spike_train_circular", "spike_time_uniform"):
+            if spec.spreads_spikes:
                 for event in events:
                     _require_contiguous_time_bins(
                         event.times,
@@ -1474,7 +1404,7 @@ class _NullContext:
                         [null],
                         overlap=null == "spike_time_uniform",
                     )
-            context.decoder = _EventDecoder(env, encoding_models, dt, prior, None)
+            decoder = _EventDecoder(env, encoding_models, dt, prior, None)
             if shared and options.get("active_only", False):
                 raise ValueError(
                     f"{operation}: shared=True permutes every cell once per data "
@@ -1485,14 +1415,23 @@ class _NullContext:
                 generator = _stream(entropy, _SHARED_KEY)
                 if null == "unit_identity":
                     n_cells = np.asarray(counts[0]).shape[1]
-                    context.shared_draws = [
+                    shared_draws = [
                         generator.permutation(n_cells) for _ in range(n_datasets)
                     ]
                 else:
-                    context.shared_draws = list(
-                        context.decoder.shifted_models(n_datasets, generator)
-                    )
-        return context
+                    shared_draws = list(decoder.shifted_models(n_datasets, generator))
+        return cls(
+            env,
+            null,
+            options,
+            n_datasets,
+            entropy,
+            order,
+            probabilities=probabilities,
+            pool=pool,
+            decoder=decoder,
+            shared_draws=shared_draws,
+        )
 
     def rolls(
         self, index: int, posterior: NDArray[np.float64]
@@ -1526,28 +1465,23 @@ class _NullContext:
         self,
         index: int,
         posterior: NDArray[np.float64],
-        times: NDArray[np.float64],
         counts: NDArray[np.int64] | None,
     ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64] | None]]:
         """Each null data set's shuffle of one event, with its spike counts."""
         from neurospatial.replay.nulls import (
+            _roll_along,
             shuffle_cell_identity,
             shuffle_spike_counts_circular,
             shuffle_spike_counts_uniform,
         )
         from neurospatial.replay.significance import _require_reproducible_decode
 
-        if self.null in _ROLLING_NULLS:
+        if _NULL_SPECS[self.null].rolls:
             rows, shifts = self.rolls(index, posterior)
             along = posterior[:, self.order]
-            n_bins = len(self.order)
-            columns = np.arange(n_bins)
             for k in range(self.n_datasets):
                 shuffled = np.array(posterior, dtype=np.float64)
-                shuffled[:, self.order] = along[rows[k]][
-                    np.arange(len(posterior))[:, None],
-                    (columns[None, :] - shifts[k][:, None]) % n_bins,
-                ]
+                shuffled[:, self.order] = _roll_along(along[rows[k]], shifts[k])
                 yield (
                     shuffled,
                     None if counts is None else np.asarray(counts)[rows[k]],
@@ -1582,8 +1516,7 @@ class _NullContext:
                         rng=generator,
                     )
                 )
-            for shuffled_counts in permuted:
-                yield decoder.decode(shuffled_counts), shuffled_counts
+            yield from decoder.decode_each(permuted)
         elif self.null == "place_field_circular":
             models_of = (
                 iter(self.shared_draws)
@@ -1598,25 +1531,26 @@ class _NullContext:
                 if self.null == "spike_train_circular"
                 else shuffle_spike_counts_uniform
             )
-            for shuffled_counts in shuffle(
-                event_counts, n_shuffles=self.n_datasets, rng=generator
-            ):
-                yield decoder.decode(shuffled_counts), shuffled_counts
+            yield from decoder.decode_each(
+                shuffle(event_counts, n_shuffles=self.n_datasets, rng=generator)
+            )
 
 
 def _fast_path_applies(
-    variant: ReplayMethod, null: str, labels: Mapping[str, str]
+    method: ReplayMethod, null: str, measured: Sequence[str]
 ) -> bool:
     """Whether every value of these shuffles follows from moment tables."""
-    options = dict(variant.score_options)
+    options = dict(method.score_options)
+    spec = None if method.score is None else _score_specs().get(method.score)
+    tabulated = None if spec is None else spec.moment_tables
     return (
-        null in _ROLLING_NULLS
-        and variant.score is weighted_correlation
-        and set(options) <= {"row_normalization"}
-        and options.get("row_normalization", "per_time_bin") == "per_time_bin"
-        and variant.segmentation is None
-        and variant.empty_time_bins == "keep"
-        and all(quantity in _FAST_QUANTITIES for quantity in labels.values())
+        _NULL_SPECS[null].rolls
+        and tabulated is not None
+        and set(options) <= set(tabulated)
+        and all(options.get(name, value) == value for name, value in tabulated.items())
+        and method.segmentation is None
+        and method.empty_time_bins == "keep"
+        and all(quantity in _FAST_QUANTITIES for quantity in measured)
     )
 
 
@@ -1633,6 +1567,10 @@ class _MomentTables:
     difference of large numbers loses precision.
     """
 
+    # Entries of each (n_time, shifts, n_bins) temporary, about 8 MB; a
+    # chunk of shifts holds about six at once.
+    _TABLE_VALUES = 1_000_000
+
     def __init__(
         self,
         context: _NullContext,
@@ -1643,7 +1581,7 @@ class _MomentTables:
         from neurospatial.decoding import map_bin
 
         env = context.env
-        tables = context.environment_tables()
+        tables = context.environment_tables
         order = context.order
         n_bins = len(order)
         self.tables = tables
@@ -1658,36 +1596,49 @@ class _MomentTables:
         along = posterior[:, order]  # (n_time, n_bins), in track order
         mass = along.sum(axis=1)
         self.mass = mass
-        index = (np.arange(n_bins)[None, :] - self.shifts[:, None]) % n_bins
-        rolled = along[:, index]  # (n_time, n_shifts, n_bins)
         positions = tables["positions"][order]
-        with np.errstate(invalid="ignore", divide="ignore"):
-            weights = np.where(
-                mass[:, None, None] > 0, rolled / mass[:, None, None], 0.0
+        n_time, n_shifts = len(along), len(self.shifts)
+        self.mean = np.empty((n_time, n_shifts))
+        self.variance = np.empty((n_time, n_shifts))
+        self.maps = np.empty((n_time, n_shifts), dtype=np.intp)
+        self.peaks = np.empty((n_time, n_shifts))
+        # Shifts a chunk at a time, so each (n_time, chunk, n_bins)
+        # temporary stays within the budget.
+        step = max(1, self._TABLE_VALUES // max(n_time * n_bins, 1))
+        for first in range(0, n_shifts, step):
+            shifts = self.shifts[first : first + step]
+            columns = slice(first, first + len(shifts))
+            index = (np.arange(n_bins)[None, :] - shifts[:, None]) % n_bins
+            rolled = along[:, index]  # (n_time, chunk, n_bins)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                weights = np.where(
+                    mass[:, None, None] > 0, rolled / mass[:, None, None], 0.0
+                )
+            mean = weights @ positions
+            self.mean[:, columns] = mean
+            self.variance[:, columns] = np.einsum(
+                "tsb,tsb->ts",
+                weights,
+                (positions[None, None, :] - mean[..., None]) ** 2,
             )
-        mean = weights @ positions
-        self.mean = mean
-        self.variance = np.einsum(
-            "tsb,tsb->ts", weights, (positions[None, None, :] - mean[..., None]) ** 2
-        )
-        # The MAP bin of each shifted row, as trajectory_metrics finds it: on
-        # the renormalized row, in bin numbering.
-        n_time, n_shifts, _ = rolled.shape
-        in_bins = np.empty((n_time * n_shifts, env.n_bins))
-        in_bins[:, order] = rolled.reshape(n_time * n_shifts, n_bins)
-        maps = np.asarray(
-            map_bin(env, in_bins / in_bins.sum(axis=1, keepdims=True))
-        ).reshape(n_time, n_shifts)
-        self.maps = maps
-        self.peaks = in_bins[np.arange(n_time * n_shifts), maps.ravel()].reshape(
-            n_time, n_shifts
-        )
+            # The MAP bin of each shifted row, as trajectory_metrics finds it:
+            # on the renormalized row, in bin numbering.
+            n_rows = n_time * len(shifts)
+            in_bins = np.empty((n_rows, env.n_bins))
+            in_bins[:, order] = rolled.reshape(n_rows, n_bins)
+            maps = np.asarray(
+                map_bin(env, in_bins / in_bins.sum(axis=1, keepdims=True))
+            )
+            self.maps[:, columns] = maps.reshape(n_time, len(shifts))
+            self.peaks[:, columns] = in_bins[np.arange(n_rows), maps].reshape(
+                n_time, len(shifts)
+            )
 
     def values(
         self,
         draws: tuple[NDArray[np.intp], NDArray[np.intp]],
-        variant: ReplayMethod,
-        labels: Mapping[str, str],
+        method: ReplayMethod,
+        measured: Sequence[str],
     ) -> dict[str, NDArray[np.float64]]:
         """The score and quantities of each null data set's shuffle of the event.
 
@@ -1695,13 +1646,13 @@ class _MomentTables:
         including NaN criterion values where a thresholded score is
         undefined.
         """
-        from neurospatial.replay.trajectory import _SCORE_DECIMALS
+        from neurospatial.replay.correlation import _finish_correlation
 
         rows, shifts = draws
         n_datasets, n_time = rows.shape
         if len(self.shifts) == 1:
             shifts = np.zeros_like(shifts)
-        needed = list(dict.fromkeys(labels.values()))
+        needed = list(measured)
         constant: dict[str, float] = {}
         if self.counts is not None:
             counts = np.asarray(self.counts)
@@ -1729,16 +1680,12 @@ class _MomentTables:
         covariance = np.sum(time_dev * mass * deviation, axis=1) / total
         var_time = np.sum(time_mass * time_dev**2, axis=1)
         var_position = np.sum(mass * (variance + deviation**2), axis=1) / total
-        eps = np.finfo(np.float64).eps
-        with np.errstate(invalid="ignore", divide="ignore"):
-            correlation = covariance / np.sqrt(var_time * var_position)
-        varies = (var_time > eps * float(np.ptp(times)) ** 2) & (
-            var_position > eps * float(np.ptp(self.tables["positions"])) ** 2
-        )
-        score = np.where(
-            varies,
-            np.clip(np.round(correlation, _SCORE_DECIMALS), -1.0, 1.0),
-            np.nan,
+        score = _finish_correlation(
+            covariance,
+            var_time,
+            var_position,
+            float(np.ptp(times)),
+            float(np.ptp(self.tables["positions"])),
         )
         values: dict[str, NDArray[np.float64]] = {"score": score}
         if "n_active_cells" in constant:
@@ -1765,7 +1712,7 @@ class _MomentTables:
                     if along is None
                     else np.ptp(along[maps], axis=1)
                 )
-        if any(c.quantity == "score" for c in variant.criteria):
+        if any(c.quantity == "score" for c in method.criteria):
             # An undefined score gives no criterion values (detect_replay).
             undefined = ~np.isfinite(score)
             for quantity in needed:
@@ -1801,9 +1748,11 @@ def _rank_order_values(
     from neurospatial._spikes import as_spike_trains
     from neurospatial.replay.rank_order import (
         _event_pairs,
-        _field_positions,
+        _require_same_cells,
         _result,
-        _supported_rates,
+        _spikes_by_window,
+        _template_fields,
+        _template_items,
     )
 
     if null not in (None, "cell_order"):
@@ -1835,40 +1784,15 @@ def _rank_order_values(
             )
         )
     windows = _event_windows(env, events, dt, operation)
-    if isinstance(encoding_models, Mapping):
-        names: list[str | None] = list(encoding_models)
-        if template is not None:
-            if template not in encoding_models:
-                raise ValueError(
-                    f"{operation}: template {template!r} is not one of "
-                    f"{list(encoding_models)}."
-                )
-            names = [template]
-    else:
-        if template is not None:
-            raise ValueError(
-                f"{operation}: template={template!r} needs a mapping of rate maps."
-            )
-        names = [None]
+    items = _template_items(env, encoding_models, template, operation)
     trains = as_spike_trains(spike_times)
     templates = []
-    for name in names:
-        template_env = env[name] if isinstance(env, Mapping) else env
-        rates = encoding_models if name is None else encoding_models[name]
-        _field_positions(template_env, rates, method.field_order, operation)
-        masked = _supported_rates(rates)
-        if method.min_peak_rate is not None:
-            peak = np.where(np.isfinite(masked), masked, 0.0).max(axis=1)
-            masked = np.where((peak >= method.min_peak_rate)[:, None], masked, np.nan)
-        positions = _field_positions(
-            template_env, masked, method.field_order, operation
+    for name, template_env, rates in items:
+        masked, positions = _template_fields(
+            template_env, rates, method.field_order, method.min_peak_rate, operation
         )
         templates.append((name, template_env, masked, positions))
-        if len(positions) != len(trains):
-            raise ValueError(
-                f"{operation}: spike_times has {len(trains)} cells but the rate "
-                f"maps have {len(positions)}."
-            )
+        _require_same_cells(len(trains), len(positions), operation)
     permutations = None
     if shared:
         generator = _stream(entropy, _SHARED_KEY)
@@ -1881,8 +1805,9 @@ def _rank_order_values(
         "n_active_cells": [],
         "active_fraction": [],
     }
-    for index, (start, stop) in enumerate(windows):
-        in_event = [train[(train >= start) & (train < stop)] for train in trains]
+    for index, ((start, stop), in_event) in enumerate(
+        zip(windows, _spikes_by_window(trains, windows), strict=True)
+    ):
         for slot, (name, template_env, masked, positions) in enumerate(templates):
             n_template = max(int(np.isfinite(positions).sum()), 1)
             if null is None:
@@ -1896,7 +1821,12 @@ def _rank_order_values(
                     min_active_cells=method.min_active_cells,
                     operation=operation,
                 )
-                observed = _result(pairs, method.spike_statistic, method.field_order)
+                observed = _result(
+                    pairs,
+                    method.spike_statistic,
+                    method.field_order,
+                    analytic_p_value=False,
+                )
                 scores = np.array([observed.score])
                 active = np.array([observed.n_active_cells])
                 datasets = np.zeros(1, dtype=np.intp)
@@ -1919,7 +1849,7 @@ def _rank_order_values(
                 np.asarray(active, dtype=np.float64) / n_template
             )
     table = pd.DataFrame({name: np.concatenate(parts) for name, parts in rows.items()})
-    if names == [None]:
+    if not isinstance(encoding_models, Mapping):
         table = table.drop(columns="template")
     if not any(c.quantity == "active_fraction" for c in method.criteria):
         table = table.drop(columns="active_fraction")
@@ -1938,7 +1868,7 @@ def _event_windows(
         and len(events)
         and not hasattr(events[0], "posterior")
     ):
-        from neurospatial.replay.calibration import _checked_intervals
+        from neurospatial.replay._inputs import _checked_intervals
 
         windows = _checked_intervals(events, operation)
         return [(float(a), float(b)) for a, b in windows]
@@ -1952,10 +1882,9 @@ def _event_windows(
                 fix="pass dt, or the events as (n_events, 2) intervals",
             )
         )
-    return [
-        (float(times[0]) - dt / 2, float(times[-1]) + dt / 2)
-        for times in (np.asarray(event.times) for event in decoded)
-    ]
+    from neurospatial.replay.methods import _spike_window
+
+    return [_spike_window(np.asarray(event.times), dt) for event in decoded]
 
 
 def _permuted_rank_scores(
@@ -1977,30 +1906,15 @@ def _permuted_rank_scores(
 
     Returns the correlations and the active cells, each (n_datasets,).
     """
+    from neurospatial.replay.rank_order import _pooled_spikes
+
     spiking = np.array(
         [cell for cell, spikes in enumerate(in_event) if spikes.size], dtype=np.intp
     )
     if permutations is None:
         # Only the active template cells take part; their number is fixed.
         spiking = spiking[np.isfinite(positions[spiking])]
-    if method.spike_statistic == "all_spikes":
-        times = (
-            np.concatenate([in_event[cell] for cell in spiking])
-            if spiking.size
-            else np.empty(0)
-        )
-        cell_of = np.repeat(
-            np.arange(spiking.size), [in_event[cell].size for cell in spiking]
-        )
-    else:
-        summaries: dict[str, Callable[..., Any]] = {
-            "first": np.min,
-            "median": np.median,
-            "mean": np.mean,
-        }
-        summarize = summaries[method.spike_statistic]
-        times = np.array([summarize(in_event[cell]) for cell in spiking], dtype=float)
-        cell_of = np.arange(spiking.size)
+    times, cell_of = _pooled_spikes(in_event, spiking, method.spike_statistic)
     if permutations is None:
         order = np.argsort(generator.random((n_datasets, spiking.size)), axis=1)
         fields = positions[spiking][order]
@@ -2018,25 +1932,6 @@ def _permuted_rank_scores(
         keep = finite[k][cell_of]
         scores[k] = _spearman_rows(fields[k][cell_of][keep][None, :], times[keep])[0]
     return scores, n_active
-
-
-def _spearman_rows(
-    x: NDArray[np.float64], values: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Spearman correlation of each row of ``x`` with ``values``.
-
-    Average ranks for ties; NaN where a row, or ``values``, does not vary.
-    """
-    from scipy import stats
-
-    v_ranks = stats.rankdata(values)
-    v_dev = v_ranks - v_ranks.mean()
-    x_ranks = stats.rankdata(x, axis=1)
-    x_dev = x_ranks - x_ranks.mean(axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        rho = (x_dev @ v_dev) / np.sqrt((x_dev**2).sum(axis=1) * (v_dev**2).sum())
-    varies = (np.ptp(x, axis=1) > 0) & (np.ptp(values) > 0)
-    return np.where(varies, rho, np.nan)
 
 
 # --------------------------------------------------------------------------
@@ -2129,11 +2024,8 @@ def shuffle_events(
     [0, 1, 2, 3, 4]
     """
     operation = "shuffle_events()"
-    _positive_integer(n_datasets, "n_datasets", operation)
-    if null not in _EVENT_NULLS:
-        raise ValueError(
-            f"{operation}: null must be one of {list(_EVENT_NULLS)}, got {null!r}."
-        )
+    validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
+    validate_choice(null, _NULLS, name="null", owner=operation)
     from neurospatial.decoding import DecodingResult
 
     decoded = _decoded_events(env, events, operation)
@@ -2161,10 +2053,7 @@ def shuffle_events(
         event_counts = None if counts is None else counts[index]
         for k, (posterior, new_counts) in enumerate(
             context.shuffles(
-                index,
-                np.asarray(event.posterior, dtype=np.float64),
-                np.asarray(event.times),
-                event_counts,
+                index, np.asarray(event.posterior, dtype=np.float64), event_counts
             )
         ):
             posteriors[k].append(
@@ -2294,11 +2183,7 @@ def dataset_test(
                 fix="pass criteria=[CriterionGrid(...)] or statistic=lambda table: ...",
             )
         )
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if "dataset" not in null_table:
         raise ValueError(
             _format_error(
@@ -2392,15 +2277,7 @@ def dataset_test(
         below = np.sum(null_statistics < observed_statistic, axis=0)
         n_observed = len(observed)
         labels, thresholds = (), ()
-    p_greater = (1.0 + greater) / (1.0 + n_datasets)
-    p_less = (1.0 + less) / (1.0 + n_datasets)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else np.minimum(2.0 * np.minimum(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_datasets, alternative)
     percentile = 100.0 * below / n_datasets
 
     def scalar_or_array(values: Any) -> Any:
@@ -2548,13 +2425,8 @@ def distribution_test(
 
     operation = "distribution_test()"
     tests = ("ks", "rank_sum", "levene")
-    if test not in tests:
-        raise ValueError(f"{operation}: test must be one of {tests}, got {test!r}.")
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_choice(test, tests, name="test", owner=operation)
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if test == "levene" and alternative != "two-sided":
         raise ValueError(
             _format_error(
@@ -2681,24 +2553,17 @@ def relative_rank_template(
     from scipy import stats
 
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.calibration import _checked_intervals
+    from neurospatial.replay._inputs import _checked_intervals
+    from neurospatial.replay.rank_order import _SPIKE_SUMMARIES
 
     operation = "relative_rank_template()"
-    statistics: dict[str, Callable[..., Any]] = {
-        "mean": np.mean,
-        "first": np.min,
-        "median": np.median,
-    }
-    if spike_statistic not in statistics:
-        raise ValueError(
-            f"{operation}: spike_statistic must be one of {list(statistics)}, got "
-            f"{spike_statistic!r}."
-        )
-    if (
-        isinstance(min_active_cells, bool)
-        or not isinstance(min_active_cells, (int, np.integer))
-        or min_active_cells < 2
-    ):
+    validate_choice(
+        spike_statistic,
+        tuple(_SPIKE_SUMMARIES),
+        name="spike_statistic",
+        owner=operation,
+    )
+    if not is_integer_at_least(min_active_cells, 2):
         raise ValueError(
             f"{operation}: min_active_cells must be an integer of at least 2, got "
             f"{min_active_cells!r}; a relative rank needs two active cells."
@@ -2714,7 +2579,7 @@ def relative_rank_template(
         if spike_statistic == "first":
             firing[cell, active] = train[first[active]]
         else:
-            summarize = statistics[spike_statistic]
+            summarize = _SPIKE_SUMMARIES[spike_statistic]
             firing[cell, active] = [
                 summarize(train[first[f] : last[f]]) for f in active
             ]
@@ -2829,12 +2694,8 @@ def template_correlation_test(
     """
 
     operation = "template_correlation_test()"
-    _positive_integer(n_shuffles, "n_shuffles", operation)
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
-            f"{alternative!r}."
-        )
+    validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=operation)
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if len(templates) != len(reference_templates) or not len(templates):
         raise ValueError(
             f"{operation}: templates and reference_templates must pair one to one "
@@ -2888,15 +2749,7 @@ def template_correlation_test(
     undefined = np.isnan(null)
     greater = int(np.sum(undefined | (null >= statistic)))
     less = int(np.sum(undefined | (null <= statistic)))
-    p_greater = (1.0 + greater) / (1.0 + n_shuffles)
-    p_less = (1.0 + less) / (1.0 + n_shuffles)
-    p_value = (
-        p_greater
-        if alternative == "greater"
-        else p_less
-        if alternative == "less"
-        else min(2.0 * min(p_greater, p_less), 1.0)
-    )
+    p_value = _tail_p_values(greater, less, n_shuffles, alternative)
     return DatasetTestResult(
         statistic=statistic,
         null_statistics=null,
@@ -2906,13 +2759,6 @@ def template_correlation_test(
         n_datasets=n_shuffles,
         n_observed=len(templates),
     )
-
-
-def _positive_integer(value: Any, name: str, operation: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
-        raise ValueError(
-            f"{operation}: {name} must be a positive integer, got {value!r}."
-        )
 
 
 # --------------------------------------------------------------------------
@@ -3030,11 +2876,7 @@ class DatasetTestRecipe:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
         from neurospatial._results import reduce_through_constructor
 
-        rebuild, (cls, state) = reduce_through_constructor(self)
-        state["null_options"] = {
-            name: dict(options) for name, options in self.null_options.items()
-        }
-        return rebuild, (cls, state)
+        return reduce_through_constructor(self)
 
     def paper_p_value(self, result: DatasetTestResult) -> float | NDArray[np.float64]:
         """The p-value by the paper's own rule.

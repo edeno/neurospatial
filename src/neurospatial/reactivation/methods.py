@@ -38,11 +38,9 @@ counts). Choices a paper does not specify are listed in each recipe's
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import warnings
-import zlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -52,6 +50,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_labelled_spike_trains
+from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
@@ -72,6 +71,7 @@ from neurospatial.reactivation.coactivity import (
 from neurospatial.reactivation.coactivity import (
     _nanmean as _nanmean_along,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1182,23 +1182,17 @@ def compare_reactivation_methods(
             )
         selected = mask.copy()
 
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
+    entropy = _entropy(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
         assert control is not None  # every method needs one, checked above
         session = _Session(trains, template, control, match, events, labels, groups)
     for method in methods:
-        key = zlib.crc32(method.name.encode())
+        key = _name_key(method.name)
 
         def stream(*indices: int, key: int = key) -> np.random.Generator:
-            return np.random.default_rng(
-                np.random.SeedSequence(entropy, spawn_key=(key, *indices))
-            )
+            return _stream(entropy, key, *indices)
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:
@@ -1356,20 +1350,6 @@ def _template_counts(
 
 class _MethodError(ValueError):
     """A method cannot be applied to this session; reported in ``error``."""
-
-
-@contextlib.contextmanager
-def _warnings_with_context(context: str) -> Iterator[None]:
-    """Re-emit the warnings raised in the block with ``context`` in front."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        yield
-    for caught_warning in caught:
-        warnings.warn(
-            f"{context}: {caught_warning.message}",
-            caught_warning.category,
-            stacklevel=4,
-        )
 
 
 def _checked_groups(

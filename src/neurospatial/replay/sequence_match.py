@@ -26,9 +26,10 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import ABSOLUTE_TOLERANCE, RELATIVE_TOLERANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
+from neurospatial.replay._compare import _tolerance
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -801,15 +802,6 @@ def _check_seconds(value: Any, name: str, operation: str, *, allow_zero: bool) -
         )
 
 
-def _is_count(value: Any, minimum: int, maximum: int | None = None) -> bool:
-    return bool(
-        not isinstance(value, bool)
-        and isinstance(value, (int, np.integer))
-        and value >= minimum
-        and (maximum is None or value <= maximum)
-    )
-
-
 def _check_match_options(
     operation: str,
     *,
@@ -834,27 +826,29 @@ def _check_match_options(
             f"{operation}: trial_probability must be in (0, 1), got "
             f"{trial_probability!r}; Lee & Wilson used 1/24."
         )
-    if not _is_count(exact_max_letters, 1, _MAX_EXACT_LETTERS):
+    if not (
+        is_integer_at_least(exact_max_letters, 1)
+        and exact_max_letters <= _MAX_EXACT_LETTERS
+    ):
         raise ValueError(
             f"{operation}: exact_max_letters must be an integer from 1 to "
             f"{_MAX_EXACT_LETTERS}, got {exact_max_letters!r}; enumerating the "
             f"orderings of more letters needs more than {_MAX_EXACT_LETTERS}! rows."
         )
-    if not _is_count(n_samples, 1):
-        raise ValueError(
-            f"{operation}: n_samples must be a positive integer, got {n_samples!r}."
-        )
+    validate_integer_at_least(n_samples, 1, name="n_samples", owner=operation)
 
 
 def _check_index_options(
     operation: str, *, bandwidth: Any, min_active_cells: Any
 ) -> None:
     _check_seconds(bandwidth, "bandwidth", operation, allow_zero=False)
-    if not _is_count(min_active_cells, 2):
-        raise ValueError(
-            f"{operation}: min_active_cells must be an integer of at least 2, got "
-            f"{min_active_cells!r}; a matching index needs a pair of cells."
-        )
+    validate_integer_at_least(
+        min_active_cells,
+        2,
+        name="min_active_cells",
+        owner=operation,
+        hint="a matching index needs a pair of cells",
+    )
 
 
 def _sorted_trains(trains: list[NDArray[np.float64]]) -> list[NDArray[np.float64]]:
@@ -905,18 +899,16 @@ def _template_ranks(
     operation: str,
 ) -> NDArray[np.intp]:
     """Each cell's place in the field order; -1 for a cell not in the template."""
-    from neurospatial.replay.rank_order import _field_positions, _supported_rates
+    from neurospatial.replay.rank_order import _template_fields
 
     if field_order not in _FIELD_ORDERS:
         raise ValueError(
             f"{operation}: field_order must be one of {_FIELD_ORDERS}, got "
             f"{field_order!r}."
         )
-    positions = _field_positions(env, encoding_models, field_order, operation)
-    if min_peak_rate is not None:
-        rates = _supported_rates(encoding_models)
-        peak = np.where(np.isfinite(rates), rates, 0.0).max(axis=1)
-        positions = np.where(peak >= min_peak_rate, positions, np.nan)
+    _, positions = _template_fields(
+        env, encoding_models, field_order, min_peak_rate, operation
+    )
     template = np.flatnonzero(np.isfinite(positions))
     order = template[np.argsort(positions[template], kind="stable")]
     tied = np.flatnonzero(np.diff(positions[order]) == 0)
@@ -942,16 +934,9 @@ def _template_ranks(
 def _matched_trains(
     trains: list[NDArray[np.float64]], ranks: NDArray[np.intp], operation: str
 ) -> list[NDArray[np.float64]]:
-    if len(trains) != ranks.size:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {len(trains)} cells but "
-                f"encoding_models has {ranks.size} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    from neurospatial.replay.rank_order import _require_same_cells
+
+    _require_same_cells(len(trains), ranks.size, operation)
     return _sorted_trains(trains)
 
 
@@ -1187,11 +1172,6 @@ def _random_orderings(
     n: int, n_samples: int, rng: np.random.Generator
 ) -> NDArray[np.intp]:
     return np.argsort(rng.random((n_samples, n)), axis=1)
-
-
-def _tolerance(threshold: float) -> float:
-    """Round-off within which a value counts as equal to ``threshold``."""
-    return ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(threshold)
 
 
 def _at_most(value: Any, threshold: float) -> Any:

@@ -17,6 +17,8 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial._validation import validate_choice
+from neurospatial.replay._inputs import _CORRELATION_WHY, _posterior_times
 from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
@@ -151,7 +153,7 @@ def weighted_correlation(
     """
     positions = _track_bin_centers(env, _OPERATION)
     weights = _validated_weights(posterior, env.n_bins, row_normalization)
-    times = _validated_times(times, len(weights))
+    times = _posterior_times(times, len(weights), _OPERATION, why=_CORRELATION_WHY)
     return WeightedCorrelationResult(
         score=float(_weighted_correlations(weights[None], times, positions)[0]),
         row_normalization=row_normalization,
@@ -173,11 +175,12 @@ def _validated_weights(
     posterior: Any, n_bins: int, row_normalization: str
 ) -> NDArray[np.float64]:
     """Check the posterior and apply the row normalization."""
-    if row_normalization not in _ROW_NORMALIZATIONS:
-        raise ValueError(
-            f"{_OPERATION}: row_normalization must be one of "
-            f"{_ROW_NORMALIZATIONS}, got {row_normalization!r}."
-        )
+    validate_choice(
+        row_normalization,
+        _ROW_NORMALIZATIONS,
+        name="row_normalization",
+        owner=_OPERATION,
+    )
     weights = np.asarray(posterior, dtype=np.float64)
     if weights.ndim != 2 or weights.shape[1] != n_bins:
         raise ValueError(
@@ -202,17 +205,6 @@ def _validated_weights(
         with np.errstate(invalid="ignore", divide="ignore"):
             weights = np.where(row_mass[:, None] > 0, weights / row_mass[:, None], 0.0)
     return weights
-
-
-def _validated_times(times: Any, n_time: int) -> NDArray[np.float64]:
-    """Check one finite time per posterior row."""
-    values: NDArray[np.float64] = np.asarray(times, dtype=np.float64)
-    if values.shape != (n_time,) or not np.isfinite(values).all():
-        raise ValueError(
-            f"{_OPERATION}: times must hold one finite time per posterior row "
-            f"({n_time}), got shape {values.shape}."
-        )
-    return values
 
 
 def _weighted_correlations(
@@ -246,9 +238,6 @@ def _weighted_correlations(
     """
     times = times - (times.min() + times.max()) / 2.0
     positions = positions - (positions.min() + positions.max()) / 2.0
-    eps = np.finfo(np.float64).eps
-    min_var_time = eps * float(np.ptp(times)) ** 2
-    min_var_position = eps * float(np.ptp(positions)) ** 2
     total = weights.sum(axis=(1, 2))
     time_mass = weights.sum(axis=2) / total[:, None]  # (n_events, n_time)
     position_mass = weights.sum(axis=1) / total[:, None]  # (n_events, n_bins)
@@ -259,10 +248,44 @@ def _weighted_correlations(
     covariance = np.einsum("et,etb,eb->e", time_dev, weights, position_dev) / total
     var_time = np.einsum("et,et->e", time_mass, time_dev**2)
     var_position = np.einsum("eb,eb->e", position_mass, position_dev**2)
+    return _finish_correlation(
+        covariance,
+        var_time,
+        var_position,
+        float(np.ptp(times)),
+        float(np.ptp(positions)),
+    )
+
+
+def _finish_correlation(
+    covariance: NDArray[np.float64],
+    var_time: NDArray[np.float64],
+    var_position: NDArray[np.float64],
+    time_range: float,
+    position_range: float,
+) -> NDArray[np.float64]:
+    """The weighted correlation from its weighted moments, rounded.
+
+    Parameters
+    ----------
+    covariance, var_time, var_position : NDArray[np.float64], shape (n_events,)
+        Weighted covariance of time and position, and their variances.
+    time_range, position_range : float
+        The range of the times and of the positions, which bounds the
+        variance that counts as round-off (see :func:`_weighted_correlations`).
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_events,)
+        The correlation rounded to ``_SCORE_DECIMALS`` and held to [-1, 1];
+        NaN where time or position does not vary under the weights.
+    """
+    eps = np.finfo(np.float64).eps
     with np.errstate(invalid="ignore", divide="ignore"):
         correlation = covariance / np.sqrt(var_time * var_position)
     # Round so that scores equal in exact arithmetic compare equal: a shuffle
     # tied with the event then counts as a tie in the Monte Carlo p-value.
     rounded = np.clip(np.round(correlation, _SCORE_DECIMALS), -1.0, 1.0)
-    varies = (var_time > min_var_time) & (var_position > min_var_position)
-    return np.where(varies, rounded, np.nan)
+    varies = (var_time > eps * time_range**2) & (var_position > eps * position_range**2)
+    finished: NDArray[np.float64] = np.where(varies, rounded, np.nan)
+    return finished

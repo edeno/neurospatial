@@ -22,6 +22,18 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
+from neurospatial.replay._inputs import _checked_intervals
+from neurospatial.replay.rank_order import (
+    _require_same_cells,
+    _template_items,
+    _template_rngs,
+    _validated_interval,
+)
 from neurospatial.replay.sequence_match import (
     _FIELD_ORDERS,
     _MATCH_ORDERS,
@@ -34,7 +46,6 @@ from neurospatial.replay.sequence_match import (
     _firing_order,
     _index_test_size,
     _inversion_p_values,
-    _is_count,
     _KeyDistribution,
     _match_keys,
     _matching_index,
@@ -53,7 +64,12 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "JI_WILSON_2007",
@@ -63,6 +79,9 @@ __all__ = [
     "detect_template_match_replay",
     "template_match_dataset_test",
 ]
+
+# Where event windows usually come from, offered when they are invalid.
+_INTERVALS_EXAMPLE = "spike_words(...).intervals"
 
 _STATISTICS = ("best_match", "matching_index")
 # Lee & Wilson's trial groups and the chance probability of a match in each;
@@ -147,7 +166,9 @@ class TemplateMatchMethod:
         the template with the largest score among those on which enough
         cells fired, then the smaller p-value, then the first (Ji & Wilson
         assigned a frame to the template with the higher matching index).
-        None needs ``template=``.
+        Each template draws from its own random stream, derived from ``rng``
+        and the template's name, so results do not depend on the templates'
+        order. None needs ``template=``.
     n_shuffles : int
         Template shuffles of :func:`template_match_dataset_test`.
     notes : tuple of str
@@ -234,32 +255,28 @@ class TemplateMatchMethod:
                 )
         else:
             _check_seconds(self.bandwidth, "bandwidth", operation, allow_zero=False)
-        counts: tuple[tuple[str, int, int | None], ...] = (
-            ("min_active_cells", 2, None),
-            ("n_shuffles", 1, None),
-            ("n_samples", 1, None),
-            ("exact_max_letters", 1, _MAX_EXACT_LETTERS),
-        )
-        for field_name, minimum, maximum in counts:
-            value = getattr(self, field_name)
-            if not _is_count(value, minimum, maximum):
-                bound = (
-                    f"from {minimum} to {maximum}"
-                    if maximum
-                    else f"of at least {minimum}"
-                )
-                raise ValueError(
-                    f"{prefix}: {field_name} must be an integer {bound}, got {value!r}."
-                )
-        if self.min_template_cells is not None and not _is_count(
+        for field_name, minimum in (
+            ("min_active_cells", 2),
+            ("n_shuffles", 1),
+            ("n_samples", 1),
+        ):
+            validate_integer_at_least(
+                getattr(self, field_name), minimum, name=field_name, owner=prefix
+            )
+        letters = self.exact_max_letters
+        if not (is_integer_at_least(letters, 1) and letters <= _MAX_EXACT_LETTERS):
+            raise ValueError(
+                f"{prefix}: exact_max_letters must be an integer from 1 to "
+                f"{_MAX_EXACT_LETTERS}, got {letters!r}."
+            )
+        if self.min_template_cells is not None and not is_integer_at_least(
             self.min_template_cells, 2
         ):
             raise ValueError(
                 f"{prefix}: min_template_cells must be an integer of at least 2 or "
                 f"None, got {self.min_template_cells!r}."
             )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_alpha(self.alpha, owner=prefix)
         rate = self.min_peak_rate
         if rate is not None and (
             isinstance(rate, bool)
@@ -275,9 +292,51 @@ class TemplateMatchMethod:
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell threshold, as a criterion."""
-        from neurospatial.replay.methods import ReplayCriterion
+        from neurospatial.replay.methods import _active_cell_criteria
 
-        return (ReplayCriterion("n_active_cells", ">=", self.min_active_cells),)
+        return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, rate maps and decoding window it scores each event on."""
+        from neurospatial.replay.methods import _SPIKE_ORDER_NEEDS
+
+        return _SPIKE_ORDER_NEEDS
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` passes ``alpha`` by ``p_comparison``.
+
+        Equality is judged within round-off; NaN fails.
+        """
+        return _passes(p_value, alpha, self.p_comparison)
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """0: the p-values are exact (at least ``1 / n!`` over ``n`` cells)."""
+        return 0.0
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its choice of template (the largest score) is alpha-free."""
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None
+        return detect_template_match_replay(
+            event.env,
+            event.spike_times,
+            event.window,
+            event.encoding_models,
+            template_match_method=self,
+            template=event.template_for(
+                self.template_choice,
+                several=isinstance(event.encoding_models, Mapping),
+            ),
+            rng=rng,
+        )
 
 
 def detect_template_match_replay(
@@ -325,8 +384,9 @@ def detect_template_match_replay(
         index), the p-value, the active-cell criterion and, with several
         templates, the tested ``template``. With fewer active template
         cells than the method's ``min_active_cells`` the score and p-value
-        are NaN and the event is not replay. ``n_shuffles_used`` is None:
-        the p-values are exact.
+        are NaN and the event has no verdict: it is not replay, its
+        criterion is False and ``error`` says why. ``n_shuffles_used`` is
+        None: the p-values are exact.
 
     Raises
     ------
@@ -369,79 +429,39 @@ def detect_template_match_replay(
     (True, 1.0, 1)
     """
     from neurospatial._spikes import as_spike_trains
-    from neurospatial.replay.rank_order import _validated_interval
 
     operation = "detect_template_match_replay()"
     method = template_match_method
-    names = _template_names(encoding_models, template, method, operation)
+    items = _template_items(
+        env,
+        encoding_models,
+        template,
+        operation,
+        single_template_method=method.name if method.template_choice is None else None,
+    )
     start, stop = _validated_interval(interval, operation)
     trains = _sorted_trains(as_spike_trains(spike_times))
-    generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(names))
+    streams = _template_rngs(rng, [name for name, _, _ in items])
     results = []
-    for name, seed in zip(names, seeds, strict=True):
+    for (name, template_env, models), stream in zip(items, streams, strict=True):
         ranks = _method_ranks(
-            method, env, encoding_models, name, len(trains), operation
+            method, template_env, models, name, len(trains), operation
         )
-        results.append(
-            _verdict(
-                method, ranks, trains, start, stop, name, np.random.default_rng(seed)
-            )
-        )
+        results.append(_verdict(method, ranks, trains, start, stop, name, stream))
     if len(results) == 1:
         return results[0]
     return _chosen(results, method)
 
 
-def _template_names(
-    encoding_models: Any,
-    template: str | None,
-    method: TemplateMatchMethod,
-    operation: str,
-) -> list[str | None]:
-    if not isinstance(encoding_models, Mapping):
-        return [None]
-    if template is not None:
-        if template not in encoding_models:
-            raise ValueError(
-                f"{operation}: template {template!r} is not one of "
-                f"{list(encoding_models)}."
-            )
-        return [template]
-    if method.template_choice is None:
-        raise ValueError(
-            _format_error(
-                f"{operation}: method {method.name!r} needs template= with several "
-                "rate-map sets.",
-                why="it tests one template and has no rule to choose one",
-                fix=f"pass template= one of {list(encoding_models)}",
-            )
-        )
-    return list(encoding_models)
-
-
 def _method_ranks(
     method: TemplateMatchMethod,
-    env: Any,
-    encoding_models: Any,
+    env: Environment,
+    models: Any,
     name: str | None,
     n_cells: int,
     operation: str,
 ) -> NDArray[np.intp]:
     """One template's ranks, checked against the method and the spike trains."""
-    if isinstance(env, Mapping):
-        if name is None:
-            raise ValueError(
-                f"{operation}: a mapping of environments needs a mapping of rate "
-                "maps with the same templates."
-            )
-        if name not in env:
-            raise ValueError(
-                f"{operation}: template {name!r} has rate maps but no environment "
-                f"in env, whose templates are {list(env)}."
-            )
-        env = env[name]
-    models = encoding_models if name is None else encoding_models[name]
     ranks = _template_ranks(
         env,
         models,
@@ -449,16 +469,7 @@ def _method_ranks(
         min_peak_rate=method.min_peak_rate,
         operation=operation,
     )
-    if ranks.size != n_cells:
-        raise ValueError(
-            _format_error(
-                f"{operation}: spike_times has {n_cells} cells but encoding_models "
-                f"has {ranks.size} rate maps.",
-                why="each cell's firing is compared with its own place field",
-                fix="pass spike times and rate maps for the same cells, in the "
-                "same order",
-            )
-        )
+    _require_same_cells(n_cells, ranks.size, operation)
     n_template = int(np.sum(ranks >= 0))
     if method.min_template_cells is not None and n_template < method.min_template_cells:
         label = "the template" if name is None else f"template {name!r}"
@@ -516,17 +527,23 @@ def _verdict(
         )
         n_active = index.n_active_cells
         score, p_value = index.score, index.match_probability
+    error = (
+        ""
+        if np.isfinite(score)
+        else f"fewer than {method.min_active_cells} active template cells"
+    )
     criterion = method.criteria[0]
-    passes = criterion.evaluate(float(n_active), np.nan)
+    passes = not error and criterion.evaluate(float(n_active), np.nan)
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(passes and _passes(p_value, method.alpha, method.p_comparison)),
+        is_replay=bool(passes and method._passes_alpha(p_value, method.alpha)),
         score=float(score),
         p_value=float(p_value),
         criteria={criterion.label: passes},
         values={criterion.label: float(n_active)},
         template=template,
         n_shuffles_used=None,
+        error=error,
     )
 
 
@@ -839,13 +856,12 @@ def template_match_dataset_test(
 
     operation = "template_match_dataset_test()"
     method = template_match_method
-    names: list[str | None] = (
-        list(encoding_models) if isinstance(encoding_models, Mapping) else [None]
-    )
+    items = _template_items(env, encoding_models, None, operation)
+    names = [name for name, _, _ in items]
     trains = _sorted_trains(as_spike_trains(spike_times))
     ranks = {
-        name: _method_ranks(method, env, encoding_models, name, len(trains), operation)
-        for name in names
+        name: _method_ranks(method, template_env, models, name, len(trains), operation)
+        for name, template_env, models in items
     }
     generator = np.random.default_rng(rng)
     if method.statistic == "best_match":
@@ -860,33 +876,10 @@ def template_match_dataset_test(
                 fix="pass the frames as an array of shape (n_frames, 2)",
             )
         )
-    frames = _checked_intervals(intervals, operation, "intervals")
+    frames = _checked_intervals(
+        intervals, operation, allow_empty=True, example=_INTERVALS_EXAMPLE
+    )
     return _frame_test(method, ranks, trains, frames, generator)
-
-
-def _checked_intervals(
-    intervals: Any, operation: str, name: str
-) -> NDArray[np.float64]:
-    values = np.asarray(intervals, dtype=np.float64)
-    if values.size == 0:
-        return values.reshape(0, 2)
-    if (
-        values.ndim != 2
-        or values.shape[1] != 2
-        or not np.isfinite(values).all()
-        or np.any(values[:, 0] >= values[:, 1])
-    ):
-        raise ValueError(
-            _format_error(
-                f"{operation}: {name} must be finite (start, stop) rows in seconds "
-                f"with start < stop, got shape {values.shape}.",
-                why="each row is one event, and spikes at start <= t < stop belong "
-                "to it",
-                fix="pass an array of shape (n_events, 2), such as "
-                "spike_words(...).intervals",
-            )
-        )
-    return values
 
 
 def _template_intervals(
@@ -898,7 +891,11 @@ def _template_intervals(
                 f"{operation}: intervals is a mapping but encoding_models is one "
                 "set of rate maps; pass an array of shape (n_events, 2)."
             )
-        return {None: _checked_intervals(intervals, operation, "intervals")}
+        return {
+            None: _checked_intervals(
+                intervals, operation, allow_empty=True, example=_INTERVALS_EXAMPLE
+            )
+        }
     if not isinstance(intervals, Mapping) or set(intervals) != set(names):
         given = list(intervals) if isinstance(intervals, Mapping) else "an array"
         raise ValueError(
@@ -911,7 +908,13 @@ def _template_intervals(
             )
         )
     return {
-        name: _checked_intervals(intervals[name], operation, f"intervals[{name!r}]")
+        name: _checked_intervals(
+            intervals[name],
+            operation,
+            name=f"intervals[{name!r}]",
+            allow_empty=True,
+            example=_INTERVALS_EXAMPLE,
+        )
         for name in names
     }
 
@@ -1251,7 +1254,7 @@ def _frame_test(
             continue
         chosen = _assignments(scores, p_values)
         chosen_p = p_values[chosen, np.arange(n_shuffles + 1)]
-        passing = _passes(chosen_p, method.alpha, method.p_comparison)
+        passing = method._passes_alpha(chosen_p, method.alpha)
         assigned[index] = chosen[0]
         assigned_cells[index] = cells[chosen[0]]
         replaying[index] = bool(passing[0])

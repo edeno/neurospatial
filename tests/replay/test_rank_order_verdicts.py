@@ -200,3 +200,115 @@ class TestChenaniPooledShuffles:
         assert table["score"].isna().all()
         assert not table["is_replay"].any()
         assert (table["error"] != "").all()
+
+
+def _spike_order_call(name):
+    """A spike-order entry point that reads templates, as f(env, models, template)."""
+    from neurospatial.replay import dataset_values, detect_template_match_replay
+    from neurospatial.replay.methods import JI_WILSON_2007
+
+    method = dataclasses.replace(DIBA_BUZSAKI_2007, template_choice="most_active")
+    trains = _firing(range(40))
+    calls = {
+        "rank_order": lambda env, models, template: detect_rank_order_replay(
+            env,
+            trains,
+            (1.0, 1.2),
+            models,
+            rank_order_method=method,
+            template=template,
+            rng=0,
+        ),
+        "template_match": lambda env, models, template: detect_template_match_replay(
+            env,
+            trains,
+            (1.0, 1.2),
+            models,
+            template_match_method=JI_WILSON_2007,
+            template=template,
+            rng=0,
+        ),
+        "dataset": lambda env, models, template: dataset_values(
+            env,
+            np.array([[1.0, 1.2]]),
+            replay_method=method,
+            encoding_models=models,
+            template=template,
+            spike_times=trains,
+        ),
+    }
+    return calls[name]
+
+
+@pytest.mark.parametrize("name", ["rank_order", "template_match", "dataset"])
+def test_spike_order_methods_refuse_the_same_template_inputs(place_code, name):
+    """Every spike-order entry point refuses unusable templates alike."""
+    env, rates = place_code
+    run = _spike_order_call(name)
+    with pytest.raises(ValueError, match="needs a mapping of rate maps"):
+        run(env, rates, "left")
+    with pytest.raises(ValueError, match="not one of"):
+        run(env, {"left": rates}, "right")
+    with pytest.raises(ValueError, match="empty mapping"):
+        run(env, {}, None)
+    with pytest.raises(ValueError, match="no environment in env"):
+        run({"left": env}, {"left": rates, "right": rates}, None)
+    with pytest.raises(ValueError, match="mapping of environments needs"):
+        run({"left": env}, rates, None)
+
+
+@pytest.mark.parametrize("name", ["rank_order", "template_match"])
+def test_template_order_does_not_change_the_shuffles(place_code, name):
+    """Each template draws from a stream named for it, as in every replay test.
+
+    A weak sequence keeps the p-values between their floor and 1, so a
+    template given another template's random draws would get another
+    p-value.
+    """
+    from neurospatial.replay import detect_template_match_replay
+    from neurospatial.replay.methods import LEE_WILSON_2002
+
+    env, rates = place_code
+    order = [12, 30, 14, 11, 25, 16, 13, 33, 18, 15, 20, 28, 17, 22, 19, 35]
+    spikes = _firing(order)
+    few = rates.copy()
+    few[[c for c in range(40) if not 10 <= c < 20]] *= 0.1
+    templates = {"forward": rates, "few": few}
+    reordered = dict(reversed(list(templates.items())))
+
+    def run(models, template=None):
+        if name == "rank_order":
+            method = dataclasses.replace(
+                DIBA_BUZSAKI_2007, template_choice="most_active", n_shuffles=99
+            )
+            return detect_rank_order_replay(
+                env,
+                spikes,
+                (1.0, 1.2),
+                models,
+                rank_order_method=method,
+                template=template,
+                rng=0,
+            )
+        # Sampled, not enumerated, match probabilities draw from the stream.
+        method = dataclasses.replace(
+            LEE_WILSON_2002,
+            template_choice="largest_score",
+            exact_max_letters=2,
+            n_samples=200,
+        )
+        return detect_template_match_replay(
+            env,
+            spikes,
+            (1.0, 1.2),
+            models,
+            template_match_method=method,
+            template=template,
+            rng=0,
+        )
+
+    first, second = run(templates), run(reordered)
+    assert first.template == second.template
+    assert 0.02 < first.p_value < 1.0
+    assert first.p_value == second.p_value
+    assert first.score == second.score

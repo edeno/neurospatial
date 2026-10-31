@@ -104,6 +104,8 @@ class TestUndefinedEventScore:
         assert np.isnan(result.score) and np.isnan(result.p_value)
         assert not any(result.criteria.values())
         assert np.isnan(result.summary()["n_shuffles_used"])
+        assert result.error.startswith("score undefined")
+        assert list(result.summary())[-1] == "error"
 
     def test_compare_records_an_error_row_instead_of_raising(self, track):
         env, rates = track
@@ -476,7 +478,7 @@ class TestCompareInputs:
         )
         column = "passes[n_active_cells >= 5]"
         assert table.loc[1, "error"] != ""
-        assert table.loc[1, column] is False
+        assert not table.loc[1, column]  # False, not NaN (truthy)
         assert table[column].astype(bool).tolist() == [True, False]
 
     def test_transposed_counts_are_refused(self, track):
@@ -652,6 +654,7 @@ class TestUndefinedNull:
         )
         assert result.score == 0.5 and np.isnan(result.p_value)
         assert not result.is_replay
+        assert result.error == "every shuffle of a null has an undefined score"
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             row = compare_replay_methods(

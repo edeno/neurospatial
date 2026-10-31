@@ -17,17 +17,22 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from itertools import combinations, pairwise
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import reduce_through_constructor
+from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.replay.methods import ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = ["ArmReplayMethod", "detect_arm_replay"]
 
@@ -98,6 +103,8 @@ class ArmReplayMethod:
         The paper's decoding settings, for reference (not enforced).
     notes : tuple of str
         Choices the paper does not specify.
+    alpha : float
+        NaN, a class constant: an arm method tests no p-value.
     """
 
     name: str
@@ -116,6 +123,7 @@ class ArmReplayMethod:
     arm_fallback: bool = False
     decoding: Mapping[str, Any] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
+    alpha: ClassVar[float] = float("nan")
 
     def __post_init__(self) -> None:
         """Freeze the mapping and refuse settings that cannot run."""
@@ -156,11 +164,7 @@ class ArmReplayMethod:
             "joint": ("only_pair", "strongest_pair"),
         }
         for name, allowed in choices.items():
-            if getattr(self, name) not in allowed:
-                raise ValueError(
-                    f"{prefix}: {name} must be one of {list(allowed)}, got "
-                    f"{getattr(self, name)!r}."
-                )
+            validate_choice(getattr(self, name), allowed, name=name, owner=prefix)
         for name in ("joint_same_sign", "arm_fallback"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(
@@ -181,6 +185,45 @@ class ArmReplayMethod:
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mappings cannot pickle."""
         return reduce_through_constructor(self)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The arms, and each event as one decode on one environment."""
+        from neurospatial.replay.methods import _CompareNeeds
+
+        return _CompareNeeds(
+            "arm",
+            ("arms",),
+            why="they classify replay per arm and per pair of arms",
+            fix="pass arms={'center': bins, 'left': bins, ...} with each arm's "
+            "bins from the junction outward",
+            one_environment=True,
+        )
+
+    @property
+    def _alpha_refusal(self) -> Literal["no_test"]:
+        """An arm method applies its checks only; it tests no p-value."""
+        return "no_test"
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        from neurospatial.decoding import JointDecodingResult
+        from neurospatial.replay.methods import _no_verdict
+
+        assert event.arms is not None and not isinstance(event.env, Mapping)
+        assert not isinstance(event.event, (JointDecodingResult, Mapping))
+        if np.unique(event.times).size < 2:
+            # The checks are named by the arms the event visits: none here.
+            return _no_verdict(self.name, (), "fewer than two time bins to score")
+        return detect_arm_replay(
+            event.env,
+            event.event.posterior,
+            event.times,
+            arms=event.arms,
+            arm_replay_method=self,
+        )
 
 
 def detect_arm_replay(

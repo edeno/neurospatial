@@ -21,7 +21,7 @@ Monte Carlo p-value helpers live in :mod:`neurospatial.stats`.
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -327,20 +327,36 @@ def _roll_rows_along_track(
     n_rows = values.shape[0]
     n_bins = len(order)
     along = values[:, order]
-    col_indices = np.arange(n_bins)
-    rows = np.arange(n_rows)[:, np.newaxis]
     smallest = 1 if exclude_zero_shift else 0
 
     for _ in range(n_shuffles):
-        # Generate random shift amounts for each row
         shifts = np.asarray(generator.integers(smallest, n_bins, size=n_rows))
-
-        # For each row i, take columns (col_indices - shifts[i]) % n_bins
-        shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
         shuffled = values.copy()
-        shuffled[:, order] = along[rows, shifted_indices]
-
+        shuffled[:, order] = _roll_along(along, shifts)
         yield shuffled
+
+
+def _roll_along(
+    along: NDArray[np.float64], shifts: NDArray[np.integer[Any]]
+) -> NDArray[np.float64]:
+    """Each row rolled circularly by its own number of bins.
+
+    Parameters
+    ----------
+    along : NDArray[np.float64], shape (n_rows, n_bins)
+        Rows in track order.
+    shifts : NDArray[np.integer], shape (n_rows,)
+        Bins to roll each row by, toward the end of the track; any integer.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_rows, n_bins)
+        Row ``i`` is ``np.roll(along[i], shifts[i])``.
+    """
+    n_rows, n_bins = along.shape
+    columns = (np.arange(n_bins) - shifts[:, np.newaxis]) % n_bins
+    rolled: NDArray[np.float64] = along[np.arange(n_rows)[:, np.newaxis], columns]
+    return rolled
 
 
 _NO_2D_FIELD_SHUFFLE = (
@@ -828,13 +844,10 @@ def _peak_weighted_rolls(
     n_bins = len(order)
     along = posterior[:, order]
     source = np.argmax(along, axis=1)
-    columns = np.arange(n_bins)
-    rows = np.arange(n_rows)[:, np.newaxis]
     for _ in range(n_shuffles):
         destination = generator.choice(n_bins, size=n_rows, p=probabilities)
-        shifts = destination - source
         shuffled = np.empty_like(posterior)
-        shuffled[:, order] = along[rows, (columns - shifts[:, np.newaxis]) % n_bins]
+        shuffled[:, order] = _roll_along(along, destination - source)
         yield shuffled
 
 

@@ -9,23 +9,31 @@ the largest among the nulls run (Davidson et al. 2009; Tirole et al. 2022).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._validation import is_integer_at_least
+from neurospatial.replay._inputs import (
+    _CORRELATION_WHY,
+    _FIT_WHY,
+    _posterior_times,
+    _probability_rows,
+)
 from neurospatial.replay.correlation import (
     WeightedCorrelationResult,
     _track_bin_centers,
-    _validated_times,
     _validated_weights,
     _weighted_correlations,
     weighted_correlation,
@@ -36,55 +44,112 @@ from neurospatial.replay.trajectory import (
     _best_line,
     _prepare_replay_lines,
     _regression_line_scores,
-    _require_probability_rows,
-    _require_times,
     detect_trajectory_radon,
     regression_line_score,
 )
+from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
+    from neurospatial.decoding.likelihood import _PoissonRates
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 _OPERATION = "replay_significance()"
-_NULLS = (
-    "column_cycle",
-    "unit_identity",
-    "pseudo_event",
-    "spike_train_circular",
-    "place_field_circular",
-    "time_bin_permutation",
-    "spike_time_uniform",
-    "column_cycle_weighted",
-)
-# Run when nulls=None, if their inputs are given: Davidson et al. (2009).
-_DEFAULT_NULLS = ("column_cycle", "unit_identity", "pseudo_event")
-# Nulls after which a time bin no longer holds its own spikes.
-_ROW_MOVING_NULLS = (
-    "pseudo_event",
-    "spike_train_circular",
-    "time_bin_permutation",
-    "spike_time_uniform",
-)
-# Nulls that decode shuffled spike counts again.
-_DECODING_NULLS = (
-    "unit_identity",
-    "spike_train_circular",
-    "place_field_circular",
-    "spike_time_uniform",
-)
-# Nulls that move each cell's spikes to other time bins of the event, so
-# the time bins without spikes differ from shuffle to shuffle.
-_COUNT_CHANGING_NULLS = ("spike_train_circular", "spike_time_uniform")
-# The options each null takes in null_options, with their defaults.
-_NULL_OPTIONS: Mapping[str, Mapping[str, Any]] = MappingProxyType(
+
+
+@dataclass(frozen=True)
+class _NullSpec:
+    """What one null of :func:`replay_significance` needs and changes.
+
+    Attributes
+    ----------
+    needs : {"posterior", "decoding", "pool"}
+        Inputs beyond the posterior: none; the decoding inputs
+        (``spike_counts``, ``encoding_models``, ``dt``), as it decodes
+        shuffled counts or rate maps again; or ``pseudo_event_pool``.
+    pool_use : str
+        Why it needs the pool, for the refusal when the pool is missing.
+    default : bool
+        Run when ``nulls=None``, if its inputs are given (Davidson et al.
+        2009).
+    moves_rows : bool
+        A time bin no longer holds its own spikes after it.
+    spreads_spikes : bool
+        It moves each cell's spikes to other time bins of the event, so the
+        time bins without spikes differ from shuffle to shuffle.
+    rolls : bool
+        Each shuffle is a row order and a circular shift of each row along
+        the track, which :func:`dataset_values` tabulates.
+    along_track : bool
+        It shifts rows along the track, so it needs a linearized track.
+    shareable : bool
+        One draw (a permutation of cells, a set of shifted rate maps) can be
+        shared by every event of a data set.
+    options : Mapping[str, Any]
+        The options it takes in ``null_options``, with their defaults.
+    """
+
+    needs: Literal["posterior", "decoding", "pool"] = "posterior"
+    pool_use: str = ""
+    default: bool = False
+    moves_rows: bool = False
+    spreads_spikes: bool = False
+    rolls: bool = False
+    along_track: bool = False
+    shareable: bool = False
+    options: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+
+
+# Every null, in the order the random numbers are drawn.
+_NULL_SPECS: Mapping[str, _NullSpec] = MappingProxyType(
     {
-        "column_cycle": MappingProxyType({"exclude_zero_shift": False}),
-        "column_cycle_weighted": MappingProxyType({"edge_exclusion": 0.0}),
-        "unit_identity": MappingProxyType({"active_only": False}),
+        "column_cycle": _NullSpec(
+            default=True,
+            rolls=True,
+            along_track=True,
+            options=MappingProxyType({"exclude_zero_shift": False}),
+        ),
+        "unit_identity": _NullSpec(
+            needs="decoding",
+            default=True,
+            shareable=True,
+            options=MappingProxyType({"active_only": False}),
+        ),
+        "pseudo_event": _NullSpec(
+            needs="pool",
+            pool_use="whose rows its time bins are drawn from",
+            default=True,
+            moves_rows=True,
+        ),
+        "spike_train_circular": _NullSpec(
+            needs="decoding", moves_rows=True, spreads_spikes=True
+        ),
+        "place_field_circular": _NullSpec(needs="decoding", shareable=True),
+        "time_bin_permutation": _NullSpec(moves_rows=True, rolls=True),
+        "spike_time_uniform": _NullSpec(
+            needs="decoding", moves_rows=True, spreads_spikes=True
+        ),
+        "column_cycle_weighted": _NullSpec(
+            needs="pool",
+            pool_use="whose mean row weights the peaks",
+            rolls=True,
+            along_track=True,
+            options=MappingProxyType({"edge_exclusion": 0.0}),
+        ),
     }
 )
+_NULLS = tuple(_NULL_SPECS)
+_DEFAULT_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.default)
+_ROW_MOVING_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.moves_rows)
+_DECODING_NULLS = tuple(
+    name for name, spec in _NULL_SPECS.items() if spec.needs == "decoding"
+)
+_COUNT_CHANGING_NULLS = tuple(
+    name for name, spec in _NULL_SPECS.items() if spec.spreads_spikes
+)
+_POOL_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.needs == "pool")
+_DECODING_INPUTS = "spike_counts, encoding_models and dt"
 _ALTERNATIVES = ("greater", "less", "two-sided")
 
 
@@ -138,7 +203,6 @@ class ReplaySignificanceResult(ResultMixin):
 
     observed: Any
     shuffles: Mapping[str, ShuffleTestResult]
-    p_value: float
     alternative: str
     use_absolute: bool
     template: str | None = None
@@ -150,6 +214,11 @@ class ReplaySignificanceResult(ResultMixin):
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild through the constructor; the read-only mapping cannot pickle."""
         return reduce_through_constructor(self)
+
+    @property
+    def p_value(self) -> float:
+        """The largest p-value among ``shuffles``: every null must reject."""
+        return max(test.p_value for test in self.shuffles.values())
 
     @property
     def n_shuffles_used(self) -> Mapping[str, int]:
@@ -562,11 +631,7 @@ def replay_significance(
             n_shuffles=n_shuffles,
             rng=rng,
         )
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
+    if not is_integer_at_least(n_shuffles, 1):
         raise ValueError(
             f"{_OPERATION} needs n_shuffles to be a positive integer, got "
             f"{n_shuffles!r}. Davidson et al. used 1500 per null, Tirole et al. "
@@ -595,8 +660,9 @@ def replay_significance(
             )
         posterior = _zero_empty_rows(decoded_posterior, np.asarray(spike_counts))
     score, options = _unwrap_partial(score, dict(score_options or {}))
+    spec = _score_specs().get(score)
     if use_absolute is None:
-        use_absolute = score is weighted_correlation
+        use_absolute = spec is not None and spec.signed
     generator = _ensure_rng(rng)
     if _takes_rng(score) and "rng" not in options:
         options["rng"] = int(generator.integers(2**63 - 1))
@@ -667,16 +733,15 @@ def replay_significance(
                 fix="leave pseudo_event out of nulls, or use empty_time_bins='keep'",
             )
         )
-    if "pseudo_event" in run or "column_cycle_weighted" in run:
+    if any(name in run for name in _POOL_NULLS):
         pool = _validated_pool(pseudo_event_pool, track_env)
 
     observed_result = scorer.observe()
     observed = float(_statistic(np.asarray([observed_result.score]), use_absolute)[0])
     if not np.isfinite(observed):
         example = (
-            "the weighted correlation is undefined when all of the posterior "
-            "mass is at one position or in one time bin"
-            if score is weighted_correlation
+            spec.undefined
+            if spec is not None and spec.undefined
             else f"{getattr(score, '__name__', 'the score')} is undefined for "
             "this event, for example when the decoded position does not change"
         )
@@ -708,14 +773,18 @@ def replay_significance(
         decoder = _EventDecoder(env, encoding_models, dt, prior, template)
         _require_reproducible_decode(decoder.decode(counts), decoded_posterior)
 
-        def decode(event_counts: Any, models: Any = None) -> Any:
-            """Decode shuffled counts or rate maps as the posterior was decoded."""
-            decoded = decoder.decode(event_counts, models)
+        def finish(decoded: Any, event_counts: Any) -> Any:
+            """A shuffle's decoded posterior, conditioned and zeroed as the event's."""
             if conditional:
                 decoded = _conditional_rows(decoded)
             if empty_time_bins == "zero":
                 return _zero_empty_rows(decoded, np.asarray(event_counts))
             return decoded
+
+        def decode_each(shuffled_counts: Iterable[Any]) -> Iterator[Any]:
+            """Decode shuffled counts as the posterior was decoded."""
+            for decoded, event_counts in decoder.decode_each(shuffled_counts):
+                yield finish(decoded, event_counts)
 
     if "unit_identity" in run:
         permuted = (
@@ -728,7 +797,7 @@ def replay_significance(
                 rng=generator,
             )
         )
-        null_scores["unit_identity"] = scorer.scores(map(decode, permuted), n_shuffles)
+        null_scores["unit_identity"] = scorer.scores(decode_each(permuted), n_shuffles)
 
     if "pseudo_event" in run:
         draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
@@ -741,13 +810,13 @@ def replay_significance(
             counts, n_shuffles=n_shuffles, rng=generator
         )
         null_scores["spike_train_circular"] = scorer.scores(
-            map(decode, shifted_counts), n_shuffles
+            decode_each(shifted_counts), n_shuffles
         )
 
     if "place_field_circular" in run:
         null_scores["place_field_circular"] = scorer.scores(
             (
-                decode(counts, models)
+                finish(decoder.decode(counts, models), counts)
                 for models in decoder.shifted_models(n_shuffles, generator)
             ),
             n_shuffles,
@@ -767,14 +836,14 @@ def replay_significance(
             counts, n_shuffles=n_shuffles, rng=generator
         )
         null_scores["spike_time_uniform"] = scorer.scores(
-            map(decode, spread_counts), n_shuffles
+            decode_each(spread_counts), n_shuffles
         )
 
     if "column_cycle_weighted" in run:
         weighted = shuffle_posterior_weighted_circular(
             track_env,
             posterior,
-            pool.mean(axis=0),
+            _pool_mean(pool),
             **options_of["column_cycle_weighted"],
             n_shuffles=n_shuffles,
             rng=generator,
@@ -795,7 +864,6 @@ def replay_significance(
     return ReplaySignificanceResult(
         observed=observed_result,
         shuffles=shuffles,
-        p_value=max(test.p_value for test in shuffles.values()),
         alternative=alternative,
         use_absolute=use_absolute,
     )
@@ -817,11 +885,7 @@ def _shuffle_tests(
     reported when a null has no defined shuffle. ``stacklevel`` points the
     warning about undefined shuffles at the caller of the public function.
     """
-    from neurospatial.stats.shuffle import (
-        ShuffleTestResult,
-        compute_shuffle_pvalue,
-        compute_shuffle_zscore,
-    )
+    from neurospatial.stats.shuffle import ShuffleTestResult
 
     shuffles = {}
     for name, statistic in null_statistics.items():
@@ -848,15 +912,8 @@ def _shuffle_tests(
                 UserWarning,
                 stacklevel=stacklevel,
             )
-        shuffles[name] = ShuffleTestResult(
-            observed_score=observed,
-            null_scores=statistic,
-            p_value=compute_shuffle_pvalue(
-                observed, statistic[defined], tail=alternative
-            ),
-            z_score=compute_shuffle_zscore(observed, statistic[defined]),
-            shuffle_type=name,
-            n_shuffles=n_shuffles,
+        shuffles[name] = ShuffleTestResult.from_null(
+            observed, statistic, shuffle_type=name, tail=alternative
         )
     return shuffles
 
@@ -924,7 +981,8 @@ def _max_over_templates(
         )
     if use_absolute is None:
         base, _ = _unwrap_partial(score, dict(score_options or {}))
-        use_absolute = base is weighted_correlation
+        spec = _score_specs().get(base)
+        use_absolute = spec is not None and spec.signed
     streams = _template_streams(rng, names)
     results: dict[str, ReplaySignificanceResult] = {}
     scores: dict[str, float] = {}
@@ -985,7 +1043,6 @@ def _max_over_templates(
     return ReplaySignificanceResult(
         observed=results[best].observed,
         shuffles=shuffles,
-        p_value=max(test.p_value for test in shuffles.values()),
         alternative="greater",
         use_absolute=use_absolute,
         template=best,
@@ -1075,19 +1132,8 @@ def _template_streams(
     A template's stream does not depend on the other templates or their
     order.
     """
-    import zlib
-
-    entropy = (
-        int(rng.integers(2**63))
-        if isinstance(rng, np.random.Generator)
-        else np.random.SeedSequence(rng).entropy
-    )
-    return {
-        name: np.random.default_rng(
-            np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
-        )
-        for name in names
-    }
+    entropy = _entropy(rng)
+    return {name: _stream(entropy, _name_key(name)) for name in names}
 
 
 def _zero_empty_rows(
@@ -1118,62 +1164,40 @@ def _nulls_to_run(
     pseudo_event_pool: Any,
 ) -> tuple[str, ...]:
     """The nulls to run, in the order the random numbers are drawn."""
-    unit_inputs = {
-        "spike_counts": spike_counts,
-        "encoding_models": encoding_models,
-        "dt": dt,
-    }
-    missing = [name for name, value in unit_inputs.items() if value is None]
-    requested_names = (
+    missing = _missing_decoding_inputs(spike_counts, encoding_models, dt)
+    requested = (
         None if nulls is None else ([nulls] if isinstance(nulls, str) else list(nulls))
     )
-    wants_decoding = requested_names is None or any(
-        name in _DECODING_NULLS for name in requested_names
+    wants_decoding = requested is None or any(
+        name in _DECODING_NULLS for name in requested
     )
-    if 0 < len(missing) < len(unit_inputs) and wants_decoding:
-        raise ValueError(
-            _format_error(
-                f"{_OPERATION}: the nulls that decode the event again "
-                f"({', '.join(_DECODING_NULLS)}) "
-                f"need spike_counts, encoding_models and dt, but "
-                f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} "
-                "missing.",
-                why="these nulls decode shuffled spike counts or shifted rate "
-                "maps the way the posterior was decoded",
-                fix="pass all three (and prior if the decode used one), or none "
-                "to run only the nulls that need the posterior alone",
-            )
+    if 0 < len(missing) < 3 and wants_decoding:
+        _refuse_missing_decoding_inputs(
+            _OPERATION,
+            _DECODING_NULLS,
+            missing,
+            alternative="or none to run only the nulls that need the posterior alone",
         )
-    available = {
-        "column_cycle": True,
-        "unit_identity": not missing,
-        "pseudo_event": pseudo_event_pool is not None,
-        "spike_train_circular": not missing,
-        "place_field_circular": not missing,
-        "time_bin_permutation": True,
-        "spike_time_uniform": not missing,
-        "column_cycle_weighted": pseudo_event_pool is not None,
+    given = {
+        "posterior": True,
+        "decoding": not missing,
+        "pool": pseudo_event_pool is not None,
     }
-    if nulls is None:
-        return tuple(name for name in _DEFAULT_NULLS if available[name])
-    requested = [nulls] if isinstance(nulls, str) else list(nulls)
+    if requested is None:
+        return tuple(name for name in _DEFAULT_NULLS if given[_NULL_SPECS[name].needs])
     unknown = [name for name in requested if name not in _NULLS]
     if unknown or not requested:
         raise ValueError(
             f"{_OPERATION}: nulls must name at least one of {_NULLS}, got "
             f"{requested!r}."
         )
-    lacking = [name for name in requested if not available[name]]
+    lacking = [name for name in requested if not given[_NULL_SPECS[name].needs]]
     if lacking:
-        decoding = "spike_counts, encoding_models and dt"
         needs = {
-            "unit_identity": decoding,
-            "pseudo_event": "pseudo_event_pool",
-            "spike_train_circular": decoding,
-            "place_field_circular": decoding,
-            "spike_time_uniform": decoding,
-            "column_cycle_weighted": "pseudo_event_pool, whose mean row "
-            "weights the peaks",
+            name: _DECODING_INPUTS
+            if _NULL_SPECS[name].needs == "decoding"
+            else f"pseudo_event_pool, {_NULL_SPECS[name].pool_use}"
+            for name in lacking
         }
         raise ValueError(
             _format_error(
@@ -1183,6 +1207,44 @@ def _nulls_to_run(
             )
         )
     return tuple(name for name in _NULLS if name in requested)
+
+
+def _missing_decoding_inputs(
+    spike_counts: Any, encoding_models: Any, dt: Any
+) -> list[str]:
+    """The inputs of the nulls that decode again that are not given, by name."""
+    return [
+        name
+        for name, value in (
+            ("spike_counts", spike_counts),
+            ("encoding_models", encoding_models),
+            ("dt", dt),
+        )
+        if value is None
+    ]
+
+
+def _refuse_missing_decoding_inputs(
+    operation: str,
+    nulls: Sequence[str],
+    missing: Sequence[str],
+    *,
+    alternative: str = "",
+) -> NoReturn:
+    """Refuse nulls that decode again without all of their inputs."""
+    one = len(nulls) == 1
+    raise ValueError(
+        _format_error(
+            f"{operation}: the {', '.join(nulls)} null{'' if one else 's'} "
+            f"decode{'s' if one else ''} the event again and need"
+            f"{'s' if one else ''} {_DECODING_INPUTS}, but {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} missing.",
+            why="these nulls decode shuffled spike counts or shifted rate maps "
+            "the way the posterior was decoded",
+            fix="pass all three (and prior if the decode used one)"
+            + (f", {alternative}" if alternative else ""),
+        )
+    )
 
 
 def _checked_null_options(
@@ -1235,7 +1297,8 @@ def _checked_null_options(
         )
     checked = {}
     for name in nulls:
-        defaults = _NULL_OPTIONS.get(name, {})
+        # Nulls of other tests, such as the rank-order cell_order, take none.
+        defaults = _NULL_SPECS[name].options if name in _NULL_SPECS else {}
         options = dict(given.get(name, {}))
         unknown = sorted(set(options) - set(defaults))
         if unknown:
@@ -1243,7 +1306,7 @@ def _checked_null_options(
                 f"it takes {sorted(defaults)}" if defaults else "it takes no options"
             )
             raise ValueError(f"{owner}: null_options gives {name} {unknown}; {takes}.")
-        if name in _NULL_OPTIONS:
+        if defaults:
             checked[name] = {**defaults, **options}
     edge = checked.get("column_cycle_weighted", {}).get("edge_exclusion", 0.0)
     if (
@@ -1345,6 +1408,10 @@ class _EventDecoder:
     share.
     """
 
+    # Posterior entries of the shuffles decoded together by decode_each
+    # (about 32 MB).
+    _BATCH_VALUES = 4_000_000
+
     def __init__(
         self,
         env: Any,
@@ -1358,6 +1425,9 @@ class _EventDecoder:
         self.dt = dt
         self.prior = prior
         self.template = template
+        # The rate maps' likelihood terms and the prior, for an event length.
+        self._prepared: tuple[int, _PoissonRates, NDArray[np.float64] | None] | None
+        self._prepared = None
 
     @property
     def first_rates(self) -> NDArray[np.float64]:
@@ -1368,22 +1438,33 @@ class _EventDecoder:
         return np.asarray(getattr(models, "firing_rates", models))
 
     def decode(self, counts: Any, models: Any = None) -> NDArray[np.float64]:
-        """The posterior of ``counts``, with ``models`` replacing the rate maps."""
-        from neurospatial.decoding import decode_jointly, decode_position
+        """The posterior of ``counts``, with ``models`` replacing the rate maps.
+
+        With one set of rate maps this is ``decode_position(env, counts,
+        encoding_models, dt=dt, prior=prior).posterior``, with the rate maps
+        checked and their likelihood terms built once per event length
+        rather than for every shuffle. ``models`` is a place-field shuffle's
+        ``(rates, prior)`` from :meth:`shifted_models`: finite, non-negative
+        rates whose unsupported bins the prior excludes.
+        """
+        from neurospatial.decoding import decode_jointly
+        from neurospatial.decoding._support import validate_prior
+        from neurospatial.decoding.likelihood import _PoissonRates
+        from neurospatial.decoding.posterior import _validate_spike_counts
 
         if self.template is None:
-            event_models, event_prior = (
-                models
-                if models is not None
-                else (
-                    self.encoding_models,
-                    self.prior,
+            counts = np.asarray(counts)
+            _validate_spike_counts(counts)
+            n_time = len(counts)
+            if models is None:
+                rates, prior = self._rates_and_prior(n_time)
+            else:
+                maps, support_prior = models
+                rates = _PoissonRates.from_rates(np.asarray(maps), float(self.dt))
+                prior = validate_prior(
+                    support_prior, n_time, self.env.n_bins, context="decode_position"
                 )
-            )
-            decoded: NDArray[np.float64] = decode_position(
-                self.env, counts, event_models, dt=self.dt, prior=event_prior
-            ).posterior
-            return decoded
+            return _posterior(counts, rates, prior)
         import warnings
 
         with warnings.catch_warnings():
@@ -1399,6 +1480,73 @@ class _EventDecoder:
             )
         return np.asarray(result.joint(self.template))
 
+    def decode_each(
+        self, shuffled: Iterable[NDArray[np.int64]]
+    ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64]]]:
+        """Each shuffle's posterior, with its counts, as :meth:`decode` gives it.
+
+        With one set of rate maps, the shuffles' counts are stacked and
+        decoded together, a batch at a time: the posterior of a time bin
+        depends only on its own counts. Each posterior is a view of its
+        batch.
+        """
+        from neurospatial.decoding.posterior import _validate_spike_counts
+
+        if self.template is not None:
+            for counts in shuffled:
+                yield self.decode(counts), counts
+            return
+
+        def decoded(
+            batch: list[NDArray[np.int64]],
+        ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64]]]:
+            n_time = len(batch[0])
+            stacked = np.concatenate(batch)
+            _validate_spike_counts(stacked)
+            rates, prior = self._rates_and_prior(n_time)
+            if prior is not None and prior.ndim == 2:  # one row per time bin
+                prior = np.tile(prior, (len(batch), 1))
+            posterior = _posterior(stacked, rates, prior)
+            for index, counts in enumerate(batch):
+                yield posterior[index * n_time : (index + 1) * n_time], counts
+
+        batch: list[NDArray[np.int64]] = []
+        size = 1
+        for counts in shuffled:
+            batch.append(np.asarray(counts))
+            if len(batch) == 1:
+                posterior_size = max(len(batch[0]), 1) * self.env.n_bins
+                size = max(1, self._BATCH_VALUES // posterior_size)
+            if len(batch) == size:
+                yield from decoded(batch)
+                batch = []
+        if batch:
+            yield from decoded(batch)
+
+    def _rates_and_prior(
+        self, n_time: int
+    ) -> tuple[_PoissonRates, NDArray[np.float64] | None]:
+        """The checked rate maps' likelihood terms and resolved prior.
+
+        As :func:`decode_position` prepares them for ``n_time`` time bins,
+        kept for the next call with as many.
+        """
+        from neurospatial.decoding._time_bins import validate_dt
+        from neurospatial.decoding.posterior import _prepare_decode_inputs
+
+        if self._prepared is None or self._prepared[0] != n_time:
+            rates, prior = _prepare_decode_inputs(
+                self.env,
+                self.encoding_models,
+                self.prior,
+                n_time,
+                dt=validate_dt(self.dt),
+                validate=True,
+                context="decode_position",
+            )
+            self._prepared = (n_time, rates, prior)
+        return self._prepared[1], self._prepared[2]
+
     def shifted_models(
         self, n_shuffles: int, generator: np.random.Generator
     ) -> Iterator[Any]:
@@ -1406,7 +1554,7 @@ class _EventDecoder:
         from neurospatial.replay.nulls import shuffle_place_fields_circular
 
         if self.template is None:
-            rates, support_prior = _supported_rates(
+            rates, support_prior = _decode_support(
                 self.env, self.encoding_models, self.prior
             )
             for maps in shuffle_place_fields_circular(
@@ -1423,7 +1571,7 @@ class _EventDecoder:
         streams = {
             name: shuffle_place_fields_circular(
                 envs[name],
-                _supported_rates(envs[name], self.encoding_models[name], None)[0],
+                _decode_support(envs[name], self.encoding_models[name], None)[0],
                 n_shuffles=n_shuffles,
                 rng=generator,
             )
@@ -1433,7 +1581,26 @@ class _EventDecoder:
             yield {name: next(streams[name]) for name in names}
 
 
-def _supported_rates(
+def _posterior(
+    counts: NDArray[np.int64],
+    rates: _PoissonRates,
+    prior: NDArray[np.float64] | None,
+) -> NDArray[np.float64]:
+    """The posterior of ``counts``, decoded as :func:`decode_position` does."""
+    from neurospatial.decoding.posterior import _posterior_blocks
+
+    ((_, _, posterior, _),) = _posterior_blocks(
+        lambda start, stop: counts[start:stop],
+        len(counts),
+        rates,
+        prior,
+        time_chunk=max(len(counts), 1),
+        dtype=np.float64,
+    )
+    return posterior
+
+
+def _decode_support(
     env: Environment, encoding_models: Any, prior: Any
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Rate maps with NaN outside training support, and the matching prior.
@@ -1454,9 +1621,40 @@ def _supported_rates(
     return rates, base * support
 
 
-def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
-    from neurospatial.replay.trajectory import _require_probability_rows
+@dataclass
+class _CheckedPool:
+    """A pseudo-event pool shared by many tests, with its rows once checked."""
 
+    pool: Any
+    rows: NDArray[np.float64] | None = None
+    mean: NDArray[np.float64] | None = None
+
+
+# Inside _checking_pool_once(pool): that pool, and its rows once checked.
+_CHECKED_POOL: ContextVar[_CheckedPool | None] = ContextVar(
+    "_CHECKED_POOL", default=None
+)
+
+
+@contextlib.contextmanager
+def _checking_pool_once(pool: Any) -> Iterator[None]:
+    """Check ``pool``'s rows, and take its mean row, once inside this block.
+
+    A caller that runs many tests on one pseudo-event pool, such as
+    :func:`compare_replay_methods` testing every event with every method,
+    runs them inside this block, which the pool must not change in: a test
+    given this same pool object reuses the first check that passed instead
+    of checking every row again. A pool that fails is checked, and refused,
+    by every test, as outside the block.
+    """
+    token = _CHECKED_POOL.set(_CheckedPool(pool))
+    try:
+        yield
+    finally:
+        _CHECKED_POOL.reset(token)
+
+
+def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
     rows = np.asarray(pool, dtype=np.float64)
     if rows.ndim != 2 or rows.shape[1] != env.n_bins or len(rows) == 0:
         raise ValueError(
@@ -1469,7 +1667,23 @@ def _validated_pool(pool: Any, env: Environment) -> NDArray[np.float64]:
                 "events, e.g. np.vstack([r.posterior for r in others])",
             )
         )
-    return _require_probability_rows(rows, _OPERATION)
+    shared = _CHECKED_POOL.get()
+    if shared is None or shared.pool is not pool:
+        return _probability_rows(rows, _OPERATION, sums="one")
+    if shared.rows is None:
+        shared.rows = _probability_rows(rows, _OPERATION, sums="one")
+    return shared.rows
+
+
+def _pool_mean(pool: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The mean row of a checked pool, taken once inside :func:`_checking_pool_once`."""
+    shared = _CHECKED_POOL.get()
+    if shared is None or shared.rows is not pool:
+        mean: NDArray[np.float64] = pool.mean(axis=0)
+        return mean
+    if shared.mean is None:
+        shared.mean = pool.mean(axis=0)
+    return shared.mean
 
 
 def _unwrap_partial(
@@ -1494,7 +1708,14 @@ def _uses_joint_weights(score: Callable[..., Any], options: Mapping[str, Any]) -
     time bin by the template's share of it (Tirole et al. 2022). Every other
     score needs rows that sum to 1.
     """
-    return score is weighted_correlation and options.get("row_normalization") == "none"
+    spec = _score_specs().get(score)
+    return (
+        spec is not None
+        and bool(spec.joint_weights)
+        and all(
+            options.get(name) == value for name, value in spec.joint_weights.items()
+        )
+    )
 
 
 def _conditional_rows(posterior: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -1529,6 +1750,64 @@ def _takes_rng(score: Callable[..., Any]) -> bool:
         ) from error
 
 
+@dataclass(frozen=True)
+class _ScoreSpec:
+    """How the tests treat one of the package's replay scores.
+
+    Attributes
+    ----------
+    scorer : callable
+        The class that scores an event and its shuffles in batches, called
+        as ``scorer(env, posterior, times, **score_options)``. It takes the
+        options the score's signature takes.
+    signed : bool
+        Whether the score's sign is the replay direction, so its absolute
+        value is tested by default.
+    undefined : str
+        When the score is undefined, for the refusal of such an event.
+    joint_weights : Mapping[str, Any]
+        Options under which the score reads a template's share of a joint
+        decode as weights, rather than rows that sum to 1.
+    moment_tables : Mapping[str, Any] or None
+        Options, with their defaults, under which :func:`dataset_values`
+        measures the score from moment tables; None when it cannot.
+    """
+
+    scorer: Callable[..., _Scorer]
+    signed: bool = False
+    undefined: str = ""
+    joint_weights: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    moment_tables: Mapping[str, Any] | None = None
+
+
+@functools.cache
+def _score_specs() -> Mapping[Callable[..., Any], _ScoreSpec]:
+    """The scores the tests know, by function."""
+    # circular.py builds its scorer on _Scorer, so it is imported here.
+    from neurospatial.replay.circular import (
+        _CircularSequenceScorer,
+        fit_circular_sequence,
+    )
+
+    return MappingProxyType(
+        {
+            detect_trajectory_radon: _ScoreSpec(_RadonScorer),
+            weighted_correlation: _ScoreSpec(
+                _WeightedCorrelationScorer,
+                signed=True,
+                undefined="the weighted correlation is undefined when all of "
+                "the posterior mass is at one position or in one time bin",
+                joint_weights=MappingProxyType({"row_normalization": "none"}),
+                moment_tables=MappingProxyType({"row_normalization": "per_time_bin"}),
+            ),
+            regression_line_score: _ScoreSpec(_RegressionLineScorer),
+            fit_circular_sequence: _ScoreSpec(_CircularSequenceScorer),
+        }
+    )
+
+
 def _scorer_for(
     score: Callable[..., Any],
     env: Environment,
@@ -1537,42 +1816,16 @@ def _scorer_for(
     options: dict[str, Any],
 ) -> _Scorer:
     """A scorer for ``score``: batched for the scores that support it."""
-    # circular.py builds its scorer on _Scorer, so it is imported here.
-    from neurospatial.replay.circular import (
-        _CircularSequenceScorer,
-        fit_circular_sequence,
-    )
-
-    batched: dict[
-        Callable[..., Any], tuple[Callable[..., _Scorer], tuple[str, ...]]
-    ] = {
-        detect_trajectory_radon: (
-            _RadonScorer,
-            (
-                "band",
-                "max_speed",
-                "min_speed",
-                "wrap",
-                "line_ends",
-                "off_track",
-                "zero_rows",
-                "n_lines",
-                "line_seed",
-            ),
-        ),
-        weighted_correlation: (_WeightedCorrelationScorer, ("row_normalization",)),
-        regression_line_score: (_RegressionLineScorer, ("band", "wrap_band")),
-        fit_circular_sequence: (_CircularSequenceScorer, ()),
-    }
-    if score in batched:
-        scorer_class, accepted = batched[score]
+    spec = _score_specs().get(score)
+    if spec is not None:
+        accepted = list(inspect.signature(score).parameters)[3:]
         unknown = sorted(set(options) - set(accepted))
         if unknown:
             raise TypeError(
                 f"{_OPERATION}: score_options has {unknown}, which "
-                f"{score.__name__} does not take; it takes {list(accepted)}."
+                f"{score.__name__} does not take; it takes {accepted}."
             )
-        return scorer_class(env, posterior, times, **options)
+        return spec.scorer(env, posterior, times, **options)
     if not callable(score):
         raise TypeError(
             f"{_OPERATION}: score must be a function such as "
@@ -1654,7 +1907,9 @@ class _WeightedCorrelationScorer(_Scorer):
         self.posterior = np.asarray(posterior, dtype=np.float64)
         self.row_normalization = row_normalization
         self.weights = _validated_weights(self.posterior, env.n_bins, row_normalization)
-        self.times = _validated_times(times, len(self.weights))
+        self.times = _posterior_times(
+            times, len(self.weights), _OPERATION, why=_CORRELATION_WHY
+        )
 
     def observe(self) -> WeightedCorrelationResult:
         score = _weighted_correlations(self.weights[None], self.times, self.positions)
@@ -1711,7 +1966,9 @@ class _RegressionLineScorer(_Scorer):
         self.order = np.argsort(starts, kind="stable")  # as in _track_positions
         self.starts, self.stops = starts[self.order], stops[self.order]
         self.posterior = np.asarray(posterior, dtype=np.float64)
-        self.times = _require_times(times, len(self.posterior), _OPERATION)
+        self.times = _posterior_times(
+            times, len(self.posterior), _OPERATION, why=_FIT_WHY, distinct=True
+        )
 
     def observe(self) -> RegressionLineScoreResult:
         return self.observed
@@ -1733,7 +1990,7 @@ class _RegressionLineScorer(_Scorer):
         batch: list[NDArray[np.float64]] = []
         filled = 0
         for shuffled in posteriors:
-            rows = _require_probability_rows(shuffled, _OPERATION, allow_zero_rows=True)
+            rows = _probability_rows(shuffled, _OPERATION, sums="one_or_zero")
             batch.append(rows[:, self.order])
             if len(batch) == self._BATCH:
                 out[filled : filled + len(batch)] = self._score_batch(batch)

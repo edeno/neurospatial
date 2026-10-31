@@ -60,17 +60,23 @@ class _PeakRecorder:
 
 @pytest.fixture
 def decoded_counts(monkeypatch):
-    """Every count matrix decode_position is given, in order."""
-    import neurospatial.decoding as decoding
+    """Every count matrix the nulls decode, in order."""
+    from neurospatial.replay.significance import _EventDecoder
 
     seen = []
-    original = decoding.decode_position
+    decode, decode_each = _EventDecoder.decode, _EventDecoder.decode_each
 
-    def spy(env, counts, *args, **kwargs):
+    def spy(self, counts, models=None):
         seen.append(np.array(counts))
-        return original(env, counts, *args, **kwargs)
+        return decode(self, counts, models)
 
-    monkeypatch.setattr(decoding, "decode_position", spy)
+    def spy_each(self, shuffled):
+        for posterior, counts in decode_each(self, shuffled):
+            seen.append(np.array(counts))
+            yield posterior, counts
+
+    monkeypatch.setattr(_EventDecoder, "decode", spy)
+    monkeypatch.setattr(_EventDecoder, "decode_each", spy_each)
     return seen
 
 

@@ -135,10 +135,13 @@ class TestVerdicts:
             env, spikes, intervals[0], rates, template_match_method=loose
         )
         assert result.p_value == pytest.approx(1 / 6) and not result.is_replay
+        assert result.error == ""
         default = detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=JI_WILSON_2007
         )
         assert np.isnan(default.score) and not default.is_replay
+        assert default.error == "fewer than 4 active template cells"
+        assert not any(default.criteria.values())
 
     def test_ji_tests_the_template_with_the_larger_index(self, track):
         env, rates = track

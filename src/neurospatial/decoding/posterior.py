@@ -74,11 +74,11 @@ def _validate_time_chunk(time_chunk: Any, *, allow_none: bool) -> Any:
     ``bool`` is rejected even though it subclasses ``int``, so ``True`` is not
     read as a chunk size of 1.
     """
-    from neurospatial._validation import is_positive_integer
+    from neurospatial._validation import is_integer_at_least
 
     if time_chunk is None and allow_none:
         return None
-    if not is_positive_integer(time_chunk):
+    if not is_integer_at_least(time_chunk, 1):
         raise ValueError(
             f"time_chunk must be a positive integer{' or None' if allow_none else ''}, "
             f"got {time_chunk!r} (type {type(time_chunk).__name__})."

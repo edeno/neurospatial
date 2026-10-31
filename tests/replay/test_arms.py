@@ -148,6 +148,11 @@ class TestWuFoster:
         assert table["template"].tolist() == ["center+right", "left"]
         with pytest.raises(ValueError, match="need arms="):
             compare_replay_methods(env, events, replay_methods=[WU_FOSTER_2014])
+        separate = [{"left": event, "right": event} for event in events]
+        with pytest.raises(ValueError, match="decoded on one environment"):
+            compare_replay_methods(
+                env, separate, replay_methods=[WU_FOSTER_2014], arms=arms
+            )
 
     def test_recipe_matches_the_paper(self):
         method = WU_FOSTER_2014

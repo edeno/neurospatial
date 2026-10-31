@@ -64,6 +64,8 @@ RegressionLineScoreResult
 
 from __future__ import annotations
 
+import contextlib
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -71,6 +73,7 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -416,7 +419,7 @@ def _track_positions(
     ValueError
         If ``env`` is neither 1-D nor a linearized track, if ``posterior`` is
         not 2-D, if it does not have one column per bin, or if a row is not a
-        probability mass (see :func:`_require_probability_rows`).
+        probability mass (see :func:`_probability_rows`).
     """
     from neurospatial.environment import _require_track_extents
 
@@ -432,80 +435,13 @@ def _track_positions(
             f"has {env.n_bins} bins. Pass the posterior decoded on this "
             "environment, with one column per bin."
         )
-    posterior = _require_probability_rows(
-        posterior, operation, allow_zero_rows=allow_zero_rows
+    posterior = _probability_rows(
+        posterior, operation, sums="one_or_zero" if allow_zero_rows else "one"
     )
     # A stable sort keeps bins that are already in track order in place, so
     # sampling below draws the same bins as it would in bin numbering.
     order = np.argsort(starts, kind="stable")
     return posterior[:, order], starts[order], stops[order]
-
-
-def _require_probability_rows(
-    posterior: NDArray[Any], operation: str, *, allow_zero_rows: bool = False
-) -> NDArray[np.float64]:
-    """Refuse rows that are not a probability mass over the bins.
-
-    Parameters
-    ----------
-    posterior : NDArray, shape (n_time_bins, n_bins)
-        Posterior mass per bin.
-    operation : str
-        The calling function, for the refusal message.
-    allow_zero_rows : bool, default=False
-        Accept rows that are all zero, the time bins without spikes that
-        ``empty_time_bins="zero"`` zeroes.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_time_bins, n_bins)
-        The posterior as float64.
-
-    Raises
-    ------
-    ValueError
-        If a row holds NaN or Inf, a negative entry, or does not sum to 1
-        within the tolerance a ``DecodingResult`` accepts (``1e-6``, which
-        covers float32 rounding).
-    """
-    from neurospatial.decoding import _ROW_SUM_TOLERANCE
-
-    posterior = np.asarray(posterior, dtype=np.float64)
-    finite = np.isfinite(posterior).all(axis=1)
-    negative = finite & (posterior < 0).any(axis=1)
-    sums = posterior.sum(axis=1)
-    unnormalized = finite & ~negative & (np.abs(sums - 1.0) > _ROW_SUM_TOLERANCE)
-    if allow_zero_rows:
-        unnormalized &= sums != 0
-    bad = ~finite | negative | unnormalized
-    if not np.any(bad):
-        return posterior
-    problems = []
-    if np.any(~finite):
-        problems.append(f"{int(np.sum(~finite))} contain NaN or Inf")
-    if np.any(negative):
-        problems.append(f"{int(np.sum(negative))} have negative entries")
-    if np.any(unnormalized):
-        worst = sums[unnormalized][np.argmax(np.abs(sums[unnormalized] - 1.0))]
-        problems.append(
-            f"{int(np.sum(unnormalized))} do not sum to 1 (worst row sums to "
-            f"{worst:.6g}, |row sum - 1| = {abs(worst - 1.0):.2g})"
-        )
-    raise ValueError(
-        _format_error(
-            f"{operation} needs each posterior row to be a probability mass "
-            f"over the bins, but {int(np.sum(bad))} of {len(posterior)} rows "
-            f"are not: {'; '.join(problems)}.",
-            why="a row with NaN has no decoded position but would be read as "
-            "the track start (bin 0), and a row that does not sum to 1 weighs "
-            "its time bin more or less than the others (a sampled fit draws "
-            "the missing mass at the track start)",
-            fix="drop undecodable time bins together with their times, "
-            "keep = np.isfinite(posterior).all(axis=1); posterior, times = "
-            "posterior[keep], times[keep]; renormalize rows that only lack "
-            "mass with posterior / posterior.sum(axis=1, keepdims=True)",
-        )
-    )
 
 
 def _map_bins(
@@ -701,7 +637,9 @@ def fit_isotonic_trajectory(
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_isotonic_trajectory()"
     )
-    times = _require_times(times, len(posterior), "fit_isotonic_trajectory()")
+    times = _posterior_times(
+        times, len(posterior), "fit_isotonic_trajectory()", why=_FIT_WHY, distinct=True
+    )
     positions = _decoded_positions(posterior, starts, stops, method)
     weights = posterior[np.arange(len(posterior)), _map_bins(posterior, starts, stops)]
 
@@ -873,10 +811,13 @@ def fit_linear_trajectory(
     the P(X|N) distribution for each decoded bin and assigned the sampled
     locations to that bin", then regressed the sampled locations on the
     time-bin number. Each draw here takes a bin at random with probability
-    equal to its posterior mass (inverting the cumulative posterior with
-    bins in track order) and uses the bin's center as the sampled position.
-    Each sample is placed at its time bin's time, and one ordinary
-    least-squares line is fit to all the samples of a resample. The papers
+    equal to its posterior mass and uses the bin's center as the sampled
+    position. Each sample is placed at its time bin's time, and one ordinary
+    least-squares line is fit to all the samples of a resample. Because a
+    sample is a bin center, the time bin's samples are drawn as their counts
+    per bin (one multinomial draw from the posterior row), and the line is
+    the count-weighted least-squares line: the same distribution of lines as
+    drawing the samples one by one, without holding them. The papers
     regress on the time-bin number; for evenly spaced time bins that gives
     the same R² and a slope in positions per time bin rather than per
     second.
@@ -961,7 +902,7 @@ def fit_linear_trajectory(
     ...     env, posterior, times, n_samples=10_000 * n_time_bins, rng=0
     ... )
     >>> print(f"{sampled.slope:.0f} cm/s, R² = {sampled.r_squared:.2f}")
-    319 cm/s, R² = 0.55
+    317 cm/s, R² = 0.55
     >>>
     >>> # Jadhav-lab code: 10,000 samples split by spike count, 500 resamples
     >>> spikes = np.random.default_rng(1).poisson(2.0, size=n_time_bins)
@@ -975,13 +916,15 @@ def fit_linear_trajectory(
     ...     rng=0,
     ... )
     >>> print(f"R² = {jadhav.r_squared:.2f}, slope_std = {jadhav.slope_std:.1f} cm/s")
-    R² = 0.55, slope_std = 3.5 cm/s
+    R² = 0.55, slope_std = 3.3 cm/s
     """
     if method not in ("sample", "map"):
         raise ValueError(f"method must be 'sample' or 'map', got {method!r}")
     operation = "fit_linear_trajectory()"
     posterior, starts, stops = _track_positions(env, posterior, operation)
-    times = _require_times(times, len(posterior), operation)
+    times = _posterior_times(
+        times, len(posterior), operation, why=_FIT_WHY, distinct=True
+    )
     spikes = (
         None
         if spike_counts is None
@@ -1231,7 +1174,9 @@ def regression_line_score(
     posterior, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=True
     )
-    times = _require_times(times, len(posterior), operation)
+    times = _posterior_times(
+        times, len(posterior), operation, why=_FIT_WHY, distinct=True
+    )
     if band is None:
         band = default_length(env, _REGRESSION_BAND_CM, name="band", call=operation)
     if not (np.isfinite(band) and band > 0):
@@ -1486,10 +1431,10 @@ def _samples_per_time_bin(
     return split
 
 
-_SAMPLE_BLOCK = 2_000_000
-"""Samples drawn and fit together, bounding memory to a few arrays of this
-size (16 MB each) however many resamples are requested; a resample larger
-than this is drawn and fit alone."""
+_COUNT_BLOCK = 2_000_000
+"""Sample counts drawn and fit together (resamples x time bins x position
+bins), bounding memory to a few arrays of this size (16 MB each) however
+many resamples are requested; a resample larger than this is drawn alone."""
 
 
 def _sampled_lines(
@@ -1501,10 +1446,12 @@ def _sampled_lines(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Draw positions from each time bin's posterior and fit a line per resample.
 
-    Each draw inverts the time bin's cumulative posterior (bins in track
-    order): the drawn bin is the first whose cumulative mass exceeds ``u``
-    times the row's total, for ``u`` uniform on [0, 1), so a bin with no
-    mass is never drawn, and the sampled position is the bin's center.
+    A sampled position is its bin's center, so a resample is described by how
+    many of each time bin's samples fall in each position bin. Those counts
+    are multinomial, with the time bin's posterior (over its total) as the
+    probabilities, so they are drawn directly instead of sample by sample: a
+    bin with no mass is never drawn. The least-squares line through the
+    samples is the count-weighted line through the (time, bin center) pairs.
 
     Parameters
     ----------
@@ -1518,138 +1465,56 @@ def _sampled_lines(
         Draws from each time bin in each resample; each row sums to
         ``n_samples``.
     generator : np.random.Generator
-        Source of the uniforms on [0, 1), drawn block by block; consecutive
-        resamples use consecutive draws, used in time-bin order within each
-        resample.
+        Source of the multinomial counts, drawn block by block in resample
+        and then time-bin order.
 
     Returns
     -------
     slopes, intercepts, r_squared : NDArray[np.float64], shape (n_resamples,)
-        The line through each resample's samples (see :func:`_pooled_lines`).
+        The least-squares line through each resample's samples; R² is NaN
+        for a resample whose samples all fall in one position bin.
     """
-    n_resamples, n_time_bins = samples_per_bin.shape
-    n_bins = posterior.shape[1]
-    cumulative = np.cumsum(posterior, axis=1)
-    totals = cumulative[:, -1]
-    # Rows laid end to end, row t shifted by 2 t so that rows never overlap,
-    # make one sorted array that a single searchsorted inverts for every
-    # sample, without an (n_samples, n_bins) comparison.
-    offsets = 2.0 * np.arange(n_time_bins)
-    flat = (cumulative + offsets[:, None]).ravel()
-    last = n_bins - 1 - np.argmax(posterior[:, ::-1] > 0, axis=1)
-    n_samples = int(samples_per_bin[0].sum())
-    step = max(1, _SAMPLE_BLOCK // n_samples)
+    n_resamples = len(samples_per_bin)
+    totals = posterior.sum(axis=1, keepdims=True)
+    # A time bin without mass gets no samples; any probabilities will do.
+    probabilities = np.divide(
+        posterior,
+        totals,
+        out=np.full_like(posterior, 1.0 / posterior.shape[1]),
+        where=totals > 0,
+    )
+    n_samples = float(samples_per_bin[0].sum())
+    step = max(1, _COUNT_BLOCK // posterior.size)
     lines = []
     for first in range(0, n_resamples, step):
-        counts = samples_per_bin[first : first + step]
-        time_bin = np.repeat(
-            np.tile(np.arange(n_time_bins), len(counts)), counts.ravel()
-        ).reshape(len(counts), -1)
-        uniforms = generator.random((len(counts), n_samples))
-        keys = offsets[time_bin] + uniforms * totals[time_bin]
-        drawn = np.searchsorted(flat, keys, side="right") - time_bin * n_bins
-        # A key rounded up to its row's total lands past the row; that draw
-        # is the row's last bin with mass.
-        drawn = np.minimum(drawn, last[time_bin])
-        lines.append(_pooled_lines(times[time_bin], centers[drawn]))
+        per_time = samples_per_bin[first : first + step]
+        # counts[r, t, b]: samples of time bin t in position bin b.
+        counts = generator.multinomial(per_time, probabilities).astype(np.float64)
+        mean_time = (per_time @ times) / n_samples
+        along = counts @ centers  # summed sample positions per time bin
+        mean_position = along.sum(axis=1) / n_samples
+        dt = times - mean_time[:, None]
+        sxx = np.sum(per_time * dt * dt, axis=1)
+        sxy = np.sum(dt * (along - per_time * mean_position[:, None]), axis=1)
+        per_position = counts.sum(axis=1)
+        dx = centers - mean_position[:, None]
+        syy = np.sum(per_position * dx * dx, axis=1)
+        slopes = sxy / sxx
+        intercepts = mean_position - slopes * mean_time
+        # With an intercept, R² of the least-squares line is the squared
+        # correlation; it is undefined when the positions never change.
+        stationary = np.count_nonzero(per_position, axis=1) < 2
+        r_squared = np.divide(
+            sxy**2,
+            sxx * syy,
+            out=np.full(len(sxx), np.nan),
+            where=~stationary,
+        )
+        lines.append((slopes, intercepts, r_squared))
     slopes, intercepts, r_squared = (
         np.concatenate(parts) for parts in zip(*lines, strict=True)
     )
     return slopes, intercepts, r_squared
-
-
-def _pooled_lines(
-    sample_times: NDArray[np.float64], sample_positions: NDArray[np.float64]
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Ordinary least-squares line through each resample's samples.
-
-    Parameters
-    ----------
-    sample_times, sample_positions : NDArray[np.float64], shape (n_resamples, n_samples)
-        Samples of each resample, at two or more distinct times.
-
-    Returns
-    -------
-    slopes, intercepts, r_squared : NDArray[np.float64], shape (n_resamples,)
-        Coefficients and R² of each resample's line; R² is NaN for a
-        resample whose positions never change.
-    """
-    mean_time = sample_times.mean(axis=1, keepdims=True)
-    mean_position = sample_positions.mean(axis=1, keepdims=True)
-    dt = sample_times - mean_time
-    dx = sample_positions - mean_position
-    sxx = np.sum(dt * dt, axis=1)
-    sxy = np.sum(dt * dx, axis=1)
-    syy = np.sum(dx * dx, axis=1)
-    slopes = sxy / sxx
-    intercepts = mean_position[:, 0] - slopes * mean_time[:, 0]
-    # With an intercept, R² of the least-squares line is the squared
-    # correlation; it is undefined when the positions never change.
-    stationary = np.ptp(sample_positions, axis=1) == 0
-    r_squared = np.divide(
-        sxy**2,
-        sxx * syy,
-        out=np.full(len(sxx), np.nan),
-        where=~stationary,
-    )
-    return slopes, intercepts, r_squared
-
-
-def _require_times(
-    times: NDArray[np.float64], n_time_bins: int, operation: str
-) -> NDArray[np.float64]:
-    """Check one finite time per posterior row, with at least two distinct.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_time_bins,)
-        Time of each posterior row, in seconds.
-    n_time_bins : int
-        Number of posterior rows.
-    operation : str
-        The calling function, for the refusal message.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_time_bins,)
-        ``times`` as float64.
-
-    Raises
-    ------
-    ValueError
-        If ``times`` is not 1-D with one entry per row, holds NaN or Inf, or
-        has a single distinct value.
-    """
-    times = np.asarray(times, dtype=np.float64)
-    if times.ndim != 1 or len(times) != n_time_bins:
-        raise ValueError(
-            _format_error(
-                f"{operation}: times has {times.size} entries in shape "
-                f"{times.shape}, but posterior has {n_time_bins} rows.",
-                why="each posterior row is the decode at one time",
-                fix="pass one time per posterior row, in seconds, with shape "
-                "(n_time_bins,); drop the times of any rows you dropped",
-            )
-        )
-    if not np.all(np.isfinite(times)):
-        raise ValueError(
-            _format_error(
-                f"{operation}: times contains NaN or Inf at "
-                f"{int(np.sum(~np.isfinite(times)))} of {n_time_bins} rows.",
-                why="a fit along time needs the time of every posterior row",
-                fix="drop those rows from both posterior and times",
-            )
-        )
-    if np.ptp(times) == 0:
-        raise ValueError(
-            _format_error(
-                f"{operation} needs at least two distinct times, but every "
-                "time bin has the same time.",
-                why="a line through identical times has no slope",
-                fix="pass the center time of each posterior row, in seconds",
-            )
-        )
-    return times
 
 
 def _fit_lines(
@@ -2045,6 +1910,27 @@ def detect_trajectory_radon(
 _LINE_ENDS = ("any", "on_track")
 _OFF_TRACK = ("band_median", "bin_median")
 _ZERO_ROWS = ("refuse", "line_median")
+# Inside _reusing_replay_lines(): the key and lines of the latest search.
+_REUSED_LINES: ContextVar[list[Any] | None] = ContextVar("_REUSED_LINES", default=None)
+
+
+@contextlib.contextmanager
+def _reusing_replay_lines() -> Iterator[None]:
+    """Reuse the latest line search for searches of the same geometry.
+
+    Building a search's scoring operators costs far more than scoring one
+    posterior with them. A caller that scores many posteriors of one event
+    one call at a time, such as :func:`dataset_values` measuring an event's
+    shuffles with :func:`detect_replay`, runs those calls inside this
+    block: a :func:`detect_trajectory_radon` search with the same bins,
+    times and options as the one before it then reuses its lines and
+    operators. Only the latest search is kept, and only inside the block.
+    """
+    token = _REUSED_LINES.set([])
+    try:
+        yield
+    finally:
+        _REUSED_LINES.reset(token)
 
 
 def _require_closed_loop(env: Environment, operation: str) -> None:
@@ -2056,7 +1942,7 @@ def _require_closed_loop(env: Environment, operation: str) -> None:
     only without ``edge_spacing``: a gap between segments would count as
     loop length at every corner but not at the seam.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         problem = "it is not a track built from a graph, so it has no loop"
     else:
@@ -2177,17 +2063,15 @@ def _prepare_replay_lines(
                 fix="leave out events without spikes, or score them as not replay",
             )
         )
-    times = _require_times(times, len(posterior), operation)
-    if np.any(np.diff(times) <= 0):
-        raise ValueError(
-            _format_error(
-                f"{operation} needs strictly increasing times.",
-                why="a trajectory's position at each time bin depends on the "
-                "time since the first",
-                fix="sort the posterior rows and their times together by time, "
-                "and drop rows with duplicate times",
-            )
-        )
+    times = _posterior_times(
+        times,
+        len(posterior),
+        operation,
+        why="a trajectory's position at each time bin depends on the time "
+        "since the first",
+        distinct=True,
+        increasing=True,
+    )
     if band is None:
         band = default_length(env, _DAVIDSON_BAND_CM, name="band", call=operation)
     # Trajectories that start and end on the track are bounded by it, and
@@ -2238,11 +2122,23 @@ def _prepare_replay_lines(
                 "environment's units",
             )
         )
+    elapsed = times - times[0]
+    reused = _REUSED_LINES.get()
+    key = None
+    if reused is not None:
+        arrays = (starts, stops, order, elapsed)
+        key = (
+            *(np.asarray(values).tobytes() for values in arrays),
+            *(band, speed_bound, min_speed, wrap, line_ends, off_track),
+            *(zero_rows, n_lines, line_seed),
+        )
+        if reused and reused[0] == key:
+            return reused[1], posterior
     lines = _ReplayLines(
         starts,
         stops,
         order,
-        times - times[0],
+        elapsed,
         float(band),
         speed_bound,
         operation,
@@ -2254,6 +2150,8 @@ def _prepare_replay_lines(
         n_lines=None if n_lines is None else int(n_lines),
         line_seed=int(line_seed),
     )
+    if reused is not None:
+        reused[:] = [key, lines]
     return lines, posterior
 
 
@@ -2420,6 +2318,7 @@ class _ReplayLines:
         )
         self.on_bin_positions = on_track_positions[on_bin]
         self._blocks: list[_LineBlock] | None = None
+        self._blocks_events = 0
         # Speeds and start positions: the grid's two axes, or each line's.
         self.speeds, self.start_positions = (
             self._grid(n_on_track, spacing, operation)
@@ -2902,9 +2801,11 @@ class _ReplayLines:
 
         Blocks keep their nonzeros, and their scores for ``n_events`` events,
         within the memory budgets. They are kept between calls when all of
-        them fit ``_CACHED_NONZEROS``.
+        them fit ``_CACHED_NONZEROS``, and reused for calls with at most the
+        events they were sized for: an event scored alone and then its
+        shuffles in batches builds the blocks again for the batches.
         """
-        if self._blocks is not None:
+        if self._blocks is not None and n_events <= self._blocks_events:
             yield from self._blocks
             return
         # On the grid a block is whole speeds, with every start position.
@@ -2935,7 +2836,7 @@ class _ReplayLines:
                     built = None
             yield block
         if built is not None:
-            self._blocks = built
+            self._blocks, self._blocks_events = built, n_events
 
     def _band_terms(
         self, positions: NDArray[np.float64], time: NDArray[np.intp]

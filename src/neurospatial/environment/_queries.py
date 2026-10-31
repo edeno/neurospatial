@@ -63,7 +63,7 @@ def _track_extents(
     1-D environments use their own coordinate. Both arrays have shape
     ``(n_bins,)`` and follow bin numbering, not track order.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is not None:
         edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
         active = linearization.active_mask
@@ -86,7 +86,7 @@ def _require_track_extents(
         raise ValueError(
             _format_error(
                 f"{operation} needs a position along a track, but this is a "
-                f"{env.n_dims}-D {env.binning.kind} environment that is not "
+                f"{env.n_dims}-D {env._binning.kind} environment that is not "
                 "a linearized track.",
                 why="it orders bins by their distance along one axis; bin "
                 "numbers have no spatial order, and a 2-D or 3-D arena has no "

@@ -20,6 +20,7 @@ from neurospatial.replay import (
     compare_replay_methods,
     dataset_test,
     dataset_values,
+    detect_trajectory_radon,
     distribution_test,
     rank_order_significance,
     relative_rank_template,
@@ -36,6 +37,7 @@ from neurospatial.replay.dataset import (
     _dataset_values,
 )
 from neurospatial.replay.methods import (
+    DAVIDSON_2009,
     FAROOQ_2019,
     GROSMARK_2016,
     SILVA_2015,
@@ -74,6 +76,32 @@ def _private_values(env, events, method, *, fast, **options):
         "rng": None,
     }
     return _dataset_values(env, events, method, fast=fast, **{**defaults, **options})
+
+
+def test_criterion_grid_matches_replay_criterion_at_the_threshold():
+    """Values within round-off of a threshold compare as equal; NaN fails."""
+    values = np.array([0.1 - 1e-12, 0.1 + 1e-12, 0.1 - 1e-6, np.nan, -0.3])
+    thresholds = np.array([0.1, 0.3])
+    table = pd.DataFrame({"q": values, "track_length": [1.0, 1.0, 1.0, 1.0, 3.0]})
+    for comparison, absolute, relative_to in itertools.product(
+        ("<", "<=", ">", ">="), (False, True), (None, "track_length")
+    ):
+        grid = CriterionGrid(
+            "q", comparison, thresholds, absolute=absolute, relative_to=relative_to
+        )
+        expected = [
+            [
+                ReplayCriterion(
+                    "q", comparison, threshold, relative_to, absolute
+                ).evaluate(value, track_length)
+                for threshold in thresholds
+            ]
+            for value, track_length in zip(values, table["track_length"], strict=True)
+        ]
+        np.testing.assert_array_equal(grid.passes(table), expected)
+    assert not ReplayCriterion("q", ">", 0.1).evaluate(0.1 + 1e-12, np.nan)
+    assert ReplayCriterion("q", "<=", 0.1).evaluate(0.1 + 1e-12, np.nan)
+    assert not ReplayCriterion("q", "<", 0.1).evaluate(np.nan, np.nan)
 
 
 class TestDatasetTest:
@@ -511,6 +539,42 @@ class TestDatasetValues:
                 ]
                 np.testing.assert_array_equal(swapped_counts, original[order])
 
+    @pytest.mark.parametrize("null", ["column_cycle", "time_bin_permutation"])
+    def test_replay_line_scores_equal_scoring_each_shuffle_alone(
+        self, track, session, null
+    ):
+        """An event's shuffles share line searches; scores are unchanged.
+
+        Dropping time bins without spikes gives the time-bin shuffles of
+        one event different times, so each needs a search of its own.
+        """
+        _, _, _, events, counts = session
+        events = events[:4]
+        counts = [np.array(event_counts) for event_counts in counts[:4]]
+        for event_counts in counts:
+            event_counts[1::3] = 0
+        method = dataclasses.replace(DAVIDSON_2009, empty_time_bins="drop")
+        common = {"spike_counts": counts, "n_datasets": 4, "rng": 5}
+        values = dataset_values(
+            track, events, replay_method=method, null=null, **common
+        )
+        shuffled = shuffle_events(track, events, null=null, **common)
+        for k, data in enumerate(shuffled):
+            alone = [
+                detect_trajectory_radon(
+                    track,
+                    event.posterior[spiking],
+                    event.times[spiking],
+                ).score
+                for event, event_counts in zip(
+                    data.events, data.spike_counts, strict=True
+                )
+                for spiking in [event_counts.sum(axis=1) > 0]
+            ]
+            np.testing.assert_array_equal(
+                values.loc[values["dataset"] == k, "score"], alone
+            )
+
     @pytest.mark.parametrize("null", ["unit_identity", "place_field_circular"])
     def test_shared_template_draws_are_one_per_data_set(self, track, session, null):
         """Two copies of an event get the same values within a shared data set."""
@@ -587,7 +651,7 @@ class TestDatasetValues:
 
     def test_decoding_nulls_need_their_inputs(self, track, session):
         _, _, _, events, counts = session
-        with pytest.raises(ValueError, match="needs \\['encoding_models', 'dt'\\]"):
+        with pytest.raises(ValueError, match="encoding_models, dt are missing"):
             dataset_values(
                 track,
                 events,

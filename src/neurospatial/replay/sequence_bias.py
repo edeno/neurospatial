@@ -29,11 +29,27 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._validation import (
+    validate_alpha,
+    validate_choice,
+    validate_integer_at_least,
+)
+from neurospatial.replay.rank_order import (
+    _BLOCK_VALUES,
+    _pooled_spikes,
+    _spikes_in,
+    _validated_interval,
+)
 from neurospatial.replay.significance import _ALTERNATIVES
 
 if TYPE_CHECKING:
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import (
+        ReplayCriterion,
+        ReplayDetectionResult,
+        _CompareEvent,
+        _CompareNeeds,
+    )
 
 __all__ = [
     "BiasSequenceMethod",
@@ -189,29 +205,65 @@ class BiasSequenceMethod:
         prefix = f"BiasSequenceMethod {self.name!r}"
         object.__setattr__(self, "notes", tuple(self.notes))
         _check_test(prefix, self.n_shuffles, self.alternative, self.use_absolute)
-        if (
-            isinstance(self.alpha, bool)
-            or not isinstance(self.alpha, (int, float, np.integer, np.floating))
-            or not 0 < self.alpha < 1
-        ):
-            raise ValueError(f"{prefix}: alpha must be in (0, 1), got {self.alpha!r}.")
-        value = self.min_active_cells
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, np.integer))
-            or value < 2
-        ):
-            raise ValueError(
-                f"{prefix}: min_active_cells must be an integer of at least 2, "
-                f"got {value!r}; a bias compares the spikes of two cells."
-            )
+        validate_alpha(self.alpha, owner=prefix)
+        validate_integer_at_least(
+            self.min_active_cells,
+            2,
+            name="min_active_cells",
+            owner=prefix,
+            hint="a bias compares the spikes of two cells",
+        )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
         """The active-cell threshold, as a criterion."""
-        from neurospatial.replay.methods import ReplayCriterion
+        from neurospatial.replay.methods import _active_cell_criteria
 
-        return (ReplayCriterion("n_active_cells", ">=", self.min_active_cells),)
+        return _active_cell_criteria(self.min_active_cells)
+
+    @property
+    def _compare_needs(self) -> _CompareNeeds:
+        """The spikes, decoding window and template matrix it scores events on."""
+        from neurospatial.replay.methods import _CompareNeeds
+
+        return _CompareNeeds(
+            "bias-sequence",
+            ("spike_times", "template_bias", "dt"),
+            why="they compare the order of each event's spikes, over the event's "
+            "decoding windows of width dt, with a template's skew-bias matrix",
+            fix="pass the session's spike_times, the template's matrix as "
+            "template_bias (e.g. mean_pairwise_bias(spike_times, theta_cycles)) "
+            "and the decoding window dt",
+        )
+
+    def _passes_alpha(self, p_value: Any, alpha: float) -> Any:
+        """Whether ``p_value`` (scalar or array) is below ``alpha``."""
+        return p_value < alpha
+
+    @property
+    def _smallest_p_value(self) -> float:
+        """The smallest p-value the method's ``n_shuffles`` can give."""
+        from neurospatial.replay.methods import _shuffle_p_floor
+
+        return _shuffle_p_floor(self.n_shuffles, self.alternative)
+
+    @property
+    def _alpha_refusal(self) -> None:
+        """None: its verdict is the p-value against alpha and its criterion."""
+        return None
+
+    def _compare(
+        self, event: _CompareEvent, rng: np.random.Generator
+    ) -> ReplayDetectionResult:
+        """This method's verdict on one event of ``compare_replay_methods``."""
+        assert event.window is not None and event.template_bias is not None
+        return detect_bias_sequence_replay(
+            event.spike_times,
+            event.window,
+            event.template_bias,
+            bias_sequence_method=self,
+            rng=rng,
+        )
 
 
 def pairwise_bias_matrix(
@@ -292,7 +344,7 @@ def pairwise_bias_matrix(
     """
     operation = "pairwise_bias_matrix()"
     times, labels, n_units = _event_spikes(spike_times, interval, operation)
-    ids = _unit_ids(unit_ids, n_units, operation)
+    ids = resolve_unit_ids(unit_ids, n_units, context=operation)
     bias, counts = _skew_bias(times, labels, n_units)
     return PairwiseBiasResult(bias=bias, n_spikes=counts, unit_ids=ids)
 
@@ -352,7 +404,7 @@ def mean_pairwise_bias(
            [ 0.333,  0.   ]])
     """
     operation = "mean_pairwise_bias()"
-    times, labels, n_units = _sorted_spikes(spike_times, operation)
+    times, labels, n_units = _sorted_spikes(spike_times)
     bounds = np.asarray(intervals, dtype=np.float64)
     if (
         bounds.ndim != 2
@@ -589,9 +641,10 @@ def detect_bias_sequence_replay(
     ReplayDetectionResult
         ``score`` is the signed similarity, ``p_value`` its shuffle test,
         ``criteria`` the active-unit rule (over every unit given), and
-        ``n_shuffles_used`` the shuffles with a defined similarity. The
-        verdict is False when the similarity is undefined (no pair active
-        in both).
+        ``n_shuffles_used`` the shuffles with a defined similarity. When
+        the similarity is undefined (no pair active in both), the event has
+        no verdict: it is not replay, its criterion is False and ``error``
+        says why.
 
     Raises
     ------
@@ -616,6 +669,7 @@ def detect_bias_sequence_replay(
     (True, -1.0)
     """
     from neurospatial.replay.methods import ReplayDetectionResult
+    from neurospatial.stats.shuffle import compute_shuffle_zscore
 
     method = bias_sequence_method
     tested = bias_similarity_significance(
@@ -628,24 +682,28 @@ def detect_bias_sequence_replay(
         rng=rng,
     )
     n_active = float(tested.n_active_cells)
+    error = (
+        ""
+        if np.isfinite(tested.similarity)
+        else "bias similarity undefined: no pair of cells fired in both the "
+        "event and the template"
+    )
     criterion = method.criteria[0]
-    passes = {criterion.label: criterion.evaluate(n_active, np.nan)}
+    passes = {criterion.label: not error and criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
-    z_score = (
-        float((tested.similarity - defined.mean()) / defined.std())
-        if defined.size and defined.std() > 0
-        else np.nan
-    )
+    z_score = compute_shuffle_zscore(tested.similarity, defined)
     return ReplayDetectionResult(
         method=method.name,
-        is_replay=bool(tested.p_value < method.alpha) and all(passes.values()),
+        is_replay=bool(method._passes_alpha(tested.p_value, method.alpha))
+        and all(passes.values()),
         score=tested.similarity,
         p_value=tested.p_value,
         criteria=passes,
         values={criterion.label: n_active},
         n_shuffles_used=int(defined.size),
         z_scores={"spike_label_permutation": z_score},
+        error=error,
     )
 
 
@@ -657,20 +715,14 @@ def detect_bias_sequence_replay(
 def _check_test(
     prefix: str, n_shuffles: Any, alternative: Any, use_absolute: Any
 ) -> None:
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{prefix}: n_shuffles must be a positive integer, got "
-            f"{n_shuffles!r}. Liu et al. (2023) used 100."
-        )
-    if alternative not in _ALTERNATIVES:
-        raise ValueError(
-            f"{prefix}: alternative must be one of {list(_ALTERNATIVES)}, got "
-            f"{alternative!r}."
-        )
+    validate_integer_at_least(
+        n_shuffles,
+        1,
+        name="n_shuffles",
+        owner=prefix,
+        hint="Liu et al. (2023) used 100",
+    )
+    validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=prefix)
     if not isinstance(use_absolute, (bool, np.bool_)):
         raise TypeError(f"{prefix}: use_absolute must be a bool, got {use_absolute!r}.")
     if use_absolute and alternative != "greater":
@@ -685,55 +737,29 @@ def _check_test(
         )
 
 
-def _interval(interval: Any, operation: str) -> tuple[float, float]:
-    from neurospatial.replay.rank_order import _validated_interval
-
-    return _validated_interval(interval, operation)
-
-
-def _unit_ids(unit_ids: Any, n_units: int, operation: str) -> NDArray[Any]:
-    if unit_ids is None:
-        return np.arange(n_units)
-    ids = np.asarray(unit_ids)
-    if ids.shape != (n_units,):
-        raise ValueError(
-            f"{operation}: unit_ids has shape {ids.shape} but spike_times has "
-            f"{n_units} units; pass one label per spike train."
-        )
-    return ids
-
-
 def _sorted_spikes(
-    spike_times: Any, operation: str, interval: tuple[float, float] | None = None
+    spike_times: Any, interval: tuple[float, float] | None = None
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """Every spike's time and unit, in time order, and the number of units.
 
     With ``interval``, only the spikes at ``start <= t < stop``.
+    :func:`~neurospatial._spikes.as_spike_trains` refuses NaN and Inf.
     """
     from neurospatial._spikes import as_spike_trains
 
     trains = as_spike_trains(spike_times)
     if interval is not None:
-        start, stop = interval
-        trains = [t[(t >= start) & (t < stop)] for t in trains]
-    times = np.concatenate(
-        [np.empty(0)] + [np.asarray(t, dtype=np.float64) for t in trains]
-    )
-    labels = np.repeat(np.arange(len(trains)), [len(t) for t in trains])
-    if not np.isfinite(times).all():
-        raise ValueError(
-            f"{operation}: spike_times holds NaN or Inf; pass finite spike "
-            "times in seconds."
-        )
+        trains = _spikes_in(trains, *interval)
+    times, labels = _pooled_spikes(trains, np.arange(len(trains)), "all_spikes")
     order = np.argsort(times, kind="stable")
-    return times[order], labels[order].astype(np.intp), len(trains)
+    return times[order], labels[order], len(trains)
 
 
 def _event_spikes(
     spike_times: Any, interval: Any, operation: str
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], int]:
     """The event's spikes, in time order, with their units."""
-    return _sorted_spikes(spike_times, operation, _interval(interval, operation))
+    return _sorted_spikes(spike_times, _validated_interval(interval, operation))
 
 
 def _skew_bias(
@@ -821,15 +847,27 @@ def _significance(
 
     n_units = len(template)
     bias, counts = _skew_bias(times, labels, n_units)
-    observed = float(_cosines(template, bias[np.newaxis])[0])
-    generator = _ensure_rng(rng)
-    shuffled = np.stack(
-        [
-            _skew_bias(times, generator.permutation(labels), n_units)[0]
-            for _ in range(n_shuffles)
-        ]
+    # A unit silent in the event has no defined pair, in the event or in any
+    # shuffle (permuting the labels keeps each unit's spike count), so the
+    # matrices are scored over the active units only.
+    active = np.flatnonzero(counts > 0)
+    active_labels = np.searchsorted(active, labels)
+    active_template = template[np.ix_(active, active)]
+    observed = float(
+        _cosines(active_template, bias[np.ix_(active, active)][np.newaxis])[0]
     )
-    null = _cosines(template, shuffled)
+    generator = _ensure_rng(rng)
+    null = np.empty(n_shuffles)
+    # Blocks of shuffles bound the memory of the stacked matrices.
+    block = max(1, _BLOCK_VALUES // max(active.size**2, 1))
+    for start in range(0, n_shuffles, block):
+        shuffled = np.stack(
+            [
+                _skew_bias(times, generator.permutation(active_labels), active.size)[0]
+                for _ in range(start, min(start + block, n_shuffles))
+            ]
+        )
+        null[start : start + block] = _cosines(active_template, shuffled)
     defined = null[np.isfinite(null)]
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray

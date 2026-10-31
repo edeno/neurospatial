@@ -21,13 +21,44 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_integer_at_least, validate_choice
+from neurospatial.environment._cache import CacheKey
+from neurospatial.replay._inputs import (
+    _STEP_WHY,
+    _posterior_times,
+    _probability_rows,
+)
 
 if TYPE_CHECKING:
+    from scipy.sparse import csr_array
+
     from neurospatial.decoding import JointDecodingResult
     from neurospatial.environment import Environment
 
 _OPERATION = "trajectory_metrics()"
 _METRICS = ("geodesic", "euclidean")
+# The per-event scalars of TrajectoryMetrics, which criteria, tested
+# quantities and data-set values name.
+_TRAJECTORY_SCALARS = (
+    "n_time_bins",
+    "duration",
+    "track_length",
+    "max_map_jump",
+    "max_mean_jump",
+    "mean_mean_jump",
+    "map_range",
+    "mean_range",
+    "start_to_end_map_distance",
+    "start_to_end_mean_distance",
+    "map_path_length",
+    "dispersion",
+    "mean_spread",
+    "mean_peak_probability",
+    "empty_fraction",
+)
+# The bin graph's edge lengths, kept with the environment: every scored
+# shuffle of an event looks up geodesic distances between its MAP bins.
+_BIN_GRAPH: CacheKey[csr_array] = CacheKey("replay bin graph")
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -128,25 +159,73 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
     space_fractions: NDArray[np.float64]
     metric: str
     units: str | None
-    n_time_bins: int
     duration: float
     track_length: float
-    max_map_jump: float
-    max_mean_jump: float
-    mean_mean_jump: float
     map_range: float
     mean_range: float
     start_to_end_map_distance: float
-    start_to_end_mean_distance: float
-    map_path_length: float
-    dispersion: float
-    mean_spread: float
-    mean_peak_probability: float
-    empty_fraction: float
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
         self._own_arrays()
+
+    # The scalars below follow from the arrays; the others need the times,
+    # the track or the bin distances, which the result does not keep.
+
+    @property
+    def n_time_bins(self) -> int:
+        """Number of time bins in the event."""
+        return len(self.map_bins)
+
+    @property
+    def max_map_jump(self) -> float:
+        """Largest of ``map_jumps``; NaN with one time bin."""
+        return _max_or_nan(self.map_jumps)
+
+    @property
+    def max_mean_jump(self) -> float:
+        """Largest of ``mean_jumps``; NaN with one time bin."""
+        return _max_or_nan(self.mean_jumps)
+
+    @property
+    def mean_mean_jump(self) -> float:
+        """Mean of ``mean_jumps``; NaN with one time bin."""
+        jumps = self.mean_jumps
+        return float(np.mean(jumps)) if len(jumps) else np.nan
+
+    @property
+    def start_to_end_mean_distance(self) -> float:
+        """Euclidean distance between the first and last posterior means."""
+        means = self.mean_positions
+        return float(np.linalg.norm(means[-1] - means[0]))
+
+    @property
+    def map_path_length(self) -> float:
+        """Sum of ``map_jumps``."""
+        return float(np.sum(self.map_jumps))
+
+    @property
+    def dispersion(self) -> float:
+        """Root-mean-square distance of the posterior means from their average."""
+        deviations = self.mean_positions - self.mean_positions.mean(axis=0)
+        return float(np.sqrt(np.mean(np.sum(deviations**2, axis=1))))
+
+    @property
+    def mean_spread(self) -> float:
+        """Mean of ``spread`` over time bins."""
+        return float(np.mean(self.spread))
+
+    @property
+    def mean_peak_probability(self) -> float:
+        """Mean of ``peak_probability`` over time bins."""
+        return float(np.mean(self.peak_probability))
+
+    @property
+    def empty_fraction(self) -> float:
+        """Fraction of time bins without spikes; NaN without ``spike_counts``."""
+        if self.empty_time_bins is None:
+            return np.nan
+        return float(np.mean(self.empty_time_bins))
 
     def well_decoded_fraction(
         self, threshold: float = 5.0, *, chance_bins: int | None = None
@@ -206,11 +285,7 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
             )
         if chance_bins is None:
             chance_bins = len(self.max_posterior)
-        elif (
-            isinstance(chance_bins, bool)
-            or not isinstance(chance_bins, (int, np.integer))
-            or chance_bins < 1
-        ):
+        elif not is_integer_at_least(chance_bins, 1):
             raise ValueError(
                 "well_decoded_fraction(): chance_bins must be a positive "
                 f"number of bins, such as 2 * env.n_bins, got {chance_bins!r}."
@@ -220,26 +295,12 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of the event's scalar metrics."""
-        return {
-            "metric": self.metric,
-            "units": self.units,
-            "n_time_bins": self.n_time_bins,
-            "duration": self.duration,
-            "track_length": self.track_length,
-            "max_map_jump": self.max_map_jump,
-            "max_mean_jump": self.max_mean_jump,
-            "mean_mean_jump": self.mean_mean_jump,
-            "map_range": self.map_range,
-            "mean_range": self.mean_range,
-            "start_to_end_map_distance": self.start_to_end_map_distance,
-            "start_to_end_mean_distance": self.start_to_end_mean_distance,
-            "map_path_length": self.map_path_length,
-            "dispersion": self.dispersion,
-            "mean_spread": self.mean_spread,
-            "mean_peak_probability": self.mean_peak_probability,
-            "well_decoded_fraction": self.well_decoded_fraction(),
-            "empty_fraction": self.empty_fraction,
-        }
+        values: dict[str, Any] = {"metric": self.metric, "units": self.units}
+        values.update({name: getattr(self, name) for name in _TRAJECTORY_SCALARS})
+        # Kept before empty_fraction, the last scalar.
+        values["well_decoded_fraction"] = self.well_decoded_fraction()
+        values["empty_fraction"] = values.pop("empty_fraction")
+        return values
 
 
 def trajectory_metrics(
@@ -433,7 +494,7 @@ def trajectory_metrics(
     >>> round(metrics.well_decoded_fraction(), 2)  # 6 of 10 bins
     0.6
     """
-    return _trajectory_metrics(
+    metrics, _ = _trajectory_metrics(
         env,
         posterior,
         times,
@@ -441,14 +502,12 @@ def trajectory_metrics(
         metric=metric,
         operation=_OPERATION,
     )
+    return metrics
 
 
 def _check_metric(metric: Any, operation: str) -> None:
     """Refuse a distance metric other than geodesic, Euclidean or None."""
-    if metric is not None and metric not in _METRICS:
-        raise ValueError(
-            f"{operation}: metric must be one of {_METRICS} or None, got {metric!r}."
-        )
+    validate_choice(metric, (*_METRICS, None), name="metric", owner=operation)
 
 
 def _trajectory_metrics(
@@ -459,8 +518,12 @@ def _trajectory_metrics(
     spike_counts: NDArray[np.int64] | None,
     metric: Literal["geodesic", "euclidean"] | None,
     operation: str,
-) -> TrajectoryMetrics:
-    """:func:`trajectory_metrics`, naming ``operation`` in its errors."""
+) -> tuple[TrajectoryMetrics, tuple[NDArray[np.float64], NDArray[np.intp]]]:
+    """:func:`trajectory_metrics`, naming ``operation`` in its errors.
+
+    Also returns the :func:`_bin_distance_lookup` of the MAP bins, so a
+    caller measuring further distances between them reuses it.
+    """
     from neurospatial.decoding import map_bin, mean_position
     from neurospatial.environment import _track_extents
     from neurospatial.geometry import require_cartesian
@@ -473,8 +536,18 @@ def _trajectory_metrics(
         "between (distance, angle) bins are not path lengths",
         fix="decode the event on the allocentric environment the animal ran in",
     )
-    raw = _posterior_rows(posterior, env.n_bins, operation)
-    times = _increasing_times(times, len(raw), operation)
+    raw = np.asarray(posterior, dtype=np.float64)
+    if raw.ndim != 2 or raw.shape[1] != env.n_bins or len(raw) == 0:
+        raise ValueError(
+            _format_error(
+                f"{operation}: posterior must have shape (n_time_bins, "
+                f"{env.n_bins}) with at least one time bin, one column per "
+                f"environment bin, got {raw.shape}.",
+                fix="pass the posterior decoded on this environment",
+            )
+        )
+    raw = _probability_rows(raw, operation, sums="at_most_one")
+    times = _posterior_times(times, len(raw), operation, why=_STEP_WHY, increasing=True)
     empty_time_bins = (
         None
         if spike_counts is None
@@ -505,8 +578,7 @@ def _trajectory_metrics(
             mean_range = float(np.ptp(posterior @ along))
 
     sizes = np.asarray(env.bin_sizes, dtype=np.float64)
-    deviations = means - means.mean(axis=0)
-    return TrajectoryMetrics(
+    metrics = TrajectoryMetrics(
         map_bins=bins,
         map_positions=centers[bins],
         peak_probability=raw[rows, bins],
@@ -519,73 +591,13 @@ def _trajectory_metrics(
         space_fractions=sizes / sizes.sum(),
         metric=metric,
         units=env.units,
-        n_time_bins=len(raw),
         duration=float(times[-1] - times[0]),
         track_length=track_length,
-        max_map_jump=_max_or_nan(map_jumps),
-        max_mean_jump=_max_or_nan(mean_jumps),
-        mean_mean_jump=float(np.mean(mean_jumps)) if len(mean_jumps) else np.nan,
         map_range=map_range,
         mean_range=mean_range,
         start_to_end_map_distance=float(between[rows_of[0], rows_of[-1]]),
-        start_to_end_mean_distance=float(np.linalg.norm(means[-1] - means[0])),
-        map_path_length=float(np.sum(map_jumps)),
-        dispersion=float(np.sqrt(np.mean(np.sum(deviations**2, axis=1)))),
-        mean_spread=float(np.mean(spread)),
-        mean_peak_probability=float(np.mean(raw[rows, bins])),
-        empty_fraction=(
-            np.nan if empty_time_bins is None else float(np.mean(empty_time_bins))
-        ),
     )
-
-
-def _posterior_rows(posterior: Any, n_bins: int, operation: str) -> NDArray[np.float64]:
-    """Check rows of finite, non-negative mass in (0, 1]."""
-    from neurospatial.decoding import _ROW_SUM_TOLERANCE
-
-    values = np.asarray(posterior, dtype=np.float64)
-    if values.ndim != 2 or values.shape[1] != n_bins or len(values) == 0:
-        raise ValueError(
-            _format_error(
-                f"{operation}: posterior must have shape (n_time_bins, "
-                f"{n_bins}) with at least one time bin, one column per "
-                f"environment bin, got {values.shape}.",
-                fix="pass the posterior decoded on this environment",
-            )
-        )
-    finite = np.isfinite(values).all(axis=1)
-    negative = finite & (values < 0).any(axis=1)
-    sums = values.sum(axis=1)
-    empty = finite & ~negative & (sums <= 0)
-    excess = finite & ~negative & (sums > 1.0 + _ROW_SUM_TOLERANCE)
-    bad = ~finite | negative | empty | excess
-    if not np.any(bad):
-        return values
-    problems = []
-    if np.any(~finite):
-        problems.append(f"{int(np.sum(~finite))} contain NaN or Inf")
-    if np.any(negative):
-        problems.append(f"{int(np.sum(negative))} have negative entries")
-    if np.any(empty):
-        problems.append(f"{int(np.sum(empty))} have no mass")
-    if np.any(excess):
-        problems.append(
-            f"{int(np.sum(excess))} sum to more than 1 (largest "
-            f"{float(np.max(sums[excess])):.6g})"
-        )
-    raise ValueError(
-        _format_error(
-            f"{operation} needs each posterior row to be a probability mass "
-            f"over the bins, or one template's share of one, but "
-            f"{int(np.sum(bad))} of {len(values)} rows are not: "
-            f"{'; '.join(problems)}.",
-            why="a row without mass, or with NaN, has no decoded position, and "
-            "a row summing to more than 1 is not a probability",
-            fix="drop undecodable time bins together with their times, "
-            "keep = np.isfinite(posterior).all(axis=1) & (posterior.sum(axis=1) "
-            "> 0); posterior, times = posterior[keep], times[keep]",
-        )
-    )
+    return metrics, (between, rows_of)
 
 
 def _along_track(
@@ -598,7 +610,7 @@ def _along_track(
     coordinate. None on a branched track, where positions along the
     linearization jump between arms.
     """
-    linearization = env.binning.linearization
+    linearization = env._binning.linearization
     if linearization is None:
         along: NDArray[np.float64] = (starts + stops) / 2
         return along
@@ -609,36 +621,6 @@ def _along_track(
     along = np.empty_like(starts)
     along[order] = np.cumsum(lengths) - lengths / 2
     return along
-
-
-def _increasing_times(
-    times: Any, n_time_bins: int, operation: str
-) -> NDArray[np.float64]:
-    """Check one finite time per posterior row, strictly increasing."""
-    values: NDArray[np.float64] = np.asarray(times, dtype=np.float64)
-    if values.shape != (n_time_bins,) or not np.isfinite(values).all():
-        raise ValueError(
-            _format_error(
-                f"{operation}: times must hold one finite time per posterior "
-                f"row ({n_time_bins}), got shape {values.shape}"
-                + ("" if values.shape != (n_time_bins,) else " with NaN or Inf")
-                + ".",
-                why="jumps and the duration compare consecutive time bins",
-                fix="pass the center time of each posterior row, in seconds; "
-                "drop the times of any rows you dropped",
-            )
-        )
-    if np.any(np.diff(values) <= 0):
-        raise ValueError(
-            _format_error(
-                f"{operation}: times must increase from one posterior row to the next.",
-                why="a jump is the step from one time bin to the next, so the "
-                "rows must be in time order",
-                fix="sort the rows: order = np.argsort(times); posterior, "
-                "times = posterior[order], times[order]",
-            )
-        )
-    return values
 
 
 def _empty_time_bins(
@@ -670,11 +652,20 @@ def _bin_distance_lookup(
     ``between[rows_of[i], rows_of[j]]``. Only distinct bins are paired, so
     a long event costs no more than its distinct MAP bins.
     """
-    from neurospatial.ops import pairwise_distances
+    from scipy.sparse.csgraph import dijkstra
+
+    from neurospatial.ops.distance import _bin_adjacency
 
     unique, rows_of = np.unique(bins, return_inverse=True)
     if metric == "geodesic":
-        between = pairwise_distances(env.connectivity, unique)
+        graph = env._cache.get(
+            _BIN_GRAPH,
+            lambda: _bin_adjacency(
+                env.connectivity, weight="distance", operation=_OPERATION
+            ),
+        )
+        # As ops.pairwise_distances computes it, on the cached graph.
+        between = dijkstra(graph, directed=False, indices=unique)[:, unique]
     else:
         points = env.bin_centers[unique]
         between = np.linalg.norm(points[:, None, :] - points[None, :, :], axis=-1)
