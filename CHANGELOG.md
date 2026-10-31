@@ -119,6 +119,10 @@
   duration. A quick 10 cm step toward the goal followed by a slow step back
   now averages to 0 cm/s instead of -495 cm/s, and the value no longer
   depends on the sampling rate.
+- `object_vector_score` is NaN for a map with one direction bin (for
+  example `direction_bin_size=2 * np.pi`). One bin spanning the circle has a
+  mean resultant length of 1 whatever the cell does, so the score reported
+  full direction selectivity.
 
 ### Exporting decoding and behavior results to pynapple
 

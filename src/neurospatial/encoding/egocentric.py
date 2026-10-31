@@ -3371,8 +3371,10 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     float
         Score in [0, 1]; higher means sharper tuning to one distance and
         one direction. NaN when fewer than two rings are complete (the
-        distance factor compares rings) or the complete rings are silent
-        (0 / 0).
+        distance factor compares rings), when there are fewer than two
+        direction bins (the direction factor compares directions; one bin
+        spanning the circle would always read as one direction) or when the
+        complete rings are silent (0 / 0).
 
     Raises
     ------
@@ -3444,7 +3446,7 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
 
     disc = tuning_curve[np.isfinite(tuning_curve).all(axis=1)]
     n_rings = len(disc)
-    if n_rings < 2:
+    if n_rings < 2 or tuning_curve.shape[1] < 2:
         return float("nan")
     distance_profile = disc.mean(axis=1)
     mean_square = float(np.mean(distance_profile**2))
