@@ -66,8 +66,61 @@ def test_decoding_user_epochs_can_only_narrow_known_recording_support(env):
         )
         assert np.isnan(scene.sample_fields(0)["posterior"]).all()
         assert np.isnan(scene.sample_fields(0.3)["posterior"]).all()
-    with pytest.raises(ValueError, match=r"does not overlap.*known recording support"):
+    with pytest.raises(
+        ValueError, match=r"does not overlap.*known decoded time \(spike_window\)"
+    ):
         Animation.from_decoding(result, epochs=(1, 2))
+
+
+def test_decoding_gaps_between_decoded_windows_are_not_drawn(continuous_recording):
+    from neurospatial.decoding import decode_session
+
+    r = continuous_recording
+    result = decode_session(
+        r.env,
+        [r.spike_times],
+        r.times,
+        r.positions,
+        method="binned",
+        dt=0.25,
+        epochs=[[0.0, 50.0], [70.0, 120.0]],
+    )
+    # No spike_window was given: only the decoded time support knows the gap.
+    assert result.spike_window is None
+    with Animation.from_decoding(result) as scene:
+        field = scene.fields["posterior"]
+        np.testing.assert_array_equal(field.epochs, [[0.0, 50.0], [70.0, 120.0]])
+        # The last bin before the gap and the first after it stay exact...
+        last, first = np.searchsorted(result.times, [50.0, 70.0])
+        np.testing.assert_array_equal(
+            scene.sample_fields(result.times[last - 1])["posterior"],
+            result.posterior[last - 1],
+        )
+        np.testing.assert_array_equal(
+            scene.sample_fields(result.times[first])["posterior"],
+            result.posterior[first],
+        )
+        # ...but nothing is held or drawn across the 20 s that were not decoded.
+        for t in (50.0, 55.0, 60.0, 69.9):
+            assert np.isnan(scene.sample_fields(t)["posterior"]).all(), t
+
+
+def test_decoding_time_support_narrows_spike_window(env):
+    result = DecodingResult(
+        np.full((2, env.n_bins), 1 / env.n_bins),
+        env,
+        np.array([0.05, 0.25]),
+        spike_window=np.array([[0.0, 0.4]]),
+        time_support=np.array([[0.0, 0.1], [0.2, 0.3]]),
+    )
+    with (
+        pytest.warns(UserWarning, match="exact samples only"),
+        Animation.from_decoding(result, max_gap=None) as scene,
+    ):
+        np.testing.assert_array_equal(
+            scene.fields["posterior"].epochs, result.time_support
+        )
+        assert np.isnan(scene.sample_fields(0.15)["posterior"]).all()
 
 
 def test_field_half_open_epochs_gate_exact_samples_and_held_intervals():

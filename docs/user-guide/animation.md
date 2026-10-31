@@ -733,9 +733,9 @@ samples beside recording gaps. Selected export windows remain half-open.
 Use `AnimationField(..., epochs=recording_windows)` to declare half-open
 recording windows. Exact samples outside those windows are missing, and a
 held interval must lie entirely within one window. `Animation.from_decoding`
-preserves the result's `spike_window`; optional `epochs` further restrict that
-support. Neither a wider requested window nor `max_gap=None` fills a known
-recording gap.
+shows the posterior only inside the result's `time_support`, the windows its
+time bins cover; optional `epochs` further restrict that support. Neither a
+wider requested window nor `max_gap=None` fills time that was not decoded.
 
 Position, pose, heading and object-vector overlays preserve NaN observations.
 When an overlay omits `times`, its samples inherit `frame_times` and retain

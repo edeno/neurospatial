@@ -33,6 +33,9 @@
   instead of `result.spike_window`, so a decode over separate epochs no longer
   spans the gaps between them. A decoded track's columns are named for the
   environment's axes (`x`, `y`). The first argument is renamed `data`.
+- `Animation.from_decoding` limits the posterior to `result.time_support`, so
+  time between decoded epochs is blank rather than held from the last bin.
+  A result without `time_support` is still limited to its `spike_window`.
 - The `pynapple` extra requires pynapple 0.8 or later, the first release with
   metadata on `IntervalSet` and `TsdFrame`.
 
