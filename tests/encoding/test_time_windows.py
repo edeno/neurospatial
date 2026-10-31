@@ -20,7 +20,10 @@ def test_frame_windows_accept_intervalset(frame_family, continuous_recording):
         spike_window=nap.IntervalSet(start=[20.0], end=[60.0]),
     )
     expected = f.single(*f.args(r, r.spike_times), **f.defaults, epochs=(20, 50))
-    np.testing.assert_array_equal(result.spike_window, [[20.0, 60.0]])
+    # pynapple's inclusive end 60.0 becomes the half-open stop just above it.
+    np.testing.assert_array_equal(
+        result.spike_window, [[20.0, np.nextafter(60.0, np.inf)]]
+    )
     np.testing.assert_allclose(result.occupancy, expected.occupancy, rtol=1e-12, atol=0)
     np.testing.assert_allclose(
         result.firing_rate, expected.firing_rate, rtol=1e-12, atol=0, equal_nan=True

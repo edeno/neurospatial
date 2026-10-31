@@ -130,7 +130,7 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # Values sampled at the times being converted.
     ("to_pynapple", "values"),
     # Records written to the file.
-    ("write_laps", "lap_types"),
+    ("write_laps", "laps"),
     ("write_trials", "trials"),
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
@@ -199,7 +199,7 @@ REQUIRED_DATA_NAMES = {
     *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
-    *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),
+    *("event_types", "entry_time", "reward_times", "crossing_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("template_epochs", "match_epochs"),
     *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
@@ -286,9 +286,7 @@ def test_free_function_required_data_lists_are_current():
         ("read_events", 1, "table_name", "laps"),
         ("read_intervals", 1, "interval_name", "trials"),
         ("write_events", 2, "name", "rewards"),
-        ("write_place_field", 3, "name", "cell_1"),
-        ("write_occupancy", 3, "name", "occupancy_1"),
-        ("write_laps", 3, "description", "laps"),
+        ("write_laps", 2, "description", "laps"),
         ("write_region_crossings", 4, "description", "crossings"),
         ("dataframe_to_events_table", 1, "name", "rewards"),
     ],

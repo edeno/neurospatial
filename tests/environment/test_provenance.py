@@ -197,19 +197,6 @@ def test_transforms_scale_the_lengths_of_recorded_choices():
     assert grid.rebin(2)._provenance.length_scale == 1.0
 
 
-@pytest.mark.parametrize(
-    ("factory", "expected"),
-    [("from_graph", 1.0), ("scaled_track", None)],
-)
-def test_files_without_a_length_scale_read_as_unknown_after_a_transform(
-    factory, expected
-):
-    """Earlier files did not save the scale; a transform since leaves it unknown."""
-    saved = to_dict(FACTORIES[factory]())
-    del saved["length_scale"]
-    assert from_dict(saved)._provenance.length_scale == expected
-
-
 def _saved_size(n_samples: int, directory: Path) -> int:
     rng = np.random.default_rng(n_samples)
     corners = np.array([[0.0, 0.0], [100.0, 100.0]])

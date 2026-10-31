@@ -210,7 +210,9 @@ class TestBodypartOverlayFromNwb:
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
 
         # Get original data for comparison
-        bodyparts, timestamps, _ = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        bodyparts = pose.bodyparts
+        timestamps = pose.times
 
         # Verify all bodyparts match
         assert set(overlay.data.keys()) == set(bodyparts.keys())
@@ -242,7 +244,8 @@ class TestBodypartOverlayFromNwb:
         from neurospatial.io.nwb import bodypart_overlay_from_nwb, read_pose
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
-        _, _, skeleton = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        skeleton = pose.skeleton
 
         # Should be equivalent
         assert overlay.skeleton.name == skeleton.name

@@ -1,10 +1,8 @@
 """NWB persistence of the per-neuron-lambda (``pooled=False``) diagnostics.
 
-Schema 2.2 adds ``pooled`` and a scalar ``reml_at_boundary`` to the GAM metadata
-blob, and -- when ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` are
-per-unit vectors -- persists those plus ``penalty_selected_by_reml`` as per-unit
-table columns. A schema-2.1 file has none of these keys and reads back
-method-conditionally: ``pooled=True`` for glm, ``pooled=None`` for ratio.
+The GAM metadata blob stores ``pooled`` and a scalar ``reml_at_boundary``; when
+``penalty`` / ``reml_objective`` / ``reml_at_boundary`` are per-unit vectors,
+those plus ``penalty_selected_by_reml`` are stored as per-unit table columns.
 """
 
 from __future__ import annotations
@@ -98,13 +96,13 @@ def test_pooled_false_nwb_roundtrip(empty_nwb, sample_environment):
     """A pooled=False result round-trips penalty / reml_objective /
     reml_at_boundary / penalty_selected_by_reml as per-unit columns; scalar/vector
     shapes are preserved and the nan fallback sentinel survives."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_per_unit_glm_result(env, n_units=3, rank=5, seed=1)
 
     write_spatial_rates(empty_nwb, result)
-    back = read_place_field(empty_nwb, env=env)
+    back = read_spatial_rates(empty_nwb, env=env)
 
     assert back.pooled is False
     np.testing.assert_allclose(np.asarray(back.penalty), np.asarray(result.penalty))
@@ -128,13 +126,13 @@ def test_pooled_false_nwb_roundtrip(empty_nwb, sample_environment):
 def test_pooled_true_nwb_roundtrip_scalar_boundary(empty_nwb, sample_environment):
     """A pooled automatic-REML result stores a scalar reml_at_boundary in the blob
     (no per-unit columns, penalty_selected_by_reml None on read)."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_pooled_glm_result(env, reml_at_boundary=True)
 
     write_spatial_rates(empty_nwb, result)
-    back = read_place_field(empty_nwb, env=env)
+    back = read_spatial_rates(empty_nwb, env=env)
 
     assert back.pooled is True
     assert back.reml_at_boundary is True
@@ -144,7 +142,7 @@ def test_pooled_true_nwb_roundtrip_scalar_boundary(empty_nwb, sample_environment
 
 def test_fixed_penalty_nwb_boundary_none(empty_nwb, sample_environment):
     """A fixed-penalty glm result (REML skipped) keeps reml_at_boundary None."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_pooled_glm_result(
@@ -152,7 +150,7 @@ def test_fixed_penalty_nwb_boundary_none(empty_nwb, sample_environment):
     )
 
     write_spatial_rates(empty_nwb, result)
-    back = read_place_field(empty_nwb, env=env)
+    back = read_spatial_rates(empty_nwb, env=env)
 
     assert back.pooled is True
     assert back.reml_at_boundary is None
@@ -160,76 +158,65 @@ def test_fixed_penalty_nwb_boundary_none(empty_nwb, sample_environment):
     assert float(back.penalty) == pytest.approx(2.5)
 
 
-def _write_then_downgrade_to_schema_2_1(nwbfile, result):
-    """Write a glm result, then rewrite its description to the schema-2.1 shape --
-    drop the schema-2.2 gam keys and downgrade schema_version."""
-    from neurospatial.io.nwb import write_spatial_rates
+@pytest.mark.parametrize(
+    "key",
+    [
+        "rank",
+        "n_iter",
+        "converged",
+        "penalty_weights",
+        "pooled",
+        "per_unit",
+        "penalty",
+        "reml_objective",
+        "reml_at_boundary",
+    ],
+)
+def test_missing_gam_metadata_key_is_refused(empty_nwb, sample_environment, key):
+    """A GAM key the writer always stores is never defaulted on read."""
+    import re
 
-    write_spatial_rates(nwbfile, result)
-    table = nwbfile.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
-    meta = json.loads(table.description)
-    meta["schema_version"] = "2.1"
-    gam = meta.get("gam")
-    if isinstance(gam, dict):
-        for key in ("pooled", "per_unit", "reml_at_boundary"):
-            gam.pop(key, None)
-    table.fields["description"] = json.dumps(meta)
-
-
-def test_nwb_schema_2_1_glm_reads_pooled_true(empty_nwb, sample_environment):
-    """A schema-2.1 glm file (no schema-2.2 keys) reads back as pooled=True,
-    scalar penalty/reml_objective, reml_at_boundary None, and
-    penalty_selected_by_reml None (method-conditional default)."""
-    from neurospatial.io.nwb import read_place_field
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
-    result = _make_pooled_glm_result(env, penalty=0.5, reml_objective=-3.2)
-    _write_then_downgrade_to_schema_2_1(empty_nwb, result)
-
-    back = read_place_field(empty_nwb, env=env)
-    assert back.pooled is True  # method-conditional default for glm
-    assert np.isscalar(back.penalty) or isinstance(back.penalty, float)
-    assert float(back.penalty) == pytest.approx(0.5)
-    assert back.reml_at_boundary is None
-    assert back.penalty_selected_by_reml is None
-
-
-def test_nwb_legacy_ratio_pooled_none(empty_nwb, sample_environment):
-    """A schema-2.1 ratio file (no pooled key) reads back as pooled=None -- pooled
-    is meaningless for a ratio result (method-conditional default)."""
-    from neurospatial.encoding.spatial import SpatialRatesResult
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
-
-    env = sample_environment
-    rng = np.random.default_rng(0)
-    result = SpatialRatesResult(
-        firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
-        occupancy=rng.uniform(0, 5, env.n_bins),
-        env=env,
-        method="diffusion_kde",
-        bandwidth=5.0,
-    )
-    write_spatial_rates(empty_nwb, result)
-    # Downgrade the schema to 2.1; a ratio table never had a pooled key.
+    write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
     table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
-    meta["schema_version"] = "2.1"
+    meta["gam"].pop(key)
     table.fields["description"] = json.dumps(meta)
 
-    back = read_place_field(empty_nwb, env=env)
-    assert back.pooled is None  # not True -- pooled is meaningless for ratio
-    assert back.method == "diffusion_kde"
+    message = (
+        f"Corrupt spatial-rates record '{DEFAULT_SPATIAL_RATES_NAME}': missing "
+        f"metadata key 'gam.{key}'."
+    )
+    with pytest.raises(ValueError, match=re.escape(message)):
+        read_spatial_rates(empty_nwb, env=env)
+
+
+def test_glm_record_without_gam_metadata_is_refused(empty_nwb, sample_environment):
+    """A glm record whose GAM blob is gone cannot be reconstructed."""
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    env = sample_environment
+    write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
+    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    meta = json.loads(table.description)
+    del meta["gam"]
+    table.fields["description"] = json.dumps(meta)
+
+    with pytest.raises(ValueError, match="missing metadata key 'gam'"):
+        read_spatial_rates(empty_nwb, env=env)
 
 
 def test_pooled_survives_nwb_and_indexing(empty_nwb, sample_environment):
     """.pooled survives an NWB round-trip and singular indexing."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_per_unit_glm_result(env, n_units=3, rank=5, seed=2)
 
     write_spatial_rates(empty_nwb, result)
-    back = read_place_field(empty_nwb, env=env)
+    back = read_spatial_rates(empty_nwb, env=env)
     assert back.pooled is False
     assert back[0].pooled is False
 
@@ -260,7 +247,7 @@ def test_pooled_true_write_allows_per_unit_column_name_in_unit_table(
 def test_truncated_per_unit_file_reads_with_clear_error(empty_nwb, sample_environment):
     """A per_unit=True record missing a per-unit column reads with a schema-aware
     ValueError naming the table + missing column, not a raw hdmf KeyError."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
     from neurospatial.io.nwb._fields import (
         DEFAULT_ANALYSIS_MODULE,
         DEFAULT_SPATIAL_RATES_NAME,
@@ -276,4 +263,4 @@ def test_truncated_per_unit_file_reads_with_clear_error(empty_nwb, sample_enviro
     table.fields["description"] = json.dumps(meta)
 
     with pytest.raises(ValueError, match=r"per-unit column"):
-        read_place_field(empty_nwb, env=env)
+        read_spatial_rates(empty_nwb, env=env)

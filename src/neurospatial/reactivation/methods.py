@@ -49,8 +49,10 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    _is_pynapple_object,
     as_intervals,
     intersect_intervals,
+    pynapple_end_to_stop,
     times_in_intervals,
 )
 from neurospatial._spikes import as_labelled_spike_trains
@@ -1254,7 +1256,10 @@ def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
     if value is None:
         return None
     if hasattr(value, "start") and hasattr(value, "end"):
-        value = np.column_stack([np.asarray(value.start), np.asarray(value.end)])
+        stops = np.asarray(value.end, dtype=np.float64)
+        if _is_pynapple_object(value):
+            stops = pynapple_end_to_stop(stops)
+        value = np.column_stack([np.asarray(value.start, dtype=np.float64), stops])
     rows = np.asarray(value, dtype=np.float64)
     if rows.ndim != 2 or rows.shape[1] != 2:
         raise ValueError(

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
-import warnings
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial.io.nwb._adapters import position_units_from_series
-from neurospatial.io.nwb._core import _require_pynwb, logger
+from neurospatial.io.nwb._core import (
+    _refuse_in_place_replacement,
+    _require_pynwb,
+    logger,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -23,7 +25,6 @@ if TYPE_CHECKING:
     from neurospatial.regions import Region
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
-_READABLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0", "3.0"})
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
 # Older records keep the version in this column; it is read only to refuse them.
 COL_METADATA = "metadata"
@@ -41,8 +42,8 @@ def write_environment(
 
     Bins, lookup, cell faces, drawing components, graph attributes, regions,
     landmarks, coordinate metadata and Arena are saved losslessly. Reading decodes these
-    data without rebuilding a layout. Environment records from schemas 1.0 and
-    1.1 are refused.
+    data without rebuilding a layout. :func:`read_environment` reads only
+    schema 3.0 and refuses records from earlier schemas.
 
     Parameters
     ----------
@@ -53,12 +54,18 @@ def write_environment(
     name : str, default "spatial_environment"
         Scratch record name.
     overwrite : bool, default False
-        Replace an existing record with the same name.
+        Replace an existing record with the same name. pynwb cannot delete a
+        record already written to disk, so replace one in a file opened with
+        ``mode="r"`` and save a copy with
+        ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``.
 
     Raises
     ------
     ValueError
         If the name exists and overwrite is false, or a component has no codec.
+    NotImplementedError
+        If ``overwrite=True`` would replace a record in a file opened with
+        ``mode="r+"`` or ``"a"``.
     ImportError
         If pynwb is unavailable.
 
@@ -114,6 +121,7 @@ def write_environment(
     )
     # Construct the replacement before removing a valid existing record.
     if name in nwbfile.scratch:
+        _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
         del nwbfile.scratch[name]
         logger.info("Overwriting existing environment '%s'", name)
     nwbfile.add_scratch(record)
@@ -165,9 +173,9 @@ def read_environment(
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
-    smoothing, boundary bins, plotting and track linearization. Schema 2.0 records
-    retain their bins with an explicitly unknown Arena. Older environment
-    records (1.0 and 1.1) must be recreated with a factory and saved again.
+    smoothing, boundary bins, plotting and track linearization. Only schema 3.0
+    records are read; records from earlier schemas must be recreated with a
+    factory and saved again.
 
     Parameters
     ----------
@@ -241,11 +249,12 @@ def read_environment(
             )
         ) from error
     version = metadata.get("schema_version")
-    if not isinstance(version, str) or version not in _READABLE_SCHEMA_VERSIONS:
+    if version != ENVIRONMENT_SCHEMA_VERSION:
         raise ValueError(
             _format_error(
-                f"Unsupported NWB environment schema {version!r} in {source}; expected '3.0' (or legacy '2.0').",
-                why="Why: older records do not store the complete binning needed to restore its capabilities.",
+                f"NWB environment schema {version!r} in {source} is no longer readable; "
+                f"this version reads only {ENVIRONMENT_SCHEMA_VERSION!r}.",
+                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )
@@ -259,10 +268,14 @@ def read_environment(
                 raise ValueError(f"array {key!r} does not match its stored dtype")
             arrays[key] = values.reshape(spec["shape"]).copy()
     except (ValueError, TypeError, KeyError, IndexError) as error:
-        raise ValueError(f"Invalid environment arrays in {source}: {error}") from error
-    return _restore_environment(
-        metadata, source=source, arrays=arrays, legacy_arena=version == "2.0"
-    )
+        raise ValueError(
+            _format_error(
+                f"Invalid environment arrays in {source}: {error}",
+                why="Why: the record holds one row whose columns match the shapes and dtypes in its description.",
+                fix="restore the original environment record, or re-save the original environment",
+            )
+        ) from error
+    return _restore_environment(metadata, source=source, arrays=arrays)
 
 
 @keyword_hint("bin_size")
@@ -309,14 +322,16 @@ def environment_from_position(
     name : str, default ""
         Name of the environment.
     units : str, optional
-        Spatial units for the environment. If None, auto-detected from the
-        series ``unit``, with NWB long names mapped to ``m`` / ``cm`` / ``mm``
-        / ``px``. Positions are read in that unit (stored × ``conversion`` +
-        ``offset``), so ``bin_size`` is in it too. If the series declares no
-        unit, a ``UserWarning`` is emitted and ``"cm"`` is assumed; pass
-        ``units=`` to state the real unit.
+        Spatial units of the positions. By default, the unit the series
+        declares, with NWB long names mapped to ``m`` / ``cm`` / ``mm`` /
+        ``px``. Positions are read in that unit (stored × ``conversion`` +
+        ``offset``), so ``bin_size`` is in it too. Required when the series
+        declares no unit. A unit that differs from the declared one raises:
+        a label cannot convert the coordinates.
     frame : str, optional
-        Coordinate frame identifier for the environment.
+        Coordinate frame of the positions. By default, the series
+        ``reference_frame``. Required to be identical to it when the series
+        declares one; supply it when the series does not.
     regions : Mapping[str, Region], optional
         Named regions to snapshot with the environment.
     arena : Arena, optional
@@ -352,7 +367,9 @@ def environment_from_position(
     KeyError
         If no Position container found, or if specified position_name not found.
     ValueError
-        If `layout` is neither "RegularGrid" nor "Hexagonal", or an option
+        If the series declares no unit and `units` is not given, if `units`
+        or `frame` conflicts with the series declaration, if
+        `layout` is neither "RegularGrid" nor "Hexagonal", or an option
         that the chosen layout or ``infer_active_bins=False`` ignores differs
         from its default. The message names ``environment_from_position``.
     ImportError
@@ -375,34 +392,32 @@ def environment_from_position(
     ...     bin_count_threshold=5,
     ... )
     """
-    from neurospatial.io.nwb._core import _require_pynwb
-
     _require_pynwb()
 
     from neurospatial.environment import Environment, _from_samples
     from neurospatial.io.nwb._behavior import read_position
 
-    # Read position data from NWB
     position_data = read_position(
         nwbfile,
         processing_module=processing_module,
         position_name=position_name,
     )
-    positions = position_data.positions
-
-    # Auto-detect units from SpatialSeries if not provided
-    if units is None:
-        units = _get_position_units(
-            nwbfile,
-            processing_module=processing_module,
-            position_name=position_name,
-        )
+    series = (
+        "The Position series"
+        if position_name is None
+        else f"Position series {position_name!r}"
+    )
+    units, frame = _series_coordinates(
+        series,
+        {"units": position_data.units, "frame": position_data.frame},
+        {"units": units, "frame": frame},
+    )
 
     # Bin the samples exactly as Environment.from_samples does, naming this
     # function in any error about the options.
     return _from_samples(
         Environment,
-        positions,
+        position_data.positions,
         bin_size=bin_size,
         name=name,
         units=units,
@@ -423,66 +438,81 @@ def environment_from_position(
     )
 
 
-def _get_position_units(
-    nwbfile: NWBFile,
-    processing_module: str | None = None,
-    position_name: str | None = None,
-) -> str:
-    """
-    Get the units from the Position SpatialSeries.
+def _series_coordinates(
+    series: str,
+    declared: dict[str, str | None],
+    requested: dict[str, str | None],
+) -> tuple[str, str | None]:
+    """Return the environment's units and frame from the series declarations.
+
+    An explicit value may restate a declaration (unit aliases are the same
+    unit) or supply a missing one; it never relabels the coordinates.
 
     Parameters
     ----------
-    nwbfile : NWBFile
-        The NWB file to read from.
-    processing_module : str, optional
-        Name of processing module containing Position.
-    position_name : str, optional
-        Name of specific SpatialSeries within Position.
+    series : str
+        How to name the Position series in messages.
+    declared : dict
+        The series ``"units"`` and ``"frame"``; None when undeclared.
+    requested : dict
+        The caller's ``"units"`` and ``"frame"``; None when not given.
 
     Returns
     -------
-    str
-        The units from the SpatialSeries, with NWB long names mapped to
-        ``m`` / ``cm`` / ``mm`` / ``px``, or "cm" as fallback.
+    units : str
+        The positions' unit.
+    frame : str or None
+        The positions' coordinate frame, None when neither side gives one.
 
-    Warns
-    -----
-    UserWarning
-        If the SpatialSeries declares no unit (``unit`` is None or empty).
-
-    Notes
-    -----
-    **Default fallback behavior:** if the SpatialSeries declares no unit, this
-    function warns, then assumes ``"cm"``.
+    Raises
+    ------
+    ValueError
+        If an explicit value conflicts with the declaration, or no unit is
+        declared or given.
     """
-    from pynwb.behavior import Position as PositionType
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import same_coordinate_declaration
 
-    from neurospatial.io.nwb._behavior import (
-        _get_behavior_container,
-        _get_spatial_series,
-    )
-
-    # Get Position container
-    position_container = _get_behavior_container(
-        nwbfile, PositionType, "Position", processing_module
-    )
-
-    # Get SpatialSeries
-    spatial_series = _get_spatial_series(
-        position_container, position_name, "SpatialSeries", "Position"
-    )
-
-    if not spatial_series.unit:
-        warnings.warn(
-            f"Position series '{spatial_series.name}' declares no unit "
-            f"(unit={spatial_series.unit!r}); assuming 'cm'. A wrong unit "
-            "mislabels every distance, speed and bin size derived from this "
-            "environment.\n"
-            "Fix: pass units='cm' (or 'm', 'mm', 'px') to "
-            "environment_from_position to state the real unit.",
-            UserWarning,
-            stacklevel=3,
+    resolved = dict(declared)
+    for key, value in requested.items():
+        known = declared[key]
+        if value is None:
+            continue
+        if known is None:
+            resolved[key] = value
+        elif not same_coordinate_declaration(
+            key, value, known, undeclared_matches=False
+        ):
+            raise ValueError(
+                _format_error(
+                    f"environment_from_position({key}={value!r}) conflicts with "
+                    f"{series[0].lower()}{series[1:]}, which declares {key} {known!r}.",
+                    why=(
+                        "Why: the positions are in the series' coordinates; a "
+                        f"different {key} label would not convert them, so every "
+                        "distance, bin size and speed would be mislabeled."
+                    ),
+                    fix=(
+                        f"omit {key}= to use {known!r}, or convert the positions "
+                        "and bin them with Environment.from_samples"
+                    ),
+                )
+            )
+    units = resolved["units"]
+    if units is None:
+        raise ValueError(
+            _format_error(
+                f"{series} declares no unit, so the physical scale of its "
+                "positions is unknown.",
+                why=(
+                    "Why: bin_size and every distance, speed and area derived "
+                    "from the environment are in the position units."
+                ),
+                fix=(
+                    "pass units='cm' (or 'm', 'mm', 'px') to "
+                    "environment_from_position, stating the unit the tracking "
+                    "system recorded"
+                ),
+            )
         )
-        return "cm"
-    return position_units_from_series(spatial_series) or str(spatial_series.unit)
+    return units, resolved["frame"]

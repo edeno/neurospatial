@@ -10,31 +10,23 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
-    position_frame_from_series,
-    position_units_from_series,
+    missing_error,
     require_unscaled_for_lazy,
+    select_one,
     timestamps_from_series,
     timestamps_handle_from_series,
-    validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
 from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
-    from pynwb.behavior import CompassDirection, Position, SpatialSeries
-
-# =============================================================================
-# Constants for behavior data
-# =============================================================================
-
-# Fallback units for position data when not specified
-DEFAULT_POSITION_UNITS: str = "cm"
+    from pynwb.behavior import SpatialSeries
 
 
 @keyword_hint("processing_module", "position_name")
@@ -53,12 +45,12 @@ def read_position(
     nwbfile : NWBFile
         The NWB file to read from.
     processing_module : str, optional
-        Name of the processing module containing Position data.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/* > acquisition.
+        Name of the processing module containing Position data. If None,
+        every processing module and acquisition is searched.
     position_name : str, optional
-        Name of the specific SpatialSeries within Position.
-        If None and multiple exist, uses first alphabetically with INFO log.
+        Name of the SpatialSeries within a Position container, or its full
+        path such as ``"processing/behavior/Position/position"``. Required
+        when the search finds more than one series.
     lazy : bool, default False
         If ``False`` (default), positions and timestamps are fully materialized
         into ``NDArray[np.float64]``. If ``True``, the h5py-backed
@@ -74,8 +66,8 @@ def read_position(
         Frozen, non-iterable holder with ``times`` in seconds, ``positions``
         in the declared physical ``units`` after conversion and offset, and
         ``units=None`` when no unit is declared. Recognized unit aliases are
-        normalized to m/cm/mm/px without rescaling values. Arrays are eager
-        float64 by default; lazy handles remain inside the holder. ``frame``
+        normalized to m/cm/mm/um/px without rescaling values. Arrays are eager,
+        read-only float64 by default; lazy handles remain inside the holder. ``frame``
         preserves a nonempty SpatialSeries ``reference_frame`` verbatim,
         or is None when undeclared. No coordinate transform is inferred.
 
@@ -84,8 +76,9 @@ def read_position(
     KeyError
         If no Position container found, or if specified position_name not found.
     ValueError
-        If ``lazy=True`` and the series declares a non-identity ``conversion``
-        or ``offset``.
+        If more than one Position series matches (pass ``position_name=``),
+        or ``lazy=True`` and the series declares a non-identity
+        ``conversion`` or ``offset``.
     ImportError
         If pynwb is not installed.
 
@@ -94,13 +87,11 @@ def read_position(
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
     block; accessing them after the file is closed raises an error from the HDF5
-    layer. ``lazy=False`` returns fully-materialized arrays as before and is safe
-    to use after the file closes.
+    layer. ``lazy=False`` returns read-only, fully-materialized arrays that
+    remain valid after the file closes.
 
-    Length validation (positions vs. timestamps) runs on **both** paths: the lazy
-    path compares the handles' ``.shape[0]`` (which an ``h5py.Dataset`` exposes
-    without materializing values), so a mismatch raises the same ``ValueError``
-    the eager path raises.
+    Positions and timestamps must have the same length on both paths; the lazy
+    path compares the handles' ``.shape[0]`` without materializing values.
 
     ``lazy=True`` returns the **stored** dtype (whatever the SpatialSeries was
     written with, e.g. ``float32``), whereas ``lazy=False`` casts to
@@ -142,204 +133,112 @@ def read_position(
     _require_pynwb()
     from pynwb.behavior import Position as PositionType
 
-    # Find Position container
-    position_container = _get_behavior_container(
-        nwbfile, PositionType, "Position", processing_module
-    )
-
-    # Get SpatialSeries from Position container
     spatial_series = _get_spatial_series(
-        position_container, position_name, "SpatialSeries", "Position"
+        nwbfile,
+        PositionType,
+        "Position",
+        processing_module,
+        position_name,
+        "position_name",
     )
 
     if lazy:
         require_unscaled_for_lazy(spatial_series, context="read_position")
-        # Return the h5py-backed handles without copying; they materialize on
-        # slice / np.asarray. Validate lengths using the handles' .shape[0]
-        # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
-        # stays lazy) so the lazy path raises the SAME ValueError the eager path
-        # raises on a positions/timestamps length mismatch.
-        data_handle = spatial_series.data
-        timestamps_handle = timestamps_handle_from_series(spatial_series)
-        validate_handle_lengths(
-            {
-                "positions": int(data_handle.shape[0]),
-                "timestamps": int(timestamps_handle.shape[0]),
-            }
-        )
-        return NWBPosition(
-            timestamps_handle,
-            data_handle,
-            position_units_from_series(spatial_series),
-            frame=position_frame_from_series(spatial_series),
-        )
-
-    # Extract position data and timestamps
-    positions = data_from_series(spatial_series)
-    timestamps = _get_timestamps(spatial_series)
-
-    from neurospatial._validation import validate_lengths
-
-    validate_lengths({"positions": positions, "timestamps": timestamps})
+        # The h5py-backed handles materialize on slice / np.asarray; the
+        # holder checks their lengths from .shape without reading values.
+        timestamps = timestamps_handle_from_series(spatial_series)
+        positions = spatial_series.data
+    else:
+        timestamps = timestamps_from_series(spatial_series)
+        positions = data_from_series(spatial_series)
     return NWBPosition(
         timestamps,
         positions,
-        position_units_from_series(spatial_series),
-        frame=position_frame_from_series(spatial_series),
+        spatial_series.unit,
+        frame=spatial_series.reference_frame,
     )
 
 
-def _get_behavior_container(
+def _get_spatial_series(
     nwbfile: NWBFile,
-    target_type: type,
+    container_type: type,
     type_name: str,
     processing_module: str | None,
-) -> Position | CompassDirection:
+    series_name: str | None,
+    keyword: str,
+) -> SpatialSeries:
     """
-    Get a behavior container (Position or CompassDirection) from NWB file.
+    Get the one SpatialSeries of a behavior container type.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to search.
-    target_type : type
+    container_type : type
         The container type class (Position or CompassDirection).
     type_name : str
-        Human-readable name for error messages (e.g., "Position", "CompassDirection").
-    processing_module : str, optional
-        If provided, look only in this specific module.
-
-    Returns
-    -------
-    Position | CompassDirection
-        The behavior container.
-
-    Raises
-    ------
-    KeyError
-        If no container found or if specified module doesn't exist.
-    """
-    if processing_module is not None:
-        # Look in specific module
-        if processing_module not in nwbfile.processing:
-            raise KeyError(
-                f"Processing module '{processing_module}' not found in NWB file. Available modules: {list(nwbfile.processing.keys())}"
-                + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-            )
-        module = nwbfile.processing[processing_module]
-        # Find container in this module
-        for obj_name in module.data_interfaces:
-            obj = module.data_interfaces[obj_name]
-            if isinstance(obj, target_type):
-                logger.debug(
-                    "Found %s at processing/%s/%s",
-                    type_name,
-                    processing_module,
-                    obj_name,
-                )
-                return obj
-        raise KeyError(
-            f"No {type_name} found in processing module '{processing_module}'"
-            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-        )
-
-    # Auto-discover using priority search
-    found = _find_containers_by_type(nwbfile, target_type)
-
-    if not found:
-        searched_locations = ["processing/*", "acquisition"]
-        raise KeyError(
-            f"No {type_name} data found in NWB file. Searched: {searched_locations}"
-            + " Fix: add the requested behavior data to processing/behavior, then pass processing_module='behavior'."
-        )
-
-    # Return the first one (highest priority due to sort order)
-    path, container = found[0]
-    if len(found) > 1:
-        all_paths = [p for p, _ in found]
-        logger.info(
-            "Multiple %s containers found: %s. Using '%s'", type_name, all_paths, path
-        )
-    else:
-        logger.debug("Found %s at %s", type_name, path)
-
-    return container
-
-
-def _get_spatial_series(
-    container: Position | CompassDirection,
-    series_name: str | None,
-    series_type_name: str,
-    container_type_name: str = "Position",
-) -> SpatialSeries:
-    """
-    Get a SpatialSeries from a behavior container.
-
-    Parameters
-    ----------
-    container : Position | CompassDirection
-        The behavior container to extract from.
+        Human-readable name for error messages, e.g. ``"Position"``.
+    processing_module : str or None
+        If provided, look only in this processing module.
     series_name : str or None
-        Name of the specific series. If None, auto-selects.
-    series_type_name : str
-        Name to use in error messages (e.g., "SpatialSeries").
-    container_type_name : str, default "Position"
-        Name of the container type for error messages.
+        Series name, or its full path such as
+        ``"processing/behavior/Position/position"``.
+    keyword : str
+        The reader argument that takes ``series_name``.
 
     Returns
     -------
     SpatialSeries
-        The spatial series object.
+        The selected series.
 
     Raises
     ------
     KeyError
-        If specified series not found or container is empty.
+        If the module, a container or the named series is missing.
+    ValueError
+        If more than one series matches.
     """
-    # Get available series names
-    available_series = sorted(container.spatial_series.keys())
-
-    if not available_series:
-        raise KeyError(f"{container_type_name} container has no {series_type_name}")
-
-    if series_name is not None:
-        # Look for specific series
-        if series_name not in container.spatial_series:
-            raise KeyError(
-                f"{series_type_name} '{series_name}' not found. "
-                f"Available: {available_series}"
+    fix = (
+        f"store the {type_name} container in processing/behavior, or pass "
+        "processing_module= with the module that holds it."
+    )
+    found = _find_containers_by_type(nwbfile, container_type)
+    if processing_module is not None:
+        if processing_module not in nwbfile.processing:
+            raise missing_error(
+                f"Processing module '{processing_module}' not found in NWB "
+                f"file. Available modules: {list(nwbfile.processing.keys())}.",
+                fix=fix,
             )
-        return container.spatial_series[series_name]
-
-    # Auto-select: use first alphabetically
-    if len(available_series) > 1:
-        logger.info(
-            "Multiple %s found: %s. Using '%s'",
-            series_type_name,
-            available_series,
-            available_series[0],
+        found = [
+            (path, container)
+            for path, container in found
+            if path.startswith(f"processing/{processing_module}/")
+        ]
+        searched = f"processing/{processing_module}"
+    else:
+        searched = "processing/* and acquisition"
+    if not found:
+        raise missing_error(
+            f"No {type_name} data found in NWB file. Searched: {searched}.",
+            fix=fix,
         )
-
-    return container.spatial_series[available_series[0]]
-
-
-def _get_timestamps(spatial_series: SpatialSeries) -> NDArray[np.float64]:
-    """
-    Get timestamps from a SpatialSeries.
-
-    If explicit timestamps are not available, computes them from rate and starting_time.
-
-    Parameters
-    ----------
-    spatial_series : SpatialSeries
-        The spatial series object.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Timestamps in seconds.
-    """
-    return timestamps_from_series(spatial_series)
+    candidates = [
+        (f"{path}/{name}", container.spatial_series[name])
+        for path, container in found
+        for name in sorted(container.spatial_series)
+    ]
+    if not candidates:
+        raise missing_error(
+            f"{type_name} container(s) {[path for path, _ in found]} "
+            "has no SpatialSeries.",
+            fix=f"add a SpatialSeries to the {type_name} container.",
+        )
+    series = select_one(
+        candidates, series_name, what=f"{type_name} series", keyword=keyword
+    )
+    logger.debug("Reading %s series '%s'", type_name, series.name)
+    return series
 
 
 @keyword_hint("processing_module", "compass_name")
@@ -357,28 +256,45 @@ def read_head_direction(
     nwbfile : NWBFile
         The NWB file to read from.
     processing_module : str, optional
-        Name of the processing module containing CompassDirection data.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/* > acquisition.
+        Name of the processing module containing CompassDirection data. If
+        None, every processing module and acquisition is searched.
     compass_name : str, optional
-        Name of the specific SpatialSeries within CompassDirection.
-        If None and multiple exist, uses first alphabetically with INFO log.
+        Name of the SpatialSeries within a CompassDirection container, or its
+        full path such as
+        ``"processing/behavior/CompassDirection/head_direction"``. Required
+        when the search finds more than one series.
 
     Returns
     -------
     NWBHeadDirection
-        Frozen, non-iterable holder with ``times`` in seconds and ``headings``
-        in radians, zero East and increasing counterclockwise. Stored values
-        pass through conversion and offset before degree-to-radian conversion
-        or unit-vector arctan2 extraction.
+        Frozen, non-iterable holder with ``times`` in seconds, ``headings``
+        in radians and ``frame``, the series' ``reference_frame`` verbatim
+        (None when blank). Angles stored as ``(n_samples,)`` values pass
+        through conversion and offset and are converted from the declared
+        unit, which must be radians or degrees. Direction vectors stored as
+        ``(n_samples, 2)`` become ``arctan2(y, x)``; a zero vector is NaN.
 
     Raises
     ------
     KeyError
         If no CompassDirection container found, or if specified compass_name
         not found.
+    ValueError
+        If more than one CompassDirection series matches (pass
+        ``compass_name=``), the series ``unit`` is not a radian or degree
+        spelling (pynwb's
+        default ``"meters"`` included) for angle data, or the data is
+        neither ``(n_samples,)`` nor ``(n_samples, 2)``.
     ImportError
         If pynwb is not installed.
+
+    Notes
+    -----
+    ``headings`` are assumed to follow the package convention: zero East and
+    increasing counterclockwise. The reader does not interpret
+    ``reference_frame`` text. Check ``frame``; if it describes another
+    convention, for example zero North and clockwise, convert with
+    ``np.pi / 2 - headings``.
 
     Examples
     --------
@@ -390,37 +306,59 @@ def read_head_direction(
     _require_pynwb()
     from pynwb.behavior import CompassDirection as CompassDirectionType
 
-    # Find CompassDirection container
-    compass_container = _get_behavior_container(
-        nwbfile, CompassDirectionType, "CompassDirection", processing_module
-    )
-
-    # Get SpatialSeries from CompassDirection container
     spatial_series = _get_spatial_series(
-        compass_container, compass_name, "SpatialSeries", "CompassDirection"
+        nwbfile,
+        CompassDirectionType,
+        "CompassDirection",
+        processing_module,
+        compass_name,
+        "compass_name",
     )
 
-    # Extract angle data and timestamps. CompassDirection SpatialSeries store
-    # head direction as either a 1-D angle series or an (n, 2) unit-vector
-    # series; handle both. Angles are returned in the allocentric convention
-    # (0 = East, increasing counterclockwise).
     raw = data_from_series(spatial_series)
-    timestamps = _get_timestamps(spatial_series)
-
     if raw.ndim == 2 and raw.shape[1] == 2:
-        # (n, 2) heading vectors -> angle via arctan2 (already radians, 0=East).
+        # (n, 2) heading vectors along the frame's x and y axes; the angle
+        # does not depend on their length or unit. A zero vector has no
+        # direction.
         angles = np.arctan2(raw[:, 1], raw[:, 0])
+        angles[(raw[:, 0] == 0) & (raw[:, 1] == 0)] = np.nan
+    elif raw.ndim == 1 or (raw.ndim == 2 and raw.shape[1] == 1):
+        angles = raw.reshape(-1) * _radians_per_unit(spatial_series)
     else:
-        angles = raw.reshape(-1)
-        # Honor the stored unit: convert degrees to radians. NWB SpatialSeries
-        # carry a free-text 'unit'; treat anything starting with "deg" as
-        # degrees (e.g. "deg", "degree", "degrees").
-        unit = getattr(spatial_series, "unit", None)
-        if isinstance(unit, str) and unit.strip().lower().startswith("deg"):
-            angles = np.deg2rad(angles)
+        raise ValueError(
+            _format_error(
+                f"CompassDirection series '{spatial_series.name}' has data of "
+                f"shape {raw.shape}.",
+                why="head direction is stored as one angle per sample, shape "
+                "(n_samples,), or as (n_samples, 2) direction vectors.",
+                fix="store the head direction in one of those shapes.",
+            )
+        )
+    return NWBHeadDirection(
+        timestamps_from_series(spatial_series),
+        angles,
+        frame=spatial_series.reference_frame,
+    )
 
-    from neurospatial._validation import validate_lengths
 
-    validate_lengths({"angles": angles, "timestamps": timestamps})
+_RADIANS_PER_ANGLE_UNIT = {
+    **dict.fromkeys(["radians", "radian", "rad", "rads"], 1.0),
+    **dict.fromkeys(["degrees", "degree", "deg", "degs"], np.pi / 180),
+}
 
-    return NWBHeadDirection(timestamps, angles)
+
+def _radians_per_unit(series: SpatialSeries) -> float:
+    """Radians in one stored angle unit; refuse any other unit declaration."""
+    unit = getattr(series, "unit", None)
+    key = str(unit).strip().lower() if unit is not None else ""
+    if key not in _RADIANS_PER_ANGLE_UNIT:
+        raise ValueError(
+            _format_error(
+                f"CompassDirection series '{series.name}' declares unit "
+                f"{unit!r}, which is not an angle unit.",
+                why="the angles could be degrees or radians; pynwb gives a "
+                "SpatialSeries saved without unit= the unit 'meters'.",
+                fix="rewrite the series with unit='radians' or unit='degrees'.",
+            )
+        )
+    return _RADIANS_PER_ANGLE_UNIT[key]

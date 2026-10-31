@@ -16,15 +16,13 @@ Reading Functions:
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_units : Read spike-time arrays from an NWB units table
-    read_place_field : Read a population SpatialRatesResult from NWB analysis/
+    read_spatial_rates : Read a SpatialRatesResult saved by write_spatial_rates
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
-    write_place_field : Write place field to NWB analysis/
-    write_spatial_rates : Write a population SpatialRatesResult to NWB analysis/
-    write_occupancy : Write occupancy map to NWB analysis/
+    write_spatial_rates : Write a SpatialRatesResult with its occupancy and environment
     write_events : Write generic events DataFrame to NWB EventsTable
-    write_laps : Write lap events to NWB processing/behavior/
+    write_laps : Write laps to an NWB TimeIntervals table
     write_region_crossings : Write region crossing events
     write_environment : Write Environment to NWB scratch space
 
@@ -53,11 +51,10 @@ Creating an environment from NWB position data:
 
 Writing analysis results:
 
->>> from neurospatial.io.nwb import write_place_field, write_occupancy
+>>> from neurospatial.io.nwb import write_spatial_rates
 >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
-...     write_place_field(nwbfile, env, place_field, name="cell_001")
-...     write_occupancy(nwbfile, env, occupancy)
+...     write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
 ...     io.write(nwbfile)
 
 Environment round-trip (save and reload):
@@ -132,19 +129,16 @@ if TYPE_CHECKING:
         write_trials as write_trials,
     )
     from neurospatial.io.nwb._fields import (
-        read_place_field as read_place_field,
-    )
-    from neurospatial.io.nwb._fields import (
-        write_occupancy as write_occupancy,
-    )
-    from neurospatial.io.nwb._fields import (
-        write_place_field as write_place_field,
+        read_spatial_rates as read_spatial_rates,
     )
     from neurospatial.io.nwb._fields import (
         write_spatial_rates as write_spatial_rates,
     )
     from neurospatial.io.nwb._holders import (
         NWBHeadDirection as NWBHeadDirection,
+    )
+    from neurospatial.io.nwb._holders import (
+        NWBPose as NWBPose,
     )
     from neurospatial.io.nwb._holders import (
         NWBPosition as NWBPosition,
@@ -177,6 +171,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     # Named array holders (no optional dependency imports)
     "NWBPosition": "neurospatial.io.nwb._holders:NWBPosition",
     "NWBHeadDirection": "neurospatial.io.nwb._holders:NWBHeadDirection",
+    "NWBPose": "neurospatial.io.nwb._holders:NWBPose",
     "NWBUnits": "neurospatial.io.nwb._holders:NWBUnits",
     # Reading functions
     "read_position": "neurospatial.io.nwb._behavior:read_position",
@@ -185,13 +180,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_events": "neurospatial.io.nwb._events:read_events",
     "read_intervals": "neurospatial.io.nwb._events:read_intervals",
     "read_units": "neurospatial.io.nwb._units:read_units",
-    "read_place_field": "neurospatial.io.nwb._fields:read_place_field",
+    "read_spatial_rates": "neurospatial.io.nwb._fields:read_spatial_rates",
     "read_environment": "neurospatial.io.nwb._environment:read_environment",
     "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
-    "write_place_field": "neurospatial.io.nwb._fields:write_place_field",
     "write_spatial_rates": "neurospatial.io.nwb._fields:write_spatial_rates",
-    "write_occupancy": "neurospatial.io.nwb._fields:write_occupancy",
     "write_events": "neurospatial.io.nwb._events:write_events",
     "write_laps": "neurospatial.io.nwb._events:write_laps",
     "write_region_crossings": "neurospatial.io.nwb._events:write_region_crossings",
@@ -222,6 +215,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "NWBHeadDirection",
+    "NWBPose",
     "NWBPosition",
     "NWBUnits",
     "bodypart_overlay_from_nwb",
@@ -233,16 +227,14 @@ __all__ = [
     "read_events",
     "read_head_direction",
     "read_intervals",
-    "read_place_field",
     "read_pose",
     "read_position",
+    "read_spatial_rates",
     "read_trials",
     "read_units",
     "write_environment",
     "write_events",
     "write_laps",
-    "write_occupancy",
-    "write_place_field",
     "write_region_crossings",
     "write_spatial_rates",
     "write_trials",

@@ -104,7 +104,8 @@ def test_equivalent_explicit_and_implicit_clocks_keep_handles(
         io.write(empty_nwb)
     with NWBHDF5IO(str(path), "r") as io:
         nwbfile = io.read()
-        parts, times, skeleton = read_pose(nwbfile, lazy=lazy)
+        result = read_pose(nwbfile, lazy=lazy)
+        parts, times, skeleton = result.bodyparts, result.times, result.skeleton
         assert set(skeleton.nodes) == {"nose", "tail"}
         np.testing.assert_allclose(times[:], expected)
         if lazy:
@@ -241,3 +242,183 @@ def test_clock_validation_crosses_chunk_boundaries(empty_nwb, lazy):
     _add_pose(empty_nwb, clocks=({"timestamps": times},) * 2, n_samples=n_samples)
     with pytest.raises(ValueError, match=r"nose.*finite and strictly increasing"):
         read_pose(empty_nwb, lazy=lazy)
+
+
+def test_custom_units_are_spelled_as_position_reads_them(empty_nwb):
+    """Pose and position readers normalize unit declarations identically."""
+    from neurospatial.io.nwb._adapters import position_units_from_series
+
+    pose = _add_pose(empty_nwb, units=(" Arena ", "Arena"))
+    overlay = bodypart_overlay_from_nwb(empty_nwb)
+    assert overlay.units == "Arena"
+    assert overlay.units == position_units_from_series(
+        pose.pose_estimation_series["nose"]
+    )
+
+
+def _add_scored_pose(nwbfile):
+    """Nose with a NaN (untracked) frame and a 0.01-confidence frame."""
+    from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+    skeleton = Skeleton(
+        name="mouse", nodes=["nose", "tail"], edges=np.array([[0, 1]], dtype=np.uint8)
+    )
+    stored = {
+        "nose": np.array([[10.0, 20.0], [np.nan, np.nan], [30.0, 40.0]]),
+        "tail": np.array([[0.0, 0.0], [2.0, 2.0], [4.0, 4.0]]),
+    }
+    scores = {"nose": np.array([0.99, 0.0, 0.01]), "tail": np.array([0.9, 0.8, 0.7])}
+    series = [
+        PoseEstimationSeries(
+            name=name,
+            data=stored[name],
+            confidence=scores[name],
+            timestamps=np.arange(3) / 10,
+            unit="pixels",
+            reference_frame="image corner",
+            conversion=0.5,
+            offset=1.0,
+        )
+        for name in ("nose", "tail")
+    ]
+    pose = PoseEstimation(
+        name="PoseEstimation",
+        pose_estimation_series=series,
+        skeleton=skeleton,
+        source_software="test",
+    )
+    nwbfile.create_processing_module(name="behavior", description="Behavior").add(pose)
+    nwbfile.create_processing_module(name="Skeletons", description="Skeletons").add(
+        skeleton
+    )
+    return stored, scores
+
+
+def test_eager_pose_survives_file_close_with_nan_and_confidence(empty_nwb, tmp_path):
+    """Values, NaN keypoints, confidence and declarations outlive the file."""
+    from pynwb import NWBHDF5IO
+
+    from neurospatial.io.nwb import NWBPose
+
+    stored, scores = _add_scored_pose(empty_nwb)
+    path = tmp_path / "scored_pose.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with NWBHDF5IO(str(path), "r") as io:
+        pose = read_pose(io.read())
+    assert isinstance(pose, NWBPose)
+    assert (pose.units, pose.frame) == ("px", "image corner")
+    np.testing.assert_allclose(pose.times, np.arange(3) / 10)
+    for name in ("nose", "tail"):
+        np.testing.assert_array_equal(pose.bodyparts[name], stored[name] * 0.5 + 1.0)
+        np.testing.assert_array_equal(pose.confidence[name], scores[name])
+    assert np.isnan(pose.bodyparts["nose"][1]).all()
+    # A 0.01-confidence keypoint is returned unmasked; its score says so.
+    np.testing.assert_array_equal(pose.bodyparts["nose"][2], [16.0, 21.0])
+    assert pose.confidence["nose"][2] == 0.01
+    assert set(pose.skeleton.nodes) == {"nose", "tail"}
+    with pytest.raises(TypeError):
+        pose.bodyparts["nose"] = np.zeros((3, 2))
+    with pytest.raises(ValueError, match="read-only"):
+        pose.bodyparts["nose"][0, 0] = 0.0
+
+
+def test_lazy_pose_confidence_is_a_file_handle(empty_nwb, tmp_path):
+    import h5py
+    from pynwb import NWBHDF5IO
+
+    _add_pose(empty_nwb)
+    path = tmp_path / "pose.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with NWBHDF5IO(str(path), "r") as io:
+        pose = read_pose(io.read(), lazy=True)
+        assert isinstance(pose.confidence["nose"], h5py.Dataset)
+        np.testing.assert_array_equal(pose.confidence["nose"][:], np.ones(4))
+
+
+def test_pose_holder_checks_rows_and_pickles():
+    import pickle
+
+    from neurospatial.io.nwb import NWBPose
+
+    times = np.arange(3.0)
+    with pytest.raises(ValueError, match=r"Length mismatch: bodyparts\['nose'\]=2"):
+        NWBPose({"nose": np.zeros((2, 2))}, times, None)
+    with pytest.raises(
+        ValueError, match=r"confidence names unknown bodyparts \['ear'\]"
+    ):
+        NWBPose({"nose": np.zeros((3, 2))}, times, None, confidence={"ear": times})
+    pose = NWBPose(
+        {"nose": np.zeros((3, 2))}, times, None, units="cm", confidence={"nose": times}
+    )
+    restored = pickle.loads(pickle.dumps(pose))
+    np.testing.assert_array_equal(restored.confidence["nose"], times)
+    assert restored.units == "cm"
+
+
+def test_pose_without_skeleton_reads(empty_nwb):
+    from ndx_pose import PoseEstimation, PoseEstimationSeries
+
+    series = PoseEstimationSeries(
+        name="nose",
+        data=np.zeros((3, 2)),
+        confidence=np.ones(3),
+        timestamps=np.arange(3) / 10,
+        unit="cm",
+        reference_frame="arena",
+    )
+    empty_nwb.create_processing_module(name="behavior", description="b").add(
+        PoseEstimation(name="pose", pose_estimation_series=[series])
+    )
+    pose = read_pose(empty_nwb)
+    assert pose.skeleton is None
+    assert list(pose.bodyparts) == ["nose"]
+
+
+def test_overlay_refuses_skeleton_nodes_that_are_not_series_names(empty_nwb):
+    """Series 'PoseEstimationSeriesNose' is not node 'nose': fail at build time."""
+    from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+    from neurospatial.animation.overlays import BodypartOverlay
+
+    skeleton = Skeleton(
+        name="mouse", nodes=["nose", "tail"], edges=np.array([[0, 1]], dtype=np.uint8)
+    )
+    series = [
+        PoseEstimationSeries(
+            name=f"PoseEstimationSeries{node.title()}",
+            data=np.full((4, 2), float(i)),
+            confidence=np.ones(4),
+            timestamps=np.arange(4) / 10,
+            unit="cm",
+            reference_frame="arena",
+        )
+        for i, node in enumerate(("nose", "tail"))
+    ]
+    empty_nwb.create_processing_module(name="behavior", description="b").add(
+        PoseEstimation(name="pose", pose_estimation_series=series, skeleton=skeleton)
+    )
+    empty_nwb.create_processing_module(name="Skeletons", description="s").add(skeleton)
+    with pytest.raises(ValueError) as caught:
+        bodypart_overlay_from_nwb(empty_nwb)
+    message = str(caught.value)
+    assert (
+        "Skeleton 'mouse' connects nodes ['nose', 'tail'] that are not "
+        "PoseEstimationSeries names ['PoseEstimationSeriesNose', "
+        "'PoseEstimationSeriesTail']" in message
+    )
+    # The documented fix: map nodes to series explicitly.
+    pose = read_pose(empty_nwb)
+    overlay = BodypartOverlay(
+        data={
+            "nose": pose.bodyparts["PoseEstimationSeriesNose"],
+            "tail": pose.bodyparts["PoseEstimationSeriesTail"],
+        },
+        times=pose.times,
+        skeleton=pose.skeleton,
+        units=pose.units,
+        frame=pose.frame,
+    )
+    data = overlay.convert_to_data(np.arange(4) / 10, 4, _environment())
+    np.testing.assert_array_equal(data.bodyparts["tail"], np.ones((4, 2)))

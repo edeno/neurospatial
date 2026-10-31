@@ -8,7 +8,7 @@ pytest.importorskip("pynwb")
 from neurospatial import compute_spatial_rates
 from neurospatial.decoding import BayesianDecoder
 from neurospatial.encoding import SpikeTrains
-from neurospatial.io.nwb import read_place_field, write_spatial_rates
+from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
 
 def test_disk_roundtrip_preserves_computed_decode(
@@ -34,7 +34,7 @@ def test_disk_roundtrip_preserves_computed_decode(
     with NWBHDF5IO(path, "w") as io:
         io.write(empty_nwb)
     with NWBHDF5IO(path, "r") as io:
-        restored = read_place_field(io.read())
+        restored = read_spatial_rates(io.read())
 
     np.testing.assert_array_equal(restored.unit_ids, rates.unit_ids)
     np.testing.assert_array_equal(restored.firing_rates, rates.firing_rates)

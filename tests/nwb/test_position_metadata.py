@@ -44,9 +44,6 @@ def test_position_frame_is_preserved_without_interpretation(
     holder = read_position(file, lazy=lazy)
     assert holder.frame == expected
     np.testing.assert_array_equal(np.asarray(holder.positions), series.data)
-    if lazy:
-        assert holder.positions is series.data
-        assert holder.times is series.timestamps
 
 
 def test_file_backed_position_frame_does_not_materialize_lazy_data(

@@ -7,8 +7,6 @@ using the ndx-pose extension.
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pytest
 
@@ -104,10 +102,13 @@ class TestReadPose:
         """Test reading pose estimation data from NWB file."""
         from neurospatial.io.nwb import read_pose
 
-        bodyparts, timestamps, skeleton = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        bodyparts = pose.bodyparts
+        timestamps = pose.times
+        skeleton = pose.skeleton
 
         # Check bodyparts dict
-        assert isinstance(bodyparts, dict)
+        assert set(bodyparts) == {"nose", "body", "tail"}
         assert len(bodyparts) == 3  # nose, body, tail
         assert "nose" in bodyparts
         assert "body" in bodyparts
@@ -137,7 +138,9 @@ class TestReadPose:
         """Test that read data matches the original data in the NWB file."""
         from neurospatial.io.nwb import read_pose
 
-        bodyparts, timestamps, _skeleton = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        bodyparts = pose.bodyparts
+        timestamps = pose.times
 
         # Get original data directly from NWB
         original_pose = sample_nwb_with_pose.processing["behavior"]["PoseEstimation"]
@@ -233,9 +236,8 @@ class TestReadPose:
         nwbfile.processing["Skeletons"].add(skeleton)
 
         # Request specific PoseEstimation by name
-        bodyparts, _timestamps, _skeleton = read_pose(
-            nwbfile, pose_estimation_name="PoseB"
-        )
+        pose = read_pose(nwbfile, pose_estimation_name="PoseB")
+        bodyparts = pose.bodyparts
 
         # Check we got PoseB (value 10.0), not PoseA (value 99.0)
         np.testing.assert_array_almost_equal(bodyparts["a"], np.ones((50, 2)) * 10.0)
@@ -258,7 +260,8 @@ class TestReadPose:
         """Test that skeleton is correctly extracted and converted."""
         from neurospatial.io.nwb import read_pose
 
-        _bodyparts, _timestamps, skeleton = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        skeleton = pose.skeleton
 
         # Verify skeleton structure matches what was stored
         assert skeleton.name == "mouse_skeleton"
@@ -271,7 +274,8 @@ class TestReadPose:
         """Test that all bodyparts are converted to dict correctly."""
         from neurospatial.io.nwb import read_pose
 
-        bodyparts, _timestamps, _skeleton = read_pose(sample_nwb_with_pose)
+        pose = read_pose(sample_nwb_with_pose)
+        bodyparts = pose.bodyparts
 
         # All bodyparts should be present
         expected_bodyparts = {"nose", "body", "tail"}
@@ -282,10 +286,8 @@ class TestReadPose:
             assert data.ndim == 2, f"Bodypart {name} should be 2D"
             assert data.shape[1] == 2, f"Bodypart {name} should have 2 columns (x, y)"
 
-    def test_multiple_pose_estimation_uses_first_alphabetically(
-        self, empty_nwb, caplog
-    ):
-        """Test that multiple PoseEstimation uses first alphabetically with INFO log."""
+    def test_multiple_pose_estimation_requires_a_name(self, empty_nwb):
+        """Several PoseEstimation containers are refused unless one is named."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
         from neurospatial.io.nwb import read_pose
@@ -362,22 +364,21 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        # Enable logging capture
-        with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
-            bodyparts, _timestamps, _skeleton = read_pose(nwbfile)
-
-        # Should use 'alpha' (first alphabetically)
-        np.testing.assert_array_almost_equal(bodyparts["a"], np.ones((50, 2)) * 1.0)
-
-        # Check INFO log message
-        assert any(
-            "Multiple PoseEstimation" in record.message
-            or ("Using" in record.message and "alpha" in record.message)
-            for record in caplog.records
+        with pytest.raises(ValueError) as caught:
+            read_pose(nwbfile)
+        message = str(caught.value)
+        assert (
+            "Found 2 PoseEstimation container candidates: ['processing/behavior/alpha', "
+            "'processing/behavior/zebra']" in message
         )
+        assert "pose_estimation_name='processing/behavior/alpha'" in message
 
-    def test_prioritizes_behavior_module_over_others(self, empty_nwb):
-        """Test that processing/behavior is prioritized over other modules."""
+        pose = read_pose(nwbfile, pose_estimation_name="zebra")
+        bodyparts = pose.bodyparts
+        np.testing.assert_array_equal(bodyparts["a"], np.full((50, 2), 999.0))
+
+    def test_same_name_in_two_modules_is_chosen_by_path(self, empty_nwb):
+        """processing/behavior is not silently preferred over another module."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
         from neurospatial.io.nwb import read_pose
@@ -440,10 +441,16 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, _timestamps, _skeleton = read_pose(nwbfile)
-
-        # Should get behavior module (value 99.0), not analysis (value 10.0)
-        np.testing.assert_array_almost_equal(bodyparts["a"], np.ones((50, 2)) * 99.0)
+        for name in (None, "PoseEstimation"):
+            with pytest.raises(
+                ValueError, match="Found 2 PoseEstimation container candidates"
+            ):
+                read_pose(nwbfile, pose_estimation_name=name)
+        pose = read_pose(
+            nwbfile, pose_estimation_name="processing/analysis/PoseEstimation"
+        )
+        bodyparts = pose.bodyparts
+        np.testing.assert_array_equal(bodyparts["a"], np.full((50, 2), 10.0))
 
     def test_uses_rate_when_timestamps_not_available(self, empty_nwb):
         """Test that timestamps are computed from rate when explicit timestamps not provided."""
@@ -489,7 +496,9 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, timestamps, _skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        bodyparts = pose.bodyparts
+        timestamps = pose.times
 
         assert bodyparts["a"].shape == (100, 2)
         assert timestamps.shape == (100,)
@@ -541,7 +550,9 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, timestamps, _skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        bodyparts = pose.bodyparts
+        timestamps = pose.times
 
         assert bodyparts["a"].shape == (100, 2)
         assert timestamps.shape == (100,)
@@ -601,7 +612,9 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, timestamps_out, _skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        bodyparts = pose.bodyparts
+        timestamps_out = pose.times
 
         assert bodyparts["a"].shape == (50, 3)
         assert bodyparts["b"].shape == (50, 3)
@@ -675,7 +688,9 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        bodyparts, timestamps_out, _skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        bodyparts = pose.bodyparts
+        timestamps_out = pose.times
 
         # All bodyparts should be present
         assert set(bodyparts.keys()) == {"a", "b", "c"}
@@ -723,7 +738,8 @@ class TestSkeletonRoundTrip:
             edges=np.array([[0, 1]], dtype=np.uint8),
         )
 
-        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        ns_skeleton = pose.skeleton
 
         # Verify name preserved
         assert ns_skeleton.name == "custom_skeleton_name"
@@ -742,7 +758,8 @@ class TestSkeletonRoundTrip:
             ),  # nose-neck, left_ear-neck, right_ear-neck, neck-body, body-tail
         )
 
-        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        ns_skeleton = pose.skeleton
 
         # Verify all nodes preserved
         assert ns_skeleton.n_nodes == len(node_names)
@@ -761,7 +778,8 @@ class TestSkeletonRoundTrip:
             edges=np.array([[0, 1], [1, 2], [2, 3]], dtype=np.uint8),
         )
 
-        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        ns_skeleton = pose.skeleton
 
         # Verify edge count preserved
         assert ns_skeleton.n_edges == 3
@@ -786,7 +804,8 @@ class TestSkeletonRoundTrip:
             edges=np.array([], dtype=np.uint8).reshape(0, 2),
         )
 
-        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        ns_skeleton = pose.skeleton
 
         # Verify nodes preserved but no edges
         assert ns_skeleton.n_nodes == 3
@@ -807,7 +826,8 @@ class TestSkeletonRoundTrip:
             edges=np.array([[0, 1], [0, 2], [0, 3], [0, 4]], dtype=np.uint8),
         )
 
-        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+        pose = read_pose(nwbfile)
+        ns_skeleton = pose.skeleton
 
         # Verify structure
         assert ns_skeleton.n_nodes == 5
@@ -897,7 +917,8 @@ class TestReadPoseScaled:
     def test_read_pose_applies_conversion_and_offset(self, scaled_pose_nwb):
         from neurospatial.io.nwb import read_pose
 
-        bodyparts, _, _ = read_pose(scaled_pose_nwb)
+        pose = read_pose(scaled_pose_nwb)
+        bodyparts = pose.bodyparts
 
         pose = scaled_pose_nwb.processing["behavior"]["PoseEstimation"]
         for name, series in pose.pose_estimation_series.items():

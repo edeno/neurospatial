@@ -1,21 +1,17 @@
-"""io.py - Stable serialization for Environment objects
-========================================================
+"""Versioned JSON + NPZ serialization of Environment objects.
 
-This module provides versioned JSON + npz serialization for Environment objects,
-enabling reproducible workflows and cross-tool interoperability.
+An environment saved with prefix ``path`` is a pair of files:
 
-Schema
-------
-The serialization format uses:
-- JSON for metadata, structure, and small arrays
-- NumPy .npz for large numerical arrays (bin_centers, etc.)
+- ``{path}.json``: schema version (``Environment-v3``), library version,
+  creation time, name, coordinate metadata, build choices and derivation
+  history, the binning and Arena records, the connectivity graph in
+  node-link form, regions and landmarks, and the shape and dtype of every
+  array.
+- ``{path}.npz``: the numerical arrays (bin centers, binning and Arena
+  arrays, grid edges and active mask), compressed.
 
-Files are saved as a directory (or zip) containing:
-- metadata.json: Schema version, library version, timestamps, parameters
-- arrays.npz: Binary arrays (bin_centers, etc.)
-- graph.json: NetworkX graph in node-link format
-- regions.json: Regions data (if present)
-
+:func:`to_dict` and :func:`from_dict` carry the same record in memory with
+the arrays as nested lists.
 """
 
 from __future__ import annotations
@@ -24,7 +20,6 @@ import contextlib
 import json
 import zlib
 from collections.abc import Iterator, Mapping
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -36,14 +31,33 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
-    from neurospatial.geometry import Binning
+    from neurospatial.environment import Environment, _Provenance
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
 
 # Schema version for serialization format
 _SCHEMA_VERSION = "Environment-v3"
+
+# Entries every saved environment contains and the readers decode. ``units``
+# and ``frame`` are written only when declared. Descriptions the binning
+# determines (``dimension_ranges``, ``grid_shape``, ``graph``, grid arrays) are
+# checked against it when present.
+_DECODED_KEYS = (
+    "array_specs",
+    "name",
+    "n_dims",
+    "n_bins",
+    "is_linearized_track",
+    "layout_parameters",
+    "derivations",
+    "length_scale",
+    "binning",
+    "arena",
+    "regions",
+    "landmarks",
+    "coordinate_kind",
+)
 
 
 def _convert_arrays_to_lists(obj: Any) -> Any:
@@ -85,28 +99,29 @@ def _get_library_version() -> str:
 
 
 def _validate_path_safety(path: PathLike) -> Path:
-    """Validate that a path is safe from directory traversal attacks.
+    """Refuse a path with ``..`` components and return it resolved.
 
     Parameters
     ----------
     path : str or Path
-        Path to validate.
+        Path to check.
 
     Returns
     -------
     Path
-        Resolved Path object if safe.
+        The absolute, resolved path.
 
     Raises
     ------
     ValueError
-        If path contains parent directory traversal ('..' components).
+        If the path contains a ``..`` component.
 
     Notes
     -----
-    This function prevents path traversal attacks by checking for '..'
-    components in the path before resolution. It helps ensure that file
-    operations stay within intended directories.
+    This is input hygiene, not a security boundary: only literal ``..``
+    components are refused, and absolute paths (or symbolic links) may name
+    any location. Callers that accept untrusted paths must confine them
+    themselves.
 
     """
     # Convert to Path but don't resolve yet
@@ -117,8 +132,8 @@ def _validate_path_safety(path: PathLike) -> Path:
     if ".." in path_obj.parts:
         raise ValueError(
             f"[E1005] Path traversal detected in path: {path}. "
-            f"Use absolute paths or paths without '..' components. "
-            f"This restriction helps prevent security vulnerabilities.\n\n"
+            f"Environment save and load paths may not contain '..' components; "
+            f"name the location directly, for example with an absolute path.\n\n"
             f"For more information, see: "
             f"https://edeno.github.io/neurospatial/errors/#e1005-path-traversal-detected"
         )
@@ -143,9 +158,9 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     - `path.json`: Metadata, graph structure, and small arrays
     - `path.npz`: Large numerical arrays (bin_centers, etc.)
 
-    The v3 format stores bins, lookup, cell faces, drawing components and Arena.
-    Loading decodes these data without rebuilding a layout. Version 2 remains
-    readable with an explicitly unknown Arena; version 1 must be recreated.
+    The ``Environment-v3`` format stores bins, lookup, cell faces, drawing
+    components and Arena. Loading decodes these data without rebuilding a
+    layout.
 
     Parameters
     ----------
@@ -156,8 +171,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
         A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
         part of the prefix, so ``rat1.day1`` creates ``rat1.day1.json`` and
         ``rat1.day1.npz``.
-        Paths containing '..' components are rejected to prevent
-        directory traversal attacks.
+        Paths containing ``..`` components are refused.
     overwrite : bool, default=False
         If ``False`` (the default), raise :class:`FileExistsError` when either
         ``{path}.json`` or ``{path}.npz`` already exists, so an accidental
@@ -167,7 +181,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     Raises
     ------
     ValueError
-        If path contains parent directory traversal ('..' components).
+        If path contains a ``..`` component.
     FileExistsError
         If ``overwrite`` is ``False`` and a target file already exists.
 
@@ -188,11 +202,10 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     The JSON + npz format does not execute arbitrary code at load time and
     is portable across Python versions and platforms.
 
-    For security, paths are validated to prevent directory traversal attacks.
-    Use absolute paths or relative paths without '..' components.
+    Paths with ``..`` components are refused as input hygiene; this does not
+    confine where an absolute path may write.
 
     """
-    # Validate path for security
     path_obj = _validate_path_safety(path)
     json_path, npz_path = _environment_file_paths(path_obj)
 
@@ -238,17 +251,15 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 def from_file(path: PathLike) -> Environment[Any]:
     """Load binning and Arena data without running a layout builder.
 
-    Version 2 files retain their bins with an explicitly unknown Arena. Version 1
-    files are refused; recreate and re-save them with a factory.
+    Only ``Environment-v3`` files are read. Files saved by earlier versions are
+    refused; recreate the environment with a factory and save it again.
 
     Parameters
     ----------
     path : str or Path
         Prefix to load from. Reads ``{path}.json`` and ``{path}.npz``.
         A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
-        part of the prefix.
-        Paths containing '..' components are rejected to prevent
-        directory traversal attacks.
+        part of the prefix. Paths containing ``..`` components are refused.
 
     Returns
     -------
@@ -263,8 +274,9 @@ def from_file(path: PathLike) -> Environment[Any]:
     FileNotFoundError
         If required files are not found.
     ValueError
-        If schema version is incompatible, data is malformed, or path
-        contains parent directory traversal ('..' components).
+        If the files are not an ``Environment-v3`` record, are malformed or
+        inconsistent with their binning, or the path contains a ``..``
+        component.
 
     Examples
     --------
@@ -283,11 +295,10 @@ def from_file(path: PathLike) -> Environment[Any]:
 
     Notes
     -----
-    For security, paths are validated to prevent directory traversal attacks.
-    Use absolute paths or relative paths without '..' components.
+    Paths with ``..`` components are refused as input hygiene; this does not
+    confine where an absolute path may read.
 
     """
-    # Validate path for security
     path_obj = _validate_path_safety(path)
     json_path, npz_path = _environment_file_paths(path_obj)
 
@@ -337,12 +348,7 @@ def from_file(path: PathLike) -> Environment[Any]:
                 fix="restore the original JSON and NPZ file pair, or re-save the original environment",
             )
         ) from error
-    return _restore_environment(
-        metadata,
-        source=str(json_path),
-        arrays=arrays,
-        legacy_arena=metadata["schema_version"] == "Environment-v2",
-    )
+    return _restore_environment(metadata, source=str(json_path), arrays=arrays)
 
 
 def _environment_payload(
@@ -406,11 +412,12 @@ def _check_schema(metadata: dict[str, Any], source: str) -> None:
             )
         )
     version = metadata.get("schema_version")
-    if version not in ("Environment-v2", _SCHEMA_VERSION):
+    if version != _SCHEMA_VERSION:
         raise ValueError(
             _format_error(
-                f"Unsupported environment schema {version!r} in {source}; expected {_SCHEMA_VERSION!r}.",
-                why="Why: this version stores the binning itself and does not rebuild older layout records.",
+                f"Environment schema {version!r} in {source} is no longer readable; "
+                f"this version reads only {_SCHEMA_VERSION!r}.",
+                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )
@@ -455,22 +462,14 @@ def _restore_environment(
     *,
     source: str,
     arrays: dict[str, NDArray[Any]],
-    legacy_arena: bool = False,
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
-    from neurospatial.environment import (
-        Environment,
-        _declared_metadata,
-        _Provenance,
-        _publish,
-    )
+    from neurospatial.environment import Environment, _declared_metadata, _publish
     from neurospatial.geometry import (
-        Arena,
         Binning,
         HexLocator,
         MeshLocator,
         TrackLinearization,
-        UnknownArena,
         decode,
         decode_arena,
         grid_index,
@@ -480,6 +479,12 @@ def _restore_environment(
 
     try:
         _reject_cyclic_metadata(metadata)
+        for key in _DECODED_KEYS:
+            if key not in metadata:
+                raise ValueError(
+                    f"the record has no {key!r} entry, which every saved "
+                    "environment contains; the record is incomplete or was edited"
+                )
         for key, spec in metadata["array_specs"].items():
             array = arrays[key]
             if list(array.shape) != spec["shape"] or array.dtype.str != spec["dtype"]:
@@ -501,39 +506,30 @@ def _restore_environment(
             raise ValueError(
                 "stored bin_centers differ from the authoritative binning centers"
             )
-        coordinate_kind = metadata.get("coordinate_kind", "cartesian")
+        coordinate_kind = metadata["coordinate_kind"]
         if coordinate_kind not in ("cartesian", "polar"):
             raise ValueError("unknown coordinate_kind")
-        arena: Arena
-        if legacy_arena:
-            # Older records describe bins and drawing outlines, not physical walls.
-            arena = UnknownArena(binning.bins.n_dims, coordinate_kind)
-        else:
-            arena_metadata = metadata["arena"]
-            if not isinstance(arena_metadata, dict):
-                raise ValueError("the arena record must be a metadata dictionary")
-            arena = decode_arena(
-                arena_metadata,
-                {
-                    key.removeprefix("arena/"): arrays[key]
-                    for key in metadata["array_specs"]
-                    if key.startswith("arena/")
-                },
-            )
-            if arena.n_dims != binning.bins.n_dims:
-                raise ValueError("stored arena dimensions differ from the binning")
-            if arena.coordinate_kind != coordinate_kind:
-                raise ValueError(
-                    "stored arena coordinate_kind differs from the environment"
-                )
-        binning = replace(
-            binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
+        arena_metadata = metadata["arena"]
+        if not isinstance(arena_metadata, dict):
+            raise ValueError("the arena record must be a metadata dictionary")
+        arena = decode_arena(
+            arena_metadata,
+            {
+                key.removeprefix("arena/"): arrays[key]
+                for key in metadata["array_specs"]
+                if key.startswith("arena/")
+            },
         )
-        params, derivations = _saved_history(metadata, binning.kind)
-        length_scale = _saved_length_scale(metadata, derivations)
+        if arena.n_dims != binning.bins.n_dims:
+            raise ValueError("stored arena dimensions differ from the binning")
+        if arena.coordinate_kind != coordinate_kind:
+            raise ValueError(
+                "stored arena coordinate_kind differs from the environment"
+            )
+        provenance = _saved_provenance(metadata)
         ranges = metadata.get("dimension_ranges")
-        if ranges is not None:
-            binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
+        if ranges is not None and tuple(map(tuple, ranges)) != binning.dimension_ranges:
+            raise ValueError("stored dimension_ranges differ from the binning")
         if metadata["is_linearized_track"] != (binning.linearization is not None):
             raise ValueError("stored is_linearized_track differs from the binning")
         # The stored graph is written for other tools; the environment
@@ -552,8 +548,7 @@ def _restore_environment(
             or isinstance(binning.locator, (HexLocator, MeshLocator))
         ):
             if (
-                "grid_shape" in metadata
-                and metadata["grid_shape"] is not None
+                metadata.get("grid_shape") is not None
                 and tuple(metadata["grid_shape"]) != context.shape
             ):
                 raise ValueError("stored grid_shape differs from the binning")
@@ -569,13 +564,13 @@ def _restore_environment(
             Environment,
             binning,
             coordinate_kind=coordinate_kind,
-            provenance=_Provenance(params, derivations, length_scale),
+            provenance=provenance,
             metadata=_declared_metadata(
                 name=metadata["name"],
                 units=metadata.get("units"),
                 frame=metadata.get("frame"),
             ),
-            regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
+            regions=Regions([Region.from_dict(r) for r in metadata["regions"]]),
             landmarks=Landmarks.from_list(metadata["landmarks"]),
             arena=arena,
         )
@@ -591,170 +586,52 @@ def _restore_environment(
         raise ValueError(
             _format_error(
                 f"Invalid environment data in {source}: {error}",
-                why="Why: saved geometry must be internally consistent and its Arena must use compatible coordinates.",
+                why="Why: a saved environment must be complete and internally consistent, and its Arena must use compatible coordinates.",
                 fix="re-save the environment from its original factory-built object with this version",
             )
         ) from error
 
 
-_TRANSFORMED = "_transformed"
-
-
-def _saved_label(binning: Binning, *, polar: bool) -> str:
-    """Return the canonical layout label of saved bins.
-
-    The label is the binning's ``kind``, spelled as a ``LayoutType`` value.
-    Files written before derivations kept their parent's label are read the
-    same way: their polar bins (labelled ``"MaskedGrid"``) are ``"Polar"``,
-    an ``"_transformed"`` suffix per ``apply_transform`` is dropped, and
-    ``"subset"`` and ``"PolygonCells"`` (a subset of non-grid bins and a
-    clip) take the label of the bins they were cut from. A subset or clip
-    whose bins came from none of the built-in lookups (for example
-    ``from_bins`` bins with nearest-center lookup) keeps its saved spelling,
-    because the file does not record the original label.
-
-    Parameters
-    ----------
-    binning : Binning
-        The decoded bins.
-    polar : bool
-        Whether the bins have egocentric polar coordinates, which only
-        ``Environment.from_polar_egocentric`` builds.
-
-    Returns
-    -------
-    str
-        The layout label.
-    """
-    from neurospatial.geometry import (
-        ClippedLocator,
-        CombinedLocator,
-        HexLocator,
-        MeshLocator,
-        RectilinearLocator,
-        SubsetLocator,
-        TransformedLocator,
-    )
-    from neurospatial.layout import LayoutType, find_layout_type
-
-    if polar:
-        return LayoutType.POLAR.value
-    kind = binning.kind
-    while kind.endswith(_TRANSFORMED):
-        kind = kind.removesuffix(_TRANSFORMED)
-    if kind not in ("subset", "PolygonCells"):
-        member = find_layout_type(kind)
-        return kind if member is None else member.value
-    locator = binning.locator
-    while isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
-        locator = locator.base
-    if binning.linearization is not None:
-        return LayoutType.GRAPH.value
-    for lookup, label in (
-        (HexLocator, LayoutType.HEXAGONAL),
-        (MeshLocator, LayoutType.TRIANGULAR_MESH),
-        (CombinedLocator, LayoutType.COMBINED),
-        # A grid subset was always labelled "MaskedGrid".
-        (RectilinearLocator, LayoutType.MASKED_GRID),
-    ):
-        if isinstance(locator, lookup):
-            return label.value
-    return kind
-
-
-def _saved_length_scale(
-    metadata: dict[str, Any], derivations: tuple[str, ...]
-) -> float | None:
-    """Return how long a unit of the saved build choices' lengths is now.
-
-    Files written before this was saved give 1.0 when no ``apply_transform``
-    followed the last recorded choices (a build, ``rebin`` or ``combine``),
-    and None, unknown, when one did.
+def _saved_provenance(metadata: dict[str, Any]) -> _Provenance:
+    """Return the saved build choices, derivation history and length scale.
 
     Parameters
     ----------
     metadata : dict
         The saved environment metadata.
-    derivations : tuple of str
-        The saved derivation history, oldest first.
 
     Returns
     -------
-    float or None
-        The ``length_scale`` of the environment's build record.
-    """
-    if "length_scale" in metadata:
-        saved: float | None = metadata["length_scale"]  # _Provenance checks it
-        return saved
-    recorded = max(
-        (i for i, step in enumerate(derivations) if step in ("rebin", "combine")),
-        default=-1,
-    )
-    return None if "apply_transform" in derivations[recorded + 1 :] else 1.0
-
-
-def _saved_history(
-    metadata: dict[str, Any], label: str
-) -> tuple[dict[str, Any], tuple[str, ...]]:
-    """Return the saved build choices and derivation history.
-
-    Files without a ``"derivations"`` record kept the input data among the
-    layout parameters and marked derivations there: ``"source"`` named a
-    subset or clip and ``"transformed": True`` an ``apply_transform``, with
-    one ``"_transformed"`` suffix on the layout label for each. Bins that
-    read as ``"Combined"`` were made by ``combine``, which comes first in
-    their history. Input data is dropped (the bins are stored directly), and
-    the markers become the derivation history.
-
-    Parameters
-    ----------
-    metadata : dict
-        The saved environment metadata.
-    label : str
-        The canonical layout label read from the bins (see ``_saved_label``).
-
-    Returns
-    -------
-    build_params : dict of str to object
-        Scalar build choices.
-    derivations : tuple of str
-        Derivation names, oldest first.
+    _Provenance
+        The environment's build record.
 
     Raises
     ------
     ValueError
-        If ``layout_parameters`` is not a dictionary or ``derivations`` is not
-        a list of names.
+        If ``layout_parameters`` is not a dictionary of scalar build choices,
+        ``derivations`` is not a list of names, or ``length_scale`` is not
+        None or a finite positive number.
     """
-    from neurospatial.layout import LayoutType
+    from neurospatial.environment import _Provenance
     from neurospatial.layout.base import build_choices
 
     params = metadata["layout_parameters"]
     if not isinstance(params, dict):
         raise ValueError("layout_parameters must be a dictionary of build choices")
-    choices: dict[str, Any] = {}
     for key, value in params.items():
-        with contextlib.suppress(TypeError):
-            choices.update(build_choices({key: value}, owner="layout_parameters"))
-    if "derivations" in metadata:
-        derivations = metadata["derivations"]
-        if not isinstance(derivations, list) or not all(
-            isinstance(step, str) for step in derivations
-        ):
-            raise ValueError("derivations must be a list of derivation names")
-        return choices, tuple(derivations)
-    kind = str(metadata.get("binning", {}).get("kind", ""))
-    history = ["combine"] if label == LayoutType.COMBINED.value else []
-    if choices.get("source") in ("subset", "clip"):
-        history.append(choices.pop("source"))
-        choices.pop("original_n_bins", None)
-    if choices.pop("transformed", None) is True:
-        n_transforms = 0
-        while kind.endswith(_TRANSFORMED):
-            kind = kind.removesuffix(_TRANSFORMED)
-            n_transforms += 1
-        history.extend(["apply_transform"] * max(n_transforms, 1))
-    return choices, tuple(history)
+        try:
+            build_choices({key: value}, owner="layout_parameters")
+        except TypeError:
+            raise ValueError(
+                f"layout_parameters[{key!r}] is not a build choice (a scalar or "
+                "a flat sequence of scalars), which is all an environment saves"
+            ) from None
+    derivations = metadata["derivations"]
+    if not isinstance(derivations, list) or not all(
+        isinstance(step, str) for step in derivations
+    ):
+        raise ValueError("derivations must be a list of derivation names")
+    return _Provenance(params, tuple(derivations), metadata["length_scale"])
 
 
 def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
@@ -823,16 +700,16 @@ def to_dict(env: Environment) -> dict[str, Any]:
     to_file : Save to disk with efficient binary format
 
     """
-    # Similar to to_file but with arrays as lists
     metadata, arrays = _environment_payload(env)
     metadata["arrays"] = {key: value.tolist() for key, value in arrays.items()}
     return metadata
 
 
 def from_dict(data: dict[str, Any]) -> Environment[Any]:
-    """Decode bins and Arena without rebuilding; v2 Arenas remain unknown.
+    """Decode bins and Arena from a dictionary made by :func:`to_dict`.
 
-    Version 1 dictionaries must be recreated with a factory and saved again.
+    No layout builder runs. Only ``Environment-v3`` dictionaries are read;
+    recreate older ones with an Environment factory.
 
     Parameters
     ----------
@@ -846,6 +723,14 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
         Cartesian or egocentric polar, as stored; static type checkers see
         ``Environment[Any]`` because the stored data decides. Check
         ``env.coordinate_kind`` before calling Cartesian-only methods.
+
+    Raises
+    ------
+    ValueError
+        If the dictionary is not an ``Environment-v3`` record, an array does
+        not match its stored shape and dtype, an entry the writers always
+        save is missing, or the saved data is inconsistent with its binning.
+        The message names what failed.
 
     Examples
     --------
@@ -863,17 +748,17 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
     from_file : Load from disk files
 
     """
-    # Check schema version
     _check_schema(data, "the environment dictionary")
     try:
         arrays = _arrays_from_lists(data)
     except (ValueError, TypeError, KeyError, OverflowError) as error:
         raise ValueError(
-            f"Invalid arrays in the environment dictionary: {error}"
+            _format_error(
+                f"Invalid arrays in the environment dictionary: {error}",
+                why="Why: each array must hold values of its stored dtype; casting would change indices, masks or coordinates.",
+                fix="pass the dictionary to_dict returned, unmodified, or re-save the original environment",
+            )
         ) from error
     return _restore_environment(
-        data,
-        source="the environment dictionary",
-        arrays=arrays,
-        legacy_arena=data["schema_version"] == "Environment-v2",
+        data, source="the environment dictionary", arrays=arrays
     )

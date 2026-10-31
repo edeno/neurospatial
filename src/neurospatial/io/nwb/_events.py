@@ -1,14 +1,14 @@
 """
-Events reading and writing for NWB ndx-events containers.
+Events and intervals reading and writing for NWB files.
 
-This module provides functions for reading and writing event data
-using ndx-events EventsTable.
+Point events (rewards, region crossings) are stored in ndx-events
+EventsTables; intervals (trials, laps) in NWB TimeIntervals tables.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,8 @@ from neurospatial.io.nwb._adapters import events_table_to_dataframe
 if TYPE_CHECKING:
     import ndx_events
     from pynwb import NWBFile
+
+    from neurospatial.behavior.segmentation import Lap, Outcome, Trial
 
 # =============================================================================
 # Constants for NWB events
@@ -37,6 +39,98 @@ DEFAULT_TRIALS_NAME: str = "trials"
 PREDEFINED_TRIALS: str = "trials"
 PREDEFINED_EPOCHS: str = "epochs"
 PREDEFINED_INVALID_TIMES: str = "invalid_times"
+_PREDEFINED_INTERVALS: tuple[str, ...] = (
+    PREDEFINED_TRIALS,
+    PREDEFINED_EPOCHS,
+    PREDEFINED_INVALID_TIMES,
+)
+
+_LAP_DIRECTION_DESCRIPTION = (
+    "Direction of the lap: clockwise, counter-clockwise or unknown"
+)
+_OVERLAP_SCORE_DESCRIPTION = (
+    "Jaccard overlap of the lap's bins with the template lap's bins, in [0, 1]; "
+    "NaN when laps were detected without a template (method='region')"
+)
+
+
+def _build_events_table(
+    name: str,
+    description: str,
+    timestamps: NDArray[np.float64],
+    columns: dict[str, tuple[str, NDArray[np.generic]]],
+) -> ndx_events.EventsTable:
+    """Build an EventsTable column by column.
+
+    Each column is stored from a typed array, so a table with no events keeps
+    its columns and dtypes when written to disk.
+
+    Parameters
+    ----------
+    name, description : str
+        Name and description of the table.
+    timestamps : NDArray[np.float64], shape (n_events,)
+        Event times in seconds from session start.
+    columns : dict[str, tuple[str, NDArray]]
+        Extra columns, each ``name -> (description, values)`` with values of
+        shape ``(n_events,)``.
+    """
+    from hdmf.common import VectorData
+
+    from neurospatial.io.nwb._core import _require_ndx_events
+
+    ndx_events_module = _require_ndx_events()
+    timestamp = ndx_events_module.TimestampVectorData(
+        name="timestamp",
+        description="Time of each event, in seconds from the session start.",
+        data=np.array(timestamps, dtype=np.float64),
+    )
+    return ndx_events_module.EventsTable(
+        name=name,
+        description=description,
+        columns=[
+            timestamp,
+            *(
+                VectorData(name=column, description=text, data=values)
+                for column, (text, values) in columns.items()
+            ),
+        ],
+    )
+
+
+def _add_events_table(
+    nwbfile: NWBFile,
+    events_table: ndx_events.EventsTable,
+    *,
+    processing_module: str,
+    module_description: str,
+    overwrite: bool,
+) -> None:
+    """Add a built events table to a processing module, replacing on request.
+
+    The table is built and validated by the caller first, so a failed write
+    never removes the table it was meant to replace.
+    """
+    from neurospatial.io.nwb._core import (
+        _get_or_create_processing_module,
+        _refuse_in_place_replacement,
+        logger,
+    )
+
+    name = events_table.name
+    module = _get_or_create_processing_module(
+        nwbfile, processing_module, module_description
+    )
+    if name in module.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"EventsTable '{name}' already exists in processing/"
+                f"{processing_module}. Use overwrite=True to replace it."
+            )
+        _refuse_in_place_replacement(nwbfile, f"events table '{name}'")
+        del module.data_interfaces[name]
+        logger.info("Overwriting existing EventsTable '%s'", name)
+    module.add(events_table)
 
 
 @keyword_hint("table_name", "processing_module")
@@ -80,8 +174,8 @@ def read_events(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     laps = read_events(nwbfile, table_name="laps")
-    ...     print(f"Found {len(laps)} lap events")
+    ...     rewards = read_events(nwbfile, table_name="rewards")
+    ...     print(f"Found {len(rewards)} reward events")
     """
     from neurospatial.io.nwb._core import _require_ndx_events, logger
 
@@ -175,246 +269,327 @@ def read_intervals(
     # Verify pynwb is installed
     _require_pynwb()
 
-    # Check predefined interval tables first
-    if interval_name == PREDEFINED_TRIALS and nwbfile.trials is not None:
-        logger.debug("Reading trials table from NWB file")
-        return nwbfile.trials.to_dataframe()
+    # The predefined tables have their own attributes; a file read from disk
+    # also lists them in nwbfile.intervals, so each name is kept once.
+    tables = {
+        name: table
+        for name, table in (
+            (PREDEFINED_TRIALS, nwbfile.trials),
+            (PREDEFINED_EPOCHS, nwbfile.epochs),
+            (PREDEFINED_INVALID_TIMES, nwbfile.invalid_times),
+        )
+        if table is not None
+    }
+    for name, table in nwbfile.intervals.items():
+        tables.setdefault(name, table)
 
-    if interval_name == PREDEFINED_EPOCHS and nwbfile.epochs is not None:
-        logger.debug("Reading epochs table from NWB file")
-        return nwbfile.epochs.to_dataframe()
+    if interval_name not in tables:
+        raise KeyError(
+            f"TimeIntervals '{interval_name}' not found in NWB file. "
+            f"Available intervals: {list(tables)}"
+        )
+    logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
+    return tables[interval_name].to_dataframe()
 
-    if interval_name == PREDEFINED_INVALID_TIMES and nwbfile.invalid_times is not None:
-        logger.debug("Reading invalid_times table from NWB file")
-        return nwbfile.invalid_times.to_dataframe()
 
-    # Check custom intervals (stored in nwbfile.intervals)
-    if interval_name in nwbfile.intervals:
-        logger.debug("Reading custom intervals '%s' from NWB file", interval_name)
-        return nwbfile.intervals[interval_name].to_dataframe()
+def _records(records: object, record_class: type, argument: str) -> list[Any]:
+    """Return ``records`` as a list after checking every element's type."""
+    if not isinstance(records, (list, tuple)):
+        raise TypeError(
+            f"{argument} must be a list of {record_class.__name__} objects; got "
+            f"{type(records).__name__}."
+        )
+    for i, record in enumerate(records):
+        if not isinstance(record, record_class):
+            raise TypeError(
+                f"{argument}[{i}] is a {type(record).__name__}, not a "
+                f"{record_class.__name__}. Pass the list returned by the detector, "
+                "or the start_times/stop_times arrays instead."
+            )
+    return list(records)
 
-    # Not found - provide helpful error message
-    available = []
-    if nwbfile.trials is not None:
-        available.append(PREDEFINED_TRIALS)
-    if nwbfile.epochs is not None:
-        available.append(PREDEFINED_EPOCHS)
-    if nwbfile.invalid_times is not None:
-        available.append(PREDEFINED_INVALID_TIMES)
-    available.extend(list(nwbfile.intervals.keys()))
 
-    raise KeyError(
-        f"TimeIntervals '{interval_name}' not found in NWB file. "
-        f"Available intervals: {available}"
+def _refuse_records_with_arrays(
+    argument: str, arrays: dict[str, object | None]
+) -> None:
+    """Refuse array arguments passed together with record objects."""
+    passed = [name for name, value in arrays.items() if value is not None]
+    if passed:
+        raise ValueError(
+            f"Cannot combine '{argument}' with {', '.join(passed)}.\n"
+            f"Why: the {argument} objects already carry every column, so the "
+            "arrays would be ignored.\n"
+            f"Fix: pass either '{argument}' or the arrays, not both."
+        )
+
+
+def _checked_intervals(
+    start_times: object, stop_times: object, *, record: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return start and stop times as validated 1-D float arrays (copies)."""
+    start = np.array(start_times, dtype=np.float64)
+    stop = np.array(stop_times, dtype=np.float64)
+    for argument, values in (("start_times", start), ("stop_times", stop)):
+        if values.ndim != 1:
+            raise ValueError(
+                f"{argument} must be a 1-D array of times in seconds; got shape "
+                f"{values.shape}."
+            )
+    if len(stop) != len(start):
+        raise ValueError(
+            f"stop_times length ({len(stop)}) must match start_times length "
+            f"({len(start)})."
+        )
+    for argument, values in (("start_times", start), ("stop_times", stop)):
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{argument} contains non-finite values (NaN or Inf)")
+        if np.any(values < 0):
+            raise ValueError(f"{argument} contains negative timestamps")
+    backwards = np.flatnonzero(stop < start)
+    if backwards.size:
+        i = backwards[0]
+        raise ValueError(
+            f"stop_time must be >= start_time for every {record}. "
+            f"{record.capitalize()} {i}: start_time={start[i]}, stop_time={stop[i]}"
+        )
+    return start, stop
+
+
+def _per_record(values: Sequence[Any] | None, argument: str, n: int) -> list[Any]:
+    """Return one value per record, checking the length against start_times."""
+    if values is None:
+        return []
+    values = list(values)
+    if len(values) != n:
+        raise ValueError(
+            f"{argument} length ({len(values)}) must match start_times length ({n})."
+        )
+    return values
+
+
+def _refuse_unknown(
+    values: list[Any],
+    allowed: tuple[str, ...],
+    *,
+    argument: str,
+    what: str,
+    why: str,
+) -> None:
+    """Refuse a value outside the vocabulary of a record field."""
+    bad = [value for value in values if value not in allowed]
+    if bad:
+        raise ValueError(
+            f"{argument} contains {bad[0]!r}, which is not a {what}.\n"
+            f"Why: {why}\n"
+            f"Fix: use one of {allowed}."
+        )
+
+
+def _build_time_intervals(
+    name: str,
+    description: str,
+    start_times: NDArray[np.float64],
+    stop_times: NDArray[np.float64],
+    columns: dict[str, tuple[str, NDArray[np.generic]]],
+) -> Any:
+    """Build a TimeIntervals table column by column.
+
+    Each column is stored from a typed array, so a table with no intervals
+    keeps its columns and dtypes when written to disk.
+
+    Parameters
+    ----------
+    name, description : str
+        Name and description of the table.
+    start_times, stop_times : NDArray[np.float64], shape (n_intervals,)
+        Interval bounds in seconds from session start.
+    columns : dict[str, tuple[str, NDArray]]
+        Extra columns, each ``name -> (description, values)`` with values of
+        shape ``(n_intervals,)``.
+
+    Returns
+    -------
+    pynwb.epoch.TimeIntervals
+    """
+    from hdmf.common import VectorData
+    from pynwb.epoch import TimeIntervals
+
+    return TimeIntervals(
+        name=name,
+        description=description,
+        columns=[
+            VectorData(
+                name="start_time",
+                description="Start time of the interval, in seconds",
+                data=start_times,
+            ),
+            VectorData(
+                name="stop_time",
+                description="Stop time of the interval, in seconds",
+                data=stop_times,
+            ),
+            *(
+                VectorData(name=column, description=text, data=values)
+                for column, (text, values) in columns.items()
+            ),
+        ],
     )
 
 
 @keyword_hint("description")
 def write_laps(
     nwbfile: NWBFile,
-    lap_times: NDArray[np.float64],
-    lap_types: NDArray[np.int_] | None = None,
+    laps: Sequence[Lap] | None = None,
     *,
-    description: str = "Detected lap events",
-    start_regions: Sequence[str] | None = None,
-    end_regions: Sequence[str] | None = None,
+    start_times: NDArray[np.float64] | None = None,
     stop_times: NDArray[np.float64] | None = None,
+    directions: Sequence[str] | None = None,
     name: str = DEFAULT_LAPS_NAME,
+    description: str = "Detected laps",
     overwrite: bool = False,
 ) -> None:
     """
-    Write lap detection results to NWB EventsTable.
+    Write laps to an NWB TimeIntervals table.
 
-    Creates an EventsTable in the processing/behavior/ module containing
-    lap event timestamps and optional direction, region, and stop time information.
+    Each lap is an interval with a start and stop time, so laps are stored
+    as a ``TimeIntervals`` table under ``/intervals/<name>``, next to the
+    trials table. Read them back with ``read_intervals(nwbfile,
+    interval_name="laps")``; pynapple loads the table as an ``IntervalSet``.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    lap_times : NDArray[np.float64], shape (n_laps,)
-        Lap start timestamps in seconds. Must be 1D array.
-    lap_types : NDArray[np.int_], optional
-        Lap types/directions. If provided, added as 'direction' column.
-        Must have same length as lap_times.
-    description : str, default "Detected lap events"
-        Description for the EventsTable.
-    start_regions : Sequence[str], optional
-        Start region names for each lap. If provided, added as 'start_region'
-        column. Must have same length as lap_times.
-    end_regions : Sequence[str], optional
-        End region names for each lap. If provided, added as 'end_region'
-        column. Must have same length as lap_times.
-    stop_times : NDArray[np.float64], optional
-        Lap end timestamps in seconds. If provided, added as 'stop_time' column.
-        Must have same length as lap_times and stop_times >= lap_times.
+    laps : Sequence[Lap], optional
+        Laps from :func:`~neurospatial.behavior.segmentation.detect_laps`.
+        Writes the ``direction`` and ``overlap_score`` of every lap. Cannot be
+        combined with the array arguments.
+    start_times : NDArray[np.float64], shape (n_laps,), optional
+        Lap start times in seconds. Required if ``laps`` is not given.
+    stop_times : NDArray[np.float64], shape (n_laps,), optional
+        Lap end times in seconds, each at or after its start time. Required if
+        ``laps`` is not given.
+    directions : Sequence[str], shape (n_laps,), optional
+        Direction of each lap: ``"clockwise"``, ``"counter-clockwise"`` or
+        ``"unknown"``, as in :class:`~neurospatial.behavior.segmentation.Lap`.
+        Stored as the ``direction`` column.
     name : str, default "laps"
-        Name for the EventsTable in NWB.
+        Name of the table. ``"trials"``, ``"epochs"`` and ``"invalid_times"``
+        are reserved by NWB.
+    description : str, default "Detected laps"
+        Description of the table.
     overwrite : bool, default False
-        If True, replace existing EventsTable with same name.
-        If False, raise ValueError on duplicate name.
+        If True, replace an existing table with the same name. Replacing a
+        table in a file opened with ``"r+"`` or ``"a"`` is refused; open it
+        with ``"r"`` and export a copy instead.
 
     Raises
     ------
     ValueError
-        If EventsTable with same name exists and overwrite=False.
-        If lap_times is not 1D.
-        If lap_types, start_regions, end_regions, or stop_times length
-        doesn't match lap_times.
-        If stop_times < lap_times for any entry.
-        If timestamps contain non-finite or negative values.
+        If ``laps`` is combined with array arguments, or neither is given.
+        If the arrays are not 1-D, their lengths differ, or a direction is
+        not a lap direction.
+        If times are non-finite or negative, or a lap stops before it starts.
+        If ``name`` is reserved by NWB, or a table with that name exists and
+        ``overwrite=False``.
+    TypeError
+        If ``laps`` is not a list of ``Lap`` objects.
+    NotImplementedError
+        If ``overwrite=True`` would replace a table in a file opened with
+        ``"r+"`` or ``"a"``.
     ImportError
-        If ndx-events is not installed.
+        If pynwb is not installed.
 
-    Notes
-    -----
-    The EventsTable is stored in the processing/behavior/ module, following
-    NWB conventions for behavioral data. The direction column uses integer
-    encoding (e.g., 0=outbound, 1=inbound) to allow flexible interpretation.
+    See Also
+    --------
+    detect_laps : Detect laps on a circular track.
+    read_intervals : Read the laps back as a DataFrame.
+    write_trials : Write trials to the predefined NWB trials table.
 
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> import numpy as np  # doctest: +SKIP
-    >>> lap_times = np.array([1.0, 5.5, 10.2, 15.8])  # doctest: +SKIP
-    >>> directions = np.array([0, 1, 0, 1])  # doctest: +SKIP
-    >>> start_regions = ["home", "goal", "home", "goal"]  # doctest: +SKIP
-    >>> end_regions = ["goal", "home", "goal", "home"]  # doctest: +SKIP
+    >>> from neurospatial.behavior import detect_laps  # doctest: +SKIP
+    >>> laps = detect_laps(position_bins, times, env)  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     write_laps(
-    ...         nwbfile,
-    ...         lap_times,
-    ...         lap_types=directions,
-    ...         start_regions=start_regions,
-    ...         end_regions=end_regions,
-    ...     )
+    ...     write_laps(nwbfile, laps)
     ...     io.write(nwbfile)
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+    ...     laps_table = read_intervals(io.read(), interval_name="laps")
     """
+    from neurospatial.behavior.segmentation import Lap
     from neurospatial.io.nwb._core import (
-        _get_or_create_processing_module,
-        _require_ndx_events,
+        _refuse_in_place_replacement,
+        _require_pynwb,
         logger,
     )
 
-    # Verify ndx-events is installed BEFORE importing EventsTable
-    # This ensures users see the friendly error message
-    ndx_events_module = _require_ndx_events()
-
-    # Validate lap_times is 1D
-    lap_times = np.asarray(lap_times, dtype=np.float64)
-    if lap_times.ndim != 1:
+    _require_pynwb()
+    if name in _PREDEFINED_INTERVALS:
         raise ValueError(
-            f"lap_times must be 1D array, got shape {lap_times.shape}. "
-            "Each element should be a single timestamp."
+            f"write_laps cannot use name={name!r}: NWB reserves it for the "
+            "predefined table of that name. Use another name, such as 'laps'."
         )
 
-    n_laps = len(lap_times)
-
-    # Validate timestamps are finite and non-negative
-    if n_laps > 0:
-        if not np.all(np.isfinite(lap_times)):
-            raise ValueError("lap_times contains non-finite values (NaN or Inf)")
-        if np.any(lap_times < 0):
-            raise ValueError("lap_times contains negative timestamps")
-
-    # Validate lap_types length if provided
-    if lap_types is not None:
-        lap_types = np.asarray(lap_types)
-        if len(lap_types) != n_laps:
+    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
+    if laps is not None:
+        _refuse_records_with_arrays(
+            "laps",
+            {
+                "start_times": start_times,
+                "stop_times": stop_times,
+                "directions": directions,
+            },
+        )
+        records = _records(laps, Lap, "laps")
+        start, stop = _checked_intervals(
+            [lap.start_time for lap in records],
+            [lap.end_time for lap in records],
+            record="lap",
+        )
+        columns["direction"] = (
+            _LAP_DIRECTION_DESCRIPTION,
+            np.array([lap.direction for lap in records], dtype=str),
+        )
+        columns["overlap_score"] = (
+            _OVERLAP_SCORE_DESCRIPTION,
+            np.array([lap.overlap_score for lap in records], dtype=np.float64),
+        )
+    else:
+        if start_times is None or stop_times is None:
             raise ValueError(
-                f"lap_types length ({len(lap_types)}) must match "
-                f"lap_times length ({n_laps})."
+                "write_laps needs either 'laps' (from detect_laps) or both "
+                "'start_times' and 'stop_times'."
+            )
+        start, stop = _checked_intervals(start_times, stop_times, record="lap")
+        if directions is not None:
+            directions_list = _per_record(directions, "directions", len(start))
+            _refuse_unknown(
+                directions_list,
+                get_args(get_type_hints(Lap)["direction"]),
+                argument="directions",
+                what="lap direction",
+                why="the direction column uses the vocabulary of Lap.direction.",
+            )
+            columns["direction"] = (
+                _LAP_DIRECTION_DESCRIPTION,
+                np.array(directions_list, dtype=str),
             )
 
-    # Validate start_regions length if provided
-    start_regions_list: list[str] | None = None
-    if start_regions is not None:
-        start_regions_list = list(start_regions)
-        if len(start_regions_list) != n_laps:
-            raise ValueError(
-                f"start_regions length ({len(start_regions_list)}) must match "
-                f"lap_times length ({n_laps})."
-            )
+    table = _build_time_intervals(name, description, start, stop, columns)
 
-    # Validate end_regions length if provided
-    end_regions_list: list[str] | None = None
-    if end_regions is not None:
-        end_regions_list = list(end_regions)
-        if len(end_regions_list) != n_laps:
-            raise ValueError(
-                f"end_regions length ({len(end_regions_list)}) must match "
-                f"lap_times length ({n_laps})."
-            )
-
-    # Validate stop_times if provided
-    stop_times_arr: NDArray[np.float64] | None = None
-    if stop_times is not None:
-        stop_times_arr = np.asarray(stop_times, dtype=np.float64)
-        if len(stop_times_arr) != n_laps:
-            raise ValueError(
-                f"stop_times length ({len(stop_times_arr)}) must match "
-                f"lap_times length ({n_laps})."
-            )
-        # Validate stop_times are finite and non-negative
-        if n_laps > 0:
-            if not np.all(np.isfinite(stop_times_arr)):
-                raise ValueError("stop_times contains non-finite values (NaN or Inf)")
-            if np.any(stop_times_arr < 0):
-                raise ValueError("stop_times contains negative timestamps")
-            # Check stop_times >= lap_times
-            if np.any(stop_times_arr < lap_times):
-                bad_idx = np.where(stop_times_arr < lap_times)[0][0]
-                raise ValueError(
-                    f"stop_time must be >= lap_time (start_time) for all laps. "
-                    f"Lap {bad_idx}: lap_time={lap_times[bad_idx]}, "
-                    f"stop_time={stop_times_arr[bad_idx]}"
-                )
-
-    # Get or create behavior processing module
-    behavior = _get_or_create_processing_module(
-        nwbfile, DEFAULT_PROCESSING_MODULE, "Behavioral data including laps and events"
-    )
-
-    # Check for existing table with same name
-    if name in behavior.data_interfaces:
+    if name in nwbfile.intervals:
         if not overwrite:
             raise ValueError(
-                f"EventsTable '{name}' already exists. Use overwrite=True to replace."
+                f"TimeIntervals '{name}' already exists. Use overwrite=True to "
+                "replace it."
             )
-        # Remove existing table for replacement (in-memory only)
-        del behavior.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
-
-    # Create EventsTable
-    events_table = ndx_events_module.EventsTable(name=name, description=description)
-
-    # Add optional columns
-    if lap_types is not None:
-        events_table.add_column(name="direction", description="Lap direction/type")
-    if start_regions_list is not None:
-        events_table.add_column(name="start_region", description="Lap start region")
-    if end_regions_list is not None:
-        events_table.add_column(name="end_region", description="Lap end region")
-    if stop_times_arr is not None:
-        events_table.add_column(name="stop_time", description="Lap end timestamp")
-
-    # Add rows for each lap
-    for i, timestamp in enumerate(lap_times):
-        row_kwargs: dict[str, float | int | str] = {"timestamp": float(timestamp)}
-        if lap_types is not None:
-            row_kwargs["direction"] = int(lap_types[i])
-        if start_regions_list is not None:
-            row_kwargs["start_region"] = start_regions_list[i]
-        if end_regions_list is not None:
-            row_kwargs["end_region"] = end_regions_list[i]
-        if stop_times_arr is not None:
-            row_kwargs["stop_time"] = float(stop_times_arr[i])
-        events_table.add_row(**row_kwargs)
-
-    # Add to behavior module
-    behavior.add(events_table)
-    logger.debug("Wrote EventsTable '%s' with %d lap events", name, n_laps)
+        _refuse_in_place_replacement(nwbfile, f"laps table '{name}'")
+        del nwbfile.intervals[name]
+        logger.info("Overwriting existing TimeIntervals '%s'", name)
+    nwbfile.add_time_intervals(table)
+    logger.debug("Wrote TimeIntervals '%s' with %d laps", name, len(start))
 
 
 @keyword_hint("description")
@@ -444,8 +619,10 @@ def write_region_crossings(
         Name of the region for each crossing (e.g., "start", "goal").
         Must have same length as crossing_times.
     event_types : NDArray[np.str_], shape (n_crossings,)
-        Type of crossing event. Common values are 'enter' and 'exit', but
-        arbitrary strings are allowed (e.g., 'approach', 'dwell', 'near').
+        Type of crossing event, such as ``Crossing.direction`` from
+        :func:`~neurospatial.behavior.segmentation.detect_region_crossings`
+        (``'entry'`` or ``'exit'``). Other strings are allowed (e.g.,
+        'approach', 'dwell').
         Must have same length as crossing_times.
     description : str, default "Region crossing events"
         Description for the EventsTable.
@@ -469,7 +646,7 @@ def write_region_crossings(
     -----
     The EventsTable is stored in the processing/behavior/ module, following
     NWB conventions for behavioral data. Each row represents a single crossing
-    event with timestamp, region name, and event type (enter/exit).
+    event with timestamp, region name, and event type (entry/exit).
 
     Examples
     --------
@@ -477,21 +654,16 @@ def write_region_crossings(
     >>> import numpy as np  # doctest: +SKIP
     >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])  # doctest: +SKIP
     >>> region_names = np.array(["start", "goal", "start", "goal"])  # doctest: +SKIP
-    >>> event_types = np.array(["enter", "enter", "exit", "exit"])  # doctest: +SKIP
+    >>> event_types = np.array(["entry", "entry", "exit", "exit"])  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
     ...     io.write(nwbfile)
     """
-    from neurospatial.io.nwb._core import (
-        _get_or_create_processing_module,
-        _require_ndx_events,
-        logger,
-    )
+    from neurospatial.io.nwb._core import _require_ndx_events, logger
 
-    # Verify ndx-events is installed BEFORE importing EventsTable
-    # This ensures users see the friendly error message
-    ndx_events_module = _require_ndx_events()
+    # Check ndx-events first so users see the install hint.
+    _require_ndx_events()
 
     # Validate crossing_times is 1D
     crossing_times = np.asarray(crossing_times, dtype=np.float64)
@@ -524,40 +696,22 @@ def write_region_crossings(
             f"crossing_times length ({len(crossing_times)})."
         )
 
-    # Get or create behavior processing module
-    behavior = _get_or_create_processing_module(
-        nwbfile,
-        DEFAULT_PROCESSING_MODULE,
-        "Behavioral data including region crossings and events",
+    events_table = _build_events_table(
+        name,
+        description,
+        crossing_times,
+        {
+            "region": ("Region name", region_names.astype(str)),
+            "event_type": ("Crossing event type", event_types.astype(str)),
+        },
     )
-
-    # Check for existing table with same name
-    if name in behavior.data_interfaces:
-        if not overwrite:
-            raise ValueError(
-                f"EventsTable '{name}' already exists. Use overwrite=True to replace."
-            )
-        # Remove existing table for replacement (in-memory only)
-        del behavior.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
-
-    # Create EventsTable
-    events_table = ndx_events_module.EventsTable(name=name, description=description)
-
-    # Add region and event_type columns
-    events_table.add_column(name="region", description="Region name")
-    events_table.add_column(name="event_type", description="Crossing event type")
-
-    # Add rows for each crossing
-    for i, timestamp in enumerate(crossing_times):
-        events_table.add_row(
-            timestamp=float(timestamp),
-            region=str(region_names[i]),
-            event_type=str(event_types[i]),
-        )
-
-    # Add to behavior module
-    behavior.add(events_table)
+    _add_events_table(
+        nwbfile,
+        events_table,
+        processing_module=DEFAULT_PROCESSING_MODULE,
+        module_description="Behavioral data including region crossings and events",
+        overwrite=overwrite,
+    )
     logger.debug(
         "Wrote EventsTable '%s' with %d region crossing events",
         name,
@@ -573,13 +727,13 @@ _OUTCOME_DESCRIPTION = (
 
 def write_trials(
     nwbfile: NWBFile,
-    trials: list | None = None,
+    trials: Sequence[Trial] | None = None,
     *,
     start_times: NDArray[np.float64] | None = None,
     stop_times: NDArray[np.float64] | None = None,
     start_regions: Sequence[str] | None = None,
-    end_regions: Sequence[str] | None = None,
-    outcomes: Sequence[str] | None = None,
+    end_regions: Sequence[str | None] | None = None,
+    outcomes: Sequence[Outcome] | None = None,
     description: str = "Behavioral trials",
     overwrite: bool = False,
 ) -> None:
@@ -587,33 +741,32 @@ def write_trials(
     Write trial data to NWB file.
 
     Writes trial intervals to the built-in NWB trials table, including
-    optional columns for start/end regions and how each trial ended.
+    optional columns for start/end regions and how each trial ended. Zero
+    trials write an empty table, so a session without trials reads back as
+    an empty DataFrame rather than a missing table.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    trials : list[Trial], optional
-        List of Trial objects from segment_trials(). If provided, fields
-        are extracted automatically. Cannot be used with raw array parameters.
-    start_times : NDArray[np.float64], optional
-        Trial start timestamps in seconds. Required if trials not provided.
-    stop_times : NDArray[np.float64], optional
-        Trial stop timestamps in seconds. Required if trials not provided.
-    start_regions : Sequence[str], optional
-        Start region names for each trial. If provided, must have same length
-        as start_times.
-    end_regions : Sequence[str], optional
-        End region names for each trial (None values stored as "").
-        If provided, must have same length as start_times.
-    outcomes : Sequence[str], optional
+    trials : Sequence[Trial], optional
+        Trials from :func:`~neurospatial.behavior.segmentation.segment_trials`.
+        Writes the ``start_region``, ``end_region`` and ``outcome`` of every
+        trial. Cannot be combined with the array arguments.
+    start_times : NDArray[np.float64], shape (n_trials,), optional
+        Trial start times in seconds. Required if ``trials`` is not given.
+    stop_times : NDArray[np.float64], shape (n_trials,), optional
+        Trial stop times in seconds. Required if ``trials`` is not given.
+    start_regions : Sequence[str], shape (n_trials,), optional
+        Start region name of each trial.
+    end_regions : Sequence[str or None], shape (n_trials,), optional
+        End region reached by each trial; None (no region reached) is stored
+        as ``""``.
+    outcomes : Sequence[Outcome], shape (n_trials,), optional
         How each trial ended: ``"reached"``, ``"timeout"``, ``"returned"`` or
         ``"censored"`` (see :class:`~neurospatial.behavior.segmentation.Trial`).
-        If provided, must have same length as start_times.
     description : str, default "Behavioral trials"
-        Accepted for API symmetry with the custom-table writers, but inert for
-        the predefined trials table: pynwb fixes that table's description to its
-        own default on the first ``add_trial`` and offers no way to change it.
+        Description of the trials table.
     overwrite : bool, default False
         If False, raise ``ValueError`` when trials already exist. If True,
         raise ``NotImplementedError``: pynwb provides no public API to remove
@@ -628,15 +781,19 @@ def write_trials(
     Raises
     ------
     ValueError
-        If both trials and raw arrays are provided.
-        If neither trials nor required arrays (start_times, stop_times) provided.
+        If ``trials`` is combined with array arguments, or neither
+        ``trials`` nor both ``start_times`` and ``stop_times`` are given.
         If array lengths don't match, or an outcome is not one of the four.
         If stop_times < start_times for any trial.
         If timestamps contain non-finite or negative values.
         If a trials table already exists and ``overwrite=False``.
+    TypeError
+        If ``trials`` is not a list of ``Trial`` objects.
     NotImplementedError
         If a trials table already exists and ``overwrite=True`` (overwriting
         the predefined trials table is not supported).
+    ImportError
+        If pynwb is not installed.
 
     Notes
     -----
@@ -667,145 +824,77 @@ def write_trials(
     read_intervals : Read generic TimeIntervals.
     segment_trials : Segment trajectory into trials.
     """
+    from neurospatial.behavior.segmentation import Outcome, Trial
     from neurospatial.io.nwb._core import _require_pynwb, logger
 
-    # Verify pynwb is installed
     _require_pynwb()
 
-    # Validate input combinations
-    has_trials = trials is not None
-    has_arrays = start_times is not None or stop_times is not None
-
-    if has_trials and has_arrays:
-        raise ValueError(
-            "Cannot specify both 'trials' and raw arrays (start_times, stop_times). "
-            "Use either Trial objects OR raw arrays, not both."
+    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
+    if trials is not None:
+        _refuse_records_with_arrays(
+            "trials",
+            {
+                "start_times": start_times,
+                "stop_times": stop_times,
+                "start_regions": start_regions,
+                "end_regions": end_regions,
+                "outcomes": outcomes,
+            },
         )
-
-    if not has_trials and not has_arrays:
-        raise ValueError(
-            "Must provide either 'trials' (list of Trial objects) or "
-            "'start_times' and 'stop_times' arrays."
+        records = _records(trials, Trial, "trials")
+        start, stop = _checked_intervals(
+            [trial.start_time for trial in records],
+            [trial.end_time for trial in records],
+            record="trial",
         )
-
-    # Initialize variables used in both branches
-    start_regions_list: list[str] | None = None
-    end_regions_list: list[str] | None = None
-    outcomes_list: list[str] | None = None
-
-    # Extract data from Trial objects or validate raw arrays
-    if has_trials:
-        if not isinstance(trials, (list, tuple)):
-            raise TypeError(f"trials must be a list, got {type(trials).__name__}")
-
-        n_trials = len(trials)
-        if n_trials > 0:
-            start_times_arr = np.array([t.start_time for t in trials], dtype=np.float64)
-            stop_times_arr = np.array([t.end_time for t in trials], dtype=np.float64)
-            start_regions_list = [t.start_region for t in trials]
-            end_regions_list = [
-                t.end_region if t.end_region is not None else "" for t in trials
-            ]
-            outcomes_list = [t.outcome for t in trials]
-        else:
-            start_times_arr = np.array([], dtype=np.float64)
-            stop_times_arr = np.array([], dtype=np.float64)
-            start_regions_list = []
-            end_regions_list = []
-            outcomes_list = []
+        start_regions_list = [trial.start_region for trial in records]
+        end_regions_list = [trial.end_region for trial in records]
+        outcomes_list = [trial.outcome for trial in records]
     else:
-        # Validate required arrays
-        if start_times is None:
+        if start_times is None or stop_times is None:
             raise ValueError(
-                "start_times is required when not using Trial objects. "
-                "Provide start_times array or use 'trials' parameter."
+                "write_trials needs either 'trials' (from segment_trials) or "
+                "both 'start_times' and 'stop_times'."
             )
-        if stop_times is None:
-            raise ValueError(
-                "stop_times is required when not using Trial objects. "
-                "Provide stop_times array or use 'trials' parameter."
-            )
+        start, stop = _checked_intervals(start_times, stop_times, record="trial")
+        start_regions_list = _per_record(start_regions, "start_regions", len(start))
+        end_regions_list = _per_record(end_regions, "end_regions", len(start))
+        outcomes_list = _per_record(outcomes, "outcomes", len(start))
+        _refuse_unknown(
+            outcomes_list,
+            get_args(Outcome),
+            argument="outcomes",
+            what="trial outcome",
+            why="the outcome column records how each trial ended.",
+        )
+    if trials is not None or start_regions is not None:
+        columns["start_region"] = (
+            "Region where trial started",
+            np.array(start_regions_list, dtype=str),
+        )
+    if trials is not None or end_regions is not None:
+        columns["end_region"] = (
+            "Region reached (empty string if none was reached)",
+            np.array(
+                ["" if region is None else region for region in end_regions_list],
+                dtype=str,
+            ),
+        )
+    if trials is not None or outcomes is not None:
+        columns["outcome"] = (
+            _OUTCOME_DESCRIPTION,
+            np.array(outcomes_list, dtype=str),
+        )
 
-        start_times_arr = np.asarray(start_times, dtype=np.float64)
-        stop_times_arr = np.asarray(stop_times, dtype=np.float64)
-        n_trials = len(start_times_arr)
-
-        # Validate array lengths
-        if len(stop_times_arr) != n_trials:
-            raise ValueError(
-                f"stop_times length ({len(stop_times_arr)}) must match "
-                f"start_times length ({n_trials})."
-            )
-
-        # Convert optional arrays if provided
-        start_regions_list = list(start_regions) if start_regions is not None else None
-        end_regions_list = list(end_regions) if end_regions is not None else None
-        outcomes_list = list(outcomes) if outcomes is not None else None
-
-        # Validate optional array lengths
-        if start_regions_list is not None and len(start_regions_list) != n_trials:
-            raise ValueError(
-                f"start_regions length ({len(start_regions_list)}) must match "
-                f"start_times length ({n_trials})."
-            )
-        if end_regions_list is not None and len(end_regions_list) != n_trials:
-            raise ValueError(
-                f"end_regions length ({len(end_regions_list)}) must match "
-                f"start_times length ({n_trials})."
-            )
-        if outcomes_list is not None and len(outcomes_list) != n_trials:
-            raise ValueError(
-                f"outcomes length ({len(outcomes_list)}) must match "
-                f"start_times length ({n_trials})."
-            )
-        if outcomes_list is not None:
-            from typing import get_args
-
-            from neurospatial.behavior.segmentation import Outcome
-
-            allowed = get_args(Outcome)
-            bad = [o for o in outcomes_list if o not in allowed]
-            if bad:
-                raise ValueError(
-                    f"outcomes contains {bad[0]!r}, which is not a trial outcome.\n"
-                    f"Why: the outcome column records how each trial ended.\n"
-                    f"Fix: use one of {allowed}."
-                )
-
-    # Validate timestamps
-    if n_trials > 0:
-        # Check for non-finite values
-        if not np.all(np.isfinite(start_times_arr)):
-            raise ValueError("start_times contains non-finite values (NaN or Inf)")
-        if not np.all(np.isfinite(stop_times_arr)):
-            raise ValueError("stop_times contains non-finite values (NaN or Inf)")
-
-        # Check for negative values
-        if np.any(start_times_arr < 0):
-            raise ValueError("start_times contains negative timestamps")
-        if np.any(stop_times_arr < 0):
-            raise ValueError("stop_times contains negative timestamps")
-
-        # Check stop >= start
-        if np.any(stop_times_arr < start_times_arr):
-            bad_idx = np.where(stop_times_arr < start_times_arr)[0][0]
-            raise ValueError(
-                f"stop_time must be >= start_time for all trials. "
-                f"Trial {bad_idx}: start_time={start_times_arr[bad_idx]}, "
-                f"stop_time={stop_times_arr[bad_idx]}"
-            )
-
-    # Handle existing trials table
     if nwbfile.trials is not None:
         if not overwrite:
             raise ValueError(
-                "Trials table already exists. Use overwrite=True to replace."
+                "A trials table already exists in this NWB file, and pynwb "
+                "cannot replace it. Write these trials to a fresh NWBFile."
             )
-        # pynwb provides no public API to delete or reset the predefined trials
-        # table, and it cannot be removed at all once the file is written. The
-        # previous implementation reached into the private ``nwbfile.fields``
-        # mapping, which silently fails in file-backed mode. Rather than corrupt
-        # the file or pretend the overwrite succeeded, refuse explicitly.
+        # pynwb provides no public API to delete or reset the predefined
+        # trials table, and it cannot be removed at all once the file is
+        # written.
         raise NotImplementedError(
             "Overwriting an existing NWB trials table is not supported: pynwb "
             "exposes no public API to remove or reset the predefined trials "
@@ -817,73 +906,10 @@ def write_trials(
             "write_region_crossings(): it stores point events, not intervals."
         )
 
-    # If no trials to add, skip table creation (NWB requires at least one trial)
-    if n_trials == 0:
-        logger.debug("No trials to write")
-        return
-
-    # Add custom columns (before adding any trials). nwbfile.trials is
-    # guaranteed None here (the exists/overwrite cases above both raise), so no
-    # custom columns exist yet.
-    existing_columns: set[str] = set()
-
-    # For Trial objects, always add all custom columns
-    if has_trials and n_trials > 0:
-        if "start_region" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="start_region", description="Region where trial started"
-            )
-        if "end_region" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="end_region",
-                description="Region reached (empty string if none was reached)",
-            )
-        if "outcome" not in existing_columns:
-            nwbfile.add_trial_column(name="outcome", description=_OUTCOME_DESCRIPTION)
-    elif not has_trials:
-        # For raw arrays, only add columns if data provided
-        if start_regions_list is not None and "start_region" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="start_region", description="Region where trial started"
-            )
-        if end_regions_list is not None and "end_region" not in existing_columns:
-            nwbfile.add_trial_column(
-                name="end_region",
-                description="Region reached (empty string if none was reached)",
-            )
-        if outcomes_list is not None and "outcome" not in existing_columns:
-            nwbfile.add_trial_column(name="outcome", description=_OUTCOME_DESCRIPTION)
-
-    # Add trials
-    for i in range(n_trials):
-        kwargs: dict[str, float | str | bool] = {
-            "start_time": float(start_times_arr[i]),
-            "stop_time": float(stop_times_arr[i]),
-        }
-
-        if has_trials:
-            # start_regions_list and end_regions_list are guaranteed non-None here
-            assert start_regions_list is not None
-            assert end_regions_list is not None
-            assert outcomes_list is not None
-            kwargs["start_region"] = start_regions_list[i]
-            kwargs["end_region"] = end_regions_list[i]
-            kwargs["outcome"] = outcomes_list[i]
-        else:
-            if start_regions_list is not None:
-                kwargs["start_region"] = start_regions_list[i]
-            if end_regions_list is not None:
-                kwargs["end_region"] = end_regions_list[i]
-            if outcomes_list is not None:
-                kwargs["outcome"] = outcomes_list[i]
-
-        nwbfile.add_trial(**kwargs)
-
-    # Note: pynwb assigns the predefined trials table its own default
-    # description on the first add_trial and provides no public API to change
-    # it afterward, so the ``description`` argument cannot be applied here.
-
-    logger.debug("Wrote %d trials to NWB file", n_trials)
+    nwbfile.trials = _build_time_intervals(
+        PREDEFINED_TRIALS, description, start, stop, columns
+    )
+    logger.debug("Wrote %d trials to NWB file", len(start))
 
 
 def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
@@ -976,7 +1002,7 @@ def dataframe_to_events_table(
     from neurospatial.io.nwb._core import _require_ndx_events
 
     # Verify ndx-events is installed
-    ndx_events_module = _require_ndx_events()
+    _require_ndx_events()
 
     # Validate input
     if not isinstance(df, pd.DataFrame):
@@ -993,44 +1019,30 @@ def dataframe_to_events_table(
             f"  Fix: Add timestamp column. Available columns: {list(df.columns)}"
         )
 
-    # Validate timestamps if not empty
-    if len(df) > 0:
-        timestamps = df["timestamp"].values
-        if not np.all(np.isfinite(timestamps)):
-            raise ValueError(
-                "timestamp column contains non-finite values (NaN or Inf).\n"
-                "  WHY: EventsTable requires valid numeric timestamps.\n"
-                "  Fix: Remove or replace NaN/Inf values in timestamp column."
-            )
-        if np.any(timestamps < 0):
-            raise ValueError(
-                "timestamp column contains negative values.\n"
-                "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
-                "  Fix: Adjust timestamps to be relative to session start."
-            )
+    timestamps = np.array(df["timestamp"], dtype=np.float64)
+    if not np.all(np.isfinite(timestamps)):
+        raise ValueError(
+            "timestamp column contains non-finite values (NaN or Inf).\n"
+            "  WHY: EventsTable requires valid numeric timestamps.\n"
+            "  Fix: Remove or replace NaN/Inf values in timestamp column."
+        )
+    if np.any(timestamps < 0):
+        raise ValueError(
+            "timestamp column contains negative values.\n"
+            "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
+            "  Fix: Adjust timestamps to be relative to session start."
+        )
 
-    # Create EventsTable
-    events_table = ndx_events_module.EventsTable(name=name, description=description)
-
-    # Add additional columns (excluding timestamp which is built-in)
-    extra_columns = [col for col in df.columns if col != "timestamp"]
-    for col in extra_columns:
-        events_table.add_column(name=col, description=f"Column: {col}")
-
-    # Add rows
-    for _, row in df.iterrows():
-        row_data = {"timestamp": float(row["timestamp"])}
-        for col in extra_columns:
-            value = row[col]
-            # Convert numpy types to Python types for NWB compatibility
-            if isinstance(value, (np.integer, np.floating)):
-                value = value.item()
-            elif isinstance(value, np.bool_):
-                value = bool(value)
-            row_data[col] = value
-        events_table.add_row(**row_data)
-
-    return events_table
+    return _build_events_table(
+        name,
+        description,
+        timestamps,
+        {
+            str(col): (f"Column: {col}", df[col].to_numpy(copy=True))
+            for col in df.columns
+            if col != "timestamp"
+        },
+    )
 
 
 @keyword_hint("name")
@@ -1109,39 +1121,19 @@ def write_events(
     See Also
     --------
     read_events : Read events from NWB EventsTable.
-    write_laps : Write lap events (specialized format).
+    write_laps : Write laps as an interval table.
     write_region_crossings : Write region crossing events (specialized format).
     """
-    from neurospatial.io.nwb._core import (
-        _get_or_create_processing_module,
-        _require_ndx_events,
-        logger,
-    )
+    from neurospatial.io.nwb._core import logger
 
-    # Verify ndx-events is installed
-    _require_ndx_events()
-
-    # Get or create processing module
-    module = _get_or_create_processing_module(
-        nwbfile, processing_module, f"{processing_module.capitalize()} data"
-    )
-
-    # Check for existing table with same name
-    if name in module.data_interfaces:
-        if not overwrite:
-            raise ValueError(
-                f"EventsTable '{name}' already exists in processing/{processing_module}. "
-                "Use overwrite=True to replace."
-            )
-        # Remove existing table for replacement (in-memory only)
-        del module.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
-
-    # Convert DataFrame to EventsTable
     events_table = dataframe_to_events_table(events, name=name, description=description)
-
-    # Add to processing module
-    module.add(events_table)
+    _add_events_table(
+        nwbfile,
+        events_table,
+        processing_module=processing_module,
+        module_description=f"{processing_module.capitalize()} data",
+        overwrite=overwrite,
+    )
     logger.debug(
         "Wrote EventsTable '%s' with %d events to processing/%s",
         name,

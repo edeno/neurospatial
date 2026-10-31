@@ -511,13 +511,11 @@ Numerical geometry is published only after convexity, interface and
 orthogonality checks; containment and plotting do not depend on certification.
 
 Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
-They include a required Arena record. Version 2/`2.0` remains readable with an
-explicit `UnknownArena`, without inferring physical geometry from parameters,
-outlines or masks; a polar environment in such a record is refused because
-it has no stored `EgocentricSurround`. Version 1/`1.x` records are refused
-with recreation guidance. Pure codecs in `geometry/_codecs.py`, including the
-arena codec, store typed arrays and JSON metadata; polygon WKB bytes
-and offsets preserve ordered cells and holes. Shared snapshot references
+They include a required Arena record. Earlier versions (`Environment-v1`/`-v2`,
+NWB `1.x`/`2.0`) are refused with recreation guidance; they are never converted
+and no Arena is inferred from their parameters, outlines or masks. Pure codecs
+in `geometry/_codecs.py`, including the arena codec, store typed arrays and
+JSON metadata; polygon WKB bytes and offsets preserve ordered cells and holes. Shared snapshot references
 retain locator ownership without duplicating each record. Locator search
 structures are not stored; they are rebuilt from saved data. Standard NWB
 containers reject slash-containing names, so a one-row ragged DynamicTable

@@ -24,7 +24,11 @@ from neurospatial.reactivation import (
     compare_reactivation_methods,
     detect_assemblies,
 )
-from neurospatial.reactivation.methods import _COLUMNS, _bootstrap_ev_minus_rev
+from neurospatial.reactivation.methods import (
+    _COLUMNS,
+    _bootstrap_ev_minus_rev,
+    _checked_events,
+)
 
 # Fewer shuffles keep the tests fast; the recipes' statistics are unchanged.
 LANSINK_FAST = dataclasses.replace(LANSINK_2009, n_shuffles=500)
@@ -634,6 +638,17 @@ def test_a_labelled_spike_group_names_the_members(reactivated, kind: str) -> Non
     pd.testing.assert_frame_equal(named, table)
     with pytest.raises(ValueError, match="unit_ids"):
         compare_reactivation_methods(group, unit_ids=labels[::-1], **arguments)
+
+
+def test_pynapple_event_ends_are_inclusive() -> None:
+    """A pynapple IntervalSet's inclusive ends become half-open stops, so a
+    spike exactly at an event's end stays in that event's bin."""
+    nap = pytest.importorskip("pynapple")
+    rows = _checked_events(nap.IntervalSet(start=[1.0, 5.0], end=[2.0, 6.0]), "x")
+    np.testing.assert_array_equal(rows[:, 0], [1.0, 5.0])
+    np.testing.assert_array_equal(rows[:, 1], np.nextafter([2.0, 6.0], np.inf))
+    plain = _checked_events(np.array([[1.0, 2.0], [5.0, 6.0]]), "x")
+    np.testing.assert_array_equal(plain, [[1.0, 2.0], [5.0, 6.0]])
 
 
 def test_a_custom_recipe_runs(reactivated) -> None:

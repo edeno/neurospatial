@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         HeadDirectionOverlay,
         PositionOverlay,
     )
+    from neurospatial.io.nwb._holders import NWBPose
 
 
 def position_overlay_from_nwb(
@@ -144,8 +145,9 @@ def bodypart_overlay_from_nwb(
     KeyError
         If no PoseEstimation container found, or if specified name not found.
     ValueError
-        If bodypart clocks or known coordinate declarations disagree, or a
-        keyword declaration conflicts with the NWB metadata.
+        If bodypart clocks or known coordinate declarations disagree, a
+        keyword declaration conflicts with the NWB metadata, or a skeleton
+        edge names a node that is not a ``PoseEstimationSeries`` name.
     ImportError
         If ndx-pose is not installed.
 
@@ -170,28 +172,52 @@ def bodypart_overlay_from_nwb(
     """
     from neurospatial.animation.overlays import BodypartOverlay
     from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
-    from neurospatial.io.nwb._pose import _read_pose_with_metadata
+    from neurospatial.io.nwb._pose import read_pose
 
-    # Read pose data from NWB
-    bodyparts, timestamps, skeleton, units, frame = _read_pose_with_metadata(
-        nwbfile,
-        pose_estimation_name=pose_estimation_name,
-    )
-
+    pose = read_pose(nwbfile, pose_estimation_name=pose_estimation_name)
+    _require_skeleton_names_bodyparts(pose)
     declarations = merge_overlay_coordinate_metadata(
-        units, frame, kwargs, context="BodypartOverlay", source="pose"
+        pose.units, pose.frame, kwargs, context="BodypartOverlay", source="pose"
     )
-
-    # Create and return BodypartOverlay
     return BodypartOverlay(
-        data=bodyparts,
-        times=timestamps,
-        skeleton=skeleton,  # Auto-extracted from PoseEstimation.skeleton
+        data=dict(pose.bodyparts),
+        times=pose.times,
+        skeleton=pose.skeleton,
         colors=colors,
         units=declarations["units"],
         frame=declarations["frame"],
         **kwargs,
     )
+
+
+def _require_skeleton_names_bodyparts(pose: NWBPose) -> None:
+    """Refuse a skeleton whose edges name nodes that are not bodypart keys.
+
+    ndx-pose matches skeleton nodes to ``PoseEstimationSeries`` by name and
+    stores no other link, so a file whose series are named, for example,
+    ``"PoseEstimationSeriesNose"`` while the node is ``"nose"`` cannot be
+    drawn.
+    """
+    from neurospatial._exceptions import _format_error
+
+    if pose.skeleton is None:
+        return
+    nodes = {node for edge in pose.skeleton.edges for node in edge}
+    unmatched = sorted(nodes - set(pose.bodyparts))
+    if unmatched:
+        raise ValueError(
+            _format_error(
+                f"Skeleton '{pose.skeleton.name}' connects nodes {unmatched} "
+                "that are not PoseEstimationSeries names "
+                f"{sorted(pose.bodyparts)}.",
+                why="ndx-pose links a skeleton node to the series with the "
+                "same name; the file records no other correspondence.",
+                fix="pose = read_pose(nwbfile), then build "
+                "BodypartOverlay(data={node: pose.bodyparts[series], ...}, "
+                "times=pose.times, skeleton=pose.skeleton) with your own "
+                "node-to-series mapping, or rename the series to the node names.",
+            )
+        )
 
 
 def head_direction_overlay_from_nwb(
@@ -233,6 +259,15 @@ def head_direction_overlay_from_nwb(
     ------
     KeyError
         If no CompassDirection container found, or if specified name not found.
+    ValueError
+        If the series unit is not a radian or degree spelling; see
+        :func:`read_head_direction`.
+
+    Notes
+    -----
+    Headings are drawn in the package convention, zero East and increasing
+    counterclockwise. Check ``read_head_direction(nwbfile).frame`` when the
+    file may use another convention.
 
     Examples
     --------

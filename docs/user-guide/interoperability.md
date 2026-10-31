@@ -308,7 +308,9 @@ start/stop arrays are rejected: convert them with `np.column_stack([starts, stop
     Prefer the original arrays with `epochs=`; if using sliced arrays, pass the
     windows again. Point selection uses the same `[start, stop)` windows as
     the analyses, so adjacent train/test windows never share a spike or
-    event; pass `closed="both"` to match pynapple's inclusive `restrict`.
+    event. A pynapple `IntervalSet` includes its end, and its rows are
+    converted so a point at `end` stays inside; for plain arrays of
+    pynapple bounds, pass `closed="both"` to match pynapple's `restrict`.
 
 ## Analysis settings and exports
 
@@ -333,9 +335,11 @@ print("Supported bins:", int(rates.spatial_support.sum()))
 ```
 
 `to_xarray()` stores these settings as JSON in `attrs["analysis_settings"]`,
-alongside a `spatial_support` variable; they survive NetCDF export. NWB spatial
-rate schema 2.4 preserves them too. Legacy or manually constructed results use
-`analysis_settings=None` when these choices are unknown. CSV does not preserve
+alongside a `spatial_support` variable; they survive NetCDF export.
+`write_spatial_rates` stores them in NWB too (spatial-rates schema 2.5);
+`read_spatial_rates` refuses records written with an earlier schema, so
+recompute and rewrite those. Results you construct by hand without these choices
+have `analysis_settings=None`. CSV does not preserve
 DataFrame attributes: save the settings as a JSON sidecar, or use NetCDF/NWB.
 
 ## `BayesianDecoder`
@@ -379,50 +383,80 @@ environment's connectivity graph.
 ## pynapple interop
 
 pynapple objects convert to and from plain arrays **at the boundary** with
-`from_pynapple` / `to_pynapple`, so the scientific code never touches pynapple.
+`from_pynapple` / `to_pynapple`.
 
 !!! note "Requires the `pynapple` extra"
     `pip install neurospatial[pynapple]`. Only these two adapter functions
     import pynapple, and they import it lazily.
 
-```python
-from neurospatial.io import from_pynapple, to_pynapple
-
-# Ingress: pynapple -> plain arrays.
-trains, unit_ids = from_pynapple(tsgroup)      # TsGroup   -> (trains, unit_ids)
-times, positions = from_pynapple(tsdframe)     # Tsd/TsdFrame -> (times, positions)
-start, end = from_pynapple(intervalset)        # IntervalSet -> (start, end)
-
-# Egress: a decoded MAP track -> a pynapple Tsd / TsdFrame.
-tsd = to_pynapple(result)                       # from a DecodingResult
-```
-
-A raw `TsGroup` can supply spikes and unit labels directly. Pass tracking as
-two explicit arrays, `tsdframe.t` and `tsdframe.values`, with timestamps first:
+A pynapple object is defined only on its `time_support`: the recording epochs,
+with gaps between them for artifacts, sleep boxes or lost tracking.
+`from_pynapple` returns that support as `epochs`, a `(n_epochs, 2)` array of
+half-open `[start, stop)` rows in seconds, so you can pass it to the analysis and keep
+the gaps out of occupancy and rates:
 
 ```python
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.decoding import decode_session
+from neurospatial.io import from_pynapple, to_pynapple
 
-rates = compute_spatial_rates(env, tsgroup, tsdframe.t, tsdframe.values)
-result = decode_session(env, tsgroup, tsdframe.t, tsdframe.values, dt=0.1)
-```
+# Ingress: pynapple -> plain arrays plus their time support.
+times, positions, epochs = from_pynapple(tsdframe)   # TsdFrame / Tsd
+# A TsGroup's support is the recording coverage only if it was built with the
+# acquisition intervals; by default it runs from the first to the last spike.
+trains, unit_ids, recorded = from_pynapple(tsgroup)  # TsGroup
+spike_times, unit_epochs = from_pynapple(ts)         # one unit's Ts
+run_epochs = from_pynapple(intervalset)              # IntervalSet -> (n, 2)
 
-neurospatial reads only the spike times and labels from a `TsGroup`; it
-ignores the group's `time_support`. Without `spike_window=`, spikes are assumed
-to have been recorded wherever position was tracked. When the electrophysiology
-covers a different stretch, pass that coverage explicitly. An `IntervalSet` is
-accepted directly:
-
-```python
 rates = compute_spatial_rates(
-    env, tsgroup, tsdframe.t, tsdframe.values, spike_window=recording_intervals
+    env, trains, times, positions,
+    epochs=epochs, spike_window=recorded, unit_ids=unit_ids,
 )
 ```
 
-Use `tsgroup.time_support` here only if you set it to the true acquisition
-intervals: a `TsGroup` built from spike times alone gets a default support that
-runs from its first spike to its last, which is not recording coverage.
+Without `epochs=`, a gap shorter than `max_gap` (1 s by default) is counted as
+time spent at the last position before it, which inflates occupancy in that bin.
+
+Positions come back in the frame's column order. A `TsdFrame` whose columns are
+the axis names in another order, such as `["y", "x"]`, is refused rather than
+silently swapping the axes; reorder it with `tsdframe.loc[["x", "y"]]` first.
+
+pynapple intervals include their end, while neurospatial windows are half-open
+`[start, stop)`. Each pynapple `end` becomes the next float above it
+(`np.nextafter(end, np.inf)`), so the epochs hold exactly the timestamps pynapple
+holds: a sample or spike at an epoch end, such as the last spike of a `TsGroup`'s
+default support, stays inside. An `IntervalSet` passed directly as `epochs=` or
+`spike_window=` is converted the same way, and `to_pynapple` converts back.
+
+A raw `TsGroup` can also supply spikes and unit labels directly, and an
+`IntervalSet` is accepted directly as `epochs=` or `spike_window=`:
+
+```python
+from neurospatial.decoding import decode_session
+
+result = decode_session(
+    env, tsgroup, times, positions, dt=0.1, spike_window=recording_intervals
+)
+```
+
+Passed directly, a `TsGroup` contributes only its spike times and labels; its
+`time_support` is ignored. Without `spike_window=`, spikes are assumed to have
+been recorded wherever position was tracked. Use the group's time support as
+`spike_window=` only if you set it to the true acquisition intervals: a
+`TsGroup` built from spike times alone gets a default support that runs from
+its first spike to its last, which is not recording coverage.
+
+Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
+time support is the decode's `spike_window`, so decoding over several windows
+stays several intervals instead of one interval spanning the gaps:
+
+```python
+tsdframe = to_pynapple(result)                              # DecodingResult
+tsd = to_pynapple(times, linear_position, epochs=epochs)    # plain arrays
+```
+
+A decode result does not record the `epochs=` it was decoded over; if you
+restricted decoding that way, pass the same windows as `to_pynapple(result,
+epochs=...)`.
 
 ## NWB interop
 
@@ -438,15 +472,22 @@ Read components explicitly. These readers return frozen, non-iterable holders:
 | Reader | Holder attributes |
 | --- | --- |
 | `read_position` | `NWBPosition.times`, `.positions`, `.units`, `.frame` |
-| `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians) |
+| `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians), `.frame` |
+| `read_pose` | `NWBPose.bodyparts`, `.times`, `.skeleton`, `.units`, `.frame`, `.confidence` |
 | `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window` |
 
+When a file holds more than one matching series or container, for example raw
+pixel and calibrated position, the reader raises and lists their paths instead
+of picking one. Pass the name or full path to `position_name=`,
+`compass_name=` or `pose_estimation_name=`.
+
 Position values already include the stored conversion and offset. Recognized
-unit aliases become `m`, `cm`, `mm` or `px` without scaling those values again.
+unit aliases become `m`, `cm`, `mm`, `um` or `px` without scaling those values again.
 Other nonempty declarations remain visible; `None` means no unit was declared.
-Choose the physical unit explicitly in that case before creating an environment.
-`environment_from_position` retains its warned cm fallback when used without
-an explicit unit.
+Choose the physical unit explicitly in that case before creating an environment:
+`environment_from_position` refuses an undeclared unit unless you pass `units=`,
+and refuses `units=` or `frame=` values that conflict with the series
+declarations.
 Position reads also preserve nonempty `SpatialSeries.reference_frame`
 descriptions verbatim in `.frame`; `None` means no frame was declared. The
 `position_overlay_from_nwb` adapter forwards both units and frame and rejects
@@ -454,8 +495,17 @@ keyword overrides that would erase or change a known declaration. Supply missing
 metadata explicitly, or transform the coordinates before using a different
 frame or physical unit. Equivalent unit spellings do not require conversion.
 
-`read_pose` returns `(bodyparts, times, skeleton)` and checks that every bodypart
-uses the same sample clock, units and reference frame. Different clocks must be
+Head direction angles stored with unit `radians` or `degrees` are returned in
+radians; any other unit, including pynwb's default `meters`, raises because
+the angles could be either. `.frame` carries the series reference frame
+verbatim. The headings are assumed to be zero East and counterclockwise; if
+`.frame` says otherwise (for example "0 = North, clockwise"), convert with
+`np.pi / 2 - hd.headings`.
+
+`read_pose` returns an `NWBPose` and checks that every bodypart
+uses the same sample clock, units and reference frame. Untracked keypoints stay
+NaN, and low-confidence keypoints are returned unchanged with their scores in
+`.confidence`; choose a threshold for your tracker and mask them yourself. Different clocks must be
 aligned explicitly before combining them into a pose. The
 `bodypart_overlay_from_nwb` adapter carries the declared units and reference
 frame into `BodypartOverlay`, which checks them against the environment. Convert
@@ -552,14 +602,14 @@ with NWBHDF5IO("session.nwb", "r") as io:
 
 `write_spatial_rates` persists a population `SpatialRatesResult` — the per-unit
 firing-rate maps, shared occupancy, `unit_ids`, optional `unit_table`, and a
-connected copy of the `Environment` — and `read_place_field` reconstructs an
+connected copy of the `Environment` — and `read_spatial_rates` reconstructs an
 equal result. Because the environment round-trips with its connectivity intact,
 graph operations work on the restored env with no `env=` argument.
 
 ```python
 from pynwb import NWBHDF5IO
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.io.nwb import write_spatial_rates, read_place_field
+from neurospatial.io.nwb import write_spatial_rates, read_spatial_rates
 
 rates = compute_spatial_rates(env, spike_times, times, positions)
 
@@ -572,9 +622,16 @@ with NWBHDF5IO("session.nwb", "r+") as io:
 # Read back (env restored from the file; an env= you pass must equal it).
 with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
-    restored = read_place_field(nwbfile, name="ca1_place_fields")
+    restored = read_spatial_rates(nwbfile, name="ca1_place_fields")
     restored.firing_rates.shape   # (n_units, n_bins)
 ```
+
+The record is a table in the processing module `analysis`, plus its occupancy
+(seconds) and a saved copy of the environment. To replace a record, open the
+file with `"r"`, call `write_spatial_rates(..., overwrite=True)`, and save a
+copy with `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb
+cannot delete objects already written to a file opened with `"r+"`, so
+`overwrite=True` refuses such files.
 
 ## See Also
 

@@ -289,7 +289,7 @@ they are not additions to the six accepted continuous-behavior workstreams.
 * [x] NWB import/export for:
   * Full `nwb/` module with read/write functions
   * `read_position()`, `read_pose()`, `read_head_direction()`
-  * `write_place_field()`, `write_occupancy()`, `write_trials()`
+  * `write_spatial_rates()`, `write_trials()`
   * `write_environment()`, `read_environment()` (round-trip)
   * ~~spikes~~ (use pynwb directly)
   * ~~LFP~~ (use pynwb directly)

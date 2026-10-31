@@ -12,7 +12,7 @@ pynwb = pytest.importorskip("pynwb")
 
 
 def test_linear_rates_file_preserves_support_and_decoder(empty_nwb, tmp_path):
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = Environment.from_grid_mask(
         np.ones((2, 1), bool),
@@ -39,7 +39,7 @@ def test_linear_rates_file_preserves_support_and_decoder(empty_nwb, tmp_path):
     with pynwb.NWBHDF5IO(str(path), "w") as io:
         io.write(empty_nwb)
     with pynwb.NWBHDF5IO(str(path), "r") as io:
-        restored = read_place_field(io.read())
+        restored = read_spatial_rates(io.read())
     np.testing.assert_array_equal(restored.unit_ids, [9, 3])
     np.testing.assert_array_equal(restored.firing_rates, rates.firing_rates)
     np.testing.assert_array_equal(restored.occupancy, rates.occupancy)

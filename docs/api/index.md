@@ -462,9 +462,8 @@ NWB (Neurodata Without Borders) read / write integration.
 - `read_environment()`, `read_position()`, `read_units()`, `read_head_direction()`, `read_pose()`,
   `read_events()`, `read_intervals()`, `read_trials()`: Read NWB
   components into neurospatial types
-- `write_environment()`, `write_place_field()`,
-  `write_occupancy()`, `write_events()`, `write_laps()`,
-  `write_region_crossings()`, `write_trials()`: Persist neurospatial
+- `write_environment()`, `write_spatial_rates()`, `write_events()`,
+  `write_laps()`, `write_region_crossings()`, `write_trials()`: Persist neurospatial
   results back into an NWBFile
 - `environment_from_position()`: Build an environment directly from
   the position channel of an NWB file
@@ -563,18 +562,23 @@ pynwb.
 
 **pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
 
-- `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids)`, `Tsd` / `TsdFrame` →
-  `(times, positions)`, `IntervalSet` → `(start, end)`.
-- `to_pynapple(times, values=...)`: Decoded track / arrays → `Tsd` / `TsdFrame`.
+- `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids, epochs)`, `Ts` →
+  `(spike_times, epochs)`, `Tsd` / `TsdFrame` → `(times, values, epochs)`,
+  `IntervalSet` → `(n, 2)` epochs; `epochs` is the object's time support.
+- `to_pynapple(times, values=..., epochs=...)`: Decoded track / arrays → `Tsd` /
+  `TsdFrame` whose time support is `epochs` or the decode's `spike_window`.
 
 **NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:
 
-- `read_position(...)` → `NWBPosition(times, positions, units)` and
-  `read_head_direction(...)` → `NWBHeadDirection(times, headings)`.
+- `read_position(...)` → `NWBPosition(times, positions, units, *, frame)`,
+  `read_head_direction(...)` → `NWBHeadDirection(times, headings, *, frame)`
+  and `read_pose(...)` → `NWBPose(bodyparts, times, skeleton, *, units,
+  frame, confidence)`. Several matching series or containers raise; choose
+  one by name or path.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
-  `NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`. Unit labels
-  are table IDs; `spike_window` intersects the selected units' acquisition
-  coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
+  `NWBUnits(spike_times, unit_ids, obs_intervals)`. Unit labels are unique
+  table IDs; the derived `spike_window` intersects the selected units'
+  acquisition coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
 - Holders are frozen and cannot be tuple-unpacked. Position units describe
   converted values; missing declarations are `None`. `read_position` /
   `read_pose` / `read_units` accept `lazy=True` (handles valid only while the
@@ -582,7 +586,7 @@ pynwb.
 - The [complete NWB recipe](../user-guide/interoperability.md#population-fields-decoding-and-a-truthful-overlay)
   carries physical units, labels, selected epochs and acquisition coverage
   through population fields, a fitted decoder, summary tables and overlays.
-- `write_spatial_rates(nwbfile, result)` / `read_place_field(nwbfile, env=None)`:
+- `write_spatial_rates(nwbfile, result)` / `read_spatial_rates(nwbfile, env=None)`:
   Round-trip a `SpatialRatesResult` (firing rates / occupancy / unit ids /
   `unit_table` + a persisted, connected environment).
 

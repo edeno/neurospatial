@@ -701,8 +701,8 @@ class TestBuildChoices:
             "circular_angle": False,
         }
 
-    def test_saved_data_is_dropped_on_read_and_choices_kept(self):
-        """Files that recorded input data among the parameters still load."""
+    def test_saved_data_among_choices_is_refused_on_read(self):
+        """A record holding input data among its build choices is refused."""
         from neurospatial import Environment
 
         env = Environment.from_grid_mask(
@@ -710,9 +710,10 @@ class TestBuildChoices:
         )
         data = env.to_dict()
         data["layout_parameters"]["grid_edges"] = [[0.0, 1.0, 2.0]] * 2
-        restored = Environment.from_dict(data)
-        assert restored.layout_parameters == env.layout_parameters
-        np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+        with pytest.raises(
+            ValueError, match=r"layout_parameters\['grid_edges'\] is not a build choice"
+        ):
+            Environment.from_dict(data)
 
 
 _EMPTY_BUILDS = {

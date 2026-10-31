@@ -313,8 +313,45 @@ class TestReadIntervals:
         """Test KeyError when interval table not found."""
         from neurospatial.io.nwb import read_intervals
 
-        with pytest.raises(KeyError, match="nonexistent"):
+        with pytest.raises(
+            KeyError,
+            match=r"TimeIntervals 'nonexistent' not found in NWB file. "
+            r"Available intervals: \[\]",
+        ):
             read_intervals(empty_nwb, interval_name="nonexistent")
+
+    def test_not_found_lists_each_table_once(self, tmp_path):
+        """The listing names every table in the file once, predefined first."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_intervals, write_laps, write_trials
+
+        nwbfile = create_roundtrip_nwb()
+        write_trials(nwbfile, start_times=[0.0], stop_times=[1.0])
+        nwbfile.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
+        write_laps(nwbfile, start_times=[0.0], stop_times=[1.0])
+        with NWBHDF5IO(str(tmp_path / "intervals.nwb"), "w") as io:
+            io.write(nwbfile)
+
+        with (
+            NWBHDF5IO(str(tmp_path / "intervals.nwb"), "r") as io,
+            pytest.raises(KeyError) as caught,
+        ):
+            read_intervals(io.read(), interval_name="lap")
+        assert str(caught.value) == (
+            "\"TimeIntervals 'lap' not found in NWB file. "
+            "Available intervals: ['trials', 'invalid_times', 'laps']\""
+        )
+
+    def test_read_invalid_times(self, empty_nwb):
+        from neurospatial.io.nwb import read_intervals
+
+        empty_nwb.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
+        empty_nwb.add_invalid_time_interval(start_time=7.5, stop_time=8.0)
+
+        invalid = read_intervals(empty_nwb, interval_name="invalid_times")
+        np.testing.assert_array_equal(invalid["start_time"], [2.0, 7.5])
+        np.testing.assert_array_equal(invalid["stop_time"], [3.0, 8.0])
 
     def test_additional_columns_preserved(self, empty_nwb):
         """Test that additional columns from TimeIntervals are preserved."""
@@ -383,255 +420,6 @@ class TestReadIntervals:
         np.testing.assert_array_almost_equal(
             result["stop_time"].values, original["stop_time"][:]
         )
-
-
-@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
-class TestWriteLaps:
-    """Tests for write_laps() function (requires ndx-events)."""
-
-    def test_basic_lap_times_writing(self, empty_nwb):
-        """Test writing basic lap times to NWB file."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-
-        # Write laps
-        write_laps(nwbfile, lap_times)
-
-        # Verify EventsTable was created
-        assert "behavior" in nwbfile.processing
-        assert "laps" in nwbfile.processing["behavior"].data_interfaces
-
-        # Verify data
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert len(laps_table) == 4
-
-        # Check timestamps
-        np.testing.assert_array_almost_equal(laps_table["timestamp"][:], lap_times)
-
-    def test_with_lap_types_direction(self, empty_nwb):
-        """Test writing laps with direction/lap_types column."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        lap_types = np.array([0, 1, 0, 1])  # 0=outbound, 1=inbound
-
-        # Write laps with directions
-        write_laps(nwbfile, lap_times, lap_types=lap_types)
-
-        # Verify direction column
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "direction" in laps_table.colnames
-
-        # Check direction values
-        np.testing.assert_array_equal(laps_table["direction"][:], lap_types)
-
-    def test_events_table_creation_in_behavior(self, empty_nwb):
-        """Test EventsTable is created in processing/behavior/ module."""
-        from ndx_events import EventsTable
-
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 2.0, 3.0])
-
-        # Write laps
-        write_laps(nwbfile, lap_times)
-
-        # Verify processing/behavior exists
-        assert "behavior" in nwbfile.processing
-
-        # Verify laps is an EventsTable
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert isinstance(laps_table, EventsTable)
-
-    def test_custom_description(self, empty_nwb):
-        """Test custom description parameter."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 2.0])
-
-        # Write with custom description
-        write_laps(nwbfile, lap_times, description="Custom lap description")
-
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert laps_table.description == "Custom lap description"
-
-    def test_default_description(self, empty_nwb):
-        """Test default description is used."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0])
-
-        write_laps(nwbfile, lap_times)
-
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "Detected lap events" in laps_table.description
-
-    def test_duplicate_name_error(self, empty_nwb):
-        """Test error when laps table already exists without overwrite."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 2.0])
-
-        # Write laps first time
-        write_laps(nwbfile, lap_times)
-
-        # Try to write again without overwrite
-        with pytest.raises(ValueError, match="already exists"):
-            write_laps(nwbfile, lap_times)
-
-    def test_overwrite_replaces_existing(self, empty_nwb):
-        """Test overwrite=True replaces existing laps table."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        original_times = np.array([1.0, 2.0])
-        new_times = np.array([5.0, 10.0, 15.0])
-
-        # Write original laps
-        write_laps(nwbfile, original_times)
-
-        # Overwrite with new data
-        write_laps(nwbfile, new_times, overwrite=True)
-
-        # Verify new data
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert len(laps_table) == 3
-        np.testing.assert_array_almost_equal(laps_table["timestamp"][:], new_times)
-
-    def test_empty_lap_times(self, empty_nwb):
-        """Test writing empty lap times array."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([])
-
-        # Write empty laps - should succeed
-        write_laps(nwbfile, lap_times)
-
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert len(laps_table) == 0
-
-    def test_lap_times_must_be_1d(self, empty_nwb):
-        """Test error when lap_times is not 1D."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
-
-        with pytest.raises(ValueError, match=r"1D|one-dimensional"):
-            write_laps(nwbfile, lap_times_2d)
-
-    def test_lap_types_length_mismatch(self, empty_nwb):
-        """Test error when lap_types length doesn't match lap_times."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 2.0, 3.0])
-        lap_types = np.array([0, 1])  # Wrong length
-
-        with pytest.raises(ValueError, match=r"length|shape"):
-            write_laps(nwbfile, lap_times, lap_types=lap_types)
-
-    def test_data_integrity(self, empty_nwb):
-        """Test data integrity after writing."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.5, 3.2, 7.8, 12.1])
-        lap_types = np.array([1, 0, 1, 0])
-
-        # Write laps
-        write_laps(nwbfile, lap_times, lap_types=lap_types)
-
-        # Read back using read_events
-        events = read_events(nwbfile, table_name="laps")
-
-        # Verify data matches
-        np.testing.assert_array_almost_equal(events["timestamp"].values, lap_times)
-        np.testing.assert_array_equal(events["direction"].values, lap_types)
-
-    def test_behavior_module_reuse(self, empty_nwb):
-        """Test that existing behavior module is reused."""
-        from pynwb.behavior import Position, SpatialSeries
-
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-
-        # Create behavior module with Position data first
-        behavior = nwbfile.create_processing_module(
-            name="behavior", description="Behavioral data"
-        )
-        position = Position(name="Position")
-        position.add_spatial_series(
-            SpatialSeries(
-                name="pos",
-                data=np.ones((10, 2)),
-                timestamps=np.arange(10) / 10.0,
-                reference_frame="test",
-                unit="cm",
-            )
-        )
-        behavior.add(position)
-
-        # Write laps - should reuse existing module
-        lap_times = np.array([1.0, 2.0])
-        write_laps(nwbfile, lap_times)
-
-        # Verify both Position and laps exist in same module
-        assert "Position" in nwbfile.processing["behavior"].data_interfaces
-        assert "laps" in nwbfile.processing["behavior"].data_interfaces
-
-    def test_custom_name(self, empty_nwb):
-        """Test writing laps with custom table name."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 2.0])
-
-        # Write with custom name
-        write_laps(nwbfile, lap_times, name="track_laps")
-
-        # Verify custom name used
-        assert "track_laps" in nwbfile.processing["behavior"].data_interfaces
-        assert "laps" not in nwbfile.processing["behavior"].data_interfaces
-
-    def test_lap_times_with_nan_raises_error(self, empty_nwb):
-        """Test error when lap_times contains NaN values."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, np.nan, 3.0])
-
-        with pytest.raises(ValueError, match=r"non-finite|NaN"):
-            write_laps(nwbfile, lap_times)
-
-    def test_lap_times_with_inf_raises_error(self, empty_nwb):
-        """Test error when lap_times contains Inf values."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, np.inf, 3.0])
-
-        with pytest.raises(ValueError, match=r"non-finite|Inf"):
-            write_laps(nwbfile, lap_times)
-
-    def test_lap_times_negative_raises_error(self, empty_nwb):
-        """Test error when lap_times contains negative timestamps."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([-1.0, 1.0, 3.0])
-
-        with pytest.raises(ValueError, match="negative"):
-            write_laps(nwbfile, lap_times)
 
 
 @pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
@@ -794,7 +582,7 @@ class TestWriteRegionCrossings:
         write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
         # Try to write again without overwrite
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValueError, match="'region_crossings' already exists"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_overwrite_replaces_existing(self, empty_nwb):
@@ -863,7 +651,9 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start"])  # Wrong length
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"length|shape"):
+        with pytest.raises(
+            ValueError, match=r"region_names length \(\d+\) must match crossing_times"
+        ):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_event_types_length_mismatch(self, empty_nwb):
@@ -875,7 +665,9 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit"])  # Wrong length
 
-        with pytest.raises(ValueError, match=r"length|shape"):
+        with pytest.raises(
+            ValueError, match=r"event_types length \(\d+\) must match crossing_times"
+        ):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_with_nan_raises_error(self, empty_nwb):
@@ -887,7 +679,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"non-finite|NaN"):
+        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_with_inf_raises_error(self, empty_nwb):
@@ -899,7 +691,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"non-finite|Inf"):
+        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_negative_raises_error(self, empty_nwb):
@@ -911,7 +703,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match="negative"):
+        with pytest.raises(ValueError, match="crossing_times contains negative"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_data_integrity(self, empty_nwb):
@@ -967,310 +759,6 @@ class TestWriteRegionCrossings:
         # Verify both Position and region_crossings exist in same module
         assert "Position" in nwbfile.processing["behavior"].data_interfaces
         assert "region_crossings" in nwbfile.processing["behavior"].data_interfaces
-
-
-@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
-class TestWriteLapsRegionColumns:
-    """Tests for write_laps() region columns extension (requires ndx-events)."""
-
-    def test_write_laps_with_start_regions(self, empty_nwb):
-        """Test writing laps with start_regions column."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        start_regions = ["home", "goal", "home", "goal"]
-
-        # Write laps with start_regions
-        write_laps(nwbfile, lap_times, start_regions=start_regions)
-
-        # Verify data
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "start_region" in laps_table.colnames
-
-        # Check values via read_events
-        events = read_events(nwbfile, table_name="laps")
-        assert list(events["start_region"]) == start_regions
-
-    def test_write_laps_with_end_regions(self, empty_nwb):
-        """Test writing laps with end_regions column."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        end_regions = ["goal", "home", "goal", "home"]
-
-        # Write laps with end_regions
-        write_laps(nwbfile, lap_times, end_regions=end_regions)
-
-        # Verify data
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "end_region" in laps_table.colnames
-
-        # Check values via read_events
-        events = read_events(nwbfile, table_name="laps")
-        assert list(events["end_region"]) == end_regions
-
-    def test_write_laps_with_stop_times(self, empty_nwb):
-        """Test writing laps with stop_times column (interval events)."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        stop_times = np.array([4.5, 9.8, 14.5, 20.0])
-
-        # Write laps with stop_times
-        write_laps(nwbfile, lap_times, stop_times=stop_times)
-
-        # Verify data
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "stop_time" in laps_table.colnames
-
-        # Check values via read_events
-        events = read_events(nwbfile, table_name="laps")
-        np.testing.assert_array_almost_equal(events["stop_time"].values, stop_times)
-
-    def test_write_laps_with_all_optional(self, empty_nwb):
-        """Test writing laps with all optional columns."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        lap_types = np.array([0, 1, 0])
-        start_regions = ["home", "goal", "home"]
-        end_regions = ["goal", "home", "goal"]
-        stop_times = np.array([4.5, 9.8, 14.5])
-
-        # Write laps with all columns
-        write_laps(
-            nwbfile,
-            lap_times,
-            lap_types=lap_types,
-            start_regions=start_regions,
-            end_regions=end_regions,
-            stop_times=stop_times,
-        )
-
-        # Verify all columns exist
-        laps_table = nwbfile.processing["behavior"]["laps"]
-        assert "direction" in laps_table.colnames
-        assert "start_region" in laps_table.colnames
-        assert "end_region" in laps_table.colnames
-        assert "stop_time" in laps_table.colnames
-
-        # Check all values via read_events
-        events = read_events(nwbfile, table_name="laps")
-        np.testing.assert_array_equal(events["direction"].values, lap_types)
-        assert list(events["start_region"]) == start_regions
-        assert list(events["end_region"]) == end_regions
-        np.testing.assert_array_almost_equal(events["stop_time"].values, stop_times)
-
-    def test_write_laps_start_regions_length_mismatch(self, empty_nwb):
-        """Test error when start_regions length doesn't match lap_times."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        start_regions = ["home", "goal"]  # Wrong length
-
-        with pytest.raises(ValueError, match=r"length"):
-            write_laps(nwbfile, lap_times, start_regions=start_regions)
-
-    def test_write_laps_end_regions_length_mismatch(self, empty_nwb):
-        """Test error when end_regions length doesn't match lap_times."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        end_regions = ["goal", "home"]  # Wrong length
-
-        with pytest.raises(ValueError, match=r"length"):
-            write_laps(nwbfile, lap_times, end_regions=end_regions)
-
-    def test_write_laps_stop_times_length_mismatch(self, empty_nwb):
-        """Test error when stop_times length doesn't match lap_times."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        stop_times = np.array([4.5, 9.8])  # Wrong length
-
-        with pytest.raises(ValueError, match=r"length"):
-            write_laps(nwbfile, lap_times, stop_times=stop_times)
-
-    def test_write_laps_stop_times_less_than_lap_times(self, empty_nwb):
-        """Test error when stop_times < lap_times for any entry."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        stop_times = np.array([4.5, 3.0, 14.5])  # Second stop_time < lap_time
-
-        with pytest.raises(ValueError, match=r"stop_time.*>=.*lap_time|start_time"):
-            write_laps(nwbfile, lap_times, stop_times=stop_times)
-
-    def test_write_laps_stop_times_with_nan_raises_error(self, empty_nwb):
-        """Test error when stop_times contains NaN values."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        stop_times = np.array([4.5, np.nan, 14.5])
-
-        with pytest.raises(ValueError, match=r"non-finite|NaN"):
-            write_laps(nwbfile, lap_times, stop_times=stop_times)
-
-    def test_write_laps_stop_times_negative_raises_error(self, empty_nwb):
-        """Test error when stop_times contains negative timestamps."""
-        from neurospatial.io.nwb import write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2])
-        stop_times = np.array([-1.0, 9.8, 14.5])
-
-        with pytest.raises(ValueError, match="negative"):
-            write_laps(nwbfile, lap_times, stop_times=stop_times)
-
-    def test_write_laps_regions_with_overwrite(self, empty_nwb):
-        """Test overwrite replaces laps with region columns."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-
-        # Write original laps (no regions)
-        original_times = np.array([1.0, 2.0])
-        write_laps(nwbfile, original_times)
-
-        # Overwrite with regions
-        new_times = np.array([5.0, 10.0, 15.0])
-        new_start_regions = ["home", "goal", "home"]
-        new_end_regions = ["goal", "home", "goal"]
-
-        write_laps(
-            nwbfile,
-            new_times,
-            start_regions=new_start_regions,
-            end_regions=new_end_regions,
-            overwrite=True,
-        )
-
-        # Verify new data
-        events = read_events(nwbfile, table_name="laps")
-        assert len(events) == 3
-        assert "start_region" in events.columns
-        assert "end_region" in events.columns
-        assert list(events["start_region"]) == new_start_regions
-        assert list(events["end_region"]) == new_end_regions
-
-    def test_write_laps_backwards_compatible(self, empty_nwb):
-        """Test that write_laps without new parameters still works."""
-        from neurospatial.io.nwb import read_events, write_laps
-
-        nwbfile = empty_nwb
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        lap_types = np.array([0, 1, 0, 1])
-
-        # Write using original API (no new params)
-        write_laps(nwbfile, lap_times, lap_types=lap_types)
-
-        # Verify original behavior preserved
-        events = read_events(nwbfile, table_name="laps")
-        np.testing.assert_array_almost_equal(events["timestamp"].values, lap_times)
-        np.testing.assert_array_equal(events["direction"].values, lap_types)
-
-        # New columns should NOT be present
-        assert "start_region" not in events.columns
-        assert "end_region" not in events.columns
-        assert "stop_time" not in events.columns
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
-class TestWriteLapsDiskRoundTrip:
-    """write_laps survives a real NWBHDF5IO write -> close -> reopen cycle.
-
-    The existing TestWriteLaps tests only exercise the live in-memory NWBFile
-    object. These tests serialize to an HDF5 file on disk and reload, catching
-    pynwb / ndx-events serialization regressions that the in-memory tests miss.
-    """
-
-    def test_laps_survive_disk_roundtrip(self, tmp_path):
-        """Lap timestamps and direction survive write -> close -> reopen."""
-        from pynwb import NWBHDF5IO
-
-        from neurospatial.io.nwb import read_events, write_laps
-
-        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-        lap_types = np.array([0, 1, 0, 1])
-
-        nwbfile = create_roundtrip_nwb()
-        write_laps(nwbfile, lap_times, lap_types=lap_types)
-
-        nwb_path = tmp_path / "laps.nwb"
-        with NWBHDF5IO(str(nwb_path), "w") as io:
-            io.write(nwbfile)
-
-        with NWBHDF5IO(str(nwb_path), "r") as io:
-            reopened = io.read()
-            recovered = read_events(reopened, table_name="laps")
-
-        # Element-wise comparison against the input, not just "doesn't raise".
-        expected = pd.DataFrame(
-            {
-                "timestamp": lap_times,
-                "direction": lap_types,
-            }
-        )
-        pd.testing.assert_frame_equal(
-            recovered.reset_index(drop=True)[["timestamp", "direction"]],
-            expected,
-            check_dtype=False,
-        )
-
-    def test_laps_metadata_survives_disk_roundtrip(self, tmp_path):
-        """Optional lap columns (direction, regions, stop_time) survive disk I/O."""
-        from pynwb import NWBHDF5IO
-
-        from neurospatial.io.nwb import read_events, write_laps
-
-        lap_times = np.array([1.0, 5.5, 10.2])
-        lap_types = np.array([0, 1, 0])
-        stop_times = np.array([2.0, 6.5, 11.2])
-        start_regions = ["home", "goal", "home"]
-        end_regions = ["goal", "home", "goal"]
-
-        nwbfile = create_roundtrip_nwb()
-        write_laps(
-            nwbfile,
-            lap_times,
-            lap_types=lap_types,
-            stop_times=stop_times,
-            start_regions=start_regions,
-            end_regions=end_regions,
-        )
-
-        nwb_path = tmp_path / "laps_meta.nwb"
-        with NWBHDF5IO(str(nwb_path), "w") as io:
-            io.write(nwbfile)
-
-        with NWBHDF5IO(str(nwb_path), "r") as io:
-            reopened = io.read()
-            recovered = read_events(reopened, table_name="laps")
-
-        expected = pd.DataFrame(
-            {
-                "timestamp": lap_times,
-                "direction": lap_types,
-                "start_region": start_regions,
-                "end_region": end_regions,
-                "stop_time": stop_times,
-            }
-        )
-        pd.testing.assert_frame_equal(
-            recovered.reset_index(drop=True)[list(expected.columns)],
-            expected,
-            check_dtype=False,
-        )
 
 
 @pytest.mark.slow
@@ -1359,3 +847,157 @@ class TestWriteEventsDiskRoundTrip:
             events,
             check_dtype=False,
         )
+
+
+def _write_rewards(nwbfile, times, *, overwrite=False):
+    from neurospatial.io.nwb import write_events
+
+    write_events(
+        nwbfile,
+        pd.DataFrame({"timestamp": times}),
+        name="rewards",
+        overwrite=overwrite,
+    )
+
+
+def _write_crossings(nwbfile, times, *, overwrite=False):
+    from neurospatial.io.nwb import write_region_crossings
+
+    n = len(times)
+    write_region_crossings(
+        nwbfile,
+        times,
+        np.array(["goal"] * n),
+        np.array(["entry"] * n),
+        name="rewards",
+        overwrite=overwrite,
+    )
+
+
+_EVENT_WRITERS = [
+    pytest.param(_write_rewards, id="write_events"),
+    pytest.param(_write_crossings, id="write_region_crossings"),
+]
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestEventsOverwrite:
+    """overwrite=True never loses the existing table to a failed write."""
+
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_invalid_replacement_keeps_the_original(self, empty_nwb, write):
+        from neurospatial.io.nwb import read_events
+
+        write(empty_nwb, np.array([1.0, 2.0]))
+
+        with pytest.raises(ValueError, match="non-finite"):
+            write(empty_nwb, np.array([3.0, np.nan]), overwrite=True)
+
+        kept = read_events(empty_nwb, table_name="rewards")
+        np.testing.assert_array_equal(kept["timestamp"].to_numpy(), [1.0, 2.0])
+
+    @pytest.mark.parametrize("mode", ["r+", "a"])
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_in_place_overwrite_is_refused(self, tmp_path, write, mode):
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events
+
+        path = tmp_path / "session.nwb"
+        nwbfile = create_roundtrip_nwb()
+        write(nwbfile, np.array([1.0, 2.0]))
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(path), mode) as io:
+            opened = io.read()
+            with pytest.raises(NotImplementedError, match=f"mode='{mode}'"):
+                write(opened, np.array([5.0, 6.0, 7.0]), overwrite=True)
+            kept = read_events(opened, table_name="rewards")
+            np.testing.assert_array_equal(kept["timestamp"].to_numpy(), [1.0, 2.0])
+
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_overwrite_then_export_round_trips(self, tmp_path, write):
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events
+
+        source = tmp_path / "session.nwb"
+        copy = tmp_path / "session_new.nwb"
+        nwbfile = create_roundtrip_nwb()
+        write(nwbfile, np.array([1.0, 2.0]))
+        with NWBHDF5IO(str(source), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(source), "r") as io:
+            opened = io.read()
+            write(opened, np.array([5.0, 6.0, 7.0]), overwrite=True)
+            with NWBHDF5IO(str(copy), "w") as export_io:
+                export_io.export(src_io=io, nwbfile=opened)
+
+        with NWBHDF5IO(str(copy), "r") as io:
+            replaced = read_events(io.read(), table_name="rewards")
+        np.testing.assert_array_equal(replaced["timestamp"].to_numpy(), [5.0, 6.0, 7.0])
+
+
+def _disk_round_trip(nwbfile, path):
+    """Write ``nwbfile`` to ``path`` and return a reader for the reopened file."""
+    from pynwb import NWBHDF5IO
+
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+    return NWBHDF5IO(str(path), "r")
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestEventTablesOnDisk:
+    """Event tables keep their columns and dtypes through a file."""
+
+    def test_zero_region_crossings_round_trip(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_region_crossings
+
+        nwbfile = create_roundtrip_nwb()
+        write_region_crossings(nwbfile, np.array([]), np.array([]), np.array([]))
+
+        with _disk_round_trip(nwbfile, tmp_path / "crossings.nwb") as io:
+            recovered = read_events(io.read(), table_name="region_crossings")
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {"timestamp", "region", "event_type"}
+
+    def test_zero_events_keep_their_columns(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_events
+
+        nwbfile = create_roundtrip_nwb()
+        events = pd.DataFrame(
+            {
+                "timestamp": np.array([], dtype=float),
+                "label": np.array([], dtype=object),
+                "value": np.array([], dtype=float),
+            }
+        )
+        write_events(nwbfile, events, name="rewards")
+
+        with _disk_round_trip(nwbfile, tmp_path / "events.nwb") as io:
+            recovered = read_events(io.read(), table_name="rewards")
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {"timestamp", "label", "value"}
+
+    def test_boolean_column_round_trips_as_bool(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_events
+
+        nwbfile = create_roundtrip_nwb()
+        events = pd.DataFrame(
+            {
+                "timestamp": [1.0, 2.0, 3.0],
+                "rewarded": [True, False, True],
+                "count": [1, 2, 3],
+            }
+        )
+        write_events(nwbfile, events, name="rewards")
+
+        with _disk_round_trip(nwbfile, tmp_path / "events.nwb") as io:
+            recovered = read_events(io.read(), table_name="rewards")
+        assert recovered["rewarded"].dtype == np.bool_
+        np.testing.assert_array_equal(recovered["rewarded"], [True, False, True])
+        assert np.issubdtype(recovered["count"].dtype, np.integer)
+        np.testing.assert_array_equal(recovered["count"], [1, 2, 3])

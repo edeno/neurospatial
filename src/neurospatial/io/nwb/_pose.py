@@ -14,15 +14,14 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._units import (
-    normalize_position_units,
-    same_coordinate_declaration,
-)
+from neurospatial._units import same_coordinate_declaration
 from neurospatial.io.nwb._adapters import (
     data_from_series,
+    missing_error,
     position_frame_from_series,
     position_units_from_series,
     require_unscaled_for_lazy,
+    select_one,
     timestamps_from_series,
     timestamps_handle_from_series,
     validate_handle_lengths,
@@ -32,11 +31,10 @@ from neurospatial.io.nwb._core import (
     _require_ndx_pose,
     logger,
 )
+from neurospatial.io.nwb._holders import NWBPose
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
-
-    from neurospatial.animation.skeleton import Skeleton
 
 
 @keyword_hint("pose_estimation_name")
@@ -45,7 +43,7 @@ def read_pose(
     *,
     pose_estimation_name: str | None = None,
     lazy: bool = False,
-) -> tuple[dict[str, NDArray[np.float64] | Any], NDArray[np.float64] | Any, Skeleton]:
+) -> NWBPose:
     """
     Read pose estimation data from NWB file.
 
@@ -54,39 +52,40 @@ def read_pose(
     nwbfile : NWBFile
         The NWB file to read from.
     pose_estimation_name : str, optional
-        Name of the specific PoseEstimation container.
-        If None, auto-discovers using priority order:
-        processing/behavior > processing/*.
+        Name of the PoseEstimation container, or its full path such as
+        ``"processing/behavior/PoseEstimation"``. Required when the file
+        holds more than one PoseEstimation container.
     lazy : bool, default False
-        If ``False`` (default), each bodypart trajectory and the timestamps are
-        fully materialized into ``NDArray[np.float64]``. If ``True``, the
-        h5py-backed ``PoseEstimationSeries.data`` handles (and the timestamps
-        handle) are returned **without** copying, so they materialize only when
-        sliced or ``np.asarray``-ed. Values are in each series' ``unit``:
-        stored × ``conversion`` + ``offset``; ``lazy=True`` raises when that map
-        is not the identity.
+        If ``False`` (default), each bodypart trajectory, confidence and the
+        timestamps are fully materialized into read-only
+        ``NDArray[np.float64]``. If ``True``, the h5py-backed
+        ``PoseEstimationSeries.data`` and ``confidence`` handles (and the
+        timestamps handle) are returned **without** copying, so they
+        materialize only when sliced or ``np.asarray``-ed. Values are in each
+        series' ``unit``: stored × ``conversion`` + ``offset``; ``lazy=True``
+        raises when that map is not the identity.
 
     Returns
     -------
-    bodyparts : dict[str, NDArray[np.float64] or h5py.Dataset]
-        Mapping from bodypart name to coordinates, each shape
-        (n_samples, n_dims), in the series' ``unit``: stored × ``conversion``
-        + ``offset``. Values are materialized arrays when ``lazy=False`` and
-        lazy handles when ``lazy=True``.
-    timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
-        Timestamps in seconds (shared across all bodyparts). A lazy handle when
-        ``lazy=True`` and the series carries explicit timestamps.
-    skeleton : Skeleton
-        Skeleton definition from the PoseEstimation container.
+    NWBPose
+        Frozen holder with ``bodyparts`` (series name to coordinates, shape
+        (n_samples, n_dims)), shared ``times`` in seconds, ``skeleton`` (None
+        when the container links none), the shared ``units`` and ``frame``
+        declarations, and per-bodypart ``confidence`` (None when no series
+        stores one). Untracked keypoints stay NaN.
 
     Raises
     ------
     KeyError
         If no PoseEstimation container found, or if specified name not found.
     ValueError
-        If ``lazy=True`` and a series declares a non-identity ``conversion``
-        or ``offset``, bodypart timestamps differ, or bodyparts declare
-        incompatible units or reference frames.
+        If more than one PoseEstimation container matches; the container has
+        no series; a bodypart's timestamps are not finite and strictly
+        increasing, differ in length from or do not match the other
+        bodyparts' timestamps; a bodypart's data or confidence does not have
+        one row per timestamp; bodyparts declare incompatible units or
+        reference frames; or ``lazy=True`` and a series declares a
+        non-identity ``conversion`` or ``offset``.
     ImportError
         If ndx-pose is not installed.
 
@@ -94,7 +93,8 @@ def read_pose(
     -----
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
-    block. ``lazy=False`` returns fully-materialized arrays as before.
+    block. ``lazy=False`` returns arrays that remain valid after the file
+    closes.
 
     All bodyparts must have the same timestamps on both paths (within float64
     rounding precision); no resampling is performed. Lazy reads inspect
@@ -106,6 +106,13 @@ def read_pose(
     never rescaled between units. Reference-frame descriptions are compared
     verbatim, without interpreting their meaning.
 
+    Keypoints are not masked by ``confidence``: no threshold suits every
+    tracker. Choose one and set low-confidence samples to NaN yourself.
+
+    ``bodyparts`` keys are the ``PoseEstimationSeries`` names. ndx-pose
+    expects these to equal the skeleton's node names but does not link them;
+    files whose series and node names differ are read unchanged.
+
     ``lazy=True`` returns the **stored** dtype (whatever each
     ``PoseEstimationSeries`` was written with, e.g. ``float32``), whereas
     ``lazy=False`` casts to ``float64``. The values are equal; only the dtype may
@@ -115,35 +122,21 @@ def read_pose(
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     bodyparts, timestamps, skeleton = read_pose(nwbfile)
-    ...     print(f"Found {len(bodyparts)} bodyparts")
+    ...     pose = read_pose(io.read())
+    >>> sorted(pose.bodyparts), pose.units  # doctest: +SKIP
+    (['body', 'nose', 'tail'], 'cm')
     """
-    bodyparts, timestamps, skeleton, _, _ = _read_pose_with_metadata(
-        nwbfile, pose_estimation_name=pose_estimation_name, lazy=lazy
-    )
-    return bodyparts, timestamps, skeleton
-
-
-def _read_pose_with_metadata(
-    nwbfile: NWBFile,
-    *,
-    pose_estimation_name: str | None = None,
-    lazy: bool = False,
-) -> tuple[dict[str, Any], Any, Skeleton, str | None, str | None]:
-    """Extract a shared clock and coordinate declarations in one traversal."""
     _require_ndx_pose()
     from ndx_pose import PoseEstimation as PoseEstimationType
 
-    from neurospatial.animation.skeleton import Skeleton as NSSkeleton
+    from neurospatial.animation.skeleton import Skeleton
 
-    # Find PoseEstimation container
     pose_estimation = _get_pose_estimation_container(
         nwbfile, PoseEstimationType, pose_estimation_name
     )
 
-    # Extract bodyparts as dict
     bodyparts: dict[str, NDArray[np.float64] | Any] = {}
+    confidence: dict[str, NDArray[np.float64] | Any] = {}
     timestamps: NDArray[np.float64] | Any | None = None
     units: str | None = None
     frame: str | None = None
@@ -153,19 +146,24 @@ def _read_pose_with_metadata(
         series = pose_estimation.pose_estimation_series[series_name]
         if lazy:
             require_unscaled_for_lazy(series, context="read_pose")
-            # h5py-backed handle without copy; materializes on slice.
+            # h5py-backed handles without copy; they materialize on slice.
             bodyparts[series_name] = series.data
             series_times = timestamps_handle_from_series(series)
         else:
             bodyparts[series_name] = data_from_series(series)
-            series_times = _get_timestamps(series)
+            series_times = timestamps_from_series(series)
+        if series.confidence is not None:
+            confidence[series_name] = (
+                series.confidence
+                if lazy
+                else np.asarray(series.confidence[:], dtype=np.float64)
+            )
 
         if timestamps is None:
             timestamps = series_times
             clock_name = series_name
         validate_handle_lengths(
             {
-                f"bodypart[{series_name}]": len(series.data),
                 "timestamps": len(timestamps),
                 f"timestamps[{series_name}]": len(series_times),
             }
@@ -209,8 +207,6 @@ def _read_pose_with_metadata(
                 )
 
         series_units = position_units_from_series(series)
-        if series_units is not None:
-            series_units = normalize_position_units(series_units)
         series_frame = position_frame_from_series(series)
         for label, declared, shared in (
             ("units", series_units, units),
@@ -234,12 +230,22 @@ def _read_pose_with_metadata(
             frame = series_frame
 
     if timestamps is None:
-        raise ValueError("PoseEstimation container has no pose estimation series")
+        raise ValueError(
+            _format_error(
+                f"PoseEstimation '{pose_estimation.name}' has no PoseEstimationSeries.",
+                fix="add one PoseEstimationSeries per tracked bodypart.",
+            )
+        )
 
-    # Convert ndx-pose Skeleton to neurospatial Skeleton
-    skeleton = NSSkeleton.from_ndx_pose(pose_estimation.skeleton)
-
-    return bodyparts, timestamps, skeleton, units, frame
+    ndx_skeleton = pose_estimation.skeleton
+    return NWBPose(
+        bodyparts,
+        timestamps,
+        None if ndx_skeleton is None else Skeleton.from_ndx_pose(ndx_skeleton),
+        units=units,
+        frame=frame,
+        confidence=confidence or None,
+    )
 
 
 def _get_pose_estimation_container(
@@ -257,7 +263,7 @@ def _get_pose_estimation_container(
     target_type : type
         The PoseEstimation type class.
     pose_estimation_name : str, optional
-        If provided, look for this specific PoseEstimation by name.
+        Container name or full path. Required when there is more than one.
 
     Returns
     -------
@@ -268,60 +274,21 @@ def _get_pose_estimation_container(
     ------
     KeyError
         If no container found or if specified name doesn't exist.
+    ValueError
+        If more than one container matches.
     """
-    # Find all PoseEstimation containers using type-based search
     found = _find_containers_by_type(nwbfile, target_type)
-
     if not found:
-        searched_locations = ["processing/*"]
-        raise KeyError(
-            f"No PoseEstimation data found in NWB file. Searched: {searched_locations}"
+        raise missing_error(
+            "No PoseEstimation data found in NWB file. Searched: "
+            "processing/* and acquisition.",
+            fix="add an ndx-pose PoseEstimation container to processing/behavior.",
         )
-
-    if pose_estimation_name is not None:
-        # Look for specific name
-        for path, container in found:
-            if container.name == pose_estimation_name:
-                logger.debug(
-                    "Found PoseEstimation '%s' at %s", pose_estimation_name, path
-                )
-                return container
-        # Not found - raise with available names
-        available_names = [container.name for _, container in found]
-        raise KeyError(
-            f"PoseEstimation '{pose_estimation_name}' not found. "
-            f"Available: {sorted(available_names)}"
-        )
-
-    # Auto-select: use first by priority (behavior module first, then alphabetically)
-    path, container = found[0]
-    if len(found) > 1:
-        all_names = [c.name for _, c in found]
-        logger.info(
-            "Multiple PoseEstimation containers found: %s. Using '%s'",
-            all_names,
-            container.name,
-        )
-    else:
-        logger.debug("Found PoseEstimation at %s", path)
-
+    container = select_one(
+        found,
+        pose_estimation_name,
+        what="PoseEstimation container",
+        keyword="pose_estimation_name",
+    )
+    logger.debug("Reading PoseEstimation '%s'", container.name)
     return container
-
-
-def _get_timestamps(series: Any) -> NDArray[np.float64]:
-    """
-    Get timestamps from a PoseEstimationSeries.
-
-    If explicit timestamps are not available, computes them from rate and starting_time.
-
-    Parameters
-    ----------
-    series : PoseEstimationSeries
-        The pose estimation series object.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Timestamps in seconds.
-    """
-    return timestamps_from_series(series)

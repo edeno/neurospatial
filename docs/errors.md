@@ -57,7 +57,7 @@ Warnings also use concrete fixes. A `bin_size` that covers every data axis warns
 | [E1001](#e1001-no-active-bins-found) | No active bins found | Critical | [Environment Creation](#environment-creation-errors) |
 | [E1002](#e1002-invalid-bin_size) | Invalid bin_size | Critical | [Environment Creation](#environment-creation-errors) |
 | [E1003](#e1003-dimension-mismatch) | Dimension mismatch | Critical | [Environment Compatibility](#environment-compatibility-errors) |
-| [E1005](#e1005-path-traversal-detected) | Path traversal detected | Security | [I/O Errors](#io-errors) |
+| [E1005](#e1005-path-traversal-detected) | Path traversal detected | Critical | [I/O Errors](#io-errors) |
 | [E1006](#e1006-environment-constructed-directly) | Environment constructed directly | Critical | [Environment Creation](#environment-creation-errors) |
 
 ---
@@ -336,70 +336,49 @@ composite_3d = Environment.combine({str(i): env for i, env in enumerate(envs_3d)
 
 **Error Message Example:**
 ```
-ValueError: [E1005] Path traversal detected in path: ../../../etc/passwd.
-Use absolute paths or paths without '..' components.
-This restriction helps prevent security vulnerabilities.
+ValueError: [E1005] Path traversal detected in path: ../shared/my_environment.
+Environment save and load paths may not contain '..' components; name the
+location directly, for example with an absolute path.
 
-For more information, see: https://edeno.github.io/neurospatial/errors/#e1005
+For more information, see: https://edeno.github.io/neurospatial/errors/#e1005-path-traversal-detected
 ```
 
 **What This Means:**
 
-You're trying to save or load an Environment with a path that contains `..` (parent directory references). This is blocked as a security measure to prevent path traversal attacks.
+`to_file` and `from_file` (and `Environment.to_file` / `Environment.from_file`)
+refuse a path that contains a `..` (parent directory) component.
 
-**Why This Is Blocked:**
+**Why This Is Refused:**
 
-Path traversal is a security vulnerability where an attacker could:
-- Read sensitive files outside the intended directory
-- Overwrite critical system files
-- Access data from other users/projects
+This is input hygiene: a path written with `..` depends on the current working
+directory and hides where the files go. It is **not** a security boundary. Only
+literal `..` components are refused; an absolute path or a symbolic link can
+still name any location. If your code saves or loads paths supplied by someone
+else, check that they stay inside the directory you intend, for example by
+comparing `Path(p).resolve()` with your base directory using
+`Path.is_relative_to`.
 
 **Solutions:**
 
-#### Solution 1: Use relative paths without '..'
+#### Solution 1: Use a relative path without '..'
 
 ```python
-# ❌ Path traversal attempt
-env.to_file("../../../sensitive_data")
+# Refused
+env.to_file("../shared/my_environment")
 
-# ✓ Use simple relative path
+# Accepted
 env.to_file("my_environment")
-
-# ✓ Use subdirectory
 env.to_file("outputs/my_environment")
 ```
 
-#### Solution 2: Use absolute paths
+#### Solution 2: Use an absolute path
 
 ```python
 from pathlib import Path
 
-# ✓ Absolute path is fine
 save_dir = Path("/Users/researcher/data/environments")
 env.to_file(save_dir / "my_environment")
-
-# ✓ Or using os.path
-import os
-save_path = os.path.join(os.getcwd(), "outputs", "my_environment")
-env.to_file(save_path)
 ```
-
-#### Solution 3: Use Path.resolve() for user input
-
-```python
-from pathlib import Path
-
-# When accepting user input, resolve to absolute path first
-user_input = "my_environment"  # From user
-safe_path = Path(user_input).resolve()
-
-# This is now an absolute path without '..'
-env.to_file(safe_path)
-```
-
-**Security Note:**
-
-This restriction is intentional and cannot be disabled. If you have a legitimate use case requiring parent directory access, use absolute paths instead.
 
 **See Also:**
 - [I/O Module Documentation](api/neurospatial/io/index.md#neurospatial.io)
