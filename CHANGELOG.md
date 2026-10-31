@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Firing by distance from an event
+
+**Added**
+
+- `peri_event_distance_histogram(spike_times, event_times, times, positions,
+  window, *, bin_size)` and `PeriEventDistanceResult`: firing rate (Hz) by
+  path length travelled from each event, negative before it. Each distance
+  bin's spikes are divided by the time spent there, pooled over events, so a
+  slow and a fast pass give the same rate and a pause adds time at one
+  distance. Distance stops at tracking gaps and breaks; time outside
+  `spike_window` is not counted; a bin no pass reached is NaN. The result has
+  `to_dataframe`, `summary_table` (peak rate, peak distance, baseline rate
+  before the event), `summary` and `plot`.
+
 ### Comparing routes along the environment
 
 **Changed**
