@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### I/O: simpler, faster readers and writers
+
+**Changed**
+
+- Faster NWB and file I/O (40,000-bin environment, 20 bodyparts × 1e6
+  samples):
+  - `read_spatial_rates(env=...)` checks the environment by its stored
+    fingerprint first: 2.3 s → 11 ms.
+  - Encoding an environment reuses its cached cell faces: each save after the
+    first takes about 1 ms instead of 0.7 s (`write_environment`,
+    `write_spatial_rates`, `to_file`, `to_dict`).
+  - `write_spatial_rates` builds the environment table only when the record is
+    not reused.
+  - `read_pose` checks a shared clock once: eager 95 → 45 ms, lazy 52 → 0.9 ms.
+  - The length of a lazy spike train no longer reads the train.
+  - `write_region_crossings` checks string arrays without Python loops (1e6
+    crossings: 332 → 20 ms), and `to_pynapple` groups crossings by integer code.
+- One overwrite rule for every NWB writer: an existing object raises
+  "The <object> already exists. Pass overwrite=True to replace it."
+- NWB environment records store the same `Environment-v4` version as saved
+  files (they stored `4.0`); environment and spatial-rates records are both
+  identified by their `format` marker.
+- A missing NWB object (environment, spatial rates, units table, position,
+  events) raises a `KeyError` whose message prints as written. A missing units
+  table was a `ValueError`.
+- A missing optional dependency (pynwb, ndx-pose, ndx-events, pynapple,
+  xarray) is reported the same way, and a broken install of one of them is no
+  longer reported as "not installed".
+- `write_trials` refuses a region that is not a string instead of storing its
+  text (for example `"None"`).
+- Error messages from the events writers and pynapple conversions use the
+  standard "Why:/Fix:" layout; non-finite values print as `nan`, not
+  `np.float64(nan)`.
+
 ### Exporting decoding and behavior results to pynapple
 
 **Added**
