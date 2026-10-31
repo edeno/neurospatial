@@ -1879,11 +1879,10 @@ def _assembly_rows(
     )
     if method.event_response is not None:
         # Every match window is compared with the control window's events.
-        _check_min_events(
-            method,
-            len(_events_in(session.events["control_events"], control_window)),
-            "control",
-        )
+        control_onsets = _events_in(session.events["control_events"], control_window)[
+            :, 0
+        ]
+        _check_min_events(method, control_onsets.size, "control")
     n_components = len(patterns)
     all_weights = np.array([pattern.weights for pattern, _ in patterns])
 
@@ -1928,11 +1927,12 @@ def _assembly_rows(
                 stream(index, 1),
             )
         if method.event_response is not None:
+            match_onsets = _events_in(session.events["match_events"], window)[:, 0]
+            _check_min_events(method, match_onsets.size, "match")
             event_columns = _event_response_columns(
                 method,
-                session,
-                (control_window, control_samples.times, control_activation),
-                (window, match_samples.times, match_activation),
+                (control_onsets, control_samples.times, control_activation),
+                (match_onsets, match_samples.times, match_activation),
             )
         rows: list[dict[str, Any]] = []
         for component, (pattern, region) in enumerate(patterns):
@@ -1984,7 +1984,6 @@ def _assembly_rows(
 
 def _event_response_columns(
     method: ReactivationMethod,
-    session: _Session,
     control: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
     match: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
 ) -> dict[str, Any]:
@@ -1994,10 +1993,9 @@ def _event_response_columns(
     ----------
     method : ReactivationMethod
         Its ``event_response``, ``statistic``, ``test`` and ``alpha``.
-    session : _Session
-        The events.
-    control, match : tuple of (window, times, activation)
-        Each period's window, sample times (n_samples,) and R(t), shape
+    control, match : tuple of (onsets, times, activation)
+        Each period's event onsets (n_events,), already checked against
+        ``min_events``, sample times (n_samples,) and R(t), shape
         (n_samples, n_components).
 
     Returns
@@ -2010,9 +2008,7 @@ def _event_response_columns(
     assert response is not None
     step = _sample_step(method)
     periods = {}
-    for name, (window, times, activation) in (("control", control), ("match", match)):
-        onsets = _events_in(session.events[f"{name}_events"], window)[:, 0]
-        _check_min_events(method, onsets.size, name)
+    for name, (onsets, times, activation) in (("control", control), ("match", match)):
         periods[name] = _peri_event_responses(
             times,
             activation,
