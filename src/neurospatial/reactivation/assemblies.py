@@ -142,7 +142,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1743,6 +1743,100 @@ def _activation_strength(
     return activation
 
 
+def _renormalized(
+    weights: NDArray[np.float64], excluded: NDArray[np.bool_]
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Patterns without the excluded units, rescaled to unit length.
+
+    Parameters
+    ----------
+    weights : ndarray, shape (n_patterns, n_units)
+        Pattern weights.
+    excluded : ndarray of bool, shape (n_units,)
+        Units to give weight 0.
+
+    Returns
+    -------
+    weights : ndarray, shape (n_patterns, n_units)
+        Unit-length rows; a row with no weight left stays 0.
+    defined : ndarray of bool, shape (n_patterns,)
+        Rows with weight left.
+    """
+    renormalized = np.where(excluded, 0.0, weights)
+    norms = np.linalg.norm(renormalized, axis=1)
+    defined = norms > 0
+    renormalized[defined] /= norms[defined, None]
+    return renormalized, defined
+
+
+class _ActivationComparison(NamedTuple):
+    """R(t) of patterns in a control and a match period, compared.
+
+    Attributes
+    ----------
+    control, match : ndarray, shape (n_bins, n_patterns)
+        Activation strength of each pattern in each period's bins.
+    control_mean, match_mean : ndarray, shape (n_patterns,)
+        Mean of each pattern's R(t) over the period.
+    threshold : ndarray, shape (n_patterns,)
+        The percentile of each pattern's control R(t); NaN without one.
+    fraction_above : ndarray, shape (n_patterns,)
+        Share of match bins with R(t) strictly above ``threshold``.
+    """
+
+    control: NDArray[np.float64]
+    match: NDArray[np.float64]
+    control_mean: NDArray[np.float64]
+    match_mean: NDArray[np.float64]
+    threshold: NDArray[np.float64]
+    fraction_above: NDArray[np.float64]
+
+
+def _compared_activations(
+    control_z: NDArray[np.float64],
+    match_z: NDArray[np.float64],
+    weights: NDArray[np.float64],
+    percentile: float | None,
+) -> _ActivationComparison:
+    """Activation strength of each pattern in two periods, and its comparison.
+
+    Parameters
+    ----------
+    control_z, match_z : ndarray, shape (n_bins, n_units)
+        Z-scored counts of the control and the match period.
+    weights : ndarray, shape (n_patterns, n_units)
+        Pattern weights, with the units left out of either period at 0.
+    percentile : float or None
+        Percentile of the control R(t) used as each pattern's threshold;
+        None for no threshold (NaN threshold and fraction).
+
+    Returns
+    -------
+    _ActivationComparison
+    """
+    control = _activation_strength(control_z, weights)
+    match = _activation_strength(match_z, weights)
+    # One pattern's R(t) at a time, as a 1-D array: the column means and
+    # percentiles then do not depend on how many patterns are compared.
+    control_mean = np.array([column.mean() for column in control.T])
+    match_mean = np.array([column.mean() for column in match.T])
+    if percentile is None:
+        undefined = np.full(weights.shape[0], np.nan)
+        return _ActivationComparison(
+            control, match, control_mean, match_mean, undefined, undefined
+        )
+    threshold = np.array([np.percentile(column, percentile) for column in control.T])
+    fraction_above = np.array(
+        [
+            np.mean(column > value)
+            for column, value in zip(match.T, threshold, strict=True)
+        ]
+    )
+    return _ActivationComparison(
+        control, match, control_mean, match_mean, threshold, fraction_above
+    )
+
+
 # =============================================================================
 # Assembly Activation
 # =============================================================================
@@ -2636,17 +2730,15 @@ def assembly_reactivation(
             )
         weights = weights / norm
 
-    control_activation = _activation_strength(control_z, weights[None])[:, 0]
-    match_activation = _activation_strength(match_z, weights[None])[:, 0]
-    control_mean = float(np.mean(control_activation))
-    match_mean = float(np.mean(match_activation))
-    threshold = float(np.percentile(control_activation, percentile))
+    comparison = _compared_activations(control_z, match_z, weights[None], percentile)
+    control_mean = float(comparison.control_mean[0])
+    match_mean = float(comparison.match_mean[0])
     return AssemblyReactivationResult(
         mean_activation_difference=match_mean - control_mean,
         control_mean_activation=control_mean,
         match_mean_activation=match_mean,
-        control_threshold=threshold,
-        fraction_above_control_threshold=float(np.mean(match_activation > threshold)),
+        control_threshold=float(comparison.threshold[0]),
+        fraction_above_control_threshold=float(comparison.fraction_above[0]),
         percentile=float(percentile),
         n_control_bins=n_control_bins,
         n_match_bins=n_match_bins,
