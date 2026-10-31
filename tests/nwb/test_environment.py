@@ -2260,35 +2260,6 @@ class TestCoordinateKindRoundTrip:
         assert isinstance(loaded, Environment)
         assert loaded.coordinate_kind == "cartesian"
 
-    def test_read_environment_missing_polar_coordinate_kind_is_rejected(
-        self, empty_nwb, sample_polar_environment
-    ):
-        """Polar measures cannot be interpreted as Cartesian cell areas."""
-        from neurospatial.io.nwb import read_environment, write_environment
-
-        write_environment(empty_nwb, sample_polar_environment, name="polar_env")
-        record = empty_nwb.scratch["polar_env"]
-        metadata = json.loads(record.description)
-        metadata.pop("coordinate_kind")
-        record.fields["description"] = json.dumps(metadata)
-        with pytest.raises(ValueError, match=r"sizes|measures|coordinate_kind"):
-            read_environment(empty_nwb, name="polar_env")
-
-    def test_read_environment_missing_cartesian_coordinate_kind_defaults(
-        self, empty_nwb, sample_environment
-    ):
-        from neurospatial import Environment
-        from neurospatial.io.nwb import read_environment, write_environment
-
-        write_environment(empty_nwb, sample_environment)
-        record = empty_nwb.scratch["spatial_environment"]
-        metadata = json.loads(record.description)
-        metadata.pop("coordinate_kind")
-        record.fields["description"] = json.dumps(metadata)
-        loaded = read_environment(empty_nwb)
-        assert isinstance(loaded, Environment)
-        np.testing.assert_array_equal(loaded.bin_sizes, sample_environment.bin_sizes)
-
     def test_polar_nwb_roundtrip_type(self, tmp_path, sample_polar_environment):
         """A polar env survives a real NWB file round-trip as the polar type.
 

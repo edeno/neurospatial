@@ -120,3 +120,55 @@ def test_unrelated_runtime_errors_are_not_hidden_as_input_corruption(monkeypatch
     monkeypatch.setattr(_codecs, "decode", broken_decoder)
     with pytest.raises(RuntimeError, match="implementation failure"):
         Environment.from_dict(record)
+
+
+# Every key the readers decode is written by every save, so a missing one means
+# the record is incomplete; the readers must not substitute a default.
+_DECODED_KEYS = [
+    "name",
+    "n_dims",
+    "n_bins",
+    "is_linearized_track",
+    "layout_parameters",
+    "derivations",
+    "length_scale",
+    "binning",
+    "arena",
+    "regions",
+    "landmarks",
+    "coordinate_kind",
+]
+
+
+@pytest.mark.parametrize("built_environment", ["polygon"], indirect=True)
+@pytest.mark.parametrize("key", _DECODED_KEYS)
+def test_record_without_a_saved_entry_is_refused(corrupted_environment_round_trip, key):
+    def drop(metadata, arrays):
+        del metadata[key]
+
+    with pytest.raises(ValueError, match=rf"the record has no {key!r} entry") as error:
+        corrupted_environment_round_trip(drop)
+    assert "Fix:" in str(error.value)
+
+
+def test_record_without_regions_is_refused_rather_than_losing_them():
+    from neurospatial.regions import Region
+
+    env = _environment()
+    env = env.with_regions(
+        {"reward": Region(name="reward", kind="point", data=np.array([0.5, 0.5]))}
+    )
+    record = env.to_dict()
+    assert Environment.from_dict(record).regions.keys() == {"reward"}
+    del record["regions"]
+    with pytest.raises(ValueError, match="the record has no 'regions' entry"):
+        Environment.from_dict(record)
+
+
+def test_non_scalar_layout_parameter_is_refused_rather_than_dropped():
+    record = _environment().to_dict()
+    record["layout_parameters"]["bin_size"] = [[1.0, 2.0], [3.0, 4.0]]
+    with pytest.raises(
+        ValueError, match=r"layout_parameters\['bin_size'\] is not a build choice"
+    ):
+        Environment.from_dict(record)
