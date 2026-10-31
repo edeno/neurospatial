@@ -2349,6 +2349,8 @@ def heading_direction_labels(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     n_directions: int = 8,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
@@ -2381,6 +2383,21 @@ def heading_direction_labels(
     n_directions : int, default=8
         Number of direction sectors, a positive integer. Default 8 creates
         45° sectors centred on East, North-East, North, and so on.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2502,6 +2519,7 @@ def heading_direction_labels(
     from neurospatial.behavior._kinematics import (
         _movement_heading_and_speed,
         validated_min_speed,
+        validated_motion,
     )
 
     call = "heading_direction_labels"
@@ -2517,15 +2535,21 @@ def heading_direction_labels(
         result="every label is None",
         columns="xy",
     )
-    headings, speeds = _movement_heading_and_speed(
+    gated, speeds = _movement_heading_and_speed(
         times_arr,
         positions_arr,
         support.interval_mask,
         smooth_window=DEFAULT_SPEED_SMOOTHING,
         min_speed=min_speed,
+        speed=validated_motion(
+            speed, name="speed", n_samples=len(times_arr), call=call
+        ),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times_arr), call=call
+        ),
     )
     return _direction_sector_labels(
-        headings,
+        gated,
         speeds,
         support.run_ids >= 0,
         min_speed=min_speed,
@@ -3941,6 +3965,8 @@ def instantaneous_goal_alignment(
     goal: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3960,6 +3986,21 @@ def instantaneous_goal_alignment(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit. Samples slower than this have no
         direction of movement and no alignment.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4024,7 +4065,7 @@ def instantaneous_goal_alignment(
     (True, True)
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import validated_min_speed
+    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
 
     times, positions, support = validated_observations(
         times,
@@ -4036,14 +4077,19 @@ def instantaneous_goal_alignment(
         result="every alignment is NaN",
         columns="xy",
     )
-    min_speed = validated_min_speed(min_speed, call="instantaneous_goal_alignment")
+    call = "instantaneous_goal_alignment"
+    min_speed = validated_min_speed(min_speed, call=call)
     return _goal_alignment(
         times,
         positions,
         goal,
         support,
         min_speed=min_speed,
-        call="instantaneous_goal_alignment",
+        call=call,
+        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call=call
+        ),
     )
 
 
@@ -4055,6 +4101,8 @@ def _goal_alignment(
     *,
     min_speed: float,
     call: str,
+    speed: NDArray[np.float64] | None,
+    headings: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
     """Cosine between movement and goal direction; NaN where not moving.
 
@@ -4094,6 +4142,8 @@ def _goal_alignment(
         support.interval_mask,
         smooth_window=DEFAULT_SPEED_SMOOTHING,
         min_speed=min_speed,
+        speed=speed,
+        headings=headings,
     )
     # At the goal itself there is no direction to the goal (arctan2(0, 0)
     # would read as East and score an arrival from the East as -1).
@@ -4111,6 +4161,8 @@ def goal_bias(
     goal: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -4130,6 +4182,21 @@ def goal_bias(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit. Samples slower than this are
         excluded from the mean.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4192,7 +4259,7 @@ def goal_bias(
     nan
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import validated_min_speed
+    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
 
     times, positions, support = validated_observations(
         times,
@@ -4204,9 +4271,19 @@ def goal_bias(
         result="the goal bias is NaN",
         columns="xy",
     )
-    min_speed = validated_min_speed(min_speed, call="goal_bias")
+    call = "goal_bias"
+    min_speed = validated_min_speed(min_speed, call=call)
     alignment = _goal_alignment(
-        times, positions, goal, support, min_speed=min_speed, call="goal_bias"
+        times,
+        positions,
+        goal,
+        support,
+        min_speed=min_speed,
+        call=call,
+        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call=call
+        ),
     )
     return _mean_alignment(alignment)
 
@@ -4427,6 +4504,8 @@ def compute_goal_directed_metrics(
     *,
     metric: DistanceMetric = "euclidean",
     min_speed: float | None = None,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     goal_radius: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
@@ -4463,6 +4542,21 @@ def compute_goal_directed_metrics(
         the first measured sample whose distance to the goal (under
         ``metric``) is at most ``goal_radius``. Finite and >= 0. None skips
         arrival detection.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4544,7 +4638,7 @@ def compute_goal_directed_metrics(
     0.0
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import resolve_min_speed
+    from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
 
     times, positions, support = validated_observations(
         times,
@@ -4576,7 +4670,20 @@ def compute_goal_directed_metrics(
             )
         )
     bias = _mean_alignment(
-        _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
+        _goal_alignment(
+            times,
+            positions,
+            goal,
+            support,
+            min_speed=min_speed,
+            call=call,
+            speed=validated_motion(
+                speed, name="speed", n_samples=len(times), call=call
+            ),
+            headings=validated_motion(
+                headings, name="headings", n_samples=len(times), call=call
+            ),
+        )
     )
 
     distances = _goal_distances(positions, goal, paths=paths, call=call)

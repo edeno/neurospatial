@@ -1067,6 +1067,7 @@ def segment_by_velocity(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
@@ -1103,7 +1104,16 @@ def segment_by_velocity(
         Standard deviation, in seconds, of the Gaussian that smooths the
         velocity vector before its magnitude is thresholded, as in
         :func:`compute_speed`, so tracking jitter at rest is not movement.
-        0 thresholds the unsmoothed central-difference speed.
+        0 thresholds the unsmoothed central-difference speed. Not used when
+        ``speed`` is given.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1217,14 +1227,27 @@ def segment_by_velocity(
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
 
+    from neurospatial._velocity import smoothed_speed
+    from neurospatial.behavior._kinematics import observed_run_samples, validated_motion
+
+    speed = validated_motion(
+        speed, name="speed", n_samples=len(times), call="segment_by_velocity"
+    )
+    if speed is None:
+        speed = smoothed_speed(
+            times, positions, support.interval_mask, smooth_window=smooth_window
+        )
+    else:
+        speed = np.where(
+            observed_run_samples(positions, support.interval_mask), speed, np.nan
+        )
     segments = [
         _segment_by_velocity_contiguous(
-            positions[run],
+            speed[run],
             times[run],
             min_speed=min_speed,
             min_duration=min_duration,
             hysteresis=hysteresis,
-            smooth_window=smooth_window,
         )
         for run in support.run_samples()
     ]
@@ -1232,30 +1255,21 @@ def segment_by_velocity(
 
 
 def _segment_by_velocity_contiguous(
-    positions: NDArray[np.float64],
+    speed: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
     min_speed: float,
     min_duration: float,
     hysteresis: float,
-    smooth_window: float,
 ) -> NDArray[np.float64]:
     """Movement epochs of one recording, shape (n_epochs, 2).
 
-    ``times`` and ``positions`` are the valid samples of one observed run,
-    already validated by :func:`segment_by_velocity`.
+    ``speed`` and ``times`` are those of the valid samples of one observed
+    run, already validated by :func:`segment_by_velocity`.
     """
-    from neurospatial._velocity import smoothed_speed
-
     # Speed of each transition i -> i+1, read at its end sample: a state
-    # change at transition i starts or stops an epoch at times[i + 1]. One
-    # run, so every interval is observed.
-    speed = smoothed_speed(
-        times,
-        positions,
-        np.ones(len(times) - 1, dtype=bool),
-        smooth_window=smooth_window,
-    )[1:]
+    # change at transition i starts or stops an epoch at times[i + 1].
+    speed = speed[1:]
 
     # Hysteresis: movement switches on when speed exceeds min_speed and off
     # when it drops below min_speed / hysteresis; in between (or NaN) the

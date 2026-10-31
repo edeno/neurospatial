@@ -163,6 +163,62 @@ def resolve_min_speed(env: Any, min_speed: float | None, *, call: str) -> float:
     )
 
 
+def validated_motion(
+    values: Any, *, name: str, n_samples: int, call: str
+) -> NDArray[np.float64] | None:
+    """A caller's per-sample ``speed`` or ``headings``, as float64, or None.
+
+    Parameters
+    ----------
+    values : array-like, shape (n_samples,), or None
+        Speed in position units per second (finite and >= 0, NaN where not
+        observed), or headings in radians (finite, NaN where not observed).
+    name : {"speed", "headings"}
+    n_samples : int
+    call : str
+        Public function name, used in the error.
+
+    Raises
+    ------
+    ValueError
+        If ``values`` is not one real number per sample, or holds an
+        infinite value, or (for speed) a negative one.
+    """
+    from neurospatial._exceptions import _format_error
+
+    if values is None:
+        return None
+    source = (
+        "compute_speed(times, positions)"
+        if name == "speed"
+        else "heading_from_velocity(times, positions)"
+    )
+    array = np.asarray(values)
+    if array.shape != (n_samples,) or not np.issubdtype(array.dtype, np.number):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs {name} to be one number per sample, shape "
+                f"({n_samples},); got dtype {array.dtype} and shape {array.shape}.",
+                why=f"{name} is read sample by sample alongside times and positions.",
+                fix=f"pass one value per sample, e.g. {source}.",
+            )
+        )
+    array = array.astype(np.float64)
+    bad = np.isinf(array) | (array < 0 if name == "speed" else False)
+    if np.any(bad):
+        rule = "finite and >= 0" if name == "speed" else "finite"
+        raise ValueError(
+            _format_error(
+                f"{call}() needs every {name} value to be {rule} or NaN; sample "
+                f"{int(np.flatnonzero(bad)[0])} is {array[bad][0]!r}.",
+                why="NaN marks a sample where it was not observed; any other "
+                "value is used as measured.",
+                fix=f"set unobserved samples to NaN, e.g. as {source} does.",
+            )
+        )
+    return array
+
+
 def _movement_heading_and_speed(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -170,8 +226,10 @@ def _movement_heading_and_speed(
     *,
     smooth_window: float,
     min_speed: float,
+    speed: NDArray[np.float64] | None = None,
+    headings: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Direction of movement and horizontal speed of the smoothed velocity.
+    """Direction of movement and the speed that gates it.
 
     No validation: the public caller checks the inputs and ``min_speed``.
 
@@ -188,24 +246,76 @@ def _movement_heading_and_speed(
     min_speed : float
         Speed in position units per second below which the animal is not
         moving.
+    speed, headings : ndarray, shape (n_samples,), optional
+        The caller's speed and direction of movement (``validated_motion``),
+        used instead of the horizontal speed and direction of the smoothed
+        velocity. Either is NaN outside the samples the smoothed velocity
+        covers, so ``max_gap``, ``epochs`` and breaks apply to it alike.
 
     Returns
     -------
     heading : ndarray, shape (n_samples,)
-        ``arctan2(vy, vx)`` in radians where the animal moves (speed above 0
-        and at least ``min_speed``); NaN where it does not, since a still
-        animal has no direction of movement (``arctan2(0, 0)`` would read as
-        East), and at samples in no run.
+        Direction in radians where the animal moves (speed above 0 and at
+        least ``min_speed``); NaN where it does not, since a still animal has
+        no direction of movement (``arctan2(0, 0)`` would read as East), and
+        at samples in no run.
     speed : ndarray, shape (n_samples,)
-        ``hypot(vx, vy)`` in position units per second; NaN at samples in no
-        run.
+        Speed in position units per second; NaN at samples in no run.
     """
     from neurospatial._velocity import smoothed_velocity
 
-    velocity = smoothed_velocity(
-        times, positions[:, :2], interval_mask, smooth_window=smooth_window
-    )
-    speed = np.hypot(velocity[:, 0], velocity[:, 1])
+    if speed is None or headings is None:
+        velocity = smoothed_velocity(
+            times, positions[:, :2], interval_mask, smooth_window=smooth_window
+        )
+        in_run = np.isfinite(velocity[:, 0])
+    else:
+        in_run = observed_run_samples(positions[:, :2], interval_mask)
+    if speed is None:
+        speed = np.hypot(velocity[:, 0], velocity[:, 1])
+    else:
+        speed = np.where(in_run, speed, np.nan)
+    if headings is None:
+        direction = np.arctan2(velocity[:, 1], velocity[:, 0])
+    else:
+        direction = np.where(in_run, headings, np.nan)
     moving = (speed > 0) & (speed >= min_speed)
-    heading = np.where(moving, np.arctan2(velocity[:, 1], velocity[:, 0]), np.nan)
-    return heading, speed
+    return np.where(moving, direction, np.nan), speed
+
+
+def run_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    *,
+    speed: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """``compute_speed``'s speed under ``interval_mask``, or the caller's.
+
+    The caller's ``speed`` is NaN outside the samples the smoothed speed
+    covers, so ``max_gap``, ``epochs`` and breaks apply to it alike.
+    """
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+
+    if speed is None:
+        return smoothed_speed(
+            times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+        )
+    return np.where(observed_run_samples(positions, interval_mask), speed, np.nan)
+
+
+def observed_run_samples(
+    positions: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+) -> NDArray[np.bool_]:
+    """True at observed samples in a run of at least two, shape (n_samples,).
+
+    These are the samples where ``smoothed_velocity`` is defined.
+    """
+    from neurospatial._intervals import valid_run_samples
+
+    finite = np.all(np.isfinite(positions.reshape(len(positions), -1)), axis=1)
+    covered = np.zeros(finite.size, dtype=bool)
+    for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
+        if run.size >= 2:
+            covered[run] = True
+    return covered

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Your own speed and headings
+
+**Added**
+
+- `speed=` and `headings=` on the behavior functions that compute motion
+  from positions: `heading_direction_labels`, `instantaneous_goal_alignment`,
+  `goal_bias`, `compute_goal_directed_metrics`, `pre_decision_heading_stats`,
+  `compute_pre_decision_metrics`, `compute_decision_analysis`,
+  `head_sweep_from_positions`, `compute_vte_trial` and `compute_vte_session`;
+  `speed=` on `segment_by_velocity` and `pre_decision_speed_stats`. Compute
+  speed once (for example `compute_speed(times, positions, smooth_window=0)`
+  for positions you already smoothed, or speed from another estimator) and
+  pass it to every gate, as rate maps and decoding already allow, so
+  "running" means the same samples in every analysis. `headings=` replaces
+  the direction of movement, for example with head direction from a sensor;
+  samples slower than `min_speed` still have none. Arrays you pass keep the
+  time support: samples excluded by `max_gap`, `epochs` or `break_before`
+  stay excluded, and pre-decision and VTE windows read them at the window's
+  samples. Results without them are unchanged.
+
 ### One estimator for position and velocity
 
 **Changed**

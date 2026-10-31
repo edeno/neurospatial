@@ -582,6 +582,8 @@ def head_sweep_from_positions(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -604,6 +606,21 @@ def head_sweep_from_positions(
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
         Stationary periods are excluded.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -674,7 +691,7 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(times, still, min_speed=1.0)
     nan
     """
-    from neurospatial.behavior._kinematics import validated_min_speed
+    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
 
     times, positions, support = validated_observations(
         times,
@@ -686,22 +703,36 @@ def head_sweep_from_positions(
         result="no head sweep was observed",
         columns="xy",
     )
-    min_speed = validated_min_speed(min_speed, call="head_sweep_from_positions")
-    return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
+    call = "head_sweep_from_positions"
+    min_speed = validated_min_speed(min_speed, call=call)
+    heading, _ = _window_motion(
+        times,
+        positions,
+        support.interval_mask,
+        min_speed=min_speed,
+        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call=call
+        ),
+    )
+    return _head_sweep(heading, support.interval_mask)
 
 
-def _head_sweep(
+def _window_motion(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     interval_mask: NDArray[np.bool_],
     *,
     min_speed: float,
-) -> float:
-    """IdPhi summed over runs of usable intervals; NaN when no run has one."""
-    from neurospatial.behavior._kinematics import _movement_heading_and_speed
+    speed: NDArray[np.float64] | None,
+    headings: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Gated direction of movement and speed of the samples given."""
+    from neurospatial.behavior._kinematics import (
+        _movement_heading_and_speed,
+        run_speed,
+    )
 
-    if not interval_mask.any():
-        return np.nan
     # NaN where the animal is not moving: no direction of movement.
     heading, _ = _movement_heading_and_speed(
         times,
@@ -709,7 +740,18 @@ def _head_sweep(
         interval_mask,
         smooth_window=DEFAULT_SPEED_SMOOTHING,
         min_speed=min_speed,
+        speed=speed,
+        headings=headings,
     )
+    return heading, run_speed(times, positions, interval_mask, speed=speed)
+
+
+def _head_sweep(
+    heading: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+) -> float:
+    """IdPhi summed over runs of usable intervals; NaN when no run has one."""
+    if not interval_mask.any():
+        return np.nan
     sweeps = [
         head_sweep_magnitude(heading[first : last + 1])
         for first, last in run_sample_bounds(interval_mask)
@@ -954,6 +996,8 @@ def compute_vte_trial(
     *,
     window_duration: float,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -979,6 +1023,21 @@ def compute_vte_trial(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1074,7 +1133,7 @@ def compute_vte_trial(
         validated_entry_time,
         validated_window_duration,
     )
-    from neurospatial.behavior._kinematics import validated_min_speed
+    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
 
     times, positions, support = validated_observations(
         times,
@@ -1091,11 +1150,20 @@ def compute_vte_trial(
     )
     entry_time = validated_entry_time(times, entry_time, call="compute_vte_trial")
     min_speed = validated_min_speed(min_speed, call="compute_vte_trial")
+    motion = _Motion(
+        min_speed=min_speed,
+        speed=validated_motion(
+            speed, name="speed", n_samples=len(times), call="compute_vte_trial"
+        ),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call="compute_vte_trial"
+        ),
+    )
     window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
     head_sweep, mean_spd, min_spd = _window_metrics(
-        times, positions, support, window, min_speed=min_speed
+        times, positions, support, window, motion
     )
     # A single trial has no session baseline, so it is not z-scored.
     return _unscored_trial(
@@ -1108,30 +1176,42 @@ def compute_vte_trial(
     )
 
 
+@dataclass(frozen=True)
+class _Motion:
+    """The speed gate and the caller's speed and headings, if any."""
+
+    min_speed: float
+    speed: NDArray[np.float64] | None
+    headings: NDArray[np.float64] | None
+
+
 def _window_metrics(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     support: ObservationSupport,
     window: slice,
-    *,
-    min_speed: float,
+    motion: _Motion,
 ) -> tuple[float, float, float]:
     """Head sweep, mean speed and minimum speed of one pre-decision window.
 
-    The window lies inside one gate segment, so its usable intervals are the
-    support's usable intervals between its first and last sample.
+    Speed and heading are computed from the window's samples alone (a
+    caller's ``speed`` and ``headings`` are taken at them). The window lies
+    inside one gate segment, so its usable intervals are the support's usable
+    intervals between its first and last sample.
     """
     from neurospatial.behavior._decision_windows import speed_stats
 
-    window_times = times[window]
-    window_positions = positions[window]
     window_mask = support.interval_mask[window.start : max(window.stop - 1, 0)]
-    head_sweep = _head_sweep(
-        window_times, window_positions, window_mask, min_speed=min_speed
+    heading, speed = _window_motion(
+        times[window],
+        positions[window],
+        window_mask,
+        min_speed=motion.min_speed,
+        speed=None if motion.speed is None else motion.speed[window],
+        headings=None if motion.headings is None else motion.headings[window],
     )
-    mean_speed, min_speed_value = speed_stats(
-        window_times, window_positions, window_mask
-    )
+    head_sweep = _head_sweep(heading, window_mask)
+    mean_speed, min_speed_value = speed_stats(speed)
     return head_sweep, mean_speed, min_speed_value
 
 
@@ -1145,6 +1225,8 @@ def compute_vte_session(
     trials: list[Trial],
     window_duration: float = 1.0,
     min_speed: float | None = None,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     alpha: float = 0.5,
     vte_threshold: float = 0.5,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1183,6 +1265,21 @@ def compute_vte_session(
     vte_threshold : float, default=0.5
         Threshold for VTE classification (finite).
         Trial is VTE if ``vte_index >= vte_threshold``.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1333,7 +1430,7 @@ def compute_vte_session(
         argument="decision_region",
     )
     from neurospatial.behavior._decision_windows import validated_window_duration
-    from neurospatial.behavior._kinematics import resolve_min_speed
+    from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
 
     window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
@@ -1349,6 +1446,15 @@ def compute_vte_session(
             "vte_threshold=0.5."
         )
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
+    motion = _Motion(
+        min_speed=min_speed,
+        speed=validated_motion(
+            speed, name="speed", n_samples=len(times), call="compute_vte_session"
+        ),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call="compute_vte_session"
+        ),
+    )
     region_bins = env.bins_in_region(decision_region)
     in_epochs = support.sample_in_epochs
     measured: list[VTETrialResult] = []
@@ -1365,7 +1471,7 @@ def compute_vte_session(
                 in_epochs=in_epochs,
                 decision_region=decision_region,
                 window_duration=window_duration,
-                min_speed=min_speed,
+                motion=motion,
             )
         )
 
@@ -1427,7 +1533,7 @@ def _measure_trial(
     in_epochs: NDArray[np.bool_],
     decision_region: str,
     window_duration: float,
-    min_speed: float,
+    motion: _Motion,
 ) -> VTETrialResult:
     """Unscored metrics of one trial, or the status saying why it has none."""
     from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
@@ -1485,7 +1591,7 @@ def _measure_trial(
             status="too_few_samples", window_start=window_start, window_end=entry_time
         )
     head_sweep, mean_speed, min_observed_speed = _window_metrics(
-        times, positions, support, window, min_speed=min_speed
+        times, positions, support, window, motion
     )
     return _unscored_trial(
         status="ok",
