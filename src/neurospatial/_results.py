@@ -463,8 +463,13 @@ def resolve_unit_ids(
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
     """Align labelled metadata by identity; accept a plain RangeIndex by position.
 
-    A ``unit_id`` column or a non-default/named index declares unit identity.
-    Missing, extra or duplicate labels raise instead of selecting another unit.
+    A ``unit_id`` column or a named index declares unit identity, and rows are
+    reordered to match ``unit_ids``. An unnamed index is not an identity: it
+    may be row numbers left by ``sort_values`` or a filter. It is accepted
+    only when it already lists ``unit_ids`` in order (or is the default
+    ``RangeIndex``, read by position); otherwise the call raises rather than
+    reorder rows by it. Missing, extra or duplicate labels raise instead of
+    selecting another unit.
 
     Parameters
     ----------
@@ -485,7 +490,9 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
     ValueError
         If ``unit_table`` is not a DataFrame, has a row count other than
         ``len(unit_ids)``, or labels rows inconsistently, with repeated or
-        missing labels, or with labels other than ``unit_ids``.
+        missing labels, or with labels other than ``unit_ids``, or if an
+        unnamed index (without a ``unit_id`` column) lists the units in an
+        order other than ``unit_ids``.
     """
     import pandas as pd
 
@@ -537,6 +544,26 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
             )
         )
     order = labels.get_indexer(ids)
+    # An unnamed index without a unit_id column may be leftover row numbers
+    # (after sort_values or a filter), not unit labels: never reorder by it.
+    unnamed = "unit_id" not in unit_table.columns and labels.name is None
+    if unnamed and not np.array_equal(order, np.arange(len(ids))):
+        raise ValueError(
+            _format_error(
+                f"unit_table has an unnamed index {labels.tolist()[:10]} that "
+                f"does not list unit_ids={ids.tolist()[:10]} in order{where}.",
+                why="Why: an unnamed index (for example row numbers left by "
+                "sort_values or a filter) does not declare unit identity, so "
+                "matching rows by it could attach another unit's metadata to "
+                "each spike train.",
+                fix="If the rows are in spike-train order, pass unit_ids=df.index "
+                "to label each train by its row, or call "
+                "df.reset_index(drop=True) to number the units 0..n-1. If the "
+                "index holds unit labels, name it (df.index.name = 'unit_id') "
+                "or add a unit_id column so rows are matched to unit_ids by "
+                "label.",
+            )
+        )
     if np.any(order < 0):
         raise ValueError(
             _format_error(

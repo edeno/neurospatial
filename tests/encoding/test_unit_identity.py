@@ -667,3 +667,46 @@ class TestUnitTableAlignment:
         table = pd.DataFrame({"region": ["CA1", "CA3"]})
         st = SpikeTrains(trains, unit_ids=[1, 0], unit_table=table)
         assert st.unit_table["region"].tolist() == ["CA1", "CA3"]
+
+    def test_sorted_unnamed_index_is_not_read_as_unit_identity(self):
+        """A sorted table's leftover row numbers must not reorder its rows.
+
+        After ``df.sort_values(...)`` the unnamed index is ``[2, 1, 0]``. A
+        scientist who builds spike trains in that row order and omits
+        ``unit_ids`` gets the default labels ``0, 1, 2``; reading the leftover
+        row numbers as labels would give each train another unit's region.
+        """
+        import pandas as pd
+
+        table = pd.DataFrame(
+            {"region": ["CA1", "CA3", "DG"], "n_spikes": [1, 2, 3]}
+        ).sort_values("region", ascending=False)
+        assert table.index.tolist() == [2, 1, 0]
+        trains = [np.arange(n) * 0.1 for n in table["n_spikes"]]
+        with pytest.raises(ValueError, match="unit identity") as excinfo:
+            SpikeTrains(trains, unit_table=table)
+        message = str(excinfo.value)
+        assert "unit_ids=" in message
+        assert "reset_index(drop=True)" in message
+        assert "unit_id" in message
+
+    def test_unnamed_index_in_unit_order_is_kept(self, trains):
+        import pandas as pd
+
+        table = pd.DataFrame({"region": ["CA1", "CA3"]}, index=[10, 20])
+        st = SpikeTrains(trains, unit_ids=[10, 20], unit_table=table)
+        assert st.unit_table["region"].tolist() == ["CA1", "CA3"]
+
+    def test_sorted_table_with_its_index_as_unit_ids(self):
+        """Passing ``unit_ids=df.index`` labels each train by its own row."""
+        import pandas as pd
+
+        table = pd.DataFrame(
+            {"region": ["CA1", "CA3", "DG"], "n_spikes": [1, 2, 3]}
+        ).sort_values("region", ascending=False)
+        trains = [np.arange(n) * 0.1 for n in table["n_spikes"]]
+        st = SpikeTrains(trains, unit_ids=table.index, unit_table=table)
+        for position, train in enumerate(st):
+            row = st.unit_table.iloc[position]
+            assert len(train) == row["n_spikes"]
+        assert st.sel(unit_id=0).size == 1  # CA1, one spike
