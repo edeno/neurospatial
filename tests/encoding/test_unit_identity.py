@@ -161,6 +161,30 @@ def test_selection_errors_name_the_other_accessor(name, trajectory, spike_trains
         container[3]
 
 
+@pytest.mark.parametrize("name", CONTAINERS)
+@pytest.mark.parametrize("label", [1.0, True, np.float64(1.0)])
+def test_sel_matches_label_kind_not_only_value(name, label, trajectory, spike_trains):
+    """``1.0`` and ``True`` equal ``1`` in Python but are different labels.
+
+    ``resolve_unit_ids`` keeps them apart, so ``sel`` must too.
+    """
+    container = _container(name, trajectory, spike_trains, [0, 1, 2])
+    with pytest.raises(KeyError, match=r"sel\(unit_id=1\)"):
+        container.sel(unit_id=label)
+    # The integer label itself, NumPy or plain, still selects.
+    assert container.sel(unit_id=np.int64(1)) is not None
+
+
+@pytest.mark.parametrize("name", CONTAINERS)
+def test_bool_is_not_a_position(name, trajectory, spike_trains):
+    """``x[True]`` would otherwise be ``x[1]``."""
+    container = _container(name, trajectory, spike_trains, [0, 1, 2])
+    with pytest.raises(TypeError, match="integer position"):
+        container[True]
+    with pytest.raises(TypeError, match="integer position"):
+        container[np.bool_(False)]
+
+
 def test_label_selects_same_neuron_in_spikes_and_rates(trajectory, spike_trains):
     """sel(unit_id=u) on the spike input and on its rates names one neuron."""
     from neurospatial.encoding.spatial import compute_spatial_rate

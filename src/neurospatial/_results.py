@@ -101,17 +101,22 @@ def _missing_label_positions(labels: Sequence[Any]) -> list[int]:
     ]
 
 
-def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
-    """Whether two label arrays hold equal labels of the same kind, in order.
+def _same_label(a: Any, b: Any) -> bool:
+    """Whether two unit labels are equal and of the same kind.
 
-    ``1`` and ``1.0`` compare equal but are different labels: shuffle streams
-    and lookups are keyed by the label itself.
+    ``1``, ``1.0`` and ``True`` compare equal in Python but are different
+    labels: shuffle streams and lookups are keyed by the label itself. NumPy
+    and plain scalars of one kind (``np.int64(1)`` and ``1``) are the same.
     """
+    return bool(a == b) and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
+
+
+def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
+    """Whether two label arrays hold the same labels (:func:`_same_label`), in order."""
     if given.shape != carried.shape:
         return False
     return all(
-        a == b and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
-        for a, b in zip(given.tolist(), carried.tolist(), strict=True)
+        _same_label(a, b) for a, b in zip(given.tolist(), carried.tolist(), strict=True)
     )
 
 
@@ -287,7 +292,8 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         Raises
         ------
         KeyError
-            If no unit has this label.
+            If no unit has this label. Labels match by value and kind, as in
+            ``resolve_unit_ids``: ``1.0`` and ``True`` do not select unit ``1``.
 
         Examples
         --------
@@ -300,22 +306,41 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         array([0.2, 0.3])
         """
         labels = np.asarray(self.unit_ids).tolist()
-        try:
-            position = labels.index(unit_id)
-        except ValueError:
-            shown = ", ".join(repr(label) for label in labels[:10])
-            more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
-            missing = plain_value(unit_id)
+        wanted = plain_value(unit_id)
+        for position, label in enumerate(labels):
+            if _same_label(label, wanted):
+                return self[position]
+        name = type(self).__name__
+        near = [label for label in labels if label == wanted]
+        if near:
             raise KeyError(
-                f"unit_id {missing!r} is not in this {type(self).__name__} "
-                f"(unit_ids: {shown}{more}). Pass one of these labels to "
-                "sel(), or use [i] to select the i-th unit by position."
-            ) from None
-        return self[position]
+                f"unit_id {wanted!r} ({type(wanted).__name__}) is not in this "
+                f"{name}, which has the {type(near[0]).__name__} label "
+                f"{near[0]!r}. Labels of different kinds are different units "
+                "(1, 1.0 and True are three labels); pass "
+                f"sel(unit_id={near[0]!r})."
+            )
+        shown = ", ".join(repr(label) for label in labels[:10])
+        more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
+        raise KeyError(
+            f"unit_id {wanted!r} is not in this {name} "
+            f"(unit_ids: {shown}{more}). Pass one of these labels to "
+            "sel(), or use [i] to select the i-th unit by position."
+        )
 
     def _unit_position(self: _UnitContainer[Any], index: Any) -> int:
         """Validate a positional ``[]`` index, pointing label lookups at ``sel``."""
         name = type(self).__name__
+        if isinstance(index, bool | np.bool_):
+            # operator.index(True) is 1, but x[True] is not "the unit at 1".
+            raise TypeError(
+                _format_error(
+                    f"{name}[{plain_value(index)!r}]: [] selects one unit by "
+                    "integer position, and a bool is not a position.",
+                    fix=f"pass an integer from {-len(self)} to {len(self) - 1}, "
+                    "or select a label with .sel(unit_id=...)",
+                )
+            )
         try:
             position = operator.index(index)
         except TypeError:
