@@ -196,3 +196,80 @@ def test_array_records_compare_by_identity_instead_of_raising():
     for record in (trains, support):
         assert record == record
         assert record != copy.deepcopy(record)  # equal values, no ValueError
+
+
+@pytest.fixture(scope="module")
+def exporters(populations) -> dict[str, object]:
+    """Every result class with a to_dataframe() or to_xarray() export."""
+    from neurospatial.decoding import decode_position, decode_position_summary
+    from neurospatial.encoding import compare_spatial_rates
+    from neurospatial.encoding.spatial import (
+        compute_directional_place_fields,
+        detect_place_fields,
+    )
+
+    rng = np.random.default_rng(1)
+    positions = rng.uniform(0, 50, (500, 2))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    times = np.linspace(0, 50, 500)
+    trains = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+    labelled = compute_spatial_rates(env, trains, times, positions, unit_ids=[4, 5, 6])
+    half = compute_spatial_rates(
+        env, trains, times, positions, epochs=(0, 25), unit_ids=[4, 5, 6]
+    )
+    counts = rng.poisson(1, (10, 3))
+    results: dict[str, object] = {}
+    for family, population in populations.items():
+        results[family] = population
+        results[f"{family}[0]"] = population[0]
+    comparison = compare_spatial_rates(labelled, half)
+    results["comparison"] = comparison
+    results["comparison[0]"] = comparison[0]
+    results["directional_place_fields"] = compute_directional_place_fields(
+        env,
+        trains[0],
+        times,
+        positions,
+        np.where(times < 25, "out", "in").astype(object),
+    )
+    results["place_fields"] = detect_place_fields(
+        env,
+        np.nan_to_num(labelled.firing_rates[0]),
+        bandwidth=5.0,
+        min_peak_rate=0.0,
+    )
+    results["decoding"] = decode_position(env, counts, labelled, dt=0.1)
+    results["decoding_summary"] = decode_position_summary(env, counts, labelled, dt=0.1)
+    return results
+
+
+EXPORTERS = [
+    *FAMILIES,
+    *(f"{family}[0]" for family in FAMILIES),
+    "comparison",
+    "comparison[0]",
+    "directional_place_fields",
+    "place_fields",
+    "decoding",
+    "decoding_summary",
+]
+
+
+@pytest.mark.parametrize("name", EXPORTERS)
+def test_every_export_array_is_writable(exporters, name):
+    """Exports are the caller's to edit: no column, variable or coordinate is
+    a read-only view of the result or its environment."""
+    result = exporters[name]
+    exported = False
+    if hasattr(result, "to_dataframe"):
+        exported = True
+        table = result.to_dataframe()
+        for column in table.columns:
+            assert table[column].to_numpy().flags.writeable, column
+    if hasattr(result, "to_xarray"):
+        pytest.importorskip("xarray")
+        exported = True
+        dataset = result.to_xarray()
+        for variable in dataset.variables:
+            assert dataset[variable].values.flags.writeable, variable
+    assert exported, f"{name} has no export"

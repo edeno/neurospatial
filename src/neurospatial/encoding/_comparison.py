@@ -369,8 +369,11 @@ shape (n_units, n_bins)
             yield self[position]
 
     def _row_unit_labels(self) -> NDArray[Any]:
-        """Unit labels for table indexes; a missing label is ``pd.NA``."""
-        labels = np.asarray(self.unit_ids)
+        """Unit labels for table indexes; a missing label is ``pd.NA``.
+
+        A writable copy: exports are the caller's to edit.
+        """
+        labels = np.array(self.unit_ids)
         if labels.dtype != object:
             return labels
         import pandas as pd
@@ -686,7 +689,7 @@ shape (n_units, n_bins)
             },
             coords={
                 unit_dim: self._row_unit_labels(),
-                bin_dim: self.bins_a,
+                bin_dim: np.array(self.bins_a),
                 "bin_b": (bin_dim, self.bins_b),
                 **per_bin,
             },

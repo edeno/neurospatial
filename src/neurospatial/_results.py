@@ -757,7 +757,9 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    # A copy: the coordinates are the caller's to edit, the environment's
+    # bin centers are read-only.
+    bin_centers = np.array(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is
     # a real inconsistency between the result and its environment, not an
     # optional-coord situation. Raise loudly rather than silently dropping it.
@@ -869,7 +871,7 @@ def build_population_dataset(
     # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
-    ids = np.asarray(unit_ids)
+    ids = np.array(unit_ids)  # the result's labels are read-only
 
     # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
     # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
