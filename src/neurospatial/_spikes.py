@@ -16,9 +16,9 @@ The main function is `as_spike_trains()`, which accepts:
 - a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains, pandas
   ``Series`` of per-unit arrays) → one train per unit
 
-Every spike time must be finite. This coercion happens at the entry point of encoding, decoding and peri-event
-functions, ensuring consistent internal handling regardless of how the user
-provides spike data.
+Every spike time must be finite. This coercion happens at the entry point of
+encoding, decoding and peri-event functions, ensuring consistent internal
+handling regardless of how the user provides spike data.
 """
 
 from __future__ import annotations

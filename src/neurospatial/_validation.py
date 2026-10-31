@@ -46,8 +46,9 @@ def validate_finite(
     ValueError
         If ``a`` contains any infinite value, or any NaN value when
         ``allow_nan`` is False. The message names the argument, the
-        number of offending values, and the index and value of the
-        first one.
+        number of offending values, and the value of the first one with
+        its index (the flat, C-order index for an array of more than one
+        dimension).
 
     Examples
     --------
@@ -62,15 +63,16 @@ def validate_finite(
     if bad.any():
         n = int(bad.sum())
         first = int(np.argmax(bad))
+        index = "flat index" if arr.ndim > 1 else "index"
         if allow_nan:
             raise ValueError(
                 f"{name} contains {n} infinite value(s) "
-                f"(first at index {first}: {arr.flat[first]!r}). "
+                f"(first at {index} {first}: {arr.flat[first]!r}). "
                 "NaN marks a missing value; replace infinities with NaN."
             )
         raise ValueError(
             f"{name} contains {n} non-finite value(s) "
-            f"(first at index {first}: {arr.flat[first]!r}). "
+            f"(first at {index} {first}: {arr.flat[first]!r}). "
             f"Remove or mask them before calling."
         )
     return arr

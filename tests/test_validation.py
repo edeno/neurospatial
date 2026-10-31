@@ -195,7 +195,11 @@ class TestValidateFinite:
         message = str(exc_info.value)
         assert "grid" in message
         # Flattened index of the inf (row 1, col 1) is 3.
-        assert "index 3" in message
+        assert "flat index 3" in message
+
+    def test_one_dimensional_index_is_not_called_flat(self) -> None:
+        with pytest.raises(ValueError, match=r"first at index 1:"):
+            validate_finite([0.0, np.inf], name="x", allow_nan=True)
 
     def test_2d_clean_input_preserved(self) -> None:
         arr = np.array([[1.0, 2.0], [3.0, 4.0]])
