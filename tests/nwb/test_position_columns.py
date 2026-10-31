@@ -196,3 +196,12 @@ def test_position_overlay_refuses_then_selects_columns(xy_speed_file):
     np.testing.assert_array_equal(overlay.times, np.arange(_N) / 30.0)
     assert overlay.units == "cm"
     assert overlay.frame == "center well"
+
+
+@pytest.mark.parametrize("columns", [0, "xy"])
+def test_columns_must_be_a_sequence(xy_speed_file, columns):
+    """A bare index or a string is refused like any other invalid columns=."""
+    from neurospatial.io.nwb import read_position
+
+    with pytest.raises(ValueError, match="columns= takes a sequence of integer"):
+        read_position(xy_speed_file, columns=columns)

@@ -263,6 +263,14 @@ def _checked_columns(
         f"pass distinct integer column indices from 0 to {n_columns - 1}, "
         "e.g. columns=[0, 1]."
     )
+    if np.ndim(columns) != 1:
+        raise ValueError(
+            _format_error(
+                f"columns= takes a sequence of integer column indices, got "
+                f"{columns!r}.",
+                fix=fix,
+            )
+        )
     selected = list(columns)
     if not selected:
         raise ValueError(
