@@ -1626,7 +1626,7 @@ def _explained_variance_rows(
                 row["ev_minus_rev_lower"] = lower
                 row["is_reactivated"] = lower > 0
             else:
-                row["is_reactivated"] = _missing()
+                row["is_reactivated"] = None
         return [row]
 
     return _match_window_rows(method, session, window_rows)
@@ -1764,9 +1764,9 @@ def _missing() -> Any:
     return pd.NA
 
 
-def _verdict(p_value: float, effect: float, alpha: float) -> Any:
+def _verdict(p_value: float, effect: float, alpha: float) -> bool | None:
     """Reactivated when ``p_value < alpha`` and ``effect > 0``; missing for a NaN p."""
-    return bool(p_value < alpha and effect > 0) if np.isfinite(p_value) else _missing()
+    return bool(p_value < alpha and effect > 0) if np.isfinite(p_value) else None
 
 
 def _nanmean(values: Sequence[float]) -> float:
