@@ -479,21 +479,25 @@ intervals: a `TsGroup` built from spike times alone gets a default support
 that runs from its first spike to its last, which is not recording coverage.
 
 **A `TsdFrame` or `Tsd` as `positions` or `headings`** keeps its time support.
-With `epochs=None`, every analysis that takes `epochs` uses the sample's
-`time_support` as its epochs, so a tracking gap shorter than `max_gap` is not
-counted as occupancy. The adopted windows are stored in the result's
+With `epochs=None`, every public function that takes `epochs` and `positions`
+or `headings` uses the sample's `time_support` as its epochs, so a tracking
+gap shorter than `max_gap` is not counted as occupancy. Results that carry
+`analysis_settings` record the adopted windows in
 `analysis_settings["epochs"]`. An explicit `epochs=` wins; when `positions`
 and `headings` are both pynapple objects with different supports, the call is
 refused until you pass `epochs=` (for example their intersection). Every
-function that takes `positions`, including `Environment.from_samples` and
-`env.bin_at`, refuses a `TsdFrame` whose columns are x/y/z in another order,
-as `from_pynapple` does.
+public function with a `positions` argument (also `true_positions`,
+`actual_positions` and `decoded_positions`), including
+`Environment.from_samples` and `env.bin_at`, refuses a `TsdFrame` whose
+columns are x/y/z in another order, as `from_pynapple` does.
 
-**A pynapple object as `times`** (or `frame_times`, `true_times`) is read as
-its timestamps, `.t`. `np.asarray(tsd)` would give the values instead, so
-`times=speed_tsd` would read speeds as seconds; neurospatial never does that.
-The time support of a pynapple `times` is not adopted as epochs; pass
-`epochs=times.time_support` if you need it.
+**A pynapple object as `times`** (or `frame_times`, `true_times`,
+`position_times`, `start_times`, `stop_times`) is read as its timestamps,
+`.t`; so is one unit's `Ts` or `Tsd` passed as `spike_times`.
+`np.asarray(tsd)` would give the values instead, so `times=speed_tsd` would
+read speeds as seconds and a `Tsd` of spike amplitudes would put every spike
+at its amplitude. The time support of a pynapple `times` is not adopted as
+epochs; pass `epochs=times.time_support` if you need it.
 
 ```python
 # Same occupancy: the TsdFrame's two recording epochs are kept.
