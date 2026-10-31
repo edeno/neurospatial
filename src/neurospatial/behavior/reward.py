@@ -56,7 +56,8 @@ def region_reward_field(
     region_name : str
         Name of region in env.regions to use as reward source.
     reward_value : float, default=1.0
-        Maximum reward value in the region.
+        Maximum of the reward field: the reward inside the region, except
+        with ``decay='gaussian'`` around a ring-like region (see Notes).
     decay : {'constant', 'linear', 'gaussian'}, default='constant'
         Reward decay profile:
         - 'constant': Binary reward (reward_value inside, 0 outside)
@@ -103,10 +104,12 @@ def region_reward_field(
       environment, and on a track it runs along the track's centerline). Bins
       that cannot reach the region (another connected component) get 0.
 
-    - **Gaussian**: Smooth falloff using Gaussian kernel smoothing.
-      After smoothing, rescales so maximum *within the region* equals
-      reward_value. This preserves the intended reward magnitude while
-      providing smooth gradients for policy learning.
+    - **Gaussian**: Smooth falloff using Gaussian kernel smoothing of the
+      region's indicator, rescaled so the field's maximum equals
+      reward_value. For a convex region the maximum is in the region. For a
+      ring or another region that encloses part of the arena, smoothing
+      makes the enclosed part the brightest place: the maximum is there,
+      and the region's own values are below reward_value.
 
     **Reward Shaping**: A reward field can serve as the potential
     ``Phi(s)`` of potential-based reward shaping [1]_, which adds
@@ -217,11 +220,11 @@ def region_reward_field(
             0.0,
         )
 
-        # Scale by the maximum inside the region (not the global maximum) so
-        # the peak reward in the region equals reward_value. The region has at
-        # least one bin and each bin keeps positive weight on itself, so this
-        # maximum is positive.
-        reward = (smoothed / smoothed[region_mask].max()) * reward_value
+        # Scale by the maximum over the arena, so no bin exceeds reward_value.
+        # For a convex region it lies in the region; around a ring it is in
+        # the hole. The region has at least one bin and each bin keeps
+        # positive weight on itself, so this maximum is positive.
+        reward = (smoothed / smoothed.max()) * reward_value
 
     return reward
 

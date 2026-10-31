@@ -158,6 +158,11 @@
   `n_bins * bin_size == 2 * pi`). Uneven bins or bins covering part of a
   turn were accepted, and the preferred direction, tuning width and tuning
   test were computed as if they covered the circle.
+- `region_reward_field(decay="gaussian")` never exceeds `reward_value`. It
+  was scaled to its maximum inside the region, and smoothing a ring makes its
+  hole the brightest place, so the field reached 1.14 there for
+  `reward_value=1`. It is now scaled to its maximum over the arena; convex
+  regions are unchanged.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers
