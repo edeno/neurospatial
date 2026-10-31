@@ -641,6 +641,24 @@ class ReactivationMethod:
             needed.extend(["control_events", "match_events"])
         return tuple(needed)
 
+    @property
+    def _needs_one_control(self) -> str | None:
+        """What makes the method compare one control window, or None.
+
+        None when the method averages its statistic over several control
+        windows (Tatsuno et al. 2006): an EV method without a test whose
+        statistic is not a partial or semipartial correlation.
+        """
+        if self.measure == "assembly":
+            return "an assembly method"
+        if self.measure == "member_cofiring":
+            return "a member co-firing method"
+        if self.test is not None:
+            return self.test
+        if self.statistic in _ONE_CONTROL_STATISTICS:
+            return self.statistic
+        return None
+
     def __post_init__(self) -> None:
         """Check that the options fit the measure."""
         where = f"ReactivationMethod {self.name!r}"
@@ -1544,10 +1562,8 @@ def _explained_variance_rows(
         control_events.append(n_events)
     control_correlations = [_pair_correlations(counts) for counts in control_counts]
     n_controls = len(control_correlations)
-    if (
-        method.test is not None or method.statistic in _ONE_CONTROL_STATISTICS
-    ) and n_controls != 1:
-        needs = method.test if method.test is not None else method.statistic
+    needs = method._needs_one_control
+    if needs is not None and n_controls != 1:
         raise _MethodError(f"{needs} needs one control window, got {n_controls}")
 
     def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
