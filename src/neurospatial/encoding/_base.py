@@ -228,7 +228,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         shared vocabulary used across all result classes:
 
         - Cartesian environments: ``bin_center_x`` / ``bin_center_y`` /
-          ``bin_center_z`` (and ``bin_center_dim_3`` ... for >3-D).
+          ``bin_center_z`` (``bin_center_dim_0`` ... above three dimensions).
         - Polar egocentric environments: ``bin_center_distance`` and
           ``bin_center_angle``.
         - Directional results (no environment, angular centers): subclasses

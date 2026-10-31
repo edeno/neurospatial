@@ -692,15 +692,14 @@ _POLAR_COORD_NAMES = ("distance", "angle")
 
 
 def _coord_dim_names(env: Any) -> list[str]:
-    """Per-dimension coordinate column names for tidy decode dataframes.
+    """Per-dimension coordinate names, one rule for every export.
 
     Returns ``["distance", "angle"]`` for a polar egocentric environment,
     ``["x", "y", "z"][:n_dims]`` for ``n_dims <= 3`` and
-    ``["dim_0", "dim_1", ...]`` otherwise. Shared by
-    :meth:`DecodingResult.to_dataframe` and
-    :meth:`DecodingSummary.to_dataframe` so their coordinate column naming
-    (``map_x``/``mean_x``/... vs ``map_dim_0``/...) stays identical. The polar
-    names match the ``bin_center_*`` coordinates of :func:`_bin_center_coords`.
+    ``["dim_0", "dim_1", ...]`` otherwise. The decode tables
+    (``map_x``/``mean_x``/... or ``map_dim_0``/...) and the ``bin_center_*``
+    coordinates of :func:`_bin_center_coords` are named from it, so one axis
+    has one name in every table and Dataset.
 
     Parameters
     ----------
@@ -726,10 +725,12 @@ def _bin_center_coords(
     """Build non-index ``bin``-dimension coordinates from an environment.
 
     Returns a mapping of coordinate name to ``("bin", values)`` tuples giving
-    the per-bin center coordinates. Cartesian environments yield
-    ``bin_center_x`` (1-D), plus ``bin_center_y`` (2-D) and ``bin_center_z``
-    (3-D). Polar egocentric environments (whose ``bin_centers[:, 0]`` is
-    distance and ``bin_centers[:, 1]`` is angle in radians) yield
+    the per-bin center coordinates, named by :func:`_coord_dim_names`.
+    Cartesian environments yield ``bin_center_x`` (1-D), plus
+    ``bin_center_y`` (2-D) and ``bin_center_z`` (3-D), and
+    ``bin_center_dim_0``, ``bin_center_dim_1``, ... above three dimensions.
+    Polar egocentric environments (whose ``bin_centers[:, 0]`` is distance
+    and ``bin_centers[:, 1]`` is angle in radians) yield
     ``bin_center_distance`` and ``bin_center_angle`` instead.
 
     Parameters
@@ -788,17 +789,9 @@ def _bin_center_coords(
             )
         )
 
-    if getattr(env, "coordinate_kind", "cartesian") == "polar":
-        return {
-            f"bin_center_{name}": ("bin", bin_centers[:, i])
-            for i, name in enumerate(_POLAR_COORD_NAMES)
-        }
-
-    # x, y, z; axes past the third are bin_center_dim_3, ...
-    names = ["bin_center_x", "bin_center_y", "bin_center_z"]
     return {
-        (names[i] if i < 3 else f"bin_center_dim_{i}"): ("bin", bin_centers[:, i])
-        for i in range(bin_centers.shape[1])
+        f"bin_center_{name}": ("bin", bin_centers[:, i])
+        for i, name in enumerate(_coord_dim_names(env))
     }
 
 
