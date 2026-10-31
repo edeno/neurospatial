@@ -302,8 +302,9 @@ lists them in one table.
 **Carrying a signal onto the samples.** `interpolate_signal` combines a
 per-frame signal from the two frames around each sample. The median speed at
 the samples is 22.0 and 46.7 cm/s. The second is slightly below 47 cm/s
-because `compute_speed` smooths the velocity over 0.1 s, and averaging
-velocity directions around a curve shortens it. Use `interpolate_signal` for
+because `compute_speed` takes velocity from a straight line fitted to about
+0.1 s of path on either side, and a straight line through a stretch of curve
+moves less far than the animal does along it. Use `interpolate_signal` for
 continuous signals such as speed or LFP amplitude; take labels and counts at
 `source_left`. `compute_speed` takes the same `break_before`, so speed is never
 smoothed across the join.

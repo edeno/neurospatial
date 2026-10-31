@@ -1154,7 +1154,10 @@ class TestBinSpikeTrainWithStatsSharedMask:
     """The public binner and private kernel apply the same caller-supplied mask."""
 
     @pytest.mark.parametrize(
-        "min_speed,expected_count", [(None, 2), (5.0, 2), (50.0, 0)]
+        # The jump to -50 slows the smoothed speed at sample 2 to about
+        # 1 cm/s, so a gate of 0.5 cm/s keeps both spikes in the field.
+        "min_speed,expected_count",
+        [(None, 2), (0.5, 2), (50.0, 0)],
     )
     def test_kernel_matches_public_binner(self, min_speed, expected_count):
         from neurospatial._intervals import interval_valid_mask

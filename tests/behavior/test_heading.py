@@ -113,10 +113,10 @@ def test_slow_samples_have_no_heading_in_either_run(two_epoch_recording):
     positions = np.c_[
         np.r_[0, 1, 2, 2, 2, 2, np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
     ]
-    # Smoothed speed in the first run falls from 24.1 to 17.3 cm/s as the
-    # animal stops; samples 3-5 are below 20 cm/s. The second run moves North
-    # at 50 cm/s throughout.
-    headings = heading_from_velocity(times, positions, min_speed=20.0)
+    # Smoothed speed in the first run falls from 20.3 to 16.7 cm/s as the
+    # animal stops; samples 3-5 are below 18.5 cm/s. The second run moves
+    # North at 50 cm/s throughout.
+    headings = heading_from_velocity(times, positions, min_speed=18.5)
     np.testing.assert_allclose(headings[:3], 0.0, atol=0)
     assert np.isnan(headings[3:6]).all()
     np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
@@ -746,7 +746,7 @@ def test_heading_from_velocity_stop_has_no_heading():
         speed, reference_speed(times, positions, 0.1), rtol=1e-12, atol=1e-12
     )
     np.testing.assert_allclose(
-        speed, [7.432, 4.664, 1.441, 1.480, 4.953, 8.092, 9.549], atol=6e-4
+        speed, [6.677, 3.756, 0.986, 1.218, 4.827, 8.237, 9.616], atol=6e-4
     )
     heading = heading_from_velocity(times, positions, min_speed=2.0)
     np.testing.assert_allclose(

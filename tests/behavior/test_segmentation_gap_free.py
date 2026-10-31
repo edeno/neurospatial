@@ -36,7 +36,11 @@ edge, so it left the source and the run departs one sample (0.1 s) earlier.
 ``compute_pre_decision_metrics`` and ``compute_vte_trial`` were captured
 again when velocity smoothing began to weight samples by their time
 difference and to renormalize the window at the ends of a run: the window's
-mean speed moved from 42.188 to 42.198 cm/s.
+mean speed moved from 42.188 to 42.198 cm/s. They were captured again when
+velocity became the slope of a Gaussian-weighted local line fit: the mean
+speed moved to 42.219 cm/s, and the minimum speed, during a true pause, from
+0.063 to exactly 0 cm/s because movement before and after the pause no longer
+leaks into it.
 """
 
 import json

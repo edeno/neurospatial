@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### One estimator for position and velocity
+
+**Changed**
+
+- Velocity, speed and direction of motion (`compute_speed`,
+  `heading_from_velocity`, `segment_by_velocity` and every built-in
+  `min_speed` gate, goal alignment, heading label, pre-decision statistic and
+  head sweep) are now the slope of the Gaussian-weighted local line fit whose
+  value is the smoothed position of `smooth_positions`, instead of a Gaussian
+  mean of frame-to-frame velocities. `smooth_window` keeps its meaning and
+  its 0.1 s default. In the middle of a run results change by less than
+  3e-6 rad in heading; at the ends of a run, where the old mean was
+  dominated by one noisy one-sided difference, the speed error with 0.5 cm
+  of jitter drops from 3-6 cm/s to about 1 cm/s and the heading error from
+  13 to 10 degrees RMS. On a clean curve the end heading lags slightly more
+  (about 1.1 instead of 0.8 smoothing widths). A truly stopped animal now
+  reads exactly 0 cm/s instead of picking up movement from either side.
+
 ### Smoothing tracked positions
 
 **Added**
