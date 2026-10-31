@@ -99,6 +99,7 @@ def centered_bin_support(
         return None
     return bin_time_support(centers - dt / 2.0, centers + dt / 2.0, tolerance=dt / 2.0)
 
+
 @reads_pynapple_samples
 def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],
