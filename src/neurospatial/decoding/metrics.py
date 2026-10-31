@@ -319,7 +319,11 @@ def median_decoding_error(
         time bins where either position contains NaN. ``inf`` when at least
         half of the remaining time bins decoded outside the environment (or
         into a part not connected to the animal's); NaN if no time bin
-        remains.
+        remains. ``inf`` is a failed decoder, not a missing value: before
+        averaging or plotting medians across sessions, count the sessions
+        with ``np.isinf`` and report them rather than dropping them. Decoding
+        to ``map_position``, which is always a bin, avoids off-environment
+        positions altogether.
 
     Warns
     -----
