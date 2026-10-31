@@ -1085,11 +1085,11 @@ class TestCircularBasisMetrics:
             assert -np.pi <= phase <= np.pi
 
     def test_pvalue_without_cov(self) -> None:
-        """Test that pvalue is None when covariance matrix not provided."""
+        """Test that pvalue is NaN when covariance matrix not provided."""
         from neurospatial.stats.circular import circular_basis_metrics
 
         _, _, pvalue = circular_basis_metrics(0.5, 0.5)
-        assert pvalue is None
+        assert np.isnan(pvalue)
 
     def test_pvalue_with_cov(self) -> None:
         """Test that pvalue is computed when covariance matrix provided."""

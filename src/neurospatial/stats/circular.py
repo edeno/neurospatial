@@ -819,8 +819,10 @@ def circular_circular_correlation(
     sin_dev1 = np.sin(angles1 - alpha_bar)
     sin_dev2 = np.sin(angles2 - beta_bar)
 
+    l20 = np.mean(sin_dev1**2)
+    l02 = np.mean(sin_dev2**2)
     # A spread below 1e-10 rad RMS is rounding error around a constant angle.
-    if min(np.mean(sin_dev1**2), np.mean(sin_dev2**2)) <= 1e-20:
+    if min(l20, l02) <= 1e-20:
         warnings.warn(
             "One or both circular variables are constant, so the "
             "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
@@ -839,8 +841,6 @@ def circular_circular_correlation(
 
     # Significance test (normal approximation)
     # From Jammalamadaka & SenGupta (2001), p. 177
-    l20 = np.mean(sin_dev1**2)
-    l02 = np.mean(sin_dev2**2)
     l22 = np.mean(sin_dev1**2 * sin_dev2**2)
 
     if l22 == 0:
@@ -854,12 +854,7 @@ def circular_circular_correlation(
 
     # Test statistic follows standard normal under null hypothesis
     ts = np.sqrt((n * l20 * l02) / l22) * rho
-    pval = float(2 * stats.norm.sf(np.abs(ts)))
-
-    # Ensure p-value is in valid range
-    pval = float(np.clip(pval, 0.0, 1.0))
-
-    return rho, pval
+    return rho, float(2 * stats.norm.sf(np.abs(ts)))
 
 
 # =============================================================================
@@ -1079,6 +1074,43 @@ class CircularBasisResult(ReadOnlyArraysMixin):
 # =============================================================================
 
 
+def _validated_cov(cov_matrix: NDArray[np.float64]) -> NDArray[np.float64]:
+    """
+    The [beta_sin, beta_cos] covariance as a checked float64 2x2 array.
+
+    Raises
+    ------
+    ValueError
+        If ``cov_matrix`` is not a finite, symmetric positive semi-definite
+        2x2 matrix.
+    """
+    cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
+    fix = (
+        "Fix: pass model.cov_params()[1:3, 1:3], the rows and columns for "
+        "[sin, cos] of the fitted GLM's covariance."
+    )
+    if cov_matrix.shape != (2, 2):
+        raise ValueError(
+            f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos], got "
+            f"shape {cov_matrix.shape}.\n{fix}"
+        )
+    if not np.all(np.isfinite(cov_matrix)):
+        raise ValueError(
+            f"cov_matrix must be finite, got {cov_matrix.tolist()}.\n"
+            f"Fix: check that the GLM fit converged before testing its "
+            f"coefficients."
+        )
+    scale = float(np.max(np.abs(cov_matrix)))
+    if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
+        np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
+    ):
+        raise ValueError(
+            f"cov_matrix must be a symmetric positive semi-definite covariance "
+            f"matrix, got {cov_matrix.tolist()}.\n{fix}"
+        )
+    return cov_matrix
+
+
 def _wald_test_magnitude(
     beta_sin: float,
     beta_cos: float,
@@ -1096,7 +1128,8 @@ def _wald_test_magnitude(
     beta_cos : float
         Coefficient for cos component from GLM.
     cov_matrix : ndarray, shape (2, 2)
-        Covariance matrix for [beta_sin, beta_cos].
+        Covariance matrix for [beta_sin, beta_cos], checked by
+        ``_validated_cov``.
 
     Returns
     -------
@@ -1107,8 +1140,7 @@ def _wald_test_magnitude(
     Raises
     ------
     ValueError
-        If the coefficients or ``cov_matrix`` are not finite, or
-        ``cov_matrix`` is not symmetric positive semi-definite.
+        If the coefficients are not finite.
 
     Notes
     -----
@@ -1118,22 +1150,12 @@ def _wald_test_magnitude(
     from scipy.stats import chi2
 
     beta = np.array([beta_sin, beta_cos], dtype=np.float64)
-    if not (np.all(np.isfinite(beta)) and np.all(np.isfinite(cov_matrix))):
+    if not np.all(np.isfinite(beta)):
         raise ValueError(
-            f"beta_sin, beta_cos and cov_matrix must be finite, got "
-            f"beta=({beta_sin!r}, {beta_cos!r}) and cov_matrix={cov_matrix.tolist()}.\n"
+            f"beta_sin and beta_cos must be finite, got ({beta_sin!r}, "
+            f"{beta_cos!r}).\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
-        )
-    scale = float(np.max(np.abs(cov_matrix)))
-    if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
-        np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
-    ):
-        raise ValueError(
-            f"cov_matrix must be a symmetric positive semi-definite covariance "
-            f"matrix, got {cov_matrix.tolist()}.\n"
-            f"Fix: pass model.cov_params()[1:3, 1:3], the rows and columns "
-            f"for [sin, cos] of the fitted GLM's covariance."
         )
 
     # Wald statistic: beta.T @ inv(cov) @ beta
@@ -1259,7 +1281,7 @@ def circular_basis_metrics(
     beta_sin: float,
     beta_cos: float,
     cov_matrix: NDArray[np.float64] | None = None,
-) -> tuple[float, float, float | None]:
+) -> tuple[float, float, float]:
     """
     Compute amplitude, phase, and p-value from GLM coefficients.
 
@@ -1286,9 +1308,9 @@ def circular_basis_metrics(
     phase : float
         Preferred phase angle in radians, range [-π, π].
         Computed as atan2(beta_sin, beta_cos).
-    pvalue : float or None
-        Wald-test p-value for H0: amplitude = 0 (no modulation). None if
-        ``cov_matrix`` is not provided; NaN, with a warning, if it is
+    pvalue : float
+        Wald-test p-value for H0: amplitude = 0 (no modulation). NaN if
+        ``cov_matrix`` is not provided, and NaN with a warning if it is
         singular.
 
     Raises
@@ -1321,20 +1343,13 @@ def circular_basis_metrics(
     >>> print(f"Amplitude: {amplitude:.2f}, Phase: {np.degrees(phase):.1f}°")
     Amplitude: 0.58, Phase: 59.0°
     """
-    # Compute amplitude: sqrt(beta_sin^2 + beta_cos^2)
     amplitude = float(np.sqrt(beta_sin**2 + beta_cos**2))
-
-    # Compute phase: atan2(beta_sin, beta_cos)
     phase = float(np.arctan2(beta_sin, beta_cos))
-
-    # Compute p-value if covariance provided
-    pvalue: float | None = None
-    if cov_matrix is not None:
-        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
-        if cov_matrix.shape != (2, 2):
-            raise ValueError(f"cov_matrix must be shape (2, 2), got {cov_matrix.shape}")
-        pvalue = _wald_test_magnitude(beta_sin, beta_cos, cov_matrix)
-
+    pvalue = (
+        np.nan
+        if cov_matrix is None
+        else _wald_test_magnitude(beta_sin, beta_cos, _validated_cov(cov_matrix))
+    )
     return amplitude, phase, pvalue
 
 
@@ -1412,11 +1427,8 @@ def is_modulated(
     >>> is_modulated(0.1, 0.1, np.array([[1.0, 0], [0, 1.0]]))
     False
     """
-    amplitude, _, pvalue = circular_basis_metrics(
-        beta_sin, beta_cos, np.asarray(cov_matrix, dtype=np.float64)
-    )
-    # A covariance was given, so there is a p-value (NaN when singular).
-    return bool(cast("float", pvalue) < alpha and amplitude >= min_magnitude)
+    amplitude, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix)
+    return bool(pvalue < alpha and amplitude >= min_magnitude)
 
 
 def plot_circular_basis_tuning(
@@ -1558,17 +1570,6 @@ def plot_circular_basis_tuning(
             "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
         )
 
-    # Validate cov_matrix shape if provided
-    if cov_matrix is not None:
-        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
-        if cov_matrix.shape != (2, 2):
-            raise ValueError(
-                f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos].\n"
-                f"Got shape: {cov_matrix.shape}\n\n"
-                f"Extract from GLM fit:\n"
-                f"  cov = model.cov_params()[1:3, 1:3]  # Rows/cols for sin, cos"
-            )
-
     # Create figure if needed
     if ax is None:
         if projection == "polar":
@@ -1576,115 +1577,51 @@ def plot_circular_basis_tuning(
         else:
             _, ax = plt.subplots()
 
-    # Default kwargs
-    line_defaults: dict = {"color": color, "linewidth": 2, "zorder": 2}
-    scatter_defaults: dict = {
+    line_kw = {"color": color, "linewidth": 2, "zorder": 2, **(line_kwargs or {})}
+    scatter_kw = {
         "color": data_color,
         "alpha": data_alpha,
         "s": 30,
         "zorder": 1,
+        **(scatter_kwargs or {}),
     }
 
-    # Merge with user kwargs
-    line_kw = {**line_defaults, **(line_kwargs or {})}
-    scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}
-
-    # Generate smooth curve for fit
-    theta_smooth = np.linspace(0, 2 * np.pi, n_points, endpoint=False)
-
-    # GLM prediction: lambda(theta) = exp(intercept + beta_cos*cos + beta_sin*sin)
-    linear_pred = (
-        intercept + beta_cos * np.cos(theta_smooth) + beta_sin * np.sin(theta_smooth)
-    )
-    # Transform to response scale (Poisson GLM uses exp link)
-    fitted_response = np.exp(linear_pred)
-
-    # Compute confidence bands if requested
-    ci_lower: NDArray[np.float64] | None = None
-    ci_upper: NDArray[np.float64] | None = None
-
-    if show_ci and cov_matrix is not None:
-        # Design matrix for each angle: [sin(θ), cos(θ)]
-        design = np.column_stack([np.sin(theta_smooth), np.cos(theta_smooth)])
-
-        # Variance of linear predictor at each angle
-        var_linear = np.sum((design @ cov_matrix) * design, axis=1)
-        se_linear = np.sqrt(np.maximum(var_linear, 0))
-
-        # Z-score for confidence level
-        z = stats.norm.ppf((1 + ci) / 2)
-
-        # CI on linear scale, then transform
-        linear_lower = linear_pred - z * se_linear
-        linear_upper = linear_pred + z * se_linear
-
-        # Transform to response scale
-        ci_lower = np.exp(linear_lower)
-        ci_upper = np.exp(linear_upper)
-
-    # Close the curve (append first point)
-    theta_closed = np.concatenate([theta_smooth, [theta_smooth[0] + 2 * np.pi]])
-    fitted_closed = np.concatenate([fitted_response, [fitted_response[0]]])
-
-    # Close CI bands if computed
-    if ci_lower is not None and ci_upper is not None:
-        ci_lower_closed = np.concatenate([ci_lower, [ci_lower[0]]])
-        ci_upper_closed = np.concatenate([ci_upper, [ci_upper[0]]])
-    else:
-        ci_lower_closed = None
-        ci_upper_closed = None
+    # A closed curve: the last point repeats the first, one turn later.
+    theta = np.linspace(0, 2 * np.pi, n_points + 1)
+    theta[-1] = theta[0] + 2 * np.pi
+    design = np.column_stack([np.sin(theta), np.cos(theta)])
+    # GLM prediction on the log-link scale: intercept + beta_sin sin + beta_cos cos
+    linear_pred = intercept + design @ np.array([beta_sin, beta_cos])
 
     if projection == "polar":
-        polar_ax = cast("PolarAxes", ax)
-
         # Draw angles as in the arena: 0 = East (right), counter-clockwise.
+        polar_ax = cast("PolarAxes", ax)
         polar_ax.set_theta_zero_location("E")
         polar_ax.set_theta_direction(1)
 
-        # Plot confidence band (behind curve)
-        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
-            polar_ax.fill_between(
-                theta_closed,
-                ci_lower_closed,
-                ci_upper_closed,
-                color=color,
-                alpha=ci_alpha,
-                zorder=0,
-            )
+    if show_ci:
+        # Pointwise band on the linear predictor, then mapped through exp.
+        cov = _validated_cov(cast("NDArray[np.float64]", cov_matrix))
+        se_linear = np.sqrt(np.maximum(np.sum((design @ cov) * design, axis=1), 0))
+        z = stats.norm.ppf((1 + ci) / 2)
+        ax.fill_between(
+            theta,
+            np.exp(linear_pred - z * se_linear),
+            np.exp(linear_pred + z * se_linear),
+            color=color,
+            alpha=ci_alpha,
+            zorder=0,
+        )
+    if show_fit:
+        ax.plot(theta, np.exp(linear_pred), **line_kw)
+    if show_data:
+        ax.scatter(
+            np.asarray(angles, dtype=np.float64).ravel(),
+            np.asarray(rates, dtype=np.float64).ravel(),
+            **scatter_kw,
+        )
 
-        # Plot fitted curve
-        if show_fit:
-            polar_ax.plot(theta_closed, fitted_closed, **line_kw)
-
-        # Plot data points
-        if show_data and angles is not None and rates is not None:
-            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
-            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
-            polar_ax.scatter(angles_arr, rates_arr, **scatter_kw)
-
-    else:
-        # Linear projection
-        # Plot confidence band (behind curve)
-        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
-            ax.fill_between(
-                theta_closed,
-                ci_lower_closed,
-                ci_upper_closed,
-                color=color,
-                alpha=ci_alpha,
-                zorder=0,
-            )
-
-        # Plot fitted curve
-        if show_fit:
-            ax.plot(theta_closed, fitted_closed, **line_kw)
-
-        # Plot data points
-        if show_data and angles is not None and rates is not None:
-            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
-            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
-            ax.scatter(angles_arr, rates_arr, **scatter_kw)
-
+    if projection != "polar":
         ax.set_xlabel("Angle (rad)")
         ax.set_ylabel("Response")
         ax.set_xlim(0, 2 * np.pi)
