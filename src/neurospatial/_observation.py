@@ -385,7 +385,8 @@ def sample_feature(
     interpolation : {"linear", "circular", "previous"}
         ``"linear"``: straight line between the bracketing samples.
         ``"circular"``: shorter arc in radians; an exact half-turn goes the
-        positive way. ``"previous"``: the value of the preceding sample.
+        positive way. ``"previous"``: the value of the last valid sample at
+        or before the query.
     kind : {"linear", "circular", "categorical"}
         The feature's value kind. Every sampled value of a circular feature is
         wrapped to ``(-pi, pi]``, whatever the interpolation.

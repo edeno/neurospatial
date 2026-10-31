@@ -1,10 +1,13 @@
 """One definition of velocity and speed for every speed gate in the package.
 
-Differencing raw positions turns tracking jitter into speed: 0.5 cm of camera
-noise reads as about 20 cm/s at 30 Hz and 200 cm/s at 500 Hz. The velocity
-vector is therefore smoothed with a Gaussian of ``smooth_window`` seconds
-before its magnitude is taken, as in non_local_detector's ``get_velocity`` and
-spyglass's position processing (whose speed smoothing default is 0.1 s).
+Differencing raw positions turns tracking jitter into speed: a still animal
+tracked with 0.5 cm of camera noise per coordinate reads as a mean speed of
+about 13 cm/s at 30 Hz and 220 cm/s at 500 Hz (centered secant). The velocity
+vector is therefore smoothed in time with a Gaussian of ``smooth_window``
+seconds before its magnitude is taken, as in non_local_detector's
+``get_velocity`` and spyglass's position processing (whose speed smoothing
+default is 0.1 s); after the default 0.1 s the same jitter reads as about
+1.3 cm/s at 30 Hz and 0.3 cm/s at 500 Hz.
 """
 
 from __future__ import annotations
