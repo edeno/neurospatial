@@ -140,6 +140,9 @@
   tracking jitter within about one bin spacing of the environment is still
   measured from its nearest bin. Use `map_position` for a decoded position
   that is always a bin.
+- `compute_shuffle_zscore` warns when it leaves undefined (NaN) null scores
+  out, giving how many, as `compute_shuffle_pvalue` does; it used to drop
+  them silently. `ShuffleTestResult.z_score` does not warn again.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

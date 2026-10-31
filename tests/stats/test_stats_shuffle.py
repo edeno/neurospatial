@@ -329,3 +329,27 @@ def test_circular_shift_warns_when_no_spike_is_in_the_windows():
             np.array([500.0, 600.0]), np.array([[0.0, 100.0]]), n_shuffles=2, rng=0
         )
     assert all(draw.size == 0 for draw in draws)
+
+
+def test_zscore_warns_when_it_drops_undefined_null_scores():
+    """Like the p-value, the z-score says how many NaN null scores it left out."""
+    from neurospatial.stats.shuffle import compute_shuffle_zscore
+
+    with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null score"):
+        z = compute_shuffle_zscore(3.0, np.array([0.0, 1.0, np.nan]))
+    assert z == pytest.approx(5.0)
+
+
+def test_shuffle_result_z_score_does_not_warn_again():
+    """The result warned once when built; reading its z-score is silent."""
+    import warnings
+
+    from neurospatial.stats.shuffle import ShuffleTestResult
+
+    with pytest.warns(UserWarning, match="undefined"):
+        result = ShuffleTestResult.from_null(
+            3.0, np.array([0.0, 1.0, np.nan]), shuffle_type="test"
+        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert result.z_score == pytest.approx(5.0)
