@@ -582,7 +582,7 @@ class TestWriteRegionCrossings:
         write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
         # Try to write again without overwrite
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValueError, match="'region_crossings' already exists"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_overwrite_replaces_existing(self, empty_nwb):
@@ -651,7 +651,9 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start"])  # Wrong length
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"length|shape"):
+        with pytest.raises(
+            ValueError, match=r"region_names length \(\d+\) must match crossing_times"
+        ):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_event_types_length_mismatch(self, empty_nwb):
@@ -663,7 +665,9 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit"])  # Wrong length
 
-        with pytest.raises(ValueError, match=r"length|shape"):
+        with pytest.raises(
+            ValueError, match=r"event_types length \(\d+\) must match crossing_times"
+        ):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_with_nan_raises_error(self, empty_nwb):
@@ -675,7 +679,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"non-finite|NaN"):
+        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_with_inf_raises_error(self, empty_nwb):
@@ -687,7 +691,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match=r"non-finite|Inf"):
+        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_crossing_times_negative_raises_error(self, empty_nwb):
@@ -699,7 +703,7 @@ class TestWriteRegionCrossings:
         region_names = np.array(["goal", "start", "goal"])
         event_types = np.array(["enter", "exit", "enter"])
 
-        with pytest.raises(ValueError, match="negative"):
+        with pytest.raises(ValueError, match="crossing_times contains negative"):
             write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
     def test_data_integrity(self, empty_nwb):

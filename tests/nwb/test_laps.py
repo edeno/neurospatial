@@ -102,12 +102,17 @@ class TestWriteLapsFromLaps:
         }
 
     @pytest.mark.parametrize(
-        "laps", [np.array([1.0, 2.0]), [1.0, 2.0], (LAPS[0], "lap")]
+        ("laps", "message"),
+        [
+            (np.array([1.0, 2.0]), "laps must be a list of Lap objects; got ndarray"),
+            ([1.0, 2.0], r"laps\[0\] is a float, not a Lap"),
+            ((LAPS[0], "lap"), r"laps\[1\] is a str, not a Lap"),
+        ],
     )
-    def test_non_lap_records_are_refused(self, empty_nwb, laps):
+    def test_non_lap_records_are_refused(self, empty_nwb, laps, message):
         from neurospatial.io.nwb import write_laps
 
-        with pytest.raises(TypeError, match="Lap"):
+        with pytest.raises(TypeError, match=message):
             write_laps(empty_nwb, laps)
 
     def test_laps_with_arrays_are_refused(self, empty_nwb):

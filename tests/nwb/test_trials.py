@@ -134,12 +134,22 @@ class TestWriteTrialsFromTrialObjects:
         assert set(recovered.columns) == {"start_time", "stop_time"}
 
     @pytest.mark.parametrize(
-        "trials", [np.array([0.0, 5.0]), [{"start_time": 0.0, "end_time": 5.0}]]
+        ("trials", "message"),
+        [
+            (
+                np.array([0.0, 5.0]),
+                "trials must be a list of Trial objects; got ndarray",
+            ),
+            (
+                [{"start_time": 0.0, "end_time": 5.0}],
+                r"trials\[0\] is a dict, not a Trial",
+            ),
+        ],
     )
-    def test_non_trial_records_are_refused(self, empty_nwb, trials):
+    def test_non_trial_records_are_refused(self, empty_nwb, trials, message):
         from neurospatial.io.nwb import write_trials
 
-        with pytest.raises(TypeError, match="Trial"):
+        with pytest.raises(TypeError, match=message):
             write_trials(empty_nwb, trials)
         assert empty_nwb.trials is None
 
@@ -461,7 +471,7 @@ class TestReadTrials:
 
         nwbfile = empty_nwb
 
-        with pytest.raises(KeyError, match="trials"):
+        with pytest.raises(KeyError, match="TimeIntervals 'trials' not found"):
             read_trials(nwbfile)
 
     def test_read_trials_with_custom_columns(self, empty_nwb):
