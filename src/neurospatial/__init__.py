@@ -338,7 +338,6 @@ if TYPE_CHECKING:
     from neurospatial.regions import Region as Region
     from neurospatial.regions import Regions as Regions
 
-# Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 # Submodules exposed via lazy (PEP 562) attribute access. Accessing, e.g.,
