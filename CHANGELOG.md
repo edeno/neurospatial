@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### pynapple event times, empty NWB tables, pynwb 4
+
+**Fixed**
+
+- A pynapple `Tsd` passed as event times was read by its values, not its
+  times: `time_to_nearest_event(times, nap.Tsd(t=reward_times, d=sizes))`
+  measured offsets from the reward sizes. A `Ts` was refused. Event, reward
+  and theta-peak times (`event_times=` in the events module and
+  `assembly_event_response`, `distance_to_reward(reward_times=)`,
+  `theta_peak_times=`, `EventOverlay(event_times=)`) now read the timestamps
+  of a `Ts`, `Tsd` or `TsdFrame`, and refuse a `TsGroup` with a message that
+  points to `tsgroup[unit_id]`.
+- `typing_extensions` is a declared dependency (`>=4.0.0`); it was imported
+  at runtime but only installed through other packages.
+
+**Changed**
+
+- `write_trials`, `write_laps`, `write_region_crossings` and `write_events`
+  with zero records write no table (and create no processing module), and
+  warn. NWB best practice is not to write empty tables: nwbinspector reports
+  `check_empty_table` and DANDI validation fails on them. Reading the table
+  back raises `KeyError`; treat a missing table as zero records. With
+  `overwrite=True`, zero records still remove the table they replace.
+- `write_laps` leaves out the `overlap_score` column when every lap's score is
+  NaN (laps from `detect_laps(..., method="region")`), which nwbinspector
+  reports as `check_col_not_nan`.
+
+**Documentation**
+
+- With pynwb 4 or later, `EventsTable` is part of the NWB core schema; a file
+  written with it cannot be read by pynwb 3. Documented in the
+  interoperability guide and the `write_events` / `write_region_crossings`
+  Notes. CI runs the NWB tests with both the locked and the newest pynwb.
+
 ### NWB I/O follow-ups
 
 **Changed**
