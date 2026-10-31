@@ -943,6 +943,49 @@ def fit_linear_trajectory(
             slope_std=None,
         )
 
+    _check_sampling(n_samples, n_resamples, allocation, spikes, len(posterior))
+
+    from neurospatial.stats import _ensure_rng
+
+    generator = _ensure_rng(rng)
+    samples_per_bin = _samples_per_time_bin(
+        int(n_samples), int(n_resamples), len(posterior), spikes, allocation, generator
+    )
+    sampled = samples_per_bin > 0
+    latest = np.where(sampled, times, -np.inf).max(axis=1)
+    earliest = np.where(sampled, times, np.inf).min(axis=1)
+    if np.any(latest == earliest):
+        raise ValueError(
+            _format_error(
+                f"{operation}: in {int(np.sum(latest == earliest))} of "
+                f"{n_resamples} resamples, all {n_samples} samples fall in "
+                "time bins with one time.",
+                why="a line along time needs sampled positions at two or "
+                "more times; n_samples is the total over all time bins, and "
+                "with allocation='spikes' each time bin's share is random",
+                fix="raise n_samples (the default is 10000)",
+            )
+        )
+    slopes, intercepts, r_squared = _sampled_lines(
+        posterior, (starts + stops) / 2, times, samples_per_bin, generator
+    )
+    return LinearFitResult(
+        slope=float(np.mean(slopes)),
+        intercept=float(np.mean(intercepts)),
+        r_squared=float(np.mean(r_squared)),
+        slope_std=float(np.std(slopes, ddof=1)) if n_resamples > 1 else None,
+    )
+
+
+def _check_sampling(
+    n_samples: int,
+    n_resamples: int,
+    allocation: str,
+    spikes: NDArray[np.int64] | None,
+    n_time_bins: int,
+) -> None:
+    """Refuse sample counts or an allocation that a sampled fit cannot use."""
+    operation = "fit_linear_trajectory()"
     for name, value, least in (
         ("n_samples", n_samples, 2),
         ("n_resamples", n_resamples, 1),
@@ -977,7 +1020,7 @@ def fit_linear_trajectory(
                 fix="pass spike_counts, or use allocation='equal'",
             )
         )
-    n_sampled = len(posterior) if spikes is None else int(np.sum(spikes > 0))
+    n_sampled = n_time_bins if spikes is None else int(np.sum(spikes > 0))
     if allocation == "equal" and n_samples < n_sampled:
         raise ValueError(
             _format_error(
@@ -989,37 +1032,6 @@ def fit_linear_trajectory(
                 fix=f"pass n_samples of at least {n_sampled}",
             )
         )
-
-    from neurospatial.stats import _ensure_rng
-
-    generator = _ensure_rng(rng)
-    samples_per_bin = _samples_per_time_bin(
-        int(n_samples), int(n_resamples), len(posterior), spikes, allocation, generator
-    )
-    sampled = samples_per_bin > 0
-    latest = np.where(sampled, times, -np.inf).max(axis=1)
-    earliest = np.where(sampled, times, np.inf).min(axis=1)
-    if np.any(latest == earliest):
-        raise ValueError(
-            _format_error(
-                f"{operation}: in {int(np.sum(latest == earliest))} of "
-                f"{n_resamples} resamples, all {n_samples} samples fall in "
-                "time bins with one time.",
-                why="a line along time needs sampled positions at two or "
-                "more times; n_samples is the total over all time bins, and "
-                "with allocation='spikes' each time bin's share is random",
-                fix="raise n_samples (the default is 10000)",
-            )
-        )
-    slopes, intercepts, r_squared = _sampled_lines(
-        posterior, (starts + stops) / 2, times, samples_per_bin, generator
-    )
-    return LinearFitResult(
-        slope=float(np.mean(slopes)),
-        intercept=float(np.mean(intercepts)),
-        r_squared=float(np.mean(r_squared)),
-        slope_std=float(np.std(slopes, ddof=1)) if n_resamples > 1 else None,
-    )
 
 
 _REGRESSION_BAND_CM = 10.5
@@ -2004,48 +2016,11 @@ def _prepare_replay_lines(
         The validated posterior in bin numbering.
     """
     from neurospatial._units import default_length
-    from neurospatial._validation import validate_choice
     from neurospatial.environment import _require_track_extents
 
-    if not isinstance(wrap, (bool, np.bool_)):
-        raise TypeError(
-            f"{operation} needs wrap=True or wrap=False, got {wrap!r}; True "
-            "treats the track as a closed loop."
-        )
-    validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
-    validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
-    validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
-    for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
-        if count is not None and (
-            isinstance(count, (bool, np.bool_))
-            or not isinstance(count, (int, np.integer))
-            or count < smallest
-        ):
-            raise ValueError(
-                f"{operation} needs {name} to be an integer >= {smallest}, got "
-                f"{count!r}."
-            )
-    if off_track == "bin_median" and (wrap or line_ends == "on_track"):
-        setting = "wrap=True" if wrap else "line_ends='on_track'"
-        raise ValueError(
-            _format_error(
-                f"{operation} got off_track='bin_median' with {setting}.",
-                why=f"with {setting} every searched trajectory stays on the "
-                "track, so off_track would change nothing",
-                fix="leave off_track at its default, or search trajectories "
-                "that may leave the track with line_ends='any' and wrap=False",
-            )
-        )
-    if wrap and line_ends == "on_track":
-        raise ValueError(
-            _format_error(
-                f"{operation} got wrap=True with line_ends='on_track'.",
-                why="a closed loop has no ends, so every trajectory starts and "
-                "ends on the track",
-                fix="pass line_ends='any' with wrap=True, and bound the speed "
-                "with max_speed",
-            )
-        )
+    _check_line_options(
+        wrap, line_ends, off_track, zero_rows, n_lines, line_seed, operation
+    )
     # Validates the environment and the posterior rows.
     _, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=zero_rows == "line_median"
@@ -2080,32 +2055,7 @@ def _prepare_replay_lines(
         max_speed = default_length(
             env, _DEFAULT_MAX_SPEED_CM, name="max_speed", call=operation
         )
-    for name, value, example in (
-        ("band", band, "band=15.0 for 15 cm on a track in cm"),
-        ("max_speed", max_speed, "max_speed=3000.0 for 30 m/s on a track in cm"),
-    ):
-        if value is not None and not (np.isfinite(value) and value > 0):
-            raise ValueError(
-                _format_error(
-                    f"{operation} needs {name} > 0 in the environment's units, "
-                    f"got {value:g}.",
-                    why="band is the half-width of the band around a trajectory "
-                    "and max_speed the largest speed searched",
-                    fix=f"pass a positive value, e.g. {example}",
-                )
-            )
-    speed_bound = np.inf if max_speed is None else float(max_speed)
-    if not (np.isfinite(min_speed) and 0 <= min_speed < speed_bound):
-        raise ValueError(
-            _format_error(
-                f"{operation} needs 0 <= min_speed < max_speed, got min_speed "
-                f"{min_speed:g} and max_speed {speed_bound:g}.",
-                why="trajectories slower than min_speed are not searched, so "
-                "some speed must remain",
-                fix="pass a min_speed below max_speed, e.g. min_speed=200.0 for "
-                "2 m/s on a track in cm",
-            )
-        )
+    speed_bound = _speed_bound(band, max_speed, min_speed, operation)
     bin_starts, _ = _require_track_extents(
         env, operation, alternative=_TRACK_ALTERNATIVE
     )
@@ -2153,6 +2103,92 @@ def _prepare_replay_lines(
     if reused is not None:
         reused[:] = [key, lines]
     return lines, posterior
+
+
+def _check_line_options(
+    wrap: bool,
+    line_ends: str,
+    off_track: str,
+    zero_rows: str,
+    n_lines: int | None,
+    line_seed: int,
+    operation: str,
+) -> None:
+    """Refuse line-search options that are invalid or contradict each other."""
+    from neurospatial._validation import validate_choice
+
+    if not isinstance(wrap, (bool, np.bool_)):
+        raise TypeError(
+            f"{operation} needs wrap=True or wrap=False, got {wrap!r}; True "
+            "treats the track as a closed loop."
+        )
+    validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
+    validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
+    validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
+    for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
+        if count is not None and (
+            isinstance(count, (bool, np.bool_))
+            or not isinstance(count, (int, np.integer))
+            or count < smallest
+        ):
+            raise ValueError(
+                f"{operation} needs {name} to be an integer >= {smallest}, got "
+                f"{count!r}."
+            )
+    if off_track == "bin_median" and (wrap or line_ends == "on_track"):
+        setting = "wrap=True" if wrap else "line_ends='on_track'"
+        raise ValueError(
+            _format_error(
+                f"{operation} got off_track='bin_median' with {setting}.",
+                why=f"with {setting} every searched trajectory stays on the "
+                "track, so off_track would change nothing",
+                fix="leave off_track at its default, or search trajectories "
+                "that may leave the track with line_ends='any' and wrap=False",
+            )
+        )
+    if wrap and line_ends == "on_track":
+        raise ValueError(
+            _format_error(
+                f"{operation} got wrap=True with line_ends='on_track'.",
+                why="a closed loop has no ends, so every trajectory starts and "
+                "ends on the track",
+                fix="pass line_ends='any' with wrap=True, and bound the speed "
+                "with max_speed",
+            )
+        )
+
+
+def _speed_bound(
+    band: float, max_speed: float | None, min_speed: float, operation: str
+) -> float:
+    """Check the band and speeds; the largest speed searched, inf for none."""
+    for name, value, example in (
+        ("band", band, "band=15.0 for 15 cm on a track in cm"),
+        ("max_speed", max_speed, "max_speed=3000.0 for 30 m/s on a track in cm"),
+    ):
+        if value is not None and not (np.isfinite(value) and value > 0):
+            raise ValueError(
+                _format_error(
+                    f"{operation} needs {name} > 0 in the environment's units, "
+                    f"got {value:g}.",
+                    why="band is the half-width of the band around a trajectory "
+                    "and max_speed the largest speed searched",
+                    fix=f"pass a positive value, e.g. {example}",
+                )
+            )
+    speed_bound = np.inf if max_speed is None else float(max_speed)
+    if not (np.isfinite(min_speed) and 0 <= min_speed < speed_bound):
+        raise ValueError(
+            _format_error(
+                f"{operation} needs 0 <= min_speed < max_speed, got min_speed "
+                f"{min_speed:g} and max_speed {speed_bound:g}.",
+                why="trajectories slower than min_speed are not searched, so "
+                "some speed must remain",
+                fix="pass a min_speed below max_speed, e.g. min_speed=200.0 for "
+                "2 m/s on a track in cm",
+            )
+        )
+    return speed_bound
 
 
 def _best_line(

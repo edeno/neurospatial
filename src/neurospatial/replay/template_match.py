@@ -233,28 +233,10 @@ class TemplateMatchMethod:
                     fix="set the options of the chosen statistic only",
                 )
             )
-        operation = prefix
         if self.statistic == "best_match":
-            _check_seconds(self.max_isi, "max_isi", operation, allow_zero=True)
-            _check_seconds(self.word_gap, "word_gap", operation, allow_zero=False)
-            assert self.max_isi is not None and self.word_gap is not None
-            if self.max_isi > self.word_gap:
-                raise ValueError(
-                    f"{prefix}: max_isi ({self.max_isi:g} s) must be at most "
-                    f"word_gap ({self.word_gap:g} s), as in Lee & Wilson (2002)."
-                )
-            probability = self.trial_probability
-            if (
-                isinstance(probability, bool)
-                or not isinstance(probability, (int, float, np.integer, np.floating))
-                or not 0 < probability < 1
-            ):
-                raise ValueError(
-                    f"{prefix}: trial_probability must be in (0, 1), got "
-                    f"{probability!r}."
-                )
+            _check_best_match_options(self, prefix)
         else:
-            _check_seconds(self.bandwidth, "bandwidth", operation, allow_zero=False)
+            _check_seconds(self.bandwidth, "bandwidth", prefix, allow_zero=False)
         for field_name, minimum in (
             ("min_active_cells", 2),
             ("n_shuffles", 1),
@@ -336,6 +318,27 @@ class TemplateMatchMethod:
                 several=isinstance(event.encoding_models, Mapping),
             ),
             rng=rng,
+        )
+
+
+def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
+    """Refuse Lee & Wilson's burst and word gaps or trial probability out of range."""
+    _check_seconds(method.max_isi, "max_isi", prefix, allow_zero=True)
+    _check_seconds(method.word_gap, "word_gap", prefix, allow_zero=False)
+    assert method.max_isi is not None and method.word_gap is not None
+    if method.max_isi > method.word_gap:
+        raise ValueError(
+            f"{prefix}: max_isi ({method.max_isi:g} s) must be at most "
+            f"word_gap ({method.word_gap:g} s), as in Lee & Wilson (2002)."
+        )
+    probability = method.trial_probability
+    if (
+        isinstance(probability, bool)
+        or not isinstance(probability, (int, float, np.integer, np.floating))
+        or not 0 < probability < 1
+    ):
+        raise ValueError(
+            f"{prefix}: trial_probability must be in (0, 1), got {probability!r}."
         )
 
 
