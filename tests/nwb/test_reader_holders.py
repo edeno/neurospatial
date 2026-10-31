@@ -183,7 +183,7 @@ def test_units_holder_rejects_misaligned_fields(unit_ids, obs_intervals):
     from neurospatial.io.nwb import NWBUnits
 
     with pytest.raises(ValueError, match="one-to-one"):
-        NWBUnits([np.array([0.1])], unit_ids, obs_intervals, None)
+        NWBUnits([np.array([0.1])], unit_ids, obs_intervals)
 
 
 @pytest.mark.parametrize(
@@ -272,3 +272,76 @@ def test_eager_position_keeps_nan_rows_after_file_closes(empty_nwb, tmp_path):
     )
     np.testing.assert_allclose(pos.times, np.arange(3) / 30.0)
     assert (pos.units, pos.frame) == ("px", "arena corner")
+
+
+def test_units_holder_owns_immutable_fields():
+    spikes = np.array([0.1, 0.4])
+    obs = np.array([[0.0, 1.0]])
+    units = NWBUnits([spikes], np.array([7]), [obs])
+    spikes[0] = 99.0
+    obs[0, 0] = 99.0
+    assert isinstance(units.spike_times, tuple)
+    assert isinstance(units.obs_intervals, tuple)
+    assert units.spike_times[0][0] == 0.1
+    np.testing.assert_array_equal(units.spike_window, [[0.0, 1.0]])
+    for array in (
+        units.spike_times[0],
+        units.unit_ids,
+        units.obs_intervals[0],
+        units.spike_window,
+    ):
+        with pytest.raises(ValueError, match="read-only"):
+            array[0] = 1.0
+
+
+def test_units_spike_window_is_derived_not_supplied():
+    with pytest.raises(TypeError):
+        NWBUnits([np.array([0.1])], np.array([7]), None, np.empty((0, 2)))
+    units = NWBUnits(
+        [np.array([0.1]), np.array([2.0])],
+        np.array([7, 11]),
+        [np.array([[0.0, 1.0], [2.0, 3.0]]), np.array([[0.5, 2.5]])],
+    )
+    np.testing.assert_array_equal(units.spike_window, [[0.5, 1.0], [2.0, 2.5]])
+    assert NWBUnits([np.array([0.1])], np.array([7]), None).spike_window is None
+
+
+def test_units_holder_checks_interval_shape_and_unique_ids():
+    with pytest.raises(ValueError) as caught:
+        NWBUnits([np.array([0.1])], np.array([7]), [np.array([0.0, 1.0])])
+    assert "obs_intervals for unit 7 must have shape (n_intervals, 2), got (2,)" in str(
+        caught.value
+    )
+    with pytest.raises(ValueError) as caught:
+        NWBUnits([np.array([0.1]), np.array([0.2])], np.array([7, 7]), None)
+    assert "unit_ids repeats [7]" in str(caught.value)
+
+
+def test_read_units_refuses_duplicate_ids(empty_nwb):
+    empty_nwb.add_unit(id=7, spike_times=[0.1])
+    empty_nwb.add_unit(id=11, spike_times=[0.2])
+    with pytest.raises(ValueError, match=r"unit_ids repeats \[7\]"):
+        read_units(empty_nwb, unit_ids=[7, 7])
+
+
+def test_read_units_refuses_a_table_with_repeated_ids(empty_nwb):
+    empty_nwb.add_unit(id=7, spike_times=[0.1])
+    empty_nwb.add_unit(id=7, spike_times=[0.2])
+    for unit_ids in (None, [7]):
+        with pytest.raises(ValueError) as caught:
+            read_units(empty_nwb, unit_ids=unit_ids)
+        assert "The units table repeats id(s) [7]" in str(caught.value)
+
+
+def test_lazy_spike_train_cannot_be_edited_through_its_cache():
+    from neurospatial.io.nwb._units import _LazyUnitSpikeTrain
+
+    units = {(0, "spike_times"): np.array([3.0, 1.0, 2.0])}
+    train = _LazyUnitSpikeTrain(units, 0)
+    view = np.asarray(train)
+    with pytest.raises(ValueError, match="read-only"):
+        view[0] = 99.0
+    copied = np.array(train, copy=True)
+    copied[0] = 99.0
+    np.testing.assert_array_equal(np.asarray(train), [1.0, 2.0, 3.0])
+    assert np.asarray(train, dtype=np.float32).dtype == np.float32

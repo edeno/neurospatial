@@ -8,6 +8,7 @@ without reading values.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,7 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
 
 
 def _declared_units(units: str | None) -> str | None:
@@ -172,42 +173,124 @@ class NWBHeadDirection(ReadOnlyArraysMixin):
 
 
 @dataclass(frozen=True)
-class NWBUnits:
+class NWBUnits(ReadOnlyArraysMixin):
     """Unit spikes, identities and acquisition coverage from an NWB file.
 
     Attributes
     ----------
-    spike_times : list of NDArray[np.float64] or lazy handles
+    spike_times : tuple of NDArray[np.float64] or lazy handles
         One sorted spike-time array in seconds per selected unit.
     unit_ids : NDArray[np.int64]
-        Table IDs aligned with spike_times and obs_intervals.
-    obs_intervals : list of NDArray[np.float64] | None
+        Unique table IDs aligned with spike_times and obs_intervals.
+    obs_intervals : tuple of NDArray[np.float64] or None
         One (n_intervals, 2) acquisition-window array per selected unit,
-        or None when the NWB column is absent.
-    spike_window : NDArray[np.float64] | None
+        or None when the NWB column is absent. A unit with no observation
+        rows has shape (0, 2).
+    spike_window : NDArray[np.float64] or None
         Intersection of all selected units' observation intervals, shape
-        (n_intervals, 2), or None when the column is absent. An empty
-        intersection has shape (0, 2).
+        (n_intervals, 2), or None when ``obs_intervals`` is None. An empty
+        intersection has shape (0, 2). Derived from ``obs_intervals``, not
+        passed to the constructor.
+
+    Raises
+    ------
+    ValueError
+        If the per-unit fields do not match one-to-one, ``unit_ids`` repeats
+        an id, or an ``obs_intervals`` entry is not (n_intervals, 2) with
+        finite rows whose stop follows their start.
+
+    Notes
+    -----
+    NumPy arrays are stored as read-only copies; copy with ``np.array(...)``
+    to modify values. Lazy spike-train handles are stored as given.
 
     Examples
     --------
     >>> from neurospatial.io.nwb import NWBUnits
-    >>> units = NWBUnits([np.array([0.1])], np.array([7]), None, None)
-    >>> units.unit_ids.tolist()
-    [7]
+    >>> units = NWBUnits(
+    ...     [np.array([0.1]), np.array([0.6])],
+    ...     np.array([7, 11]),
+    ...     [np.array([[0.0, 1.0]]), np.array([[0.5, 2.0]])],
+    ... )
+    >>> units.unit_ids.tolist(), units.spike_window.tolist()
+    ([7, 11], [[0.5, 1.0]])
     """
 
-    spike_times: list[NDArray[np.float64] | Any]
+    spike_times: Sequence[NDArray[np.float64] | Any]
     unit_ids: NDArray[np.int64]
-    obs_intervals: list[NDArray[np.float64]] | None
-    spike_window: NDArray[np.float64] | None
+    obs_intervals: Sequence[NDArray[np.float64]] | None
+    spike_window: NDArray[np.float64] | None = field(init=False)
 
     def __post_init__(self) -> None:
+        unit_ids = np.asarray(self.unit_ids)
         n = len(self.spike_times)
         n_obs = n if self.obs_intervals is None else len(self.obs_intervals)
-        if not (len(self.unit_ids) == n_obs == n):
+        if not (len(unit_ids) == n_obs == n):
             raise ValueError(
-                f"spike_times has {n} units, unit_ids {len(self.unit_ids)}, "
+                f"spike_times has {n} units, unit_ids {len(unit_ids)}, "
                 f"obs_intervals {n_obs}; these must match one-to-one.\n"
                 "Fix: pass one unit_id and one obs_intervals entry per spike train."
             )
+        values, counts = np.unique(unit_ids, return_counts=True)
+        if np.any(counts > 1):
+            raise ValueError(
+                _format_error(
+                    f"unit_ids repeats {values[counts > 1].tolist()}.",
+                    why="each id must name exactly one unit.",
+                    fix="list each unit id once.",
+                )
+            )
+        object.__setattr__(self, "unit_ids", unit_ids)
+        object.__setattr__(self, "spike_times", tuple(map(_own, self.spike_times)))
+        window = None
+        if self.obs_intervals is not None:
+            obs = tuple(
+                _unit_obs_intervals(rows, unit_id)
+                for rows, unit_id in zip(self.obs_intervals, unit_ids, strict=True)
+            )
+            object.__setattr__(self, "obs_intervals", obs)
+            window = _shared_window(obs, unit_ids)
+        object.__setattr__(self, "spike_window", window)
+        self._own_arrays()
+
+
+def _own(value: Any) -> Any:
+    """Read-only copy of a NumPy array; a lazy handle is kept as given."""
+    return read_only_copy(value) if isinstance(value, np.ndarray) else value
+
+
+def _unit_obs_intervals(rows: Any, unit_id: Any) -> NDArray[np.float64]:
+    """One unit's observation rows as a read-only (n_intervals, 2) array."""
+    rows = np.asarray(rows, dtype=np.float64)
+    if rows.size == 0:
+        # NWB allows a unit with no observation rows (never observed); pynwb
+        # returns those as shape (0,).
+        rows = np.empty((0, 2))
+    if rows.ndim != 2 or rows.shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"obs_intervals for unit {unit_id} must have shape "
+                f"(n_intervals, 2), got {rows.shape}.",
+                fix="give each unit's observation windows as "
+                "[[start, stop], ...] rows in seconds.",
+            )
+        )
+    return read_only_copy(rows)
+
+
+def _shared_window(
+    obs_intervals: tuple[NDArray[np.float64], ...], unit_ids: NDArray[Any]
+) -> NDArray[np.float64]:
+    """Intersection of every unit's observation rows, shape (n_intervals, 2)."""
+    from neurospatial._intervals import as_intervals, intersect_intervals
+
+    window = None
+    for rows, unit_id in zip(obs_intervals, unit_ids, strict=True):
+        if rows.shape[0] == 0:
+            return np.empty((0, 2), dtype=np.float64)
+        normalized = as_intervals(rows, name=f"obs_intervals[{unit_id}]")
+        assert normalized is not None
+        window = (
+            normalized if window is None else intersect_intervals(window, normalized)
+        )
+    return np.empty((0, 2), dtype=np.float64) if window is None else window

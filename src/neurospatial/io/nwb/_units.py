@@ -2,9 +2,8 @@
 Spike-time reading from an NWB ``units`` table.
 
 This module provides :func:`read_units`, which extracts per-neuron spike-time
-arrays from the ragged ``units`` :class:`~hdmf.common.table.DynamicTable` of an
-NWB file. Spikes are the one neural data type lacking a reader, so without it
-every multi-cell workflow has to start in bare ``pynwb``.
+arrays, unit ids and observation intervals from the ragged ``units``
+:class:`~hdmf.common.table.DynamicTable` of an NWB file.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, intersect_intervals
 from neurospatial.io.nwb._core import _require_pynwb
 from neurospatial.io.nwb._holders import NWBUnits
 
@@ -35,9 +33,10 @@ class _LazyUnitSpikeTrain:
     ragged column. Valid only while the backing ``NWBFile`` is open.
 
     The materialized array is **memoized** on first access: the ragged slice is
-    read and sorted once, then cached and reused on every subsequent
+    read and sorted once, then cached read-only and reused on every subsequent
     ``__getitem__`` / ``__len__`` / ``np.asarray``, so repeated access does not
-    re-read and re-sort the whole unit off disk.
+    re-read and re-sort the whole unit off disk. ``np.array(train)`` or
+    ``np.asarray(train, copy=True)`` returns a writable copy.
     """
 
     __slots__ = ("_cache", "_row", "_units")
@@ -51,16 +50,22 @@ class _LazyUnitSpikeTrain:
 
     def _materialize(self) -> NDArray[np.float64]:
         if self._cache is None:
-            self._cache = np.sort(
+            cache = np.sort(
                 np.asarray(self._units[self._row, "spike_times"], dtype=np.float64)
             )
+            cache.flags.writeable = False
+            self._cache = cache
         return self._cache
 
-    def __array__(
-        self, dtype: Any = None, copy: bool | None = None
-    ) -> NDArray[np.float64]:
+    def __array__(self, dtype: Any = None, copy: bool | None = None) -> NDArray[Any]:
         arr = self._materialize()
-        return arr if dtype is None else arr.astype(dtype)
+        if dtype is not None and np.dtype(dtype) != arr.dtype:
+            if copy is False:
+                raise ValueError(
+                    f"Converting spike times to {np.dtype(dtype)} requires a copy."
+                )
+            return arr.astype(dtype)
+        return arr.copy() if copy else arr
 
     def __getitem__(self, key: Any) -> Any:
         # Indexing may yield an array or a scalar depending on ``key``.
@@ -90,9 +95,8 @@ def read_units(
         naming the missing id(s). Default reads all units in table order.
     lazy : bool, default False
         If ``False`` (default), each unit's spike train is fully materialized
-        into a sorted ``NDArray[np.float64]`` up front -- the historical,
-        byte-for-byte-unchanged behavior. If ``True``, each list entry is a lazy
-        per-unit handle that reads and sorts only that unit's spike-time slice
+        into a sorted, read-only ``NDArray[np.float64]`` up front. If ``True``,
+        each ``spike_times`` entry is a lazy per-unit handle that reads and sorts only that unit's spike-time slice
         when it is ``np.asarray``-ed or indexed, keeping large recordings
         off-RAM until a unit is actually accessed.
 
@@ -107,8 +111,10 @@ def read_units(
     Raises
     ------
     ValueError
-        If the file has no ``units`` table, or if any requested ``unit_ids``
-        value is not present in ``units.id``.
+        If the file has no ``units`` table, the table repeats an id, any
+        requested ``unit_ids`` value is not present in ``units.id`` or is
+        requested twice, or a unit's ``obs_intervals`` are not valid
+        (n_intervals, 2) rows.
     ImportError
         If pynwb is not installed.
 
@@ -158,22 +164,23 @@ def read_units(
         )
 
     ids = np.asarray(units.id.data[:])
+    values, counts = np.unique(ids, return_counts=True)
+    if np.any(counts > 1):
+        raise ValueError(
+            _format_error(
+                f"The units table repeats id(s) {values[counts > 1].tolist()}.",
+                why="Why: unit_ids names table identities, so each id must name "
+                "one row.",
+                fix="rewrite the units table with one unique id per unit.",
+            )
+        )
     if unit_ids is None:
         rows: list[int] = list(range(len(ids)))
-        out_ids = ids
     else:
-        # `unit_ids` are matched against the table's id values ONLY. Resolve
-        # each to its row; an id with no match is a hard error (do not fall
-        # back to interpreting it as a row index, which would silently return
-        # the wrong unit on a typo).
-        rows = []
-        missing: list[int] = []
-        for u in unit_ids:
-            match = np.flatnonzero(ids == u)
-            if match.size == 0:
-                missing.append(u)
-            else:
-                rows.append(int(match[0]))
+        # `unit_ids` are matched against the table's id values ONLY; an id
+        # with no match is an error, never reinterpreted as a row index.
+        row_of = {int(unit_id): row for row, unit_id in enumerate(ids)}
+        missing = [u for u in unit_ids if u not in row_of]
         if missing:
             raise ValueError(
                 _format_error(
@@ -182,7 +189,7 @@ def read_units(
                     why="Why: unit_ids names table identities, not row positions.",
                 )
             )
-        out_ids = ids[rows]
+        rows = [row_of[u] for u in unit_ids]
 
     # pynwb exposes ragged columns via row-then-column indexing
     # (`units[row, "spike_times"]`), returning one neuron's spike-time list.
@@ -193,28 +200,9 @@ def read_units(
         spike_trains = [
             np.sort(np.asarray(units[i, "spike_times"], dtype=np.float64)) for i in rows
         ]
-    obs_intervals: list[NDArray[np.float64]] | None = None
-    spike_window: NDArray[np.float64] | None = None
-    if "obs_intervals" in units.colnames:
-        # NWB allows a unit with no observation rows (never observed); pynwb
-        # returns those as shape (0,), so keep them as explicit (0, 2) arrays.
-        obs_intervals = [
-            np.asarray(units[row, "obs_intervals"], dtype=np.float64) for row in rows
-        ]
-        obs_intervals = [
-            np.empty((0, 2)) if intervals.size == 0 else intervals
-            for intervals in obs_intervals
-        ]
-        spike_window = np.empty((0, 2), dtype=np.float64)
-        for i, intervals in enumerate(obs_intervals):
-            if intervals.size == 0:
-                spike_window = intervals
-                break
-            normalized = as_intervals(
-                intervals, name=f"obs_intervals[{int(out_ids[i])}]"
-            )
-            assert normalized is not None
-            spike_window = (
-                normalized if i == 0 else intersect_intervals(spike_window, normalized)
-            )
-    return NWBUnits(spike_trains, out_ids, obs_intervals, spike_window)
+    obs_intervals = (
+        [units[row, "obs_intervals"] for row in rows]
+        if "obs_intervals" in units.colnames
+        else None
+    )
+    return NWBUnits(spike_trains, ids[rows], obs_intervals)

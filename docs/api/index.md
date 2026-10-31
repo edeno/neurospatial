@@ -573,9 +573,9 @@ pynwb.
 - `read_position(...)` → `NWBPosition(times, positions, units)` and
   `read_head_direction(...)` → `NWBHeadDirection(times, headings)`.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
-  `NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`. Unit labels
-  are table IDs; `spike_window` intersects the selected units' acquisition
-  coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
+  `NWBUnits(spike_times, unit_ids, obs_intervals)`. Unit labels are unique
+  table IDs; the derived `spike_window` intersects the selected units'
+  acquisition coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
 - Holders are frozen and cannot be tuple-unpacked. Position units describe
   converted values; missing declarations are `None`. `read_position` /
   `read_pose` / `read_units` accept `lazy=True` (handles valid only while the
