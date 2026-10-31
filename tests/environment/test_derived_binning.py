@@ -736,8 +736,6 @@ def test_wrapped_geometry_corruption_is_rejected(
         else:
             arrays["binning/bins/centers"] += 0.01
             arrays["bin_centers"] += 0.01
-            for node in metadata["graph"]["nodes"]:
-                node["pos"] = (np.asarray(node["pos"]) + 0.01).tolist()
             if "binning/shapes/centers" in arrays:
                 arrays["binning/shapes/centers"] += 0.01
             elif "binning/shapes/points" in arrays:

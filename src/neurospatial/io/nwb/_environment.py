@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from neurospatial.layout import LayoutType
     from neurospatial.regions import Region
 
-ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
+ENVIRONMENT_SCHEMA_VERSION: str = "4.0"
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
 # Older records keep the version in this column; it is read only to refuse them.
 COL_METADATA = "metadata"
@@ -38,12 +38,12 @@ def write_environment(
     name: str = DEFAULT_ENVIRONMENT_NAME,
     overwrite: bool = False,
 ) -> None:
-    """Store complete bins and Arena using NWB environment schema 3.0.
+    """Store complete bins and Arena using NWB environment schema 4.0.
 
     Bins, lookup, cell faces, drawing components, graph attributes, regions,
     landmarks, coordinate metadata and Arena are saved losslessly. Reading decodes these
     data without rebuilding a layout. :func:`read_environment` reads only
-    schema 3.0 and refuses records from earlier schemas.
+    schema 4.0 and refuses records from earlier schemas.
 
     Parameters
     ----------
@@ -173,7 +173,7 @@ def read_environment(
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
-    smoothing, boundary bins, plotting and track linearization. Only schema 3.0
+    smoothing, boundary bins, plotting and track linearization. Only schema 4.0
     records are read; records from earlier schemas must be recreated with a
     factory and saved again.
 
@@ -254,7 +254,7 @@ def read_environment(
             _format_error(
                 f"NWB environment schema {version!r} in {source} is no longer readable; "
                 f"this version reads only {ENVIRONMENT_SCHEMA_VERSION!r}.",
-                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
+                why="Why: each schema version stores a different record, and older records are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )

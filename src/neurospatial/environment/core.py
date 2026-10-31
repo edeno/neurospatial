@@ -4527,7 +4527,7 @@ class Environment(Generic[_C]):
         """Load an Environment saved in an NWB file's scratch space.
 
         Reads a record written by :meth:`to_nwb` (or
-        :func:`neurospatial.io.nwb.write_environment`). Schema 3.0 restores the
+        :func:`neurospatial.io.nwb.write_environment`). Schema 4.0 restores the
         complete binning, arena and regions without a layout builder. To
         build a new environment from the file's Position data, use
         :func:`neurospatial.io.nwb.environment_from_position`.
@@ -5143,7 +5143,7 @@ class Environment(Generic[_C]):
         return _rings(self.connectivity, int(center), hops=hops)
 
     def to_file(self, path: str | Path, *, overwrite: bool = False) -> None:
-        """Save Environment-v3 binning and Arena data to JSON and NPZ files.
+        """Save Environment-v4 binning and Arena data to JSON and NPZ files.
 
         Loading restores Arena, bins, lookup, faces, drawing components and clip
         mapping without rebuilding a layout. Creates two files:
@@ -5232,8 +5232,8 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Environment-v3 restores Arena, bins, lookup, faces, drawing components
-        and clip mapping without rebuilding a layout. Only Environment-v3 is
+        Environment-v4 restores Arena, bins, lookup, faces, drawing components
+        and clip mapping without rebuilding a layout. Only Environment-v4 is
         read; recreate older environments with a factory and save them again.
 
         """
@@ -5244,9 +5244,9 @@ class Environment(Generic[_C]):
     def to_dict(self) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
-        Stores Environment-v3 binning and Arena data with numerical arrays as
+        Stores Environment-v4 binning and Arena data with numerical arrays as
         lists and explicit shapes/dtypes. Loading decodes this data without
-        rebuilding a layout. Only version 3 is read; recreate older
+        rebuilding a layout. Only version 4 is read; recreate older
         environments with a factory and save them again.
 
         Returns
@@ -5283,9 +5283,9 @@ class Environment(Generic[_C]):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
-        """Decode Environment-v3 binning and Arena without rebuilding a layout.
+        """Decode Environment-v4 binning and Arena without rebuilding a layout.
 
-        Only version 3 is read; recreate older environments with a factory
+        Only version 4 is read; recreate older environments with a factory
         and save them again.
 
         Parameters
@@ -5342,10 +5342,10 @@ class Environment(Generic[_C]):
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
-        Environment schema 3.0 stores Arena, explicit walls, bins, exact lookup,
-        cell faces, drawing components, clip mapping, track linearization, graph
-        attributes, regions and coordinate metadata. Loading does not rebuild a
-        layout. Only schema 3.0 is read; recreate older environments with a
+        Environment schema 4.0 stores Arena, explicit walls, bins, exact lookup,
+        cell faces, drawing components, clip mapping, track linearization,
+        regions and coordinate metadata. Loading does not rebuild a
+        layout. Only schema 4.0 is read; recreate older environments with a
         factory and save them again.
 
         Parameters

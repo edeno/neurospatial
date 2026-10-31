@@ -748,7 +748,7 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
         assert metadata["name"] == "test_arena"
-        assert metadata["schema_version"] == "3.0"
+        assert metadata["schema_version"] == "4.0"
 
     def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
         """Writing preserves every center value exactly."""
