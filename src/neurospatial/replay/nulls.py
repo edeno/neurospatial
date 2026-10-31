@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_draw_count
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -128,6 +129,7 @@ def shuffle_cell_identity(
     shuffle_place_fields_circular : Circular shift of place fields
     shuffle_time_bins : Temporal order shuffle
     """
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_cell_identity()")
     generator = np.random.default_rng(rng)
     n_neurons = spike_counts.shape[1]
 
@@ -292,6 +294,9 @@ def shuffle_place_fields_circular(
     shuffle_place_fields_circular_2d : 2D circular shift for 2D environments
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_place_fields_circular()"
+    )
     encoding_models = np.asarray(encoding_models)
     order = _track_order(
         env,
@@ -436,6 +441,9 @@ def shuffle_place_fields_circular_2d(
     shuffle_spike_times_circular : Spike-time shift, for any arena
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_place_fields_circular_2d()"
+    )
     # Validate 2D environment
     if env.n_dims != 2:
         raise ValueError(
@@ -618,6 +626,9 @@ def shuffle_posterior_circular(
         from the session's mean posterior (Farooq et al. 2019)
     shuffle_place_fields_circular : Circular shift of place fields
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_posterior_circular()"
+    )
     posterior = np.asarray(posterior)
     order = _track_order(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
@@ -754,6 +765,9 @@ def shuffle_posterior_weighted_circular(
     >>> sorted(peaks)
     [4, 5, 6]
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_posterior_weighted_circular()"
+    )
     operation = "shuffle_posterior_weighted_circular()"
     posterior = np.asarray(posterior, dtype=np.float64)
     order = _track_order(env, posterior, operation, _POSTERIOR_SHUFFLE_ALTERNATIVE)
@@ -917,6 +931,9 @@ def shuffle_spike_counts_circular(
     >>> shuffled.sum(axis=0).tolist()  # each cell keeps its spikes
     [3, 3]
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_spike_counts_circular()"
+    )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2:
         raise ValueError(
@@ -1009,6 +1026,9 @@ def shuffle_spike_counts_uniform(
     >>> shuffled.sum(axis=0).tolist()  # each cell keeps its spikes
     [3, 1]
     """
+    validate_draw_count(
+        n_shuffles, name="n_shuffles", owner="shuffle_spike_counts_uniform()"
+    )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2 or np.any(counts < 0):
         raise ValueError(

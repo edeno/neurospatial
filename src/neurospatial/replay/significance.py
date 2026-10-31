@@ -48,6 +48,7 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     regression_line_score,
 )
+from neurospatial.stats import _TAILS
 
 if TYPE_CHECKING:
     from neurospatial.decoding.likelihood import _PoissonRates
@@ -150,7 +151,7 @@ _COUNT_CHANGING_NULLS = tuple(
 )
 _POOL_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.needs == "pool")
 _DECODING_INPUTS = "spike_counts, encoding_models and dt"
-_ALTERNATIVES = ("greater", "less", "two-sided")
+_ALTERNATIVES = _TAILS
 
 
 class _UndefinedScoreError(ValueError):

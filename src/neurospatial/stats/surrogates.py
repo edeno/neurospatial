@@ -50,7 +50,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.stats.shuffle import _validate_draw_count
+from neurospatial._validation import validate_draw_count, validate_integer_at_least
 
 
 def _validated_counts(spike_counts: NDArray[np.int64]) -> NDArray[np.float64]:
@@ -144,7 +144,9 @@ def generate_poisson_surrogates(
     generate_jittered_spikes : Temporal jitter surrogates
     """
     counts = _validated_counts(spike_counts)
-    _validate_draw_count(n_surrogates, "n_surrogates")
+    validate_draw_count(
+        n_surrogates, name="n_surrogates", owner="generate_poisson_surrogates()"
+    )
     # Each (time_bin, neuron) pair samples Poisson(mean count of its neuron).
     lam = np.broadcast_to(counts.mean(axis=0) if len(counts) else 0.0, counts.shape)
     return _poisson_draws(lam, n_surrogates, np.random.default_rng(rng))
@@ -241,8 +243,18 @@ def generate_inhomogeneous_poisson_surrogates(
     from scipy.ndimage import uniform_filter1d
 
     counts = _validated_counts(spike_counts)
-    _validate_draw_count(smoothing_window, "smoothing_window")
-    _validate_draw_count(n_surrogates, "n_surrogates")
+    validate_integer_at_least(
+        smoothing_window,
+        1,
+        name="smoothing_window",
+        owner="generate_inhomogeneous_poisson_surrogates()",
+        hint="it is the smoothing window length in time bins, e.g. 3",
+    )
+    validate_draw_count(
+        n_surrogates,
+        name="n_surrogates",
+        owner="generate_inhomogeneous_poisson_surrogates()",
+    )
     # Time-varying Poisson means: counts smoothed along time, edges extended.
     lam = (
         uniform_filter1d(counts, size=smoothing_window, axis=0, mode="nearest")
@@ -351,7 +363,9 @@ def generate_jittered_spikes(
                 fix="pass jitter_std in the units of spike_times, e.g. 0.01 s",
             )
         )
-    _validate_draw_count(n_surrogates, "n_surrogates")
+    validate_draw_count(
+        n_surrogates, name="n_surrogates", owner="generate_jittered_spikes()"
+    )
     if window is not None:
         start, stop = (float(v) for v in window)
         outside = (spike_times < start) | (spike_times >= stop)

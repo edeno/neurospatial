@@ -39,6 +39,7 @@ from neurospatial.stats.circular import (
 )
 from neurospatial.stats.circular import _to_radians as _to_radians
 from neurospatial.stats.circular import _validate_paired_input as _validate_paired_input
+from neurospatial.stats.shuffle import _TAILS as _TAILS
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,

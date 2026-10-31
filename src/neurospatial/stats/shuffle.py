@@ -64,6 +64,11 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_draw_count,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -74,31 +79,10 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def _is_positive_count(value: object) -> bool:
-    """Whether ``value`` is an integer of at least 1 (bools are not counts)."""
-    return bool(
-        isinstance(value, (int, np.integer))
-        and not isinstance(value, (bool, np.bool_))
-        and value >= 1
-    )
-
-
-def _validate_draw_count(value: int, name: str) -> None:
-    """Reject a shuffle or surrogate count that would yield nothing."""
-    if not _is_positive_count(value):
-        raise ValueError(
-            _format_error(
-                f"{name}={value!r} must be a positive integer.",
-                why="Why: a null distribution needs at least one draw",
-                fix=f"pass {name}=1000",
-            )
-        )
-
-
 def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
     """Reject invalid counts and offsets before allocating shuffle output."""
     problems = []
-    if not _is_positive_count(n_shuffles):
+    if not is_integer_at_least(n_shuffles, 1):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
     if (
         not isinstance(min_shift, (int, float, np.integer, np.floating))
@@ -327,7 +311,7 @@ def shuffle_time_bins(
     shuffle_time_bins_coherent : The same shuffle under a name that stresses
         that all neurons share one permutation.
     """
-    _validate_draw_count(n_shuffles, "n_shuffles")
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_time_bins()")
     return _row_permutations(
         np.asarray(spike_counts), n_shuffles, np.random.default_rng(rng)
     )
@@ -793,10 +777,7 @@ def compute_shuffle_pvalue(
             "observed score makes all comparisons against the null False, which "
             "would silently return the floor p-value 1/(n+1)."
         )
-    if tail not in _TAILS:
-        raise ValueError(
-            f"tail must be 'greater', 'less', or 'two-sided', got '{tail}'"
-        )
+    validate_choice(tail, _TAILS, name="tail", owner="compute_shuffle_pvalue()")
 
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     undefined = np.isnan(null_scores)
@@ -1026,7 +1007,7 @@ def shuffle_trials(
                 fix="pass one label per sample, in time order",
             )
         )
-    _validate_draw_count(n_shuffles, "n_shuffles")
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_trials()")
     # Trial index of each sample: a new trial starts where the label changes.
     trial = np.concatenate([[0], np.cumsum(trial_labels[1:] != trial_labels[:-1])])
     run_labels = trial_labels[np.flatnonzero(np.diff(trial, prepend=-1))]
@@ -1133,7 +1114,7 @@ def shuffle_spikes_isi(
                 fix="pass np.sort(spike_times[np.isfinite(spike_times)])",
             )
         )
-    _validate_draw_count(n_shuffles, "n_shuffles")
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_spikes_isi()")
     if spike_times.size < 3:
         warnings.warn(
             f"shuffle_spikes_isi: {spike_times.size} spike(s) give at most one "

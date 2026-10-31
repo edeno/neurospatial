@@ -314,6 +314,24 @@ def validate_integer_at_least(
         )
 
 
+def validate_draw_count(value: object, *, name: str, owner: str) -> None:
+    """Require a positive number of shuffles or surrogates to draw.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not an integer of at least 1, which would yield an
+        empty null distribution.
+    """
+    validate_integer_at_least(
+        value,
+        1,
+        name=name,
+        owner=owner,
+        hint="a null distribution needs at least one draw, e.g. 1000",
+    )
+
+
 def validate_alpha(alpha: object, *, owner: str) -> None:
     """Require a significance level strictly between 0 and 1.
 
