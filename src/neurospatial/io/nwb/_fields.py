@@ -23,6 +23,7 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial.io.files import _check_schema
+from neurospatial.io.nwb._adapters import missing_error
 from neurospatial.io.nwb._core import _clear_for_write, _require_pynwb, logger
 from neurospatial.io.nwb._environment import (
     SPATIAL_RATES_FORMAT,
@@ -731,9 +732,12 @@ def read_spatial_rates(
                 fix=_RECREATE_FIX,
             )
         available = list(_analysis_records(nwbfile, SPATIAL_RATES_FORMAT))
-        raise KeyError(
+        raise missing_error(
             f"Spatial rates '{name}' not found in /analysis. Saved spatial "
-            f"rates: {available}"
+            f"rates: {available}",
+            fix=f"pass name= one of {available}"
+            if available
+            else "write the rates with write_spatial_rates first",
         )
 
     table = analysis[name]
@@ -793,9 +797,10 @@ def read_spatial_rates(
         )
 
     if occupancy_name not in analysis:
-        raise KeyError(
+        raise missing_error(
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
-            "in /analysis."
+            "in /analysis.",
+            fix=_RECREATE_FIX,
         )
     occupancy_record = analysis[occupancy_name]
     if COL_OCCUPANCY not in getattr(occupancy_record, "colnames", ()):

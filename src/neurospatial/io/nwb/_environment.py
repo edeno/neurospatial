@@ -424,18 +424,11 @@ def _environment_slot(
     return "replace"
 
 
-class _MissingEnvironmentError(KeyError):
-    """No saved environment of the requested name; prints its message as written."""
-
-    def __str__(self) -> str:
-        return str(self.args[0])
-
-
-def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
+def _missing_environment_error(nwbfile: NWBFile, name: str) -> KeyError:
     """Say which environments the file stores and how to build one instead."""
     from pynwb.behavior import Position
 
-    from neurospatial._exceptions import _format_error
+    from neurospatial.io.nwb._adapters import missing_error
     from neurospatial.io.nwb._core import _find_containers_by_type
 
     stored = list(_analysis_records(nwbfile, ENVIRONMENT_FORMAT))
@@ -448,16 +441,12 @@ def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
         )
     else:
         build_fix = f"to bin a Position container into a new environment, call {build}"
-    fix = f"pass name= one of {stored}, or {build_fix}" if stored else build_fix
-    return _format_error(
+    return missing_error(
         f"No environment named {name!r} is saved in this NWB file "
-        f"(saved environments: {stored or 'none'}).",
-        why=(
-            "Why: read_environment and Environment.from_nwb load an environment "
-            "saved with env.to_nwb or write_environment; they do not bin "
-            "position data."
-        ),
-        fix=fix,
+        f"(saved environments: {stored or 'none'}). read_environment and "
+        "Environment.from_nwb load an environment saved with env.to_nwb or "
+        "write_environment; they do not bin position data.",
+        fix=f"pass name= one of {stored}, or {build_fix}" if stored else build_fix,
     )
 
 
@@ -529,7 +518,7 @@ def read_environment(
                 fix="recreate the environment with an Environment factory and "
                 "save it again with this version",
             )
-        raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
+        raise _missing_environment_error(nwbfile, name)
     record = nwbfile.analysis[name]
     source = f"NWB analysis/{name}"
     metadata = _require_record(
