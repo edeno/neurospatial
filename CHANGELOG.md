@@ -140,6 +140,11 @@
   tracking jitter within about one bin spacing of the environment is still
   measured from its nearest bin. Use `map_position` for a decoded position
   that is always a bin.
+- `median_decoding_error` counts a decoded position outside the environment
+  as worse than any measured error, instead of leaving it out like a missing
+  sample: leaving out failed decodes reported the remaining, better ones as
+  the median. Time bins with a missing or out-of-environment actual position
+  are still left out, and the warning gives both counts.
 - `compute_shuffle_zscore` warns when it leaves undefined (NaN) null scores
   out, giving how many, as `compute_shuffle_pvalue` does; it used to drop
   them silently. `ShuffleTestResult.z_score` does not warn again.

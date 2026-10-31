@@ -335,6 +335,42 @@ class TestErrorAlongTheEnvironment:
             )[0]
         )
 
+    def test_median_counts_a_decode_off_the_maze_as_a_failure(self):
+        """An off-maze decode is a failed decode, not a missing sample.
+
+        Leaving it out of the median, as a missing tracking sample is left
+        out, would report the remaining, better decodes as the median.
+        """
+        from neurospatial.decoding.metrics import median_decoding_error
+
+        row = Environment.from_grid_mask(
+            np.ones((10, 1), dtype=bool),
+            grid_edges=(np.arange(11.0), np.array([0.0, 1.0])),
+        )
+        actual = np.full((5, 2), [0.5, 0.5])
+        decoded = np.array(
+            [[0.5, 0.5], [1.5, 0.5], [-50.0, 0.5], [-60.0, 0.5], [-70.0, 0.5]]
+        )
+        with pytest.warns(UserWarning, match=r"3 of 5 .*decoded.*worse than"):
+            median = median_decoding_error(row, decoded, actual)
+        assert median == np.inf  # 3 of 5 decodes failed
+
+        decoded[3:] = [[2.5, 0.5], [3.5, 0.5]]
+        with pytest.warns(UserWarning, match=r"1 of 5"):
+            median = median_decoding_error(row, decoded, actual)
+        assert median == pytest.approx(2.0)  # 0, 1, 2, 3, failed
+
+    def test_median_leaves_out_missing_actual_positions(self):
+        from neurospatial.decoding.metrics import median_decoding_error
+
+        row = Environment.from_grid_mask(
+            np.ones((10, 1), dtype=bool),
+            grid_edges=(np.arange(11.0), np.array([0.0, 1.0])),
+        )
+        decoded = np.full((3, 2), [0.5, 0.5])
+        actual = np.array([[0.5, 0.5], [2.5, 0.5], [np.nan, np.nan]])
+        assert median_decoding_error(row, decoded, actual) == pytest.approx(1.0)
+
     def test_far_outside_position_has_no_geodesic_error(self):
         """A position far beyond the environment is not in it: NaN, warned."""
         from neurospatial.decoding.metrics import decoding_error

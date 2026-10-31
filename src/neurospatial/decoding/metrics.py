@@ -135,18 +135,55 @@ def decoding_error(
     median_decoding_error : Median error summary statistic.
     DecodingResult.error_against : Error against separately sampled tracking.
     """
+    errors, decoded_off, actual_off = _errors_and_misses(
+        env, decoded_positions, actual_positions, metric=metric, call="decoding_error()"
+    )
+    far = decoded_off | actual_off
+    if np.any(far):
+        warnings.warn(
+            f"decoding_error(): {int(np.sum(far))} of {len(errors)} time bins "
+            "have a decoded or actual position outside the environment, more "
+            "than about one bin spacing from it, so their geodesic error is "
+            "NaN. A decoded position there (such as a posterior mean between "
+            "two arms) is a failed decode: use map_position for a decoded "
+            "position that is always a bin. Check actual positions for "
+            "tracking glitches or a different coordinate frame.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return errors
+
+
+def _errors_and_misses(
+    env: Environment,
+    decoded_positions: NDArray[np.float64],
+    actual_positions: NDArray[np.float64],
+    *,
+    metric: DistanceMetric,
+    call: str,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
+    """Per-time-bin errors and which positions lie outside the environment.
+
+    Returns
+    -------
+    errors : NDArray[np.float64], shape (n_time_bins,)
+        As :func:`decoding_error` returns them, without its warning.
+    decoded_off, actual_off : NDArray[np.bool_], shape (n_time_bins,)
+        Time bins whose decoded (actual) position is finite but outside the
+        environment, so their geodesic error is NaN. All False for
+        ``metric="euclidean"``.
+    """
     decoded_positions, actual_positions = _paired_positions(
-        env, decoded_positions, actual_positions, call="decoding_error()"
+        env, decoded_positions, actual_positions, call=call
     )
-    validate_choice(
-        metric, ("euclidean", "geodesic"), name="metric", owner="decoding_error()"
-    )
+    validate_choice(metric, ("euclidean", "geodesic"), name="metric", owner=call)
     for name, positions in (
         ("decoded_positions", decoded_positions),
         ("actual_positions", actual_positions),
     ):
-        refuse_infinite(positions, name=name, call="decoding_error")
+        refuse_infinite(positions, name=name, call=call.removesuffix("()"))
 
+    none = np.zeros(len(decoded_positions), dtype=bool)
     if metric == "euclidean":
         if env.coordinate_kind == "polar":
             # (distance, angle) rows: measure between places in the animal's
@@ -154,11 +191,15 @@ def decoding_error(
             decoded_positions = _egocentric_plane(decoded_positions)
             actual_positions = _egocentric_plane(actual_positions)
         diff = decoded_positions - actual_positions
-        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
+        return (
+            cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1)),
+            none,
+            none.copy(),
+        )
 
     require_cartesian(
         env.coordinate_system,
-        "decoding_error(metric='geodesic')",
+        f"{call.removesuffix('()')}(metric='geodesic')",
         why="It locates the decoded and actual positions as allocentric "
         "positions in the environment's bins.",
         fix="decode on the allocentric environment the positions were "
@@ -173,26 +214,17 @@ def decoding_error(
     actual_bins = np.full(len(errors), -1, dtype=np.intp)
     decoded_bins[valid] = _bins_or_nearest(env, decoded_positions[valid])
     actual_bins[valid] = _bins_or_nearest(env, actual_positions[valid])
-    far = valid & ((decoded_bins < 0) | (actual_bins < 0))
-    if np.any(far):
-        warnings.warn(
-            f"decoding_error(): {int(np.sum(far))} of {len(errors)} time bins "
-            "have a decoded or actual position outside the environment, more "
-            "than one bin spacing beyond its extent, so their geodesic error "
-            "is NaN. Check those positions for tracking glitches or a "
-            "different coordinate frame, or use metric='euclidean'.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    measured = valid & ~far
+    decoded_off = valid & (decoded_bins < 0)
+    actual_off = valid & (actual_bins < 0)
+    measured = valid & ~decoded_off & ~actual_off
     if np.any(measured):
         errors[measured] = _geodesic_pair_distances(
             env.connectivity,
             decoded_bins[measured],
             actual_bins[measured],
-            operation="decoding_error()",
+            operation=call,
         )
-    return errors
+    return errors, decoded_off, actual_off
 
 
 def _paired_positions(
@@ -260,10 +292,14 @@ def median_decoding_error(
     *,
     metric: DistanceMetric = "geodesic",
 ) -> float:
-    """Compute the median decoding error, ignoring NaN.
+    """Compute the median decoding error over the decoded time bins.
 
-    Convenience function equivalent to
-    ``np.nanmedian(decoding_error(env, decoded, actual, metric=metric))``.
+    The median of :func:`decoding_error`, except that a decoded position
+    outside the environment (geodesic metric) counts as worse than any
+    measured error instead of being left out: it is a failed decode, and
+    leaving it out would report the remaining, better decodes as the median.
+    Time bins with a missing (NaN) or out-of-environment actual position are
+    left out.
 
     Parameters
     ----------
@@ -280,8 +316,16 @@ def median_decoding_error(
     -------
     median_error : float
         Median distance between decoded and actual positions, ignoring
-        time bins where either position contains NaN.
-        Returns NaN if all time bins contain NaN.
+        time bins where either position contains NaN. ``inf`` when at least
+        half of the remaining time bins decoded outside the environment (or
+        into a part not connected to the animal's); NaN if no time bin
+        remains.
+
+    Warns
+    -----
+    UserWarning
+        When a decoded or actual position lies outside the environment,
+        giving how many of each.
 
     Examples
     --------
@@ -300,7 +344,25 @@ def median_decoding_error(
     --------
     decoding_error : Per-time-bin error computation.
     """
-    errors = decoding_error(env, decoded_positions, actual_positions, metric=metric)
+    call = "median_decoding_error()"
+    errors, decoded_off, actual_off = _errors_and_misses(
+        env, decoded_positions, actual_positions, metric=metric, call=call
+    )
+    # A decoded position outside the environment is a failed decode: rank it
+    # above every measured error. A missing ground truth is left out.
+    failed = decoded_off & ~actual_off
+    errors[failed] = np.inf
+    if np.any(decoded_off | actual_off):
+        warnings.warn(
+            f"{call}: {int(failed.sum())} of {len(errors)} time bins have a "
+            "decoded position outside the environment (such as a posterior "
+            "mean between two arms); the median counts them as worse than "
+            f"any measured error. {int(actual_off.sum())} have an actual "
+            "position outside it and are left out, like missing positions. "
+            "Use map_position for a decoded position that is always a bin.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
     return float(np.nanmedian(errors))
 
 
