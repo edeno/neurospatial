@@ -1602,10 +1602,8 @@ def _explained_variance_rows(
         if method.test == "partial_correlation_t":
             p_value = summary["p_value"]
             row["p_value"] = p_value
-            row["is_reactivated"] = (
-                bool(p_value < method.alpha and summary["partial_correlation"] > 0)
-                if np.isfinite(p_value)
-                else _missing()
+            row["is_reactivated"] = _verdict(
+                p_value, summary["partial_correlation"], method.alpha
             )
         elif method.test == "pair_bootstrap":
             valid = (
@@ -1764,6 +1762,11 @@ def _missing() -> Any:
     import pandas as pd
 
     return pd.NA
+
+
+def _verdict(p_value: float, effect: float, alpha: float) -> Any:
+    """Reactivated when ``p_value < alpha`` and ``effect > 0``; missing for a NaN p."""
+    return bool(p_value < alpha and effect > 0) if np.isfinite(p_value) else _missing()
 
 
 def _nanmean(values: Sequence[float]) -> float:
