@@ -171,3 +171,57 @@ def test_baseline_is_nan_without_pre_event_bins():
         bin_size=0.5,
     )
     assert np.isnan(result.summary()["baseline_rate"])
+
+
+def test_silent_unit_has_no_peak_latency():
+    """A PSTH with no spikes has no peak, so its latency is NaN.
+
+    Reporting the first bin's center (``-0.95`` s for a ``(-1, 1)`` window)
+    would read as a response that precedes the event.
+    """
+    import warnings
+
+    from neurospatial.events import (
+        peri_event_histogram,
+        population_peri_event_histogram,
+    )
+
+    events = np.array([10.0, 20.0])
+    single = peri_event_histogram(np.array([]), events, (-1.0, 1.0), bin_size=0.1)
+    assert single.summary()["peak_rate"] == 0.0
+    assert np.isnan(single.summary()["peak_latency"])
+    assert np.isnan(single.summary_table()["peak_latency"].iloc[0])
+
+    # One responsive unit and one silent unit: only the silent one loses its peak.
+    population = population_peri_event_histogram(
+        [np.array([10.25, 20.25]), np.array([])], events, (-1.0, 1.0), bin_size=0.1
+    )
+    table = population.summary_table()
+    np.testing.assert_allclose(table["peak_latency"].iloc[0], 0.25)
+    assert np.isnan(table["peak_latency"].iloc[1])
+    assert table["peak_rate"].tolist()[1] == 0.0
+
+    silent = population_peri_event_histogram(
+        [np.array([]), np.array([])], events, (-1.0, 1.0), bin_size=0.1
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        summary = silent.summary()
+    assert np.isnan(summary["population_peak_latency"])
+    assert summary["mean_peak_rate"] == 0.0
+
+
+def test_all_nan_histogram_has_no_peak():
+    hist = np.array([[np.nan, np.nan, np.nan], [0.0, 0.1, 0.5]])
+    result = PopulationPeriEventResult(
+        histograms=hist,
+        sem=np.zeros_like(hist),
+        mean_sem=np.zeros(3),
+        n_events=10,
+        window=(-0.75, 0.75),
+        bin_size=0.5,
+    )
+    table = result.summary_table()
+    assert np.isnan(table["peak_rate"].iloc[0])
+    assert np.isnan(table["peak_latency"].iloc[0])
+    assert table["peak_latency"].iloc[1] == 0.5

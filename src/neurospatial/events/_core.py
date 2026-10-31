@@ -291,18 +291,45 @@ def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.
     return pre
 
 
+def _peak_latencies(
+    rates: NDArray[np.float64], bin_centers: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Peak rate and the time of the peak for each row of ``rates``.
+
+    The first bin wins a tie. A row with no bin above zero (a unit that never
+    fired in the window) has no peak, so its latency is NaN rather than the
+    first bin's center; an all-NaN row has NaN rate and latency.
+
+    Parameters
+    ----------
+    rates : ndarray, shape (n_rows, n_bins)
+        Non-negative rates, NaN where undefined.
+    bin_centers : ndarray, shape (n_bins,)
+        Bin centers relative to the event (s).
+
+    Returns
+    -------
+    peak_rate, peak_latency : ndarray, shape (n_rows,)
+    """
+    filled = np.where(np.isnan(rates), -np.inf, rates)
+    peak_idx = np.argmax(filled, axis=1)
+    rows = np.arange(rates.shape[0])
+    latency = np.where(filled[rows, peak_idx] > 0, bin_centers[peak_idx], np.nan)
+    return rates[rows, peak_idx], latency
+
+
 def _response_metrics(
     rates: NDArray[np.float64], bin_centers: NDArray[np.float64], pre: NDArray[np.bool_]
 ) -> dict[str, NDArray[np.float64]]:
     """Peak rate, peak latency and baseline rate per row of ``rates`` (Hz)."""
     n_units = rates.shape[0]
-    peak_idx = np.nanargmax(rates, axis=1)
+    peak_rate, peak_latency = _peak_latencies(rates, bin_centers)
     baseline = (
         np.nanmean(rates[:, pre], axis=1) if pre.any() else np.full(n_units, np.nan)
     )
     return {
-        "peak_rate": rates[np.arange(n_units), peak_idx],
-        "peak_latency": bin_centers[peak_idx],
+        "peak_rate": peak_rate,
+        "peak_latency": peak_latency,
         "baseline_rate": baseline,
     }
 
@@ -512,7 +539,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         -------
         pandas.DataFrame
             One row indexed by ``unit_id`` with ``peak_rate`` (Hz),
-            ``peak_latency`` (s, time of the peak relative to the event) and
+            ``peak_latency`` (s, time of the peak relative to the event; NaN
+            when no bin is above zero, as for a unit with no spikes) and
             ``baseline_rate`` (Hz, mean rate over the bins that end at or
             before the event; NaN when the window has none). ``df.attrs``
             holds ``window``, ``bin_size``, ``n_events`` and
@@ -530,7 +558,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         dict
             Mapping with ``unit_id``, ``n_events`` and ``n_events_dropped``
             (int), ``peak_rate`` (Hz), ``peak_latency`` (s, time of the peak
-            relative to the event), and ``baseline_rate`` (Hz, mean rate over
+            relative to the event; NaN when no bin is above zero, as for a
+            unit with no spikes), and ``baseline_rate`` (Hz, mean rate over
             the bins that end at or before the event; a bin that straddles
             the event is not baseline).
 
@@ -841,7 +870,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         pandas.DataFrame
             One row per unit, indexed by ``unit_id``, with columns
             ``peak_rate`` (Hz), ``peak_latency`` (s, time of the per-unit peak
-            relative to the event), and ``baseline_rate`` (Hz, mean rate over
+            relative to the event; NaN for a unit with no bin above zero), and
+            ``baseline_rate`` (Hz, mean rate over
             the bins that end at or before the event). ``df.attrs`` holds
             ``window``, ``bin_size``, ``n_events`` and ``n_events_dropped``.
 
@@ -877,7 +907,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             Mapping with ``n_units``, ``n_events`` and ``n_events_dropped``
             (int), ``mean_peak_rate`` (Hz, population-average peak firing
             rate), and ``population_peak_latency`` (s, time of the mean
-            histogram peak).
+            histogram peak; NaN when no unit fired in the window).
 
         Examples
         --------
@@ -895,14 +925,15 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         >>> sorted(result.summary())
         ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
         """
+        _, latency = _peak_latencies(
+            self.mean_firing_rate[np.newaxis], self.bin_centers
+        )
         return {
             "n_units": self.n_units,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
             "mean_peak_rate": float(np.nanmean(np.nanmax(self.firing_rates, axis=1))),
-            "population_peak_latency": float(
-                self.bin_centers[int(np.nanargmax(self.mean_firing_rate))]
-            ),
+            "population_peak_latency": float(latency[0]),
         }
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
