@@ -36,6 +36,7 @@ from neurospatial._validation import validate_float_dtype
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding._time_bins import centered_bin_support, validate_dt
 from neurospatial.decoding.likelihood import _PoissonRates
+from neurospatial.ops.normalize import _zero_smoothing_noise
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -318,6 +319,8 @@ def normalize_to_posterior(
                 f"prior must have shape ({n_bins},) or ({n_time}, {n_bins}) to "
                 f"match log_likelihood, got shape {prior_arr.shape}."
             )
+        if np.isfinite(prior_arr).all():
+            prior_arr = _zero_smoothing_noise(prior_arr)
         if not np.isfinite(prior_arr).all() or np.any(prior_arr < 0):
             raise ValueError(
                 _format_error(

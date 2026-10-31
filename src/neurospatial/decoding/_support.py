@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.ops.normalize import _zero_smoothing_noise
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -150,6 +151,8 @@ def validate_prior(
                 "mask * env.bin_sizes for a prior uniform over space on mask.",
             )
         )
+    if np.isfinite(values).all():
+        values = _zero_smoothing_noise(values)
     if not np.isfinite(values).all() or np.any(values < 0):
         n_bad = int(np.sum(~np.isfinite(values) | (values < 0)))
         raise ValueError(

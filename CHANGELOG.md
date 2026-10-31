@@ -123,6 +123,14 @@
   example `direction_bin_size=2 * np.pi`). One bin spanning the circle has a
   mean resultant length of 1 whatever the cell does, so the score reported
   full direction selectivity.
+- `normalize_field` and decoding priors accept a field smoothed with
+  `env.smooth` from non-negative values. Smoothing keeps heat-kernel modes
+  down to a weight of 1e-6, so it can ring slightly below zero (about -7e-9
+  for an impulse on a 100-bin track at bandwidth 8), and both used to refuse
+  the field as negative. Negative entries no larger than 1e-5 of the field's
+  largest value now count as 0; larger negative values are still refused.
+  `env.smooth` itself is unchanged and stays exactly linear for signed
+  fields.
 
 ### Exporting decoding and behavior results to pynapple
 
