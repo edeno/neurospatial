@@ -57,7 +57,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     hold_last_valid,
-    interval_valid_mask,
+    interval_gates,
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 from neurospatial.encoding._validation import validate_trajectory
@@ -683,7 +683,7 @@ def prepare_egocentric_binning(
     # One temporal gate for the map and for the time its range left out: a
     # sample beyond the range passes the bin check here and is split off below.
     observed = observed_frames(positions, headings, object_positions)
-    gated = interval_valid_mask(
+    gated = interval_gates(
         times,
         start_bin=np.where(frame_bins == BEYOND_RANGE, 0, frame_bins),
         max_gap=max_gap,
@@ -693,16 +693,6 @@ def prepare_egocentric_binning(
         sample_valid=observed,
     )
     starts = hold_last_valid(frame_bins, observed, fill=-1)[:-1]
-    time_beyond = float(np.diff(times)[gated & (starts == BEYOND_RANGE)].sum())
-    prepared = prepare_frame_binning(
-        times,
-        frame_bins,
-        n_bins,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-        interval_mask=gated & (starts >= 0),
-        break_before=break_before,
-        sample_valid=observed,
-    )
+    time_beyond = float(np.diff(times)[gated.mask & (starts == BEYOND_RANGE)].sum())
+    prepared = prepare_frame_binning(gated.narrowed(starts >= 0), frame_bins, n_bins)
     return prepared, polar_env, time_beyond

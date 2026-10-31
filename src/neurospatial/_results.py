@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import fields
 from types import MappingProxyType
-from typing import Any, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -203,6 +203,16 @@ def _unfrozen(value: Any, *, nested: bool) -> Any:
 _ResultT = TypeVar("_ResultT")
 
 
+def owned_analysis_settings(result: object) -> dict[str, Any] | None:
+    """The settings a :func:`_copy_analysis_settings` result owns, uncopied.
+
+    For reads inside the package: never edit the dictionary or hand it out,
+    since the public ``analysis_settings`` property returns a copy.
+    """
+    settings: dict[str, Any] | None = vars(result).get("_analysis_settings")
+    return settings
+
+
 def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
     """Give a result dataclass independently owned settings on every read and write.
 
@@ -215,8 +225,7 @@ def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
     """
 
     def read_settings(result: object) -> dict[str, Any] | None:
-        settings: dict[str, Any] | None = vars(result).get("_analysis_settings")
-        return deepcopy(settings)
+        return deepcopy(owned_analysis_settings(result))
 
     def write_settings(result: object, settings: dict[str, Any] | None) -> None:
         vars(result)["_analysis_settings"] = deepcopy(settings)
@@ -520,20 +529,23 @@ def resolve_record_unit_ids(
     *,
     context: str,
     input_ids: NDArray[Any] | Sequence[Any] | None = None,
+    label_field: Literal["unit_ids", "unit_id"] = "unit_ids",
 ) -> None:
-    """Resolve a frozen record's ``unit_ids`` field in place.
+    """Resolve a frozen record's unit labels in place.
 
     The one rule for generated labels: when neither the caller nor the input
-    (``input_ids``) supplies labels, the record is numbered ``0..n_units-1`` and its ``_unit_ids_generated``
-    flag is set. Generated labels are row positions, not identities the
-    caller supplied, so they pair units by position (for example with a
-    decoder's spike input) and the spike-input adapter does not carry them
-    into a later call as labels. ``dataclasses.replace`` passes the flag on.
+    (``input_ids``) supplies labels, the record's ``_unit_ids_generated``
+    flag is set, and a population record is numbered ``0..n_units-1``.
+    Generated labels are row positions, not identities the caller supplied,
+    so they pair units by position (for example with a decoder's spike
+    input) and the spike-input adapter does not carry them into a later call
+    as labels. ``dataclasses.replace`` passes the flag on.
 
     Parameters
     ----------
     record : dataclass instance
-        A frozen record with ``unit_ids`` and ``_unit_ids_generated`` fields.
+        A frozen record with a ``label_field`` field and a
+        ``_unit_ids_generated`` field.
     n_units : int
         Number of units the labels must describe.
     context : str
@@ -541,17 +553,22 @@ def resolve_record_unit_ids(
     input_ids : array-like, optional
         Labels the input itself carries, such as a ``TsGroup``'s index; see
         :func:`resolve_unit_ids`.
+    label_field : {"unit_ids", "unit_id"}, default="unit_ids"
+        ``"unit_ids"`` for a population record, whose labels are resolved by
+        :func:`resolve_unit_ids`; ``"unit_id"`` for a single-unit record,
+        whose label is kept as given (None: no identity).
 
     Raises
     ------
     ValueError
         As :func:`resolve_unit_ids`.
     """
-    given = record.unit_ids
+    given = getattr(record, label_field)
     if given is None and input_ids is None:
         object.__setattr__(record, "_unit_ids_generated", True)
-    labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
-    object.__setattr__(record, "unit_ids", labels)
+    if label_field == "unit_ids":
+        labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
+        object.__setattr__(record, "unit_ids", labels)
 
 
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
@@ -804,32 +821,17 @@ def _bin_center_coords(
     Raises
     ------
     ValueError
-        If ``env`` is given but its ``bin_centers`` is not 2-D or its length
+        If ``env`` is given but its ``bin_centers`` length
         (``bin_centers.shape[0]``) does not equal ``n_bins``. The genuine
         no-env case (``env is None``) is a no-op and returns an empty mapping.
     """
-    # Genuine no-env case (e.g. directional results pass bin_centers directly
-    # and have no env): no bin-center coords to build. This is NOT a mismatch.
+    # Directional results have no env: no bin-center coords to build.
     if env is None:
         return {}
 
     # A copy: the coordinates are the caller's to edit, the environment's
     # bin centers are read-only.
     bin_centers = np.array(env.bin_centers, dtype=np.float64)
-    # bin-center data IS present (env was given); a shape disagreement here is
-    # a real inconsistency between the result and its environment, not an
-    # optional-coord situation. Raise loudly rather than silently dropping it.
-    if bin_centers.ndim != 2:
-        raise ValueError(
-            _format_error(
-                "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
-                "xarray bin-center coords, but env produced an array with "
-                f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).",
-                why="each bin needs an (x, y, ...) center for the 'bin' coordinate.",
-                fix="pass an Environment, whose bin_centers have shape "
-                "(n_bins, n_dims).",
-            )
-        )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(
             _format_error(
@@ -871,8 +873,8 @@ def build_population_dataset(
     firing_rates : ndarray, shape (n_units, n_bins)
         Population firing-rate matrix (Hz).
     unit_ids : ndarray, shape (n_units,)
-        Per-unit identity labels. **Must be unique** (label-based
-        ``.sel(unit_id=...)`` requires uniqueness).
+        Per-unit identity labels, unique as result constructors guarantee
+        (label-based ``.sel(unit_id=...)`` requires uniqueness).
     env : Any, optional
         Environment supplying ``bin_center_*`` coords (Cartesian or polar).
         Pass either ``env`` or ``bin_centers``, not both. ``None`` adds no
@@ -895,8 +897,7 @@ def build_population_dataset(
     Raises
     ------
     ValueError
-        If both ``env`` and ``bin_centers`` are given, if ``unit_ids``
-        contains duplicate labels, if ``occupancy`` is
+        If ``occupancy`` is
         provided but its length does not equal ``n_bins``, or if
         ``bin_centers`` is provided but is not 1-D of length ``n_bins``.
         (Absent ``occupancy``/``bin_centers`` are simply omitted; only a
@@ -906,36 +907,11 @@ def build_population_dataset(
     """
     xr = import_xarray()
 
-    if env is not None and bin_centers is not None:
-        raise ValueError(
-            _format_error(
-                "build_population_dataset got both env and bin_centers.",
-                why="both would set the bin-center coordinates.",
-                fix="pass env for spatial results or bin_centers for "
-                "directional results.",
-            )
-        )
     # Copy the rates: the Dataset is the caller's to edit, and results are
     # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.array(unit_ids)  # the result's labels are read-only
-
-    # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
-    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
-    # object array.
-    dups = [label for label, count in Counter(ids.tolist()).items() if count > 1]
-    if dups:
-        raise ValueError(
-            _format_error(
-                "unit_ids must be unique to build an xarray.Dataset, but these "
-                f"label(s) are duplicated: {dups}.",
-                why="Why: label-based selection .sel(unit_id=...) requires a "
-                "unique index coordinate.",
-                fix="deduplicate unit_ids (e.g. when concatenating populations) "
-                "before calling to_xarray().",
-            )
-        )
 
     coords: dict[str, Any] = {"unit_id": ids, "bin": np.arange(n_bins)}
     coords.update(_bin_center_coords(env, n_bins))

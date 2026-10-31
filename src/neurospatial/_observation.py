@@ -18,6 +18,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, Literal
 
 import numpy as np
@@ -26,20 +27,23 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    IntervalGates,
     as_intervals,
     gap_endpoints,
+    gated_intervals,
     interval_valid_mask,
     ragged_arange,
     run_sample_bounds,
     times_in_intervals,
+    valid_run_samples,
     validate_max_gap,
     warn_excluded_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
+    refuse_infinite,
     times_positions_problems,
-    validate_strictly_increasing,
     validate_times_positions,
 )
 
@@ -97,6 +101,16 @@ class ObservationSupport(ReadOnlyArraysMixin):
     def __post_init__(self) -> None:
         self._own_arrays()
 
+    @cached_property
+    def gap_endpoints(
+        self,
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]]:
+        """:func:`~neurospatial._intervals.gap_endpoints` of ``sample_valid``, read-only."""
+        endpoints = gap_endpoints(self.sample_valid)
+        for array in endpoints:
+            array.setflags(write=False)
+        return endpoints
+
     def restricted(
         self, times: NDArray[np.float64], defined: NDArray[np.bool_]
     ) -> ObservationSupport:
@@ -141,27 +155,35 @@ class ObservationSupport(ReadOnlyArraysMixin):
         ... ).interval_mask
         array([ True, False, False,  True])
         """
-        raw_gates = interval_valid_mask(
-            times,
-            max_gap=self.max_gap,
-            epochs=self.epochs,
-            break_before=self.break_before,
-        )
-        return _support_from_gates(
+        return resolve_sample_support(
             times,
             self.sample_valid & np.asarray(defined, dtype=bool),
-            raw_gates,
             max_gap=self.max_gap,
             epochs=self.epochs,
             break_before=self.break_before,
+            result=None,
+        )
+
+    def gates(self, times: NDArray[np.float64]) -> IntervalGates:
+        """The usable intervals with the gates that resolved them.
+
+        Parameters
+        ----------
+        times : ndarray, shape (n_samples,)
+            The times this support was resolved from, in seconds.
+        """
+        return IntervalGates(
+            times,
+            self.interval_mask,
+            self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+            sample_valid=self.sample_valid,
         )
 
     def run_samples(self) -> list[NDArray[np.intp]]:
         """Indices of the valid samples of each run, in time order."""
-        return [
-            first + np.flatnonzero(self.sample_valid[first : last + 1])
-            for first, last in self.run_sample_bounds
-        ]
+        return valid_run_samples(self.interval_mask, self.sample_valid)
 
 
 def validate_break_before(
@@ -207,15 +229,19 @@ def _support_from_gates(
     samples, used for intervals with no valid sample on one side.
     """
     n_samples = times.size
-    interval_mask = interval_valid_mask(
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        sample_valid=sample_valid,
-    )
-    _, _, linked = gap_endpoints(sample_valid)
-    interval_gates = np.where(linked, interval_mask, raw_gates)
+    if n_samples < 2 or sample_valid.all():
+        # Every interval is linked to its own samples: the gates are the mask.
+        interval_mask = interval_gates = raw_gates
+    else:
+        endpoints = gap_endpoints(sample_valid)
+        interval_mask = gated_intervals(
+            times,
+            endpoints,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+        )
+        interval_gates = np.where(endpoints[2], interval_mask, raw_gates)
     bounds = run_sample_bounds(interval_mask)
     run_ids = np.full(n_samples, -1, dtype=np.intp)
     lengths = bounds[:, 1] - bounds[:, 0] + 1
@@ -257,8 +283,8 @@ def resolve_observation_support(
         Seconds; already validated and strictly increasing.
     positions : ndarray, shape (n_samples, n_dims)
         Float coordinates; NaN entries mark a missing sample. Infinite
-        entries are refused by the public entry points
-        (:func:`refuse_infinite`).
+        entries are refused by the shared validation
+        (:func:`~neurospatial._validation.refuse_infinite`).
     max_gap, epochs
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
@@ -339,15 +365,7 @@ def resolve_sample_support(
         # Warn on the usable intervals, after missing samples are bridged: a
         # gap across missing samples can exceed max_gap although every
         # sampling interval passes it.
-        warn_excluded_intervals(
-            times,
-            support.interval_mask,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            break_before=break_before,
-            sample_valid=sample_valid,
-            result=result,
-        )
+        warn_excluded_intervals(support.gates(times), result=result)
     return support
 
 
@@ -413,8 +431,7 @@ def sample_feature(
 
     at_sample = exact.copy()
     if epochs is not None:
-        row = np.searchsorted(epochs[:, 0], q, side="right") - 1
-        at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
+        at_sample &= times_in_intervals(epochs, q)
 
     between = ~exact & (k >= 0) & (k < n_samples - 1)
     if n_samples > 1:
@@ -425,7 +442,7 @@ def sample_feature(
 
     # Interpolate between the valid samples that bound the (bridged) gap, as
     # if missing samples had been deleted.
-    start, end, _ = gap_endpoints(support.sample_valid)
+    start, end, _ = support.gap_endpoints
     left, right = start[k[between]], end[k[between]]
     x0 = values[left]
     if interpolation == "previous":
@@ -600,12 +617,10 @@ def validated_observations(
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
         raise empty_samples_error(call, ("times", "positions"))
-    validate_strictly_increasing(t, call=call)
     if columns is not None:
         _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
         p = p[:, None]
-    refuse_infinite(p, name="positions", call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
     support = resolve_observation_support(
@@ -673,51 +688,6 @@ def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
     )
 
 
-def refuse_infinite(values: NDArray[np.float64], *, name: str, call: str) -> None:
-    """Refuse infinite entries; NaN is the only marker of a missing sample.
-
-    Parameters
-    ----------
-    values : ndarray of float64, shape (n_samples, n_columns)
-        Per-sample values such as positions or signals.
-    name : str
-        Argument name, used in the message.
-    call : str
-        Public function name, used in the message.
-
-    Raises
-    ------
-    ValueError
-        If any entry is infinite, naming how many and the first one.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> refuse_infinite(np.array([[0.0, np.nan]]), name="positions", call="f")
-    >>> refuse_infinite(np.array([[0.0, np.inf]]), name="positions", call="f")
-    Traceback (most recent call last):
-    ...
-    ValueError: f() got 1 infinite value(s) in positions, first at row 0, column 1 (inf).
-    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
-    Fix: correct the step that produced it, or mark those samples missing with positions[np.isinf(positions)] = np.nan.
-    """
-    infinite = np.isinf(values)
-    if not infinite.any():
-        return
-    row, column = (int(i) for i in np.argwhere(infinite)[0])
-    raise ValueError(
-        _format_error(
-            f"{call}() got {int(infinite.sum())} infinite value(s) in {name}, "
-            f"first at row {row}, column {column} ({float(values[row, column])}).",
-            why="NaN marks a missing sample, but an infinite value is not a "
-            "measurement; it usually comes from a division by zero in a "
-            "calibration or unit conversion, so it is not treated as missing.",
-            fix="correct the step that produced it, or mark those samples "
-            f"missing with {name}[np.isinf({name})] = np.nan.",
-        )
-    )
-
-
 def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float64]:
     try:
         t = np.asarray(times, dtype=np.float64)
@@ -733,14 +703,14 @@ def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float6
             _format_error(
                 f"Invalid times passed to {call}():\n- " + "\n- ".join(problems),
                 why="each interval [times[k], times[k+1]) is judged by its duration, "
-                "so mis-shaped or unsorted timestamps give wrong numbers.",
-                fix="pass times as a sorted 1-D array of finite timestamps in seconds.",
+                "so mis-shaped, unsorted or repeated timestamps give wrong numbers.",
+                fix="pass times as a sorted 1-D array of finite timestamps in "
+                "seconds, without repeats.",
             )
         )
     assert t is not None
     if t.size == 0:
         raise empty_samples_error(call, ("times",))
-    validate_strictly_increasing(t, call=call)
     return t
 
 
@@ -941,14 +911,15 @@ def validated_signals(
         for f in range(sig.shape[1])
     )
     # One warning for the table, when no feature keeps a usable interval.
-    usable = np.any([support.interval_mask for support in supports], axis=0)
     warn_excluded_intervals(
-        t,
-        usable,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        break_before=breaks,
-        sample_valid=np.asarray(sample_valid.any(axis=1)),
+        IntervalGates(
+            t,
+            np.any([support.interval_mask for support in supports], axis=0),
+            max_gap,
+            epochs=resolved_epochs,
+            break_before=breaks,
+            sample_valid=np.asarray(sample_valid.any(axis=1)),
+        ),
         result=result,
     )
     return t, sig, supports

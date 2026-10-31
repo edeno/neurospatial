@@ -12,7 +12,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
-from neurospatial._validation import is_integer_at_least, validate_finite_scalar
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_finite_scalar,
+)
 from neurospatial.ops.boundary_vectors import nearest_boundary
 from neurospatial.simulation._seeds import _stream_seeds
 
@@ -831,22 +835,17 @@ def simulate_session(
     )
 
     # Validate parameters
-    valid_cell_types = {"place", "border", "grid", "mixed"}
-    if cell_type not in valid_cell_types:
-        raise ValueError(
-            f"cell_type must be one of {valid_cell_types}, got '{cell_type}'"
-        )
-
-    valid_trajectory_methods = {"ou", "sinusoidal", "laps"}
-    if trajectory_method not in valid_trajectory_methods:
-        raise ValueError(
-            f"trajectory_method must be one of {valid_trajectory_methods}, "
-            f"got '{trajectory_method}'"
-        )
-
-    valid_coverage = {"uniform", "random"}
-    if coverage not in valid_coverage:
-        raise ValueError(f"coverage must be one of {valid_coverage}, got '{coverage}'")
+    owner = "simulate_session()"
+    validate_choice(
+        cell_type, ("place", "border", "grid", "mixed"), name="cell_type", owner=owner
+    )
+    validate_choice(
+        trajectory_method,
+        ("ou", "sinusoidal", "laps"),
+        name="trajectory_method",
+        owner=owner,
+    )
+    validate_choice(coverage, ("uniform", "random"), name="coverage", owner=owner)
 
     # Check for grid cells in non-2D environments
     if cell_type in ("grid", "mixed") and env.n_dims != 2:

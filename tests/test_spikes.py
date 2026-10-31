@@ -349,13 +349,20 @@ class TestNormalizeSpikeTimesEdgeCases:
         assert len(result) == 1
         np.testing.assert_array_equal(result[0], [0.1, 0.5, 1.2])
 
-    def test_preserves_spike_order(self) -> None:
-        """Spike times should maintain their order."""
+    def test_sorts_a_train_given_out_of_order(self) -> None:
+        """A train merged from several sources comes back in time order."""
         from neurospatial._spikes import as_spike_trains
 
-        spikes = np.array([3.0, 1.0, 2.0, 0.5])  # Unsorted
+        spikes = np.array([3.0, 1.0, 2.0, 0.5])
         result = as_spike_trains(spikes)
-        np.testing.assert_array_equal(result[0], [3.0, 1.0, 2.0, 0.5])
+        np.testing.assert_array_equal(result[0], [0.5, 1.0, 2.0, 3.0])
+        np.testing.assert_array_equal(spikes, [3.0, 1.0, 2.0, 0.5])  # untouched
+
+    def test_sorted_train_is_not_copied(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        spikes = np.array([0.5, 1.0, 1.0, 2.0])
+        assert as_spike_trains(spikes)[0] is spikes
 
     def test_negative_spike_times(self) -> None:
         """Negative spike times should be preserved (e.g., relative to event)."""
@@ -511,23 +518,21 @@ class TestSpikeInputBoundaries:
         pd = pytest.importorskip("pandas")
         from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, ids, supplied = as_labelled_spike_trains(
+        trains, ids = as_labelled_spike_trains(
             pd.Series([0.1, 0.5, 1.2], index=[10, 11, 12]), None, context="demo"
         )
         assert len(trains) == 1
         np.testing.assert_array_equal(trains[0], [0.1, 0.5, 1.2])
-        assert ids.tolist() == [0]
-        assert not supplied
+        assert ids is None
 
     def test_pynapple_ts_is_one_unit(self) -> None:
         nap = pytest.importorskip("pynapple")
         from neurospatial._spikes import as_labelled_spike_trains, as_spike_trains
 
         ts = nap.Ts(t=np.array([0.1, 0.5, 1.2]))
-        trains, ids, supplied = as_labelled_spike_trains(ts, None, context="demo")
+        trains, ids = as_labelled_spike_trains(ts, None, context="demo")
         np.testing.assert_array_equal(trains[0], [0.1, 0.5, 1.2])
-        assert ids.tolist() == [0]
-        assert not supplied
+        assert ids is None
         np.testing.assert_array_equal(as_spike_trains(ts)[0], [0.1, 0.5, 1.2])
 
     def test_pynapple_trains_read_by_timestamps_on_every_route(self) -> None:
@@ -554,11 +559,10 @@ class TestSpikeInputBoundaries:
     def test_dict_of_trains_keeps_unit_labels(self) -> None:
         from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, ids, supplied = as_labelled_spike_trains(
+        trains, ids = as_labelled_spike_trains(
             {"ca1_3": [0.1, 0.2], "ca1_7": np.array([0.5])}, None, context="demo"
         )
         assert ids.tolist() == ["ca1_3", "ca1_7"]
-        assert supplied
         np.testing.assert_array_equal(trains[1], [0.5])
 
     def test_dataframe_is_refused_with_a_conversion(self) -> None:
@@ -645,12 +649,34 @@ class TestRastersAndZeroPadding:
         with pytest.raises(ValueError, match=r"(?s)row\(s\) \[0\] decrease.*zeros"):
             as_spike_trains(padded)
 
-    def test_unsorted_list_of_trains_is_kept(self) -> None:
-        """Order within a train does not change counts, so lists need no sort."""
-        from neurospatial._spikes import as_spike_trains
+    def test_unsorted_trains_are_sorted_with_their_labels(self) -> None:
+        """Each train is sorted in place of itself; labels stay with it."""
+        from neurospatial._spikes import as_labelled_spike_trains
 
-        (train,) = as_spike_trains([np.array([0.5, 0.1, 0.3])])
-        np.testing.assert_array_equal(train, [0.5, 0.1, 0.3])
+        trains, ids = as_labelled_spike_trains(
+            {"b": np.array([0.5, 0.1, 0.3]), "a": np.array([-2.0, -3.0])},
+            None,
+            context="demo",
+        )
+        assert ids.tolist() == ["b", "a"]
+        np.testing.assert_array_equal(trains[0], [0.1, 0.3, 0.5])
+        np.testing.assert_array_equal(trains[1], [-3.0, -2.0])
+
+    def test_spike_trains_container_stores_sorted_read_only_copies(self) -> None:
+        from neurospatial.encoding import SpikeTrains
+
+        given = np.array([0.5, 0.1, 0.3])
+        stored = SpikeTrains([given], unit_ids=["u"]).trains[0]
+        np.testing.assert_array_equal(stored, [0.1, 0.3, 0.5])
+        np.testing.assert_array_equal(given, [0.5, 0.1, 0.3])
+        assert not stored.flags.writeable
+
+    def test_single_train_is_sorted(self) -> None:
+        from neurospatial._spikes import as_spike_train
+
+        np.testing.assert_array_equal(as_spike_train([0.4, -0.1]), [-0.1, 0.4])
+        with pytest.raises(ValueError, match="1-D"):
+            as_spike_train(np.array([[0.1, 0.2], [0.3, 0.4]]))
 
     def test_decoding_counts_refuse_raster_and_zero_padding(self) -> None:
         from neurospatial.decoding import bin_spikes_in_time
@@ -676,9 +702,8 @@ class TestLabelledSpikeContainers:
         series = pd.Series(
             [np.array([0.1, 0.2]), np.array([0.3])], index=[7, 9], name="spike_times"
         )
-        trains, ids, supplied = as_labelled_spike_trains(series, None, context="demo")
+        trains, ids = as_labelled_spike_trains(series, None, context="demo")
         assert ids.tolist() == [7, 9]
-        assert supplied
         np.testing.assert_array_equal(trains[0], [0.1, 0.2])
         np.testing.assert_array_equal(trains[1], [0.3])
 
@@ -690,7 +715,7 @@ class TestLabelledSpikeContainers:
             {"unit": ["b", "a", "b", "a", "a"], "time": [0.4, 0.1, 0.5, 0.2, 0.3]}
         )
         series = table.groupby("unit")["time"].apply(np.array)
-        trains, ids, _ = as_labelled_spike_trains(series, None, context="demo")
+        trains, ids = as_labelled_spike_trains(series, None, context="demo")
         assert ids.tolist() == ["a", "b"]
         np.testing.assert_array_equal(trains[0], [0.1, 0.2, 0.3])
         np.testing.assert_array_equal(trains[1], [0.4, 0.5])
@@ -698,18 +723,17 @@ class TestLabelledSpikeContainers:
     def test_tuple_unit_ids_stay_one_label_per_unit(self) -> None:
         from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, ids, supplied = as_labelled_spike_trains(
+        trains, ids = as_labelled_spike_trains(
             {(1, 3): [0.1], (2, 5): [0.2, 0.3]}, None, context="demo"
         )
         assert ids.shape == (2,)
         assert ids.tolist() == [(1, 3), (2, 5)]
-        assert supplied
         np.testing.assert_array_equal(trains[1], [0.2, 0.3])
 
     def test_tuple_unit_ids_can_be_passed_explicitly(self) -> None:
         from neurospatial._spikes import as_labelled_spike_trains
 
-        _, ids, _ = as_labelled_spike_trains(
+        _, ids = as_labelled_spike_trains(
             [[0.1], [0.2, 0.3]], [(1, 3), (2, 5)], context="demo"
         )
         assert ids.tolist() == [(1, 3), (2, 5)]

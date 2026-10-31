@@ -27,7 +27,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import validate_choice
+from neurospatial._validation import refuse_infinite, validate_choice
 from neurospatial.decoding.estimates import _egocentric_plane
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import _geodesic_pair_distances
@@ -143,19 +143,7 @@ def decoding_error(
         ("decoded_positions", decoded_positions),
         ("actual_positions", actual_positions),
     ):
-        infinite = np.isinf(positions).any(axis=1)
-        if np.any(infinite):
-            raise ValueError(
-                _format_error(
-                    f"decoding_error(): {name} contains Inf in "
-                    f"{int(np.sum(infinite))} of {len(positions)} time bins.",
-                    why="an infinite position is not a place, so it has no "
-                    "distance to another position",
-                    fix="mark missing or invalid positions as NaN (their error "
-                    "is NaN), e.g. positions[np.isinf(positions).any(axis=1)] "
-                    "= np.nan",
-                )
-            )
+        refuse_infinite(positions, name=name, call="decoding_error")
 
     if metric == "euclidean":
         if env.coordinate_kind == "polar":

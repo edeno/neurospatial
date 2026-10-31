@@ -1448,7 +1448,8 @@ def visibility_occupancy(
     env : Environment
         The environment.
     times : NDArray[np.float64], shape (n_time,)
-        Timestamps in seconds for each position; finite and non-decreasing.
+        Timestamps in seconds for each position; finite and strictly
+        increasing.
     positions : NDArray[np.float64], shape (n_time, 2)
         Positions along trajectory. A row with a NaN coordinate is a missing
         sample (a lost tracking frame); intervals that start or end at it add
@@ -1495,7 +1496,7 @@ def visibility_occupancy(
     ------
     ValueError
         If ``times`` and ``positions`` are misaligned, ``times`` is not finite
-        and non-decreasing, ``positions`` is not ``(n_time, 2)``, ``headings``
+        and strictly increasing, ``positions`` is not ``(n_time, 2)``, ``headings``
         is not ``(n_time,)``, ``max_gap`` is not positive, or ``epochs`` or
         ``break_before`` is malformed.
 
@@ -1535,7 +1536,7 @@ def visibility_occupancy(
     from neurospatial._intervals import (
         as_intervals,
         hold_last_valid,
-        interval_valid_mask,
+        interval_gates,
         validate_max_gap,
         warn_excluded_intervals,
     )
@@ -1570,22 +1571,15 @@ def visibility_occupancy(
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
     # A missing sample is bridged like a deleted row: the gap's time is
     # viewed from the observed sample that starts it.
-    usable = interval_valid_mask(
+    gates = interval_gates(
         times,
         max_gap=max_gap,
         epochs=resolved_epochs,
         break_before=breaks,
         sample_valid=observed,
     )
-    warn_excluded_intervals(
-        times,
-        usable,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        start_bin_gate=not bool(observed.all()),
-        break_before=breaks,
-        result="no bin received viewing time",
-    )
+    warn_excluded_intervals(gates, result="no bin received viewing time")
+    usable = gates.mask
 
     held = hold_last_valid(np.arange(n_time), observed, fill=0)
     dt = np.bincount(

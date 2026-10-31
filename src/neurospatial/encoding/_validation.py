@@ -2,14 +2,13 @@
 
 The public ``compute_*_rate(s)`` entry points and cell predicates share:
 
-- ``_validate_times`` — finite, non-decreasing timestamps with at least two
-  samples.
+- ``_validate_times`` — finite, strictly increasing timestamps with at least
+  two samples.
 - ``validate_trajectory`` — joint length and dimensionality checks on
   ``(times, positions?, headings?)``, plus a warning for headings that look
   like degrees.
 - ``warn_if_angles_look_like_degrees`` — the degree check for any angle
   input read as radians.
-- ``validate_spike_times`` / ``validate_spike_trains`` — spike timestamps.
 
 The smoothing-method validator lives in
 ``neurospatial.encoding._smoothing._validate_smoothing_parameters`` and
@@ -20,7 +19,6 @@ directly.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
@@ -30,6 +28,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
+    refuse_infinite,
     times_positions_problems,
 )
 from neurospatial.environment import Environment
@@ -39,8 +38,6 @@ __all__ = [
     "_validate_env_argument",
     "_validate_times",
     "require_planar",
-    "validate_spike_times",
-    "validate_spike_trains",
     "validate_trajectory",
     "warn_if_angles_look_like_degrees",
 ]
@@ -140,7 +137,7 @@ def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None
 
 
 def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
-    """Check finite, non-decreasing timestamps with at least two samples.
+    """Check finite, strictly increasing timestamps with at least two samples.
 
     The same check, and the same messages, as :func:`validate_trajectory`
     without positions or headings.
@@ -148,7 +145,7 @@ def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Timestamps in seconds; adjacent equal timestamps are allowed.
+        Timestamps in seconds; a repeated timestamp is refused.
     context : str
         Name of the calling function, used in the error message.
 
@@ -158,89 +155,6 @@ def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
         If the shape, sample count, finite values or ordering is invalid.
     """
     validate_trajectory(times, context=context)
-
-
-def validate_spike_times(
-    spike_times: NDArray[np.float64], *, context: str, allow_empty: bool = True
-) -> None:
-    """Check one-dimensional finite, sorted, non-negative spike timestamps.
-
-    Parameters
-    ----------
-    spike_times : ndarray, shape (n_spikes,)
-        Spike timestamps in seconds. Empty trains are allowed by default.
-    context : str
-        Name of the calling function, used in the error message.
-    allow_empty : bool, default True
-        Whether a neuron with no spikes is a valid input.
-
-    Raises
-    ------
-    ValueError
-        If the shape, finite values, sign, ordering or emptiness is invalid.
-    """
-    problems = []
-    if spike_times.ndim != 1:
-        problems.append(
-            (
-                f"spike_times must be 1-D, got shape {spike_times.shape}",
-                "pass one 1-D spike_times array per unit",
-            )
-        )
-    else:
-        if not len(spike_times) and not allow_empty:
-            problems.append(
-                (
-                    "spike_times is empty (no spikes)",
-                    "pass at least one spike timestamp in seconds",
-                )
-            )
-        if not np.all(np.isfinite(spike_times)):
-            n_bad = int(np.sum(~np.isfinite(spike_times)))
-            problems.append(
-                (
-                    f"spike_times must be finite (seconds); got {n_bad} NaN/inf entries",
-                    "remove non-finite spike_times entries",
-                )
-            )
-        if np.any(spike_times < 0):
-            n_negative = int(np.sum(spike_times < 0))
-            problems.append(
-                (
-                    f"spike_times must be non-negative (seconds); got {n_negative} negative entries (min: {float(np.nanmin(spike_times)):.6g} s)",
-                    "align spike_times to the recording's non-negative time origin",
-                )
-            )
-        decreasing = np.flatnonzero(np.diff(spike_times) < 0)
-        if decreasing.size:
-            problems.append(
-                (
-                    f"spike_times must be monotonically non-decreasing (sorted in ascending order); found {decreasing.size} decreasing interval(s) at indices {decreasing[:5].tolist()}",
-                    "if spikes were merged from multiple sources, sort the array with np.sort(spike_times)",
-                )
-            )
-    _raise_input_problems(context, problems)
-
-
-def validate_spike_trains(
-    spike_trains: Sequence[NDArray[np.float64]], *, context: str
-) -> None:
-    """Validate each train, naming the failing unit as ``context (neuron i)``.
-
-    Parameters
-    ----------
-    spike_trains : sequence of ndarray, each shape (n_spikes,)
-        One spike-time array per unit, in seconds.
-    context : str
-        Name of the calling function, used in the error message.
-
-    Raises
-    ------
-    ValueError
-        From :func:`validate_spike_times` for the first invalid train.
-    """
-    for i, spike_times in enumerate(spike_trains):
-        validate_spike_times(spike_times, context=f"{context} (neuron {i})")
 
 
 def warn_if_angles_look_like_degrees(
@@ -321,15 +235,17 @@ def validate_trajectory(
 ) -> None:
     """Check trajectory shapes, aligned sample rows and timestamp validity.
 
-    All detected problems are reported together. Non-finite positions and
-    headings remain valid missing observations for the binning layer to drop.
+    All detected problems are reported together. NaN positions and headings
+    remain valid missing observations for the binning layer to drop; an
+    infinite one is refused (:func:`~neurospatial._validation.refuse_infinite`).
     Headings read as radians that look like degrees warn
     (:func:`warn_if_angles_look_like_degrees`).
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Finite non-decreasing timestamps in seconds, with at least two samples.
+        Finite, strictly increasing timestamps in seconds, with at least two
+        samples.
     positions : ndarray, shape (n_samples,) or (n_samples, n_dims), optional
         Coordinates aligned with times. One-dimensional positions are accepted
         for a one-dimensional environment.
@@ -346,7 +262,8 @@ def validate_trajectory(
     Raises
     ------
     ValueError
-        If timestamp validity, shapes, coordinate dimensions or lengths disagree.
+        If timestamp validity, shapes, coordinate dimensions or lengths
+        disagree, or if positions or headings hold an infinite value.
 
     Warns
     -----
@@ -383,6 +300,9 @@ def validate_trajectory(
                 positions=positions is not None,
             )
         )
+    for name, values in (("positions", positions), ("headings", headings)):
+        if values is not None:
+            refuse_infinite(values, name=name, call=context)
     if headings is not None and heading_unit != "deg":
         warn_if_angles_look_like_degrees(
             headings,

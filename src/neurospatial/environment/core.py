@@ -113,9 +113,6 @@ from neurospatial.environment._summary import (
     _repr_html,
 )
 from neurospatial.environment._targets import (
-    REGION_TARGET_WHY,
-    TARGET_WHY,
-    former_targets,
     resolve_targets,
 )
 from neurospatial.environment._track_width import _with_track_width
@@ -1681,11 +1678,7 @@ class Environment(Generic[_C]):
         indices = self._locate(positions, "Environment.contains")
         return np.asarray(indices != -1, dtype=np.bool_)
 
-    @keyword_hint(
-        former=("point1", "point2", "edge_weight"),
-        translate=former_targets(2),
-        why=TARGET_WHY,
-    )
+    @keyword_hint()
     def distance_between(
         self,
         *,
@@ -1895,7 +1888,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Must be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
@@ -1910,8 +1903,9 @@ class Environment(Generic[_C]):
             With ``time_allocation='linear'`` an interval with an end outside
             the environment adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
-            Instantaneous speed at each sample. If provided with min_speed,
-            samples below threshold are excluded from occupancy calculation.
+            Instantaneous speed at each sample, required with min_speed and
+            refused without it (it would be ignored). Samples below the
+            threshold are excluded from occupancy calculation.
         min_speed : float, optional
             Minimum speed threshold in physical units per second. Requires
             speed parameter. Samples with speed < min_speed are excluded.
@@ -1966,7 +1960,7 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If times and positions have different lengths, if arrays are
-            inconsistent, or if min_speed is provided without speed.
+            inconsistent, or if only one of speed and min_speed is given.
         ValueError
             If positions have wrong number of dimensions.
         ValueError
@@ -2108,7 +2102,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: ``(distance, angle)`` rows on an egocentric
@@ -2152,7 +2146,7 @@ class Environment(Generic[_C]):
         ValueError
             If times and positions have different lengths, if positions
             have wrong number of dimensions, or if timestamps are not
-            monotonically increasing (non-decreasing).
+            strictly increasing.
         ValueError
             If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -2172,8 +2166,8 @@ class Environment(Generic[_C]):
         inputs. Deduplication never merges samples across an invalid interval.
         With dedup=False, one bin is returned per retained sample.
 
-        Timestamps must be monotonically increasing (non-decreasing).
-        Sort your data by time before calling this method if needed.
+        Timestamps must be strictly increasing. Sort your data by time and
+        drop repeated timestamps before calling this method if needed.
 
         Examples
         --------
@@ -2232,7 +2226,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions.
         outside_value : int or None, default=-1
@@ -2618,14 +2612,7 @@ class Environment(Generic[_C]):
         fix="keep the full polar environment and select bins with a boolean mask",
         example="near = env.bin_centers[:, 0] < 20.0; field[near]",
     )
-    @keyword_hint(
-        former=("bins",),
-        translate=lambda values: (
-            "pass the boolean array of bins to keep as mask=",
-            {"mask": values["bins"]},
-        ),
-        why="Why: the boolean array of bins to keep is passed by keyword as mask=.",
-    )
+    @keyword_hint()
     def subset(
         self: Environment[CartesianSystem],
         *,
@@ -3306,8 +3293,8 @@ class Environment(Generic[_C]):
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
-            A row with a NaN or infinite coordinate is a missing sample and is
-            left out.
+            A row with a NaN coordinate is a missing sample and is left out;
+            an infinite coordinate is refused.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
             For RegularGrid: length of each square bin side (or per-dimension if sequence).
@@ -3544,8 +3531,8 @@ class Environment(Generic[_C]):
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
-            A row with a NaN or infinite coordinate is a missing sample and is
-            left out.
+            A row with a NaN coordinate is a missing sample and is left out;
+            an infinite coordinate is refused.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
         name : str, default ""
@@ -4647,7 +4634,7 @@ class Environment(Generic[_C]):
         """
         return _bin_center_of(self.bin_centers, bin_indices, self._geometry.coordinates)
 
-    @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def neighbors(
         self,
         *,
@@ -4748,11 +4735,7 @@ class Environment(Generic[_C]):
         sizes.setflags(write=False)
         return sizes
 
-    @keyword_hint(
-        former=("source_active_bin_idx", "target_active_bin_idx"),
-        translate=former_targets(2),
-        why=TARGET_WHY,
-    )
+    @keyword_hint()
     def path_between(
         self,
         *,
@@ -4808,11 +4791,7 @@ class Environment(Generic[_C]):
         start, end = self._target_bins("path_between()", bins, points, count=2)
         return _path_between(self.connectivity, int(start), int(end))
 
-    @keyword_hint(
-        former=("targets",),
-        translate=former_targets(1, region=True),
-        why=REGION_TARGET_WHY,
-    )
+    @keyword_hint()
     def distance_to(
         self,
         *,
@@ -4913,7 +4892,7 @@ class Environment(Generic[_C]):
             coordinates=self._geometry.coordinates,
         )
 
-    @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def reachable_from(
         self,
         *,
@@ -5068,7 +5047,7 @@ class Environment(Generic[_C]):
         """
         return _components(self.connectivity, largest_only=largest_only)
 
-    @keyword_hint(former=("center_bin",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def rings(
         self,
         *,

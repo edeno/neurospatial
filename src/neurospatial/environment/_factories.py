@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import refuse_infinite
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _declared_metadata, _Provenance
 from neurospatial.geometry import (
@@ -310,10 +311,9 @@ def _from_samples(
             )
         )
 
-    # An infinite coordinate is not a position in the arena: treat it as a
-    # missing sample, like NaN, which the layouts already leave out.
-    if np.isinf(positions).any():
-        positions = np.where(np.isinf(positions), np.nan, positions)
+    # NaN marks a missing sample, which the layouts leave out; an infinite
+    # coordinate is not a measurement.
+    refuse_infinite(positions, name="positions", call=factory)
 
     # Warn on a likely-transposed positions array before building the grid.
     # The classic footgun is np.array([x, y]) -- shape (n_dims, n_samples) --

@@ -53,9 +53,14 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._units import same_coordinate_declaration
-from neurospatial._validation import timestamps_of, validate_finite
+from neurospatial._validation import (
+    times_positions_problems,
+    timestamps_of,
+    validate_finite,
+)
 from neurospatial._video_io import _validate_frame_processing
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
@@ -193,13 +198,11 @@ class _Overlay:
     _owned_mappings: ClassVar[tuple[str, ...]] = ()
 
     def _snapshot(self: _OverlayT) -> _OverlayT:
-        from neurospatial.animation.scene import _readonly
-
         result = copy.copy(self)
         for name in self._owned_arrays:
             value = getattr(result, name)
             if value is not None:
-                setattr(result, name, _readonly(value))
+                setattr(result, name, read_only_copy(value))
         for name in self._owned_objects:
             setattr(result, name, copy.deepcopy(getattr(result, name)))
         for name in self._owned_mappings:
@@ -1086,12 +1089,10 @@ class EventOverlay(_Overlay):
     _owned_mappings: ClassVar[tuple[str, ...]] = ("event_positions",)
 
     def _snapshot(self) -> EventOverlay:
-        from neurospatial.animation.scene import _readonly
-
         result = super()._snapshot()
         assert isinstance(result.event_times, dict)  # normalized in __post_init__
         result.event_times = {
-            name: _readonly(times) for name, times in result.event_times.items()
+            name: read_only_copy(times) for name, times in result.event_times.items()
         }
         return result
 
@@ -2064,20 +2065,19 @@ class SpikeRasterOverlay(_Overlay):
 
     def _snapshot(self) -> SpikeRasterOverlay:
         from neurospatial._results import as_label_array
-        from neurospatial.animation.scene import _readonly
 
         result = super()._snapshot()
         if result.unit_ids is not None:
-            result.unit_ids = _readonly(as_label_array(result.unit_ids))
+            result.unit_ids = read_only_copy(as_label_array(result.unit_ids))
         rows, ids = result._rows
-        result._rows = (list(rows), _readonly(ids))
+        result._rows = (list(rows), read_only_copy(ids))
         return result
 
     def __post_init__(self) -> None:
         """Check the spikes, the order and the labels."""
         from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, ids, _ = as_labelled_spike_trains(
+        trains, ids = as_labelled_spike_trains(
             self.spike_times,
             cast("Any", self.unit_ids),
             context="SpikeRasterOverlay",
@@ -2098,6 +2098,8 @@ class SpikeRasterOverlay(_Overlay):
                 "row of the raster is one unit. Fix: pass a permutation, such "
                 "as np.argsort of each unit's place-field peak."
             )
+        if ids is None:
+            ids = np.arange(len(trains))
         self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 
@@ -2897,16 +2899,15 @@ class VideoOverlay(_Overlay):
             # Determine video source: array or file path
             if isinstance(self.source, np.ndarray):
                 original_size = (self.source.shape[2], self.source.shape[1])
-                _validate_frame_processing(original_size, self.crop, self.downsample)
+                processed_size = _validate_frame_processing(
+                    original_size, self.crop, self.downsample
+                )
                 reader: NDArray[np.uint8] | Any = self.source
                 if self.crop is not None:
                     x, y, width, height = self.crop
                     reader = reader[:, y : y + height, x : x + width]
                 if self.downsample > 1:
                     reader = _DownsampledFrames(reader, self.downsample)
-                    processed_size = reader.frame_size_px
-                else:
-                    processed_size = (reader.shape[2], reader.shape[1])
                 n_video_frames = self.source.shape[0]
             else:
                 # File path - create _VideoReader
@@ -3956,7 +3957,7 @@ def _validate_position_metadata(
 
 
 def _validate_monotonic_time(times: NDArray[np.float64], *, name: str) -> None:
-    """Validate that timestamps are monotonically increasing.
+    """Validate that timestamps are finite and strictly increasing.
 
     Parameters
     ----------
@@ -3968,38 +3969,24 @@ def _validate_monotonic_time(times: NDArray[np.float64], *, name: str) -> None:
     Raises
     ------
     ValueError
-        If times are not strictly monotonically increasing, with actionable
-        WHAT/WHY/HOW guidance.
+        If times are not a finite, strictly increasing 1-D array, naming
+        every problem with why and how to fix it.
 
     Notes
     -----
     Empty arrays or single-element arrays pass validation trivially.
     """
-    times = np.asarray(times, dtype=np.float64)
-    if times.ndim != 1 or not np.isfinite(times).all():
-        raise ValueError(f"{name} must be a finite 1-D array of timestamps in seconds.")
-    if times.size <= 1:
-        return  # Empty or single element is trivially monotonic
-
-    # Check if strictly increasing
-    if not np.all(np.diff(times) > 0):
-        # Find first non-monotonic index
-        diffs = np.diff(times)
-        first_bad_idx = np.where(diffs <= 0)[0][0] + 1
-
-        # WHAT/WHY/HOW format
+    problems = times_positions_problems(np.asarray(times, dtype=np.float64), None)[0]
+    if problems:
         raise ValueError(
-            f"WHAT: Non-monotonic timestamps detected in '{name}'.\n"
-            f"  First violation at index {first_bad_idx}: "
-            f"times[{first_bad_idx - 1}]={times[first_bad_idx - 1]:.6f}, "
-            f"times[{first_bad_idx}]={times[first_bad_idx]:.6f}\n\n"
-            f"WHY: Interpolation requires strictly increasing timestamps to align "
-            f"overlay data with animation frames.\n\n"
-            f"Fix: Sort the times array using np.argsort(), or if duplicates exist, "
-            f"apply jitter or remove duplicates. Example:\n"
-            f"  sorted_indices = np.argsort(times)\n"
-            f"  times = times[sorted_indices]\n"
-            f"  data = data[sorted_indices]"
+            _format_error(
+                f"{name} must be finite, strictly increasing timestamps in "
+                "seconds:\n- " + "\n- ".join(problems),
+                why="interpolation aligns overlay data with animation frames by "
+                "time, so every sample needs its own instant.",
+                fix="sort the samples by time and drop repeated timestamps, "
+                "indexing times and data together.",
+            )
         )
 
 

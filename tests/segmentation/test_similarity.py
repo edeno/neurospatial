@@ -208,7 +208,9 @@ class TestTrajectorySimilarity:
 
         trajectory = np.array([0, 1, 2], dtype=np.int64)
 
-        with pytest.raises(ValueError, match=r"method must be one of.*got 'invalid'"):
+        with pytest.raises(
+            ValueError, match=r"got method='invalid'; method must be one of"
+        ):
             trajectory_similarity(trajectory, trajectory, env, method="invalid")
 
     def test_trajectory_similarity_empty_trajectories(self):

@@ -377,7 +377,7 @@ class TestOccupancyValidation:
         times = np.array([0.0, 2.0, 1.0])  # decreasing at index 1
         positions = np.array([[5.0, 5.0], [6.0, 6.0], [7.0, 7.0]])
 
-        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
+        with pytest.raises(ValueError, match=r"strictly increasing; it decreases"):
             env.occupancy(times, positions)
 
 

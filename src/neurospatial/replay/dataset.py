@@ -2658,7 +2658,7 @@ def relative_rank_template(
             f"{min_active_cells!r}; a relative rank needs two active cells."
         )
     windows = _checked_intervals(intervals, operation)
-    trains = [np.sort(train) for train in as_spike_trains(spike_times)]
+    trains = as_spike_trains(spike_times)
     # When each cell fired in each frame, (n_cells, n_frames); NaN if silent.
     firing = np.full((len(trains), len(windows)), np.nan)
     for cell, train in enumerate(trains):

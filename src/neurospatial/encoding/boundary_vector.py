@@ -628,33 +628,29 @@ def _count_boundary_events(
     support : TimeSupport
         The retained intervals, for the result's analysis settings.
     """
-    from neurospatial._intervals import hold_last_valid, warn_excluded_intervals
+    from neurospatial._intervals import (
+        hold_last_valid,
+        interval_gates,
+        warn_excluded_intervals,
+    )
     from neurospatial.encoding._egocentric_counts import BEYOND_RANGE
     from neurospatial.encoding._spatial_counts import prepare_frame_binning
 
-    prepared = prepare_frame_binning(
+    observed_bins = np.where(observed, 0, -1).astype(np.intp)
+    gates = interval_gates(
         times,
-        np.where(observed, 0, -1).astype(np.intp),
-        n_bins,
+        start_bin=observed_bins,
         max_gap=max_gap,
         epochs=epochs,
-        break_before=break_before,
         spike_window=spike_window,
+        break_before=break_before,
         sample_valid=observed,
     )
+    prepared = prepare_frame_binning(gates, observed_bins, n_bins)
     frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     support = prepared.support
     mask = support.mask
-    warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=support.max_gap,
-        epochs=support.epochs,
-        spike_window=support.spike_window,
-        start_bin_gate=True,
-        break_before=break_before,
-        result="the rate map is empty",
-    )
+    warn_excluded_intervals(gates, result="the rate map is empty")
     starts = frame_bins[:-1][mask]  # (n_kept_intervals, n_rays)
     durations = np.broadcast_to(np.diff(times)[mask][:, None], starts.shape)
     hit = starts >= 0
@@ -907,15 +903,11 @@ def compute_boundary_vector_rate(
     --------
     compute_boundary_vector_rates : The population version, with details.
     """
-    from neurospatial.encoding._validation import validate_spike_times
+    from neurospatial._spikes import as_spike_train
 
-    validate_spike_times(
-        np.asarray(spike_times, dtype=np.float64),
-        context="compute_boundary_vector_rate",
-    )
     population = _boundary_vector_rates(
         env,
-        [np.asarray(spike_times, dtype=np.float64)],
+        [as_spike_train(spike_times)],
         times,
         positions,
         headings,
@@ -993,7 +985,6 @@ def _boundary_vector_rates(
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_trains,
         validate_trajectory,
     )
     from neurospatial.encoding.egocentric import _require_planar_env
@@ -1017,7 +1008,7 @@ def _boundary_vector_rates(
     require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+    spike_trains, resolved_unit_ids = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
@@ -1026,7 +1017,6 @@ def _boundary_vector_rates(
     validate_trajectory(
         times, positions=positions, headings=headings, context=context, n_dims=2
     )
-    validate_spike_trains(spike_trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     _warn_if_population_silent(
         spike_trains,
@@ -1113,7 +1103,7 @@ def _boundary_vector_rates(
         boundary_source=boundary_source,
         method=method,
         bandwidth=resolved_bandwidth,
-        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,

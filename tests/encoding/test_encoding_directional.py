@@ -4537,3 +4537,17 @@ def test_unit_and_population_circular_metrics_agree_exactly():
     for i, single in enumerate(result):
         assert_array_equal(directions[i], single.preferred_direction())
         assert lengths[i] == single.mean_vector_length()
+
+
+def test_directional_rates_refuse_an_unknown_angle_unit():
+    from neurospatial.encoding import compute_directional_rates
+
+    times = np.linspace(0.0, 10.0, 101)
+    with pytest.raises(
+        ValueError,
+        match=r"compute_directional_rates\(\) got angle_unit='degrees'; "
+        r"angle_unit must be one of 'rad', 'deg'",
+    ):
+        compute_directional_rates(
+            [times[::10]], times, np.zeros_like(times), angle_unit="degrees"
+        )

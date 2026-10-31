@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 
 from neurospatial._intervals import (
+    IntervalGates,
+    interval_gates,
     interval_valid_mask,
     start_allocated_occupancy,
     warn_excluded_intervals,
@@ -69,25 +71,25 @@ def test_inclusive_gap_contract():
 @pytest.mark.parametrize("rate", [30.0, 1000.0, 29.97])
 def test_max_gap_at_the_sampling_interval_warns_about_rounding(rate, offset):
     times = offset + np.arange(10_000) / rate
-    mask = interval_valid_mask(times, max_gap=1 / rate)
-    assert 0 < np.count_nonzero(~mask) < mask.size  # rounding drops a share
+    gates = interval_gates(times, max_gap=1 / rate)
+    assert 0 < np.count_nonzero(~gates.mask) < gates.mask.size  # rounding drops a share
     with pytest.warns(UserWarning, match="only by float rounding") as record:
-        warn_excluded_intervals(times, mask, max_gap=1 / rate)
+        warn_excluded_intervals(gates)
     assert "not in seconds" not in str(record[0].message)
 
 
 @pytest.mark.parametrize("offset", [0.0, 1.7e9])
 def test_max_gap_above_the_sampling_interval_is_silent(recwarn, offset):
     times = offset + np.arange(10_000) / 30.0
-    mask = interval_valid_mask(times, max_gap=1.5 / 30.0)
-    assert mask.all()
-    warn_excluded_intervals(times, mask, max_gap=1.5 / 30.0)
+    gates = interval_gates(times, max_gap=1.5 / 30.0)
+    assert gates.mask.all()
+    warn_excluded_intervals(gates)
     assert not recwarn.list
 
 
 def test_all_excluded_without_named_gates_reads_cleanly():
     with pytest.warns(UserWarning) as record:
-        warn_excluded_intervals(np.arange(4.0), np.zeros(3, bool), max_gap=None)
+        warn_excluded_intervals(IntervalGates(np.arange(4.0), np.zeros(3, bool), None))
     message = str(record[0].message)
     assert "gate(s) )" not in message and "Fix: ." not in message
     assert "Fix: check that the samples are finite" in message
@@ -116,8 +118,21 @@ def test_interval_valid_mask_gap_without_positions():
     assert interval_valid_mask(np.array([0.0])).shape == (0,)
 
 
-def test_observed_runs(two_epoch_recording):
-    from neurospatial._intervals import observed_runs
+def test_observed_run_samples(two_epoch_recording):
+    from neurospatial._observation import resolve_sample_support
+
+    def observed_runs(times, *, max_gap, epochs, sample_valid=None):
+        valid = (
+            np.ones(times.size, dtype=bool) if sample_valid is None else sample_valid
+        )
+        return resolve_sample_support(
+            times,
+            valid,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=None,
+            result="the result is empty",
+        ).run_samples()
 
     def bounds(runs):
         return [(int(run[0]), int(run[-1]) + 1) for run in runs]

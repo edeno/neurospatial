@@ -110,18 +110,9 @@ def _times_problems(times: NDArray[np.float64], n_time: int) -> list[str]:
             f"times has shape {times.shape}, expected ({n_time},) to match the "
             "decoded time bins"
         ]
-    if not np.all(np.isfinite(times)):
-        i = int(np.flatnonzero(~np.isfinite(times))[0])
-        return [f"times must be finite, but times[{i}] = {times[i]}"]
-    unordered = np.flatnonzero(np.diff(times) <= 0)
-    if unordered.size:
-        i = int(unordered[0])
-        return [
-            "times must be strictly increasing, but "
-            f"times[{i + 1}] = {times[i + 1]} does not follow "
-            f"times[{i}] = {times[i]}"
-        ]
-    return []
+    from neurospatial._validation import times_positions_problems
+
+    return [problem.rstrip(".") for problem in times_positions_problems(times, None)[0]]
 
 
 def _mean_over(values: NDArray[np.floating], rows: NDArray[np.bool_]) -> float:
@@ -178,31 +169,36 @@ def _align_true_positions(
         Coordinates at query times and their observed-run identifiers. Missing
         query positions have NaN coordinates and run identifier -1.
     """
-    from neurospatial._validation import validate_finite
+    from neurospatial._validation import refuse_infinite, times_positions_problems
 
-    times = validate_finite(times, name="times")
-    true_times = validate_finite(true_times, name="true_times")
+    times = np.asarray(times, dtype=np.float64)
+    true_times = np.asarray(true_times, dtype=np.float64)
     true_positions = np.asarray(true_positions, dtype=np.float64)
-    if times.ndim != 1 or np.any(np.diff(times) <= 0):
-        raise ValueError(
-            "times must be a strictly increasing 1D array of decode times."
-        )
-    if true_times.ndim != 1 or not true_times.size:
-        raise ValueError("true_times must be a nonempty 1D array of timestamps.")
-    if np.any(np.diff(true_times) <= 0):
-        raise ValueError(
-            "true_times must be strictly increasing (no duplicates). "
-            "Sort true_times and reorder true_positions together before alignment."
-        )
+    for name, values in (("times", times), ("true_times", true_times)):
+        problems = times_positions_problems(values, None)[0]
+        if name == "true_times" and values.ndim == 1 and not values.size:
+            problems.append("true_times is empty; it needs at least one sample.")
+        if problems:
+            raise ValueError(
+                _format_error(
+                    f"{call}() got invalid {name}:\n- " + "\n- ".join(problems),
+                    why="positions are interpolated between the samples around "
+                    "each decode time, so times need one finite, strictly "
+                    "increasing sample per row.",
+                    fix=f"pass {name} as a strictly increasing 1-D array of "
+                    "finite timestamps in seconds; reorder true_positions "
+                    "together with true_times.",
+                )
+            )
     if true_positions.shape != (true_times.size, n_dims):
         raise ValueError(
             f"true_positions must have shape ({true_times.size}, {n_dims}) "
             f"to match true_times and the environment, got {true_positions.shape}."
         )
-    if np.any(np.isinf(true_positions)):
-        raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
+    refuse_infinite(true_positions, name="true_positions", call=call)
     from neurospatial._intervals import (
         gap_endpoints,
+        interval_gates,
         interval_valid_mask,
         validate_max_gap,
         warn_excluded_intervals,
@@ -215,12 +211,8 @@ def _align_true_positions(
 
     aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
     finite = np.all(np.isfinite(true_positions), axis=1)
-    gates = interval_valid_mask(true_times, max_gap=max_gap, break_before=breaks)
     warn_excluded_intervals(
-        true_times,
-        gates,
-        max_gap=max_gap,
-        break_before=breaks,
+        interval_gates(true_times, max_gap=max_gap, break_before=breaks),
         result="true positions are known only at exact sample times",
     )
     # A missing true position is bridged like a deleted row: the gap between

@@ -18,14 +18,6 @@ _POSITIONAL = (
     inspect.Parameter.POSITIONAL_OR_KEYWORD,
 )
 
-Translate = Callable[[dict[str, Any]], tuple[str, dict[str, Any] | None]]
-"""Map earlier arguments onto today's keywords.
-
-It takes the values given for the ``former`` arguments, by name, and returns
-a sentence on which keyword to use and the corrected keywords, or None when
-no single correction fits the values.
-"""
-
 
 def _shown(value: Any) -> str:
     """Show a short value as written, and anything longer by its type."""
@@ -37,19 +29,16 @@ def keyword_hint(
     *order: str,
     redirect: str | None = None,
     fix: str | None = None,
-    former: tuple[str, ...] = (),
-    translate: Translate | None = None,
-    why: str | None = None,
     missing: Mapping[str, tuple[str, str]] | None = None,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     """Explain a call that passes options by position or to the wrong function.
 
     Python refuses an extra positional argument before the function runs, with
     a message that does not say which keyword was meant. The wrapped function
-    raises a ``TypeError`` instead. When an earlier version took options in a
-    known positional ``order``, it maps each extra positional value onto those
-    keywords and shows the corrected call; otherwise it lists the keyword-only
-    options without guessing which one was meant. Every other call, including
+    raises a ``TypeError`` instead. When options have a natural positional
+    ``order``, it maps each extra positional value onto those keywords and
+    shows the corrected call; otherwise it lists the keyword-only options
+    without guessing which one was meant. Every other call, including
     other argument errors, runs the function unchanged. The signature,
     docstring and ``__wrapped__`` are the function's own. On a method, the
     corrected call is shown on ``env``, the name the documentation gives an
@@ -59,8 +48,8 @@ def keyword_hint(
     ----------
     *order : str
         Keyword-only parameters that extra positional values stand for, in
-        the order an earlier version took them positionally. Leave it empty
-        for a function that never took options by position.
+        the order a caller would write them. Leave it empty when no order is
+        natural.
     redirect : str, optional
         For a function that loads a saved environment and builds nothing,
         such as ``Environment.from_nwb``: the dotted path of the function
@@ -69,18 +58,8 @@ def keyword_hint(
         loads and shows the corrected call to the builder.
     fix : str, optional
         Fix to show for extra positional values instead of mapping them onto
-        keywords, for a function whose earlier positional arguments have no
-        keyword today.
-    former : tuple of str, optional
-        Arguments an earlier version took first by position, in that order,
-        that ``translate`` maps onto today's keywords. Extra positional values
-        stand for them, and so does a keyword call using a name that no
-        longer exists. A name that is still a parameter is passed on as it
-        is.
-    translate : callable, optional
-        Required with ``former``; see :data:`Translate`.
-    why : str, optional
-        ``Why:`` line for a call that ``former`` explains.
+        keywords, for values that have no keyword, such as a layout kind and
+        its parameters passed to ``Environment.from_layout``.
     missing : mapping of str to (str, str), optional
         Required keyword-only options whose omission needs more than Python's
         "missing argument" message, each mapped to its ``Why:`` sentence and
@@ -92,8 +71,6 @@ def keyword_hint(
     callable
         A decorator that keeps the function's signature.
     """
-    if bool(former) != (translate is not None):
-        raise TypeError("keyword_hint needs former and translate together.")
 
     def decorate(function: Callable[_P, _R]) -> Callable[_P, _R]:
         signature = inspect.signature(function)
@@ -116,7 +93,6 @@ def keyword_hint(
             raise TypeError(
                 f"keyword_hint missing names options that are not required {optional}."
             )
-        removed = frozenset(former) - parameters.keys()
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
         # The caller neither passes nor sees the class or instance a
@@ -128,16 +104,6 @@ def keyword_hint(
         def call_with(arguments: dict[str, Any]) -> str:
             given = [f"{name}={_shown(value)}" for name, value in arguments.items()]
             return f"{caller}({', '.join([*shown, *given])})"
-
-        def formerly(values: dict[str, Any], kwargs: dict[str, Any]) -> str:
-            assert translate is not None
-            kept = {
-                name: values.pop(name) for name in list(values) if name in parameters
-            }
-            text, corrected = translate(values)
-            if corrected is None:
-                return text
-            return f"{text}, as in {call_with({**corrected, **kept, **kwargs})}"
 
         def positional_error(
             args: tuple[Any, ...], kwargs: dict[str, Any]
@@ -153,15 +119,8 @@ def keyword_hint(
                 else f"{count} positional argument{'' if count == 1 else 's'} "
                 f"({', '.join(shown)})"
             )
-            reason = (
-                "Why: options are keyword-only, so a value passed by "
-                "position cannot be matched to an option."
-            )
             if fix is not None:
                 advice = fix
-            elif former and len(extra) <= len(former):
-                advice = formerly(dict(zip(former, extra, strict=False)), kwargs)
-                reason = why or reason
             elif len(mapped) < len(extra):
                 advice = "options are keyword-only; pass them by name: " + ", ".join(
                     f"{name}=" for name in options
@@ -177,20 +136,9 @@ def keyword_hint(
                 _format_error(
                     f"{title}() takes {taken} but {given_count} "
                     f"{'was' if given_count == 1 else 'were'} given.",
-                    why=reason,
+                    why="Why: options are keyword-only, so a value passed by "
+                    "position cannot be matched to an option.",
                     fix=advice,
-                )
-            )
-
-        def former_error(kwargs: dict[str, Any]) -> TypeError:
-            values = {name: kwargs[name] for name in former if name in kwargs}
-            rest = {name: value for name, value in kwargs.items() if name not in values}
-            listed = ", ".join(name for name in values if name in removed)
-            return TypeError(
-                _format_error(
-                    f"{title}() does not take {listed}.",
-                    why=why or f"Why: {listed} is the name an earlier version used.",
-                    fix=formerly(values, rest),
                 )
             )
 
@@ -233,8 +181,6 @@ def keyword_hint(
                             fix=advice,
                         )
                     )
-            if removed and not removed.isdisjoint(kwargs):
-                raise former_error(kwargs)
             if not accepts_any_keyword and redirect is not None:
                 unexpected = {
                     name: value

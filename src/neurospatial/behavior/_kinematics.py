@@ -18,8 +18,7 @@ def interval_velocity(
     A sample with a non-finite coordinate is missing and is bridged like a
     deleted row: every usable interval inside the gap between two valid
     samples gets that gap's velocity, its displacement over its elapsed
-    time. A zero-length gap (duplicate timestamps) has no defined velocity
-    and is NaN, like an unobserved interval, rather than infinite.
+    time; ``times`` are strictly increasing, so every gap has a duration.
 
     Parameters
     ----------
@@ -43,7 +42,7 @@ def interval_velocity(
         np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
     )
     dt = times[end] - times[start]
-    defined = interval_mask & linked & (dt > 0)
+    defined = interval_mask & linked
     velocity: NDArray[np.float64] = np.full(
         (dt.size, positions.shape[1]), np.nan, dtype=np.float64
     )

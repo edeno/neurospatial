@@ -317,10 +317,9 @@ class PreparedScene:
         self._frame_interval = (
             float(np.median(np.diff(frames))) if len(frames) > 1 else 0.0
         )
+        # Raster rows come from spike coercion, which sorts each train.
         self._raster_clocks = {
-            (id(raster), row): (
-                spikes if np.all(spikes[1:] >= spikes[:-1]) else np.sort(spikes)
-            )
+            (id(raster), row): spikes
             for raster in scene._overlay_data.spike_rasters
             for row, spikes in enumerate(raster.spike_times)
         }

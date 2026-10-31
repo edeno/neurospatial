@@ -8,8 +8,9 @@ rendering.
 from __future__ import annotations
 
 import contextlib
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
+import threading
+from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple, Protocol, runtime_checkable
 
@@ -17,6 +18,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_integer_at_least
+
+# A forward jump of at most this many frames is decoded through instead of
+# seeking: a seek restarts decoding at the previous keyframe.
+_MAX_FRAMES_GRABBED = 16
 
 
 @runtime_checkable
@@ -86,7 +92,7 @@ def _validate_frame_processing(
     frame_size_px: tuple[int, int],
     crop: tuple[int, int, int, int] | None,
     downsample: int,
-) -> None:
+) -> tuple[int, int]:
     """Refuse a crop or downsample factor that does not fit the video frame.
 
     Parameters
@@ -98,6 +104,11 @@ def _validate_frame_processing(
     downsample : int
         Factor by which the (cropped) frame is shrunk.
 
+    Returns
+    -------
+    tuple of (width, height)
+        Size of the processed frame in pixels, after crop and downsample.
+
     Raises
     ------
     ValueError
@@ -106,11 +117,7 @@ def _validate_frame_processing(
         inside the frame, or the processed frame has no pixels.
     """
     width, height = frame_size_px
-    if (
-        isinstance(downsample, bool)
-        or not isinstance(downsample, (int, np.integer))
-        or downsample < 1
-    ):
+    if not is_integer_at_least(downsample, 1):
         raise ValueError(
             _format_error(
                 f"downsample must be a positive integer; got {downsample!r}.",
@@ -122,14 +129,8 @@ def _validate_frame_processing(
         values = tuple(crop) if np.iterable(crop) else ()
         if (
             len(values) != 4
-            or any(
-                isinstance(value, bool) or not isinstance(value, (int, np.integer))
-                for value in values
-            )
-            or values[0] < 0
-            or values[1] < 0
-            or values[2] <= 0
-            or values[3] <= 0
+            or not all(is_integer_at_least(value, 0) for value in values[:2])
+            or not all(is_integer_at_least(value, 1) for value in values[2:])
             or values[0] + values[2] > width
             or values[1] + values[3] > height
         ):
@@ -152,6 +153,7 @@ def _validate_frame_processing(
                 fix="use a smaller downsample factor or a larger crop.",
             )
         )
+    return width // downsample, height // downsample
 
 
 class CacheInfo(NamedTuple):
@@ -208,16 +210,15 @@ class _VideoReader:
         Size of returned frames after crop and downsample.
     original_size_px : tuple of (width, height)
         Original video frame size before any processing.
-    crop_offset_px : tuple of (x, y)
-        Offset of crop region from top-left corner.
     prefetch_ahead : int
         Number of frames to prefetch ahead.
 
     Notes
     -----
     - Frames are returned in RGB format (OpenCV reads as BGR internally).
-    - Pickling keeps the settings and drops the cache and prefetch thread,
-      so a reader can be sent to parallel rendering workers.
+    - One OpenCV capture serves all reads: frames read in order need no
+      seek. Pickling keeps the settings and drops the capture, cache and
+      prefetch thread, so a reader can be sent to parallel rendering workers.
 
     Examples
     --------
@@ -245,7 +246,6 @@ class _VideoReader:
     ) -> None:
         import cv2
 
-        # Validate path
         self._path = Path(path)
         if not self._path.exists():
             raise FileNotFoundError(f"Video file not found: {self._path}")
@@ -253,64 +253,51 @@ class _VideoReader:
         self._downsample = downsample
         self._cache_size = cache_size
 
-        # Validate prefetch_ahead
         if prefetch_ahead < 0:
             raise ValueError(
                 f"prefetch_ahead must be non-negative, got {prefetch_ahead}"
             )
         self._prefetch_ahead = prefetch_ahead
 
-        # Open video to read metadata
-        cap = cv2.VideoCapture(str(self._path))
-        if not cap.isOpened():
+        capture = cv2.VideoCapture(str(self._path))
+        if not capture.isOpened():
             raise ValueError(f"Could not open video file: {self._path}")
-
+        self._n_frames: int = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self._original_size_px: tuple[int, int] = (width, height)
+        # One capture serves every read; ``_next_frame`` is the frame its
+        # next ``read()`` returns, so in-order reads need no seek.
+        self._capture: cv2.VideoCapture | None = capture
+        self._next_frame = 0
         try:
-            self._n_frames: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            self._original_size_px: tuple[int, int] = (width, height)
-        finally:
-            cap.release()
-
-        _validate_frame_processing((width, height), crop, downsample)
+            self._frame_size_px = _validate_frame_processing(
+                (width, height), crop, downsample
+            )
+        except ValueError:
+            self._release_capture()
+            raise
         self._crop = crop
-        if crop is not None:
-            crop_x, crop_y, crop_w, crop_h = crop
-            self._crop_offset_px = (crop_x, crop_y)
-            effective_width = crop_w
-            effective_height = crop_h
-        else:
-            self._crop_offset_px = (0, 0)
-            effective_width = width
-            effective_height = height
 
-        # Calculate final frame size after downsample
-        final_width = effective_width // downsample
-        final_height = effective_height // downsample
-        self._frame_size_px = (final_width, final_height)
+        # The lock guards the capture and the cache, so a frame wanted by
+        # the caller and by the prefetch thread is decoded only once.
+        self._lock = threading.Lock()
+        self._cache: OrderedDict[int, NDArray[np.uint8]] = OrderedDict()
+        self._hits = 0
+        self._misses = 0
 
-        # Create the cached frame reader
-        self._setup_cache()
-
-        # Set up prefetching infrastructure
         self._prefetch_executor: ThreadPoolExecutor | None = None
+        self._prefetch_task: Future[None] | None = None
         if self._prefetch_ahead > 0:
-            # Create a single-thread executor for prefetching
             self._prefetch_executor = ThreadPoolExecutor(max_workers=1)
 
-    def _setup_cache(self) -> None:
-        """Set up the LRU-cached frame reader."""
-
-        # Create a new cached function bound to this instance
-        @lru_cache(maxsize=self._cache_size)
-        def _read_frame(frame_idx: int) -> NDArray[np.uint8]:
-            return self._read_frame_uncached(frame_idx)
-
-        self._cached_read_frame = _read_frame
+    def _release_capture(self) -> None:
+        if self._capture is not None:
+            self._capture.release()
+            self._capture = None
 
     def _read_frame_uncached(self, frame_idx: int) -> NDArray[np.uint8]:
-        """Read a single frame from disk without caching.
+        """Decode one frame from disk; the caller holds ``self._lock``.
 
         Parameters
         ----------
@@ -320,56 +307,75 @@ class _VideoReader:
         Returns
         -------
         NDArray[np.uint8]
-            RGB frame array of shape (height, width, 3).
+            Read-only RGB frame array of shape (height, width, 3).
         """
         import cv2
 
-        cap = cv2.VideoCapture(str(self._path))
-        try:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if not ret:
-                raise OSError(
-                    _format_error(
-                        f"Could not decode frame {frame_idx} of video '{self._path}'.",
-                        why=(
-                            "OpenCV read no image, although the video "
-                            f"reports {self._n_frames} frames. "
-                            "The frame may be corrupt, this OpenCV build may "
-                            "lack the codec, or the container may overstate "
-                            "its frame count (common for variable-frame-rate "
-                            "MP4 files)."
-                        ),
-                        fix=(
-                            "check that the video plays to this frame in a "
-                            "media player, or re-encode it at a constant frame "
-                            "rate, e.g. ffmpeg -i in.mp4 -c:v libx264 "
-                            "-fps_mode cfr out.mp4, then reopen it."
-                        ),
-                    )
+        if self._capture is None:
+            self._capture = cv2.VideoCapture(str(self._path))
+            self._next_frame = 0
+        capture = self._capture
+        skip = frame_idx - self._next_frame
+        if 0 <= skip <= _MAX_FRAMES_GRABBED:
+            for _ in range(skip):
+                capture.grab()
+        else:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = capture.read()
+        if not ret:
+            # The capture's position is unknown after a failed read.
+            self._release_capture()
+            raise OSError(
+                _format_error(
+                    f"Could not decode frame {frame_idx} of video '{self._path}'.",
+                    why=(
+                        "OpenCV read no image, although the video "
+                        f"reports {self._n_frames} frames. "
+                        "The frame may be corrupt, this OpenCV build may "
+                        "lack the codec, or the container may overstate "
+                        "its frame count (common for variable-frame-rate "
+                        "MP4 files)."
+                    ),
+                    fix=(
+                        "check that the video plays to this frame in a "
+                        "media player, or re-encode it at a constant frame "
+                        "rate, e.g. ffmpeg -i in.mp4 -c:v libx264 "
+                        "-fps_mode cfr out.mp4, then reopen it."
+                    ),
                 )
+            )
+        self._next_frame = frame_idx + 1
 
-            # Apply crop if specified
-            if self._crop is not None:
-                x, y, w, h = self._crop
-                frame = frame[y : y + h, x : x + w]
+        if self._crop is not None:
+            x, y, w, h = self._crop
+            frame = frame[y : y + h, x : x + w]
+        if self._downsample > 1:
+            new_h = frame.shape[0] // self._downsample
+            new_w = frame.shape[1] // self._downsample
+            frame = cv2.resize(frame, (new_w, new_h))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Apply downsample if specified
-            if self._downsample > 1:
-                new_h = frame.shape[0] // self._downsample
-                new_w = frame.shape[1] // self._downsample
-                frame = cv2.resize(frame, (new_w, new_h))
+        # Cast for mypy (cv2 already returns uint8)
+        result: NDArray[np.uint8] = frame.astype(np.uint8, copy=False)
+        # The cache hands this array to every later reader of the frame.
+        result.setflags(write=False)
+        return result
 
-            # Convert BGR to RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            # Cast for mypy (cv2 already returns uint8)
-            result: NDArray[np.uint8] = frame.astype(np.uint8, copy=False)
-            # The cache hands this array to every later reader of the frame.
-            result.setflags(write=False)
-            return result
-        finally:
-            cap.release()
+    def _cached_read_frame(self, frame_idx: int) -> NDArray[np.uint8]:
+        """Return a frame from the LRU cache, decoding it on a miss."""
+        with self._lock:
+            frame = self._cache.get(frame_idx)
+            if frame is not None:
+                self._hits += 1
+                self._cache.move_to_end(frame_idx)
+                return frame
+            self._misses += 1
+            frame = self._read_frame_uncached(frame_idx)
+            if self._cache_size > 0:
+                self._cache[frame_idx] = frame
+                if len(self._cache) > self._cache_size:
+                    self._cache.popitem(last=False)
+            return frame
 
     def __getitem__(self, frame_idx: int) -> NDArray[np.uint8]:
         """Get a video frame by index.
@@ -396,49 +402,43 @@ class _VideoReader:
             raise IndexError(
                 f"Frame index {frame_idx} out of range [0, {self._n_frames})"
             )
-
-        # Trigger prefetching for upcoming frames
-        if self._prefetch_ahead > 0 and self._prefetch_executor is not None:
-            self._trigger_prefetch(frame_idx)
-
+        executor = self._prefetch_executor
+        if executor is not None:
+            self._trigger_prefetch(executor, frame_idx)
         return self._cached_read_frame(frame_idx)
 
-    def _trigger_prefetch(self, current_frame: int) -> None:
-        """Trigger prefetching of upcoming frames in background thread.
+    def _trigger_prefetch(
+        self, executor: ThreadPoolExecutor, current_frame: int
+    ) -> None:
+        """Load the frames after ``current_frame`` in the background.
+
+        At most one prefetch task is pending: while one runs, later
+        accesses do not queue more, so the thread does not fall behind
+        playback.
 
         Parameters
         ----------
+        executor : ThreadPoolExecutor
+            The single-thread prefetch executor.
         current_frame : int
             The frame that was just accessed.
         """
-        if self._prefetch_executor is None:
+        if self._prefetch_task is not None and not self._prefetch_task.done():
             return
-
-        # Calculate frames to prefetch (current+1 to current+prefetch_ahead)
         start_frame = current_frame + 1
         end_frame = min(current_frame + self._prefetch_ahead + 1, self._n_frames)
-
         if start_frame >= end_frame:
             return
 
-        # Submit prefetch task (non-blocking)
         def prefetch_frames() -> None:
-            """
-            Prefetch upcoming frames into cache in background thread.
-
-            Iterates through the specified frame range and loads each frame
-            into the LRU cache. Errors are suppressed since they will be
-            caught on actual frame access.
-            """
             for idx in range(start_frame, end_frame):
-                # Ignore errors in prefetching - they'll be caught on actual access
+                # A frame that fails here raises again when it is accessed.
                 with contextlib.suppress(Exception):
-                    # This will cache the frame via lru_cache
                     self._cached_read_frame(idx)
 
-        # Executor might be shut down
+        # The executor may already be shut down.
         with contextlib.suppress(RuntimeError):
-            self._prefetch_executor.submit(prefetch_frames)
+            self._prefetch_task = executor.submit(prefetch_frames)
 
     def cache_info(self) -> CacheInfo:
         """Return cache statistics.
@@ -448,13 +448,13 @@ class _VideoReader:
         CacheInfo
             Named tuple with hits, misses, maxsize, currsize.
         """
-        info = self._cached_read_frame.cache_info()
-        return CacheInfo(
-            hits=info.hits,
-            misses=info.misses,
-            maxsize=info.maxsize or 0,
-            currsize=info.currsize,
-        )
+        with self._lock:
+            return CacheInfo(
+                hits=self._hits,
+                misses=self._misses,
+                maxsize=self._cache_size,
+                currsize=len(self._cache),
+            )
 
     @property
     def n_frames(self) -> int:
@@ -472,11 +472,6 @@ class _VideoReader:
         return self._original_size_px
 
     @property
-    def crop_offset_px(self) -> tuple[int, int]:
-        """Crop offset (x, y) from top-left corner."""
-        return self._crop_offset_px
-
-    @property
     def prefetch_ahead(self) -> int:
         """Number of frames to prefetch ahead during sequential access."""
         return self._prefetch_ahead
@@ -484,8 +479,8 @@ class _VideoReader:
     def __reduce__(self) -> tuple:
         """Support pickle serialization.
 
-        Cache and prefetch executor are dropped during pickling for safety
-        in parallel workflows.
+        The capture, cache and prefetch executor are dropped; the restored
+        reader opens its own.
 
         Returns
         -------
@@ -506,9 +501,9 @@ class _VideoReader:
     def close(self) -> None:
         """Release resources held by the _VideoReader.
 
-        Shuts down the prefetch thread pool executor if active. Safe to call
-        multiple times. After closing, the reader can still be used but
-        prefetching will be disabled.
+        Shuts down the prefetch thread and releases the video capture. Safe
+        to call multiple times. After closing, the reader can still be used:
+        it reopens the video on the next read, without prefetching.
 
         Examples
         --------
@@ -516,9 +511,13 @@ class _VideoReader:
         >>> frame = reader[0]  # doctest: +SKIP
         >>> reader.close()  # Release resources  # doctest: +SKIP
         """
-        if hasattr(self, "_prefetch_executor") and self._prefetch_executor is not None:
-            self._prefetch_executor.shutdown(wait=False)
+        executor = getattr(self, "_prefetch_executor", None)
+        if executor is not None:
+            executor.shutdown(wait=False)
             self._prefetch_executor = None
+        if hasattr(self, "_lock"):
+            with self._lock:
+                self._release_capture()
 
     def __enter__(self) -> _VideoReader:
         """Enter context manager.
@@ -553,5 +552,5 @@ class _VideoReader:
         self.close()
 
     def __del__(self) -> None:
-        """Clean up prefetch executor on deletion."""
+        """Release the prefetch executor and capture on deletion."""
         self.close()

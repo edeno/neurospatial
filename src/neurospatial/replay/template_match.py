@@ -56,7 +56,6 @@ from neurospatial.replay.sequence_match import (
     _random_orderings,
     _sampled_distribution,
     _sequence_match,
-    _sorted_trains,
     _template_ranks,
     _trial_group,
 )
@@ -446,7 +445,7 @@ def detect_template_match_replay(
         single_template_method=method.name if method.template_choice is None else None,
     )
     start, stop = _validated_interval(interval, operation)
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     streams = _template_rngs(rng, [name for name, _, _ in items])
     results = []
     for (name, template_env, models), stream in zip(items, streams, strict=True):
@@ -865,7 +864,7 @@ def template_match_dataset_test(
     method = template_match_method
     items = _template_items(env, encoding_models, None, operation)
     names = [name for name, _, _ in items]
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     ranks = {
         name: _method_ranks(method, template_env, models, name, len(trains), operation)
         for name, template_env, models in items

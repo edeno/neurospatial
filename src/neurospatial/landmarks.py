@@ -23,6 +23,7 @@ from shapely.geometry.base import BaseGeometry
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.regions import _thaw_metadata
 from neurospatial.regions.core import (
     _check_planar_geometry,
@@ -164,7 +165,7 @@ class Landmark:
             data = _owned_point(
                 self.data,
                 owner=owner,
-                shape_kinds={"Polygon": "polygon", "LineString": "line"},
+                shape_kinds=_SHAPE_KINDS,
             )
         elif self.kind in ("line", "polygon"):
             data = _owned_shape(self.data, kind=self.kind, owner=owner)
@@ -457,14 +458,10 @@ class Landmarks(Mapping[str, Landmark]):
         KeyError
             If ``name`` is not a landmark in this collection.
         ValueError
-            If ``tolerance`` is negative or not finite, or ``points`` does not
+            If ``tolerance`` is not a finite nonnegative number, or ``points`` does not
             have shape ``(n_points, n_dims)``.
         """
-        if not np.isfinite(tolerance) or tolerance < 0:
-            raise _error(
-                f"tolerance must be finite and nonnegative, got {tolerance!r}.",
-                "pass a distance in the environment's units, such as 2.0",
-            )
+        validate_finite_scalar(tolerance, name="tolerance", positive=False)
         query = np.asarray(points, dtype=np.float64)
         nearest = self[name].nearest_points(query)
         with np.errstate(invalid="ignore"):

@@ -257,10 +257,12 @@ class TestVideoReaderCropDownsample:
 
         assert reader.original_size_px == (32, 32)
         assert reader.frame_size_px == (16, 16)
-        assert reader.crop_offset_px == (8, 8)
 
         frame = reader[0]
         assert frame.shape == (16, 16, 3)
+        np.testing.assert_array_equal(
+            frame, _VideoReader(larger_video_path)[0][8:24, 8:24]
+        )
 
     def test_reader_crop_and_downsample(self, larger_video_path: Path):
         """Test crop followed by downsample."""
@@ -388,7 +390,7 @@ with open(sys.argv[1], "rb") as stream:
     reader = pickle.load(stream)
 with reader:
     assert reader.frame_size_px == (10, 8)
-    assert reader.crop_offset_px == (2, 4)
+    assert reader._crop == (2, 4, 20, 16)
     assert reader.cache_info().maxsize == 7
     assert reader.cache_info().currsize == 0
     assert reader.prefetch_ahead == 2

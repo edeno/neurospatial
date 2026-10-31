@@ -38,7 +38,6 @@ from neurospatial._validation import (
 from neurospatial.replay.sequence_match import (
     _check_seconds,
     _onsets,
-    _sorted_trains,
 )
 from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
@@ -137,7 +136,7 @@ def surrogate_spike_trains(
     peaks = _checked_surrogate_options(
         operation, (kind,), max_jitter=max_jitter, theta_peak_times=theta_peak_times
     )
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     return _surrogate(trains, kind, max_jitter, peaks, np.random.default_rng(rng))
 
 
@@ -424,7 +423,7 @@ def recurring_spike_sequences(
     from neurospatial._spikes import as_spike_trains
 
     operation = "recurring_spike_sequences()"
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     _check_search_options(
         operation,
         n_cells=len(trains),
@@ -770,7 +769,7 @@ def recurring_sequences_significance(
 
     operation = "recurring_sequences_significance()"
     method = recurring_sequence_method
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     peaks = _checked_surrogate_options(
         operation,
         method.surrogates,

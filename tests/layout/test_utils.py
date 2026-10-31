@@ -133,13 +133,12 @@ def test_generic_graph_plot_empty_graph():
         _generic_graph_plot(G, "Empty")
 
 
-@pytest.mark.parametrize("missing", [np.nan, np.inf])
-def test_no_finite_position_says_nan_or_infinite(missing):
-    """Infinite samples are missing like NaN, so the message names both."""
+def test_no_finite_position_says_nan_or_infinite():
+    """All-NaN samples leave no row to bin; the message names every row."""
     from neurospatial import Environment
 
     with pytest.raises(ValueError, match="NaN or infinite") as caught:
-        Environment.from_samples(np.full((10, 2), missing), bin_size=1.0)
+        Environment.from_samples(np.full((10, 2), np.nan), bin_size=1.0)
     assert "all 10 rows" in str(caught.value)
 
 

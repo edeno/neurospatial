@@ -248,7 +248,8 @@ def test_run_bounds(mask, expected):
 
 
 def test_break_before_drops_only_the_interval_it_starts():
-    from neurospatial._intervals import interval_valid_mask, observed_runs
+    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._observation import resolve_sample_support
 
     times = np.arange(6) * 0.1
     breaks = np.array([True, False, False, True, False, False])
@@ -256,7 +257,14 @@ def test_break_before_drops_only_the_interval_it_starts():
     # Entry 0 is ignored; the break at sample 3 drops interval (2, 3) only.
     mask = interval_valid_mask(times, max_gap=0.5, break_before=breaks)
     np.testing.assert_array_equal(mask, [True, True, False, True, True])
-    runs = observed_runs(times, max_gap=0.5, epochs=None, break_before=breaks)
+    runs = resolve_sample_support(
+        times,
+        np.ones(times.size, dtype=bool),
+        max_gap=0.5,
+        epochs=None,
+        break_before=breaks,
+        result="the result is empty",
+    ).run_samples()
     assert [run.tolist() for run in runs] == [[0, 1, 2], [3, 4, 5]]
 
 
@@ -362,7 +370,6 @@ def test_starts_and_stops_as_rows_get_a_column_stack_hint() -> None:
 
 def test_context_warnings_survive_an_error_in_the_block() -> None:
     """A warning raised before an error often explains it, so it is kept."""
-    import warnings
 
     from neurospatial._stacklevel import _warnings_with_context
 
@@ -373,47 +380,6 @@ def test_context_warnings_survive_an_error_in_the_block() -> None:
     ):
         warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
         raise ValueError("nothing left")
-
-
-def test_linear_fill_between_repeated_timestamps_is_silent_and_left_missing():
-    """A missing row between two samples at one instant has no place on a path.
-
-    Its gap lasts no time, so the row stays NaN and holds no time or spikes;
-    filling it must not leak a 0/0 RuntimeWarning.
-    """
-    from neurospatial._intervals import fill_missing_positions
-
-    times = np.array([0.0, 0.1, 0.2, 0.2, 0.2, 0.3, 0.4])
-    positions = np.c_[np.arange(7.0), np.zeros(7)]
-    positions[3] = np.nan
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        filled = fill_missing_positions(times, positions, time_allocation="linear")
-    assert np.isnan(filled[3]).all()
-    np.testing.assert_array_equal(
-        np.delete(filled, 3, axis=0), np.delete(positions, 3, axis=0)
-    )
-
-
-def test_linear_occupancy_with_a_missing_row_at_a_repeated_timestamp():
-    """Occupancy equals that of the recording with the missing row deleted."""
-    from neurospatial import Environment
-
-    env = Environment.from_samples(
-        np.c_[np.linspace(0, 10, 50), np.linspace(0, 10, 50)], bin_size=2.0
-    )
-    times = np.array([0.0, 0.1, 0.2, 0.2, 0.2, 0.3, 0.4])
-    positions = np.c_[np.linspace(1, 9, 7), np.linspace(1, 9, 7)]
-    missing = positions.copy()
-    missing[3] = np.nan
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", RuntimeWarning)
-        occupancy = env.occupancy(times, missing, time_allocation="linear")
-    deleted = env.occupancy(
-        np.delete(times, 3), np.delete(positions, 3, axis=0), time_allocation="linear"
-    )
-    np.testing.assert_allclose(occupancy, deleted, rtol=1e-12, atol=0)
-    assert occupancy.sum() == pytest.approx(0.4)
 
 
 def test_break_declared_on_a_missing_row_moves_to_the_next_kept_row():

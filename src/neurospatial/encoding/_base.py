@@ -23,7 +23,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, UnitSelectionMixin
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    UnitSelectionMixin,
+    owned_analysis_settings,
+    resolve_record_unit_ids,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -190,13 +196,13 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         return spatial_support(self)
 
     def _analysis_attrs(self) -> dict[str, Any]:
-        """Independent estimator metadata for table exports and indexed results."""
+        """Independent estimator metadata for table exports."""
         from copy import deepcopy
 
         return {
             "method": self.method,
             "bandwidth": self.bandwidth,
-            "analysis_settings": deepcopy(self.analysis_settings),
+            "analysis_settings": deepcopy(owned_analysis_settings(self)),
         }
 
     @property
@@ -796,7 +802,7 @@ class _RateResultMixin(SpatialResultMixin):
                     "0.0 for no threshold.",
                 )
             )
-        recorded = (self.analysis_settings or {}).get("min_occupancy")
+        recorded = (owned_analysis_settings(self) or {}).get("min_occupancy")
         if recorded is not None and recorded != value:
             raise ValueError(
                 _format_error(
@@ -831,10 +837,10 @@ class SingleUnitRateMixin(_RateResultMixin):
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def _resolve_units(self) -> None:
-        # No label is a generated identity; a label from a population with
-        # generated labels arrives already marked.
-        if self.unit_id is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
+        # A label from a population with generated labels arrives marked.
+        resolve_record_unit_ids(
+            self, 1, context=type(self).__name__, label_field="unit_id"
+        )
 
 
 class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitResultT]):
@@ -854,7 +860,7 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
     _unit_ids_generated: bool
 
     def _resolve_units(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_record_unit_ids
+        from neurospatial._results import align_unit_table
 
         kind = type(self).__name__
         resolve_record_unit_ids(self, len(self), context=kind)
@@ -909,7 +915,8 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             if self.n_spikes_outside_intervals is None
             else int(self.n_spikes_outside_intervals[position]),
             spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
+            # The constructor copies the settings it is given.
+            analysis_settings=owned_analysis_settings(self),
             _unit_ids_generated=self._unit_ids_generated,
             **fields,
         )

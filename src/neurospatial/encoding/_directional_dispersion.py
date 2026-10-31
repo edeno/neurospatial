@@ -60,7 +60,8 @@ def heading_correlation_time(
     value, and irregular sampling is measured in seconds, not rows.
     """
     times = prepared.times
-    observed = times if prepared.sample_valid is None else times[prepared.sample_valid]
+    sample_valid = prepared.gates.sample_valid
+    observed = times if sample_valid is None else times[sample_valid]
     # Without two observed samples there is no sampling interval.
     step = float(np.median(np.diff(observed))) if observed.size > 1 else np.nan
     valid = prepared.support.mask & (prepared.frame_bins[:-1] >= 0)

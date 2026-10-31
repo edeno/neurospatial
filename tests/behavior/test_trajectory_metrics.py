@@ -196,14 +196,15 @@ class TestComputeHomeRange:
         )
 
     def test_time_weighted_ties_within_roundoff_are_ties(self):
-        # Three bins with 0.3 s each, summed from 0.1 s dwells in different orders.
+        # Three bins with 0.3 s each, summed from 0.1 s dwells in different
+        # orders (bin 2's last sample starts no interval): all tie at 50 %.
         position_bins = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2, 2])
         times = np.r_[np.arange(9) * 0.1, 0.9]
         times = np.round(times, 10)
         home_range = compute_home_range(
             position_bins, times=times, percentile=50.0, max_gap=None
         )
-        np.testing.assert_array_equal(home_range, [2, 0, 1])
+        np.testing.assert_array_equal(home_range, [0, 1, 2])
 
     def test_home_range_returns_indices(self):
         """Test that home_range returns bin indices (integers)."""

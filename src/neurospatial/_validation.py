@@ -9,10 +9,11 @@ into downstream computations.
 
 from __future__ import annotations
 
+import math
 import numbers
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -175,11 +176,69 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
         )
 
 
+def refuse_infinite(values: NDArray[np.float64], *, name: str, call: str) -> None:
+    """Refuse infinite entries; NaN is the only marker of a missing sample.
+
+    Parameters
+    ----------
+    values : ndarray of float64, shape (n_samples,) or (n_samples, n_columns)
+        Per-sample values such as positions, headings or signals.
+    name : str
+        Argument name, used in the message.
+    call : str
+        Public function name, used in the message.
+
+    Raises
+    ------
+    ValueError
+        If any entry is infinite, naming how many and the first one.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> refuse_infinite(np.array([[0.0, np.nan]]), name="positions", call="f")
+    >>> refuse_infinite(np.array([[0.0, np.inf]]), name="positions", call="f")
+    Traceback (most recent call last):
+    ...
+    ValueError: f() got 1 infinite value(s) in positions, first at row 0, column 1 (inf).
+    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
+    Fix: correct the step that produced it, or mark those samples missing with positions[np.isinf(positions)] = np.nan.
+    >>> refuse_infinite(np.array([0.0, -np.inf]), name="headings", call="f")
+    Traceback (most recent call last):
+    ...
+    ValueError: f() got 1 infinite value(s) in headings, first at index 1 (-inf).
+    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
+    Fix: correct the step that produced it, or mark those samples missing with headings[np.isinf(headings)] = np.nan.
+    """
+    infinite = np.isinf(values)
+    if not infinite.any():
+        return
+    first = tuple(int(i) for i in np.argwhere(infinite)[0])
+    where = (
+        f"row {first[0]}, column {first[1]}"
+        if len(first) == 2
+        else f"index {', '.join(map(str, first))}"
+    )
+    raise ValueError(
+        _format_error(
+            f"{call}() got {int(infinite.sum())} infinite value(s) in {name}, "
+            f"first at {where} ({float(values[first])}).",
+            why="NaN marks a missing sample, but an infinite value is not a "
+            "measurement; it usually comes from a division by zero in a "
+            "calibration or unit conversion, so it is not treated as missing.",
+            fix="correct the step that produced it, or mark those samples "
+            f"missing with {name}[np.isinf({name})] = np.nan.",
+        )
+    )
+
+
 def times_positions_problems(
     t: NDArray[np.float64] | None, p: NDArray[np.float64] | None
 ) -> tuple[list[str], bool]:
     """Collect pair problems, skipping an array that failed numeric conversion."""
     problems: list[str] = []
+    # Whether the recorded times go backwards, evidence of a swap below.
+    times_go_back = False
     if t is not None:
         if t.ndim != 1:
             problems.append(f"times must be 1-D (n_samples,), got shape {t.shape}.")
@@ -192,15 +251,33 @@ def times_positions_problems(
                     f"times has {int((~finite).sum())} non-finite value(s), "
                     f"first at index {int(np.argmin(finite))}."
                 )
+                # A NaN in times says nothing about order.
+                recorded = t[finite]
+                times_go_back = bool(np.any(recorded[1:] < recorded[:-1]))
             elif t.size > 1:
-                down = np.flatnonzero(np.diff(t) < 0)
+                down = np.flatnonzero(t[1:] < t[:-1])
+                times_go_back = bool(down.size)
                 if down.size:
                     k = int(down[0])
                     problems.append(
-                        f"times must be monotonically non-decreasing; it decreases at "
+                        f"times must be strictly increasing; it decreases at "
                         f"{down.size} place(s), first {float(t[k])!r} -> {float(t[k + 1])!r} "
                         f"at index {k}. To sort, index times and every per-sample "
                         'array with order = np.argsort(times, kind="stable").'
+                    )
+                repeated = np.flatnonzero(t[1:] == t[:-1])
+                if repeated.size:
+                    k = int(repeated[0])
+                    problems.append(
+                        f"times must be strictly increasing; {repeated.size} "
+                        f"timestamp(s) repeat the one before, first {float(t[k])!r} "
+                        f"at indices {k} and {k + 1}. A repeated timestamp gives one "
+                        "instant two samples and the interval between them no "
+                        "duration. To keep the first row of each timestamp, index "
+                        "times and every per-sample array with "
+                        "keep = np.unique(times, return_index=True)[1]; if the "
+                        "recordings restart their clocks, analyze each recording "
+                        "in its own call or map them to one clock."
                     )
     if p is not None and (p.ndim not in (1, 2) or (p.ndim == 2 and p.shape[1] == 0)):
         problems.append(
@@ -221,19 +298,14 @@ def times_positions_problems(
     # Suggest a swap only on evidence: 2-D times are a trajectory, or times
     # whose recorded values go backwards (as positions do) while positions
     # would be valid times. Positions that never decrease alone are normal on
-    # a linear track, and a NaN in times says nothing about order.
-    times_go_back = (
-        t is not None and t.ndim == 1 and bool(np.any(np.diff(t[np.isfinite(t)]) < 0))
-    )
-    positions_are_times = (
-        p is not None
+    # a linear track.
+    looks_swapped = (t is not None and t.ndim == 2) or (
+        times_go_back
+        and p is not None
         and p.ndim == 1
         and p.size > 1
         and bool(np.isfinite(p).all())
-        and bool(np.all(np.diff(p) >= 0))
-    )
-    looks_swapped = (t is not None and t.ndim == 2) or (
-        times_go_back and positions_are_times
+        and bool(np.all(p[1:] >= p[:-1]))
     )
     return problems, looks_swapped
 
@@ -249,7 +321,8 @@ def validate_times_positions(
     Parameters
     ----------
     times : array-like, shape (n_samples,)
-        Sample timestamps in seconds; must be 1-D, finite and non-decreasing.
+        Sample timestamps in seconds; must be 1-D, finite and strictly
+        increasing.
     positions : array-like, shape (n_samples, n_dims) or (n_samples,)
         One position row per timestamp.
     call : str
@@ -264,7 +337,8 @@ def validate_times_positions(
     ------
     ValueError
         Listing every problem, with a ``Fix:`` line that names the swap when the
-        arguments look swapped.
+        arguments look swapped; or when ``positions`` hold an infinite value
+        (:func:`refuse_infinite`), since NaN is the only missing-sample marker.
     """
     conversion_problems = []
     arrays: list[NDArray[np.float64] | None] = []
@@ -284,63 +358,27 @@ def validate_times_positions(
             format_times_positions_error(problems, looks_swapped, call=call)
         )
     assert t is not None and p is not None
+    refuse_infinite(p, name="positions", call=call)
     return t, p
-
-
-def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> None:
-    """Raise ValueError when ``times`` repeat a timestamp.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Timestamps in seconds, already validated as finite and non-decreasing
-        (``validate_times_positions`` rejects decreasing clocks).
-    call : str
-        Public function name, used in the message.
-
-    Raises
-    ------
-    ValueError
-        Naming the first repeated timestamp and how to resolve it.
-    """
-    repeated = np.flatnonzero(np.diff(times) <= 0)
-    if repeated.size == 0:
-        return
-    k = int(repeated[0])
-    raise ValueError(
-        _format_error(
-            f"{call}() needs strictly increasing times; times[k] == times[k+1] "
-            f"== {times[k]:g} at index {k} ({repeated.size} repeated timestamps).",
-            why=(
-                "interpolation and derivatives need positive elapsed time "
-                "between samples."
-            ),
-            fix=(
-                "drop repeated rows (keep = np.r_[True, np.diff(times) > 0]); "
-                "if the recordings restart their clocks, analyze each recording "
-                "in its own call or map them to one clock."
-            ),
-        )
-    )
 
 
 def format_times_positions_error(
     problems: list[str], looks_swapped: bool, *, call: str, positions: bool = True
 ) -> str:
     """Format timestamp problems; ``positions=False`` for a call without positions."""
-    rows = " with one numeric positions row per timestamp" if positions else ""
+    rows = ", with one numeric positions row per timestamp" if positions else ""
     fix = (
         "Fix: did you pass positions before times? "
         f"Call {call}(..., times, positions, ...)."
         if looks_swapped
-        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds"
-        f"{rows}."
+        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds, "
+        f"without repeats{rows}."
     )
     return (
         f"Invalid times/positions passed to {call}():\n- "
         + "\n- ".join(problems)
         + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
-        "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
+        "so mis-shaped, unsorted or repeated timestamps give wrong numbers.\n" + fix
     )
 
 
@@ -429,11 +467,7 @@ def validate_alpha(alpha: object, *, owner: str) -> None:
     ValueError
         If ``alpha`` is not a number in (0, 1).
     """
-    if (
-        isinstance(alpha, (bool, np.bool_))
-        or not isinstance(alpha, (int, float, np.integer, np.floating))
-        or not 0 < alpha < 1
-    ):
+    if not (is_finite_real(alpha, positive=True) and alpha < 1):
         raise ValueError(f"{owner}: alpha must be in (0, 1), got {alpha!r}.")
 
 
@@ -479,6 +513,34 @@ def validate_float_dtype(
     raise ValueError(message)
 
 
+def is_finite_real(value: object, *, positive: bool) -> TypeGuard[float]:
+    """Whether ``value`` is one finite real number, positive or nonnegative.
+
+    Python and NumPy numbers both count; booleans are not read as 0 or 1.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    positive : bool
+        Require ``value > 0``; otherwise ``value >= 0``.
+
+    Examples
+    --------
+    >>> is_finite_real(0.0, positive=False), is_finite_real(0.0, positive=True)
+    (True, False)
+    >>> (
+    ...     is_finite_real(True, positive=True),
+    ...     is_finite_real(float("nan"), positive=False),
+    ... )
+    (False, False)
+    """
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
+        return False
+    number = float(value)
+    return math.isfinite(number) and (number > 0 if positive else number >= 0)
+
+
 def validate_finite_scalar(
     value: Any, *, name: str, positive: bool, none_allowed: bool = False
 ) -> None:
@@ -504,12 +566,7 @@ def validate_finite_scalar(
     """
     if none_allowed and value is None:
         return
-    if (
-        isinstance(value, (bool, np.bool_))
-        or not isinstance(value, (int, float, np.integer, np.floating))
-        or not np.isfinite(value)
-        or (value <= 0 if positive else value < 0)
-    ):
+    if not is_finite_real(value, positive=positive):
         raise ValueError(
             f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
             f"{', or None' if none_allowed else ''}; got {value!r}."

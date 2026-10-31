@@ -361,11 +361,13 @@ def test_max_gap_none_preserves_requested_window(pause_track):
     assert times[0] == 99.5
 
 
-def test_auto_laps_with_missing_template_rows_equal_deleted_rows():
-    """NaN rows in the first 10% change neither the template nor the search.
+def test_auto_laps_with_missing_template_rows_equal_deleted_rows_with_breaks():
+    """NaN rows in the first 10% end the recording there, as in env.occupancy.
 
-    The automatic template is the first 10% of the located samples, and the
-    search begins after it, exactly as when the missing rows are deleted.
+    A NaN row is bin -1, not located, so laps never span it: the result equals
+    that of the recording with those rows deleted and a break declared at the
+    first row after each. The automatic template is the first 10% of the
+    located samples, and the search begins after it.
     """
     from neurospatial import Environment
 
@@ -379,7 +381,15 @@ def test_auto_laps_with_missing_template_rows_equal_deleted_rows():
     positions[missing] = np.nan
     position_bins = env.bin_at(positions)
     kept = ~missing
-    expected = detect_laps(position_bins[kept], times[kept], env, method="auto")
+    breaks = np.zeros(times.size, dtype=bool)
+    breaks[[70, 170]] = True  # first rows after the lost tracking
+    expected = detect_laps(
+        position_bins[kept],
+        times[kept],
+        env,
+        method="auto",
+        break_before=breaks[kept],
+    )
     assert expected
     assert detect_laps(position_bins, times, env, method="auto") == expected
 

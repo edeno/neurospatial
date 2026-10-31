@@ -8,7 +8,7 @@ import pytest
 
 from neurospatial import Environment, Regions
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.encoding._validation import validate_spike_times, validate_trajectory
+from neurospatial.encoding._validation import validate_trajectory
 
 
 @dataclass(frozen=True)
@@ -185,17 +185,6 @@ def test_unsorted_times_say_how_to_sort(with_positions):
     assert fix.startswith("Fix:")
     # A call without positions is not told to pass position rows.
     assert ("positions" in fix) is with_positions
-
-
-def test_spike_validation_reports_all_problems():
-    with pytest.raises(ValueError) as caught:
-        validate_spike_times(np.array([1.0, -1.0, np.nan]), context="decode_position")
-    message = str(caught.value)
-    assert "decode_position" in message
-    assert "finite" in message
-    assert "non-negative" in message
-    assert "monotonically non-decreasing" in message
-    assert "Fix:" in message
 
 
 def test_valid_linear_trajectory_is_accepted():
