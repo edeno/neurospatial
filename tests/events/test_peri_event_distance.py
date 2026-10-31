@@ -154,3 +154,84 @@ def test_tables_and_summary():
     assert result.summary()["n_events"] == 1
     with pytest.raises(ValueError, match="read-only"):
         result.occupancy[0, 0] = 5.0
+
+
+def _reward_stop(hz: float, seed: int = 0):
+    """Run 0 -> 50 cm at 25 cm/s, stop 5 s at the reward, run on to 100 cm.
+
+    Tracking adds 0.5 cm of noise per coordinate to every frame.
+    """
+    rng = np.random.default_rng(seed)
+    dt = 1 / hz
+    run_in = np.arange(0.0, 2.0, dt)
+    stop = np.arange(2.0, 7.0, dt)
+    run_out = np.arange(7.0, 9.0, dt)
+    times = np.r_[run_in, stop, run_out]
+    x = np.r_[run_in * 25.0, np.full(stop.size, 50.0), 50.0 + (run_out - 7.0) * 25.0]
+    positions = np.c_[x, np.zeros_like(x)] + rng.normal(0, 0.5, (times.size, 2))
+    return times, positions
+
+
+@pytest.mark.parametrize("hz", [30.0, 120.0])
+def test_tracking_jitter_during_a_stop_adds_little_distance(hz):
+    """On smoothed positions, a 5 s stop at the reward stays near distance 0.
+
+    Summing raw frame-to-frame steps, 0.5 cm jitter adds 130 cm (30 Hz) to
+    520 cm (120 Hz) during the stop; the smoothed path adds a few cm.
+    """
+    from neurospatial.behavior import smooth_positions
+
+    times, positions = _reward_stop(hz)
+    result = peri_event_distance_histogram(
+        np.array([]),
+        np.array([2.0]),
+        times,
+        smooth_positions(times, positions, smooth_window=0.1),
+        (0.0, 60.0),
+        bin_size=10.0,
+    )
+    seconds = result.occupancy[0]
+    # The whole 5 s stop stays in [0, 10); the smoothed path adds a few cm,
+    # so part of the first 10 cm of running on (0.4 s) is there too.
+    assert 5.0 < seconds[0] < 5.4
+    # Running on at 25 cm/s spends 0.4 s in each later 10 cm bin.
+    np.testing.assert_allclose(seconds[1:5], 0.4, atol=0.05)
+    # Positions are used as given, so raw jitter spreads the stop far beyond
+    # the first bin.
+    raw = peri_event_distance_histogram(
+        np.array([]), np.array([2.0]), times, positions, (0.0, 60.0), bin_size=10.0
+    )
+    assert raw.occupancy[0, 0] < 2.0
+
+
+def test_min_speed_gives_a_stop_no_distance():
+    from neurospatial.behavior import smooth_positions
+
+    times, positions = _reward_stop(30.0)
+    gated = peri_event_distance_histogram(
+        np.array([]),
+        np.array([2.0]),
+        times,
+        smooth_positions(times, positions, smooth_window=0.1),
+        (0.0, 10.0),
+        bin_size=2.0,
+        min_speed=5.0,
+    )
+    assert gated.occupancy[0, 0] == pytest.approx(5.0, abs=0.15)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"), [("min_speed", -1.0), ("min_speed", np.nan)]
+)
+def test_refuses_a_negative_or_undefined_min_speed(option, value):
+    times, positions = _hand_path()
+    with pytest.raises(ValueError, match=option):
+        peri_event_distance_histogram(
+            np.array([0.5]),
+            np.array([1.0]),
+            times,
+            positions,
+            (-10.0, 30.0),
+            bin_size=10.0,
+            **{option: value},
+        )

@@ -1648,6 +1648,130 @@ def compute_cumulative_distance(
 
 
 @reads_pynapple_samples
+def smooth_positions(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> NDArray[np.float64]:
+    """Smooth tracked positions in time, never across a tracking loss.
+
+    Each sample is replaced by the value at its own time of a straight line
+    fitted, within its run of continuous observation, to the nearby samples
+    weighted by a Gaussian of their time difference. Smooth raw tracking once
+    with this function and pass the result to every analysis, so occupancy,
+    rate maps, path length and decoding error all use the same positions;
+    neurospatial uses positions as given.
+
+    Summing raw frame-to-frame steps counts tracking jitter as movement:
+    with 0.5 cm of jitter, a 5 s stop adds about 130 cm of path at 30 Hz
+    (580 cm at 125 Hz), and running at 25 cm/s reads 1.4 times too long at
+    30 Hz (4.4 times at 125 Hz). After smoothing over 0.1 s the stop adds a
+    few centimetres and running reads about 1.01 times its length.
+
+    Parameters
+    ----------
+    times : ArrayLike, shape (n_samples,)
+        Timestamps in seconds, finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Tracked positions; a NaN row is a missing sample.
+    smooth_window : float, default=0.1
+        Standard deviation, in seconds, of the Gaussian weights (cut at four
+        standard deviations), as for speed elsewhere in the package. 0
+        returns a copy. A larger window removes more jitter and rounds more
+        of the path: motion at constant velocity is unchanged, gentle turns
+        shorten by about 1.5% at 0.1 s, and a 10 cm out-and-back over 0.4 s
+        keeps about 60% of its length (80% over 0.8 s; 80% and 90% at
+        0.05 s).
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+        Positions are not smoothed across a gap that is not bridged.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``; positions are not smoothed across a window edge.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. Positions are not smoothed across a break.
+
+    Returns
+    -------
+    NDArray[np.float64], shape of ``positions``
+        Smoothed positions. Missing (NaN) rows stay NaN, and a sample in no
+        run (isolated by gaps, breaks or epoch edges) keeps its position.
+
+    Raises
+    ------
+    ValueError
+        If ``smooth_window`` is negative or not finite, or ``times`` and
+        ``positions`` are not one valid sample per time.
+
+    See Also
+    --------
+    compute_cumulative_distance : Path length along the positions.
+    compute_speed : Speed, from velocity smoothed by its own ``smooth_window``.
+
+    Notes
+    -----
+    Neurospatial does not smooth positions for you: occupancy, rate maps,
+    path length, region visits and decoding error use the positions you
+    pass. The one smoothing it applies itself is to the motion derived from
+    them, since differencing positions turns even small jitter into speed
+    (0.5 cm reads as about 13 cm/s at 30 Hz). Velocity, speed and the
+    direction of motion are smoothed over 0.1 s (``smooth_window`` of
+    :func:`compute_speed`) wherever the package computes them: in
+    :func:`compute_speed`, :func:`heading_from_velocity` and
+    :func:`segment_by_velocity`, where ``smooth_window`` sets it; in the
+    ``min_speed`` gates of the rate-map functions; and in the goal
+    alignment, heading labels, pre-decision statistics, head sweeps and the
+    angular term of the path efficiencies.
+
+    Examples
+    --------
+    A still animal tracked with 0.5 cm of jitter at 30 Hz for 5 s:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import smooth_positions, traveled_path_length
+    >>> times = np.arange(0.0, 5.0, 1 / 30)
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.normal(0.0, 0.5, (times.size, 2))  # cm
+    >>> round(traveled_path_length(times, positions))  # jitter read as path
+    132
+    >>> smoothed = smooth_positions(times, positions)
+    >>> bool(traveled_path_length(times, smoothed) < 10)
+    True
+    """
+    from neurospatial._velocity import time_smoothed_positions, validated_smooth_window
+
+    smooth_window = validated_smooth_window(smooth_window, call="smooth_positions")
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="smooth_positions",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no positions were smoothed",
+    )
+    smoothed = time_smoothed_positions(
+        times_arr, positions_arr, support.interval_mask, smooth_window
+    )
+    return (
+        smoothed.reshape(np.shape(positions)) if np.ndim(positions) == 1 else smoothed
+    )
+
+
+@reads_pynapple_samples
 def compute_home_range(
     position_bins: NDArray[np.int_],
     env: Environment,

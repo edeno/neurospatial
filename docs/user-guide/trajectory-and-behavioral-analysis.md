@@ -156,7 +156,23 @@ step between them. The 30 Hz session prints runs of 168.7, 236.9 and 439.3 cm
 and a total of 844.8 cm in 38.40 s of observed time, which is 22 cm/s times
 38.40 s: nothing was added across the loss or the join, and the lost frames
 did not turn the total into `NaN`. The 120 Hz session gives 1808.3 cm,
-likewise 47 cm/s times its observed time. `compute_cumulative_distance` returns the distance at every
+likewise 47 cm/s times its observed time.
+
+Positions are used as given, and these simulated ones are exact. Smooth raw
+tracking once, before any analysis, with `smooth_positions(times, positions)`
+and pass the result everywhere, so occupancy, rate maps and path length all
+see the same positions. Summing raw frame-to-frame steps counts tracking
+jitter as running: with 0.5 cm of jitter, a 5 s stop adds about 130 cm at
+30 Hz and 580 cm at 125 Hz, and running at 25 cm/s reads 1.4 times too long
+at 30 Hz; after `smooth_positions` (0.1 s) the stop adds a few centimetres.
+Smoothing shortens quick reversals: a 10 cm out-and-back over 0.4 s keeps
+about 60% of its length, so choose `smooth_window` for what you measure, and
+skip this step for positions your pipeline already smoothed. The one
+smoothing neurospatial applies itself is to motion derived from positions:
+speed, velocity and direction of motion are smoothed over 0.1 s wherever
+they are computed, because differencing positions turns even small jitter
+into speed; `compute_speed` and `heading_from_velocity` take
+`smooth_window` to change it. `compute_cumulative_distance` returns the distance at every
 frame (`run_distance` restarts at 0 in each run, `cumulative_distance` keeps
 adding across runs); `traveled_path_length` returns only the total.
 
