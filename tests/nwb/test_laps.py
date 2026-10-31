@@ -85,21 +85,54 @@ class TestWriteLapsFromLaps:
         np.testing.assert_array_equal(laps.end, [lap.end_time for lap in LAPS])
         assert list(laps["direction"]) == [lap.direction for lap in LAPS]
 
-    def test_zero_laps_write_an_empty_table(self, tmp_path):
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"laps": []}, {"start_times": [], "stop_times": []}],
+        ids=["records", "arrays"],
+    )
+    def test_zero_laps_write_nothing_and_warn(self, tmp_path, kwargs):
+        """NWB files should not hold empty tables, so no table is added."""
         from neurospatial.io.nwb import write_laps
 
         nwbfile = create_roundtrip_nwb()
-        write_laps(nwbfile, [])
+        with pytest.warns(
+            UserWarning, match="write_laps wrote nothing: there are no laps"
+        ):
+            write_laps(nwbfile, **kwargs)
+        assert "laps" not in nwbfile.intervals
+        _save(nwbfile, tmp_path / "laps.nwb")
+
+        with pytest.raises(KeyError, match="'laps' not found"):
+            _read_laps(tmp_path / "laps.nwb")
+
+    def test_zero_laps_still_validate_the_name(self, empty_nwb):
+        from neurospatial.io.nwb import write_laps
+
+        with pytest.raises(ValueError, match="cannot use name='trials'"):
+            write_laps(empty_nwb, [], name="trials")
+
+    def test_region_method_laps_omit_the_all_nan_overlap_score(self, tmp_path):
+        """Laps found without a template have no overlap score to store."""
+        from neurospatial.io.nwb import write_laps
+
+        region_laps = [
+            Lap(
+                start_time=1.0,
+                end_time=4.0,
+                direction="clockwise",
+                overlap_score=np.nan,
+            ),
+            Lap(
+                start_time=5.0, end_time=9.0, direction="unknown", overlap_score=np.nan
+            ),
+        ]
+        nwbfile = create_roundtrip_nwb()
+        write_laps(nwbfile, region_laps)
         _save(nwbfile, tmp_path / "laps.nwb")
 
         recovered = _read_laps(tmp_path / "laps.nwb")
-        assert len(recovered) == 0
-        assert set(recovered.columns) == {
-            "start_time",
-            "stop_time",
-            "direction",
-            "overlap_score",
-        }
+        assert list(recovered.columns) == ["start_time", "stop_time", "direction"]
+        np.testing.assert_array_equal(recovered["start_time"], [1.0, 5.0])
 
     @pytest.mark.parametrize(
         ("laps", "message"),
@@ -232,6 +265,24 @@ class TestWriteLapsOverwrite:
 
         table = read_intervals(empty_nwb, interval_name="laps")
         np.testing.assert_array_equal(table["start_time"], [1.0])
+
+    def test_overwrite_with_zero_laps_removes_the_table(self, empty_nwb):
+        from neurospatial.io.nwb import write_laps
+
+        write_laps(empty_nwb, LAPS)
+        with pytest.warns(UserWarning, match="existing table 'laps' was removed"):
+            write_laps(empty_nwb, [], overwrite=True)
+
+        assert "laps" not in empty_nwb.intervals
+
+    def test_zero_laps_without_overwrite_keep_the_existing_table(self, empty_nwb):
+        from neurospatial.io.nwb import write_laps
+
+        write_laps(empty_nwb, LAPS)
+        with pytest.raises(ValueError, match="'laps' already exists"):
+            write_laps(empty_nwb, [])
+
+        assert len(empty_nwb.intervals["laps"]) == len(LAPS)
 
     def test_invalid_replacement_keeps_the_original(self, empty_nwb):
         from neurospatial.io.nwb import read_intervals, write_laps
