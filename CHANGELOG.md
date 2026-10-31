@@ -28,6 +28,20 @@
     chunks (408 MB to 51 MB at 1,000 bins), `null_events` cuts windows by
     binary search, and `compare_replay_methods` checks a pseudo-event pool
     once.
+- `fit_linear_trajectory(method="sample")` (`KARLSSON_FRANK_2009`,
+  `JADHAV_2016`, `TANG_2017`, `SHIN_2019`) draws each time bin's samples as
+  counts per position bin, one multinomial draw from the posterior row, and
+  fits the count-weighted line. A sample is its bin's center, so this is the
+  same distribution of lines as drawing samples one by one (two-sample KS
+  tests over 4,000 resamples on five posteriors, all p > 0.05), but seeded
+  results change: on 12 simulated events the verdicts and p-values are
+  unchanged and R² moves by at most 0.005. One `KARLSSON_FRANK_2009` event
+  with its 10,000 shuffles takes 0.5 s instead of 22 s.
+- With several templates, `detect_rank_order_replay` and
+  `detect_template_match_replay` draw each template's shuffles from a stream
+  derived from `rng` and the template's name, as every other replay test
+  does, so reordering `encoding_models` no longer changes the p-values.
+  Single-template results are unchanged.
 - `ReplayDetectionResult.error` says why a result has no verdict (score or
   null undefined, too few active template cells, too few time bins), and
   every `detect_*` function sets it with every criterion False. A
