@@ -743,6 +743,14 @@ def write_region_crossings(
     detect_region_crossings : Detect entries into and exits from a region.
     read_events : Read the crossings back as a DataFrame.
 
+    Notes
+    -----
+    With pynwb 4 or later (NWB schema 2.10+), ``EventsTable`` is part of the
+    NWB core schema and ``ndx_events.EventsTable`` is ``pynwb.event.EventsTable``.
+    A file written that way cannot be read by pynwb 3, which does not know the
+    newer core types and reports the table as missing; read it with pynwb 4
+    or later. Files written with pynwb 3 read with either version.
+
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
@@ -1261,6 +1269,12 @@ def write_events(
     - ``x``, ``y``, ``z``: Spatial position columns.
 
     All additional columns are preserved as EventsTable columns.
+
+    With pynwb 4 or later (NWB schema 2.10+), ``EventsTable`` is part of the
+    NWB core schema and ``ndx_events.EventsTable`` is ``pynwb.event.EventsTable``.
+    A file written that way cannot be read by pynwb 3, which does not know the
+    newer core types and reports the table as missing; read it with pynwb 4
+    or later. Files written with pynwb 3 read with either version.
 
     Examples
     --------

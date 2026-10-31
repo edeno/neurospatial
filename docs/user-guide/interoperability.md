@@ -649,6 +649,13 @@ so treat a missing table as zero trials, laps, crossings or events. Laps found
 without a template lap (`detect_laps(..., method="region")`) have no overlap
 score, so their table has no `overlap_score` column.
 
+Event tables (`write_events`, `write_region_crossings`) are `EventsTable`s.
+With pynwb 4 or later (NWB schema 2.10+), `EventsTable` is part of the NWB core
+schema, and a file written with it cannot be read by pynwb 3: the older reader
+does not know the newer core types, so `read_events` reports the table as
+missing. Use pynwb 4 or later to read files written with pynwb 4 or later.
+Files written with pynwb 3 read with either version.
+
 ## See Also
 
 - **[Complete Workflows](workflows.md)**: End-to-end encode / decode examples
