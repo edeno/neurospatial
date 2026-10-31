@@ -137,13 +137,16 @@ def _count_spikes_in_time_bins(
     -------
     ndarray of int64, shape (n_time_bins, n_neurons)
     """
-    counts = np.zeros((left.size, len(spike_trains)), dtype=np.int64)
-    if left.size == 0:
-        return counts
-    for unit, train in enumerate(spike_trains):
-        s = np.asarray(train, dtype=np.float64)
-        idx = np.searchsorted(left, s, side="right") - 1
-        inside = idx >= 0
-        inside[inside] = s[inside] < right[idx[inside]]
-        counts[:, unit] = np.bincount(idx[inside], minlength=left.size)
-    return counts
+    n_units = len(spike_trains)
+    if left.size == 0 or n_units == 0:
+        return np.zeros((left.size, n_units), dtype=np.int64)
+    trains = [np.asarray(train, dtype=np.float64).ravel() for train in spike_trains]
+    spikes = np.concatenate(trains)
+    unit = np.repeat(np.arange(n_units), [train.size for train in trains])
+    idx = np.searchsorted(left, spikes, side="right") - 1
+    inside = idx >= 0
+    inside[inside] = spikes[inside] < right[idx[inside]]
+    # One count per (bin, unit) cell, in the C order of the result.
+    cells = idx[inside] * n_units + unit[inside]
+    counts = np.bincount(cells, minlength=left.size * n_units)
+    return counts.reshape(left.size, n_units).astype(np.int64, copy=False)
