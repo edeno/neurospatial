@@ -182,3 +182,17 @@ def test_columns_need_a_two_dimensional_series():
     nwbfile = _file(np.linspace(0.0, 1.0, _N), "meters")
     with pytest.raises(ValueError, match="stores one value per sample"):
         read_position(nwbfile, columns=[0])
+
+
+def test_position_overlay_refuses_then_selects_columns(xy_speed_file):
+    """The overlay factory refuses x-y-speed and overlays the chosen columns."""
+    from neurospatial.io.nwb import position_overlay_from_nwb
+
+    with pytest.raises(ValueError, match="pass columns= with the spatial columns"):
+        position_overlay_from_nwb(xy_speed_file)
+
+    overlay = position_overlay_from_nwb(xy_speed_file, columns=[0, 1], units="cm")
+    np.testing.assert_array_equal(overlay.positions, _xy_speed()[:, :2])
+    np.testing.assert_array_equal(overlay.times, np.arange(_N) / 30.0)
+    assert overlay.units == "cm"
+    assert overlay.frame == "center well"

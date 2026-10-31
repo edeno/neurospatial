@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pynwb import NWBFile
 
     from neurospatial.animation.overlays import (
@@ -25,6 +27,7 @@ def position_overlay_from_nwb(
     *,
     processing_module: str | None = None,
     position_name: str | None = None,
+    columns: Sequence[int] | None = None,
     color: str = "red",
     size: float = 12.0,
     trail_length: int = 0,
@@ -41,6 +44,11 @@ def position_overlay_from_nwb(
         Name of processing module containing Position.
     position_name : str, optional
         Name of specific SpatialSeries within Position.
+    columns : sequence of int, optional
+        Spatial columns of the series to overlay, e.g. ``[0, 1]`` when the
+        series also stores speed; see :func:`read_position`. Default uses
+        every column. The selected columns take the series unit only when it
+        is one length or pixel unit; otherwise supply ``units=``.
     color : str, default "red"
         Color for the position marker.
     size : float, default 12.0
@@ -60,7 +68,9 @@ def position_overlay_from_nwb(
     Raises
     ------
     ValueError
-        If a keyword coordinate declaration conflicts with NWB metadata.
+        If a keyword coordinate declaration conflicts with NWB metadata, or
+        the series needs ``columns`` or ``columns`` is invalid (see
+        :func:`read_position`).
 
     Examples
     --------
@@ -83,6 +93,7 @@ def position_overlay_from_nwb(
         nwbfile,
         processing_module=processing_module,
         position_name=position_name,
+        columns=columns,
     )
     positions = position_data.positions
     timestamps = position_data.times

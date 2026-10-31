@@ -574,9 +574,9 @@ pynwb.
   `read_head_direction(...)` → `NWBHeadDirection(times, headings, *, frame)`
   and `read_pose(...)` → `NWBPose(bodyparts, times, skeleton, *, units,
   frame, confidence)`. Several matching series or containers raise; choose
-  one by name or path. `read_position(..., columns=[0, 1])` and
-  `environment_from_position(..., columns=[0, 1])` keep the spatial columns
-  of a series that also stores speed or other values.
+  one by name or path. `read_position`, `environment_from_position` and
+  `position_overlay_from_nwb` take `columns=[0, 1]` to keep the spatial
+  columns of a series that also stores speed or other values.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
   `NWBUnits(spike_times, unit_ids, obs_intervals, *, unit_table, resolution)`.
   Unit labels are unique table IDs; the derived `spike_window` intersects the

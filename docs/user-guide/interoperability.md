@@ -519,8 +519,8 @@ of picking one. Pass the name or full path to `position_name=`,
 Some files keep non-spatial values in the position series. DANDI 000447, for
 example, stores x, y and speed in one series with unit
 `"centimeters; centimeters/second"`. Binning all three columns would treat speed
-as a third spatial axis, so `read_position` and `environment_from_position`
-refuse a series whose unit lists several units, or that has three or more
+as a third spatial axis, so `read_position`, `environment_from_position` and
+`position_overlay_from_nwb` refuse a series whose unit lists several units, or that has three or more
 columns under a unit that is not one length or pixel unit. The error quotes the
 series description, which often names the columns. Choose the spatial columns
 with `columns=`; when the series unit does not apply to them, state it:
@@ -528,6 +528,7 @@ with `columns=`; when the series unit does not apply to them, state it:
 ```python
 pos = read_position(nwbfile, columns=[0, 1])        # x and y; pos.units is None
 env = environment_from_position(nwbfile, bin_size=2.0, columns=[0, 1], units="cm")
+overlay = position_overlay_from_nwb(nwbfile, columns=[0, 1], units="cm")
 ```
 
 Position values already include the stored conversion and offset. Recognized

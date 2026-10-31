@@ -321,7 +321,7 @@ neurospatial.io.nwb.bodypart_overlay_from_nwb(nwbfile, *, pose_estimation_name=N
 neurospatial.io.nwb.dataframe_to_events_table(df, *, name, description='Events')
 neurospatial.io.nwb.environment_from_position(nwbfile, *, bin_size, processing_module=None, position_name=None, columns=None, name='', units=None, frame=None, regions=None, arena=None, wall_fit='snap', layout='RegularGrid', dimension_ranges=None, infer_active_bins=True, bin_count_threshold=0, dilate=False, fill_holes=False, close_gaps=False, add_boundary_bins=False, connect_diagonal_neighbors=True)
 neurospatial.io.nwb.head_direction_overlay_from_nwb(nwbfile, *, processing_module=None, compass_name=None, color='yellow', length=15.0, **kwargs)
-neurospatial.io.nwb.position_overlay_from_nwb(nwbfile, *, processing_module=None, position_name=None, color='red', size=12.0, trail_length=0, **kwargs)
+neurospatial.io.nwb.position_overlay_from_nwb(nwbfile, *, processing_module=None, position_name=None, columns=None, color='red', size=12.0, trail_length=0, **kwargs)
 neurospatial.io.nwb.read_environment(nwbfile, *, name='spatial_environment')
 neurospatial.io.nwb.read_events(nwbfile, *, table_name, processing_module='behavior')
 neurospatial.io.nwb.read_head_direction(nwbfile, *, processing_module=None, compass_name=None)
