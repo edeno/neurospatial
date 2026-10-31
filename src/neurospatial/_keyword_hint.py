@@ -62,10 +62,11 @@ def keyword_hint(
         the order an earlier version took them positionally. Leave it empty
         for a function that never took options by position.
     redirect : str, optional
-        Dotted path of the function that takes options this one does not,
-        such as the builder for a function that only loads. A call whose
-        unexpected keywords are all parameters of that function raises a
-        ``TypeError`` naming it with the corrected call.
+        For a function that loads a saved environment and builds nothing,
+        such as ``Environment.from_nwb``: the dotted path of the function
+        that builds one. A call whose unexpected keywords are all parameters
+        of that builder raises a ``TypeError`` that says the function only
+        loads and shows the corrected call to the builder.
     fix : str, optional
         Fix to show for extra positional values instead of mapping them onto
         keywords, for a function whose earlier positional arguments have no
