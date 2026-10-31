@@ -1218,7 +1218,9 @@ class RankOrderMethod:
         takes, among the templates on which the event is replay, the one
         with the most active cells and then the larger ``|rho|`` (Diba &
         Buzsáki 2007); without such a template, the same rule over all
-        templates. None needs ``template=``.
+        templates. Each template draws its shuffles from its own random
+        stream, derived from ``rng`` and the template's name, so results do
+        not depend on the templates' order. None needs ``template=``.
     notes : tuple of str
         Choices the paper does not specify, and event-selection rules not
         applied.
@@ -3142,7 +3144,7 @@ def detect_rank_order_replay(
                 fix="pass the epoch's events to compare_replay_methods",
             )
         )
-    from neurospatial.replay.rank_order import _template_items
+    from neurospatial.replay.rank_order import _template_items, _template_rngs
 
     items = _template_items(
         env,
@@ -3151,8 +3153,7 @@ def detect_rank_order_replay(
         "detect_rank_order_replay()",
         single_template_method=method.name if method.template_choice is None else None,
     )
-    generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(items))
+    streams = _template_rngs(rng, [name for name, _, _ in items])
     results = [
         _rank_order_verdict(
             template_env,
@@ -3161,9 +3162,9 @@ def detect_rank_order_replay(
             models,
             method,
             template=name,
-            rng=np.random.default_rng(seed),
+            rng=stream,
         )
-        for (name, template_env, models), seed in zip(items, seeds, strict=True)
+        for (name, template_env, models), stream in zip(items, streams, strict=True)
     ]
     if len(results) == 1:
         return results[0]

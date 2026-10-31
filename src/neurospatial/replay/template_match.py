@@ -31,6 +31,7 @@ from neurospatial.replay._inputs import _checked_intervals
 from neurospatial.replay.rank_order import (
     _require_same_cells,
     _template_items,
+    _template_rngs,
     _validated_interval,
 )
 from neurospatial.replay.sequence_match import (
@@ -165,7 +166,9 @@ class TemplateMatchMethod:
         the template with the largest score among those on which enough
         cells fired, then the smaller p-value, then the first (Ji & Wilson
         assigned a frame to the template with the higher matching index).
-        None needs ``template=``.
+        Each template draws from its own random stream, derived from ``rng``
+        and the template's name, so results do not depend on the templates'
+        order. None needs ``template=``.
     n_shuffles : int
         Template shuffles of :func:`template_match_dataset_test`.
     notes : tuple of str
@@ -438,18 +441,13 @@ def detect_template_match_replay(
     )
     start, stop = _validated_interval(interval, operation)
     trains = _sorted_trains(as_spike_trains(spike_times))
-    generator = np.random.default_rng(rng)
-    seeds = generator.integers(2**63, size=len(items))
+    streams = _template_rngs(rng, [name for name, _, _ in items])
     results = []
-    for (name, template_env, models), seed in zip(items, seeds, strict=True):
+    for (name, template_env, models), stream in zip(items, streams, strict=True):
         ranks = _method_ranks(
             method, template_env, models, name, len(trains), operation
         )
-        results.append(
-            _verdict(
-                method, ranks, trains, start, stop, name, np.random.default_rng(seed)
-            )
-        )
+        results.append(_verdict(method, ranks, trains, start, stop, name, stream))
     if len(results) == 1:
         return results[0]
     return _chosen(results, method)

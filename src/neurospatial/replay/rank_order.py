@@ -874,6 +874,24 @@ def _template_items(
     return [(name, env, encoding_models[name]) for name in names]
 
 
+def _template_rngs(
+    rng: np.random.Generator | int | None, names: Sequence[str | None]
+) -> list[np.random.Generator]:
+    """The random stream of each template in ``names``, in their order.
+
+    Several templates draw from streams derived from ``rng`` and their names,
+    as in every other replay test, so a template's shuffles do not depend on
+    the other templates or their order. One template draws from a stream
+    seeded by ``rng``.
+    """
+    from neurospatial.replay.significance import _template_streams
+
+    if len(names) > 1:
+        streams = _template_streams(rng, [str(name) for name in names])
+        return [streams[str(name)] for name in names]
+    return [np.random.default_rng(np.random.default_rng(rng).integers(2**63))]
+
+
 def _require_same_cells(n_trains: int, n_maps: int, operation: str) -> None:
     """Refuse spike trains and rate maps of different numbers of cells."""
     if n_trains != n_maps:
