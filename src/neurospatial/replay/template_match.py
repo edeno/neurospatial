@@ -363,7 +363,7 @@ def detect_template_match_replay(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event in seconds (Lee & Wilson's word, Ji & Wilson's
         frame). Spikes at ``start <= t < stop`` count.
     encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping

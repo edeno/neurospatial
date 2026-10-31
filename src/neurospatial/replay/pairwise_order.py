@@ -359,7 +359,7 @@ def pairwise_order_score(
         Spike times in seconds, one train per cell, in the same order as the
         rows of ``encoding_models``. Any input
         :func:`~neurospatial.decoding.bin_spikes_in_time` accepts.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds. Spikes at ``start <= t < stop``
         count.
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
@@ -676,7 +676,7 @@ def detect_pairwise_order_replay(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds.
     encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping
         Each cell's rate map on ``env``, in Hz; or a mapping of such rate

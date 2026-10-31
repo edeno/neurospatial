@@ -252,6 +252,15 @@ def _parse_intervals(
     Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
     are unusable; ``problems`` is empty when ``rows`` is valid.
     """
+    kind = type(value).__name__
+    if _is_pynapple_object(value) and kind != "IntervalSet":
+        # A Ts/Tsd/TsdFrame has scalar .start/.end (its first and last
+        # timestamps), which would read as one window over everything.
+        return None, [
+            f"{name} is a pynapple {kind}, a time series rather than a set of "
+            f"intervals; pass the windows it was recorded in, "
+            f"{name}={kind.lower()}.time_support"
+        ]
     if hasattr(value, "start") and hasattr(value, "end"):
         try:
             starts = np.asarray(value.start, dtype=np.float64)
@@ -374,7 +383,9 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     ValueError
         On a wrong shape, zero rows, non-finite values or ``stop <= start``.
         Non-finite and inverted rows are all listed in one message; a value
-        that is unreadable or wrongly shaped is reported on its own.
+        that is unreadable or wrongly shaped is reported on its own. A
+        pynapple time series (``Ts``, ``Tsd``, ``TsdFrame``) is refused with
+        a pointer to its ``time_support``.
     """
     rows, problems = _resolve_intervals(value, name)
     if problems:

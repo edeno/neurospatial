@@ -438,7 +438,7 @@ def best_sequence_match(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The event, in seconds: one word. Letters whose burst starts at
         ``start <= t < stop`` count; bursts are found on the whole trains,
         so a burst that began before ``start`` adds no letter.
@@ -675,7 +675,7 @@ def sequence_matching_index(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The event (Ji & Wilson's frame), in seconds; spikes at
         ``start <= t < stop`` count.
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult

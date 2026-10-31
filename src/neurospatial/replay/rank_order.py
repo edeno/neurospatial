@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 from scipy import stats
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import interval_rows, is_pynapple_type
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_integer_at_least
 from neurospatial.stats import _ALTERNATIVES
@@ -176,7 +177,7 @@ def rank_order_correlation(
         Spike times in seconds, one train per cell, in the same order as the
         rows of ``encoding_models``. Any input
         :func:`~neurospatial.decoding.bin_spikes_in_time` accepts.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds. Spikes at ``start <= t < stop``
         count.
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
@@ -751,6 +752,23 @@ def _permuted_correlations(
 
 
 def _validated_interval(interval: Any, operation: str) -> tuple[float, float]:
+    """One event's half-open ``(start, stop)`` in seconds.
+
+    A one-row pynapple ``IntervalSet`` is read with its inclusive end moved to
+    the next float, so a spike at ``end`` stays in the event.
+    """
+    if is_pynapple_type(interval, "IntervalSet"):
+        rows = interval_rows(interval)
+        if len(rows) != 1:
+            raise ValueError(
+                _format_error(
+                    f"{operation}: interval has {len(rows)} intervals, but it "
+                    "is one event.",
+                    why="each call scores the spikes of one candidate event",
+                    fix="pass one row, e.g. intervals[k], and call once per event",
+                )
+            )
+        interval = rows[0]
     values = np.asarray(interval, dtype=np.float64)
     if values.shape != (2,) or not np.isfinite(values).all() or values[0] >= values[1]:
         raise ValueError(

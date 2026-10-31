@@ -29,7 +29,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import interval_rows, is_pynapple_type
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._validation import (
     validate_alpha,
     validate_choice,
@@ -284,10 +286,12 @@ def pairwise_bias_matrix(
     ----------
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per unit.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The event, in seconds; spikes at ``start <= t < stop`` belong to it.
     unit_ids : array-like or None, default=None
-        Label of each unit, one per train; None numbers them from 0.
+        Label of each unit, one per train; None uses the labels of a spike
+        group (a pynapple ``TsGroup``'s index, a ``SpikeTrains``' ids), else
+        numbers them from 0.
 
     Returns
     -------
@@ -343,15 +347,14 @@ def pairwise_bias_matrix(
            [nan, nan, nan]])
     """
     operation = "pairwise_bias_matrix()"
-    times, labels, n_units = _event_spikes(spike_times, interval, operation)
-    ids = resolve_unit_ids(unit_ids, n_units, context=operation)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
+    times, labels, n_units = _event_spikes(trains, interval, operation)
+    ids = resolve_unit_ids(unit_ids, n_units, context=operation, input_ids=input_ids)
     bias, counts = _skew_bias(times, labels, n_units)
     return PairwiseBiasResult(bias=bias, n_spikes=counts, unit_ids=ids)
 
 
-def mean_pairwise_bias(
-    spike_times: Any, intervals: NDArray[np.float64]
-) -> NDArray[np.float64]:
+def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
     """Mean skew-bias matrix over many events, such as a task's theta cycles.
 
     Each pair's mean is over the events in which both units fired, so a
@@ -361,9 +364,11 @@ def mean_pairwise_bias(
     ----------
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per unit.
-    intervals : NDArray[np.float64], shape (n_events, 2)
+    intervals : NDArray[np.float64], shape (n_events, 2), or IntervalSet
         Each event's (start, stop), in seconds; spikes at ``start <= t <
-        stop`` belong to it.
+        stop`` belong to it. Rows are not merged, so touching theta cycles
+        stay separate events. A pynapple ``IntervalSet``'s inclusive ends
+        become the next float, so a spike at ``end`` stays in its event.
 
     Returns
     -------
@@ -405,7 +410,11 @@ def mean_pairwise_bias(
     """
     operation = "mean_pairwise_bias()"
     times, labels, n_units = _sorted_spikes(spike_times)
-    bounds = np.asarray(intervals, dtype=np.float64)
+    bounds = (
+        interval_rows(intervals)
+        if is_pynapple_type(intervals, "IntervalSet")
+        else np.asarray(intervals, dtype=np.float64)
+    )
     if (
         bounds.ndim != 2
         or bounds.shape[1] != 2
@@ -528,7 +537,7 @@ def bias_similarity_significance(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per unit, in the order of the
         template's rows.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The event, in seconds; spikes at ``start <= t < stop`` belong to it.
     template_bias : NDArray[np.float64], shape (n_units, n_units)
         The template's skew-bias matrix, such as :func:`mean_pairwise_bias`
@@ -626,7 +635,7 @@ def detect_bias_sequence_replay(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per unit, in the order of the
         template's rows.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds.
     template_bias : NDArray[np.float64], shape (n_units, n_units)
         The template's skew-bias matrix, such as :func:`mean_pairwise_bias`

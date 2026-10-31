@@ -9,11 +9,12 @@ This module provides functions to convert between point events and intervals:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from neurospatial._intervals import _format_rows, _merge, times_in_intervals
+from neurospatial._pynapple import interval_rows, is_pynapple_type
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.events._core import _event_times, _validate_events_dataframe
 
@@ -21,8 +22,29 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
+def _interval_table(intervals: Any, start_column: str, stop_column: str) -> Any:
+    """Return ``intervals``, reading a pynapple ``IntervalSet`` as a table.
+
+    The set becomes a DataFrame with ``start_column``, ``stop_column`` and its
+    metadata columns. Each inclusive pynapple ``end`` becomes the next float
+    above it, the half-open stop holding the same timestamps.
+    """
+    if not is_pynapple_type(intervals, "IntervalSet"):
+        return intervals
+    import pandas as pd
+
+    rows = interval_rows(intervals)
+    table = pd.DataFrame({start_column: rows[:, 0], stop_column: rows[:, 1]})
+    metadata = getattr(intervals, "metadata", None)
+    if metadata is not None:
+        for column in metadata.columns:
+            if column not in table.columns:
+                table[column] = metadata[column].to_numpy()
+    return table
+
+
 def intervals_to_events(
-    intervals: pd.DataFrame,
+    intervals: pd.DataFrame | Any,
     *,
     which: Literal["start", "stop", "both"] = "start",
     start_column: str = "start_time",
@@ -38,8 +60,11 @@ def intervals_to_events(
 
     Parameters
     ----------
-    intervals : pd.DataFrame
-        Intervals DataFrame with start and stop time columns.
+    intervals : pd.DataFrame or IntervalSet
+        Intervals DataFrame with start and stop time columns, or a pynapple
+        ``IntervalSet`` (its metadata columns can be preserved). An
+        ``IntervalSet``'s inclusive ``end`` becomes the half-open stop, the
+        next float above ``end``.
     which : {"start", "stop", "both"}, default="start"
         Which interval boundaries to extract as events:
         - "start": Extract only start times
@@ -108,6 +133,7 @@ def intervals_to_events(
     """
     import pandas as pd
 
+    intervals = _interval_table(intervals, start_column, stop_column)
     # Validate which parameter
     valid_which = {"start", "stop", "both"}
     if which not in valid_which:
@@ -412,7 +438,7 @@ def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
 
 def filter_by_intervals(
     events: pd.DataFrame,
-    intervals: pd.DataFrame,
+    intervals: pd.DataFrame | Any,
     *,
     include: bool = True,
     timestamp_column: str = "timestamp",
@@ -429,8 +455,12 @@ def filter_by_intervals(
     ----------
     events : pd.DataFrame
         Events DataFrame to filter. Must have timestamp column.
-    intervals : pd.DataFrame
-        Intervals DataFrame with start and stop time columns.
+    intervals : pd.DataFrame or IntervalSet
+        Intervals DataFrame with start and stop time columns, or a pynapple
+        ``IntervalSet``, whose inclusive ends keep an event at ``end`` inside,
+        as pynapple's ``restrict`` does. Pass the set itself rather than
+        ``iset.as_dataframe()``: that table's ``end`` column is inclusive, but
+        read as ``stop_column`` it would be treated as exclusive.
     include : bool, default=True
         If True, keep events within intervals, half-open
         ``[start, stop)``: an event exactly at a stop is outside.
@@ -497,6 +527,7 @@ def filter_by_intervals(
     """
 
     call = "filter_by_intervals"
+    intervals = _interval_table(intervals, start_column, stop_column)
     timestamps = _event_times(events, timestamp_column, name="events", call=call)
     starts = _event_times(intervals, start_column, name="intervals", call=call)
     stops = _event_times(intervals, stop_column, name="intervals", call=call)

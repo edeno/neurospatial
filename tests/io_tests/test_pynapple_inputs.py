@@ -340,3 +340,97 @@ def test_ordered_tsdframe_positions_match_plain_arrays(nap, session):
     np.testing.assert_array_equal(
         env.occupancy(times, frame), env.occupancy(times, positions)
     )
+
+
+# ---------------------------------------------------------------------------
+# Intervals: IntervalSet accepted where an interval table is, Tsd refused
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("make", ["tsd", "tsdframe", "ts"])
+def test_a_time_series_as_epochs_names_its_time_support(nap, make):
+    from neurospatial._intervals import as_intervals
+
+    t = np.array([1.0, 2.0, 3.0])
+    series = {
+        "tsd": lambda: nap.Tsd(t=t, d=t),
+        "tsdframe": lambda: nap.TsdFrame(t=t, d=np.c_[t, t], columns=["x", "y"]),
+        "ts": lambda: nap.Ts(t=t),
+    }[make]()
+    name = type(series).__name__
+
+    with pytest.raises(ValueError, match=rf"epochs is a pynapple {name}") as excinfo:
+        as_intervals(series, name="epochs")
+    assert f"epochs={name.lower()}.time_support" in str(excinfo.value)
+
+
+@pytest.fixture
+def trials(nap):
+    """Two trials whose second one ends exactly on an event."""
+    return nap.IntervalSet(
+        start=[5.0, 50.0], end=[20.0, 80.0], metadata={"kind": ["a", "b"]}
+    )
+
+
+def test_filter_by_intervals_accepts_an_intervalset(nap, trials):
+    import pandas as pd
+
+    from neurospatial.events import filter_by_intervals
+
+    times = np.array([3.0, 10.0, 20.0, 30.0, 80.0, 81.0])
+    events = pd.DataFrame({"timestamp": times})
+
+    kept = filter_by_intervals(events, trials)
+
+    # pynapple intervals include their end, so 20.0 and 80.0 are inside, as
+    # in pynapple's own restrict.
+    assert kept["timestamp"].tolist() == [10.0, 20.0, 80.0]
+    np.testing.assert_array_equal(kept["timestamp"], nap.Ts(times).restrict(trials).t)
+
+
+def test_intervals_to_events_accepts_an_intervalset(trials):
+    from neurospatial.events import intervals_to_events
+
+    starts = intervals_to_events(trials, preserve_columns=["kind"])
+    both = intervals_to_events(trials, which="both")
+
+    assert starts["timestamp"].tolist() == [5.0, 50.0]
+    assert starts["kind"].tolist() == ["a", "b"]
+    # Each stop is the half-open stop holding the inclusive end.
+    stops = both.loc[both["boundary"] == "stop", "timestamp"].to_numpy()
+    np.testing.assert_array_equal(stops, np.nextafter([20.0, 80.0], np.inf))
+
+
+def test_pairwise_bias_matrix_accepts_a_one_row_intervalset(nap, group):
+    from neurospatial.replay import pairwise_bias_matrix
+
+    event = nap.IntervalSet(start=1.0, end=30.0)
+
+    from_set = pairwise_bias_matrix(group, event)
+    from_pair = pairwise_bias_matrix(group, (1.0, np.nextafter(30.0, np.inf)))
+
+    np.testing.assert_array_equal(from_set.bias, from_pair.bias)
+    np.testing.assert_array_equal(from_set.n_spikes, from_pair.n_spikes)
+    # The group's labels name the matrix rows.
+    assert from_set.unit_ids.tolist() == [5, 6, 7]
+
+
+def test_one_event_interval_refuses_several_rows(nap, group):
+    from neurospatial.replay import pairwise_bias_matrix
+
+    with pytest.raises(ValueError, match=r"has 2 intervals"):
+        pairwise_bias_matrix(group, nap.IntervalSet(start=[1.0, 5.0], end=[2.0, 6.0]))
+
+
+def test_mean_pairwise_bias_accepts_an_intervalset(nap):
+    from neurospatial.replay import mean_pairwise_bias
+
+    # Unit 0 fires at 1.0 and exactly at the cycle's inclusive end, 9.0.
+    spikes = [np.array([1.0, 9.0]), np.array([2.0])]
+    cycles = nap.IntervalSet(start=[0.0], end=[9.0])
+
+    # Unit 0 fires once before and once after unit 1: no bias. Read as a
+    # half-open [0, 9) the spike at 9.0 would be lost and the bias would be 1.
+    np.testing.assert_array_equal(
+        mean_pairwise_bias(spikes, cycles), [[0.0, 0.0], [0.0, 0.0]]
+    )
