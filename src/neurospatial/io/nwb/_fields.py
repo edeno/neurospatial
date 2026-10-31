@@ -200,10 +200,9 @@ def write_spatial_rates(
 
     Notes
     -----
-    This function mutates only ``nwbfile``. The ``result`` object and its
-    arrays are never modified -- ``firing_rates`` and ``occupancy`` are copied
-    before being handed to the NWB containers, so the written data never
-    aliases the result's memory.
+    This function mutates only ``nwbfile``. The NWB containers hold the
+    result's own ``firing_rates`` and ``occupancy``, which are read-only, so
+    neither the result nor the written data can change the other.
 
     Examples
     --------
@@ -222,127 +221,26 @@ def write_spatial_rates(
     _require_pynwb()
     from hdmf.common import DynamicTable, VectorData
 
-    is_glm = result.method == "glm"
-    # The per-unit-lambda columns exist only for a pooled=False per-unit result
-    # (keyed off the provenance mask, exactly as the writer decides below), so
-    # they are reserved only then -- a pooled=True/fixed-penalty glm write does
-    # not emit them and must not reject a unit_table column named e.g. "penalty".
-    is_per_unit = is_glm and result.penalty_selected_by_reml is not None
-
     env = result.env
-    # Copy the arrays (np.array, not a no-copy np.asarray) so the
-    # NWB containers never alias the live result's memory. Mutating
-    # result.firing_rates / result.occupancy after the write must not change what
-    # was written, and vice versa. dtype is preserved.
-    firing_rates = np.array(result.firing_rates)
-    occupancy = np.array(result.occupancy)
     unit_ids = np.asarray(result.unit_ids)
     n_units = int(unit_ids.shape[0])
-
     occupancy_name = f"{name}_occupancy"
     env_name = f"{name}_environment" if environment_name is None else environment_name
 
-    # --- Preflight (BEFORE any mutation): reserved-name validation ----------
-    # Shapes need no check here: SpatialRatesResult refuses firing_rates or
-    # occupancy that do not match its env's bins when it is constructed.
-
-    # `unit_id` / `firing_rate` / `units` are reserved for the table's own
-    # columns; a unit_table column with one of these names would collide inside
-    # the DynamicTable.
-    # A glm result always writes `deviance` / `coefficients`, so those are always
-    # reserved; the per-unit-lambda columns (`penalty` / `reml_objective` /
-    # `reml_at_boundary` / `penalty_selected_by_reml`) are written -- and thus
-    # reserved -- only for a pooled=False per-unit result. Raise a clear
-    # param-named error instead of a low-level hdmf error.
-    reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE, COL_UNITS)
-    if is_glm:
-        reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
-    if is_per_unit:
-        reserved_names = (
-            *reserved_names,
-            COL_PENALTY,
-            COL_REML_OBJECTIVE,
-            COL_REML_AT_BOUNDARY,
-            COL_PENALTY_SELECTED,
-        )
-    unit_table = result.unit_table
-    if unit_table is not None:
-        reserved_clash = [
-            str(c) for c in unit_table.columns if str(c) in reserved_names
-        ]
-        if reserved_clash:
-            raise ValueError(
-                f"unit_table has reserved column name(s) {reserved_clash}: "
-                f"{list(reserved_names)} are reserved for the spatial-rates "
-                f"table's own columns. Rename these unit_table columns."
-            )
-
-    # Check every name -- the table, its companion occupancy and the
-    # environment record -- before the first mutation. The objects to replace
-    # are removed only after the replacements are built, so a failed write
-    # can restore them.
-    env_metadata, env_arrays, env_fingerprint = _environment_content(env)
-    old_names, env_slot = _plan_spatial_rates_write(
-        nwbfile, name, occupancy_name, env_name, env_fingerprint, overwrite=overwrite
-    )
-
-    # Optional per-unit metadata columns.
-    unit_table_columns: list[str] = []
-    extra_columns: list[VectorData] = []
-    if unit_table is not None:
-        unit_table_columns = [str(c) for c in unit_table.columns]
-        extra_columns = [
-            VectorData(
-                name=str(col),
-                description=f"unit_table column '{col}'",
-                data=unit_table[col].to_numpy(),
-            )
-            for col in unit_table.columns
-        ]
-
-    meta_dict: dict[str, object] = {
-        "format": SPATIAL_RATES_FORMAT,
-        "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
-        "method": str(result.method),
-        # ``bandwidth`` is nullable: ``None`` for method="glm" (which has no
-        # bandwidth), a float for the ratio methods.
-        "bandwidth": (None if result.bandwidth is None else float(result.bandwidth)),
-        "n_bins": int(env.n_bins),
-        "n_units": n_units,
-        "unit_table_columns": unit_table_columns,
-        "occupancy_name": occupancy_name,
-        "environment_name": env_name,
-        "environment_sha256": env_fingerprint,
-        "unit_ids_generated": bool(result._unit_ids_generated),
-        "min_occupancy": float(result.min_occupancy),
-        "n_spikes_outside_intervals": (
-            None
-            if result.n_spikes_outside_intervals is None
-            else result.n_spikes_outside_intervals.tolist()
-        ),
-        "analysis_settings": result.analysis_settings,
-        "spike_window": (
-            None if result.spike_window is None else result.spike_window.tolist()
-        ),
-    }
-
     # GAM (method="glm") diagnostics: scalars + the (rank,) penalty_weights go
     # into the JSON blob; the per-unit deviance and coefficients become table
-    # columns. Under pooled=False (per-unit lambda) the penalty / reml_objective /
-    # reml_at_boundary vectors and the penalty_selected_by_reml mask also become
-    # per-unit columns; the blob's scalar slots then carry JSON null. ``pooled``
-    # (the only reliable source -- scalar cases are value-identical either way)
-    # and ``per_unit`` (whether the vector columns are present) always ride along.
+    # columns. Under pooled=False (per-unit lambda, marked by the provenance
+    # mask) the penalty / reml_objective / reml_at_boundary vectors and the
+    # penalty_selected_by_reml mask also become per-unit columns; the blob's
+    # scalar slots then carry JSON null. ``pooled`` (the only reliable source
+    # -- scalar cases are value-identical either way) and ``per_unit`` (whether
+    # the vector columns are present) always ride along.
+    gam_meta: dict[str, object] | None = None
     gam_columns: list[VectorData] = []
-    if is_glm:
+    if result.method == "glm":
         rank = int(result.rank)  # type: ignore[arg-type]
-        # The per-unit vector path is exactly when the provenance mask exists
-        # (same discriminant as the reserved-name gate above).
-        per_unit = is_per_unit
-        penalty = result.penalty
-        reml_objective = result.reml_objective
-        reml_at_boundary = result.reml_at_boundary
-        gam_meta: dict[str, object] = {
+        per_unit = result.penalty_selected_by_reml is not None
+        gam_meta = {
             "rank": rank,
             "n_iter": int(result.n_iter),  # type: ignore[arg-type]
             "converged": bool(result.converged),
@@ -351,25 +249,25 @@ def write_spatial_rates(
             ).tolist(),
             "pooled": bool(result.pooled),
             "per_unit": per_unit,
+            # Scalar slots: real values when scalar, JSON null when the value
+            # lives in a per-unit column instead.
+            "penalty": None
+            if per_unit or result.penalty is None
+            else float(result.penalty),
+            "reml_objective": None
+            if per_unit or result.reml_objective is None
+            else float(result.reml_objective),
+            "reml_at_boundary": None
+            if per_unit or result.reml_at_boundary is None
+            else bool(result.reml_at_boundary),
         }
-        # Scalar slots: real values when scalar, JSON null when the value lives in
-        # a per-unit column instead (per_unit=True).
-        gam_meta["penalty"] = None if per_unit or penalty is None else float(penalty)
-        gam_meta["reml_objective"] = (
-            None if per_unit or reml_objective is None else float(reml_objective)
-        )
-        gam_meta["reml_at_boundary"] = (
-            None if per_unit or reml_at_boundary is None else bool(reml_at_boundary)
-        )
-        meta_dict["gam"] = gam_meta
         # coefficients (rank, n_units) -> per-unit rows (n_units, rank), matching
         # the firing_rate per-unit-row layout; deviance (n_units,) as-is.
-        coefficients_rows = np.array(result.coefficients, dtype=np.float64).T
         gam_columns = [
             VectorData(
                 name=COL_DEVIANCE,
                 description="Per-unit unpenalized Poisson deviance (method='glm').",
-                data=np.array(result.deviance, dtype=np.float64),
+                data=np.asarray(result.deviance, dtype=np.float64),
             ),
             VectorData(
                 name=COL_COEFFICIENTS,
@@ -377,7 +275,7 @@ def write_spatial_rates(
                     f"Per-unit GAM coefficients (n_units, rank={rank}); "
                     f"transpose back to (rank, n_units) on read (method='glm')."
                 ),
-                data=coefficients_rows,
+                data=np.asarray(result.coefficients, dtype=np.float64).T,
             ),
         ]
         if per_unit:
@@ -416,8 +314,68 @@ def write_spatial_rates(
                 ),
             ]
 
+    # A unit_table column may not share a name with a column the table writes
+    # itself (``units`` is reserved even when no link is written). Refuse
+    # before any mutation, naming the argument, instead of a low-level hdmf
+    # error.
+    unit_table = result.unit_table
+    unit_table_columns = (
+        [] if unit_table is None else [str(c) for c in unit_table.columns]
+    )
+    reserved_names = [
+        COL_UNIT_ID,
+        COL_FIRING_RATE,
+        COL_UNITS,
+        *(column.name for column in gam_columns),
+    ]
+    reserved_clash = [c for c in unit_table_columns if c in reserved_names]
+    if reserved_clash:
+        raise ValueError(
+            f"unit_table has reserved column name(s) {reserved_clash}: "
+            f"{reserved_names} are reserved for the spatial-rates "
+            f"table's own columns. Rename these unit_table columns."
+        )
+
+    # Check every name -- the table, its companion occupancy and the
+    # environment record -- before the first mutation. The objects to replace
+    # are removed only after the replacements are built, so a failed write
+    # can restore them.
+    env_metadata, env_arrays, env_fingerprint = _environment_content(env)
+    old_names, env_slot = _plan_spatial_rates_write(
+        nwbfile, name, occupancy_name, env_name, env_fingerprint, overwrite=overwrite
+    )
+
+    meta_dict: dict[str, object] = {
+        "format": SPATIAL_RATES_FORMAT,
+        "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
+        "method": str(result.method),
+        # ``bandwidth`` is nullable: ``None`` for method="glm" (which has no
+        # bandwidth), a float for the ratio methods.
+        "bandwidth": (None if result.bandwidth is None else float(result.bandwidth)),
+        "n_bins": int(env.n_bins),
+        "n_units": n_units,
+        "unit_table_columns": unit_table_columns,
+        "occupancy_name": occupancy_name,
+        "environment_name": env_name,
+        "environment_sha256": env_fingerprint,
+        "unit_ids_generated": bool(result._unit_ids_generated),
+        "min_occupancy": float(result.min_occupancy),
+        "n_spikes_outside_intervals": (
+            None
+            if result.n_spikes_outside_intervals is None
+            else result.n_spikes_outside_intervals.tolist()
+        ),
+        "analysis_settings": result.analysis_settings,
+        "spike_window": (
+            None if result.spike_window is None else result.spike_window.tolist()
+        ),
+    }
+    if gam_meta is not None:
+        meta_dict["gam"] = gam_meta
     description = json.dumps(meta_dict)
 
+    # The result's arrays are read-only, so the containers can hold them
+    # without a copy.
     table = DynamicTable(
         name=name,
         description=description,
@@ -434,10 +392,17 @@ def write_spatial_rates(
                     f"n_bins={env.n_bins}; bin coordinates are in the environment "
                     f"saved as '{env_name}'."
                 ),
-                data=firing_rates,
+                data=result.firing_rates,
             ),
             *_units_link(nwbfile, unit_ids, generated=result._unit_ids_generated),
-            *extra_columns,
+            *(
+                VectorData(
+                    name=str(column),
+                    description=f"unit_table column '{column}'",
+                    data=values.to_numpy(),
+                )
+                for column, values in (() if unit_table is None else unit_table.items())
+            ),
             *gam_columns,
         ],
     )
@@ -455,7 +420,7 @@ def write_spatial_rates(
             VectorData(
                 name=COL_OCCUPANCY,
                 description="Time spent in each bin, in seconds",
-                data=occupancy,
+                data=result.occupancy,
             )
         ],
     )
