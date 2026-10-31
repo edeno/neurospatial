@@ -233,6 +233,15 @@ def head_direction_overlay_from_nwb(
     ------
     KeyError
         If no CompassDirection container found, or if specified name not found.
+    ValueError
+        If the series unit is not a radian or degree spelling; see
+        :func:`read_head_direction`.
+
+    Notes
+    -----
+    Headings are drawn in the package convention, zero East and increasing
+    counterclockwise. Check ``read_head_direction(nwbfile).frame`` when the
+    file may use another convention.
 
     Examples
     --------

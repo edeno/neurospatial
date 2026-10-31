@@ -964,3 +964,106 @@ class TestReadScaledSeries:
         angles = head_direction_data.headings
 
         np.testing.assert_allclose(angles, np.deg2rad(2 * stored), rtol=1e-12)
+
+
+def _add_compass(nwbfile, data, **series_kwargs):
+    from pynwb.behavior import CompassDirection, SpatialSeries
+
+    compass = CompassDirection(name="CompassDirection")
+    compass.add_spatial_series(
+        SpatialSeries(
+            name="head_direction",
+            data=data,
+            timestamps=np.arange(len(data)) / 30.0,
+            **series_kwargs,
+        )
+    )
+    nwbfile.create_processing_module(name="behavior", description="Behavior").add(
+        compass
+    )
+
+
+class TestReadHeadDirectionUnits:
+    """Angles are converted only from recognized radian or degree units."""
+
+    @pytest.mark.parametrize("unit", [None, "meters", "", "arbitrary"])
+    def test_unrecognized_angle_unit_is_refused(self, empty_nwb, unit):
+        """Degrees saved with pynwb's default unit are not read as radians."""
+        from neurospatial.io.nwb import read_head_direction
+
+        kwargs = {"reference_frame": "0 = East"}
+        if unit is not None:
+            kwargs["unit"] = unit
+        _add_compass(empty_nwb, np.array([0.0, 90.0, 180.0]), **kwargs)
+        with pytest.raises(ValueError) as caught:
+            read_head_direction(empty_nwb)
+        message = str(caught.value)
+        assert "is not an angle unit" in message
+        assert "unit='radians' or unit='degrees'" in message
+
+    @pytest.mark.parametrize(
+        ("unit", "scale"),
+        [
+            ("radians", 1.0),
+            (" Rad ", 1.0),
+            ("radian", 1.0),
+            ("degrees", np.pi / 180),
+            ("Deg", np.pi / 180),
+            ("degree", np.pi / 180),
+        ],
+    )
+    def test_recognized_angle_units(self, empty_nwb, unit, scale):
+        from neurospatial.io.nwb import read_head_direction
+
+        stored = np.array([0.0, 0.5, 1.0, 1.5])
+        _add_compass(empty_nwb, stored, unit=unit, reference_frame="0 = East")
+        np.testing.assert_allclose(
+            read_head_direction(empty_nwb).headings, stored * scale, rtol=1e-12
+        )
+
+    def test_unit_vectors_do_not_need_an_angle_unit(self, empty_nwb):
+        from neurospatial.io.nwb import read_head_direction
+
+        angles = np.array([0.0, np.pi / 2, -np.pi / 2])
+        vectors = 3.0 * np.column_stack([np.cos(angles), np.sin(angles)])
+        _add_compass(empty_nwb, vectors, reference_frame="0 = East")
+        np.testing.assert_allclose(
+            read_head_direction(empty_nwb).headings, angles, atol=1e-12
+        )
+
+    def test_three_column_heading_is_refused(self, empty_nwb):
+        from neurospatial.io.nwb import read_head_direction
+
+        _add_compass(empty_nwb, np.zeros((4, 3)), unit="radians", reference_frame="x")
+        with pytest.raises(ValueError, match=r"shape \(4, 3\)"):
+            read_head_direction(empty_nwb)
+
+    def test_reference_frame_is_carried_not_interpreted(self, empty_nwb, tmp_path):
+        """A compass frame is returned verbatim with an eager file-backed read."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_head_direction
+
+        frame = "0 = North, increasing clockwise"
+        stored = np.array([0.0, 90.0, np.nan, 270.0])
+        _add_compass(empty_nwb, stored, unit="degrees", reference_frame=frame)
+        path = tmp_path / "heading.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
+        with NWBHDF5IO(str(path), "r") as io:
+            hd = read_head_direction(io.read())
+        assert hd.frame == frame
+        np.testing.assert_allclose(hd.headings, np.deg2rad(stored), rtol=1e-12)
+        assert np.isnan(hd.headings[2])
+
+
+def test_zero_heading_vector_has_no_direction(empty_nwb):
+    """A (0, 0) direction vector is missing, not East."""
+    from neurospatial.io.nwb import read_head_direction
+
+    _add_compass(
+        empty_nwb, np.array([[0.0, 1.0], [0.0, 0.0]]), reference_frame="0 = East"
+    )
+    headings = read_head_direction(empty_nwb).headings
+    assert headings[0] == pytest.approx(np.pi / 2)
+    assert np.isnan(headings[1])

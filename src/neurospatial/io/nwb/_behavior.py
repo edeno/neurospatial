@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
@@ -315,18 +316,32 @@ def read_head_direction(
     Returns
     -------
     NWBHeadDirection
-        Frozen, non-iterable holder with ``times`` in seconds and ``headings``
-        in radians, zero East and increasing counterclockwise. Stored values
-        pass through conversion and offset before degree-to-radian conversion
-        or unit-vector arctan2 extraction.
+        Frozen, non-iterable holder with ``times`` in seconds, ``headings``
+        in radians and ``frame``, the series' ``reference_frame`` verbatim
+        (None when blank). Angles stored as ``(n_samples,)`` values pass
+        through conversion and offset and are converted from the declared
+        unit, which must be radians or degrees. Direction vectors stored as
+        ``(n_samples, 2)`` become ``arctan2(y, x)``; a zero vector is NaN.
 
     Raises
     ------
     KeyError
         If no CompassDirection container found, or if specified compass_name
         not found.
+    ValueError
+        If the series ``unit`` is not a radian or degree spelling (pynwb's
+        default ``"meters"`` included) for angle data, or the data is
+        neither ``(n_samples,)`` nor ``(n_samples, 2)``.
     ImportError
         If pynwb is not installed.
+
+    Notes
+    -----
+    ``headings`` are assumed to follow the package convention: zero East and
+    increasing counterclockwise. The reader does not interpret
+    ``reference_frame`` text. Check ``frame``; if it describes another
+    convention, for example zero North and clockwise, convert with
+    ``np.pi / 2 - headings``.
 
     Examples
     --------
@@ -348,23 +363,50 @@ def read_head_direction(
         compass_container, compass_name, "SpatialSeries", "CompassDirection"
     )
 
-    # Extract angle data and timestamps. CompassDirection SpatialSeries store
-    # head direction as either a 1-D angle series or an (n, 2) unit-vector
-    # series; handle both. Angles are returned in the allocentric convention
-    # (0 = East, increasing counterclockwise).
     raw = data_from_series(spatial_series)
-    timestamps = timestamps_from_series(spatial_series)
-
     if raw.ndim == 2 and raw.shape[1] == 2:
-        # (n, 2) heading vectors -> angle via arctan2 (already radians, 0=East).
+        # (n, 2) heading vectors along the frame's x and y axes; the angle
+        # does not depend on their length or unit. A zero vector has no
+        # direction.
         angles = np.arctan2(raw[:, 1], raw[:, 0])
+        angles[(raw[:, 0] == 0) & (raw[:, 1] == 0)] = np.nan
+    elif raw.ndim == 1 or (raw.ndim == 2 and raw.shape[1] == 1):
+        angles = raw.reshape(-1) * _radians_per_unit(spatial_series)
     else:
-        angles = raw.reshape(-1)
-        # Honor the stored unit: convert degrees to radians. NWB SpatialSeries
-        # carry a free-text 'unit'; treat anything starting with "deg" as
-        # degrees (e.g. "deg", "degree", "degrees").
-        unit = getattr(spatial_series, "unit", None)
-        if isinstance(unit, str) and unit.strip().lower().startswith("deg"):
-            angles = np.deg2rad(angles)
+        raise ValueError(
+            _format_error(
+                f"CompassDirection series '{spatial_series.name}' has data of "
+                f"shape {raw.shape}.",
+                why="head direction is stored as one angle per sample, shape "
+                "(n_samples,), or as (n_samples, 2) direction vectors.",
+                fix="store the head direction in one of those shapes.",
+            )
+        )
+    return NWBHeadDirection(
+        timestamps_from_series(spatial_series),
+        angles,
+        frame=spatial_series.reference_frame,
+    )
 
-    return NWBHeadDirection(timestamps, angles)
+
+_RADIANS_PER_ANGLE_UNIT = {
+    **dict.fromkeys(["radians", "radian", "rad", "rads"], 1.0),
+    **dict.fromkeys(["degrees", "degree", "deg", "degs"], np.pi / 180),
+}
+
+
+def _radians_per_unit(series: SpatialSeries) -> float:
+    """Radians in one stored angle unit; refuse any other unit declaration."""
+    unit = getattr(series, "unit", None)
+    key = str(unit).strip().lower() if unit is not None else ""
+    if key not in _RADIANS_PER_ANGLE_UNIT:
+        raise ValueError(
+            _format_error(
+                f"CompassDirection series '{series.name}' declares unit "
+                f"{unit!r}, which is not an angle unit.",
+                why="the angles could be degrees or radians; pynwb gives a "
+                "SpatialSeries saved without unit= the unit 'meters'.",
+                fix="rewrite the series with unit='radians' or unit='degrees'.",
+            )
+        )
+    return _RADIANS_PER_ANGLE_UNIT[key]
