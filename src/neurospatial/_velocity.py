@@ -121,7 +121,8 @@ def gaussian_pair_weights(
     weight : NDArray[np.float64], shape (n_samples - lag,)
         ``exp(-dt**2 / (2 * sigma**2))`` of the pair ``(i, i + lag)``, where
         ``dt = times[i + lag] - times[i]``; 0 for pairs more than
-        ``4 * sigma`` apart.
+        ``4 * sigma`` apart. It is a view of a buffer the next lag
+        overwrites, so it is valid only until the next iteration.
     """
     from neurospatial._intervals import _timestamp_rounding
 
@@ -131,15 +132,19 @@ def gaussian_pair_weights(
     lo = np.searchsorted(times, times - reach, side="left")
     hi = np.searchsorted(times, times + reach, side="right")
     widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
+    weights = np.empty(max(times.size - 1, 0))
+    beyond = np.empty(weights.size, dtype=bool)
     for lag in range(1, widest + 1):
-        weight = times[lag:] - times[:-lag]
-        far = weight > reach
+        weight = weights[: times.size - lag]
+        far = beyond[: weight.size]
+        np.subtract(times[lag:], times[:-lag], out=weight)
+        np.greater(weight, reach, out=far)
         # In place: exp(-0.5 * (dt / sigma) ** 2), the costly step of smoothing.
         weight /= sigma
         np.square(weight, out=weight)
         weight *= -0.5
         np.exp(weight, out=weight)
-        weight[far] = 0.0
+        np.putmask(weight, far, 0.0)
         yield lag, weight
 
 
@@ -209,14 +214,21 @@ def smooth_run_in_time(
         weighted = np.vstack([np.where(defined[:, None], table, 0.0).T, defined])
         sums = weighted.copy()
         product = np.empty(table.shape[0])
+        # With every row defined the weight row is all ones, so w adds to
+        # its sums unscaled.
+        ones = bool(defined.all())
+        scaled = weighted[:-1] if ones else weighted
         # Each pair (i, i + k) within reach adds to both samples.
         for k, w in gaussian_pair_weights(times, sigma):
             buffer = product[: w.size]
-            for row, total in zip(weighted, sums, strict=True):
+            for row, total in zip(scaled, sums[: len(scaled)], strict=True):
                 np.multiply(w, row[k:], out=buffer)
                 total[:-k] += buffer
                 np.multiply(w, row[:-k], out=buffer)
                 total[k:] += buffer
+            if ones:
+                sums[-1, :-k] += w
+                sums[-1, k:] += w
         smoothed[defined] = (sums[:-1, defined] / sums[-1, defined]).T
     result: NDArray[np.float64] = smoothed.reshape(values.shape)
     return result
