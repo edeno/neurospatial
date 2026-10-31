@@ -216,7 +216,9 @@ def test_closing_the_napari_window_releases_owned_readers(env, file_video):
 def test_owner_deduplicates_and_completes_cleanup_after_one_reader_fails():
     first, second = Reader(fail=True), Reader()
     owner = _OwnedReaders([first, first, second])
-    with pytest.raises(BaseException) as caught:
+    with pytest.raises(
+        BaseException, match=r"Failed to close owned animation video readers"
+    ) as caught:
         owner.close()
     assert len(caught.value.exceptions) == 1
     assert first.close_count == second.close_count == 1

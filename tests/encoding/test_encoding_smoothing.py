@@ -1208,7 +1208,9 @@ class TestGaussianKernelMemoryWarning:
         # Patch the threshold below the env's bin count so it trips.
         monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
 
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(
+            UserWarning, match=r"Computing a dense Gaussian-KDE kernel for"
+        ) as record:
             kernel = _smoothing._get_gaussian_kernel(simple_env, bandwidth=5.0)
 
         msg = str(record[0].message)

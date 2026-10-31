@@ -150,7 +150,9 @@ def test_refuses_dimensions_that_cannot_build_the_maze(cls, kwargs, match):
 
 
 def test_a_length_error_says_what_to_pass():
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"is not a length: stem_length must be a finite number of cm"
+    ) as error:
         mazes.TMazeDims(stem_length=-1.0)
     assert str(error.value) == (
         "TMazeDims(stem_length=-1.0) is not a length: stem_length must be a "

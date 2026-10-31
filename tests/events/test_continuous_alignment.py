@@ -440,7 +440,7 @@ def test_actionable_errors(override, match):
 
 
 def test_all_excluded_error_counts_each_reason():
-    with pytest.raises(ValueError) as info:
+    with pytest.raises(ValueError, match=r"align_continuous_to_events: All") as info:
         align_continuous_to_events(
             TWO_RUNS, TWO_RUNS, [0.75, 99.0, 1.25], (-0.5, 0.5), dt=0.125
         )

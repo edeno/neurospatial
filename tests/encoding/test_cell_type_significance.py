@@ -436,7 +436,9 @@ def test_input_group_labels_cannot_be_overridden(
 ):
     f, r = significance_family, significance_recording
     group = encoding.SpikeTrains(r.trains[:2], unit_ids=[10, 20])
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"but the spike input is already labelled"
+    ) as caught:
         f.function(
             *f.args(r, group), unit_ids=[20, 10], n_shuffles=4, rng=0, **f.defaults
         )

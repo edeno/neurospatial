@@ -291,7 +291,9 @@ def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
     Arrival used to be searched outside the epochs, giving 1100 s.
     """
     r = two_epoch_recording
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ):
         result = compute_goal_directed_metrics(
             r.env,
             r.times,

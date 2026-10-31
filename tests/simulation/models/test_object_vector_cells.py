@@ -879,7 +879,9 @@ def test_egocentric_model_requires_headings():
         preferred_direction=0,
         direction_frame="egocentric",
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"s firing depends on which way the animal faces"
+    ) as caught:
         model.firing_rate(np.zeros(1), np.array([[30, 50]]))
     assert 'direction_frame="allocentric"' in str(caught.value)
     assert "Why:" in str(caught.value)

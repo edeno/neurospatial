@@ -161,7 +161,9 @@ class TestObjectVectorScoreProfiles:
         # directions by rate: random noise used to score 1.0.
         rates = np.random.default_rng(0).normal(size=(N_DIST, N_DIR))
         n_negative = int((rates < 0).sum())
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError, match=r"object_vector_score needs a firing-rate map; got"
+        ) as excinfo:
             object_vector_score(rates)
         message = str(excinfo.value)
         assert f"{n_negative} negative" in message

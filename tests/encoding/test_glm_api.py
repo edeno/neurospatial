@@ -505,7 +505,9 @@ def test_public_warning_forwards_unit_ids(
 
     monkeypatch.setattr(glmnp, "_newton_fit_numpy", failing_fit)
 
-    with pytest.warns(UserWarning) as rec:
+    with pytest.warns(
+        UserWarning, match=r"MRF-GAM per-unit fit did not converge for unit"
+    ) as rec:
         compute_spatial_rates(
             env,
             spike_times,

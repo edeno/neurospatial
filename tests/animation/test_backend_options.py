@@ -100,7 +100,7 @@ def test_another_backends_option_is_ignored_with_one_warning(
 ):
     _available(backend)
     (name,) = option
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(UserWarning, match=r"To use it, pass backend") as record:
         _run(animation, backend, dpi=20, **option)
     (warning,) = _ignore_warnings(record)
     message = str(warning.message)
@@ -133,7 +133,9 @@ def test_the_suggested_call_uses_the_option(animation, tmp_path, option, owner):
 
 
 def test_several_ignored_options_share_one_warning(animation):
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"crf is used by the video backend; the html backend ignores"
+    ) as record:
         _run(animation, "html", crf=15, preset="slow", dpi=20)
     (warning,) = _ignore_warnings(record)
     assert "crf is used by the video backend" in str(warning.message)

@@ -127,7 +127,7 @@ def test_result_owns_read_only_arrays(significance_recording):
         r.env, r.trains, r.times, r.positions, n_shuffles=5, rng=0
     )
     for array in (result.observed_scores, result.null_scores, result.p_values):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"assignment destination is read-only"):
             array[...] = 0
     restored = pickle.loads(pickle.dumps(result))
     np.testing.assert_array_equal(restored.p_values, result.p_values)

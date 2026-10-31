@@ -88,7 +88,9 @@ def test_max_gap_above_the_sampling_interval_is_silent(recwarn, offset):
 
 
 def test_all_excluded_without_named_gates_reads_cleanly():
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals, so"
+    ) as record:
         warn_excluded_intervals(IntervalGates(np.arange(4.0), np.zeros(3, bool), None))
     message = str(record[0].message)
     assert "gate(s) )" not in message

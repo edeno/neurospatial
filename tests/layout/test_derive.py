@@ -149,7 +149,9 @@ def test_subset_binning_refuses_invalid_selections(keep):
     parent = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )._binning
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"A bin subset needs a nonempty boolean selection of all"
+    ) as caught:
         subset_binning(parent, keep)
     assert "Why:" in str(caught.value)
     assert "Fix:" in str(caught.value)

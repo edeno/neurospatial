@@ -83,7 +83,9 @@ def test_mapping_rejects_invalid_indices(indices, count):
     ],
 )
 def test_polygon_cells_reject_invalid_partition(polygons):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Why: exact cell geometry must remain consistent with point"
+    ):
         PolygonCells(polygons)
 
 
@@ -354,7 +356,9 @@ def test_transform_polygon_cells_maps_shared_vertices_and_keeps_holes():
     "polygon", [Point(0, 0), Polygon(), Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])]
 )
 def test_clipping_rejects_invalid_geometry_without_repair(polygon):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Why: exact cell geometry must remain consistent with point"
+    ):
         clip_binning(_grid(), polygon)
 
 

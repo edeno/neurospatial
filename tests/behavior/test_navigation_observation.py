@@ -164,7 +164,7 @@ def test_errors_name_the_called_function(name):
             env, times, positions, goal, min_speed=1.0
         ),
     }
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(ValueError, match=r"times must be strictly increasing") as error:
         calls[name]()
     message = str(error.value)
     assert f"{name}()" in message.splitlines()[0]
@@ -275,7 +275,9 @@ def _calls_with(times, positions, goal):
 def test_one_dimensional_positions_error_names_the_call(name):
     times = _times(10)
     positions = np.arange(10.0)  # a linearized track: no x and y
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"needs positions with x and y columns; got shape"
+    ) as error:
         _calls_with(times, positions, np.array([10.0]))[name]()
     message = str(error.value)
     assert message.startswith(f"{name}() needs positions with x and y columns")
@@ -299,7 +301,9 @@ def test_goal_dimension_error_names_the_call(name):
     times = _times(10)
     positions = _east_run(10, 1.0)
     goal = np.array([10.0, 0.0, 0.0])
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"needs a goal with one coordinate per position dimension"
+    ) as error:
         _calls_with(times, positions, goal)[name]()
     message = str(error.value)
     assert message.startswith(

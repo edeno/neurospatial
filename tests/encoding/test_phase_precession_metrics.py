@@ -1353,7 +1353,10 @@ class TestHasPhasePrecessionValidation:
 
         positions = np.linspace(0, 50, 100)
         phases = np.linspace(0, 2 * np.pi, 90)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"positions and phases must have same length\. Got positions",
+        ):
             has_phase_precession(positions, phases)
 
     def test_has_phase_precession_default_work_is_bounded(

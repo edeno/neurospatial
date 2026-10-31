@@ -577,7 +577,10 @@ class TestBinSequenceNonFiniteTimes:
         times = np.array([0.0, 1.0, 2.0], dtype=np.float64)
         times[1] = bad_value
 
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid times/positions passed to Environment\.bin_sequence",
+        ) as excinfo:
             env.bin_sequence(times, positions)
 
         message = str(excinfo.value)

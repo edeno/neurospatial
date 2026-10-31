@@ -364,7 +364,7 @@ def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps
             unit_ids=list(IDS),
         )
 
-    with pytest.warns(UserWarning) as caught:
+    with pytest.warns(UserWarning, match=r"and firing_rates") as caught:
         pv = population_vector_correlation(
             estimated(first, 5.0), estimated(second, 10.0)
         )

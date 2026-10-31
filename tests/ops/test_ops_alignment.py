@@ -130,7 +130,9 @@ class TestMapProbabilities:
         src_probs = np.array([1.0])  # Wrong size
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"source_probs must be a 1D array of length"
+        ):
             map_probabilities(src_env, tgt_env, src_probs)
 
     def test_dimension_mismatch(self):
@@ -140,7 +142,10 @@ class TestMapProbabilities:
         src_probs = np.array([1.0])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 3)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"Source and target environments must have the same number of",
+        ):
             map_probabilities(src_env, tgt_env, src_probs)
 
     def test_with_scale(self):
@@ -168,7 +173,9 @@ class TestMapProbabilities:
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"data must be finite, check for nan or inf values"
+        ):
             map_probabilities(src_env, tgt_env, src_probs)
 
     def test_map_probabilities_empty_env_still_returns_zeros(self):

@@ -58,7 +58,9 @@ def test_swapped_times_positions(recording):
 def test_trajectory_reports_length_and_dimensions_together(recording):
     r = recording
     positions = np.zeros((len(r.times) - 1, 3))
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to compute_spatial_rate"
+    ) as caught:
         compute_spatial_rate(r.env, r.spike_times, r.times, positions)
     message = str(caught.value)
     assert "times has 1800" in message
@@ -72,7 +74,9 @@ def test_egocentric_population_reports_length_and_dimensions_together(recording)
     from neurospatial.encoding import compute_egocentric_rates
 
     r = recording
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to compute_egocentric_rates"
+    ) as caught:
         compute_egocentric_rates(
             r.env,
             [r.spike_times],
@@ -131,7 +135,9 @@ def test_window_strings_name_the_call(name):
     import neurospatial.events as events
 
     function = getattr(events, name)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Why: peri-event windows are expressed in seconds relative"
+    ) as caught:
         function(np.array([0.1]), np.array([0.0, 1.0]), window=("-0.5", "1.0"))
     message = str(caught.value)
     assert name in message
@@ -141,7 +147,7 @@ def test_window_strings_name_the_call(name):
 
 
 def test_unknown_animation_backend_lists_widget(recording):
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=r"Unknown backend: unknown") as caught:
         recording.env.animate_fields(
             np.zeros((2, recording.env.n_bins)),
             frame_times=np.array([0.0, 0.1]),
@@ -153,7 +159,9 @@ def test_unknown_animation_backend_lists_widget(recording):
 
 
 def test_trajectory_reports_time_and_heading_problems_together():
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to compute_directional_rate"
+    ) as caught:
         validate_trajectory(
             np.array([1.0, 0.0, np.nan]),
             headings=np.ones((2, 2)),
@@ -177,7 +185,9 @@ def test_trajectory_reports_time_and_heading_problems_together():
 def test_unsorted_times_say_how_to_sort(with_positions):
     times = np.array([0.0, 2.0, 1.0, 3.0])
     positions = np.zeros((4, 2)) if with_positions else None
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to decode_session"
+    ) as caught:
         validate_trajectory(times, positions=positions, context="decode_session")
     message = str(caught.value)
     assert "order = np.argsort(times" in message
@@ -198,7 +208,9 @@ def test_valid_linear_trajectory_is_accepted():
 
 @pytest.mark.parametrize("bad_shape", [(10, 3), (10, 2, 1)])
 def test_invalid_coordinate_dimensions_name_the_call(bad_shape):
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to compute_view_rate"
+    ) as caught:
         validate_trajectory(
             np.arange(10.0),
             positions=np.ones(bad_shape),
@@ -474,7 +486,7 @@ def test_coarse_bin_size_warns():
 def test_large_grid_warning_is_visible():
     from neurospatial.layout.helpers.utils import check_grid_size_safety
 
-    with pytest.warns(UserWarning) as caught:
+    with pytest.warns(UserWarning, match=r"Creating large grid with shape") as caught:
         check_grid_size_safety((500, 500))
     assert "250,000" in str(caught[0].message)
     assert "Fix:" in str(caught[0].message)
@@ -500,7 +512,9 @@ def test_psth_window_in_ms_warns(recording):
 def test_invalid_peri_event_window_names_the_call(window):
     from neurospatial.events import align_spikes_to_events
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"align_spikes_to_events: window must contain two finite"
+    ) as caught:
         align_spikes_to_events(np.array([1.0]), np.array([1.0]), window)
     assert "align_spikes_to_events" in str(caught.value)
     assert "window" in str(caught.value)

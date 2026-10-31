@@ -51,7 +51,7 @@ def test_seeded_reproducible():
 
 
 def test_rejects_too_short():
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=r"Analyzed time is") as caught:
         list(stats.shuffle_spike_times_circular([10], [[0, 30]], min_shift=20))
     assert "min_shift" in str(caught.value)
     assert "Why:" in str(caught.value)
@@ -101,7 +101,9 @@ def test_large_clock_rounding_stays_below_excluded_stop():
 
 @pytest.mark.parametrize("windows", [[[5, 1], [0, np.nan]], [[1, 2, 3]]])
 def test_invalid_windows_fix_names_primitive_argument(windows):
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError, match=r"Why: circular shifting requires finite half-open"
+    ) as exc:
         list(stats.shuffle_spike_times_circular([10], windows))
     message = str(exc.value)
     assert "windows" in message

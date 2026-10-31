@@ -1587,7 +1587,10 @@ class TestViewRatesResultSummaryTable:
         )
 
         # Wrong number of ids
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"unit_ids length mismatch in ViewRatesResult\.summary_table",
+        ):
             result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
     def test_summary_table_peak_x_matches_batch_method(

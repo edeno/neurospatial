@@ -871,7 +871,9 @@ class TestUnitAlignment:
         decoder, spikes, times = labelled_fit
         shifted = make_spike_group(spikes, _FIT_IDS + 1)
         args = (shifted, times, positions) if call == "score" else (shifted, times)
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError, match=r"Spike input unit labels do not match the decoder"
+        ) as excinfo:
             getattr(decoder, call)(*args)
         message = str(excinfo.value)
         assert "missing: [10]" in message
@@ -1013,7 +1015,9 @@ def test_fit_unit_ids_enable_label_alignment(sim, make_spike_group):
         decoder.predict(reordered, times).posterior,
         decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Spike input unit labels do not match the decoder"
+    ) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)
@@ -1047,7 +1051,9 @@ def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
     env, spikes, times, positions = sim
     group = make_spike_group(spikes[:2], index=[10, 20])
     decoder = BayesianDecoder(env, dt=0.5)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"BayesianDecoder\.fit got unit_ids"
+    ) as caught:
         decoder.fit(group, times, positions, unit_ids=[20, 10])
     for text in ["[20, 10]", "[10, 20]", "Fix:"]:
         assert text in str(caught.value)
@@ -1107,7 +1113,9 @@ def test_from_rates_label_alignment(sim, make_spike_group):
         ).posterior,
         decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Spike input unit labels do not match the decoder"
+    ) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)

@@ -360,7 +360,10 @@ def test_reml_boundary_diagnostic_per_unit(open_field_env, simulate_flat_weak_si
     basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
-    with pytest.warns(UserWarning) as rec:
+    with pytest.warns(
+        UserWarning,
+        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
+    ) as rec:
         fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
     boundary = np.asarray(fit.reml_at_boundary)
     assert boundary.shape == (3,)
@@ -392,7 +395,10 @@ def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_sign
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     # Labels supplied -> the warning carries them, not bare indices.
-    with pytest.warns(UserWarning) as rec:
+    with pytest.warns(
+        UserWarning,
+        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
+    ) as rec:
         fit_mrf_gam(
             basis,
             counts,
@@ -407,7 +413,10 @@ def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_sign
     assert "unit index" not in msg  # labels replace the positional fallback
 
     # No labels -> positional "unit indices".
-    with pytest.warns(UserWarning) as rec2:
+    with pytest.warns(
+        UserWarning,
+        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
+    ) as rec2:
         fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
     msg2 = "\n".join(str(w.message) for w in rec2)
     assert "unit indices" in msg2
@@ -489,7 +498,9 @@ def test_aggregate_diagnostics(open_field_env, simulate_place_fields, monkeypatc
 
     monkeypatch.setattr(glmnp, "_newton_fit_numpy", failing_fit)
 
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"MRF-GAM per-unit fit did not converge for unit index"
+    ) as record:
         fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
 
     assert fit.converged is False

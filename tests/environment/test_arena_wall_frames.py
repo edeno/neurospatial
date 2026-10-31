@@ -366,7 +366,9 @@ def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
 def test_unresolved_wall_clearance_names_the_wall_and_the_fix():
     """The refusal gives the same advice as an unresolved face."""
     child, arena = _rotated_clipped_grid(1e-12, (1.49, 1.51))
-    with pytest.raises(ValueError) as refusal:
+    with pytest.raises(
+        ValueError, match=r"so whether it cuts through that bin is unresolved"
+    ) as refusal:
         _publish(child, arena)
     message = str(refusal.value)
     assert "Physical wall 'wall_0' lies within" in message

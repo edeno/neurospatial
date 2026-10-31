@@ -31,7 +31,9 @@ def test_create_hex_grid_with_dimension_range():
 
 def test_create_hex_grid_invalid_hexagon_width():
     positions = np.array([[0, 0], [1, 1]], dtype=np.float64)
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"hexagon_width must be positive and finite, got"
+    ):
         hgu._create_hex_grid(positions, hexagon_width=0)
 
 

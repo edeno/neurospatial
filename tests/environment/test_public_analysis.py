@@ -125,7 +125,7 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
     assert len(calls) == 1
     assert first is not second
     assert np.shares_memory(first, second)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"assignment destination is read-only"):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)
     np.testing.assert_array_equal(env.compute_gaussian_kernel(bandwidth=1.0), expected)

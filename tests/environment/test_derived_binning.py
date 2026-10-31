@@ -322,7 +322,9 @@ def test_shear_refuses_smoothing_and_scales_measures(built_environment):
     [np.diag([2.0, 1.0]), np.diag([2e-5, 1e-5]), np.array([[1.0, 0.25], [0.0, 1.0]])],
 )
 def test_track_non_similarity_refused(built_environment, linear):
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Why: non-similarity maps change bin lengths according to"
+    ) as caught:
         built_environment.apply_transform(_affine(linear))
     assert "Environment.from_graph" in str(caught.value)
     assert "Why:" in str(caught.value)

@@ -43,13 +43,13 @@ def test_get_n_bins_zero_extent():
 
 def test_get_n_bins_invalid_bin_size():
     data = np.array([[0, 0], [1, 1]])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"bin_size must be positive and finite, got"):
         get_n_bins(data, bin_size=0)
 
 
 def test_get_n_bins_invalid_dimension_range():
     data = np.array([[0, 0], [1, 1]])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"each axis needs one"):
         get_n_bins(data, bin_size=1, dimension_range=[(0,)])
 
 
@@ -100,19 +100,19 @@ def test_infer_dimension_ranges_from_samples_point_data():
 
 def test_infer_dimension_ranges_from_samples_all_nan():
     data = np.array([[np.nan, np.nan], [np.nan, np.nan]])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"No position has a finite value: all"):
         _infer_dimension_ranges_from_samples(data)
 
 
 def test_infer_dimension_ranges_from_samples_wrong_buffer_length():
     data = np.array([[1, 2], [3, 4]])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"buffer_around_data sequence length"):
         _infer_dimension_ranges_from_samples(data, buffer_around_data=[1])
 
 
 def test_infer_dimension_ranges_from_samples_not_2d():
     data = np.array([1, 2, 3])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"positions must be a 2D array, shape is"):
         _infer_dimension_ranges_from_samples(data)
 
 
@@ -129,7 +129,9 @@ def test_generic_graph_plot_2d(monkeypatch):
 
 def test_generic_graph_plot_empty_graph():
     G = nx.Graph()
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Graph is empty or None\. Cannot plot an empty graph"
+    ):
         _generic_graph_plot(G, "Empty")
 
 

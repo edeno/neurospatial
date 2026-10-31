@@ -48,7 +48,9 @@ class TestCheckGridSizeSafety:
 
     def test_warning_message_contains_diagnostics(self):
         """Test that warning message includes helpful diagnostics."""
-        with pytest.warns(UserWarning) as warning_list:
+        with pytest.warns(
+            UserWarning, match=r"Creating large grid with shape"
+        ) as warning_list:
             check_grid_size_safety((500, 500), warn_threshold_mb=50.0)
 
         warning_msg = str(warning_list[0].message)
@@ -65,7 +67,7 @@ class TestCheckGridSizeSafety:
     def test_custom_thresholds(self):
         """Test using custom warning threshold."""
         # With very low threshold, even small grid should warn
-        with pytest.warns(UserWarning):
+        with pytest.warns(UserWarning, match=r"Creating large grid with shape"):
             check_grid_size_safety((100, 100), warn_threshold_mb=1.0)
 
         # With very high threshold, large grid should not warn

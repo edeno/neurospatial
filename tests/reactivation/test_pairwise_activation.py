@@ -100,7 +100,9 @@ def test_constant_neuron_warning_names_the_callers_column_and_label() -> None:
     template = pairwise_correlations(rng.poisson(2.0, (500, 4)).astype(float))
     counts = rng.poisson(2.0, (200, 4)).astype(float)
     counts[:, 0] = 1.0
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"have the same count in every time bin of spike_counts, so"
+    ) as record:
         pairwise_activation(
             counts,
             template,

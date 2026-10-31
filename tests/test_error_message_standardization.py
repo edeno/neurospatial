@@ -26,7 +26,9 @@ class TestUtilsErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_bin_size = -5.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             get_n_bins(data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -40,7 +42,9 @@ class TestUtilsErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_bin_size = 0.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             get_n_bins(data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -52,7 +56,9 @@ class TestUtilsErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_bin_size = [5.0, -2.0]
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             get_n_bins(data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -67,7 +73,10 @@ class TestUtilsErrorMessages:
         samples = np.random.default_rng(0).uniform(0, 10, (200, 2))
         bad_threshold = -10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"bin_count_threshold must be a non-negative whole number of",
+        ) as exc_info:
             Environment.from_samples(
                 samples, bin_size=2.0, layout=layout, bin_count_threshold=bad_threshold
             )
@@ -84,7 +93,9 @@ class TestCalibrationErrorMessages:
         """Test that offset_px validation shows actual value when wrong length."""
         bad_offset = (10.0,)  # Only one value, should be two
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"offset_px must be a tuple of two numeric values"
+        ) as exc_info:
             simple_scale(px_per_cm=2.0, offset_px=bad_offset)
 
         error_msg = str(exc_info.value)
@@ -97,7 +108,9 @@ class TestCalibrationErrorMessages:
         """Test that offset_px with wrong type shows helpful message."""
         bad_offset = "not_a_tuple"  # pyright: ignore[reportAssignmentType]
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"offset_px must be a tuple of two numeric values"
+        ) as exc_info:
             simple_scale(px_per_cm=2.0, offset_px=bad_offset)  # pyright: ignore[reportArgumentType]
 
         error_msg = str(exc_info.value)
@@ -114,7 +127,9 @@ class TestRegularGridErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_bin_size = -3.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             _create_regular_grid(positions=data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -126,7 +141,9 @@ class TestRegularGridErrorMessages:
         data = np.array([[0, 0, 0], [10, 10, 10]])  # 3D data
         bad_bin_size = [2.0, 3.0]  # Only 2 values for 3D data
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be one number per dimension"
+        ) as exc_info:
             _create_regular_grid(positions=data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -146,7 +163,9 @@ class TestHexagonalErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_width = -5.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"hexagon_width must be positive and finite, got"
+        ) as exc_info:
             _create_hex_grid(positions=data, hexagon_width=bad_width)
 
         error_msg = str(exc_info.value)
@@ -158,7 +177,9 @@ class TestHexagonalErrorMessages:
         data = np.array([[0, 0], [10, 10]])
         bad_width = 0.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"hexagon_width must be positive and finite, got"
+        ) as exc_info:
             _create_hex_grid(positions=data, hexagon_width=bad_width)
 
         error_msg = str(exc_info.value)
@@ -169,7 +190,7 @@ class TestHexagonalErrorMessages:
         """Test dimension_range validation shows actual when not length 2."""
         bad_range = [(0, 10), (0, 10), (0, 10)]  # 3D range for 2D hexagonal grid
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"must match n_dims") as exc_info:
             _create_hex_grid(
                 positions=None, dimension_range=bad_range, hexagon_width=2.0
             )
@@ -211,7 +232,9 @@ class TestGraphErrorMessages:
         edge_order = [(0, 1)]
         bad_bin_size = -2.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             _get_graph_bins(G, edge_order, edge_spacing=0.0, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -230,7 +253,9 @@ class TestGraphErrorMessages:
         edge_order = [(0, 1)]
         bad_bin_size = 0.0
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             _get_graph_bins(G, edge_order, edge_spacing=0.0, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
@@ -251,7 +276,7 @@ class TestGraphErrorMessages:
         edge_order = [(0, 1), (1, 2)]
         bad_spacing = [1.0, 2.0, 3.0]  # Should be length 1 for 2 edges
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"edge_spacing has length") as exc_info:
             _get_graph_bins(G, edge_order, edge_spacing=bad_spacing, bin_size=1.0)
 
         error_msg = str(exc_info.value)
@@ -293,7 +318,9 @@ class TestErrorMessageFormat:
         data = np.array([[0, 0], [10, 10]])
 
         # Test with clearly bad value
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             get_n_bins(data, bin_size=-999.5)
 
         error_msg = str(exc_info.value)
@@ -305,7 +332,9 @@ class TestErrorMessageFormat:
         """Verify error messages contain enough context for debugging."""
         data = np.array([[0, 0], [10, 10]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             get_n_bins(data, bin_size=0.0)
 
         error_msg = str(exc_info.value)

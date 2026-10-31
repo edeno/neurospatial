@@ -271,7 +271,9 @@ def test_arrays_are_read_only():
     ],
 )
 def test_empty_input_raises_actionable_error(name, kwargs):
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError, match=r"got no samples: times and positions are empty"
+    ) as excinfo:
         getattr(behavior, name)(np.array([]), np.zeros((0, 2)), **kwargs)
     what, why, fix = str(excinfo.value).split("\n")
     assert what == f"{name}() got no samples: times and positions are empty."
@@ -352,7 +354,9 @@ def test_signals_one_dimensional_signal_is_one_feature():
 
 def test_signals_shared_gate_warns_once_for_many_features():
     times = [0.0, 0.1, 0.2, 1.0, 1.1]
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ) as record:
         _signals(times, np.ones((5, 3)), max_gap=0.05)
     assert len(record) == 1
 

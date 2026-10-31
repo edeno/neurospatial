@@ -65,7 +65,9 @@ def test_flat_rate_recovered_at_recording_edges(event_recording, population):
 def test_all_events_dropped_error(event_recording, population):
     spikes, events, _ = event_recording
     function = population_peri_event_histogram if population else peri_event_histogram
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"events were dropped from the peri-event histogram: no event"
+    ) as error:
         function(
             [spikes] if population else spikes, events, (-0.5, 1), epochs=(5000, 6000)
         )

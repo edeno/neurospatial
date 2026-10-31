@@ -845,7 +845,10 @@ def test_all_zero_spike_population(open_field_env):
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning,
+        match=r"MRF-GAM fit: no unit has any spikes; lambda is unidentified",
+    ):
         fit = fit_mrf_gam(basis, counts, occ, penalty=None)
 
     assert fit.penalty is None
@@ -864,7 +867,10 @@ def test_all_zero_spike_fixed_penalty(open_field_env):
     counts = np.zeros((basis.live_bins.size, 2), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning,
+        match=r"MRF-GAM fit: no unit has any spikes; lambda is unidentified",
+    ):
         fit = fit_mrf_gam(basis, counts, occ, penalty=3.0)
 
     assert fit.penalty == 3.0
@@ -956,7 +962,7 @@ def test_zero_occupancy_empty_basis(open_field_env):
     counts = np.zeros((0, 3), dtype=np.int64)
     occ = np.zeros(0)
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match=r"MRF-GAM fit: zero total occupancy"):
         fit = fit_mrf_gam(basis, counts, occ, penalty=None)
 
     assert fit.coefficients.shape == (0, 3)

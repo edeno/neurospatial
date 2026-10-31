@@ -4101,7 +4101,10 @@ class TestIsHeadDirectionCellValidation:
 
         times, headings = uniform_heading_trajectory
         spikes = np.sort(np.random.default_rng(0).uniform(0, 60, 50))
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid times/positions passed to compute_directional_rate",
+        ):
             is_head_direction_cell(spikes, times, headings[:-5])
 
     def test_is_head_direction_cell_raises_on_invalid_angle_unit(

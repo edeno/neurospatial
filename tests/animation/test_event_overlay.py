@@ -219,7 +219,9 @@ class TestEventOverlayValidation:
         position_times = np.array([0.0, 1.0])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: Both event_positions and positions/position_times"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 positions=positions,
@@ -237,7 +239,9 @@ class TestEventOverlayValidation:
 
         event_times = np.array([0.5, 1.5])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: No position data provided for events"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 # No positions or event_positions!
@@ -254,7 +258,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.5])
         positions = np.array([[0.0, 0.0], [10.0, 10.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: positions provided without position_times"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 positions=positions,
@@ -271,7 +277,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.5])
         position_times = np.array([0.0, 1.0])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: position_times provided without positions"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 position_times=position_times,
@@ -288,7 +296,7 @@ class TestEventOverlayValidation:
         event_times = np.array([[0.5, 1.5], [2.0, 2.5]])  # 2D!
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -304,7 +312,7 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.nan, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -320,7 +328,7 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.inf, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -336,7 +344,7 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.0, 1.5, 2.0])  # 4 events
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])  # Only 2 positions
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: event_positions for") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,

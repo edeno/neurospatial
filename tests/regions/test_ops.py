@@ -138,7 +138,9 @@ class TestMissingPositions:
     def test_non_finite_rows_are_refused(self, square, query, bad):
         positions = np.array([[5.0, 5.0], [1.0, 1.0], [bad, 2.0], [3.0, bad]])
 
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match=r"with a NaN or infinite coordinate"
+        ) as caught:
             query(positions, square)
 
         message = str(caught.value)
@@ -241,7 +243,9 @@ class TestPointRegions:
         ids=["any", "dataframe"],
     )
     def test_missing_radius_names_the_point_region(self, box_and_well, query):
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match=r"are point regions, so membership needs point_radius"
+        ) as caught:
             query(np.array([[50.0, 50.0]]), box_and_well)
 
         message = str(caught.value)

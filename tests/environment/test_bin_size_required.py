@@ -72,6 +72,8 @@ def test_bare_environment_raises_beginner_grade_error():
     The message must mention ``from_samples`` so beginners know the correct
     approach immediately from the error text.
     """
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(
+        ValueError, match=r"Environment cannot be constructed directly"
+    ) as exc_info:
         Environment()
     assert "from_samples" in str(exc_info.value)

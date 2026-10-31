@@ -63,17 +63,17 @@ def test_get_graph_bins_with_gap(simple_graph):
 
 
 def test_get_graph_bins_invalid_bin_size(simple_graph):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"bin_size must be positive and finite, got"):
         _get_graph_bins(simple_graph, [(0, 1)], 0.0, 0.0)
 
 
 def test_get_graph_bins_invalid_edge(simple_graph):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"in edge_order not found in graph"):
         _get_graph_bins(simple_graph, [(0, 3)], 0.0, 0.5)
 
 
 def test_get_graph_bins_invalid_gap_length(simple_graph):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"edge_spacing has length"):
         _get_graph_bins(simple_graph, [(0, 1), (1, 2)], [0.5, 0.5], 0.5)
 
 
@@ -156,7 +156,9 @@ def test_project_1d_to_2d_nan(simple_graph):
 
 def test_project_1d_to_2d_invalid_shape(simple_graph):
     edge_order = [(0, 1), (1, 2)]
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"linear_position must be convertible to a 1D array"
+    ):
         project_1d_to_2d(np.ones((2, 2)), simple_graph, edge_order)
 
 
@@ -205,7 +207,7 @@ def test_find_bin_for_linear_position_with_active_mask():
 def test_find_bin_for_linear_position_invalid_active_mask():
     bin_edges = np.array([0.0, 1.0, 2.0])
     active_mask = np.array([True])  # Wrong length
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"active_mask length"):
         _find_bin_for_linear_position(0.5, bin_edges, active_mask)
 
 

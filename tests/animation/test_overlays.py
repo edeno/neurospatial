@@ -440,7 +440,9 @@ class TestVideoOverlayValidation:
     def test_alpha_lower_bound(self):
         """Test that alpha < 0.0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: alpha must be between"
+        ) as exc_info:
             VideoOverlay(source=data, alpha=-0.1)
 
         error_msg = str(exc_info.value)
@@ -450,7 +452,9 @@ class TestVideoOverlayValidation:
     def test_alpha_upper_bound(self):
         """Test that alpha > 1.0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: alpha must be between"
+        ) as exc_info:
             VideoOverlay(source=data, alpha=1.5)
 
         error_msg = str(exc_info.value)
@@ -470,7 +474,7 @@ class TestVideoOverlayValidation:
     def test_array_wrong_ndim(self):
         """Test that 3D array (not 4D) raises ValueError."""
         data = np.zeros((16, 16, 3), dtype=np.uint8)  # Missing frames dimension
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Video array must be") as exc_info:
             VideoOverlay(source=data)
 
         error_msg = str(exc_info.value)
@@ -479,7 +483,9 @@ class TestVideoOverlayValidation:
     def test_array_wrong_channels(self):
         """Test that non-RGB array (not 3 channels) raises ValueError."""
         data = np.zeros((10, 16, 16, 4), dtype=np.uint8)  # RGBA, not RGB
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: Video array must have"
+        ) as exc_info:
             VideoOverlay(source=data)
 
         error_msg = str(exc_info.value)
@@ -488,7 +494,9 @@ class TestVideoOverlayValidation:
     def test_array_wrong_dtype(self):
         """Test that non-uint8 array raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.float32)  # float, not uint8
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: Video array must have dtype uint"
+        ) as exc_info:
             VideoOverlay(source=data)
 
         error_msg = str(exc_info.value)
@@ -497,7 +505,9 @@ class TestVideoOverlayValidation:
     def test_downsample_must_be_positive(self):
         """Test that downsample <= 0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: downsample must be a positive integer"
+        ) as exc_info:
             VideoOverlay(source=data, downsample=0)
 
         error_msg = str(exc_info.value)
@@ -506,7 +516,9 @@ class TestVideoOverlayValidation:
     def test_downsample_negative(self):
         """Test that negative downsample raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: downsample must be a positive integer"
+        ) as exc_info:
             VideoOverlay(source=data, downsample=-1)
 
         error_msg = str(exc_info.value)
@@ -515,7 +527,9 @@ class TestVideoOverlayValidation:
     def test_downsample_float_not_integer(self):
         """Test that float downsample raises ValueError (must be integer)."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: downsample must be a positive integer"
+        ) as exc_info:
             VideoOverlay(source=data, downsample=1.5)  # type: ignore[arg-type]
 
         error_msg = str(exc_info.value)
@@ -524,7 +538,7 @@ class TestVideoOverlayValidation:
     def test_interp_linear_emits_warning(self):
         """Test that interp='linear' emits UserWarning (not implemented for video)."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(UserWarning, match=r"WHAT: VideoOverlay interp") as record:
             VideoOverlay(source=data, interp="linear")
 
         # Verify warning message explains the limitation
@@ -872,7 +886,10 @@ class TestValidateMonotonicTime:
     def test_non_monotonic_decreasing(self):
         """Test that decreasing times raise ValueError with actionable message."""
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Decreases at index 2
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"test_overlay must be finite, strictly increasing timestamps",
+        ) as exc_info:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
@@ -886,7 +903,10 @@ class TestValidateMonotonicTime:
     def test_duplicate_times(self):
         """Test that duplicate consecutive times raise ValueError."""
         times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at index 2
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"test_overlay must be finite, strictly increasing timestamps",
+        ) as exc_info:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
@@ -895,7 +915,10 @@ class TestValidateMonotonicTime:
     def test_all_identical_times(self):
         """Test that all identical times raise ValueError."""
         times = np.array([1.0, 1.0, 1.0, 1.0])
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"test_overlay must be finite, strictly increasing timestamps",
+        ) as exc_info:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
@@ -932,7 +955,7 @@ class TestValidateShape:
         """Test that dimension mismatch raises ValueError."""
         data = np.array([[0.0, 1.0], [2.0, 3.0]])  # 2D
         expected_ndims = 3  # Expecting 3D
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -950,7 +973,7 @@ class TestValidateShape:
         """Test that 1D array raises error when 2D expected."""
         data = np.array([0.0, 1.0, 2.0])  # 1D
         expected_ndims = 2
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -967,7 +990,9 @@ class TestValidateShape:
         """Test that 3D+ arrays raise clear error about invalid shape."""
         data = np.array([[[0.0, 1.0], [2.0, 3.0]]])  # 3D array
         expected_ndims = 2
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: Invalid array shape for"
+        ) as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -1005,7 +1030,9 @@ class TestValidateTemporalAlignment:
         """Test that no temporal overlap raises ValueError."""
         overlay_times = np.array([0.0, 1.0, 2.0])
         frame_times = np.array([5.0, 6.0, 7.0])
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: No temporal overlap between"
+        ) as exc_info:
             _validate_temporal_alignment(
                 overlay_times, frame_times, name="test_overlay"
             )
@@ -1026,7 +1053,9 @@ class TestValidateTemporalAlignment:
         )  # Overlap: 3.5-4.0 = 0.5s (10%)
 
         # Should emit UserWarning
-        with pytest.warns(UserWarning) as warn_info:
+        with pytest.warns(
+            UserWarning, match=r"Partial temporal overlap for"
+        ) as warn_info:
             _validate_temporal_alignment(
                 overlay_times, frame_times, name="test_overlay"
             )
@@ -1095,7 +1124,9 @@ class TestValidateBounds:
         data = np.array([[15.0, 16.0], [20.0, 25.0], [3.0, 4.0]])  # 2/3 = 66% out
         dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
 
-        with pytest.warns(UserWarning) as warn_info:
+        with pytest.warns(
+            UserWarning, match=r"coordinates fall outside environment bounds"
+        ) as warn_info:
             _validate_bounds(data, dim_ranges, name="test_data", threshold=0.5)
 
         warning_msg = str(warn_info[0].message)
@@ -1110,7 +1141,9 @@ class TestValidateBounds:
         data = np.array([[15.0, 16.0], [20.0, 25.0]])
         dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
 
-        with pytest.warns(UserWarning) as warn_info:
+        with pytest.warns(
+            UserWarning, match=r"coordinates fall outside environment bounds"
+        ) as warn_info:
             _validate_bounds(data, dim_ranges, name="test_data", threshold=0.0)
 
         warning_msg = str(warn_info[0].message)
@@ -1148,7 +1181,9 @@ class TestValidateBounds:
         )
         dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
 
-        with pytest.warns(UserWarning) as warn_info:
+        with pytest.warns(
+            UserWarning, match=r"coordinates fall outside environment bounds"
+        ) as warn_info:
             _validate_bounds(data, dim_ranges, name="test_data", threshold=0.1)
 
         warning_msg = str(warn_info[0].message)
@@ -1203,7 +1238,9 @@ class TestValidateSkeletonConsistency:
         )
         bodypart_names = ["head", "body"]  # Missing 'tail' in data
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"references missing bodypart"
+        ) as exc_info:
             _validate_skeleton_consistency(
                 skeleton, bodypart_names, name="test_skeleton"
             )
@@ -1226,7 +1263,9 @@ class TestValidateSkeletonConsistency:
         )
         bodypart_names = ["head", "body", "tail"]
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"references missing bodypart"
+        ) as exc_info:
             _validate_skeleton_consistency(
                 skeleton, bodypart_names, name="test_skeleton"
             )
@@ -1572,7 +1611,10 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Should raise ValueError from _validate_monotonic_time
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"PositionOverlay\.times must be finite, strictly increasing",
+        ) as exc_info:
             _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
@@ -1612,7 +1654,7 @@ class TestConvertOverlaysToData:
         n_frames = 2
 
         # Should raise ValueError from _validate_shape
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
             _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
@@ -1639,7 +1681,9 @@ class TestConvertOverlaysToData:
         n_frames = 1
 
         # Should raise ValueError from _validate_skeleton_consistency
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"references missing bodypart"
+        ) as exc_info:
             _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
@@ -1916,7 +1960,9 @@ class TestValidateVideoEnv:
         env_1d.n_dims = 1
         env_1d.dimension_ranges = np.array([[0.0, 100.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"VideoOverlay requires a 2D environment"
+        ) as exc_info:
             _validate_video_env(env_1d)
 
         assert "2D" in str(exc_info.value) or "n_dims" in str(exc_info.value)
@@ -1931,7 +1977,9 @@ class TestValidateVideoEnv:
         env_inf.n_dims = 2
         env_inf.dimension_ranges = np.array([[0.0, np.inf], [0.0, 100.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"VideoOverlay requires finite dimension ranges"
+        ) as exc_info:
             _validate_video_env(env_inf)
 
         assert (

@@ -325,9 +325,11 @@ def test_reflected_mask_and_nested_nd_frame_preserve_domain():
 
 
 def test_transform_refuses_unrepresentable_geometry_without_runtime_warnings():
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Transformed coordinates exceed floating-point range"
+    ):
         OpenArena(box(0, 0, 2, 2)).transformed(np.diag([np.finfo(float).max, 1.0, 1.0]))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"MaskArena edges"):
         MaskArena((np.arange(3.0),), np.ones(2, bool)).transformed(
             np.diag([np.finfo(float).max, 1.0])
         )
@@ -433,7 +435,10 @@ def test_transformed_track_keeps_resolvable_collective_hole(gap):
     ],
 )
 def test_arena_refuses_invalid_affine_matrix(matrix):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"matrix must be finite, affine and match the arena dimensions",
+    ):
         arenas()[2].transformed(matrix)
 
 
@@ -472,7 +477,9 @@ def test_codec_rejects_unknown_versions_missing_arrays_and_wrong_dtypes():
         with pytest.raises(ValueError):
             decode_arena(meta, broken)
     polygon_meta, polygon_arrays = encode_arena(arenas()[2])
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Malformed arena payload: ParseException: Unexpected EOF"
+    ):
         decode_arena(
             polygon_meta,
             {**polygon_arrays, "polygon_wkb": np.array([1, 2, 3], np.uint8)},

@@ -208,7 +208,7 @@ def test_frame_analysis_mask_is_shared_once(
 
 def test_frame_window_errors_are_aggregated(frame_family, continuous_recording):
     f, r = frame_family, continuous_recording
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match=r"Invalid time window: epochs row") as exc:
         f.single(
             *f.args(r, r.spike_times), **f.defaults, epochs=(2, 1), spike_window="bad"
         )
@@ -242,7 +242,9 @@ def test_predicates_report_invalid_windows(
     if f.name == "egocentric":
         options.pop("method")
         options.pop("bandwidth")
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Why: epochs and spike_window are half-open"
+    ) as caught:
         f.predicate(
             *f.args(r, r.spike_times),
             **options,
@@ -374,7 +376,7 @@ def test_spatial_spike_window_restores_true_rate(continuous_recording, plural):
 
 def test_epochs_and_spike_window_errors(continuous_recording):
     r = continuous_recording
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match=r"Invalid time window: epochs row") as exc:
         compute_spatial_rate(
             r.env,
             r.spike_times,

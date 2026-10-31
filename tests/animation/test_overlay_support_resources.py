@@ -148,7 +148,12 @@ def test_video_conversion_closes_acquired_reader_on_validation_failure(
     frames = np.arange(2.0) if failure == "frame_count" else np.arange(3.0)
     with (
         pytest.raises((ValueError, AttributeError)),
-        pytest.warns(UserWarning) if overlay.calibration is None else nullcontext(),
+        pytest.warns(
+            UserWarning,
+            match=r"VideoOverlay has no calibration\. Video will be scaled to",
+        )
+        if overlay.calibration is None
+        else nullcontext(),
     ):
         overlay.convert_to_data(frames, len(frames), env)
     assert len(readers) == 1
@@ -161,14 +166,22 @@ def test_pipeline_closes_all_owned_readers_on_later_failure(env, readers):
         VideoOverlay("second.mp4", times=np.arange(3.0)),
         object(),
     ]
-    with pytest.raises(TypeError), pytest.warns(UserWarning):
+    with (
+        pytest.raises(TypeError),
+        pytest.warns(
+            UserWarning,
+            match=r"VideoOverlay has no calibration\. Video will be scaled to",
+        ),
+    ):
         _convert_overlays_to_data(overlays, np.arange(3.0), 3, env)
     assert len(readers) == 2
     assert [r.close_count for r in readers] == [1, 1]
 
 
 def test_conversion_opens_one_reader_and_realign_borrows_it(env, readers):
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"VideoOverlay has no calibration\. Video will be scaled to"
+    ):
         prepared, owned = _convert_overlays_to_data(
             [VideoOverlay("test.mp4", times=np.arange(3.0))],
             np.array([0.0, 2.0]),
@@ -196,7 +209,13 @@ def test_single_conversion_failure_closes_previously_opened_reader(env, readers)
             raise ValueError(msg)
 
     failing = Fails()
-    with pytest.raises(ValueError, match="adapter"), pytest.warns(UserWarning):
+    with (
+        pytest.raises(ValueError, match="adapter"),
+        pytest.warns(
+            UserWarning,
+            match=r"VideoOverlay has no calibration\. Video will be scaled to",
+        ),
+    ):
         _convert_overlays_to_data(
             [VideoOverlay("test.mp4", times=np.arange(3.0)), failing],
             np.arange(3.0),

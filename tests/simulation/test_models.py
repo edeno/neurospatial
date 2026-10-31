@@ -213,12 +213,16 @@ class TestPlaceCellModel:
 
     def test_width_negative_raises(self, simple_2d_env):
         """Negative width raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"width must be finite and strictly positive, got"
+        ):
             PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=-5.0)
 
     def test_anisotropic_width_zero_component_raises(self, simple_2d_env):
         """Anisotropic width with a zero component raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"width must be finite and strictly positive, got"
+        ):
             PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=[10.0, 0.0])
 
     def test_width_nan_raises(self, simple_2d_env):

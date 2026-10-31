@@ -197,7 +197,9 @@ def test_native_close_drains_workers_and_notifies_after_window_failure():
     )
     animation.figure = SimpleNamespace(renderer=Mock())
     animation._canvas = Mock()
-    with pytest.raises(Exception) as error:
+    with pytest.raises(
+        Exception, match=r"Failed to close native animation resources"
+    ) as error:
         animation.close()
     assert "window already destroyed" in str(error.value.exceptions[0])
     # Workers drain before the view, and so the scene's readers, are released.

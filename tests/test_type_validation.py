@@ -77,7 +77,9 @@ class TestBinSizeNaNInfValidation:
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got nan"
+        ) as exc_info:
             Environment.from_samples(data, bin_size=np.nan)
 
         error_msg = str(exc_info.value)
@@ -89,7 +91,9 @@ class TestBinSizeNaNInfValidation:
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got"
+        ) as exc_info:
             Environment.from_samples(data, bin_size=[5.0, np.nan])
 
         error_msg = str(exc_info.value)
@@ -101,7 +105,9 @@ class TestBinSizeNaNInfValidation:
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got inf"
+        ) as exc_info:
             Environment.from_samples(data, bin_size=np.inf)
 
         error_msg = str(exc_info.value)
@@ -113,7 +119,9 @@ class TestBinSizeNaNInfValidation:
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got -inf"
+        ) as exc_info:
             Environment.from_samples(data, bin_size=-np.inf)
 
         error_msg = str(exc_info.value)
@@ -205,7 +213,9 @@ class TestExceptionChaining:
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"bin_size must be positive and finite, got nan"
+        ) as exc_info:
             Environment.from_samples(data, bin_size=np.nan)
 
         # Error should be a ValueError, not a TypeError

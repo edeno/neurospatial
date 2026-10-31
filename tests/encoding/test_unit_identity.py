@@ -420,7 +420,9 @@ def test_unit_ids_must_match_group_labels(
     trains = spike_trains[:2]
     group = make_spike_group(trains, [10, 20])
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError, match=r"but the spike input is already labelled"
+    ) as excinfo:
         _compute(name, env, times, positions, headings, group, unit_ids=[20, 10])
     message = str(excinfo.value)
     assert "[20, 10]" in message

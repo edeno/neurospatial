@@ -315,7 +315,9 @@ class TestKernelHighBinWarning:
 
         monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 5)
         graph = _line_graph(6)
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(
+            UserWarning, match=r"Computing a dense diffusion kernel for"
+        ) as record:
             kernel = smoothing.compute_diffusion_kernels(
                 graph, volumes=np.ones(6), bandwidth=1.0, mode="transition"
             )

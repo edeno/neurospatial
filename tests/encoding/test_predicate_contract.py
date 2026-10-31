@@ -108,7 +108,7 @@ def test_free_predicates_raise_on_bad_input(
     offset = 1 if f.name == "head_direction" else 2
     args[offset], args[offset + 1] = args[offset + 1], args[offset]
     kwargs = {"criterion": "threshold"} if f.name == "place" else {}
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Why: each interval"):
         predicate(*args, **kwargs)
 
 
@@ -198,7 +198,9 @@ def test_has_place_field_flags_noise(
     for fn in [encoding.has_place_field, result.has_place_field]:
         for key, value in encoding.spatial.PLACE_FIELD_DETECTION_DEFAULTS.items():
             assert inspect.signature(fn).parameters[key].default == value
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to compute_spatial_rate"
+    ):
         encoding.has_place_field(ou_2min_env, tr, p, t)
 
 

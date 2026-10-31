@@ -336,7 +336,7 @@ class TestRayleighTest:
         """Empty array should raise ValueError."""
         from neurospatial.stats.circular import rayleigh_test
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"samples for circular statistics\. Got"):
             rayleigh_test(np.array([]))
 
     def test_insufficient_samples_raises(self) -> None:

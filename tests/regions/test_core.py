@@ -224,7 +224,7 @@ def test_regions_add_both_point_and_polygon():
 def test_regions_setitem_key_mismatch():
     regs = Regions()
     r = Region(name="foo", kind="point", data=[1, 2])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"must match Region\.name"):
         regs["bar"] = r
 
 
@@ -333,7 +333,7 @@ def test_regions_buffer_raw_point():
 
 def test_regions_buffer_invalid_shape():
     regs = Regions()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"source coordinates must have shape"):
         regs.buffer(np.array([1.0, 2.0, 3.0]), distance=1.0, new_name="badbuf")
 
 

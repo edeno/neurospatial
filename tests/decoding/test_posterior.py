@@ -258,7 +258,7 @@ class TestNormalizeToPosterior:
         """Invalid handle_degenerate value should raise ValueError."""
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"got handle_degenerate"):
             normalize_to_posterior(simple_log_likelihood, handle_degenerate="invalid")
 
     @pytest.mark.parametrize("handle_degenerate", ["uniform", "nan", "raise"])
