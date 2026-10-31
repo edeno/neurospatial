@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import _is_pynapple_object, pynapple_end_to_stop
+from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -127,8 +128,7 @@ def _plain_sample(name: str, value: Any) -> Any:
     """Return a pynapple sample argument as the plain array it stands for."""
     if name in _TIME_ARGUMENTS:
         # np.asarray(tsd) gives the VALUES, not the timestamps.
-        t = getattr(value, "t", None)
-        return value if t is None else np.asarray(t, dtype=np.float64)
+        return timestamps_of(value, name=name)
     if "positions" in name and hasattr(value, "columns"):
         refuse_permuted_spatial_columns(value.columns, fix=f"{name}={{frame}}")
     values = getattr(value, "values", None)
