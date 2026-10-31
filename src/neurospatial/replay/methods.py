@@ -696,6 +696,43 @@ class ReplayMethod:
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
         self._check_score()
+        self._check_criteria()
+        self._check_segment_detection()
+        validate_choice(
+            self.empty_time_bins,
+            ("keep", "drop", "zero"),
+            name="empty_time_bins",
+            owner=f"ReplayMethod {self.name!r}",
+        )
+        self._check_template_choice()
+        self._check_tested_quantities()
+        self._check_template_settings()
+        self._check_nulls()
+        validate_choice(
+            self.alternative,
+            _ALTERNATIVES,
+            name="alternative",
+            owner=f"ReplayMethod {self.name!r}",
+        )
+        validate_alpha(self.alpha, owner=f"ReplayMethod {self.name!r}")
+        validate_integer_at_least(
+            self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
+        )
+        if not (self.nulls or self.criteria or self.segmentation is not None):
+            raise ValueError(
+                _format_error(
+                    f"ReplayMethod {self.name!r}: the method has no nulls, "
+                    "criteria or segmentation, so it tests nothing.",
+                    why="without a shuffle test, a threshold or a trajectory "
+                    "segment to find, every event would be called replay",
+                    fix="give nulls such as ('column_cycle',), criteria such as "
+                    "(ReplayCriterion('score', '>', 0.5, absolute=True),), or a "
+                    "ReplaySegmentation",
+                )
+            )
+
+    def _check_criteria(self) -> None:
+        """Refuse criteria the method cannot evaluate."""
         unknown = sorted(
             {c.quantity for c in self.criteria} - set(_CRITERION_QUANTITIES)
         )
@@ -750,38 +787,39 @@ class ReplayMethod:
                 "describe a segment, but the method has no segmentation; give "
                 "it a ReplaySegmentation or use event-level quantities."
             )
-        if (
+
+    def _check_segment_detection(self) -> None:
+        """Refuse settings a segment-detection test cannot use."""
+        if not (
             self.score is None
             and self.segmentation is not None
             and self.nulls
             and not self.tested_quantities
         ):
-            # The detection test scores 0 or 1 against shuffles at least as
-            # extreme, with the event's time-bin rules applied to each shuffle.
-            if self.alternative != "greater" or self.use_absolute is not None:
-                raise ValueError(
-                    f"ReplayMethod {self.name!r}: a segment-detection test is "
-                    "one-sided on a 0/1 score; leave alternative='greater' and "
-                    "use_absolute=None."
-                )
-            moving = [name for name in self.nulls if name in _ROW_MOVING_NULLS]
-            row_rules = (
-                self.segmentation.min_active_cells_per_time_bin is not None
-                or self.empty_time_bins != "keep"
+            return
+        # The detection test scores 0 or 1 against shuffles at least as
+        # extreme, with the event's time-bin rules applied to each shuffle.
+        if self.alternative != "greater" or self.use_absolute is not None:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: a segment-detection test is "
+                "one-sided on a 0/1 score; leave alternative='greater' and "
+                "use_absolute=None."
             )
-            if moving and row_rules:
-                raise ValueError(
-                    f"ReplayMethod {self.name!r}: nulls {moving} move or change "
-                    "the spikes in each time bin, so the event's active-cell "
-                    "and empty-time-bin rules do not apply to its shuffles; "
-                    "use nulls that keep the time bins in place."
-                )
-        validate_choice(
-            self.empty_time_bins,
-            ("keep", "drop", "zero"),
-            name="empty_time_bins",
-            owner=f"ReplayMethod {self.name!r}",
+        moving = [name for name in self.nulls if name in _ROW_MOVING_NULLS]
+        row_rules = (
+            self.segmentation.min_active_cells_per_time_bin is not None
+            or self.empty_time_bins != "keep"
         )
+        if moving and row_rules:
+            raise ValueError(
+                f"ReplayMethod {self.name!r}: nulls {moving} move or change "
+                "the spikes in each time bin, so the event's active-cell "
+                "and empty-time-bin rules do not apply to its shuffles; "
+                "use nulls that keep the time bins in place."
+            )
+
+    def _check_template_choice(self) -> None:
+        """Refuse template choices the method cannot make."""
         validate_choice(
             self.template_choice,
             _TEMPLATE_CHOICES,
@@ -800,7 +838,9 @@ class ReplayMethod:
             )
         if self.template_choice == "max_score":
             self._check_max_score()
-        self._check_tested_quantities()
+
+    def _check_template_settings(self) -> None:
+        """Refuse template settings that contradict the method."""
         if self.template_choice == "sum":
             refused = [
                 c.label for c in self.criteria if c.quantity in _TEMPLATE_QUANTITIES
@@ -830,6 +870,9 @@ class ReplayMethod:
                 f"ReplayMethod {self.name!r}: segment_template_fraction needs a "
                 "segmentation; give the method a ReplaySegmentation."
             )
+
+    def _check_nulls(self) -> None:
+        """Refuse nulls the method cannot run."""
         unknown = [name for name in self.nulls if name not in _NULLS]
         if unknown:
             raise ValueError(
@@ -877,28 +920,6 @@ class ReplayMethod:
                     "use nulls that do not spread spikes across time bins "
                     "(such as 'place_field_circular' or 'column_cycle'), or "
                     "test the segment's detection with score=None",
-                )
-            )
-        validate_choice(
-            self.alternative,
-            _ALTERNATIVES,
-            name="alternative",
-            owner=f"ReplayMethod {self.name!r}",
-        )
-        validate_alpha(self.alpha, owner=f"ReplayMethod {self.name!r}")
-        validate_integer_at_least(
-            self.n_shuffles, 1, name="n_shuffles", owner=f"ReplayMethod {self.name!r}"
-        )
-        if not (self.nulls or self.criteria or self.segmentation is not None):
-            raise ValueError(
-                _format_error(
-                    f"ReplayMethod {self.name!r}: the method has no nulls, "
-                    "criteria or segmentation, so it tests nothing.",
-                    why="without a shuffle test, a threshold or a trajectory "
-                    "segment to find, every event would be called replay",
-                    fix="give nulls such as ('column_cycle',), criteria such as "
-                    "(ReplayCriterion('score', '>', 0.5, absolute=True),), or a "
-                    "ReplaySegmentation",
                 )
             )
 
@@ -1258,6 +1279,12 @@ class RankOrderMethod:
             validate_choice(
                 getattr(self, field_name), allowed, name=field_name, owner=prefix
             )
+        self._check_test(prefix)
+        validate_alpha(self.alpha, owner=prefix)
+        self._check_counts(prefix)
+
+    def _check_test(self, prefix: str) -> None:
+        """Refuse settings the method's test cannot use."""
         if self.test == "t_distribution" and self.alternative != "two-sided":
             raise ValueError(
                 f"{prefix}: the t-distribution test of rho is two-sided; use "
@@ -1284,7 +1311,9 @@ class RankOrderMethod:
             raise ValueError(
                 f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
             )
-        validate_alpha(self.alpha, owner=prefix)
+
+    def _check_counts(self, prefix: str) -> None:
+        """Refuse counts, fractions and rates out of their range."""
         for field_name, minimum in (
             ("min_active_cells", 3),
             ("n_shuffles", 1),
@@ -3421,73 +3450,96 @@ def _pooled_ssi_verdicts(
         surrogates.append(np.fmax.reduce(shuffled, axis=0))
     pooled = np.concatenate(surrogates) if surrogates else np.empty(0)
     pooled = pooled[np.isfinite(pooled)]
+    threshold, no_threshold = _pooled_ssi_threshold(pooled, method.alpha)
     n_events = len(surrogates)
-    threshold = np.nan
-    no_threshold = "the epoch has no shuffle with an SSI to set the threshold"
-    if pooled.size:
-        grid = np.arange(-400, 401) / 100.0  # testsession.m: b0 = -4:.01:4
-        cdf = np.searchsorted(np.sort(pooled), grid, side="right") / pooled.size
-        above = np.flatnonzero(cdf > 1.0 - method.alpha)
-        if above.size:
-            threshold = float(grid[above[0]])
-        else:
-            no_threshold = (
-                f"the 1 - alpha quantile of the epoch's {pooled.size} shuffled "
-                "SSIs is above 4, the end of the threshold grid (testsession.m "
-                "b0 = -4:.01:4); use a larger alpha"
-            )
-    epoch_ok = method.min_epoch_events is None or n_events >= method.min_epoch_events
+    if method.min_epoch_events is not None and n_events < method.min_epoch_events:
+        threshold_error = (
+            f"the epoch has {n_events} events with at least "
+            f"{method.min_active_cells} active cells, fewer than "
+            f"{method.min_epoch_events}"
+        )
+    else:
+        threshold_error = "" if np.isfinite(threshold) else no_threshold
+    return [
+        _no_verdict(
+            method.name,
+            method.criteria,
+            f"fewer than {method.min_active_cells} active template cells",
+        )
+        if entry is None
+        else _pooled_ssi_verdict(
+            method, *entry, names, pooled, threshold, threshold_error
+        )
+        for entry in observed
+    ]
+
+
+def _pooled_ssi_threshold(
+    pooled: NDArray[np.float64], alpha: float
+) -> tuple[float, str]:
+    """The SSI threshold of the epoch's pooled shuffles, or NaN and why not.
+
+    The threshold is the first point of testsession.m's grid
+    ``b0 = -4:.01:4`` where the shuffles' CDF exceeds ``1 - alpha``.
+    """
+    if not pooled.size:
+        return np.nan, "the epoch has no shuffle with an SSI to set the threshold"
+    grid = np.arange(-400, 401) / 100.0  # testsession.m: b0 = -4:.01:4
+    cdf = np.searchsorted(np.sort(pooled), grid, side="right") / pooled.size
+    above = np.flatnonzero(cdf > 1.0 - alpha)
+    if not above.size:
+        return np.nan, (
+            f"the 1 - alpha quantile of the epoch's {pooled.size} shuffled "
+            "SSIs is above 4, the end of the threshold grid (testsession.m "
+            "b0 = -4:.01:4); use a larger alpha"
+        )
+    return float(grid[above[0]]), ""
+
+
+def _pooled_ssi_verdict(
+    method: RankOrderMethod,
+    n_active: int,
+    scores: NDArray[np.float64],
+    names: list[str | None],
+    pooled: NDArray[np.float64],
+    threshold: float,
+    threshold_error: str,
+) -> ReplayDetectionResult:
+    """One event's verdict: its largest SSI over templates against the threshold.
+
+    ``threshold_error`` says why the epoch has no usable threshold (too few
+    events, or no threshold on the grid), or is empty.
+    """
     label = method.criteria[0].label
-    verdicts = []
-    for entry in observed:
-        if entry is None:
-            verdicts.append(
-                _no_verdict(
-                    method.name,
-                    method.criteria,
-                    f"fewer than {method.min_active_cells} active template cells",
-                )
-            )
-            continue
-        n_active, scores = entry
-        finite = np.isfinite(scores)
-        best = int(np.nanargmax(scores)) if finite.any() else 0
-        score = float(scores[best]) if finite.any() else np.nan
-        # An empty pool gives 1, as (0 + 1) / (0 + 1).
-        p_value = (
-            float(_tail_p_values(np.sum(pooled >= score), 0, pooled.size, "greater"))
-            if np.isfinite(score)
-            else np.nan
+    finite = np.isfinite(scores)
+    if not finite.any():
+        return ReplayDetectionResult(
+            method=method.name,
+            is_replay=False,
+            score=np.nan,
+            p_value=np.nan,
+            criteria={label: False},
+            values={label: float(n_active)},
+            template=None,
+            n_shuffles_used=None,
+            error="rank-order correlation undefined: no variation in the active "
+            "cells' order",
         )
-        if not finite.any():
-            error = (
-                "rank-order correlation undefined: no variation in the active "
-                "cells' order"
-            )
-        elif not epoch_ok:
-            error = (
-                f"the epoch has {n_events} events with at least "
-                f"{method.min_active_cells} active cells, fewer than "
-                f"{method.min_epoch_events}"
-            )
-        elif np.isnan(threshold):
-            error = no_threshold
-        else:
-            error = ""
-        verdicts.append(
-            ReplayDetectionResult(
-                method=method.name,
-                is_replay=bool(epoch_ok and score > threshold),
-                score=score,
-                p_value=p_value,
-                criteria={label: not error},
-                values={label: float(n_active)},
-                template=names[best] if finite.any() else None,
-                n_shuffles_used=int(pooled.size) if np.isfinite(p_value) else None,
-                error=error,
-            )
-        )
-    return verdicts
+    best = int(np.nanargmax(scores))
+    score = float(scores[best])
+    # An empty pool gives 1, as (0 + 1) / (0 + 1).
+    p_value = float(_tail_p_values(np.sum(pooled >= score), 0, pooled.size, "greater"))
+    return ReplayDetectionResult(
+        method=method.name,
+        is_replay=bool(not threshold_error and score > threshold),
+        score=score,
+        p_value=p_value,
+        criteria={label: not threshold_error},
+        values={label: float(n_active)},
+        template=names[best],
+        n_shuffles_used=int(pooled.size),
+        error=threshold_error,
+    )
 
 
 class _CompareNeeds(NamedTuple):
