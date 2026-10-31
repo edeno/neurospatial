@@ -130,34 +130,7 @@ class ArmReplayMethod:
         object.__setattr__(self, "decoding", MappingProxyType(dict(self.decoding)))
         object.__setattr__(self, "notes", tuple(self.notes))
         prefix = f"ArmReplayMethod {self.name!r}"
-        for name in (
-            "peak_threshold",
-            "smoothing_sigma",
-            "min_duration",
-            "min_coverage",
-            "min_abs_correlation",
-            "joint_min_abs_correlation",
-            "merge_max_gap",
-        ):
-            value = getattr(self, name)
-            if value is None and name == "merge_max_gap":
-                continue
-            if isinstance(value, bool) or not isinstance(
-                value, (int, float, np.integer, np.floating)
-            ):
-                raise ValueError(f"{prefix}: {name} must be a number, got {value!r}.")
-        for name in ("peak_threshold", "smoothing_sigma", "min_duration"):
-            value = getattr(self, name)
-            if not (np.isfinite(value) and value >= 0):
-                raise ValueError(f"{prefix}: {name} must be >= 0, got {value!r}.")
-        for name in (
-            "min_coverage",
-            "min_abs_correlation",
-            "joint_min_abs_correlation",
-        ):
-            value = getattr(self, name)
-            if not 0 <= value < 1:
-                raise ValueError(f"{prefix}: {name} must be in [0, 1), got {value!r}.")
+        _check_arm_numbers(self, prefix)
         choices = {
             "subregions": ("largest_peak", "runs"),
             "coverage": ("represented", "mean_range"),
@@ -224,6 +197,38 @@ class ArmReplayMethod:
             arms=event.arms,
             arm_replay_method=self,
         )
+
+
+def _check_arm_numbers(method: ArmReplayMethod, prefix: str) -> None:
+    """Refuse a threshold, duration or share that is not a number in range."""
+    for name in (
+        "peak_threshold",
+        "smoothing_sigma",
+        "min_duration",
+        "min_coverage",
+        "min_abs_correlation",
+        "joint_min_abs_correlation",
+        "merge_max_gap",
+    ):
+        value = getattr(method, name)
+        if value is None and name == "merge_max_gap":
+            continue
+        if isinstance(value, bool) or not isinstance(
+            value, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError(f"{prefix}: {name} must be a number, got {value!r}.")
+    for name in ("peak_threshold", "smoothing_sigma", "min_duration"):
+        value = getattr(method, name)
+        if not (np.isfinite(value) and value >= 0):
+            raise ValueError(f"{prefix}: {name} must be >= 0, got {value!r}.")
+    for name in (
+        "min_coverage",
+        "min_abs_correlation",
+        "joint_min_abs_correlation",
+    ):
+        value = getattr(method, name)
+        if not 0 <= value < 1:
+            raise ValueError(f"{prefix}: {name} must be in [0, 1), got {value!r}.")
 
 
 def detect_arm_replay(
@@ -351,12 +356,58 @@ def detect_arm_replay(
     >>> result.is_replay, result.template
     (True, 'center+left')
     """
-    from neurospatial.replay.methods import ReplayCriterion, ReplayDetectionResult
+    from neurospatial.replay.methods import ReplayDetectionResult
 
     method = arm_replay_method
+    n_bins = env.n_bins
+    posterior, dt = _checked_event(posterior, times, n_bins)
+    arm_bins = _validated_arms(arms, env)
+    threshold = method.peak_threshold / n_bins
+    runs = {
+        name: _arm_runs(method, posterior, bins, threshold, dt, name)
+        for name, bins in arm_bins.items()
+    }
+
+    values, passes = _single_arm_checks(method, runs)
+    if method.joint == "only_pair":
+        pair_replay = _only_pair_replay
+    else:
+        pair_replay = _strongest_pair_replay
+    template, score = pair_replay(method, posterior, arm_bins, runs, values, passes)
+    sequence = True
+    if template is None and method.arm_fallback:
+        best = _fallback_run(runs)
+        if best is not None:
+            template, score = best.arm, abs(best.correlation)
+            sequence = False
+    if method.arm_fallback:
+        passes["sequence"] = template is not None and sequence
+        values["sequence"] = float(passes["sequence"])
+    return ReplayDetectionResult(
+        method=method.name,
+        is_replay=template is not None,
+        score=float(score),
+        p_value=np.nan,
+        criteria=passes,
+        values=values,
+        template=template,
+    )
+
+
+def _checked_event(
+    posterior: NDArray[np.float64], times: NDArray[np.float64], n_bins: int
+) -> tuple[NDArray[np.float64], float]:
+    """The posterior as floats and the time-bin spacing, after checking both.
+
+    Returns
+    -------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        The posterior as a float array.
+    dt : float
+        Spacing of the time bins, in seconds.
+    """
     posterior = np.asarray(posterior, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
-    n_bins = env.n_bins
     if posterior.ndim != 2 or posterior.shape[1] != n_bins:
         raise ValueError(
             f"{_OPERATION}: posterior must have shape (n_time_bins, {n_bins}), "
@@ -388,13 +439,22 @@ def detect_arm_replay(
                 fix="pass the decoding time grid of the event",
             )
         )
-    arm_bins = _validated_arms(arms, env)
-    threshold = method.peak_threshold / n_bins
-    dt = float(steps[0])
-    runs = {
-        name: _arm_runs(method, posterior, bins, threshold, dt, name)
-        for name, bins in arm_bins.items()
-    }
+    return posterior, float(steps[0])
+
+
+def _single_arm_checks(
+    method: ArmReplayMethod, runs: Mapping[str, list[_Run]]
+) -> tuple[dict[str, float], dict[str, bool]]:
+    """Each arm's duration, coverage and ``|wc|`` checks, keyed by label.
+
+    Returns
+    -------
+    values : dict of str to float
+        The measured value of each check.
+    passes : dict of str to bool
+        Whether each check passes.
+    """
+    from neurospatial.replay.methods import ReplayCriterion
 
     values: dict[str, float] = {}
     passes: dict[str, bool] = {}
@@ -418,118 +478,173 @@ def detect_arm_replay(
         for criterion, value in checks:
             values[criterion.label] = float(value)
             passes[criterion.label] = criterion.evaluate(float(value), np.nan)
+    return values, passes
 
-    def joint_correlation(first: _Run, second: _Run, start: int, stop: int) -> float:
-        # The path runs from the first arm's end, through the junction, to
-        # the second arm's end.
-        path = np.r_[arm_bins[first.arm][::-1], arm_bins[second.arm]]
-        return _pixel_correlation(posterior[start:stop][:, path])
 
-    def same_sign(first: _Run, second: _Run, correlation: float) -> bool:
-        # Along the path, the first arm is read from its end inward.
-        return bool(
-            np.sign(-first.correlation)
-            == np.sign(second.correlation)
-            == np.sign(correlation)
-            != 0
-        )
+def _strongest(arm_runs: list[_Run]) -> _Run:
+    """The run with the largest absolute correlation."""
+    return max(arm_runs, key=lambda run: run.strength)
 
-    def strongest(arm_runs: list[_Run]) -> _Run:
-        return max(arm_runs, key=lambda run: run.strength)
+
+def _joint_correlation(
+    posterior: NDArray[np.float64],
+    arm_bins: Mapping[str, NDArray[np.intp]],
+    first: _Run,
+    second: _Run,
+    start: int,
+    stop: int,
+) -> float:
+    """Weighted correlation of time bins ``start:stop`` along a two-arm path."""
+    # The path runs from the first arm's end, through the junction, to
+    # the second arm's end.
+    path = np.r_[arm_bins[first.arm][::-1], arm_bins[second.arm]]
+    return _pixel_correlation(posterior[start:stop][:, path])
+
+
+def _same_sign(first: _Run, second: _Run, correlation: float) -> bool:
+    """Whether both arms' correlations have the joint's sign along the path."""
+    # Along the path, the first arm is read from its end inward.
+    return bool(
+        np.sign(-first.correlation)
+        == np.sign(second.correlation)
+        == np.sign(correlation)
+        != 0
+    )
+
+
+def _only_pair_replay(
+    method: ArmReplayMethod,
+    posterior: NDArray[np.float64],
+    arm_bins: Mapping[str, NDArray[np.intp]],
+    runs: Mapping[str, list[_Run]],
+    values: dict[str, float],
+    passes: dict[str, bool],
+) -> tuple[str | None, float]:
+    """The only joint pair, else every single-arm replay (Wu & Foster 2014).
+
+    Each pair of arms is tested from the arms' strongest runs, and its
+    checks are added to ``values`` and ``passes``.
+
+    Returns
+    -------
+    template : str or None
+        The replayed pair, the replayed arms joined by ``","``, or None.
+    score : float
+        The replay's absolute weighted correlation, NaN without one.
+    """
+    from neurospatial.replay.methods import ReplayCriterion
 
     joint_criterion = ReplayCriterion("|wc|", ">", method.joint_min_abs_correlation)
-    template: str | None = None
-    score = np.nan
-    sequence = True
-    if method.joint == "only_pair":
-        joint: list[tuple[str, float]] = []
-        for first_arm, second_arm in combinations(arm_bins, 2):
-            pair = f"{first_arm}+{second_arm}"
-            if runs[first_arm] and runs[second_arm]:
-                first, second = strongest(runs[first_arm]), strongest(runs[second_arm])
-                correlation = joint_correlation(
-                    first,
-                    second,
-                    min(first.start, second.start),
-                    max(first.stop, second.stop),
-                )
-                same_way = same_sign(first, second, correlation)
-                long_and_covered = first.long_and_covered and second.long_and_covered
-            else:
-                correlation, same_way, long_and_covered = np.nan, False, False
-            label = f"{pair}: {joint_criterion.label}"
-            values[label] = float(abs(correlation))
-            passes[label] = joint_criterion.evaluate(abs(correlation), np.nan)
-            if method.joint_same_sign:
-                values[f"{pair}: same sign as joint"] = float(same_way)
-                passes[f"{pair}: same sign as joint"] = same_way
-            if (
-                passes[label]
-                and long_and_covered
-                and (same_way or not method.joint_same_sign)
-            ):
-                joint.append((pair, abs(correlation)))
-        single = [
-            name
-            for name, arm_runs in runs.items()
-            if arm_runs and strongest(arm_runs).passes
-        ]
-        if len(joint) == 1:
-            template, score = joint[0]
-        elif not joint and single:
-            template = ",".join(single)
-            score = max(abs(strongest(runs[name]).correlation) for name in single)
-    else:
-        replays = [run for arm_runs in runs.values() for run in arm_runs if run.passes]
-        best_pair: tuple[str, float] | None = None
-        for one, other in combinations(replays, 2):
-            if one.arm == other.arm:
-                continue
-            first, second = (one, other) if one.start <= other.start else (other, one)
-            pair = f"{first.arm}+{second.arm}"
-            # From the first replay's start to the second's end, as the
-            # Berners-Lee et al. code does.
-            signed = joint_correlation(first, second, first.start, second.stop)
-            correlation = abs(signed)
-            label = f"{pair}: {joint_criterion.label}"
-            if correlation > values.get(label, -np.inf):
-                values[label] = float(correlation)
-                passes[label] = joint_criterion.evaluate(correlation, np.nan)
-            agrees = same_sign(first, second, signed)
-            if method.joint_same_sign:
-                sign_label = f"{pair}: same sign as joint"
-                passes[sign_label] = passes.get(sign_label, False) or agrees
-                values[sign_label] = float(passes[sign_label])
-            if (
-                joint_criterion.evaluate(correlation, np.nan)
-                and (agrees or not method.joint_same_sign)
-                and (best_pair is None or correlation > best_pair[1])
-            ):
-                best_pair = (pair, correlation)
-        if best_pair is not None:
-            template, score = best_pair
-        elif replays:
-            best = strongest(replays)
-            template, score = best.arm, abs(best.correlation)
-    if template is None and method.arm_fallback:
-        sustained = [run for arm_runs in runs.values() for run in arm_runs]
-        strengths = [run.strength for run in sustained]
-        if sustained and strengths.count(max(strengths)) == 1:
-            best = sustained[strengths.index(max(strengths))]
-            template, score = best.arm, abs(best.correlation)
-            sequence = False
-    if method.arm_fallback:
-        passes["sequence"] = template is not None and sequence
-        values["sequence"] = float(passes["sequence"])
-    return ReplayDetectionResult(
-        method=method.name,
-        is_replay=template is not None,
-        score=float(score),
-        p_value=np.nan,
-        criteria=passes,
-        values=values,
-        template=template,
-    )
+    joint: list[tuple[str, float]] = []
+    for first_arm, second_arm in combinations(arm_bins, 2):
+        pair = f"{first_arm}+{second_arm}"
+        if runs[first_arm] and runs[second_arm]:
+            first, second = _strongest(runs[first_arm]), _strongest(runs[second_arm])
+            correlation = _joint_correlation(
+                posterior,
+                arm_bins,
+                first,
+                second,
+                min(first.start, second.start),
+                max(first.stop, second.stop),
+            )
+            same_way = _same_sign(first, second, correlation)
+            long_and_covered = first.long_and_covered and second.long_and_covered
+        else:
+            correlation, same_way, long_and_covered = np.nan, False, False
+        label = f"{pair}: {joint_criterion.label}"
+        values[label] = float(abs(correlation))
+        passes[label] = joint_criterion.evaluate(abs(correlation), np.nan)
+        if method.joint_same_sign:
+            values[f"{pair}: same sign as joint"] = float(same_way)
+            passes[f"{pair}: same sign as joint"] = same_way
+        if (
+            passes[label]
+            and long_and_covered
+            and (same_way or not method.joint_same_sign)
+        ):
+            joint.append((pair, abs(correlation)))
+    single = [
+        name
+        for name, arm_runs in runs.items()
+        if arm_runs and _strongest(arm_runs).passes
+    ]
+    if len(joint) == 1:
+        return joint[0]
+    if not joint and single:
+        return ",".join(single), max(
+            abs(_strongest(runs[name]).correlation) for name in single
+        )
+    return None, np.nan
+
+
+def _strongest_pair_replay(
+    method: ArmReplayMethod,
+    posterior: NDArray[np.float64],
+    arm_bins: Mapping[str, NDArray[np.intp]],
+    runs: Mapping[str, list[_Run]],
+    values: dict[str, float],
+    passes: dict[str, bool],
+) -> tuple[str | None, float]:
+    """The strongest joint pair, else the strongest single-arm replay.
+
+    Pairs of single-arm replays on different arms, the earlier first, are
+    tested (Berners-Lee et al. 2021); each pair's strongest checks are added
+    to ``values`` and ``passes``.
+
+    Returns
+    -------
+    template : str or None
+        The replayed pair, in time order, the replayed arm, or None.
+    score : float
+        The replay's absolute weighted correlation, NaN without one.
+    """
+    from neurospatial.replay.methods import ReplayCriterion
+
+    joint_criterion = ReplayCriterion("|wc|", ">", method.joint_min_abs_correlation)
+    replays = [run for arm_runs in runs.values() for run in arm_runs if run.passes]
+    best_pair: tuple[str, float] | None = None
+    for one, other in combinations(replays, 2):
+        if one.arm == other.arm:
+            continue
+        first, second = (one, other) if one.start <= other.start else (other, one)
+        pair = f"{first.arm}+{second.arm}"
+        # From the first replay's start to the second's end, as the
+        # Berners-Lee et al. code does.
+        signed = _joint_correlation(
+            posterior, arm_bins, first, second, first.start, second.stop
+        )
+        correlation = abs(signed)
+        label = f"{pair}: {joint_criterion.label}"
+        if correlation > values.get(label, -np.inf):
+            values[label] = float(correlation)
+            passes[label] = joint_criterion.evaluate(correlation, np.nan)
+        agrees = _same_sign(first, second, signed)
+        if method.joint_same_sign:
+            sign_label = f"{pair}: same sign as joint"
+            passes[sign_label] = passes.get(sign_label, False) or agrees
+            values[sign_label] = float(passes[sign_label])
+        if (
+            joint_criterion.evaluate(correlation, np.nan)
+            and (agrees or not method.joint_same_sign)
+            and (best_pair is None or correlation > best_pair[1])
+        ):
+            best_pair = (pair, correlation)
+    if best_pair is not None:
+        return best_pair
+    if replays:
+        best = _strongest(replays)
+        return best.arm, abs(best.correlation)
+    return None, np.nan
+
+
+def _fallback_run(runs: Mapping[str, list[_Run]]) -> _Run | None:
+    """The strongest run of any arm, or None without runs or on a tie."""
+    sustained = [run for arm_runs in runs.values() for run in arm_runs]
+    strengths = [run.strength for run in sustained]
+    if sustained and strengths.count(max(strengths)) == 1:
+        return sustained[strengths.index(max(strengths))]
+    return None
 
 
 @dataclass(frozen=True)
