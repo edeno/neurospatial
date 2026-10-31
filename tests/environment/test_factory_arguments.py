@@ -399,7 +399,7 @@ def test_from_layout_refuses_an_unbuilt_engine():
 _FORMER_FIRST_POSITIONAL_OPTION = {
     "from_samples": "bin_size",
     "open_field": "bin_size",
-    "from_graph": "edge_spacing",
+    "from_graph": "bin_size",
     "maze": "kind",
     "from_polygon": "bin_size",
     "from_pixel_mask": "pixel_size",
@@ -461,10 +461,16 @@ def _graph():
             lambda p: Environment.open_field(p, 4.0, name="arena"),
             "Environment.open_field(positions, bin_size=4.0, name='arena')",
         ),
-        # The track factory took edge_spacing before bin_size.
+        # A lone stray value on a track is the required bin size, not the
+        # optional gap between edges.
         (
-            lambda p: Environment.from_graph(_graph(), [(0, 1)], 0.0, 2.0),
-            "pass edge_spacing=0.0, bin_size=2.0 by keyword",
+            lambda p: Environment.from_graph(_graph(), [(0, 1)], 2.0),
+            "pass bin_size=2.0 by keyword, as in "
+            "Environment.from_graph(graph, edge_order, bin_size=2.0)",
+        ),
+        (
+            lambda p: Environment.from_graph(_graph(), [(0, 1)], 2.0, 0.0),
+            "pass bin_size=2.0, edge_spacing=0.0 by keyword",
         ),
         (
             lambda p: Environment.maze("plus", bin_size=2.0),

@@ -3911,7 +3911,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint("edge_spacing", "bin_size")
+    @keyword_hint("bin_size", "edge_spacing")
     def from_graph(
         cls,
         graph: nx.Graph,
