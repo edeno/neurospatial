@@ -297,21 +297,79 @@ class TestErrorAlongTheEnvironment:
         # down the left arm, along the base, up the middle arm
         np.testing.assert_allclose(along, [79.0 + 60.0 + 79.0], atol=2.0)
 
-    def test_position_between_arms_is_measured_from_its_nearest_bin(self, w_track):
-        """A posterior mean between two arms lies off the track; it is measured
-        from the nearest track bin, not by a straight-line fallback."""
+    def test_position_between_arms_has_no_geodesic_error(self, w_track):
+        """A posterior mean between two arms is not on the maze: NaN, warned.
+
+        Measuring it from its nearest bin would pick one arm by proximity,
+        whatever share of the posterior was on that arm.
+        """
         from neurospatial.decoding.metrics import decoding_error
 
         decoded = np.array([[30.0, 79.0]])  # between left and middle arms
         actual = np.array([[60.0, 79.0]])
-        nearest_bin = w_track.nearest_bin(decoded, max_distance=np.inf)
-        assert nearest_bin[0] >= 0
-        nearest = w_track.bin_centers[nearest_bin]
-        np.testing.assert_allclose(
-            decoding_error(w_track, decoded, actual),
-            decoding_error(w_track, nearest, actual),
+        with pytest.warns(UserWarning, match=r"1 of 1 time bins.*outside"):
+            errors = decoding_error(w_track, decoded, actual)
+        np.testing.assert_array_equal(errors, [np.nan])
+
+    def test_mean_between_arms_of_an_open_maze_is_not_snapped(self):
+        """Half the posterior on each arm top: its mean is in the gap.
+
+        Snapping it to the nearest arm reported 4 cm for a decode that put
+        half its mass 125 cm along the maze from the animal.
+        """
+        from shapely.geometry import box
+        from shapely.ops import unary_union
+
+        from neurospatial.decoding.metrics import decoding_error
+
+        u_maze = unary_union([box(0, 0, 10, 60), box(40, 0, 50, 60), box(0, 0, 50, 10)])
+        env = Environment.from_polygon(u_maze, bin_size=2.0, units="cm")
+        decoded = np.array([[25.0, 55.0], [50.5, 30.0]])  # gap; jitter at an edge
+        actual = np.array([[5.0, 55.0], [45.0, 30.0]])
+        with pytest.warns(UserWarning, match=r"1 of 2 time bins.*outside"):
+            errors = decoding_error(env, decoded, actual)
+        assert np.isnan(errors[0])
+        assert errors[1] == pytest.approx(
+            decoding_error(
+                env, env.bin_centers[env.nearest_bin(decoded[1:])], actual[1:]
+            )[0]
         )
-        assert decoding_error(w_track, decoded, actual)[0] > 100.0
+
+    def test_median_counts_a_decode_off_the_maze_as_a_failure(self):
+        """An off-maze decode is a failed decode, not a missing sample.
+
+        Leaving it out of the median, as a missing tracking sample is left
+        out, would report the remaining, better decodes as the median.
+        """
+        from neurospatial.decoding.metrics import median_decoding_error
+
+        row = Environment.from_grid_mask(
+            np.ones((10, 1), dtype=bool),
+            grid_edges=(np.arange(11.0), np.array([0.0, 1.0])),
+        )
+        actual = np.full((5, 2), [0.5, 0.5])
+        decoded = np.array(
+            [[0.5, 0.5], [1.5, 0.5], [-50.0, 0.5], [-60.0, 0.5], [-70.0, 0.5]]
+        )
+        with pytest.warns(UserWarning, match=r"3 of 5 .*decoded.*worse than"):
+            median = median_decoding_error(row, decoded, actual)
+        assert median == np.inf  # 3 of 5 decodes failed
+
+        decoded[3:] = [[2.5, 0.5], [3.5, 0.5]]
+        with pytest.warns(UserWarning, match=r"1 of 5"):
+            median = median_decoding_error(row, decoded, actual)
+        assert median == pytest.approx(2.0)  # 0, 1, 2, 3, failed
+
+    def test_median_leaves_out_missing_actual_positions(self):
+        from neurospatial.decoding.metrics import median_decoding_error
+
+        row = Environment.from_grid_mask(
+            np.ones((10, 1), dtype=bool),
+            grid_edges=(np.arange(11.0), np.array([0.0, 1.0])),
+        )
+        decoded = np.full((3, 2), [0.5, 0.5])
+        actual = np.array([[0.5, 0.5], [2.5, 0.5], [np.nan, np.nan]])
+        assert median_decoding_error(row, decoded, actual) == pytest.approx(1.0)
 
     def test_far_outside_position_has_no_geodesic_error(self):
         """A position far beyond the environment is not in it: NaN, warned."""

@@ -254,5 +254,5 @@ def prepare_bins(binning: object) -> Binning:
         # A native recipe, as env.binning carries, is a closed formula over
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
-        binning = replace(binning, faces=KnownFaces(binning.build_faces()))
+        binning = replace(binning, faces=KnownFaces(binning.shared_faces()))
     return binning

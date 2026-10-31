@@ -591,3 +591,35 @@ def test_circular_basis_components_derive_from_angles():
     result = circular_basis(np.array([0.0, 90.0, 180.0]), angle_unit="deg")
     assert_allclose(result.angles, [0.0, np.pi / 2, np.pi])
     assert_allclose(result.design_matrix, [[0, 1], [1, 0], [0, -1]], atol=1e-12)
+
+
+def test_band_with_the_intercept_covariance_is_the_full_pointwise_interval():
+    """With cov_params()[:3, :3], the band adds the intercept's variance."""
+    import matplotlib.pyplot as plt
+    from scipy import stats
+
+    from neurospatial.stats.circular import plot_circular_basis_tuning
+
+    full = np.array([[0.04, 0.01, -0.005], [0.01, 0.02, 0.002], [-0.005, 0.002, 0.03]])
+    ax = plot_circular_basis_tuning(
+        0.5, 0.3, intercept=1.0, cov_matrix=full, show_ci=True, projection="linear"
+    )
+    band = ax.collections[0].get_paths()[0].vertices
+    theta = np.asarray(ax.lines[0].get_xdata(), dtype=float)  # the plotted angles
+    design = np.column_stack([np.ones_like(theta), np.sin(theta), np.cos(theta)])
+    eta = design @ np.array([1.0, 0.5, 0.3])
+    se = np.sqrt(np.einsum("ij,jk,ik->i", design, full, design))
+    upper = np.exp(eta + stats.norm.ppf(0.975) * se)
+    np.testing.assert_allclose(band[:, 1].max(), upper.max(), rtol=1e-6)
+
+    conditional = plot_circular_basis_tuning(
+        0.5,
+        0.3,
+        intercept=1.0,
+        cov_matrix=full[1:, 1:],
+        show_ci=True,
+        projection="linear",
+    )
+    narrower = conditional.collections[0].get_paths()[0].vertices
+    assert narrower[:, 1].max() < band[:, 1].max()
+    plt.close("all")

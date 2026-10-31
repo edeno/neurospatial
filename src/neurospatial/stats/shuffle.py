@@ -579,7 +579,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     @property
     def z_score(self) -> float:
         """Standard score of the observed score against the null scores."""
-        return compute_shuffle_zscore(self.observed_score, self.null_scores)
+        # Construction already warned about undefined null scores.
+        return _shuffle_zscore(self.observed_score, self.null_scores)
 
     @property
     def n_shuffles(self) -> int:
@@ -889,8 +890,8 @@ def compute_shuffle_zscore(
     Notes
     -----
     Undefined (NaN) null scores are left out of the mean and standard
-    deviation, as :func:`compute_shuffle_pvalue` leaves them out of the
-    p-value.
+    deviation, with a warning giving how many, as
+    :func:`compute_shuffle_pvalue` leaves them out of the p-value.
 
     The z-score indicates how many standard deviations the observed value
     is from the mean of the null distribution. Positive values indicate
@@ -925,6 +926,21 @@ def compute_shuffle_zscore(
     compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
+    null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
+    undefined = np.isnan(null_scores)
+    if undefined.any():
+        warnings.warn(
+            f"Dropped {int(undefined.sum())} undefined (NaN) null score(s) out "
+            f"of {null_scores.size} before computing the z-score; it uses the "
+            f"other {int((~undefined).sum())}.",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return _shuffle_zscore(observed, null_scores)
+
+
+def _shuffle_zscore(observed: float, null_scores: NDArray[np.float64]) -> float:
+    """:func:`compute_shuffle_zscore` without its warning, for callers that warn."""
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     null_scores = null_scores[~np.isnan(null_scores)]
     if null_scores.size < 2 or np.isinf(null_scores).any():

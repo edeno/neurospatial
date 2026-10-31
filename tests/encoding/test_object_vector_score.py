@@ -102,6 +102,11 @@ class TestObjectVectorScore:
         tc[1:, 6] = 20.0
         assert np.isnan(object_vector_score(tc))
 
+    def test_one_direction_bin_is_nan(self):
+        # The direction factor compares directions; one bin spanning the full
+        # circle has a resultant length of 1 whatever the cell does.
+        assert np.isnan(object_vector_score(np.array([[0.0], [1.0], [0.0]])))
+
 
 def _von_mises(n: int, center: int, kappa: float = 4.0) -> np.ndarray:
     angles = 2 * np.pi * (np.arange(n) - center) / n

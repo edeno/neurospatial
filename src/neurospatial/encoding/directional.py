@@ -216,7 +216,26 @@ def _check_angular_bins(result: _DirectionalRateMixin) -> int:
                 fix=fix,
             )
         )
-    return int(np.shape(centers)[0])
+    n_bins = int(np.shape(centers)[0])
+    # Consecutive centers one bin_size apart, modulo a turn, n_bins of them
+    # making one turn: the bins tile the circle in order, from any start.
+    steps = np.diff(np.asarray(centers, dtype=np.float64)) % (2 * np.pi)
+    turn = 2 * np.pi
+    tolerance = 1e-9 * turn
+    if abs(n_bins * bin_size - turn) > tolerance or np.any(
+        np.abs(steps - bin_size) > tolerance
+    ):
+        raise ValueError(
+            _format_error(
+                f"{kind}: the {n_bins} bin_centers with bin_size={bin_size!r} do "
+                "not tile the circle: consecutive centers must be bin_size apart "
+                "and n_bins * bin_size must be 2 * pi.",
+                why="Why: the preferred direction, tuning width and tuning test "
+                "treat the bins as equal sectors covering one turn.",
+                fix=fix,
+            )
+        )
+    return n_bins
 
 
 def _check_spike_counts(result: _DirectionalRateMixin) -> None:

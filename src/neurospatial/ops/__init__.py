@@ -73,6 +73,7 @@ from neurospatial.ops.calculus import (
 )
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.diffusion import _HEAT_KERNEL_RANK_TOL as _HEAT_KERNEL_RANK_TOL
+from neurospatial.ops.diffusion import _MISSING_SUPPORT_FLOOR as _MISSING_SUPPORT_FLOOR
 from neurospatial.ops.diffusion import _RESOLUTION_MARGIN as _RESOLUTION_MARGIN
 from neurospatial.ops.diffusion import MRFBasis
 from neurospatial.ops.diffusion import _above_component_floor as _above_component_floor

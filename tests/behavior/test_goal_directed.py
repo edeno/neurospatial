@@ -526,6 +526,51 @@ class TestComputeGoalDirectedMetrics:
         assert result.mean_approach_rate < 0  # Negative = approaching
         assert result.goal_distance_at_end < result.goal_distance_at_start
 
+    def test_mean_approach_rate_averages_over_time_not_samples(self):
+        """A quick step in and a slow step out average to the net change.
+
+        The animal closes 10 cm in 0.01 s and opens it again over 0.99 s, so
+        its distance to the goal is unchanged after 1 s: the mean rate per
+        second is 0, not the sample mean of -1000 and +10.1 cm/s.
+        """
+        from neurospatial.behavior.navigation import compute_goal_directed_metrics
+
+        env = Environment.from_samples(
+            np.array([[0.0, -5.0], [60.0, 5.0]]), bin_size=5.0, units="cm"
+        )
+        times = np.array([0.0, 0.01, 1.0])
+        positions = np.array([[50.0, 0.0], [40.0, 0.0], [50.0, 0.0]])
+        result = compute_goal_directed_metrics(
+            env, times, positions, np.zeros(2), min_speed=0.0, max_gap=None
+        )
+        assert result.mean_approach_rate == pytest.approx(0.0, abs=1e-12)
+
+    def test_mean_approach_rate_is_unchanged_by_resampling(self):
+        """Extra samples on the same straight path leave the mean unchanged."""
+        from neurospatial.behavior.navigation import compute_goal_directed_metrics
+
+        env = Environment.from_samples(
+            np.array([[0.0, -5.0], [100.0, 5.0]]), bin_size=5.0, units="cm"
+        )
+        coarse = np.array([0.0, 1.0, 4.0])
+        # Approach at 20 cm/s for 1 s, then retreat at 5 cm/s for 3 s.
+        x_coarse = np.array([60.0, 40.0, 55.0])
+        fine = np.linspace(0.0, 4.0, 41)
+        x_fine = np.interp(fine, coarse, x_coarse)
+        means = [
+            compute_goal_directed_metrics(
+                env,
+                t,
+                np.column_stack([x, np.zeros_like(x)]),
+                np.zeros(2),
+                min_speed=0.0,
+                max_gap=None,
+            ).mean_approach_rate
+            for t, x in ((coarse, x_coarse), (fine, x_fine))
+        ]
+        # Net change -5 cm over 4 s.
+        assert means == pytest.approx([-1.25, -1.25], rel=1e-12)
+
 
 class TestErrorHandling:
     """Test error handling and messages."""

@@ -180,6 +180,12 @@ class CombinedLocator(ReadOnlyState):
                     np.full(len(self.bridge_pairs), -1, dtype=np.intp),
                 ]
             ),
+            np.concatenate(
+                [
+                    *[link.open_fraction for link in links],
+                    np.ones(len(self.bridge_pairs)),
+                ]
+            ),
         )
 
     @property
@@ -282,7 +288,7 @@ def combined_faces(
             "Combined navigation bridges have no physical face geometry; use "
             "scalar diffusion when child geometry is certified."
         )
-    parts = [child.build_faces() for child in locator.children]
+    parts = [child.shared_faces() for child in locator.children]
     return KnownFaces(
         FaceGeometry(
             connections.pairs,

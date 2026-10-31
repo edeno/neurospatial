@@ -141,6 +141,7 @@ def test_codec_round_trip(codec_part):
     assert meta["codec_version"] == {
         Binning: 6,
         SpatialBins: 2,
+        BinConnections: 2,
         NearestBinLocator: 2,
         RectilinearLocator: 2,
     }.get(type(codec_part), 1)

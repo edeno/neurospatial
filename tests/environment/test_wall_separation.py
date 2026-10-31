@@ -22,7 +22,7 @@ from neurospatial.arena import OpenArena
 from neurospatial.binning import KnownFaces
 from neurospatial.geometry._arena_fit import _wall_sides, clip_wall
 from neurospatial.geometry._polygon_cells import clip_mapping_of
-from neurospatial.ops.transforms import rotate_2d
+from neurospatial.ops.transforms import AffineND, rotate_2d
 
 SLANTED = Polygon([(0, 0), (20, 3), (17, 20), (-2, 16)])
 ROUND = Point(10, 10).buffer(9.3, quad_segs=32)
@@ -450,3 +450,49 @@ def test_a_thin_wall_between_hexagons_is_not_crossed(left):
     a, b = (int(i) for i in env.bin_at([[left - 3.0, 10.0], [left + 3.5, 10.0]]))
     around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
     assert env.distance_between(bins=[a, b]) >= around - 6.0
+
+
+def _partly_walled():
+    """Two 10-unit cells whose shared face a wall covers for 8 of its 10 units."""
+    outline = box(0, 0, 20, 10)
+    return Environment.from_polygon(
+        outline,
+        bin_size=10,
+        arena=OpenArena(outline, walls={"divider": LineString([(10, 0), (10, 8)])}),
+        units="cm",
+    )
+
+
+@pytest.mark.parametrize(
+    "republish",
+    [
+        pytest.param(lambda env, path: env.subset(mask=np.ones(2, bool)), id="subset"),
+        pytest.param(
+            lambda env, path: Environment.from_bins(env.binning, arena=env.arena),
+            id="from_bins",
+        ),
+        pytest.param(
+            lambda env, path: env.apply_transform(AffineND(np.eye(3))),
+            id="identity_transform",
+        ),
+        pytest.param(
+            lambda env, path: (env.to_file(path), Environment.from_file(path))[1],
+            id="file_round_trip",
+        ),
+    ],
+)
+def test_a_partly_walled_face_keeps_its_open_share_when_republished(
+    republish, tmp_path
+):
+    env = _partly_walled()
+    # The shared face is 10 long and the wall leaves 2 of it open.
+    assert env.binning.build_faces().A.tolist() == pytest.approx([2.0])
+    again = republish(env, tmp_path / "environment")
+    assert again.binning.build_faces().A.tolist() == pytest.approx([2.0])
+    np.testing.assert_array_equal(again.edge_pairs, env.edge_pairs)
+    counts = np.array([1.0, 0.0])
+    np.testing.assert_allclose(
+        again.smooth(counts, bandwidth=5.0, mode="transition"),
+        env.smooth(counts, bandwidth=5.0, mode="transition"),
+        rtol=1e-12,
+    )

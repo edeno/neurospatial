@@ -163,14 +163,13 @@ def build_mesh(point_spacing: float = 5.0) -> tuple[Environment, list[float]]:
     return env, [0.0, 0.0]
 
 
-# The mesh fixture triangulates a square lattice. Every lattice cell is
-# cocircular, so scipy's Delaunay picks each cell's diagonal by a tie-break that
-# differs across platforms (macOS vs Linux/Windows): an equally valid mesh with
-# different triangles. The frozen baseline describes the mesh it was captured
-# on, identified by this fingerprint of its bin centers. The mesh cases were
-# re-captured when meshes began triangulating near the origin (the polygon's
-# lower-left bound), which changes the tie-break; the dense path is unchanged.
-MESH_BASELINE_FINGERPRINT = "73408dc90df2e273"
+# The frozen baseline describes the mesh it was captured on, identified by this
+# fingerprint of its bin centers: where four points are cocircular, scipy's
+# Delaunay picks a diagonal by a tie-break that can differ across platforms,
+# giving an equally valid mesh with different triangles. The mesh cases were
+# re-captured when meshes moved from a square lattice (every cell cocircular)
+# to a triangular one; the dense path is unchanged.
+MESH_BASELINE_FINGERPRINT = "0fb05417cc69de93"
 
 
 def bin_center_fingerprint(env: Environment) -> str:

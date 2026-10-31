@@ -179,7 +179,7 @@ def selected_records(
     connections, pair_kept = binning.connections.select(child_of)
     faces = binning.faces
     if faces.available:
-        old_faces = binning.build_faces()
+        old_faces = binning.shared_faces()
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,
@@ -504,7 +504,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )
     bins = SpatialBins.from_arrays(centers, sizes, dims)
-    connections = BinConnections(all_pairs, distances, links.is_open, links.closed_by)
+    connections = BinConnections(
+        all_pairs, distances, links.is_open, links.closed_by, links.open_fraction
+    )
     pairs = connections.pairs
     if locator is None:
         locator = TransformedLocator(binning.locator, matrix)
@@ -527,7 +529,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     )
     faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
-        old = binning.build_faces()
+        old = binning.shared_faces()
         if similarity:
             faces = KnownFaces(
                 FaceGeometry(

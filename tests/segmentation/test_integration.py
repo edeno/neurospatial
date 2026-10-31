@@ -106,7 +106,7 @@ class TestFullTrajectoryAnalysisWorkflow:
             assert similarity > 0.5, "Consecutive laps should have high similarity"
 
         # Step 4: Compute home range (should be annular region)
-        home_range = compute_home_range(position_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, env, percentile=95.0)
         assert len(home_range) > 10, "Home range should include multiple bins"
 
         # Step 5: Compute MSD (should show ballistic movement within laps)
@@ -320,8 +320,8 @@ class TestFullTrajectoryAnalysisWorkflow:
         assert 0.0 <= similarity <= 1.0
 
         # Step 3: Compute home range for each phase
-        explore_home = compute_home_range(explore_bins, percentile=95.0)
-        goal_home = compute_home_range(goal_bins, percentile=95.0)
+        explore_home = compute_home_range(explore_bins, env, percentile=95.0)
+        goal_home = compute_home_range(goal_bins, env, percentile=95.0)
 
         assert len(explore_home) > 0
         assert len(goal_home) > 0

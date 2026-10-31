@@ -94,6 +94,113 @@
   standard "Why:/Fix:" layout; non-finite values print as `nan`, not
   `np.float64(nan)`.
 
+### Correctness fixes
+
+**Fixed**
+
+- An environment with a wall covering part of a shared cell face can be saved
+  and loaded, subset, rebuilt with `from_bins`, transformed and combined.
+  Before, all of these raised `grid faces.A does not match shared cell-face
+  measures`. The binning now keeps the whole shared face and records the
+  share no wall covers in `binning.connections.open_fraction`;
+  `binning.build_faces()` multiplies the two, as smoothing and the other
+  finite-volume operations always did. Saved environments store
+  `open_fraction`, so files written by earlier versions must be rebuilt
+  from their source geometry.
+- `spatial_information_bias()` of an unpenalized GLM (`penalty=0`) whose
+  basis has more modes than the animal visited bins no longer raises
+  `LinAlgError` or returns a value set by roundoff. The modes no visited bin
+  sees do not change the rate at a visited bin, so the bias counts only the
+  visited modes: `(visited bins - 1)` instead of `rank - 1`, and 0 when the
+  animal stayed in one bin.
+- `compute_goal_directed_metrics(...).mean_approach_rate` averages over
+  observed time, as its documentation says, instead of over samples: it is
+  the change of goal distance over the usable intervals divided by their
+  duration. A quick 10 cm step toward the goal followed by a slow step back
+  now averages to 0 cm/s instead of -495 cm/s, and the value no longer
+  depends on the sampling rate.
+- `object_vector_score` is NaN for a map with one direction bin (for
+  example `direction_bin_size=2 * np.pi`). One bin spanning the circle has a
+  mean resultant length of 1 whatever the cell does, so the score reported
+  full direction selectivity.
+- `normalize_field` and decoding priors accept a field smoothed with
+  `env.smooth` from non-negative values. Smoothing keeps heat-kernel modes
+  down to a weight of 1e-6, so it can ring slightly below zero (about -7e-9
+  for an impulse on a 100-bin track at bandwidth 8), and both used to refuse
+  the field as negative. Negative entries no larger than 1e-5 of the field's
+  largest value now count as 0; larger negative values are still refused.
+  `env.smooth` itself is unchanged and stays exactly linear for signed
+  fields.
+- `decoding_error` (geodesic, the default) no longer measures a position in
+  the gap between arms of a maze from the nearest arm. Any position inside
+  the environment's bounding box was snapped to its nearest bin, so a
+  posterior mean between two arm tips (half the mass on each) was reported
+  as a 4 cm error on a U maze, from whichever arm was closer. Such positions
+  are now NaN with a warning, like positions outside the environment;
+  tracking jitter within about one bin spacing of the environment is still
+  measured from its nearest bin. Use `map_position` for a decoded position
+  that is always a bin.
+- `median_decoding_error` counts a decoded position outside the environment
+  as worse than any measured error, instead of leaving it out like a missing
+  sample: leaving out failed decodes reported the remaining, better ones as
+  the median. Time bins with a missing or out-of-environment actual position
+  are still left out, and the warning gives both counts.
+- `compute_shuffle_zscore` warns when it leaves undefined (NaN) null scores
+  out, giving how many, as `compute_shuffle_pvalue` does; it used to drop
+  them silently. `ShuffleTestResult.z_score` does not warn again.
+- `plot_phase_precession` breaks the fitted line where it wraps instead of
+  drawing a segment across the whole phase axis, draws it over the fit's own
+  position range (one NaN position used to remove it), and takes
+  `angle_unit="deg"` like `compute_phase_precession`; phases that look like
+  degrees with the default `angle_unit="rad"` warn.
+- `DirectionalRateResult` and `DirectionalRatesResult` built by hand refuse
+  bins that do not tile the circle (consecutive centers `bin_size` apart and
+  `n_bins * bin_size == 2 * pi`). Uneven bins or bins covering part of a
+  turn were accepted, and the preferred direction, tuning width and tuning
+  test were computed as if they covered the circle.
+- `region_reward_field(decay="gaussian")` never exceeds `reward_value`. It
+  was scaled to its maximum inside the region, and smoothing a ring makes its
+  hole the brightest place, so the field reached 1.14 there for
+  `reward_value=1`. It is now scaled to its maximum over the arena; convex
+  regions are unchanged.
+- `resample_field(method="diffuse")` no longer loses fields narrower than the
+  destination bins. It read the field at the destination centers before
+  smoothing, so coarsening 1 cm bins to 8 cm kept all of a narrow field at
+  one position and none of it 3 cm away. It now smooths on the source and on
+  the destination, by `bandwidth / sqrt(2)` each (`bandwidth` in all), and
+  divides the smoothed values by the smoothed weight of observed bins once;
+  the field's integral is kept wherever it lies. Resampling onto the same
+  environment equals `env.smooth(field, bandwidth=bandwidth, mode="average")`.
+  Use a `bandwidth` of at least the larger bin spacing. Infinite field values
+  are refused, as with `method="nearest"`.
+- The directional tuning test's heading correlation time no longer builds a
+  time grid over breaks between recordings. Its grid spanned the whole
+  elapsed time at the sampling step, so two sessions ten years apart in one
+  call needed about 10^10 grid points; it now covers the analyzed time,
+  cutting each break to a length that changes no lag the estimate reads,
+  and gives the same value.
+- `plot_circular_basis_tuning` accepts the 3x3 covariance of
+  `[intercept, beta_sin, beta_cos]` (`model.cov_params()[:3, :3]`) and then
+  draws the full pointwise interval of the rate. A 2x2 `[sin, cos]`
+  covariance still draws the narrower band of the tuning's shape alone.
+- `compute_home_range(position_bins, env, ...)` takes the environment and
+  ranks bins by time per unit area (`env.bin_sizes`), the utilization
+  density whose isopleth is the home range. Ranked by occupancy, a large bin
+  used thinly entered before a small bin used intensively, which biased home
+  ranges on hexagonal, mesh, track and clipped bins; on equal bins the result
+  is unchanged. Bin indices beyond `env.n_bins` are refused.
+- `TriangularMesh` layouts triangulate a triangular lattice of points instead
+  of a square one, so interior triangles are equilateral. On the right
+  triangles of the square lattice, the line between neighboring centers
+  crossed the shared side about 27 degrees off the perpendicular, and
+  `divergence(gradient(x))` inside a box was 1.1, 2.2 and 4.4 at spacings 1,
+  0.5 and 0.25 instead of 0; it is now 0 to roundoff, and the smoothing
+  kernel is isotropic. Lattice points closer than half a spacing to the
+  outline are left out, so the boundary triangles stay well shaped. Meshes
+  built with the same `point_spacing` have different bins than before.
+- `divergence` and `env.get_divergence_operator()` give the skewed-mesh
+  warning that smoothing gives, once per environment.
+
 ### Exporting decoding and behavior results to pynapple
 
 **Added**

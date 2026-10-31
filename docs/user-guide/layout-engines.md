@@ -124,7 +124,10 @@ env = Environment.from_polygon(arena, bin_size=2.5)
 ```
 
 ### TriangularMeshLayout
-**Triangular tessellation** - alternative grid structure.
+**Triangular tessellation** - alternative grid structure. Inside the arena
+the triangles are equilateral, with side `point_spacing`, so smoothing,
+`gradient` and `divergence` are as accurate as on a square grid; the
+triangles along the outline are fitted to it.
 
 **When to use**: Alternative to hexagonal, specific geometric needs
 **Performance**: ⭐⭐⭐ (moderate)

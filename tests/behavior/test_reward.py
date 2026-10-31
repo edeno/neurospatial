@@ -259,6 +259,28 @@ class TestRegionRewardField:
         reward_variance = np.var(reward)
         assert reward_variance > 0  # Not constant
 
+    def test_gaussian_reward_never_exceeds_reward_value_around_a_ring(self):
+        """Smoothing a ring makes its hole the brightest place.
+
+        Scaling to the region's own maximum then put 1.14 in the hole for
+        reward_value=1; the field is scaled to its maximum over the arena.
+        """
+        from shapely.geometry import Point
+
+        env = Environment.from_polygon(box(-10, -10, 10, 10), bin_size=1, units="cm")
+        regions = Regions()
+        regions.add(
+            "ring", polygon=Point(0, 0).buffer(6).difference(Point(0, 0).buffer(3))
+        )
+        env = env.with_regions(regions)
+        reward = region_reward_field(
+            env, region_name="ring", decay="gaussian", bandwidth=4.0, reward_value=2.0
+        )
+        assert reward.max() == pytest.approx(2.0)
+        hole = np.linalg.norm(env.bin_centers, axis=1) < 3
+        # The hole holds the maximum; the ring itself stays below it.
+        assert reward[hole].max() == pytest.approx(2.0)
+
     def test_region_reward_field_gaussian_no_bandwidth_error(self):
         """Test that Gaussian decay without bandwidth raises ValueError."""
         positions = np.column_stack(

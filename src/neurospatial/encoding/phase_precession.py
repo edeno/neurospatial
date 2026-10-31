@@ -1074,6 +1074,7 @@ def plot_phase_precession(
     result: PhasePrecessionResult | None = None,
     ax: Axes | None = None,
     *,
+    angle_unit: Literal["rad", "deg"] = "rad",
     position_label: str = "Position",
     show_fit: bool = True,
     marker_size: float = 20.0,
@@ -1093,11 +1094,14 @@ def plot_phase_precession(
     positions : ndarray of shape (n_spikes,)
         Position at each spike.
     phases : ndarray of shape (n_spikes,)
-        Spike phase relative to LFP theta (radians).
+        Spike phase relative to LFP theta, in ``angle_unit``.
     result : PhasePrecessionResult, optional
-        If provided, overlay fitted line.
+        If provided, overlay fitted line over the fit's position range.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of ``phases``, as in :func:`compute_phase_precession`. The plot
+        is in radians either way.
     position_label : str, default="Position"
         Label for x-axis.
     show_fit : bool, default=True
@@ -1147,6 +1151,8 @@ def plot_phase_precession(
     """
     import matplotlib.pyplot as plt
 
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
     # Convert to arrays
     positions = np.asarray(positions, dtype=np.float64).ravel()
     phases = np.asarray(phases, dtype=np.float64).ravel()
@@ -1158,6 +1164,14 @@ def plot_phase_precession(
             f"Got positions: {len(positions)}, phases: {len(phases)}."
         )
 
+    phases = to_radians(phases, angle_unit)
+    if angle_unit == "rad":
+        warn_if_angles_look_like_degrees(
+            phases,
+            name="phases",
+            context="plot_phase_precession",
+            angle_unit_keyword=True,
+        )
     # Wrap phases to [0, 2pi]
     phases = phases % (2 * np.pi)
 
@@ -1188,12 +1202,18 @@ def plot_phase_precession(
 
     # Plot fitted lines if result provided and show_fit is True
     if result is not None and show_fit:
-        # Fitted line in the positions' own units: offset is the phase at
-        # the start of the fit's position range.
-        pos_range = np.linspace(positions.min(), positions.max(), 100)
-        fitted_phases = (
-            result.offset + result.slope * (pos_range - result.position_range[0])
-        ) % (2 * np.pi)
+        # Fitted line over the fit's own position range: offset is the phase
+        # at its start.
+        start, stop = result.position_range
+        pos_range = np.linspace(start, stop, 200)
+        fitted_phases = (result.offset + result.slope * (pos_range - start)) % (
+            2 * np.pi
+        )
+        # Break the line where it wraps rather than joining the two ends
+        # across the plot.
+        wraps = np.flatnonzero(np.abs(np.diff(fitted_phases)) > np.pi) + 1
+        pos_range = np.insert(pos_range, wraps, np.nan)
+        fitted_phases = np.insert(fitted_phases, wraps, np.nan)
 
         # Plot in both the lower [0, 2pi] and upper [2pi, 4pi] regions
         ax.plot(pos_range, fitted_phases, **line_kw)

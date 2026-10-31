@@ -379,7 +379,7 @@ def test_a_room_with_no_observed_bin_stays_nan(two_rooms):
 
 
 def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor():
-    from neurospatial.environment._fields import MISSING_SUPPORT_FLOOR
+    from neurospatial.ops.diffusion import _MISSING_SUPPORT_FLOOR
 
     track = Environment.from_samples(np.linspace(0.0, 60.0, 400)[:, None], bin_size=1.0)
     observed = track.bin_centers[:, 0] < 15.0
@@ -391,9 +391,9 @@ def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor():
         track.compute_kernel(bandwidth=2.0, mode="average", cache=False) @ observed
     )
     relative = support / support.max()
-    clear = np.abs(relative / MISSING_SUPPORT_FLOOR - 1.0) > 0.01
+    clear = np.abs(relative / _MISSING_SUPPORT_FLOOR - 1.0) > 0.01
     np.testing.assert_array_equal(
-        np.isnan(smoothed)[clear], (relative <= MISSING_SUPPORT_FLOOR)[clear]
+        np.isnan(smoothed)[clear], (relative <= _MISSING_SUPPORT_FLOOR)[clear]
     )
     # Holes next to the observed bins are filled; far ones stay NaN.
     assert np.isfinite(smoothed[~observed]).any()

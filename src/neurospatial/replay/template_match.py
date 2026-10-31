@@ -59,7 +59,7 @@ from neurospatial.replay.sequence_match import (
     _template_ranks,
     _trial_group,
 )
-from neurospatial.stats.shuffle import _shuffle_p_values, compute_shuffle_zscore
+from neurospatial.stats.shuffle import _shuffle_p_values, _shuffle_zscore
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1166,7 +1166,7 @@ def _dataset_result(
 ) -> TemplateMatchDatasetResult:
     shuffle_p = float(_shuffle_p_values(observed, shuffled, "greater"))
     shuffle_z = (
-        compute_shuffle_zscore(observed, shuffled) if np.isfinite(shuffle_p) else np.nan
+        _shuffle_zscore(observed, shuffled) if np.isfinite(shuffle_p) else np.nan
     )
     return TemplateMatchDatasetResult(
         method=method.name,

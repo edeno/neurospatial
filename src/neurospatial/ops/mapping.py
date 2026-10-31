@@ -368,15 +368,18 @@ def resample_field(
 
         - "nearest": value of the nearest source bin center (fast, preserves
           values), for destination bins inside the source
-        - "diffuse": nearest-neighbor pullback followed by a boundary-aware,
-          valid-bin-normalized diffusion **average** of the pulled-back field.
-          For **intensive** fields only (rate maps / probability densities); it
-          does not conserve mass, so do not use it for spike counts, occupancy,
-          or any extensive/mass quantity.
+        - "diffuse": a boundary-aware, valid-bin-normalized diffusion
+          **average** with ``bandwidth``, split between the source (before
+          reading the field at the destination centers) and the destination
+          (after). For **intensive** fields only (rate maps / probability
+          densities); it does not conserve mass, so do not use it for spike
+          counts, occupancy, or any extensive/mass quantity.
     bandwidth : float, optional
-        Smoothing bandwidth for the diffuse method, in the destination
-        environment's length units (``dst_env.units``). Required when
-        method="diffuse", ignored for method="nearest".
+        Total smoothing bandwidth for the diffuse method, in the
+        environments' length units. Use at least the larger of the two bin
+        spacings, so detail finer than the destination bins is averaged
+        rather than sampled. Required when method="diffuse", ignored for
+        method="nearest".
 
     Returns
     -------
@@ -424,7 +427,8 @@ def resample_field(
     **Use "diffuse" when:**
 
     - You're changing resolution significantly (>2× bin size ratio)
-    - You want to reduce aliasing artifacts
+    - You want to avoid aliasing: a field narrower than the destination
+      bins, read only at their centers, can be missed or doubled
     - You need spatially smooth results
     - Example: Comparing place fields across different grid resolutions
 
@@ -440,9 +444,18 @@ def resample_field(
     ``src_env.interpolate(field, dst_env.bin_centers, mode="nearest")``. No
     interpolation or smoothing is applied.
 
-    **Diffuse method**: Applies nearest-neighbor mapping, then a masked
+    **Diffuse method**: Smooths the field on ``src_env`` with bandwidth
+    ``bandwidth / sqrt(2)``, reads it at the destination centers as the
+    nearest method does, and smooths the result on ``dst_env`` with the same
+    bandwidth. Heat-kernel smoothing composes by adding variances, so the
+    field is smoothed by ``bandwidth`` in all, and resampling onto the same
+    environment is ``env.smooth(field, bandwidth=bandwidth, mode="average")``.
+    Smoothing on the source first removes detail finer than the destination
+    bins before they sample it, so coarsening keeps a narrow field's total
+    rate wherever the field lies; smoothing on the destination after removes
+    the blocks of a finer destination. Each smoothing is a masked
     (valid-bin-normalized) diffusion average — Nadaraya-Watson with the
-    row-stochastic heat operator ``H`` on ``dst_env``: ``smooth(value * valid) /
+    row-stochastic heat operator ``H``: ``smooth(value * valid) /
     smooth(valid)``. Only bins covered by the source contribute weight, so
     covered bins adjacent to an uncovered region are **not** biased toward zero,
     and a ``NaN`` in the source field is interpolated rather than propagating.
@@ -551,24 +564,84 @@ def resample_field(
             f"destination has {dst_centers.shape[1]}D."
         )
 
-    # Each destination bin reads the nearest source bin center's value, NaN
-    # where its center lies in no source bin by the source's own containment
-    # rule; a distance-to-nearest-center threshold would let bins well outside
-    # the source copy its edge values. The source caches its KD-tree, so
-    # repeated resampling does not rebuild it.
-    resampled = src_env.interpolate(field, dst_centers, mode="nearest")
     if method == "nearest":
-        return resampled
+        return _nearest_source_values(field, src_env, dst_centers)
     assert bandwidth is not None  # Already validated above
-    # The pulled-back field is intensive, so it is averaged over its valid
-    # bins exactly as env.smooth(mode="average") averages a rate map with
-    # missing bins: a NaN bin gets no weight and is filled from valid
-    # neighbours, and a bin whose smoothed support is truncation noise stays
-    # NaN rather than reporting noise / noise. The destination caches its
-    # eigenbasis, so repeated resampling onto it does not rebuild it.
-    smoothed = np.array(
-        dst_env.diffuse(resampled, bandwidth=bandwidth, mode="average"),
-        dtype=np.float64,
+    return _diffuse_resample(field, src_env, dst_env, float(bandwidth))
+
+
+def _diffuse_resample(
+    field: NDArray[np.float64],
+    src_env: ResampleSourceConsumer,
+    dst_env: ResampleTargetConsumer,
+    bandwidth: float,
+) -> NDArray[np.float64]:
+    """Masked diffusion average carried from the source to the destination.
+
+    The field's observed values (NaN bins zeroed) and the observed-bin weights
+    are smoothed together on the source by ``bandwidth / sqrt(2)``, read at
+    the destination centers (no weight outside the source), smoothed together
+    on the destination by the same bandwidth, and divided once. That is the
+    masked (Nadaraya-Watson) average with the composed kernel: smoothing by
+    ``b / sqrt(2)`` twice is smoothing by ``b``, so onto the same environment
+    it is ``env.smooth(field, bandwidth=bandwidth, mode="average")``.
+    Dividing after each smoothing instead would treat the bins the first
+    average filled as observed and reach farther than ``bandwidth``.
+    """
+    from neurospatial.ops.diffusion import (
+        _MISSING_SUPPORT_FLOOR,
+        _above_component_floor,
+        _component_support_mask,
     )
-    smoothed[src_env.bin_at(dst_centers) < 0] = np.nan
-    return smoothed
+
+    if np.isinf(field).any():
+        # NaN is a missing bin; an infinite value has no average to give.
+        raise ValueError(
+            "Field contains infinite values. "
+            f"Found {int(np.sum(np.isinf(field)))} infinite values out of "
+            f"{len(field)} bins. Replace them with finite values, or with NaN "
+            "for bins without a value."
+        )
+    half = bandwidth / np.sqrt(2.0)
+    observed = ~np.isnan(field)
+    stacked = np.column_stack([np.where(observed, field, 0.0), observed.astype(float)])
+    # NaN-free columns: each smoothing is the plain linear apply.
+    on_source = np.asarray(
+        src_env.diffuse(stacked, bandwidth=half, mode="average"), dtype=np.float64
+    )
+    dst_centers = dst_env.bin_centers
+    read = np.column_stack(
+        [
+            np.nan_to_num(_nearest_source_values(column, src_env, dst_centers))
+            for column in on_source.T
+        ]
+    )
+    numerator, weights = np.asarray(
+        dst_env.diffuse(read, bandwidth=half, mode="average"), dtype=np.float64
+    ).T
+    # As env.smooth: NaN where no observed weight reaches the bin's component,
+    # or where the smoothed weight is truncation noise next to the largest.
+    geometry = dst_env.get_diffusion_geometry()
+    labels, n_components = geometry.labels, geometry.n_components
+    support = _component_support_mask(labels, n_components, read[:, 1] > 0)
+    support &= _above_component_floor(
+        labels, n_components, weights, _MISSING_SUPPORT_FLOOR
+    )
+    support &= src_env.bin_at(dst_centers) >= 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(support, numerator / weights, np.nan)
+
+
+def _nearest_source_values(
+    field: NDArray[np.float64],
+    src_env: ResampleSourceConsumer,
+    dst_centers: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """The value of the nearest source bin center at each destination center.
+
+    NaN where the destination center lies in no source bin by the source's
+    own containment rule; a distance-to-nearest-center threshold would let
+    bins well outside the source copy its edge values. The source caches its
+    KD-tree, so repeated resampling does not rebuild it.
+    """
+    return np.asarray(src_env.interpolate(field, dst_centers, mode="nearest"))

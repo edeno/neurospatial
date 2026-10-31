@@ -1210,6 +1210,80 @@ class TestTuningPvalueDispersion:
             windows.append(heading_correlation_time(prepared, centers))
         assert windows[1] == pytest.approx(windows[0], rel=0.02)
 
+    @staticmethod
+    def _full_grid_correlation_time(prepared, bin_centers) -> float:
+        """Reference: the step function on one regular grid over all the time."""
+        from scipy.fft import irfft, next_fast_len, rfft
+
+        times = prepared.times
+        sample_valid = prepared.gates.sample_valid
+        observed = times if sample_valid is None else times[sample_valid]
+        step = float(np.median(np.diff(observed)))
+        valid = prepared.support.mask & (prepared.frame_bins[:-1] >= 0)
+        intervals = np.flatnonzero(valid)
+        start, stop = times[intervals[0]], times[intervals[-1] + 1]
+        midpoints = (
+            start + (np.arange(int(np.ceil((stop - start) / step))) + 0.5) * step
+        )
+        midpoints = midpoints[midpoints < stop]
+        interval = np.searchsorted(times, midpoints, side="right") - 1
+        on = valid[interval]
+        unit = np.stack([np.cos(bin_centers), np.sin(bin_centers)], axis=1)
+        durations = np.diff(times)[intervals]
+        mean = durations @ unit[prepared.frame_bins[intervals]] / durations.sum()
+        centered = (unit[np.where(on, prepared.frame_bins[interval], 0)] - mean) * on[
+            :, None
+        ]
+        n = len(centered)
+        n_fft = next_fast_len(2 * n - 1, real=True)
+        spectrum = rfft(centered, n_fft, axis=0)
+        lagged = irfft((spectrum * spectrum.conj()).real.sum(axis=1), n_fft)[:n]
+        weights = rfft(on.astype(float), n_fft)
+        n_pairs = irfft((weights * weights.conj()).real, n_fft)[:n]
+        correlation = np.where(n_pairs > 0.5, lagged / np.maximum(n_pairs, 1), 0.0)
+        correlation = correlation / correlation[0]
+        nonpositive = np.flatnonzero(correlation[1:] <= 0)
+        end = int(nonpositive[0]) + 1 if nonpositive.size else n
+        return step * (1.0 + 2.0 * float(correlation[1:end].sum()))
+
+    @pytest.mark.parametrize("gap", [5.0, 300.0])
+    def test_correlation_time_across_a_break_matches_one_full_grid(
+        self, wandering_heading_session, gap
+    ) -> None:
+        """Leaving a break out of the grid changes no lag the estimate uses."""
+        from neurospatial.encoding._directional_counts import (
+            prepare_directional_binning,
+        )
+        from neurospatial.encoding._directional_dispersion import (
+            heading_correlation_time,
+        )
+
+        times, headings = wandering_heading_session
+        times = np.where(times < 300.0, times, times + gap)
+        prepared, centers = prepare_directional_binning(times, headings, None)
+        assert heading_correlation_time(prepared, centers) == pytest.approx(
+            self._full_grid_correlation_time(prepared, centers), rel=1e-9
+        )
+
+    def test_correlation_time_does_not_grow_with_the_length_of_a_break(
+        self, wandering_heading_session
+    ) -> None:
+        """Two sessions a decade apart: the grid covers only the recorded time."""
+        from neurospatial.encoding._directional_counts import (
+            prepare_directional_binning,
+        )
+        from neurospatial.encoding._directional_dispersion import (
+            heading_correlation_time,
+        )
+
+        times, headings = wandering_heading_session
+        windows = []
+        for gap in (300.0, 3.2e8):  # five minutes; ten years (~1e10 grid steps)
+            shifted = np.where(times < 300.0, times, times + gap)
+            prepared, centers = prepare_directional_binning(shifted, headings, None)
+            windows.append(heading_correlation_time(prepared, centers))
+        assert windows[1] == pytest.approx(windows[0], rel=1e-9)
+
     def test_missing_headings_match_deleted_rows(
         self, wandering_heading_session
     ) -> None:

@@ -836,7 +836,7 @@ def combine_binnings(
     # Records are immutable, so the components are shared; a native face
     # recipe is built once here, as every combined face and diffusion reads it.
     children = tuple(
-        replace(child, faces=KnownFaces(child.build_faces()))
+        replace(child, faces=KnownFaces(child.shared_faces()))
         if isinstance(child.faces, NativeFaces)
         else child
         for child in binnings

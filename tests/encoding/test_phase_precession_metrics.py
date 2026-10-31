@@ -1129,8 +1129,9 @@ class TestPlotPhasePrecession:
             y_data_1 = lines[1].get_ydata()
 
             # One should be in 0-2pi range, other in 2pi-4pi range
-            mean_y_0 = np.mean(y_data_0)
-            mean_y_1 = np.mean(y_data_1)
+            # NaN breaks the line where it wraps.
+            mean_y_0 = np.nanmean(y_data_0)
+            mean_y_1 = np.nanmean(y_data_1)
             y_diff = abs(mean_y_1 - mean_y_0)
 
             assert np.isclose(y_diff, 2 * np.pi, atol=0.5), (
@@ -1157,8 +1158,11 @@ class TestPlotPhasePrecession:
 
         try:
             line_x, line_y = ax.get_lines()[0].get_data()
-            expected = (1.0 - 0.15 * (np.asarray(line_x) - 20)) % (2 * np.pi)
-            error = np.angle(np.exp(1j * (np.asarray(line_y) - expected)))
+            drawn = np.isfinite(np.asarray(line_x, dtype=float))  # not a wrap break
+            line_x = np.asarray(line_x, dtype=float)[drawn]
+            line_y = np.asarray(line_y, dtype=float)[drawn]
+            expected = (1.0 - 0.15 * (line_x - 20)) % (2 * np.pi)
+            error = np.angle(np.exp(1j * (line_y - expected)))
             assert np.max(np.abs(error)) < 1e-3
         finally:
             plt.close("all")
@@ -1379,3 +1383,78 @@ class TestHasPhasePrecessionValidation:
         d = precessing_spikes
         result = has_phase_precession(d["positions"], d["phases"], rng=0)
         assert isinstance(result, bool)
+
+
+def _precessing_spikes():
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0, 40, 400)
+    phases = (3 * np.pi - 2 * np.pi * positions / 40 + rng.normal(0, 0.3, 400)) % (
+        2 * np.pi
+    )
+    return positions, phases
+
+
+def _fit_lines(ax):
+    return [line for line in ax.lines if line.get_label() != "_doubled_note"]
+
+
+def test_plotted_fit_line_breaks_where_it_wraps_instead_of_crossing_the_plot():
+    import matplotlib.pyplot as plt
+
+    from neurospatial.encoding.phase_precession import (
+        compute_phase_precession,
+        plot_phase_precession,
+    )
+
+    positions, phases = _precessing_spikes()
+    result = compute_phase_precession(positions, phases, n_shuffles=0)
+    ax = plot_phase_precession(positions, phases, result)
+    lines = _fit_lines(ax)
+    assert len(lines) == 2
+    for line in lines:
+        y = np.asarray(line.get_ydata(), dtype=float)
+        steps = np.abs(np.diff(y))
+        # Consecutive drawn points follow the fitted slope, never the wrap.
+        assert np.nanmax(steps) < 0.5
+        assert np.isfinite(y).sum() > 50
+    plt.close("all")
+
+
+def test_a_missing_position_does_not_remove_the_fit_line():
+    import matplotlib.pyplot as plt
+
+    from neurospatial.encoding.phase_precession import (
+        compute_phase_precession,
+        plot_phase_precession,
+    )
+
+    positions, phases = _precessing_spikes()
+    result = compute_phase_precession(positions, phases, n_shuffles=0)
+    ax = plot_phase_precession(np.r_[positions, np.nan], np.r_[phases, 0.1], result)
+    for line in _fit_lines(ax):
+        assert np.isfinite(np.asarray(line.get_xdata(), dtype=float)).any()
+    plt.close("all")
+
+
+def test_plot_takes_phases_in_degrees_like_the_fit():
+    import matplotlib.pyplot as plt
+
+    from neurospatial.encoding.phase_precession import (
+        compute_phase_precession,
+        plot_phase_precession,
+    )
+
+    positions, phases = _precessing_spikes()
+    result = compute_phase_precession(
+        positions, np.degrees(phases), angle_unit="deg", n_shuffles=0
+    )
+    in_radians = plot_phase_precession(positions, phases, result)
+    in_degrees = plot_phase_precession(
+        positions, np.degrees(phases), result, angle_unit="deg"
+    )
+    np.testing.assert_allclose(
+        in_degrees.collections[0].get_offsets(),
+        in_radians.collections[0].get_offsets(),
+        atol=1e-9,
+    )
+    plt.close("all")
