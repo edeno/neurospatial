@@ -134,7 +134,7 @@ class TestSpatialRatesRoundTrip:
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
-        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        table = empty_nwb.analysis["spatial_rates"]
         meta = json.loads(table.description)
         meta.pop(key)
         table.fields["description"] = json.dumps(meta)
@@ -154,7 +154,7 @@ class TestSpatialRatesRoundTrip:
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
-        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        table = empty_nwb.analysis["spatial_rates"]
         meta = json.loads(table.description)
         meta["n_units"] = 4
         table.fields["description"] = json.dumps(meta)
@@ -174,7 +174,7 @@ class TestSpatialRatesRoundTrip:
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
-        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        table = empty_nwb.analysis["spatial_rates"]
         meta = json.loads(table.description)
         meta[key] = value
         table.fields["description"] = json.dumps(meta)
@@ -312,7 +312,7 @@ class TestSpatialRatesRoundTrip:
 
         write_spatial_rates(empty_nwb, result)
         # Drop the persisted environment so neither source is available.
-        del empty_nwb.scratch["spatial_rates_environment"]
+        del empty_nwb.analysis["spatial_rates_environment"]
 
         with pytest.raises(ValueError, match="no attached environment"):
             read_spatial_rates(empty_nwb)  # env=None
@@ -388,7 +388,7 @@ class TestSpatialRatesRoundTrip:
 
         env = sample_environment
         write_spatial_rates(empty_nwb, _make_rates_result(env))
-        del empty_nwb.scratch["spatial_rates_environment"]
+        del empty_nwb.analysis["spatial_rates_environment"]
 
         with pytest.raises(ValueError, match="cannot verify"):
             read_spatial_rates(empty_nwb, env=env)
@@ -423,20 +423,21 @@ class TestSpatialRatesRoundTrip:
         self, empty_nwb, sample_environment, monkeypatch
     ):
         """A failed replacement leaves the original record readable."""
-        from neurospatial.io.nwb import (
-            _environment,
-            read_spatial_rates,
-            write_spatial_rates,
-        )
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         original = _make_rates_result(env, seed=0)
         write_spatial_rates(empty_nwb, original)
+        add_analysis = empty_nwb.add_analysis
+        original_occupancy = empty_nwb.analysis["spatial_rates_occupancy"]
 
-        def fail(*args, **kwargs):
-            raise RuntimeError("disk full")
+        def fail(obj):
+            # Adding the new occupancy fails; restoring the original succeeds.
+            if obj.name == "spatial_rates_occupancy" and obj is not original_occupancy:
+                raise RuntimeError("disk full")
+            add_analysis(obj)
 
-        monkeypatch.setattr(_environment, "write_environment", fail)
+        monkeypatch.setattr(empty_nwb, "add_analysis", fail)
         with pytest.raises(ValueError) as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
@@ -453,28 +454,35 @@ class TestSpatialRatesRoundTrip:
         self, empty_nwb, sample_environment, monkeypatch
     ):
         """When an original cannot be put back, the error names it."""
-        from neurospatial.io.nwb import _environment, write_spatial_rates
+        from neurospatial.io.nwb import write_spatial_rates
 
         env = sample_environment
         write_spatial_rates(empty_nwb, _make_rates_result(env, seed=0))
+        add_analysis = empty_nwb.add_analysis
+        failed = []
 
-        def fail(*args, **kwargs):
-            raise RuntimeError("disk full")
+        def fail_then_refuse_restore(obj):
+            # The occupancy add fails; every later add (the restores) fails too.
+            if failed or obj.name == "spatial_rates_occupancy":
+                failed.append(obj.name)
+                raise RuntimeError("disk full")
+            add_analysis(obj)
 
-        def refuse_restore(obj):
-            raise RuntimeError("cannot re-add")
-
-        monkeypatch.setattr(_environment, "write_environment", fail)
-        monkeypatch.setattr(empty_nwb, "add_scratch", refuse_restore)
+        monkeypatch.setattr(empty_nwb, "add_analysis", fail_then_refuse_restore)
         with pytest.raises(ValueError) as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
             )
         message = str(caught.value)
         assert "restored" not in message.replace("could not be restored", "")
-        assert "could not be restored: ['spatial_rates_environment']" in message
+        assert (
+            "could not be restored: ['spatial_rates_occupancy', 'spatial_rates']"
+            in message
+        )
         assert "Do not write this NWBFile" in message
-        assert "spatial_rates_environment" not in empty_nwb.scratch
+        assert "spatial_rates" not in empty_nwb.analysis
+        # The shared environment was reused, never removed.
+        assert "spatial_rates_environment" in empty_nwb.analysis
 
     def test_orphaned_occupancy_blocks_write_without_overwrite(
         self, empty_nwb, sample_environment
@@ -483,17 +491,13 @@ class TestSpatialRatesRoundTrip:
         from pynwb import TimeSeries
 
         from neurospatial.io.nwb import write_spatial_rates
-        from neurospatial.io.nwb._core import _get_or_create_processing_module
 
         env = sample_environment
         result = _make_rates_result(env)
 
         # Simulate a half-written state: an orphan occupancy companion with the
         # table itself absent.
-        analysis = _get_or_create_processing_module(
-            empty_nwb, "analysis", "Analysis results"
-        )
-        analysis.add(
+        empty_nwb.add_analysis(
             TimeSeries(
                 name="spatial_rates_occupancy",
                 data=np.zeros((1, env.n_bins)),
@@ -506,7 +510,7 @@ class TestSpatialRatesRoundTrip:
             write_spatial_rates(empty_nwb, result)  # overwrite=False
 
         # The write aborted BEFORE any mutation: no new table was created.
-        assert "spatial_rates" not in analysis.data_interfaces
+        assert "spatial_rates" not in empty_nwb.analysis
 
     def test_orphaned_occupancy_overwrite_replaces_cleanly(
         self, empty_nwb, sample_environment
@@ -515,16 +519,12 @@ class TestSpatialRatesRoundTrip:
         from pynwb import TimeSeries
 
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
-        from neurospatial.io.nwb._core import _get_or_create_processing_module
 
         env = sample_environment
         result = _make_rates_result(env)
 
-        analysis = _get_or_create_processing_module(
-            empty_nwb, "analysis", "Analysis results"
-        )
         # Stale orphan with a WRONG length (would corrupt a name-only pairing).
-        analysis.add(
+        empty_nwb.add_analysis(
             TimeSeries(
                 name="spatial_rates_occupancy",
                 data=np.zeros((1, env.n_bins + 5)),
@@ -555,7 +555,7 @@ class TestSpatialRatesRoundTrip:
 
         # A file-wide bin_centers dataset would describe only the first
         # environment and silently mislabel the second record's bins.
-        assert "bin_centers" not in empty_nwb.processing["analysis"].data_interfaces
+        assert "bin_centers" not in empty_nwb.analysis
         back_a = read_spatial_rates(empty_nwb, name="session_a")
         back_b = read_spatial_rates(empty_nwb, name="session_b")
         np.testing.assert_array_equal(back_a.env.bin_centers, env_a.bin_centers)
@@ -563,9 +563,8 @@ class TestSpatialRatesRoundTrip:
         assert back_b.env.units == "m"
 
     def _replace_occupancy(self, nwbfile, record):
-        analysis = nwbfile.processing["analysis"]
-        del analysis.data_interfaces["spatial_rates_occupancy"]
-        analysis.add(record)
+        del nwbfile.analysis["spatial_rates_occupancy"]
+        nwbfile.add_analysis(record)
 
     def test_wrong_length_occupancy_raises_at_read(self, empty_nwb, sample_environment):
         """A companion occupancy of wrong length raises at READ time."""
@@ -638,10 +637,8 @@ class TestSpatialRatesRoundTrip:
 
         with NWBHDF5IO(str(path), "r") as io:
             nwbfile = io.read()
-            analysis = nwbfile.processing["analysis"]
-            assert not any(
-                isinstance(obj, TimeSeries) for obj in analysis.data_interfaces.values()
-            )
+            analysis = nwbfile.analysis
+            assert not any(isinstance(obj, TimeSeries) for obj in analysis.values())
             occupancy = analysis["spatial_rates_occupancy"].to_dataframe()
             assert list(occupancy.columns) == ["occupancy"]
             np.testing.assert_array_equal(occupancy["occupancy"], result.occupancy)
@@ -659,12 +656,8 @@ class TestSpatialRatesRoundTrip:
         from hdmf.common import DynamicTable, VectorData
 
         from neurospatial.io.nwb import read_spatial_rates
-        from neurospatial.io.nwb._core import _get_or_create_processing_module
 
-        analysis = _get_or_create_processing_module(
-            empty_nwb, "analysis", "Analysis results"
-        )
-        analysis.add(
+        empty_nwb.add_analysis(
             DynamicTable(
                 name="not_rates",
                 description="just a plain description, not JSON metadata",

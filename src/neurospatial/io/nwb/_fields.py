@@ -2,8 +2,8 @@
 Spatial firing-rate maps in NWB files.
 
 ``write_spatial_rates`` stores a population ``SpatialRatesResult`` -- rate
-maps, occupancy and the environment they were estimated on -- and
-``read_spatial_rates`` restores it.
+maps, occupancy and the environment they were estimated on -- in the NWB
+file's top-level ``/analysis`` group, and ``read_spatial_rates`` restores it.
 
 Schema
 ------
@@ -23,13 +23,13 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial.io.nwb._core import (
-    _get_or_create_processing_module,
     _refuse_in_place_replacement,
     _require_pynwb,
     logger,
 )
 
 if TYPE_CHECKING:
+    from hdmf.common import DynamicTable
     from pynwb import NWBFile
 
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -44,7 +44,7 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
 # Schema version of the spatial-rates metadata blob; the reader accepts only
 # this version.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.6"
+SPATIAL_RATES_SCHEMA_VERSION: str = "3.0"
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
@@ -61,8 +61,9 @@ COL_PENALTY_SELECTED: str = "penalty_selected_by_reml"
 # Column of the occupancy companion table (one row per bin).
 COL_OCCUPANCY: str = "occupancy"
 
-# Default processing module for analysis results
-DEFAULT_ANALYSIS_MODULE: str = "analysis"
+# Processing module where records before schema 3.0 were written; read only to
+# refuse them.
+_EARLIER_MODULE: str = "analysis"
 
 
 # =============================================================================
@@ -75,6 +76,7 @@ def write_spatial_rates(
     result: SpatialRatesResult,
     *,
     name: str = DEFAULT_SPATIAL_RATES_NAME,
+    environment_name: str | None = None,
     overwrite: bool = False,
 ) -> None:
     """
@@ -84,14 +86,15 @@ def write_spatial_rates(
     unit identities, and optional per-unit metadata -- so that
     :func:`read_spatial_rates` reconstructs an equal ``SpatialRatesResult``.
 
-    The container is a :class:`~hdmf.common.DynamicTable` (one row per unit) in
-    the processing module ``nwbfile.processing["analysis"]`` (not NWB's
-    top-level ``/analysis`` group), with a ``unit_id`` column, a 2-D
-    ``firing_rate`` column of shape ``(n_units, n_bins)`` on the bin axis, and
-    one column per ``unit_table`` field. The table description is a JSON blob
-    holding ``schema_version``, ``method``, ``bandwidth``, ``n_bins``,
-    ``n_units``, the ``unit_table`` column names (``unit_table_columns``),
-    ``occupancy_name``, ``unit_ids_generated``, ``min_occupancy`` (seconds),
+    Everything is written to the file's top-level ``/analysis`` group, which
+    NWB provides for shareable analysis results. The rates are a
+    :class:`~hdmf.common.DynamicTable` (one row per unit) with a ``unit_id``
+    column, a 2-D ``firing_rate`` column of shape ``(n_units, n_bins)`` on the
+    bin axis, and one column per ``unit_table`` field. The table description
+    is a JSON blob holding ``schema_version``, ``method``, ``bandwidth``,
+    ``n_bins``, ``n_units``, the ``unit_table`` column names
+    (``unit_table_columns``), ``occupancy_name``, ``environment_name``,
+    ``unit_ids_generated``, ``min_occupancy`` (seconds),
     ``n_spikes_outside_intervals``, ``analysis_settings``, ``spike_window``
     and, for ``method="glm"``, a ``gam`` block (below). Occupancy is stored once
     (it is shared across units) as a companion ``DynamicTable`` named
@@ -107,20 +110,19 @@ def write_spatial_rates(
     Ratio-method results carry none of these; they read back with the GAM fields
     ``None``. ``bandwidth`` is stored nullable (``None`` for glm).
 
-    The full :class:`~neurospatial.Environment` is **persisted** alongside the
-    rates (via :func:`~neurospatial.io.nwb.write_environment` under the derived
-    name ``f"{name}_environment"``), so it round-trips with its connectivity
-    edges and geometry intact. :func:`read_spatial_rates` restores that
-    environment when called without ``env=``; the persisted env is a separate
-    copy from any default-named environment, so multiple results and a standalone
-    ``write_environment`` never collide.
+    The full :class:`~neurospatial.Environment` the rates were estimated on is
+    stored once, as a :func:`~neurospatial.io.nwb.write_environment` record
+    named ``environment_name``; the rates record that name and
+    :func:`read_spatial_rates` follows it. Rates estimated on the same
+    environment can share one record: when a record of that name already
+    stores exactly this environment (same bins, arena, regions, landmarks,
+    units, frame and name), it is reused rather than written again.
 
-    The write is **atomic**: all name collisions (the table, ``f"{name}_occupancy"``
-    and ``f"{name}_environment"``) and all validation are resolved *before*
-    the first object is added, so a duplicate without ``overwrite`` raises before
-    any mutation and ``overwrite=True`` cleans every companion. If a later add
-    still fails, the already-added objects are removed, any replaced record is
-    restored, and a ``ValueError`` says whether that cleanup succeeded.
+    The write is **atomic**: all name collisions and all validation are
+    resolved *before* the first object is added, so a duplicate without
+    ``overwrite`` raises before any mutation. If a later add still fails, the
+    already-added objects are removed, any replaced record is restored, and a
+    ``ValueError`` says whether that cleanup succeeded.
 
     Parameters
     ----------
@@ -132,27 +134,38 @@ def write_spatial_rates(
         ``unit_ids`` (including whether generated), ``spike_window``,
         ``unit_table``, ``method`` and ``bandwidth`` are all preserved.
     name : str, default "spatial_rates"
-        Name for the spatial-rates DynamicTable in
-        ``nwbfile.processing["analysis"]``.
+        Name for the spatial-rates DynamicTable in ``nwbfile.analysis``.
+    environment_name : str, optional
+        Name of the environment record in ``nwbfile.analysis``. Default
+        ``f"{name}_environment"``. Pass the same name for rates estimated on
+        one environment to store it once; pass the name of a record saved
+        with :func:`~neurospatial.io.nwb.write_environment` to link to it.
     overwrite : bool, default False
-        If True, replace an existing container and *all* its companions (the
-        ``f"{name}_occupancy"`` table and the ``f"{name}_environment"``
-        environment). If False, raise ``ValueError`` when any of those names is
-        already present. Replacing works on an in-memory ``NWBFile`` or one read
-        with mode ``"r"`` and then exported to a new path with
+        If True, replace an existing table ``name`` and its
+        ``f"{name}_occupancy"`` companion. If False, raise ``ValueError`` when
+        either name is already present. An environment record is never
+        replaced while other spatial rates use it; with ``overwrite=True`` a
+        record used only by the rates being replaced is replaced too.
+        Replacing works on an in-memory ``NWBFile`` or one read with mode
+        ``"r"`` and then exported to a new path with
         ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``; pynwb
-        cannot delete objects already written to a file opened with ``"r+"`` or
-        ``"a"``.
+        cannot delete objects already written to a file opened with ``"r+"``
+        or ``"a"``.
 
     Raises
     ------
     ValueError
-        If a container named ``name`` (or one of its companions) exists and
-        ``overwrite=False``; if a ``unit_table`` column is named ``unit_id`` or
-        ``firing_rate`` (reserved -- plus ``deviance`` / ``coefficients`` for a
-        glm result, whose GAM columns share the table); or if a companion add
-        fails after a partial write (the message says what could not be cleaned
-        up).
+        If a table ``name`` (or its occupancy companion) exists and
+        ``overwrite=False``; if ``environment_name`` names a record that
+        stores a different environment (and is not replaceable as described
+        under ``overwrite``) or an ``/analysis`` object that is not an
+        environment record; if ``name``, its occupancy companion and
+        ``environment_name`` are not three distinct names, or ``name`` or the
+        companion is an environment record; if a ``unit_table`` column is
+        named ``unit_id`` or ``firing_rate`` (reserved -- plus ``deviance`` /
+        ``coefficients`` for a glm result, whose GAM columns share the table);
+        or if a companion add fails after a partial write (the message says
+        what could not be cleaned up).
     NotImplementedError
         If ``overwrite=True`` would replace a record in a file opened with
         ``"r+"`` or ``"a"``.
@@ -161,12 +174,10 @@ def write_spatial_rates(
 
     Notes
     -----
-    This function mutates only ``nwbfile`` (adds the DynamicTable and the
-    companion occupancy table to the processing module ``analysis``, and the
-    persisted environment to ``scratch``). The ``result`` object and its arrays
-    are never modified -- ``firing_rates`` and ``occupancy`` are copied before
-    being handed to the NWB containers, so the written data never aliases the
-    result's memory.
+    This function mutates only ``nwbfile``. The ``result`` object and its
+    arrays are never modified -- ``firing_rates`` and ``occupancy`` are copied
+    before being handed to the NWB containers, so the written data never
+    aliases the result's memory.
 
     Examples
     --------
@@ -177,13 +188,13 @@ def write_spatial_rates(
     ... )  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
+    ...     write_spatial_rates(
+    ...         nwbfile, rates, name="ca1_place_fields", environment_name="open_field"
+    ...     )
     ...     io.write(nwbfile)
     """
     _require_pynwb()
     from hdmf.common import DynamicTable, VectorData
-
-    from neurospatial.io.nwb._environment import write_environment
 
     is_glm = result.method == "glm"
     # The per-unit-lambda columns exist only for a pooled=False per-unit result
@@ -203,7 +214,7 @@ def write_spatial_rates(
     n_units = int(unit_ids.shape[0])
 
     occupancy_name = f"{name}_occupancy"
-    env_name = f"{name}_environment"
+    env_name = f"{name}_environment" if environment_name is None else environment_name
 
     # --- Preflight (BEFORE any mutation): reserved-name validation ----------
     # Shapes need no check here: SpatialRatesResult refuses firing_rates or
@@ -239,33 +250,15 @@ def write_spatial_rates(
                 f"table's own columns. Rename these unit_table columns."
             )
 
-    analysis = _get_or_create_processing_module(
-        nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
-    )
-
     # Resolve every name collision -- the table, its companion occupancy and
-    # the persisted environment -- before the first add, so a duplicate without
+    # the environment record -- before the first add, so a duplicate without
     # overwrite raises before any mutation. For overwrite=True the existing
     # objects are captured here but deleted only in the try-block below, after
     # the replacements are built, so a failed write can restore them.
-    existing = [n for n in (name, occupancy_name) if n in analysis.data_interfaces]
-    if env_name in nwbfile.scratch:
-        existing.append(env_name)
-    old_objects: list[tuple[str, str, object]] = []
-    if existing:
-        if not overwrite:
-            raise ValueError(
-                f"Spatial rates '{name}' already exists (found: {existing}). "
-                f"Use overwrite=True to replace it and its companions."
-            )
-        _refuse_in_place_replacement(nwbfile, f"spatial rates '{name}'")
-        for obj_name in (name, occupancy_name):
-            if obj_name in analysis.data_interfaces:
-                old_objects.append(
-                    ("analysis", obj_name, analysis.data_interfaces[obj_name])
-                )
-        if env_name in nwbfile.scratch:
-            old_objects.append(("scratch", env_name, nwbfile.scratch[env_name]))
+    old_objects, env_record = _plan_spatial_rates_write(
+        nwbfile, env, name, occupancy_name, env_name, overwrite=overwrite
+    )
+    if old_objects:
         logger.info("Overwriting existing spatial rates '%s' and its companions", name)
 
     # Optional per-unit metadata columns.
@@ -292,6 +285,7 @@ def write_spatial_rates(
         "n_units": n_units,
         "unit_table_columns": unit_table_columns,
         "occupancy_name": occupancy_name,
+        "environment_name": env_name,
         "unit_ids_generated": bool(result._unit_ids_generated),
         "min_occupancy": float(result.min_occupancy),
         "n_spikes_outside_intervals": (
@@ -439,41 +433,32 @@ def write_spatial_rates(
     )
 
     # Remove any originals (overwrite=True), then add the table, its companion
-    # occupancy and the full environment (with connectivity and geometry). If
+    # occupancy and, unless an identical record is reused, the environment. If
     # any step fails, the newly added objects are rolled back and the originals
     # restored.
-    added: list[tuple[str, str]] = []
-    removed: list[tuple[str, str, object]] = []
+    new_objects = [table, occupancy_table]
+    if env_record is not None:
+        new_objects.append(env_record)
+    added: list[str] = []
+    removed: list[tuple[str, object]] = []
     try:
-        for namespace, obj_name, _obj in old_objects:
-            if namespace == "analysis":
-                del analysis.data_interfaces[obj_name]
-            else:
-                del nwbfile.scratch[obj_name]
-            removed.append((namespace, obj_name, _obj))
-        analysis.add(table)
-        added.append(("analysis", name))
-        analysis.add(occupancy_table)
-        added.append(("analysis", occupancy_name))
-        write_environment(nwbfile, env, name=env_name)
-        added.append(("scratch", env_name))
+        for obj_name, obj in old_objects:
+            del nwbfile.analysis[obj_name]
+            removed.append((obj_name, obj))
+        for obj in new_objects:
+            nwbfile.add_analysis(obj)
+            added.append(obj.name)
     except Exception as exc:
         not_removed = []
-        for namespace, obj_name in reversed(added):
+        for obj_name in reversed(added):
             try:
-                if namespace == "analysis":
-                    del analysis.data_interfaces[obj_name]
-                else:
-                    del nwbfile.scratch[obj_name]
+                del nwbfile.analysis[obj_name]
             except Exception:
                 not_removed.append(obj_name)
         not_restored = []
-        for namespace, obj_name, obj in reversed(removed):
+        for obj_name, obj in reversed(removed):
             try:
-                if namespace == "analysis":
-                    analysis.add(obj)
-                else:
-                    nwbfile.add_scratch(obj)
+                nwbfile.add_analysis(obj)
             except Exception:
                 not_restored.append(obj_name)
         raise ValueError(
@@ -488,10 +473,108 @@ def write_spatial_rates(
     )
 
 
+def _plan_spatial_rates_write(
+    nwbfile: NWBFile,
+    env: Environment,
+    name: str,
+    occupancy_name: str,
+    env_name: str,
+    *,
+    overwrite: bool,
+) -> tuple[list[tuple[str, object]], DynamicTable | None]:
+    """Check every name a spatial-rates write uses, before any mutation.
+
+    Returns
+    -------
+    old_objects : list of (str, object)
+        ``/analysis`` objects to replace, by name.
+    env_record : DynamicTable or None
+        The environment record to add; None when an identical record named
+        ``env_name`` is reused.
+    """
+    from neurospatial.io.nwb._environment import (
+        _environment_record,
+        _is_environment_record,
+        _stored_environment_matches,
+    )
+
+    analysis = nwbfile.analysis
+    if len({name, occupancy_name, env_name}) != 3:
+        raise ValueError(
+            f"write_spatial_rates: name={name!r}, its occupancy companion "
+            f"{occupancy_name!r} and environment_name={env_name!r} must be three "
+            "different /analysis names. Choose another environment_name."
+        )
+    for own in (name, occupancy_name):
+        if own in analysis and _is_environment_record(analysis[own]):
+            raise ValueError(
+                f"write_spatial_rates: /analysis/{own} is an environment record, "
+                "which other spatial rates may use. Choose another name= for the "
+                "rates."
+            )
+    existing = [n for n in (name, occupancy_name) if n in analysis]
+    if existing and not overwrite:
+        raise ValueError(
+            f"Spatial rates '{name}' already exists (found: {existing}). "
+            f"Use overwrite=True to replace it and its companions."
+        )
+    old_objects = [(n, analysis[n]) for n in existing]
+
+    if env_name not in analysis:
+        env_record = _environment_record(env, env_name)
+    elif not _is_environment_record(analysis[env_name]):
+        raise ValueError(
+            _format_error(
+                f"write_spatial_rates: /analysis/{env_name} is a "
+                f"{type(analysis[env_name]).__name__}, not an environment record.",
+                why="Why: the rates' environment would replace another analysis "
+                "result of that name.",
+                fix="pass environment_name= another name",
+            )
+        )
+    elif _stored_environment_matches(nwbfile, env_name, env):
+        env_record = None
+    else:
+        users = _spatial_rates_using(nwbfile, env_name)
+        if not (overwrite and users == [name]):
+            raise ValueError(
+                _format_error(
+                    f"write_spatial_rates: /analysis/{env_name} stores a different "
+                    "environment from the one these rates were estimated on"
+                    + (f" (used by spatial rates {users})." if users else "."),
+                    why="Why: rates are read with the environment record they "
+                    "name, so replacing it would relabel the bins of the rates "
+                    "that use it.",
+                    fix="pass environment_name= a new name to store this "
+                    "environment separately",
+                )
+            )
+        env_record = _environment_record(env, env_name)
+        old_objects.append((env_name, analysis[env_name]))
+    if old_objects:
+        _refuse_in_place_replacement(nwbfile, f"spatial rates '{name}'")
+    return old_objects, env_record
+
+
+def _spatial_rates_using(nwbfile: NWBFile, env_name: str) -> list[str]:
+    """Names of the spatial-rates tables in ``/analysis`` that use ``env_name``."""
+    users = []
+    for table_name, table in nwbfile.analysis.items():
+        if COL_FIRING_RATE not in getattr(table, "colnames", ()):
+            continue
+        try:
+            meta = json.loads(table.description)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(meta, dict) and meta.get("environment_name") == env_name:
+            users.append(table_name)
+    return sorted(users)
+
+
 def _abort_message(
     name: str,
     exc: Exception,
-    removed: list[tuple[str, str, object]],
+    removed: list[tuple[str, object]],
     not_removed: list[str],
     not_restored: list[str],
 ) -> str:
@@ -522,7 +605,7 @@ def _verify_saved_environment(
     from neurospatial.environment import _environment_differences
     from neurospatial.io.nwb._environment import read_environment
 
-    if env_name not in nwbfile.scratch:
+    if env_name not in nwbfile.analysis:
         raise ValueError(
             _format_error(
                 f"read_spatial_rates: cannot verify env= against spatial rates "
@@ -569,12 +652,11 @@ def read_spatial_rates(
     nwbfile : NWBFile
         The NWB file to read from.
     name : str, default "spatial_rates"
-        Name of the spatial-rates DynamicTable in
-        ``nwbfile.processing["analysis"]``.
+        Name of the spatial-rates DynamicTable in ``nwbfile.analysis``.
     env : Environment, optional
         Environment to attach to the result. When omitted, the result gets the
-        environment :func:`write_spatial_rates` persisted under
-        ``f"{name}_environment"``, which round-trips with its connectivity
+        environment record the rates name (``environment_name`` in their
+        metadata, as :func:`write_spatial_rates` stored it), which round-trips with its connectivity
         edges and geometry **intact**, so graph operations (``neighbors``,
         ``path_between``, ...) work on the restored env. When given, ``env=``
         is first checked against the stored ``firing_rates`` bin count and then
@@ -594,12 +676,14 @@ def read_spatial_rates(
     Raises
     ------
     KeyError
-        If the processing module ``analysis``, the named table, or its companion
-        occupancy is missing from ``nwbfile``.
+        If the named table or its companion occupancy is missing from
+        ``nwbfile.analysis``.
     ValueError
         If ``name`` points at a table not written by ``write_spatial_rates``; if
         the record was written with a schema version other than
-        ``SPATIAL_RATES_SCHEMA_VERSION`` (recompute and rewrite the rates); if
+        ``SPATIAL_RATES_SCHEMA_VERSION``, including rates an earlier version
+        wrote to the processing module ``analysis`` (recompute and rewrite the
+        rates); if
         a metadata key the writer always stores is missing or the recorded unit
         count does not match the table; if the companion occupancy length does not match the table's recorded
         ``n_bins``; if no persisted environment is in the file (whether or not
@@ -623,17 +707,25 @@ def read_spatial_rates(
     _require_pynwb()
     from neurospatial.encoding.spatial import SpatialRatesResult
 
-    if DEFAULT_ANALYSIS_MODULE not in nwbfile.processing:
+    analysis = nwbfile.analysis
+    if name not in analysis:
+        earlier = nwbfile.processing.get(_EARLIER_MODULE)
+        if earlier is not None and name in earlier.data_interfaces:
+            raise ValueError(
+                _format_error(
+                    f"Spatial rates '{name}' are in the processing module "
+                    f"'{_EARLIER_MODULE}', where neurospatial before spatial-rates "
+                    f"schema {SPATIAL_RATES_SCHEMA_VERSION} wrote them; this "
+                    "version reads only rates in /analysis.",
+                    why="Why: earlier records store a different layout and are "
+                    "not converted.",
+                    fix=_RECREATE_FIX,
+                )
+            )
+        available = _spatial_rates_names(nwbfile)
         raise KeyError(
-            f"No '{DEFAULT_ANALYSIS_MODULE}' processing module in NWB file; "
-            f"cannot read spatial rates '{name}'."
-        )
-    analysis = nwbfile.processing[DEFAULT_ANALYSIS_MODULE]
-    if name not in analysis.data_interfaces:
-        available = list(analysis.data_interfaces.keys())
-        raise KeyError(
-            f"Spatial rates '{name}' not found in processing module "
-            f"'{DEFAULT_ANALYSIS_MODULE}'. Available: {available}"
+            f"Spatial rates '{name}' not found in /analysis. Saved spatial "
+            f"rates: {available}"
         )
 
     table = analysis[name]
@@ -695,10 +787,10 @@ def read_spatial_rates(
             {col: np.asarray(table[col][:]) for col in unit_table_columns}
         )
 
-    if occupancy_name not in analysis.data_interfaces:
+    if occupancy_name not in analysis:
         raise KeyError(
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
-            f"in processing module '{DEFAULT_ANALYSIS_MODULE}'."
+            "in /analysis."
         )
     occupancy_record = analysis[occupancy_name]
     if COL_OCCUPANCY not in getattr(occupancy_record, "colnames", ()):
@@ -719,17 +811,17 @@ def read_spatial_rates(
             f"the file may be corrupt or the wrong companion was written."
         )
 
-    # The rates' environment is the one write_spatial_rates persisted under
-    # f"{name}_environment" (full connectivity + geometry). An explicit env= is
+    # The rates' environment is the record they name (full connectivity +
+    # geometry). An explicit env= is
     # attached only after it is verified against that saved environment, so a
     # same-size env with other units, frame, bins or topology cannot relabel
     # the maps. No connectivity-less fabrication from bin centers.
     from neurospatial.io.nwb._environment import read_environment
 
-    env_name = f"{name}_environment"
+    env_name = _required_key(meta, "environment_name", name)
     verify_env = env is not None
     if env is None:
-        if env_name not in nwbfile.scratch:
+        if env_name not in analysis:
             raise ValueError(
                 f"Spatial rates '{name}' has no attached environment: no "
                 f"persisted environment '{env_name}' is in the file. Rewrite the "
@@ -864,6 +956,15 @@ _RECREATE_FIX = (
 )
 
 
+def _spatial_rates_names(nwbfile: NWBFile) -> list[str]:
+    """Names of the spatial-rates tables in ``nwbfile.analysis``, sorted."""
+    return sorted(
+        name
+        for name, table in nwbfile.analysis.items()
+        if COL_FIRING_RATE in getattr(table, "colnames", ())
+    )
+
+
 def _require_current_schema(meta: dict[str, Any], name: str) -> None:
     """Refuse a spatial-rates record written with another schema version."""
     recorded = meta.get("schema_version")
@@ -873,10 +974,12 @@ def _require_current_schema(meta: dict[str, Any], name: str) -> None:
                 f"Spatial rates '{name}' has schema_version={recorded!r}; this "
                 f"version of neurospatial reads only schema "
                 f"{SPATIAL_RATES_SCHEMA_VERSION}.",
-                why="other versions store different data (records before 2.6 "
-                "store occupancy as a time series, and records before 2.5 lack "
-                "the occupancy threshold that defines spatial_support), and "
-                "reading them would mean guessing",
+                why="other versions store different data (records before 3.0 "
+                "are in a processing module and keep a private copy of their "
+                "environment, records before 2.6 store occupancy as a time "
+                "series, and records before 2.5 lack the occupancy threshold "
+                "that defines spatial_support), and reading them would mean "
+                "guessing",
                 fix=_RECREATE_FIX,
             )
         )

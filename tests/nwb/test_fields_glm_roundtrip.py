@@ -241,9 +241,9 @@ class TestOverwriteAtomicity:
     def test_overwrite_failure_preserves_original(
         self, empty_nwb, sample_environment, monkeypatch
     ):
-        """When the environment write fails mid-overwrite, the original survives.
+        """When a companion write fails mid-overwrite, the original survives.
 
-        The old table/occupancy/environment are removed only inside the write's
+        The old table and occupancy are removed only inside the write's
         try-block and restored on failure, so an aborted overwrite leaves the
         pre-existing record intact and readable rather than deleted.
         """
@@ -253,21 +253,24 @@ class TestOverwriteAtomicity:
         original = _make_glm_rates_result(env, rank=5, seed=1)
         write_spatial_rates(empty_nwb, original, name="rates")
 
-        # A replacement whose overwrite write fails at the environment step.
+        # A replacement whose overwrite write fails at the occupancy step.
         replacement = _make_glm_rates_result(env, rank=4, seed=2)
-        import neurospatial.io.nwb._environment as _envmod
+        add_analysis = empty_nwb.add_analysis
+        original_occupancy = empty_nwb.analysis["rates_occupancy"]
 
-        def _boom(*_args, **_kwargs):
-            raise RuntimeError("injected environment write failure")
+        def _boom(obj):
+            if obj.name == "rates_occupancy" and obj is not original_occupancy:
+                raise RuntimeError("injected occupancy write failure")
+            add_analysis(obj)
 
-        monkeypatch.setattr(_envmod, "write_environment", _boom)
+        monkeypatch.setattr(empty_nwb, "add_analysis", _boom)
 
         with pytest.raises(ValueError, match="Aborted writing spatial rates"):
             write_spatial_rates(empty_nwb, replacement, name="rates", overwrite=True)
 
         # Restore the real writer, then confirm the ORIGINAL record survives:
         # readable via the explicit env (table + occupancy restored) AND via the
-        # persisted env (env restored), field-for-field equal to the original.
+        # saved env, field-for-field equal to the original.
         monkeypatch.undo()
         back = read_spatial_rates(empty_nwb, name="rates", env=env)
         assert back.rank == original.rank  # the original rank, not the replacement's
@@ -277,7 +280,7 @@ class TestOverwriteAtomicity:
         np.testing.assert_allclose(
             np.asarray(back.coefficients), np.asarray(original.coefficients)
         )
-        # env restored too: read with env=None finds the persisted environment.
+        # Read with env=None still finds the saved environment.
         back_env_none = read_spatial_rates(empty_nwb, name="rates")
         assert back_env_none.env.n_bins == env.n_bins
 
@@ -290,12 +293,11 @@ class TestSchemaVersionGuard:
 
         from neurospatial.io.nwb import write_spatial_rates
         from neurospatial.io.nwb._fields import (
-            DEFAULT_ANALYSIS_MODULE,
             DEFAULT_SPATIAL_RATES_NAME,
         )
 
         write_spatial_rates(nwbfile, _make_ratio_rates_result(env))
-        table = nwbfile.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+        table = nwbfile.analysis[DEFAULT_SPATIAL_RATES_NAME]
         meta = json.loads(table.description)
         if schema_value is _MISSING:
             meta.pop("schema_version", None)
@@ -304,7 +306,7 @@ class TestSchemaVersionGuard:
         table.fields["description"] = json.dumps(meta)
 
     @pytest.mark.parametrize(
-        "bad", [_MISSING, "0.9", "1.0", "2.0", "2.4", "2.5", "2.7", "3.0"]
+        "bad", [_MISSING, "0.9", "1.0", "2.0", "2.4", "2.5", "2.6", "3.1", "4.0"]
     )
     def test_other_schema_versions_refused(self, empty_nwb, sample_environment, bad):
         """Any other version is refused up front with recreate instructions,
@@ -318,5 +320,5 @@ class TestSchemaVersionGuard:
             read_spatial_rates(empty_nwb, env=env)
         message = str(caught.value)
         assert f"has schema_version={recorded!r}" in message
-        assert "reads only schema 2.6" in message
+        assert "reads only schema 3.0" in message
         assert "write them again with write_spatial_rates" in message

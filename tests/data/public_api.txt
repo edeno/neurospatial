@@ -335,7 +335,7 @@ neurospatial.io.nwb.write_environment(nwbfile, env, *, name='spatial_environment
 neurospatial.io.nwb.write_events(nwbfile, events, *, name, description='Event data', processing_module='behavior', overwrite=False)
 neurospatial.io.nwb.write_laps(nwbfile, laps=None, *, start_times=None, stop_times=None, directions=None, name='laps', description='Detected laps', overwrite=False)
 neurospatial.io.nwb.write_region_crossings(nwbfile, crossings=None, *, times=None, regions=None, directions=None, name='region_crossings', description='Region crossing events', overwrite=False)
-neurospatial.io.nwb.write_spatial_rates(nwbfile, result, *, name='spatial_rates', overwrite=False)
+neurospatial.io.nwb.write_spatial_rates(nwbfile, result, *, name='spatial_rates', environment_name=None, overwrite=False)
 neurospatial.io.nwb.write_trials(nwbfile, trials=None, *, start_times=None, stop_times=None, start_regions=None, end_regions=None, outcomes=None, description='Behavioral trials', overwrite=False)
 neurospatial.io.to_dict(env)
 neurospatial.io.to_file(env, path, *, overwrite=False)

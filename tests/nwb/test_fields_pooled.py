@@ -16,7 +16,6 @@ import pytest
 pytest.importorskip("pynwb")
 
 from neurospatial.io.nwb._fields import (
-    DEFAULT_ANALYSIS_MODULE,
     DEFAULT_SPATIAL_RATES_NAME,
 )
 
@@ -180,7 +179,7 @@ def test_missing_gam_metadata_key_is_refused(empty_nwb, sample_environment, key)
 
     env = sample_environment
     write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
-    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     meta["gam"].pop(key)
     table.fields["description"] = json.dumps(meta)
@@ -199,7 +198,7 @@ def test_glm_record_without_gam_metadata_is_refused(empty_nwb, sample_environmen
 
     env = sample_environment
     write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
-    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     del meta["gam"]
     table.fields["description"] = json.dumps(meta)
@@ -249,7 +248,6 @@ def test_truncated_per_unit_file_reads_with_clear_error(empty_nwb, sample_enviro
     ValueError naming the table + missing column, not a raw hdmf KeyError."""
     from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
     from neurospatial.io.nwb._fields import (
-        DEFAULT_ANALYSIS_MODULE,
         DEFAULT_SPATIAL_RATES_NAME,
     )
 
@@ -257,7 +255,7 @@ def test_truncated_per_unit_file_reads_with_clear_error(empty_nwb, sample_enviro
     # Write a pooled=True result (no per-unit columns), then lie in the blob that
     # it is per_unit -- exactly a truncated / corrupt per-unit record.
     write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
-    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     meta["gam"]["per_unit"] = True
     table.fields["description"] = json.dumps(meta)
