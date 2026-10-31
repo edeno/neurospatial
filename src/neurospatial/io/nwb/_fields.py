@@ -117,8 +117,8 @@ def write_spatial_rates(
     and ``f"{name}_environment"``) and all validation are resolved *before*
     the first object is added, so a duplicate without ``overwrite`` raises before
     any mutation and ``overwrite=True`` cleans every companion. If a later add
-    still fails, the already-added objects are rolled back and a ``ValueError`` is
-    raised.
+    still fails, the already-added objects are removed, any replaced record is
+    restored, and a ``ValueError`` says whether that cleanup succeeded.
 
     Parameters
     ----------
@@ -148,7 +148,8 @@ def write_spatial_rates(
         ``overwrite=False``; if a ``unit_table`` column is named ``unit_id`` or
         ``firing_rate`` (reserved -- plus ``deviance`` / ``coefficients`` for a
         glm result, whose GAM columns share the table); or if a companion add
-        fails after a partial write (the partial objects are rolled back first).
+        fails after a partial write (the message says what could not be cleaned
+        up).
     NotImplementedError
         If ``overwrite=True`` would replace a record in a file opened with
         ``"r+"`` or ``"a"``.
@@ -447,7 +448,7 @@ def write_spatial_rates(
         write_environment(nwbfile, env, name=env_name)
         added.append(("scratch", env_name))
     except Exception as exc:
-        # Roll back the newly-added (partial) objects...
+        not_removed = []
         for namespace, obj_name in reversed(added):
             try:
                 if namespace == "analysis":
@@ -455,33 +456,18 @@ def write_spatial_rates(
                 else:
                     del nwbfile.scratch[obj_name]
             except Exception:
-                logger.warning(
-                    "Rollback of '%s' failed while aborting spatial-rates write '%s'",
-                    obj_name,
-                    name,
-                )
-        # ...then restore the originals we removed, so a failed overwrite does not
-        # destroy the pre-existing record. Skip any name a partial write left
-        # behind (restore only what is actually missing).
+                not_removed.append(obj_name)
+        not_restored = []
         for namespace, obj_name, obj in reversed(removed):
             try:
                 if namespace == "analysis":
-                    if obj_name not in analysis.data_interfaces:
-                        analysis.add(obj)
-                elif obj_name not in nwbfile.scratch:
+                    analysis.add(obj)
+                else:
                     nwbfile.add_scratch(obj)
             except Exception:
-                logger.warning(
-                    "Restore of original '%s' failed while aborting spatial-rates "
-                    "overwrite '%s'; the pre-existing record may be lost.",
-                    obj_name,
-                    name,
-                )
+                not_restored.append(obj_name)
         raise ValueError(
-            f"Aborted writing spatial rates '{name}': a companion write failed "
-            f"after a partial write ({exc!r}). The newly-added objects were rolled "
-            f"back and any pre-existing record restored, but the NWB file may still "
-            f"need inspection."
+            _abort_message(name, exc, removed, not_removed, not_restored)
         ) from exc
 
     logger.debug(
@@ -489,6 +475,32 @@ def write_spatial_rates(
         name,
         n_units,
         env.n_bins,
+    )
+
+
+def _abort_message(
+    name: str,
+    exc: Exception,
+    removed: list[tuple[str, str, object]],
+    not_removed: list[str],
+    not_restored: list[str],
+) -> str:
+    """Describe what a failed spatial-rates write left in the NWBFile."""
+    what = f"Aborted writing spatial rates '{name}': {exc!r}."
+    if not (not_removed or not_restored):
+        state = "The partly written objects were removed"
+        if removed:
+            state += " and the pre-existing record was restored"
+        return f"{what} {state}."
+    problems = []
+    if not_removed:
+        problems.append(f"partly written objects could not be removed: {not_removed}")
+    if not_restored:
+        problems.append(f"pre-existing objects could not be restored: {not_restored}")
+    return _format_error(
+        f"{what} The NWBFile in memory is inconsistent; " + "; ".join(problems) + ".",
+        fix="Do not write this NWBFile. Rebuild it, or reopen it from disk where "
+        "the previous record is unchanged, and write the rates again.",
     )
 
 

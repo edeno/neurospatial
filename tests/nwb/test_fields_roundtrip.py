@@ -419,6 +419,63 @@ class TestSpatialRatesRoundTrip:
             np.asarray(back_env_none.firing_rates), np.asarray(second.firing_rates)
         )
 
+    def test_failed_overwrite_restores_the_original_record(
+        self, empty_nwb, sample_environment, monkeypatch
+    ):
+        """A failed replacement leaves the original record readable."""
+        from neurospatial.io.nwb import (
+            _environment,
+            read_spatial_rates,
+            write_spatial_rates,
+        )
+
+        env = sample_environment
+        original = _make_rates_result(env, seed=0)
+        write_spatial_rates(empty_nwb, original)
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(_environment, "write_environment", fail)
+        with pytest.raises(ValueError) as caught:
+            write_spatial_rates(
+                empty_nwb, _make_rates_result(env, seed=1), overwrite=True
+            )
+        message = str(caught.value)
+        assert "RuntimeError('disk full')" in message
+        assert "the pre-existing record was restored" in message
+        monkeypatch.undo()
+
+        back = read_spatial_rates(empty_nwb)
+        np.testing.assert_array_equal(back.firing_rates, original.firing_rates)
+
+    def test_failed_restore_is_reported_not_claimed(
+        self, empty_nwb, sample_environment, monkeypatch
+    ):
+        """When an original cannot be put back, the error names it."""
+        from neurospatial.io.nwb import _environment, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env, seed=0))
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        def refuse_restore(obj):
+            raise RuntimeError("cannot re-add")
+
+        monkeypatch.setattr(_environment, "write_environment", fail)
+        monkeypatch.setattr(empty_nwb, "add_scratch", refuse_restore)
+        with pytest.raises(ValueError) as caught:
+            write_spatial_rates(
+                empty_nwb, _make_rates_result(env, seed=1), overwrite=True
+            )
+        message = str(caught.value)
+        assert "restored" not in message.replace("could not be restored", "")
+        assert "could not be restored: ['spatial_rates_environment']" in message
+        assert "Do not write this NWBFile" in message
+        assert "spatial_rates_environment" not in empty_nwb.scratch
+
     def test_orphaned_occupancy_blocks_write_without_overwrite(
         self, empty_nwb, sample_environment
     ):
