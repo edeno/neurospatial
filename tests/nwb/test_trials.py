@@ -102,20 +102,46 @@ class TestWriteTrialsFromTrialObjects:
         end_region = nwbfile.trials["end_region"][0]
         assert end_region in ("", "None", None)
 
-    def test_empty_trials_list(self, empty_nwb):
-        """Test writing empty trials list.
+    def test_zero_trials_write_an_empty_table(self, tmp_path):
+        """A session without trials reads back as an empty table, not a KeyError."""
+        from pynwb import NWBHDF5IO
 
-        Note: NWB doesn't create trials table until at least one trial is added.
-        Empty trials list results in no trials table.
-        """
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        nwbfile = create_roundtrip_nwb()
+        write_trials(nwbfile, trials=[])
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "r") as io:
+            recovered = read_trials(io.read())
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {
+            "start_time",
+            "stop_time",
+            "start_region",
+            "end_region",
+            "outcome",
+        }
+
+    def test_zero_trials_from_arrays_write_an_empty_table(self, empty_nwb):
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        write_trials(empty_nwb, start_times=[], stop_times=[])
+
+        recovered = read_trials(empty_nwb)
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {"start_time", "stop_time"}
+
+    @pytest.mark.parametrize(
+        "trials", [np.array([0.0, 5.0]), [{"start_time": 0.0, "end_time": 5.0}]]
+    )
+    def test_non_trial_records_are_refused(self, empty_nwb, trials):
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-
-        write_trials(nwbfile, trials=[])
-
-        # NWB behavior: No trials table created when no trials added
-        assert nwbfile.trials is None
+        with pytest.raises(TypeError, match="Trial"):
+            write_trials(empty_nwb, trials)
+        assert empty_nwb.trials is None
 
 
 class TestWriteTrialsFromArrays:
@@ -203,12 +229,23 @@ class TestWriteTrialsFromArrays:
 class TestWriteTrialsValidation:
     """Tests for write_trials() input validation."""
 
-    def test_mixed_args_error(self, empty_nwb):
-        """Test error when both trials and arrays provided."""
+    @pytest.mark.parametrize(
+        ("arrays", "names"),
+        [
+            (
+                {"start_times": np.array([0.0]), "stop_times": np.array([5.0])},
+                "start_times, stop_times",
+            ),
+            ({"start_regions": ["home"]}, "start_regions"),
+            ({"end_regions": ["goal"]}, "end_regions"),
+            ({"outcomes": ["reached"]}, "outcomes"),
+        ],
+    )
+    def test_trials_with_arrays_are_refused(self, empty_nwb, arrays, names):
+        """Arrays passed with Trial objects would be ignored, so they raise."""
         from neurospatial.behavior.segmentation import Trial
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
         trials = [
             Trial(
                 start_time=0.0,
@@ -218,97 +255,101 @@ class TestWriteTrialsValidation:
                 outcome="reached",
             )
         ]
-        start_times = np.array([0.0])
-        stop_times = np.array([5.0])
 
-        with pytest.raises(ValueError, match="Cannot specify both"):
-            write_trials(
-                nwbfile, trials=trials, start_times=start_times, stop_times=stop_times
-            )
+        with pytest.raises(ValueError, match=f"Cannot combine 'trials' with {names}"):
+            write_trials(empty_nwb, trials, **arrays)
+        assert empty_nwb.trials is None
 
-    def test_missing_required_arrays_error(self, empty_nwb):
-        """Test error when required arrays are missing."""
+    @pytest.mark.parametrize(
+        "arrays",
+        [{}, {"start_times": np.array([0.0])}, {"stop_times": np.array([5.0])}],
+    )
+    def test_needs_trials_or_both_time_arrays(self, empty_nwb, arrays):
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
+        with pytest.raises(ValueError, match="needs either 'trials'"):
+            write_trials(empty_nwb, **arrays)
 
-        # Missing stop_times
-        with pytest.raises(ValueError, match="stop_times"):
-            write_trials(nwbfile, start_times=np.array([0.0]))
-
-        # Missing start_times
-        with pytest.raises(ValueError, match="start_times"):
-            write_trials(nwbfile, stop_times=np.array([5.0]))
-
-    def test_length_mismatch_error(self, empty_nwb):
-        """Test error when array lengths don't match."""
+    @pytest.mark.parametrize(
+        ("column", "message"),
+        [
+            (
+                {"stop_times": np.array([5.0, 15.0])},
+                r"stop_times length \(2\) must match start_times length \(3\)",
+            ),
+            (
+                {"start_regions": ["home"]},
+                r"start_regions length \(1\) must match start_times length \(3\)",
+            ),
+            (
+                {"end_regions": ["goal"]},
+                r"end_regions length \(1\) must match start_times length \(3\)",
+            ),
+            (
+                {"outcomes": ["reached"]},
+                r"outcomes length \(1\) must match start_times length \(3\)",
+            ),
+        ],
+    )
+    def test_length_mismatch_names_the_argument(self, empty_nwb, column, message):
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        start_times = np.array([0.0, 10.0, 20.0])
-        stop_times = np.array([5.0, 15.0])  # Wrong length
-
-        with pytest.raises(ValueError, match="length"):
-            write_trials(nwbfile, start_times=start_times, stop_times=stop_times)
-
-    def test_optional_array_length_mismatch_error(self, empty_nwb):
-        """Test error when optional arrays have wrong length."""
-        from neurospatial.io.nwb import write_trials
-
-        nwbfile = empty_nwb
-        start_times = np.array([0.0, 10.0])
-        stop_times = np.array([5.0, 15.0])
-        start_regions = ["home"]  # Wrong length
-
-        with pytest.raises(ValueError, match="length"):
-            write_trials(
-                nwbfile,
-                start_times=start_times,
-                stop_times=stop_times,
-                start_regions=start_regions,
-            )
+        arrays = {
+            "start_times": np.array([0.0, 10.0, 20.0]),
+            "stop_times": np.array([5.0, 15.0, 25.0]),
+            **column,
+        }
+        with pytest.raises(ValueError, match=message):
+            write_trials(empty_nwb, **arrays)
 
     def test_stop_before_start_error(self, empty_nwb):
         """Test error when stop_time < start_time."""
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        start_times = np.array([10.0])
-        stop_times = np.array([5.0])  # Before start
+        with pytest.raises(
+            ValueError,
+            match=r"every trial. Trial 1: start_time=10.0, stop_time=5.0",
+        ):
+            write_trials(
+                empty_nwb,
+                start_times=np.array([0.0, 10.0]),
+                stop_times=np.array([1.0, 5.0]),
+            )
 
-        with pytest.raises(ValueError, match=r"stop_time.*start_time"):
-            write_trials(nwbfile, start_times=start_times, stop_times=stop_times)
-
-    def test_nan_timestamps_error(self, empty_nwb):
-        """Test error when timestamps contain NaN."""
+    @pytest.mark.parametrize(
+        ("start", "stop", "message"),
+        [
+            ([0.0, np.nan], [5.0, 15.0], "start_times contains non-finite"),
+            ([0.0, 10.0], [5.0, np.nan], "stop_times contains non-finite"),
+            ([0.0, 10.0], [np.inf, 15.0], "stop_times contains non-finite"),
+            ([-1.0, 10.0], [5.0, 15.0], "start_times contains negative"),
+        ],
+    )
+    def test_invalid_times_name_the_argument(self, empty_nwb, start, stop, message):
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        start_times = np.array([0.0, np.nan])
-        stop_times = np.array([5.0, 15.0])
+        with pytest.raises(ValueError, match=message):
+            write_trials(empty_nwb, start_times=start, stop_times=stop)
+        assert empty_nwb.trials is None
 
-        with pytest.raises(ValueError, match=r"non-finite|NaN"):
-            write_trials(nwbfile, start_times=start_times, stop_times=stop_times)
-
-    def test_negative_timestamps_error(self, empty_nwb):
-        """Test error when timestamps are negative."""
+    def test_negative_stop_times_are_refused(self, empty_nwb):
+        """A negative stop time is reported for stop_times, not start_times."""
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        start_times = np.array([-1.0, 10.0])
-        stop_times = np.array([5.0, 15.0])
+        with pytest.raises(ValueError, match="stop_times contains negative"):
+            write_trials(empty_nwb, start_times=[0.0, 10.0], stop_times=[5.0, -1.0])
 
-        with pytest.raises(ValueError, match="negative"):
-            write_trials(nwbfile, start_times=start_times, stop_times=stop_times)
+    def test_arrays_store_missing_end_region_as_empty_string(self, empty_nwb):
+        from neurospatial.io.nwb import read_trials, write_trials
 
-    def test_no_input_error(self, empty_nwb):
-        """Test error when no input provided."""
-        from neurospatial.io.nwb import write_trials
+        write_trials(
+            empty_nwb,
+            start_times=[0.0, 10.0],
+            stop_times=[5.0, 15.0],
+            end_regions=["goal", None],
+        )
 
-        nwbfile = empty_nwb
-
-        with pytest.raises(ValueError, match="Must provide"):
-            write_trials(nwbfile)
+        assert list(read_trials(empty_nwb)["end_region"]) == ["goal", ""]
 
 
 class TestWriteTrialsOverwrite:
@@ -334,7 +375,7 @@ class TestWriteTrialsOverwrite:
         write_trials(nwbfile, trials)
 
         # Try to write again without overwrite
-        with pytest.raises(ValueError, match=r"already exists|overwrite"):
+        with pytest.raises(ValueError, match="A trials table already exists"):
             write_trials(nwbfile, trials)
 
     def test_overwrite_true_raises_not_implemented(self, empty_nwb):
@@ -372,7 +413,7 @@ class TestWriteTrialsOverwrite:
         assert len(nwbfile.trials) == 1
 
         # Overwrite is refused with a clear, actionable error.
-        with pytest.raises(NotImplementedError, match="not supported"):
+        with pytest.raises(NotImplementedError, match="trials table is not supported"):
             write_trials(nwbfile, new_trials, overwrite=True)
 
         # Original table is left untouched.
@@ -515,60 +556,32 @@ class TestReadTrials:
 
 
 class TestWriteTrialsDescription:
-    """Tests for write_trials() description parameter.
+    """The description argument describes the trials table."""
 
-    Note: pynwb fixes the predefined trials table's description to its own
-    default ("experimental trials") on the first add_trial and provides no way
-    to change it afterward, and overwriting the predefined trials table is not
-    supported. The ``description`` argument therefore does not alter the
-    predefined trials table description -- it is accepted for API symmetry only.
-    """
+    def test_custom_description_survives_a_file(self, tmp_path):
+        from pynwb import NWBHDF5IO
 
-    def test_custom_description_does_not_override_predefined_table(self, empty_nwb):
-        """The description arg cannot change the predefined trials table description.
-
-        pynwb owns the trials table description; this documents that the
-        argument is inert for the built-in table rather than silently raising.
-        """
-        from neurospatial.behavior.segmentation import Trial
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        trials = [
-            Trial(
-                start_time=0.0,
-                end_time=5.0,
-                start_region="home",
-                end_region="goal",
-                outcome="reached",
-            )
-        ]
-        write_trials(nwbfile, trials, description="T-maze behavioral trials")
+        nwbfile = create_roundtrip_nwb()
+        write_trials(
+            nwbfile,
+            start_times=[0.0],
+            stop_times=[5.0],
+            description="T-maze behavioral trials",
+        )
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "w") as io:
+            io.write(nwbfile)
 
-        # pynwb keeps its own default description for the predefined table.
-        assert nwbfile.trials.description != "T-maze behavioral trials"
-        assert len(nwbfile.trials) == 1
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "r") as io:
+            assert io.read().trials.description == "T-maze behavioral trials"
 
     def test_default_description(self, empty_nwb):
-        """Test default description is used."""
-        from neurospatial.behavior.segmentation import Trial
         from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        trials = [
-            Trial(
-                start_time=0.0,
-                end_time=5.0,
-                start_region="home",
-                end_region="goal",
-                outcome="reached",
-            )
-        ]
+        write_trials(empty_nwb, start_times=[0.0], stop_times=[5.0])
 
-        write_trials(nwbfile, trials)
-
-        # NWB creates trials table with its own default description
-        assert nwbfile.trials.description is not None
+        assert empty_nwb.trials.description == "Behavioral trials"
 
 
 @pytest.mark.slow
