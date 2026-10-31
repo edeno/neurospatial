@@ -512,7 +512,6 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         *,
         shuffle_type: str,
         tail: Literal["greater", "less", "two-sided"] = "greater",
-        decimals: int | None = None,
     ) -> ShuffleTestResult:
         """Test an observed score against the scores of its shuffles.
 
@@ -528,10 +527,6 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
         tail : {"greater", "less", "two-sided"}, default="greater"
             Direction of the test, as for :func:`compute_shuffle_pvalue`.
-        decimals : int or None, default=None
-            Compare the observed and shuffled scores rounded to this many
-            decimals for the p-value, so that scores equal up to
-            floating-point error tie. None compares them as they are.
 
         Returns
         -------
@@ -566,12 +561,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        if decimals is None:
-            p_value = compute_shuffle_pvalue(observed_score, defined, tail=tail)
-        else:
-            p_value = compute_shuffle_pvalue(
-                round(observed_score, decimals), np.round(defined, decimals), tail=tail
-            )
+        p_value = compute_shuffle_pvalue(observed_score, defined, tail=tail)
         return cls(
             observed_score=observed_score,
             null_scores=null,

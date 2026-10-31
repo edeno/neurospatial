@@ -189,22 +189,6 @@ def test_from_null_leaves_out_undefined_scores_with_a_warning():
     assert result.tail == "greater"
 
 
-def test_from_null_decimals_ties_scores_equal_up_to_rounding():
-    null = np.array([0.30000000000000004, 0.1, 0.2])
-    exact = ShuffleTestResult.from_null(0.3, null, shuffle_type="x")
-    rounded = ShuffleTestResult.from_null(0.3, null, shuffle_type="x", decimals=6)
-    assert exact.p_value == pytest.approx(2 / 4)  # 0.30000000000000004 >= 0.3
-    assert rounded.p_value == pytest.approx(2 / 4)
-    below = ShuffleTestResult.from_null(
-        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x"
-    )
-    assert below.p_value == pytest.approx(1 / 4)
-    tied = ShuffleTestResult.from_null(
-        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x", decimals=6
-    )
-    assert tied.p_value == pytest.approx(2 / 4)
-
-
 def test_from_null_records_tail():
     result = ShuffleTestResult.from_null(
         -5.0, np.arange(9.0), shuffle_type="x", tail="less"

@@ -21,7 +21,6 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_integer_at_least
 from neurospatial.replay.significance import _ALTERNATIVES
-from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -582,11 +581,11 @@ def _result(
     score, p_value = np.nan, np.nan
     if pairs.times.size:
         x = pairs.field_positions[pairs.cell]
-        if np.ptp(x) > 0 and np.ptp(pairs.times) > 0:
-            test = stats.spearmanr(x, pairs.times)
-            score = float(test.statistic)
-            if analytic_p_value:
-                p_value = _spearman_p_value(x, pairs.times, score, float(test.pvalue))
+        # The shuffles' formula: ranks are half-integers, so the sums are exact
+        # and a shuffle with the event's ranks gives the same correlation.
+        score = float(_spearman_rows(x[np.newaxis], pairs.times)[0])
+        if analytic_p_value and np.isfinite(score):
+            p_value = _spearman_p_value(x, pairs.times, score)
     return RankOrderResult(
         score=score,
         analytic_p_value=p_value,
@@ -668,7 +667,7 @@ _EXACT_MAX_PAIRS = 9
 
 
 def _spearman_p_value(
-    x: NDArray[np.float64], times: NDArray[np.float64], score: float, approximate: float
+    x: NDArray[np.float64], times: NDArray[np.float64], score: float
 ) -> float:
     """Two-sided Spearman p-value: exact for few pairs, else the t-approximation."""
     import math
@@ -677,9 +676,15 @@ def _spearman_p_value(
 
     n = x.size
     if n > _EXACT_MAX_PAIRS:
-        # The t-approximation reaches 0 for |rho| = 1; no ordering of n
+        # t = rho sqrt((n - 2) / (1 - rho^2)) on n - 2 degrees of freedom, as
+        # scipy.stats.spearmanr. It reaches 0 for |rho| = 1; no ordering of n
         # distinct values is rarer than 2 / n!, computed in log space because
         # n! overflows a float from n = 171 (the bound then underflows to 0).
+        with np.errstate(divide="ignore"):
+            t = abs(score) * np.sqrt(
+                (n - 2) / np.float64((1.0 - score) * (1.0 + score))
+            )
+        approximate = float(2.0 * stats.t.sf(t, n - 2))
         return max(approximate, 2.0 * math.exp(-math.lgamma(n + 1)))
     orders = _all_permutations(n)
     # Blocks of orderings bound the memory of the rank arrays (n = 9 has 362,880).
@@ -690,11 +695,7 @@ def _spearman_p_value(
             for start in range(0, len(orders), block)
         ]
     )
-    return float(
-        np.mean(
-            np.abs(np.round(rho, _SCORE_DECIMALS)) >= round(abs(score), _SCORE_DECIMALS)
-        )
-    )
+    return float(np.mean(np.abs(rho) >= abs(score)))
 
 
 def _spearman_rows(
@@ -731,9 +732,6 @@ def _cell_order_test(
         _permuted_correlations(pairs, permutations),
         shuffle_type="cell_order",
         tail=alternative,
-        # Ties in rho differ by rounding between spearmanr and the matrix
-        # formula of the shuffles.
-        decimals=_SCORE_DECIMALS,
     )
 
 

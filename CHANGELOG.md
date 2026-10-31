@@ -32,6 +32,9 @@
 - `ShuffleTestResult` takes `observed_score`, `null_scores`, `p_value`,
   `shuffle_type` and `tail`; `z_score` and `n_shuffles` are derived from the
   null scores.
+- `ShuffleTestResult.from_null` no longer takes `decimals`. Rank-order replay
+  scores the event with the same Spearman formula as its shuffles, so a
+  shuffle with the event's correlation ties with it exactly.
 - The replay null generators (`shuffle_cell_identity`,
   `shuffle_place_fields_circular`, `shuffle_posterior_circular`,
   `shuffle_spike_counts_circular`, ...) refuse `n_shuffles` below 1 or not an
