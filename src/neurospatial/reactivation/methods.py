@@ -2153,9 +2153,11 @@ def _period_samples(
     ``activation_step`` when it is given. With a smoothing bandwidth, spike
     trains convolved with a Gaussian of that standard deviation and sampled
     every ``activation_step`` (default half the bandwidth). Each epoch piece
-    is binned and smoothed on its own, so nothing crosses a gap; a piece
+    is tiled with bins and smoothed on its own, so nothing crosses a gap; a piece
     shorter than one bin holds no sample.
     """
+    from itertools import pairwise
+
     from scipy.ndimage import gaussian_filter1d
 
     assert method.bin_size is not None  # assembly methods have one
@@ -2163,11 +2165,19 @@ def _period_samples(
     step = _sample_step(method)
     width = method.bin_size if smoothing is None else step
     per_bin = round(width / step)
-    values, times = [], []
-    for piece in window:
-        if piece[1] - piece[0] < width:
-            continue
-        counts, centers = _binned(trains, piece[None, :], step)
+    pieces = window[window[:, 1] - window[:, 0] >= width]
+    if not len(pieces):
+        raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
+    # One pass over the spikes bins every piece; each piece's steps are then
+    # summed or smoothed on their own and packed in place, as a piece has no
+    # more samples than steps.
+    values, times = _binned(trains, pieces, step)
+    piece_of_step = np.searchsorted(pieces[:, 0], times, side="right") - 1
+    bounds = np.searchsorted(piece_of_step, np.arange(len(pieces) + 1))
+    n_samples = 0
+    segments = []
+    for first, stop in pairwise(bounds):
+        counts, centers = values[first:stop], times[first:stop]
         if smoothing is not None:
             counts = gaussian_filter1d(
                 counts, sigma=smoothing / step, axis=0, mode="constant"
@@ -2179,17 +2189,15 @@ def _period_samples(
             )
             counts = cumulative[per_bin:] - cumulative[:-per_bin]
             centers = centers[: counts.shape[0]] - step / 2 + width / 2
-        if counts.shape[0]:
-            values.append(counts)
-            times.append(centers)
-    if not values:
+        n = counts.shape[0]
+        if n:
+            values[n_samples : n_samples + n] = counts
+            times[n_samples : n_samples + n] = centers
+            segments.append((n_samples, n_samples + n, step))
+            n_samples += n
+    if not n_samples:
         raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
-    stops = np.cumsum([len(piece) for piece in values])
-    segments = [
-        (int(stop - len(piece)), int(stop), step)
-        for stop, piece in zip(stops, values, strict=True)
-    ]
-    return _Samples(np.vstack(values), np.concatenate(times), segments)
+    return _Samples(values[:n_samples], times[:n_samples], segments)
 
 
 def _sample_step(method: ReactivationMethod) -> float:
