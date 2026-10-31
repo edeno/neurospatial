@@ -224,7 +224,8 @@ def shuffle_spike_times_circular(
             stacklevel=_external_stacklevel(),
         )
     idx = idx[inside]
-    compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
+    # Sorted, each shifted train is two sorted runs (see the draws).
+    compressed = np.sort(offsets[idx] + (spike_times[inside] - normalized[idx, 0]))
     # Validation above runs at call time; only the draws are lazy.
     return _circular_shift_draws(
         compressed,
@@ -248,6 +249,8 @@ def _circular_shift_draws(
     generator: np.random.Generator,
 ) -> Generator[NDArray[np.float64], None, None]:
     """Yield shifted spike trains from validated, compressed-clock inputs."""
+    # A sum on a large absolute clock may round up to an excluded stop.
+    last = np.nextafter(windows[:, 1], windows[:, 0])
     for _ in range(n_shuffles):
         wrapped = np.mod(
             compressed + generator.uniform(min_shift, total - min_shift), total
@@ -255,10 +258,10 @@ def _circular_shift_draws(
         j = np.minimum(
             np.searchsorted(offsets, wrapped, side="right") - 1, len(windows) - 1
         )
-        shifted = windows[j, 0] + (wrapped - offsets[j])
-        # A sum on a large absolute clock may round up to an excluded stop.
-        shifted = np.minimum(shifted, np.nextafter(windows[j, 1], windows[j, 0]))
-        yield np.sort(shifted)
+        shifted = np.minimum(windows[j, 0] + (wrapped - offsets[j]), last[j])
+        # A shifted sorted train is two sorted runs, which a stable sort merges
+        # in linear time.
+        yield np.sort(shifted, kind="stable")
 
 
 def shuffle_time_bins(

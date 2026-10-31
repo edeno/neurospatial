@@ -156,7 +156,7 @@ def _poisson_draws(
 ) -> Generator[NDArray[np.int64], None, None]:
     """Yield Poisson count matrices with means ``lam``."""
     for _ in range(n_surrogates):
-        yield generator.poisson(lam=lam).astype(np.int64)
+        yield generator.poisson(lam=lam).astype(np.int64, copy=False)
 
 
 def generate_inhomogeneous_poisson_surrogates(
@@ -384,23 +384,26 @@ def _jitter_draws(
     generator: np.random.Generator,
 ) -> Generator[NDArray[np.float64], None, None]:
     """Yield sorted jittered trains, the jitter truncated to ``window``."""
+    # Jitter leaves a sorted train nearly sorted, where a stable sort is close
+    # to linear. Each draw is made in input order and moved with its spike.
+    order = np.argsort(spike_times, kind="stable")
+    spike_times = spike_times[order]
     if window is None:
         for _ in range(n_surrogates):
-            yield np.sort(
-                spike_times + generator.normal(0.0, jitter_std, spike_times.size)
-            )
+            noise = generator.normal(0.0, jitter_std, spike_times.size)[order]
+            yield np.sort(spike_times + noise, kind="stable")
         return
     from scipy.special import ndtr, ndtri
 
     # Inverse-CDF sampling of N(0, jitter_std) truncated to the window. Each
     # spike lies inside it, so [low, high] contains 0.5 and stays accurate.
     low = ndtr((window[0] - spike_times) / jitter_std)
-    high = ndtr((window[1] - spike_times) / jitter_std)
+    width = ndtr((window[1] - spike_times) / jitter_std) - low
     last = np.nextafter(window[1], window[0])
     for _ in range(n_surrogates):
-        u = low + generator.uniform(size=spike_times.size) * (high - low)
+        u = low + generator.uniform(size=spike_times.size)[order] * width
         jittered = spike_times + jitter_std * ndtri(u)
-        yield np.sort(np.clip(jittered, window[0], last))
+        yield np.sort(np.clip(jittered, window[0], last), kind="stable")
 
 
 __all__ = [
