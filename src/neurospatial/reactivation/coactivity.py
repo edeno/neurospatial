@@ -584,7 +584,7 @@ def _peri_event_values(
     found = index >= 0
     index = np.clip(index, 0, times.size - 1)
     inside = found & (queries < times[index] + step / 2 - tolerance)
-    out = values[index].astype(np.float64)
+    out = values[index].astype(np.float64, copy=False)
     out[~inside] = np.nan
     return out
 
