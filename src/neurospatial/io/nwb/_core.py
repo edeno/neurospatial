@@ -51,6 +51,58 @@ def _refuse_in_place_replacement(nwbfile: NWBFile, what: str) -> None:
     )
 
 
+def _clear_for_write(
+    nwbfile: NWBFile, container: Any, name: str, *, overwrite: bool, what: str
+) -> bool:
+    """Make room for ``name`` in ``container``; return whether one was removed.
+
+    Call it after the replacement is built and checked, so a bad replacement
+    never costs the original.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The file that holds ``container``.
+    container : mapping
+        Where the object lives, e.g. ``nwbfile.analysis``,
+        ``nwbfile.intervals`` or a processing module's ``data_interfaces``.
+    name : str
+        Name of the object about to be written.
+    overwrite : bool
+        Whether an existing object may be replaced.
+    what : str
+        Description of the object, e.g. ``"events table 'rewards'"``.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` exists and ``overwrite=False``.
+    NotImplementedError
+        If ``name`` exists in a file opened for in-place writing.
+    """
+    if name not in container:
+        return False
+    if not overwrite:
+        raise ValueError(
+            f"The {what} already exists. Pass overwrite=True to replace it."
+        )
+    _refuse_in_place_replacement(nwbfile, what)
+    del container[name]
+    logger.info("Overwriting the existing %s", what)
+    return True
+
+
+class _MissingObjectError(KeyError):
+    """A ``KeyError`` that prints its message as written.
+
+    ``str(KeyError)`` shows the message's repr, which quotes it and prints
+    line breaks as ``\\n``.
+    """
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
 def _require_pynwb() -> Any:
     """
     Lazily import pynwb, raising ImportError with helpful message if not installed.

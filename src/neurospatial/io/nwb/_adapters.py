@@ -42,14 +42,11 @@ def position_frame_from_series(series: Any) -> str | None:
 
 
 def missing_error(what: str, *, fix: str) -> KeyError:
-    """A ``KeyError`` whose message and fix stay on one line.
-
-    ``str(KeyError)`` shows the message's repr, which would print line
-    breaks as ``\\n``.
-    """
+    """A ``KeyError`` for a missing named object, printed as written."""
     from neurospatial._exceptions import _format_error
+    from neurospatial.io.nwb._core import _MissingObjectError
 
-    return KeyError(_format_error(what, fix=fix).replace("\n", " "))
+    return _MissingObjectError(_format_error(what, fix=fix))
 
 
 def select_one(
