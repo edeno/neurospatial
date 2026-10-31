@@ -3644,6 +3644,8 @@ def compare_replay_methods(
     """
     import pandas as pd
 
+    from neurospatial.replay.significance import _checking_pool_once
+
     for name, per_event in (
         ("spike_counts", spike_counts),
         ("valid_time_bins", valid_time_bins),
@@ -3653,171 +3655,41 @@ def compare_replay_methods(
                 f"compare_replay_methods(): {name} has {len(per_event)} "
                 f"entries but there are {len(events)} events."
             )
-    from neurospatial.decoding import JointDecodingResult
-    from neurospatial.replay.segments import _valid_time_bins
-
-    valid: list[NDArray[np.bool_]] = []  # each event's checked valid_time_bins
-    event_times = [
-        event.conditional[event.template_names[0]].times
-        if isinstance(event, JointDecodingResult)
-        else _separate_times(event, index)
-        if isinstance(event, Mapping)
-        else event.times
-        for index, event in enumerate(events)
-    ]
-    for index, times in enumerate(event_times):
-        if times is None:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): event {index} has no times.",
-                    why="replay scores and segments need each time bin's time",
-                    fix="decode each event with times=, e.g. "
-                    "decode_position(env, counts, rates, dt=dt, times=grid)",
-                )
-            )
-        event = events[index]
-        expected = env[template] if isinstance(env, Mapping) and template else env
-        # (environment given, environment decoded on) for each decode.
-        decoded: list[tuple[Any, Any]]
-        if isinstance(event, Mapping):
-            # Templates missing from a mapping of env are refused when tested.
-            decoded = [
-                (env[name] if isinstance(env, Mapping) else env, result.env)
-                for name, result in event.items()
-                if not isinstance(env, Mapping) or name in env
-            ]
-        elif isinstance(event, JointDecodingResult) or isinstance(expected, Mapping):
-            decoded = []
-        else:
-            decoded = [(expected, getattr(event, "env", None))]
-        for expected_env, event_env in decoded:
-            if event_env is not None:
-                _check_decoded_environment(
-                    expected_env, event_env, index, "compare_replay_methods()"
-                )
-        n_time_bins = len(np.asarray(times))
-        if spike_counts is not None:
-            shape = np.shape(spike_counts[index])
-            if len(shape) not in (1, 2) or shape[0] != n_time_bins:
-                raise ValueError(
-                    _format_error(
-                        f"compare_replay_methods(): spike_counts[{index}] has "
-                        f"shape {shape}, but event {index} has {n_time_bins} "
-                        "time bins.",
-                        why="each row of counts holds one time bin's spikes",
-                        fix=f"pass shape ({n_time_bins}, n_cells); transpose "
-                        "counts given as (n_cells, n_time_bins)",
-                    )
-                )
-        if valid_time_bins is not None:
-            valid.append(
-                _valid_time_bins(
-                    valid_time_bins[index],
-                    n_time_bins,
-                    operation=f"compare_replay_methods(): event {index}",
-                )
-            )
-    method_names = [method.name for method in replay_methods]
-    if len(set(method_names)) != len(method_names):
-        raise ValueError(
-            _format_error(
-                f"compare_replay_methods(): method names must be unique, got "
-                f"{method_names}.",
-                why="each row and each random stream is labeled by the method's name",
-                fix="give variants their own name, e.g. "
-                "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
-            )
-        )
-    given = {
-        "spike_times": spike_times,
-        "encoding_models": encoding_models,
-        "dt": dt,
-        "arms": arms,
-        "template_bias": template_bias,
-    }
-    by_needs: dict[_CompareNeeds, list[str]] = {}
-    for method in replay_methods:
-        if method._compare_needs is not None:
-            by_needs.setdefault(method._compare_needs, []).append(method.name)
-    for needs, names in by_needs.items():
-        missing = [f"{name}=" for name in needs.inputs if given[name] is None]
-        if missing:
-            raise ValueError(
-                _format_error(
-                    f"compare_replay_methods(): {needs.kind} methods {names} "
-                    f"need {', '.join(missing)}.",
-                    why=needs.why,
-                    fix=needs.fix,
-                )
-            )
-        if needs.one_environment and (
-            isinstance(env, Mapping)
-            or any(
-                isinstance(event, (JointDecodingResult, Mapping)) for event in events
-            )
-        ):
-            raise ValueError(
-                f"compare_replay_methods(): {needs.kind} methods {names} take "
-                "events decoded on one environment, not joint decodes, "
-                "separately decoded templates or a mapping of environments."
-            )
-    pool = None
-    if any(needs.pool for needs in by_needs):
-        if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
-            raise ValueError(
-                _format_error(
-                    "compare_replay_methods(): the pseudo-event and weighted "
-                    "column-cycle nulls cannot draw from joint decodes or "
-                    "separately decoded templates.",
-                    why="a joint decode's rows hold several templates, and these "
-                    "nulls draw rows, or the mean row, of one posterior",
-                    fix="pass each event's tested share as a DecodingResult, "
-                    "or leave out methods with these nulls",
-                )
-            )
-        pool = np.vstack(
-            [
-                event.posterior
-                for event in events
-                if not isinstance(event, (JointDecodingResult, Mapping))
-            ]
-        )
+    event_times = _event_times(events)
+    valid = _checked_event_inputs(
+        env, events, event_times, template, spike_counts, valid_time_bins
+    )
+    needs_pool = _check_compare_methods(
+        replay_methods,
+        env,
+        events,
+        {
+            "spike_times": spike_times,
+            "encoding_models": encoding_models,
+            "dt": dt,
+            "arms": arms,
+            "template_bias": template_bias,
+        },
+    )
+    pool = _pseudo_event_pool(events) if needs_pool else None
     entropy = _entropy(rng)
 
-    def stream_for(
-        index: int,
-        method: ReplayMethod
-        | RankOrderMethod
-        | PairwiseOrderMethod
-        | ArmReplayMethod
-        | TemplateMatchMethod
-        | BiasSequenceMethod,
-    ) -> Any:
+    def stream_for(index: int, method: _AnyReplayMethod) -> Any:
         return _stream(entropy, index, _name_key(method.name))
 
     windows = (
-        None
-        if dt is None
-        else [_spike_window(np.asarray(times), dt) for times in event_times]
+        None if dt is None else [_spike_window(times, dt) for times in event_times]
     )
-    # The pooled SSI test scores each event against the whole epoch's shuffles.
-    pooled: list[dict[str, ReplayDetectionResult]] = [{} for _ in events]
-    for method in replay_methods:
-        if isinstance(method, RankOrderMethod) and method.test == "pooled_ssi":
-            assert windows is not None
-            verdicts = _pooled_ssi_verdicts(
-                method,
-                env,
-                spike_times,
-                windows,
-                encoding_models,
-                template,
-                [stream_for(index, method) for index in range(len(events))],
-            )
-            for event_verdicts, verdict in zip(pooled, verdicts, strict=True):
-                event_verdicts[method.name] = verdict
-    from neurospatial.replay.significance import _checking_pool_once
-
+    pooled = _pooled_ssi_by_event(
+        replay_methods,
+        env,
+        spike_times,
+        windows,
+        encoding_models,
+        template,
+        lambda method: [stream_for(index, method) for index in range(len(events))],
+        len(events),
+    )
     rows = []
     # Every event and method tests against the same pool: check it once.
     with _checking_pool_once(pool):
@@ -3825,12 +3697,12 @@ def compare_replay_methods(
             compared = _CompareEvent(
                 env=env,
                 event=event,
-                times=np.asarray(event_times[index]),
+                times=event_times[index],
                 window=None if windows is None else windows[index],
                 spike_counts=None
                 if spike_counts is None
                 else np.asarray(spike_counts[index]),
-                valid_time_bins=valid[index] if valid else None,
+                valid_time_bins=None if valid is None else valid[index],
                 spike_times=spike_times,
                 encoding_models=encoding_models,
                 dt=dt,
@@ -3852,6 +3724,220 @@ def compare_replay_methods(
     table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = entropy
     return table
+
+
+def _event_times(
+    events: Sequence[
+        DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    ],
+) -> list[NDArray[np.float64]]:
+    """Each event's time-bin times; every event must have them."""
+    from neurospatial.decoding import JointDecodingResult
+
+    event_times = [
+        event.conditional[event.template_names[0]].times
+        if isinstance(event, JointDecodingResult)
+        else _separate_times(event, index)
+        if isinstance(event, Mapping)
+        else event.times
+        for index, event in enumerate(events)
+    ]
+    for index, times in enumerate(event_times):
+        if times is None:
+            raise ValueError(
+                _format_error(
+                    f"compare_replay_methods(): event {index} has no times.",
+                    why="replay scores and segments need each time bin's time",
+                    fix="decode each event with times=, e.g. "
+                    "decode_position(env, counts, rates, dt=dt, times=grid)",
+                )
+            )
+    return [np.asarray(times) for times in event_times]
+
+
+def _checked_event_inputs(
+    env: Environment | Mapping[str, Environment],
+    events: Sequence[
+        DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    ],
+    event_times: list[NDArray[np.float64]],
+    template: str | None,
+    spike_counts: Sequence[NDArray[np.int64]] | None,
+    valid_time_bins: Sequence[NDArray[np.bool_]] | None,
+) -> list[NDArray[np.bool_]] | None:
+    """Check each event's environment and per-event inputs, event by event.
+
+    Returns each event's checked ``valid_time_bins``, or None without them.
+    """
+    from neurospatial.replay.segments import _valid_time_bins
+
+    valid: list[NDArray[np.bool_]] = []
+    for index, (event, times) in enumerate(zip(events, event_times, strict=True)):
+        for expected_env, event_env in _decoded_environments(env, event, template):
+            if event_env is not None:
+                _check_decoded_environment(
+                    expected_env, event_env, index, "compare_replay_methods()"
+                )
+        n_time_bins = len(times)
+        if spike_counts is not None:
+            shape = np.shape(spike_counts[index])
+            if len(shape) not in (1, 2) or shape[0] != n_time_bins:
+                raise ValueError(
+                    _format_error(
+                        f"compare_replay_methods(): spike_counts[{index}] has "
+                        f"shape {shape}, but event {index} has {n_time_bins} "
+                        "time bins.",
+                        why="each row of counts holds one time bin's spikes",
+                        fix=f"pass shape ({n_time_bins}, n_cells); transpose "
+                        "counts given as (n_cells, n_time_bins)",
+                    )
+                )
+        if valid_time_bins is not None:
+            valid.append(
+                _valid_time_bins(
+                    valid_time_bins[index],
+                    n_time_bins,
+                    operation=f"compare_replay_methods(): event {index}",
+                )
+            )
+    return None if valid_time_bins is None else valid
+
+
+def _decoded_environments(
+    env: Environment | Mapping[str, Environment],
+    event: DecodingResult | JointDecodingResult | Mapping[str, DecodingResult],
+    template: str | None,
+) -> list[tuple[Any, Any]]:
+    """(environment given, environment decoded on) for each of an event's decodes."""
+    from neurospatial.decoding import JointDecodingResult
+
+    expected = env[template] if isinstance(env, Mapping) and template else env
+    if isinstance(event, Mapping):
+        # Templates missing from a mapping of env are refused when tested.
+        return [
+            (env[name] if isinstance(env, Mapping) else env, result.env)
+            for name, result in event.items()
+            if not isinstance(env, Mapping) or name in env
+        ]
+    if isinstance(event, JointDecodingResult) or isinstance(expected, Mapping):
+        return []
+    return [(expected, getattr(event, "env", None))]
+
+
+def _check_compare_methods(
+    replay_methods: Sequence[_AnyReplayMethod],
+    env: Environment | Mapping[str, Environment],
+    events: Sequence[
+        DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    ],
+    given: Mapping[str, Any],
+) -> bool:
+    """Check that the methods can run on these inputs; whether any needs the pool.
+
+    Method names must be unique, and each kind of method must have the
+    inputs it reads (``given``, by argument name) and, for arm methods,
+    events decoded on one environment.
+    """
+    from neurospatial.decoding import JointDecodingResult
+
+    method_names = [method.name for method in replay_methods]
+    if len(set(method_names)) != len(method_names):
+        raise ValueError(
+            _format_error(
+                f"compare_replay_methods(): method names must be unique, got "
+                f"{method_names}.",
+                why="each row and each random stream is labeled by the method's name",
+                fix="give variants their own name, e.g. "
+                "dataclasses.replace(method, name='diba_alpha_0.05', alpha=0.05)",
+            )
+        )
+    by_needs: dict[_CompareNeeds, list[str]] = {}
+    for method in replay_methods:
+        if method._compare_needs is not None:
+            by_needs.setdefault(method._compare_needs, []).append(method.name)
+    several = isinstance(env, Mapping) or any(
+        isinstance(event, (JointDecodingResult, Mapping)) for event in events
+    )
+    for needs, names in by_needs.items():
+        missing = [f"{name}=" for name in needs.inputs if given[name] is None]
+        if missing:
+            raise ValueError(
+                _format_error(
+                    f"compare_replay_methods(): {needs.kind} methods {names} "
+                    f"need {', '.join(missing)}.",
+                    why=needs.why,
+                    fix=needs.fix,
+                )
+            )
+        if needs.one_environment and several:
+            raise ValueError(
+                f"compare_replay_methods(): {needs.kind} methods {names} take "
+                "events decoded on one environment, not joint decodes, "
+                "separately decoded templates or a mapping of environments."
+            )
+    return any(needs.pool for needs in by_needs)
+
+
+def _pseudo_event_pool(
+    events: Sequence[
+        DecodingResult | JointDecodingResult | Mapping[str, DecodingResult]
+    ],
+) -> NDArray[np.float64]:
+    """Every event's posterior rows stacked: the pool of the pool-drawing nulls."""
+    from neurospatial.decoding import JointDecodingResult
+
+    if any(isinstance(event, (JointDecodingResult, Mapping)) for event in events):
+        raise ValueError(
+            _format_error(
+                "compare_replay_methods(): the pseudo-event and weighted "
+                "column-cycle nulls cannot draw from joint decodes or "
+                "separately decoded templates.",
+                why="a joint decode's rows hold several templates, and these "
+                "nulls draw rows, or the mean row, of one posterior",
+                fix="pass each event's tested share as a DecodingResult, "
+                "or leave out methods with these nulls",
+            )
+        )
+    return np.vstack(
+        [
+            event.posterior
+            for event in events
+            if not isinstance(event, (JointDecodingResult, Mapping))
+        ]
+    )
+
+
+def _pooled_ssi_by_event(
+    replay_methods: Sequence[_AnyReplayMethod],
+    env: Environment | Mapping[str, Environment],
+    spike_times: Any,
+    windows: list[tuple[float, float]] | None,
+    encoding_models: Any,
+    template: str | None,
+    streams_for: Callable[[_AnyReplayMethod], list[np.random.Generator]],
+    n_events: int,
+) -> list[dict[str, ReplayDetectionResult]]:
+    """Each event's verdicts from the pooled-SSI methods, by method name.
+
+    A pooled-SSI test scores each event against the shuffles of every event
+    in the epoch, so its verdicts are made for all events at once.
+    """
+    pooled: list[dict[str, ReplayDetectionResult]] = [{} for _ in range(n_events)]
+    for method in replay_methods:
+        if isinstance(method, RankOrderMethod) and method.test == "pooled_ssi":
+            assert windows is not None
+            verdicts = _pooled_ssi_verdicts(
+                method,
+                env,
+                spike_times,
+                windows,
+                encoding_models,
+                template,
+                streams_for(method),
+            )
+            for event_verdicts, verdict in zip(pooled, verdicts, strict=True):
+                event_verdicts[method.name] = verdict
+    return pooled
 
 
 def _separate_times(
