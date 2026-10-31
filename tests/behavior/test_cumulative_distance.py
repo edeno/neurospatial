@@ -163,9 +163,9 @@ def test_arrays_read_only_and_summary_scalars():
     assert all(type(v) in (int, float) for v in summary.values())
 
 
-def test_consecutive_non_finite_rows_do_not_warn():
+def test_consecutive_missing_rows_do_not_warn():
     positions = np.array(
-        [[0.0, 0.0], [np.inf, 0.0], [np.inf, 0.0], [1.0, 0.0], [2.0, 0.0]]
+        [[0.0, 0.0], [np.nan, 0.0], [np.nan, 0.0], [1.0, 0.0], [2.0, 0.0]]
     )
     times = np.arange(5) * 0.1
 

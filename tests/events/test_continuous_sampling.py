@@ -194,12 +194,15 @@ def test_invalid_sample_beyond_max_gap_blocks_its_intervals_and_instant():
     np.testing.assert_array_equal(values[5:], [0.25, 0.5])
 
 
-def test_infinite_sample_is_missing():
+@pytest.mark.parametrize("bad", [np.inf, -np.inf])
+def test_infinite_sample_is_refused_not_missing(bad):
+    """NaN marks a missing sample; an infinity is a corrupt value, not a gap."""
     x = TWO_RUNS.copy()
-    x[3] = np.inf
-    values, support = _sample(TWO_RUNS, x, [0.3, 0.375], max_gap=0.2)
-    assert not support.any()
-    assert np.isnan(values).all()
+    x[3] = bad
+    with pytest.raises(ValueError, match=r"infinite value\(s\)") as caught:
+        _sample(TWO_RUNS, x, [0.3, 0.375], max_gap=0.2)
+    assert "row 3" in str(caught.value)
+    assert "np.nan" in str(caught.value)
 
 
 def test_isolated_sample_supports_only_its_instant():

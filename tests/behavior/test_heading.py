@@ -660,17 +660,26 @@ class TestHeadingFromVelocityGuards:
                 positions=positions, times=np.arange(len(positions)) * -0.1
             )
 
-    @pytest.mark.parametrize("missing", [np.nan, np.inf, -np.inf])
-    def test_heading_from_velocity_nonfinite_rows_have_no_heading(self, missing):
-        """A row with a non-finite coordinate is missing: NaN there, East elsewhere."""
+    def test_heading_from_velocity_nan_row_has_no_heading(self):
+        """A row with a NaN coordinate is missing: NaN there, East elsewhere."""
         from neurospatial.behavior import heading_from_velocity
 
         positions = np.c_[np.arange(6.0), np.zeros(6)]
-        positions[2, 0] = missing
+        positions[2, 0] = np.nan
         headings = heading_from_velocity(
             np.arange(6) * 0.1, positions, smooth_window=0.0
         )
         np.testing.assert_array_equal(headings, [0.0, 0.0, np.nan, 0.0, 0.0, 0.0])
+
+    @pytest.mark.parametrize("bad", [np.inf, -np.inf])
+    def test_heading_from_velocity_infinite_row_raises(self, bad):
+        """An infinite coordinate is a corrupt value, not a missing sample."""
+        from neurospatial.behavior import heading_from_velocity
+
+        positions = np.c_[np.arange(6.0), np.zeros(6)]
+        positions[2, 0] = bad
+        with pytest.raises(ValueError, match="infinite value"):
+            heading_from_velocity(np.arange(6) * 0.1, positions, smooth_window=0.0)
 
     def test_heading_from_velocity_descending_times_would_flip(self):
         """The timestamp guard blocks descending times that would rotate headings by pi.

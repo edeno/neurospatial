@@ -482,7 +482,7 @@ class TestMeanSquareDisplacement:
         np.testing.assert_allclose(result.msd[:2], [1.0, 4.0])
         assert np.isnan(result.msd[2])
 
-    @pytest.mark.parametrize("missing", [100.0, np.nan, np.inf])
+    @pytest.mark.parametrize("missing", [100.0, np.nan])
     def test_geodesic_msd_excludes_missing_or_outside_bins(self, missing):
         """Only the observed stationary pair contributes to the estimate."""
         env = Environment.from_grid_mask(

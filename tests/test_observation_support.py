@@ -104,6 +104,40 @@ def test_no_observed_sample_warns_that_nothing_is_usable():
         _support(np.arange(5) * 0.1, np.full(5, np.nan))
 
 
+@pytest.mark.parametrize("bad", [np.inf, -np.inf])
+def test_infinite_position_is_refused_not_missing(bad):
+    """An infinite coordinate is usually a calibration error, not a lost frame."""
+    positions = np.c_[np.arange(5, dtype=float), np.zeros(5)]
+    positions[2, 1] = bad
+    with pytest.raises(ValueError, match=r"f\(\) got 1 infinite value\(s\)") as caught:
+        validated_observations(
+            np.arange(5) * 0.1,
+            positions,
+            call="f",
+            max_gap=0.5,
+            epochs=None,
+            break_before=None,
+            result="the result is empty",
+        )
+    message = str(caught.value)
+    assert "row 2, column 1" in message
+    assert "\nWhy: " in message and "\nFix: " in message
+
+
+def test_infinite_position_is_refused_by_a_public_analysis():
+    positions = np.c_[np.arange(5, dtype=float), np.zeros(5)]
+    positions[4, 0] = np.inf
+    with pytest.raises(ValueError, match=r"compute_speed\(\) got 1 infinite"):
+        behavior.compute_speed(np.arange(5) * 0.1, positions)
+
+
+def test_infinite_signal_is_refused_in_any_feature():
+    signals = np.ones((5, 2))
+    signals[3, 1] = -np.inf
+    with pytest.raises(ValueError, match="row 3, column 1"):
+        _signals(signals=signals)
+
+
 def test_isolated_finite_sample():
     s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
