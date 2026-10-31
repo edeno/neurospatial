@@ -173,7 +173,8 @@ def sample_at_times(
     values = np.asarray(values, dtype=np.float64)
     query_times = np.atleast_1d(np.asarray(query_times, dtype=np.float64))
     if interp not in ("linear", "nearest"):
-        raise ValueError("interp must be 'linear' or 'nearest'.")
+        msg = "interp must be 'linear' or 'nearest'."
+        raise ValueError(msg)
     result = np.full((len(query_times), *values.shape[1:]), np.nan)
     if not len(times):
         return result

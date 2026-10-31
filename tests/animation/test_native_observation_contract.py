@@ -41,7 +41,7 @@ def native(layer, scene, item):
 
 
 @pytest.mark.parametrize(
-    "interp, expected", [("linear", [0.25, 0.25]), ("nearest", [0, 0])]
+    ("interp", "expected"), [("linear", [0.25, 0.25]), ("nearest", [0, 0])]
 )
 def test_inherited_native_clock_honors_interpolation_and_recording_gap(
     env, interp, expected
@@ -94,7 +94,7 @@ def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
 
 
 @pytest.mark.parametrize(
-    "rates, expected_peak",
+    ("rates", "expected_peak"),
     [(None, 1), ([np.nan, np.inf], 1), ([0, 0], 1), ([0, 5, np.nan, 10], 10)],
 )
 def test_rate_summary_ignores_missing_and_nonfinite_observations(rates, expected_peak):

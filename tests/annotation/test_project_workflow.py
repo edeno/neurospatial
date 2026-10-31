@@ -461,7 +461,8 @@ def test_failed_save_preserves_previous_file_and_unsaved_editor(
     shapes.data = [previous_geometry + 1.0]
 
     def fail_replace(_source, _target):
-        raise OSError("Disk write interrupted")
+        msg = "Disk write interrupted"
+        raise OSError(msg)
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, "replace", fail_replace)

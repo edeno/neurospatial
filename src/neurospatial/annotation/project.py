@@ -79,20 +79,27 @@ class AnnotationShape:
         """Own coordinates and metadata without requiring valid geometry."""
         vertices = read_only_copy(self.vertices, np.float64)
         if vertices.ndim != 2 or vertices.shape[1] != 2:
-            raise ValueError("Shape vertices must have shape (n_vertices, 2).")
+            msg = "Shape vertices must have shape (n_vertices, 2)."
+            raise ValueError(msg)
         if not np.all(np.isfinite(vertices)):
-            raise ValueError("Shape vertices must contain finite pixel coordinates.")
+            msg = "Shape vertices must contain finite pixel coordinates."
+            raise ValueError(msg)
         if self.shape_type not in _SHAPE_TYPES:
-            raise ValueError(f"Unknown shape_type {self.shape_type!r}.")
+            msg = f"Unknown shape_type {self.shape_type!r}."
+            raise ValueError(msg)
         if self.role not in get_args(RegionType):
-            raise ValueError(f"Unknown annotation role {self.role!r}.")
+            msg = f"Unknown annotation role {self.role!r}."
+            raise ValueError(msg)
         for name in ("name", "identifier", "parent_id"):
             if not isinstance(getattr(self, name), str):
-                raise ValueError(f"Shape {name} must be a string.")
+                msg = f"Shape {name} must be a string."
+                raise ValueError(msg)
         if not self.identifier:
-            raise ValueError("Shape identifier must be nonempty.")
+            msg = "Shape identifier must be nonempty."
+            raise ValueError(msg)
         if not isinstance(self.metadata, Mapping):
-            raise ValueError("Shape metadata must be a mapping of JSON values.")
+            msg = "Shape metadata must be a mapping of JSON values."
+            raise ValueError(msg)
         metadata = _thaw_metadata(self.metadata)
         # Refused now rather than when the draft becomes a Region.
         _require_json_metadata(metadata)
@@ -157,12 +164,14 @@ def _checked_calibration(
     can share it instead of copying it.
     """
     if not isinstance(calibration, VideoCalibration):
-        raise ValueError("calibration must be a VideoCalibration or None.")
+        msg = "calibration must be a VideoCalibration or None."
+        raise ValueError(msg)
     if calibration.frame_size_px != frame_size:
-        raise ValueError(
+        msg = (
             "Calibration frame_size_px must match the reference frame "
             f"(width, height) {frame_size}."
         )
+        raise ValueError(msg)
     return calibration
 
 
@@ -229,23 +238,24 @@ class AnnotationProject:
             or frame.shape[2] != 3
             or min(frame.shape[:2]) == 0
         ):
-            raise ValueError(
-                "Project frame must be a nonempty RGB uint8 image (height, width, 3)."
-            )
+            msg = "Project frame must be a nonempty RGB uint8 image (height, width, 3)."
+            raise ValueError(msg)
         if (
             isinstance(frame_index, bool)
             or not isinstance(frame_index, (int, np.integer))
             or frame_index < 0
         ):
-            raise ValueError("frame_index must be a nonnegative integer.")
+            msg = "frame_index must be a nonnegative integer."
+            raise ValueError(msg)
         if video_path is not None and not isinstance(video_path, (str, Path)):
-            raise ValueError("video_path must be a string, Path, or None.")
+            msg = "video_path must be a string, Path, or None."
+            raise ValueError(msg)
         if mode not in get_args(AnnotationMode):
-            raise ValueError(f"Unknown annotation mode {mode!r}.")
+            msg = f"Unknown annotation mode {mode!r}."
+            raise ValueError(msg)
         if multiple_boundaries not in get_args(MultipleBoundaryStrategy):
-            raise ValueError(
-                f"Unknown multiple_boundaries policy {multiple_boundaries!r}."
-            )
+            msg = f"Unknown multiple_boundaries policy {multiple_boundaries!r}."
+            raise ValueError(msg)
         validate_finite_scalar(
             bin_size, name="bin_size", positive=True, none_allowed=True
         )
@@ -257,29 +267,28 @@ class AnnotationProject:
         )
         shapes_tuple = tuple(shapes)
         if any(not isinstance(shape, AnnotationShape) for shape in shapes_tuple):
-            raise ValueError("shapes must contain AnnotationShape objects.")
+            msg = "shapes must contain AnnotationShape objects."
+            raise ValueError(msg)
         identities = {shape.identifier: shape for shape in shapes_tuple}
         if len(identities) != len(shapes_tuple):
-            raise ValueError("Shape identifiers must be unique within a project.")
+            msg = "Shape identifiers must be unique within a project."
+            raise ValueError(msg)
         for shape in shapes_tuple:
             if shape.parent_id:
                 parent = identities.get(shape.parent_id)
                 if parent is None:
-                    raise ValueError(
-                        f"Shape {shape.identifier!r} references missing parent {shape.parent_id!r}."
-                    )
+                    msg = f"Shape {shape.identifier!r} references missing parent {shape.parent_id!r}."
+                    raise ValueError(msg)
                 if parent is shape or parent.parent_id:
-                    raise ValueError(
-                        "Interior rings must reference a top-level exterior ring."
-                    )
+                    msg = "Interior rings must reference a top-level exterior ring."
+                    raise ValueError(msg)
                 if (
                     shape.shape_type != "polygon"
                     or parent.shape_type != "polygon"
                     or shape.role != parent.role
                 ):
-                    raise ValueError(
-                        "Interior rings must be polygons with the same role as their parent."
-                    )
+                    msg = "Interior rings must be polygons with the same role as their parent."
+                    raise ValueError(msg)
         owned_calibration = (
             None
             if calibration is None
@@ -405,18 +414,19 @@ class AnnotationProject:
                 with np.load(stream, allow_pickle=False) as archive:
                     raw = archive["metadata"]
                     if raw.dtype != np.uint8 or raw.ndim != 1:
-                        raise ValueError("metadata must be a UTF-8 byte array")
+                        msg = "metadata must be a UTF-8 byte array"
+                        raise ValueError(msg)
                     document = json.loads(raw.tobytes().decode("utf-8"))
                     if (
                         not isinstance(document, dict)
                         or document.get("format") != _FORMAT
                     ):
-                        raise ValueError("unrecognized project format")
+                        msg = "unrecognized project format"
+                        raise ValueError(msg)
                     version = document.get("version")
                     if type(version) is not int or version != _VERSION:
-                        raise _UnsupportedVersionError(
-                            f"Unsupported annotation project version {version!r}; supported version is {_VERSION}."
-                        )
+                        msg = f"Unsupported annotation project version {version!r}; supported version is {_VERSION}."
+                        raise _UnsupportedVersionError(msg)
                     _require_keys(
                         document,
                         {
@@ -434,7 +444,8 @@ class AnnotationProject:
                     )
                     rows = document["shapes"]
                     if not isinstance(rows, list):
-                        raise ValueError("shapes must be a list")
+                        msg = "shapes must be a list"
+                        raise ValueError(msg)
                     expected = {
                         "frame",
                         "metadata",
@@ -443,9 +454,8 @@ class AnnotationProject:
                     if set(archive.files) != expected or len(archive.files) != len(
                         expected
                     ):
-                        raise ValueError(
-                            "archive arrays do not match the shape records"
-                        )
+                        msg = "archive arrays do not match the shape records"
+                        raise ValueError(msg)
                     shapes = []
                     for i, row in enumerate(rows):
                         _require_keys(
@@ -491,9 +501,8 @@ class AnnotationProject:
                 BadZipFile,
                 EOFError,
             ) as exc:
-                raise ValueError(
-                    f"Corrupt annotation project {str(path)!r}: {exc}"
-                ) from exc
+                msg = f"Corrupt annotation project {str(path)!r}: {exc}"
+                raise ValueError(msg) from exc
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Rebuild owned arrays and nested metadata after pickle or deepcopy."""
@@ -527,4 +536,5 @@ class _UnsupportedVersionError(ValueError):
 
 def _require_keys(value: Any, keys: set[str]) -> None:
     if not isinstance(value, dict) or set(value) != keys:
-        raise ValueError(f"expected fields {sorted(keys)}")
+        msg = f"expected fields {sorted(keys)}"
+        raise ValueError(msg)

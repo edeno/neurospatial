@@ -634,7 +634,8 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
 
         def _spy(self, *a, **k):
-            raise AssertionError("predict must not run when metric is invalid")
+            msg = "predict must not run when metric is invalid"
+            raise AssertionError(msg)
 
         monkeypatch.setattr(BayesianDecoder, "predict", _spy)
         with pytest.raises(ValueError, match="metric"):
@@ -646,7 +647,8 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
 
         def _spy(self, *a, **k):
-            raise AssertionError("predict must not run when distance is invalid")
+            msg = "predict must not run when distance is invalid"
+            raise AssertionError(msg)
 
         monkeypatch.setattr(BayesianDecoder, "predict", _spy)
         with pytest.raises(ValueError, match="distance"):
@@ -1139,7 +1141,7 @@ def test_from_rates_constructor_labels(sim, make_spike_group):
 
 
 @pytest.mark.parametrize(
-    "method, options",
+    ("method", "options"),
     [
         ("binned", {"bandwidth": 5}),
         ("diffusion_kde", {"bandwidth": 5}),

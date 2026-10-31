@@ -191,7 +191,7 @@ def test_significance_uses_only_observed_windows(
 
 
 @pytest.mark.parametrize(
-    "significance_family,argument",
+    ("significance_family", "argument"),
     [
         (family, argument)
         for family in (

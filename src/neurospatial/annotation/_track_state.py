@@ -259,7 +259,8 @@ class TrackBuilderState:
 
         """
         if idx < 0 or idx >= len(self.nodes):
-            raise IndexError(f"Node index {idx} out of range")
+            msg = f"Node index {idx} out of range"
+            raise IndexError(msg)
 
         self._apply_node_edit(
             [node for i, node in enumerate(self.nodes) if i != idx],
@@ -295,7 +296,8 @@ class TrackBuilderState:
 
         """
         if idx < 0 or idx >= len(self.nodes):
-            raise IndexError(f"Node index {idx} out of range")
+            msg = f"Node index {idx} out of range"
+            raise IndexError(msg)
 
         self._save_for_undo()
         self.start_node = idx
@@ -387,7 +389,8 @@ class TrackBuilderState:
 
         """
         if edge_idx < 0 or edge_idx >= len(self.edges):
-            raise IndexError(f"Edge index {edge_idx} out of range")
+            msg = f"Edge index {edge_idx} out of range"
+            raise IndexError(msg)
 
         self._delete_edges((edge_idx,))
 
@@ -397,7 +400,8 @@ class TrackBuilderState:
         if not selected:
             return
         if any(index < 0 or index >= len(self.edges) for index in selected):
-            raise IndexError("Edge selection contains an invalid edge index")
+            msg = "Edge selection contains an invalid edge index"
+            raise IndexError(msg)
         self._save_for_undo()
         self.edges = [
             edge for index, edge in enumerate(self.edges) if index not in selected
@@ -407,7 +411,8 @@ class TrackBuilderState:
     def _set_node_label(self, index: int, label: str) -> None:
         """Rename a node as one undoable command."""
         if index < 0 or index >= len(self.nodes):
-            raise IndexError("Node index out of range")
+            msg = "Node index out of range"
+            raise IndexError(msg)
         if self.node_labels[index] == label:
             return
         self._save_for_undo()

@@ -67,9 +67,8 @@ class _PolarGridLayout(MaskedGridLayout):
             If the grid is not two-dimensional or the masked grid is invalid.
         """
         if np.ndim(active_mask) != 2 or len(grid_edges) != 2:
-            raise ValueError(
-                "Polar layouts require a 2-D mask and two grid edge arrays."
-            )
+            msg = "Polar layouts require a 2-D mask and two grid edge arrays."
+            raise ValueError(msg)
         super().build(
             active_mask=active_mask,
             grid_edges=grid_edges,

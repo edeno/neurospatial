@@ -434,7 +434,8 @@ class TestSpatialRatesRoundTrip:
         def fail(obj):
             # Adding the new occupancy fails; restoring the original succeeds.
             if obj.name == "spatial_rates_occupancy" and obj is not original_occupancy:
-                raise RuntimeError("disk full")
+                msg = "disk full"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail)
@@ -465,7 +466,8 @@ class TestSpatialRatesRoundTrip:
             # The occupancy add fails; every later add (the restores) fails too.
             if failed or obj.name == "spatial_rates_occupancy":
                 failed.append(obj.name)
-                raise RuntimeError("disk full")
+                msg = "disk full"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail_then_refuse_restore)

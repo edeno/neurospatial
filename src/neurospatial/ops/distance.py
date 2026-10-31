@@ -399,11 +399,12 @@ def _geodesic_pair_distances(
 
 def _require_metric(metric: str) -> None:
     if metric not in ("geodesic", "euclidean"):
-        raise ValueError(
+        msg = (
             f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
             f"Use metric='geodesic' for graph-based distances or "
             f"metric='euclidean' for coordinate-based distances."
         )
+        raise ValueError(msg)
 
 
 def _require_bin_centers(
@@ -411,16 +412,18 @@ def _require_bin_centers(
 ) -> NDArray[np.float64]:
     """Return ``bin_centers`` for a Euclidean query, refusing a missing or short one."""
     if bin_centers is None:
-        raise ValueError(
+        msg = (
             "bin_centers parameter is required when metric='euclidean'. "
             "Provide an array of node coordinates with shape (n_nodes, n_dims)."
         )
+        raise ValueError(msg)
     if bin_centers.shape[0] != n_nodes:
-        raise ValueError(
+        msg = (
             f"bin_centers size {bin_centers.shape[0]} must match "
             f"number of nodes in graph ({n_nodes}). "
             f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
         )
+        raise ValueError(msg)
     return bin_centers
 
 
@@ -569,10 +572,11 @@ def distance_field(
 
     _require_metric(metric)
     if cutoff is not None and not cutoff >= 0:  # NaN is no distance
-        raise ValueError(
+        msg = (
             f"cutoff must be non-negative, got {cutoff}. "
             f"Use cutoff=None for no distance limit, or provide a positive value."
         )
+        raise ValueError(msg)
 
     n_nodes = _require_bin_graph(G, "distance_field()")
     if n_nodes == 0:
@@ -580,10 +584,11 @@ def distance_field(
 
     sources_array = _as_bin_indices(sources, n_nodes, "distance_field()", "sources")
     if len(sources_array) == 0:
-        raise ValueError(
+        msg = (
             "sources must contain at least one node. "
             "Provide a non-empty list or array of source node indices."
         )
+        raise ValueError(msg)
 
     if metric == "euclidean":
         coords = _require_bin_centers(bin_centers, n_nodes)
@@ -787,10 +792,11 @@ def neighbors_within(
 
     _require_metric(metric)
     if not radius >= 0:  # NaN is no distance
-        raise ValueError(
+        msg = (
             f"radius must be non-negative, got {radius}. "
             f"Provide a positive radius value or 0 for only center nodes."
         )
+        raise ValueError(msg)
 
     n_nodes = _require_bin_graph(G, "neighbors_within()")
     centers_array = _as_bin_indices(centers, n_nodes, "neighbors_within()", "centers")

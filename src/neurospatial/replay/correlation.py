@@ -185,10 +185,11 @@ def _validated_weights(
     )
     weights = np.asarray(posterior, dtype=np.float64)
     if weights.ndim != 2 or weights.shape[1] != n_bins:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: posterior must have shape (n_time_bins, {n_bins}), "
             f"one column per environment bin, got {weights.shape}."
         )
+        raise ValueError(msg)
     if not np.isfinite(weights).all() or np.any(weights < 0):
         raise ValueError(
             _format_error(
@@ -202,7 +203,8 @@ def _validated_weights(
         )
     row_mass = weights.sum(axis=1)
     if not np.any(row_mass > 0):
-        raise ValueError(f"{_OPERATION}: the posterior has no mass.")
+        msg = f"{_OPERATION}: the posterior has no mass."
+        raise ValueError(msg)
     if row_normalization == "per_time_bin":
         with np.errstate(invalid="ignore", divide="ignore"):
             weights = np.where(row_mass[:, None] > 0, weights / row_mass[:, None], 0.0)

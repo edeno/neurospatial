@@ -216,7 +216,8 @@ def test_gui_thread_only_assigns_layer_data_prepared_on_the_worker(monkeypatch):
     prepared = handle._prepare(0.15)
 
     def refuse(*args, **kwargs):
-        raise AssertionError("sampled on the GUI thread")
+        msg = "sampled on the GUI thread"
+        raise AssertionError(msg)
 
     for name in ("sample", "trail", "pose", "heading_arrow", "events", "field_sample"):
         monkeypatch.setattr(handle._helper, name, refuse)
@@ -622,7 +623,8 @@ def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
 
         # Native worker errors become inspectable and never escape Qt slots.
         def fail(time):
-            raise OSError("decoder read failed")
+            msg = "decoder read failed"
+            raise OSError(msg)
 
         monkeypatch.setattr(handle, "_prepare", fail)
         handle.time_control.setValue(0.2)

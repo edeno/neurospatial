@@ -269,32 +269,36 @@ def simulate_replay_event(
     from neurospatial.simulation.spikes import generate_poisson_spikes
 
     if kind not in _KINDS:
-        raise ValueError(f"{_OPERATION}: kind must be one of {_KINDS}, got {kind!r}.")
+        msg = f"{_OPERATION}: kind must be one of {_KINDS}, got {kind!r}."
+        raise ValueError(msg)
     for name, value in (
         ("duration", duration),
         ("rate_gain", rate_gain),
         ("random_interval", random_interval),
     ):
         if not (np.isfinite(value) and value > 0):
-            raise ValueError(f"{_OPERATION}: {name} must be positive, got {value!r}.")
+            msg = f"{_OPERATION}: {name} must be positive, got {value!r}."
+            raise ValueError(msg)
     if (
         isinstance(drop_fraction, bool)
         or not isinstance(drop_fraction, (int, float, np.integer, np.floating))
         or not 0.0 <= drop_fraction <= 1.0
     ):
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: drop_fraction must be a fraction from 0 to 1 of the "
             f"event's spikes, got {drop_fraction!r}."
         )
+        raise ValueError(msg)
     if (
         isinstance(n_noise_spikes, bool)
         or not isinstance(n_noise_spikes, (int, np.integer))
         or n_noise_spikes < 0
     ):
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: n_noise_spikes must be a non-negative integer, got "
             f"{n_noise_spikes!r}."
         )
+        raise ValueError(msg)
     starts, stops = _require_track_extents(
         env,
         _OPERATION,
@@ -399,10 +403,11 @@ def _add_noise_spikes(
 def _validated_rates(rates: Any, n_bins: int) -> NDArray[np.float64]:
     maps = np.asarray(getattr(rates, "firing_rates", rates), dtype=np.float64)
     if maps.ndim != 2 or maps.shape[1] != n_bins:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: rates must have shape (n_cells, {n_bins}), one rate "
             f"map per cell on env, got {maps.shape}."
         )
+        raise ValueError(msg)
     if not np.isfinite(maps).all() or np.any(maps < 0):
         raise ValueError(
             _format_error(
@@ -493,9 +498,10 @@ def _path(
     if kind == "jump":
         jump = length / 4 if jump_distance is None else float(jump_distance)
         if not (np.isfinite(jump) and jump > 0):
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: jump_distance must be positive, got {jump_distance!r}."
             )
+            raise ValueError(msg)
         distance = np.where(
             times >= duration / 2, distance + np.sign(speed) * jump, distance
         )

@@ -41,7 +41,7 @@ def uniform_log_likelihood() -> np.ndarray:
 @pytest.fixture
 def degenerate_log_likelihood() -> np.ndarray:
     """Log-likelihood with degenerate row (all -inf)."""
-    ll = np.array(
+    return np.array(
         [
             [-1.0, -2.0, -3.0],
             [-np.inf, -np.inf, -np.inf],  # Degenerate row
@@ -49,7 +49,6 @@ def degenerate_log_likelihood() -> np.ndarray:
         ],
         dtype=np.float64,
     )
-    return ll
 
 
 @pytest.fixture
@@ -1206,7 +1205,8 @@ class TestDecodePositionTimeChunkHybrid:
                 if spec.startswith(name):
                     offset = spec[len(name) :]
                     return value + (int(offset) if offset else 0)
-            raise AssertionError(f"unrecognized dim spec: {spec}")
+            msg = f"unrecognized dim spec: {spec}"
+            raise AssertionError(msg)
 
         shape = tuple(_resolve(s) for s in prior_shape)
         prior = np.random.default_rng(0).uniform(0.1, 1.0, shape)

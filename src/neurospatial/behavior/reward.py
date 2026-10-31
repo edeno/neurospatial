@@ -160,10 +160,11 @@ def region_reward_field(
            shaping. ICML.
     """
     if decay not in ("constant", "linear", "gaussian"):
-        raise ValueError(
+        msg = (
             f"Invalid decay type: {decay!r}. "
             "Must be one of: 'constant', 'linear', 'gaussian'."
         )
+        raise ValueError(msg)
     _reject_unused_parameter("bandwidth", bandwidth, decay, uses="gaussian")
     _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
     validate_finite_scalar(
@@ -203,10 +204,11 @@ def region_reward_field(
     elif decay == "gaussian":
         # Gaussian falloff using smoothing
         if bandwidth is None:
-            raise ValueError(
+            msg = (
                 "bandwidth parameter is required for decay='gaussian'. "
                 "Provide a smoothing bandwidth in the same units as your environment."
             )
+            raise ValueError(msg)
 
         # Create indicator field (1 inside region, 0 outside)
         indicator = np.where(region_mask, 1.0, 0.0)
@@ -348,10 +350,11 @@ def goal_reward_field(
     from neurospatial.environment import _validate_target_bins
 
     if decay not in ("linear", "exponential", "inverse"):
-        raise ValueError(
+        msg = (
             f"Invalid decay type: {decay!r}. "
             "Must be one of: 'linear', 'exponential', 'inverse'."
         )
+        raise ValueError(msg)
     _reject_unused_parameter("max_distance", max_distance, decay, uses="linear")
     validate_finite_scalar(
         max_distance, name="max_distance", positive=True, none_allowed=True
@@ -376,10 +379,11 @@ def goal_reward_field(
         reward = scale * np.exp(-distances / scale)
     elif decay == "linear":
         if max_distance is None:
-            raise ValueError(
+            msg = (
                 "max_distance parameter is required for decay='linear'. "
                 "Specify the distance at which reward reaches zero."
             )
+            raise ValueError(msg)
         reward = scale * np.maximum(0, 1 - distances / max_distance)
     else:
         reward = scale / (1 + distances)

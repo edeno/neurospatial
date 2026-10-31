@@ -167,7 +167,7 @@ def test_json_export_accepts_boolean_ids(recording, records, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "suffix, serializer", [(".csv", "to_csv"), (".json", "to_json")]
+    ("suffix", "serializer"), [(".csv", "to_csv"), (".json", "to_json")]
 )
 def test_event_serialization_failure_does_not_truncate_previous_review(
     recording, records, tmp_path, monkeypatch, suffix, serializer
@@ -177,7 +177,8 @@ def test_event_serialization_failure_does_not_truncate_previous_review(
     path.write_text("previous review", encoding="utf-8")
 
     def fail_serialization(*args, **kwargs):
-        raise ValueError("Cannot serialize review metadata")
+        msg = "Cannot serialize review metadata"
+        raise ValueError(msg)
 
     monkeypatch.setattr(pd.DataFrame, serializer, fail_serialization)
     message = "Event IDs cannot round-trip" if suffix == ".json" else "Cannot serialize"
@@ -257,7 +258,7 @@ def test_filter_and_annotation_preserve_overlap_identity(recording, records, tmp
 
 
 @pytest.mark.parametrize(
-    "changed, message",
+    ("changed", "message"),
     [
         ({"event_id": ["a", "a", "c"]}, "unique"),
         ({"event_id": ["a", None, "c"]}, "nonmissing"),
@@ -501,7 +502,7 @@ def test_widget_playback_advances_physical_seconds_on_an_irregular_clock(recordi
 
 
 @pytest.mark.parametrize(
-    "options, message",
+    ("options", "message"),
     [
         ({"speed": 0}, "speed"),
         ({"speed": np.nan}, "speed"),

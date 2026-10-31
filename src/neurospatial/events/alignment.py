@@ -140,7 +140,7 @@ def _keep_observed_events(
         if windows is not None:
             keep &= intervals_contain(windows, starts, stops)
     if not keep.any():
-        raise ValueError(
+        msg = (
             f"All {event_times.size} events were dropped from the peri-event "
             f"histogram: no event's window [event{window[0]:+g} s, "
             f"event{window[1]:+g} s) lies entirely inside epochs ∩ spike_window. "
@@ -148,6 +148,7 @@ def _keep_observed_events(
             f"if no spikes occurred there.\nFix: check that event_times, epochs "
             f"and spike_window share one clock (seconds), or narrow `window`."
         )
+        raise ValueError(msg)
     return event_times[keep], np.flatnonzero(keep)
 
 
@@ -497,11 +498,12 @@ def population_peri_event_histogram(
     trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
 
     if len(trains) == 0:
-        raise ValueError(
+        msg = (
             "spike_times is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
             "  Fix: Provide at least one spike train."
         )
+        raise ValueError(msg)
     context = "population_peri_event_histogram"
     window = _validate_window(window, context=context)
     histograms, sem, mean_sem, event_indices, n_dropped = _peri_event_histograms(

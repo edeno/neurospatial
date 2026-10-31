@@ -469,11 +469,12 @@ def _decode_options(
 
     unknown = sorted(set(decode_kwargs) - set(_DECODE_OPTIONS))
     if unknown:
-        raise TypeError(
+        msg = (
             f"{caller} got unexpected keyword argument(s): {unknown}. Supported "
             f"decode kwargs are {', '.join(_DECODE_OPTIONS)} (dtype is an "
             "explicit parameter)."
         )
+        raise TypeError(msg)
     time_chunk = decode_kwargs.get(
         "time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK if summary else None
     )
@@ -557,10 +558,11 @@ def _prepare_session_decode(
     trains, _ = _as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
-        raise ValueError(
+        msg = (
             f"times must be a 1-D array of timestamps for decode_session, "
             f"got shape {times_arr.shape}."
         )
+        raise ValueError(msg)
     # Require finite, sorted timestamps before constructing observed runs.
     _validate_times(times_arr, context=context)
     breaks = validate_break_before(break_before, times_arr.size, call=context)
@@ -598,7 +600,7 @@ def _prepare_session_decode(
         _warn_if_bins_drop_observed_time(runs, bin_left, bin_right, dt, max_gap)
     if bin_left.size == 0:
         longest = float(np.max(np.diff(runs, axis=1), initial=0.0))
-        raise ValueError(
+        msg = (
             f"No decode time bin fits: the {runs.shape[0]} observed recording "
             f"run(s) are at most {longest:.3g} s long, shorter than dt={dt}. "
             f"\nWhy: time bins are formed only inside runs of samples with gaps "
@@ -607,6 +609,7 @@ def _prepare_session_decode(
             f"\nFix: use a smaller dt, widen epochs/spike_window, or pass a larger "
             f"max_gap (max_gap=None decodes across gaps)."
         )
+        raise ValueError(msg)
 
     rates, prior = _prepare_decode_inputs(
         env,

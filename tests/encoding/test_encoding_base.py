@@ -71,7 +71,7 @@ class TestToNumpy:
     """Tests for _to_numpy helper function."""
 
     @pytest.mark.parametrize(
-        "value,expected",
+        ("value", "expected"),
         [
             (np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0])),
             ([1.0, 2.0, 3.0], np.array([1.0, 2.0, 3.0])),

@@ -138,11 +138,12 @@ def _occupancy(
 
     # Validate time_allocation parameter
     if time_allocation not in ("start", "linear"):
-        raise ValueError(
+        msg = (
             f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
             "Use 'start' for simple allocation (all layouts) or 'linear' for "
             "segment intersection with rectangular or exact planar polygon cells."
         )
+        raise ValueError(msg)
 
     # Validate the capability before returning for empty input.
     polygon_allocation = False
@@ -412,56 +413,60 @@ def _transitions(
         # MODEL-BASED MODE
         # Validate that empirical inputs aren't provided
         if bins is not None or times is not None or positions is not None:
-            raise ValueError(
+            msg = (
                 "Cannot provide both 'method' (model-based) and empirical "
                 "inputs (bins/times/positions). Choose one mode."
             )
+            raise ValueError(msg)
 
         # Validate that empirical parameters aren't silently ignored
         if lag != 1:
-            raise ValueError(
+            msg = (
                 f"Parameter 'lag' is only valid in empirical mode. "
                 f"Got lag={lag} with method='{method}'. "
                 f"Remove 'lag' parameter or set method=None for empirical mode."
             )
+            raise ValueError(msg)
         if allow_teleports is not False:
-            raise ValueError(
+            msg = (
                 f"Parameter 'allow_teleports' is only valid in empirical mode. "
                 f"Got allow_teleports={allow_teleports} with method='{method}'. "
                 f"Remove 'allow_teleports' parameter or set method=None for empirical mode."
             )
+            raise ValueError(msg)
         if break_before is not None:
-            raise ValueError(
+            msg = (
                 f"Parameter 'break_before' is only valid in empirical mode. "
                 f"Got break_before with method='{method}': model transitions "
                 f"come from the graph, not from a recording. "
                 f"Remove 'break_before' or set method=None for empirical mode."
             )
+            raise ValueError(msg)
 
         # Validate bandwidth parameter usage
         if method == "random_walk" and bandwidth is not None:
-            raise ValueError(
+            msg = (
                 f"Parameter 'bandwidth' is only valid with method='diffusion'. "
                 f"Got bandwidth={bandwidth} with method='random_walk'. "
                 f"Remove 'bandwidth' parameter."
             )
+            raise ValueError(msg)
 
         # Dispatch to model-based method
         if method == "random_walk":
             return _random_walk_transitions(graph, normalize=normalize)
-        elif method == "diffusion":
+        if method == "diffusion":
             if bandwidth is None:
-                raise ValueError(
+                msg = (
                     "method='diffusion' requires 'bandwidth' parameter. "
                     "Provide bandwidth in physical units (sigma)."
                 )
+                raise ValueError(msg)
             return _diffusion_transitions(
                 cache, binning, bandwidth=bandwidth, normalize=normalize
             )
-        else:
-            raise ValueError(
-                f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."
-            )
+        msg = f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."
+        raise ValueError(msg)
     else:
         # EMPIRICAL MODE
         return _empirical_transitions(
@@ -573,21 +578,24 @@ def _empirical_transitions(
     trajectory_provided = times is not None or positions is not None
 
     if not bins_provided and not trajectory_provided:
-        raise ValueError("Must provide either 'bins' or both 'times' and 'positions'.")
+        msg = "Must provide either 'bins' or both 'times' and 'positions'."
+        raise ValueError(msg)
 
     if bins_provided and trajectory_provided:
-        raise ValueError(
+        msg = (
             "Cannot provide both 'bins' and 'times'/'positions'. "
             "Use one input method only."
         )
+        raise ValueError(msg)
 
     # If times/positions provided, validate both are present
     if trajectory_provided:
         if times is None or positions is None:
-            raise ValueError(
+            msg = (
                 "Both times and positions must be provided together "
                 "when computing transitions from trajectory."
             )
+            raise ValueError(msg)
 
         # Compute bin sequence from trajectory
         bins = _bin_sequence(
@@ -623,10 +631,11 @@ def _empirical_transitions(
     # Convert to numpy array and validate dtype
     bins = np.asarray(bins)
     if not np.issubdtype(bins.dtype, np.integer):
-        raise ValueError(
+        msg = (
             f"bins must be an integer array, got dtype {bins.dtype}. "
             f"Ensure bin indices are integers before calling transitions()."
         )
+        raise ValueError(msg)
     bins = bins.astype(np.intp)
     if bins_provided:
         # A precomputed sequence has no clock, so only declared breaks apply.
@@ -639,7 +648,8 @@ def _empirical_transitions(
 
     # Validate lag
     if lag < 1:
-        raise ValueError(f"lag must be positive (got {lag}).")
+        msg = f"lag must be positive (got {lag})."
+        raise ValueError(msg)
 
     # Handle empty or single-element sequences
     if len(bins) == 0 or len(bins) <= lag:
@@ -652,13 +662,14 @@ def _empirical_transitions(
         invalid_mask = (bins < 0) | (bins >= n_bins)
         invalid_indices = np.where(invalid_mask)[0]
         invalid_values = bins[invalid_mask]
-        raise ValueError(
+        msg = (
             f"Invalid bin indices found outside range [0, {n_bins}). "
             f"Found {len(invalid_indices)} invalid values at indices "
             f"{invalid_indices[:5].tolist()}{'...' if len(invalid_indices) > 5 else ''}: "
             f"{invalid_values[:5].tolist()}{'...' if len(invalid_values) > 5 else ''}. "
             f"Note: -1 (outside) values are not allowed in transitions."
         )
+        raise ValueError(msg)
 
     # Extract transition pairs with lag
     source_bins = bins[:-lag]
@@ -690,11 +701,12 @@ def _diffusion_transitions(
 ) -> scipy.sparse.csr_matrix:
     """Return the heat-diffusion transitions from the cached heat kernel."""
     if not normalize:
-        raise ValueError(
+        msg = (
             "method='diffusion' does not support normalize=False. "
             "Heat kernel transitions are inherently normalized (row-stochastic). "
             "Set normalize=True or use method='random_walk'."
         )
+        raise ValueError(msg)
 
     return _diffusion_transition_matrix(
         _compute_kernel(cache, binning, bandwidth, mode="transition", writable=False)

@@ -100,14 +100,14 @@ class _RectangleControl(QWidget):
         if not self._active:
             return None
         if self._geometry_pending:
-            raise ValueError(
+            msg = (
                 f"Finish drawing or editing the {self._noun}, "
                 f"or choose {self._clear_label}."
             )
+            raise ValueError(msg)
         if self.layer not in self._viewer.layers or len(self.layer.data) != 1:
-            raise ValueError(
-                f"Draw one {self._noun} rectangle, or choose {self._clear_label}."
-            )
+            msg = f"Draw one {self._noun} rectangle, or choose {self._clear_label}."
+            raise ValueError(msg)
         return np.asarray(self.layer.data[0], dtype=np.float64)
 
     def _describe(self) -> str:
@@ -263,7 +263,8 @@ class BoxPromptControl(_RectangleControl):
         columns = np.clip(rectangle[:, 1], -0.5, width - 0.5)
         box = np.array([columns.min(), rows.min(), columns.max(), rows.max()])
         if box[2] <= box[0] or box[3] <= box[1]:
-            raise ValueError("Draw the box over the image, with positive size.")
+            msg = "Draw the box over the image, with positive size."
+            raise ValueError(msg)
         return box
 
     def _describe(self) -> str:

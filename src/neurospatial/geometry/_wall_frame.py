@@ -109,104 +109,96 @@ def wall_source_frame(
                     frames,
                     errors[selected],
                 )
-            else:
-                # Retain the *current* clipped support in the exact wall frame.
-                # Project shared vertices once through the actual stored frames.
-                # Their existing forward-residual bounds include inverse and
-                # large-origin arithmetic without expanding physical support.
-                polygons = np.asarray(locator.cells.polygons, dtype=object)
-                coordinates = shapely.get_coordinates(polygons)
-                unique, indices = np.unique(coordinates, axis=0, return_inverse=True)
-                mapped = unique
-                projection_errors = np.zeros_like(unique)
-                for frame in frames:
-                    mapped, projection_errors = frame.affine.project(
-                        mapped, projection_errors
-                    )
-                current_parents = cells_from_locator(locator.base)
-                current_errors = [
-                    _polygon_coordinate_errors(p) for p in current_parents
-                ]
-                source_errors = [_polygon_coordinate_errors(p) for p in cells]
-                projected = shapely.set_coordinates(polygons, mapped[indices])
-                clipped: list[Polygon | MultiPolygon] = []
-                clipped_errors = errors[locator.mapping.parent_bin_indices]
-                signed_permutation = all(
-                    np.all(np.isin(frame.inverse[:2, :2], (-1.0, 0.0, 1.0)))
-                    and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=0) == 1)
-                    and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=1) == 1)
-                    for frame in frames
+            # Retain the *current* clipped support in the exact wall frame.
+            # Project shared vertices once through the actual stored frames.
+            # Their existing forward-residual bounds include inverse and
+            # large-origin arithmetic without expanding physical support.
+            polygons = np.asarray(locator.cells.polygons, dtype=object)
+            coordinates = shapely.get_coordinates(polygons)
+            unique, indices = np.unique(coordinates, axis=0, return_inverse=True)
+            mapped = unique
+            projection_errors = np.zeros_like(unique)
+            for frame in frames:
+                mapped, projection_errors = frame.affine.project(
+                    mapped, projection_errors
                 )
-                axis_aligned = all(
-                    np.all(
-                        np.any(
-                            np.diff(shapely.get_coordinates(ring), axis=0) == 0, axis=1
-                        )
-                    )
-                    for polygon in (*cells, *current_parents)
-                    for ring in shapely.get_rings(shapely.get_parts(polygon))
+            current_parents = cells_from_locator(locator.base)
+            current_errors = [_polygon_coordinate_errors(p) for p in current_parents]
+            source_errors = [_polygon_coordinate_errors(p) for p in cells]
+            projected = shapely.set_coordinates(polygons, mapped[indices])
+            clipped: list[Polygon | MultiPolygon] = []
+            clipped_errors = errors[locator.mapping.parent_bin_indices]
+            signed_permutation = all(
+                np.all(np.isin(frame.inverse[:2, :2], (-1.0, 0.0, 1.0)))
+                and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=0) == 1)
+                and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=1) == 1)
+                for frame in frames
+            )
+            axis_aligned = all(
+                np.all(
+                    np.any(np.diff(shapely.get_coordinates(ring), axis=0) == 0, axis=1)
                 )
-                # Signed permutations recover the stored axis coordinates
-                # exactly on axis-aligned parent geometry. Other inverses or
-                # rounded diagonal boundaries may leave a parent-edge gap.
-                # Refuse uncertain wall clearance instead of expanding cells.
-                exact_axes = signed_permutation and axis_aligned
-                projection_error = float(
-                    np.max(np.linalg.norm(projection_errors, axis=1))
-                )
-                projection_error += float(
-                    np.max(
-                        np.linalg.norm(
-                            np.asarray(current_errors) @ np.abs(inverse[:2, :2]).T,
-                            axis=1,
-                        )
+                for polygon in (*cells, *current_parents)
+                for ring in shapely.get_rings(shapely.get_parts(polygon))
+            )
+            # Signed permutations recover the stored axis coordinates
+            # exactly on axis-aligned parent geometry. Other inverses or
+            # rounded diagonal boundaries may leave a parent-edge gap.
+            # Refuse uncertain wall clearance instead of expanding cells.
+            exact_axes = signed_permutation and axis_aligned
+            projection_error = float(np.max(np.linalg.norm(projection_errors, axis=1)))
+            projection_error += float(
+                np.max(
+                    np.linalg.norm(
+                        np.asarray(current_errors) @ np.abs(inverse[:2, :2]).T,
+                        axis=1,
                     )
                 )
-                for child, (polygon, parent) in enumerate(
-                    zip(projected, locator.mapping.parent_bin_indices, strict=True)
+            )
+            for child, (polygon, parent) in enumerate(
+                zip(projected, locator.mapping.parent_bin_indices, strict=True)
+            ):
+                retained = polygon.intersection(cells[parent])
+                if (
+                    not isinstance(retained, (Polygon, MultiPolygon))
+                    or retained.is_empty
                 ):
-                    retained = polygon.intersection(cells[parent])
-                    if (
-                        not isinstance(retained, (Polygon, MultiPolygon))
-                        or retained.is_empty
-                    ):
-                        raise ValueError(
-                            "Current clipped cells lose their source-frame support."
+                    msg = "Current clipped cells lose their source-frame support."
+                    raise ValueError(msg)
+                if not exact_axes:
+                    error = projection_error + float(
+                        np.linalg.norm(source_errors[parent])
+                    )
+                    clipped_errors[child] += error
+                    # The projected cell's boundary is known only to
+                    # within ``error``, on either side, so a wall inside
+                    # the parent cell is unresolved when it comes within
+                    # ``error`` of that boundary without reaching deeper
+                    # than ``error`` into the cell.
+                    core = polygon.buffer(-error)
+                    for number, wall in enumerate(walls):
+                        interior = wall.intersection(cells[parent]).difference(
+                            cells[parent].boundary
                         )
-                    if not exact_axes:
-                        error = projection_error + float(
-                            np.linalg.norm(source_errors[parent])
-                        )
-                        clipped_errors[child] += error
-                        # The projected cell's boundary is known only to
-                        # within ``error``, on either side, so a wall inside
-                        # the parent cell is unresolved when it comes within
-                        # ``error`` of that boundary without reaching deeper
-                        # than ``error`` into the cell.
-                        core = polygon.buffer(-error)
-                        for number, wall in enumerate(walls):
-                            interior = wall.intersection(cells[parent]).difference(
-                                cells[parent].boundary
-                            )
-                            if (
-                                interior.length > 0
-                                and interior.intersection(core).length == 0
-                                and interior.distance(polygon.boundary) <= error
-                            ):
-                                raise ValueError(
-                                    _clearance_message(
-                                        frames[-1].base.wall_names[number],
-                                        child,
-                                        error,
-                                    )
+                        if (
+                            interior.length > 0
+                            and interior.intersection(core).length == 0
+                            and interior.distance(polygon.boundary) <= error
+                        ):
+                            raise ValueError(
+                                _clearance_message(
+                                    frames[-1].base.wall_names[number],
+                                    child,
+                                    error,
                                 )
-                    clipped.append(retained)
-                return (
-                    tuple(clipped),
-                    walls,
-                    original,
-                    inverse,
-                    frames,
-                    clipped_errors,
-                )
+                            )
+                clipped.append(retained)
+            return (
+                tuple(clipped),
+                walls,
+                original,
+                inverse,
+                frames,
+                clipped_errors,
+            )
     return None

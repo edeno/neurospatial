@@ -73,7 +73,7 @@ def test_all_names_resolve(module_name):
 
 
 @pytest.mark.parametrize(
-    "top_name,submodule_name",
+    ("top_name", "submodule_name"),
     [
         ("Environment", "neurospatial.environment"),
         ("Region", "neurospatial.regions"),

@@ -93,8 +93,7 @@ def _penalized_hessian_jax(basis: Array, mu: Array, penalty_diag: Array) -> Arra
     """
     r = basis.shape[1]
     hessian = jnp.einsum("ir,ik,is->krs", basis, mu, basis)
-    hessian = hessian + (penalty_diag + _HESSIAN_JITTER) * jnp.eye(r, dtype=basis.dtype)
-    return hessian
+    return hessian + (penalty_diag + _HESSIAN_JITTER) * jnp.eye(r, dtype=basis.dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -448,12 +447,13 @@ def select_penalty_by_reml_jax(
         options={"xatol": _REML_XATOL},
     )
     if not np.isfinite(result.fun):
-        raise ValueError(
+        msg = (
             "REML found no finite objective in the log-penalty interval "
             f"{_LOG_PENALTY_BOUNDS}: no lambda yielded a converged inner fit with "
             "a positive-definite Hessian. Reduce the basis rank, improve "
             "occupancy coverage, or supply a fixed penalty."
         )
+        raise ValueError(msg)
     lower, upper = _LOG_PENALTY_BOUNDS
     at_boundary = bool(min(result.x - lower, upper - result.x) <= _REML_BOUNDARY_TOL)
     return float(np.exp(result.x)), float(result.fun), at_boundary

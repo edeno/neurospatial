@@ -82,7 +82,8 @@ class _OwnedReaders:
 
     def add(self, reader: Any) -> None:
         if self._closed:
-            raise RuntimeError("Cannot add readers to a closed resource owner.")
+            msg = "Cannot add readers to a closed resource owner."
+            raise RuntimeError(msg)
         if callable(getattr(reader, "close", None)):
             self._readers.setdefault(id(reader), reader)
 

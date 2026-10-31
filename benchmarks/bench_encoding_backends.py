@@ -274,7 +274,8 @@ def run_single_benchmark(
             )
 
     else:
-        raise ValueError(f"Unknown function: {function_name}")
+        msg = f"Unknown function: {function_name}"
+        raise ValueError(msg)
 
     # Warmup run (excludes JIT compilation time for JAX)
     if warmup:

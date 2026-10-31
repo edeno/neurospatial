@@ -345,7 +345,7 @@ def _read_events(nwbfile):
 
 
 _EXTENSIONS = pytest.mark.parametrize(
-    "read,module,missing_message",
+    ("read", "module", "missing_message"),
     [
         (_read_pose, "ndx_pose", "ndx_pose is required"),
         (_read_events, "ndx_events", "ndx_events is required"),

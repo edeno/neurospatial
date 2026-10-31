@@ -34,7 +34,8 @@ def _x_neighbors(env):
         match = np.flatnonzero(np.all(np.isclose(centers, point), axis=1))
         if match.size:
             return first, int(match[0])
-    raise AssertionError("no pair of x-neighbors in this environment")
+    msg = "no pair of x-neighbors in this environment"
+    raise AssertionError(msg)
 
 
 class TestOccupancyEdgeCases:

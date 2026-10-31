@@ -13,7 +13,7 @@ from neurospatial._intervals import (
 
 
 @pytest.mark.parametrize(
-    "kwargs,expected",
+    ("kwargs", "expected"),
     [
         ({"epochs": np.array([[0.0, 1.0]])}, [True, True, False]),
         ({"spike_window": np.array([[0.0, 1.0]])}, [True, True, False]),

@@ -163,10 +163,11 @@ class JointDecodingResult(ReadOnlyArraysMixin, ResultMixin):
             If ``name`` is not a template of this result.
         """
         if name not in self.conditional:
-            raise KeyError(
+            msg = (
                 f"no template named {name!r}; the templates are "
                 f"{list(self.template_names)}."
             )
+            raise KeyError(msg)
         column = self.template_names.index(name)
         joint = (
             self.conditional[name].posterior
@@ -342,9 +343,8 @@ def decode_jointly(
         )
     bad_names = [name for name in names if not isinstance(name, str)]
     if bad_names:
-        raise ValueError(
-            f"{_OPERATION}: template names must be strings, got {bad_names!r}."
-        )
+        msg = f"{_OPERATION}: template names must be strings, got {bad_names!r}."
+        raise ValueError(msg)
     envs = _per_template(env, names, "env")
     if prior is not None and not isinstance(prior, Mapping):
         raise ValueError(

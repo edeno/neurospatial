@@ -29,12 +29,14 @@ def capture_shapes(
     """
     features = shapes_layer.features
     if len(features) != len(shapes_layer.data):
-        raise ValueError("Cannot capture project: shape features are not synchronized.")
+        msg = "Cannot capture project: shape features are not synchronized."
+        raise ValueError(msg)
     if not features["_polygon_id"].astype(bool).all():
-        raise ValueError(
+        msg = (
             "Cannot capture project: a shape has not been processed yet. "
             "Flush pending annotation edits before saving."
         )
+        raise ValueError(msg)
     metadata = shapes_layer.metadata.get("_polygon_metadata", {})
     earlier = {shape.identifier: shape for shape in previous}
     captured = (
@@ -84,12 +86,13 @@ def _validate_shapes_for_display(shapes: Sequence[AnnotationShape]) -> None:
             required = "2 defining vertices or 4 corners"
         if not valid:
             label = shape.name or shape.identifier
-            raise ValueError(
+            msg = (
                 f"Cannot display annotation shape {index + 1} ({label!r}): "
                 f"{shape.shape_type} has {count} vertices; napari requires {required}. "
                 "Replace this shape with an AnnotationShape containing the required "
                 "vertices before resuming. The saved geometry has not been changed."
             )
+            raise ValueError(msg)
 
 
 def restore_shapes(shapes: Sequence[AnnotationShape], shapes_layer: Any) -> None:

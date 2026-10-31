@@ -155,10 +155,11 @@ def neighbor_reduce(
     """
     # Validate inputs
     if field.shape[0] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"field.shape must match environment bins (got field.shape={field.shape}, "
             f"expected ({env.n_bins},))"
         )
+        raise ValueError(msg)
 
     validate_choice(
         op, ("sum", "mean", "max", "min", "std"), name="op", owner="neighbor_reduce()"
@@ -166,14 +167,14 @@ def neighbor_reduce(
 
     if weights is not None:
         if weights.shape[0] != env.n_bins:
-            raise ValueError(
+            msg = (
                 f"weights.shape must match environment bins (got weights.shape={weights.shape}, "
                 f"expected ({env.n_bins},))"
             )
+            raise ValueError(msg)
         if op not in {"sum", "mean"}:
-            raise ValueError(
-                f"weights are only supported for 'sum' and 'mean' operations, got '{op}'"
-            )
+            msg = f"weights are only supported for 'sum' and 'mean' operations, got '{op}'"
+            raise ValueError(msg)
 
     # ``sum`` and ``mean`` are linear over the neighborhood and can be expressed
     # as a sparse matrix-vector product against the (binary) adjacency matrix.
@@ -419,10 +420,11 @@ def graph_convolve(
     """
     # Validate field shape
     if field.shape[0] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"field.shape must match environment bins (got field.shape={field.shape}, "
             f"expected ({env.n_bins},))"
         )
+        raise ValueError(msg)
 
     # Determine kernel type and compute kernel matrix if needed
     if callable(kernel):
@@ -441,10 +443,11 @@ def graph_convolve(
         # Precomputed kernel matrix
         kernel_matrix = kernel
         if kernel_matrix.shape != (env.n_bins, env.n_bins):
-            raise ValueError(
+            msg = (
                 f"kernel matrix shape must be ({env.n_bins}, {env.n_bins}), "
                 f"got {kernel_matrix.shape}"
             )
+            raise ValueError(msg)
 
     # NaN marks a missing source value, not zero activity.
     missing = np.isnan(field)

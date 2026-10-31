@@ -68,7 +68,8 @@ def _check_criterion_settings(
         relative_to, (None, "track_length"), name="relative_to", owner=prefix
     )
     if not isinstance(absolute, (bool, np.bool_)):
-        raise ValueError(f"{prefix}: absolute must be True or False, got {absolute!r}.")
+        msg = f"{prefix}: absolute must be True or False, got {absolute!r}."
+        raise ValueError(msg)
 
 
 def _criterion_label(

@@ -89,7 +89,8 @@ def _create_hex_grid(
     if positions is not None:
         ds_arr = np.asarray(positions, dtype=float)
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
-            raise ValueError("`positions` must be shape (n_samples, 2).")
+            msg = "`positions` must be shape (n_samples, 2)."
+            raise ValueError(msg)
 
     if dimension_range is not None:
         (min_x, max_x), (min_y, max_y) = _compute_dimension_ranges(
@@ -102,7 +103,8 @@ def _create_hex_grid(
             else ds_arr[np.isfinite(ds_arr).all(axis=1)]
         )
         if finite.shape[0] == 0:
-            raise ValueError("`positions` is empty; cannot infer bounding box.")
+            msg = "`positions` is empty; cannot infer bounding box."
+            raise ValueError(msg)
         min_vals = np.min(finite, axis=0)
         max_vals = np.max(finite, axis=0)
         min_x, max_x = float(min_vals[0]), float(max_vals[0])

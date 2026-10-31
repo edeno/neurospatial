@@ -162,7 +162,8 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
         b = int(hex_color[4:6], 16) / 255.0
         a = int(hex_color[6:8], 16) / 255.0
     else:
-        raise ValueError(f"Invalid hex color: {hex_color}")
+        msg = f"Invalid hex color: {hex_color}"
+        raise ValueError(msg)
     return np.array([r, g, b, a], dtype=np.float64)
 
 
@@ -496,7 +497,7 @@ def _show_1d_preview(
         return ax
 
     # Create the 1D preview plot
-    ax = plot_graph_as_1D(
+    return plot_graph_as_1D(
         track_graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
@@ -504,8 +505,6 @@ def _show_1d_preview(
         figsize=(10, 2),
         show=show,
     )
-
-    return ax
 
 
 def _can_preview(state: TrackBuilderState) -> bool:

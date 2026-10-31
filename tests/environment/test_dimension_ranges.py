@@ -74,7 +74,8 @@ def _track_cell_ends(env: Environment) -> np.ndarray:
                 ]
                 break
         else:
-            raise AssertionError(f"bin center {center} lies on no track segment")
+            msg = f"bin center {center} lies on no track segment"
+            raise AssertionError(msg)
     return np.array(ends)
 
 

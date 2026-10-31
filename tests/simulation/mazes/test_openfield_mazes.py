@@ -22,7 +22,7 @@ class TestCircularMazes:
     """Test circular arena mazes (Watermaze, Barnes, Cheeseboard)."""
 
     @pytest.mark.parametrize(
-        "factory,dims_cls",
+        ("factory", "dims_cls"),
         [
             (make_watermaze, WatermazeDims),
             (make_barnes_maze, BarnesDims),
@@ -35,7 +35,7 @@ class TestCircularMazes:
         assert maze.env_track is None
 
     @pytest.mark.parametrize(
-        "factory,dims_cls",
+        ("factory", "dims_cls"),
         [
             (make_watermaze, WatermazeDims),
             (make_barnes_maze, BarnesDims),

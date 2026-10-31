@@ -767,9 +767,8 @@ def interval_valid_mask(
     """
     validate_max_gap(max_gap)
     if require_end_bin and start_bin is None:
-        raise ValueError(
-            "require_end_bin=True needs start_bin, the bin of every sample."
-        )
+        msg = "require_end_bin=True needs start_bin, the bin of every sample."
+        raise ValueError(msg)
     times = np.asarray(times, dtype=np.float64)
     speed = validate_speed_gate(speed, min_speed, times.size)
     if len(times) < 2:
@@ -1253,12 +1252,13 @@ def start_allocated_occupancy(
     """
     bins = start_bin[:-1][interval_mask]
     if bins.size and int(bins.max()) >= n_bins:
-        raise ValueError(
+        msg = (
             f"A retained interval starts in bin {int(bins.max())}, but there "
             f"are only {n_bins} bins: start_bin does not come from this "
             "environment. Fix: compute start_bin with env.bin_at on the same "
             "environment."
         )
+        raise ValueError(msg)
     weights = dt[interval_mask] if return_seconds else None
     return np.bincount(bins, weights=weights, minlength=n_bins).astype(np.float64)
 

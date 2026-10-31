@@ -165,12 +165,13 @@ def time_to_nearest_event(
     if max_time is not None and not (
         _is_real_number(max_time) and np.isfinite(max_time) and max_time >= 0
     ):
-        raise ValueError(
+        msg = (
             f"max_time must be a finite non-negative number of seconds, got "
             f"{max_time!r}.\n"
             "  WHY: max_time is the largest time-to-event magnitude returned.\n"
             "  Fix: Use max_time >= 0, or None for no clipping."
         )
+        raise ValueError(msg)
 
     recorded = as_intervals(epochs, name="epochs")
 

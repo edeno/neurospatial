@@ -218,7 +218,9 @@ def native_fastplotlib():
     return fastplotlib
 
 
-@pytest.mark.parametrize("vmin,vmax,threshold", [(0, 1, 1), (2, 3, 3), (0, 4, 1)])
+@pytest.mark.parametrize(
+    ("vmin", "vmax", "threshold"), [(0, 1, 1), (2, 3, 3), (0, 4, 1)]
+)
 def test_native_iso_threshold_uses_data_units_beyond_color_limits(
     native_fastplotlib, vmin, vmax, threshold
 ):
@@ -326,7 +328,8 @@ def test_native_volume_material_gamma_and_opacity_still_change_colors(
 
 
 @pytest.mark.parametrize(
-    "front,back,vmin,vmax", [(2, 4, 0, 1), (-4, -2, 0, 1), (-2e6, -1.5e6, -3e6, -2.5e6)]
+    ("front", "back", "vmin", "vmax"),
+    [(2, 4, 0, 1), (-4, -2, 0, 1), (-2e6, -1.5e6, -3e6, -2.5e6)],
 )
 def test_native_mip_depth_uses_raw_maximum_despite_saturated_color(
     native_fastplotlib, front, back, vmin, vmax
@@ -423,7 +426,8 @@ def test_native_captures_missing_holes_negative_zero_and_lazy_updates(
             return self.shape[0]
 
         def __array__(self, *args, **kwargs):
-            raise AssertionError("Never materialize the movie")
+            msg = "Never materialize the movie"
+            raise AssertionError(msg)
 
         def __getitem__(self, index):
             self.reads.append(index)
@@ -592,7 +596,8 @@ def test_volume_compatibility_failure_precedes_widget_allocation(
     import neurospatial.environment._fastplotlib_compat as compatibility
 
     def unavailable(*args):
-        raise ImportError("Cannot verify this volume shader")
+        msg = "Cannot verify this volume shader"
+        raise ImportError(msg)
 
     fake = SimpleNamespace(
         __version__="0.7.0",

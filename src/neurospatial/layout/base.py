@@ -39,7 +39,8 @@ def _choice(value: Any) -> Any:
         items = tuple(_choice(item) for item in value)
         if all(isinstance(item, _SCALAR_CHOICES) for item in items):
             return items
-    raise TypeError(f"{type(value).__name__} is not a scalar or a flat sequence")
+    msg = f"{type(value).__name__} is not a scalar or a flat sequence"
+    raise TypeError(msg)
 
 
 _DECLARE_DATA = (

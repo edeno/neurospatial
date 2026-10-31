@@ -468,7 +468,8 @@ def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
 
     class FailingTree:
         def query(self, points, k=1, **options):
-            raise MemoryError("query buffer")
+            msg = "query buffer"
+            raise MemoryError(msg)
 
     locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
     monkeypatch.setattr(

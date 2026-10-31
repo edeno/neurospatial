@@ -141,7 +141,7 @@ def load_all_neurons():
 }
 _FENCE = re.compile(
     r"^(?P<indent>[ \t]*)```python[ \t]*\n(?P<body>.*?)^(?P=indent)```[ \t]*$",
-    re.M | re.S,
+    re.MULTILINE | re.DOTALL,
 )
 _MARKER = re.compile(
     r"<!--\s*docs-test:\s*(?P<kind>run|skip|raises)\b(?P<arg>[^>]*?)\s*-->"

@@ -139,26 +139,30 @@ def _structural_constant_base(
     B = np.asarray(B, dtype=np.float64)
     n_components = int(n_live_components)
     if B.ndim != 2:
-        raise ValueError(f"B must be 2-D; got shape {B.shape}.")
+        msg = f"B must be 2-D; got shape {B.shape}."
+        raise ValueError(msg)
     if not 1 <= n_components <= B.shape[1]:
-        raise ValueError(
+        msg = (
             "n_live_components must be between 1 and the basis rank; got "
             f"{n_components} for B shape {B.shape}."
         )
+        raise ValueError(msg)
 
     intercepts = B[:, :n_components]
     peak_rows = np.argmax(np.abs(intercepts), axis=0)
     levels = intercepts[peak_rows, np.arange(n_components)]
     if np.any(levels == 0.0):
-        raise ValueError("a structural component-intercept column is identically zero.")
+        msg = "a structural component-intercept column is identically zero."
+        raise ValueError(msg)
 
     base = np.zeros(B.shape[1], dtype=np.float64)
     base[:n_components] = 1.0 / levels
     if not np.allclose(B @ base, 1.0, rtol=1e-12, atol=1e-12):
-        raise ValueError(
+        msg = (
             "the leading component-intercept columns do not span the all-ones "
             "predictor required by MRFBasis."
         )
+        raise ValueError(msg)
     return base
 
 
@@ -335,11 +339,12 @@ def _fit_mrf_gam_per_unit(
                 tol=_FIT_TOL,
             )
         except ValueError as exc:
-            raise ValueError(
+            msg = (
                 f"MRF-GAM per-unit REML failed for "
                 f"{_format_affected_units([int(k)], unit_ids)}: {exc} Supply a "
                 "fixed penalty or use pooled=True (which pools across units)."
-            ) from exc
+            )
+            raise ValueError(msg) from exc
         lam_per_unit[k] = lam_k
         reml_obj_per_unit[k] = obj_k
         boundary_per_unit[k] = bool(bnd_k)
@@ -361,10 +366,11 @@ def _fit_mrf_gam_per_unit(
                 tol=_FIT_TOL,
             )
         except ValueError as exc:
-            raise ValueError(
+            msg = (
                 "MRF-GAM per-unit REML failed for the pooled fallback over the "
                 f"informative units (needed for zero-spike units): {exc}"
-            ) from exc
+            )
+            raise ValueError(msg) from exc
         lam_per_unit[zero_spike] = pooled_lam
         boundary_per_unit[zero_spike] = bool(pooled_bnd)
 
@@ -523,21 +529,22 @@ def fit_mrf_gam(
 
     # --- shape validation: inputs must already be restricted to live_bins ---
     if counts.ndim != 2:
-        raise ValueError(
-            f"counts must be 2-D (n_live_bins, n_units); got shape {counts.shape}."
-        )
+        msg = f"counts must be 2-D (n_live_bins, n_units); got shape {counts.shape}."
+        raise ValueError(msg)
     if counts.shape[0] != n_live_bins:
-        raise ValueError(
+        msg = (
             f"counts has {counts.shape[0]} bin rows but the basis has "
             f"{n_live_bins} live bins. counts and occupancy must be restricted to "
             "basis.live_bins before calling fit_mrf_gam; it validates the bin "
             "count and never re-slices."
         )
+        raise ValueError(msg)
     if occupancy.shape != (n_live_bins,):
-        raise ValueError(
+        msg = (
             f"occupancy must have shape ({n_live_bins},) matching the basis live "
             f"bins; got {occupancy.shape}."
         )
+        raise ValueError(msg)
     n_units = int(counts.shape[1])
 
     # ``unit_ids`` (diagnostic-only) must align with the unit axis, else a later
@@ -545,10 +552,11 @@ def fit_mrf_gam(
     if unit_ids is not None:
         ids_arr = np.asarray(unit_ids)
         if ids_arr.ndim != 1 or ids_arr.shape[0] != n_units:
-            raise ValueError(
+            msg = (
                 f"unit_ids must be a 1-D sequence aligned with the unit axis "
                 f"(length n_units={n_units}); got shape {ids_arr.shape}."
             )
+            raise ValueError(msg)
 
     # --- degenerate: no neurons (skip the fit) ---
     if n_units == 0:

@@ -103,7 +103,7 @@ def _firing(result):
 
 
 @pytest.mark.parametrize(
-    "call, default_method",
+    ("call", "default_method"),
     [(c[1], c[2]) for c in KWARG_CASES],
     ids=[c[0] for c in KWARG_CASES],
 )
@@ -207,7 +207,7 @@ _FIELD_CASES = [
 
 
 @pytest.mark.parametrize(
-    "call, default_method",
+    ("call", "default_method"),
     [(c[1], c[2]) for c in _FIELD_CASES],
     ids=[c[0] for c in _FIELD_CASES],
 )

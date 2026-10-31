@@ -147,9 +147,8 @@ def _error(what: str, fix: str) -> ValueError:
 def _real_array(value: Any, name: str, *, copy: bool = True) -> NDArray[np.float64]:
     raw = np.asarray(value)
     if raw.dtype.kind not in "iuf":
-        raise _error(
-            f"{name} must contain real numeric values.", "pass real-valued arrays"
-        )
+        msg = f"{name} must contain real numeric values."
+        raise _error(msg, "pass real-valued arrays")
     if copy:
         return np.array(raw, dtype=np.float64, copy=True)
     return np.asarray(raw, dtype=np.float64)
@@ -157,7 +156,8 @@ def _real_array(value: Any, name: str, *, copy: bool = True) -> NDArray[np.float
 
 def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
-        raise _error(f"{name} must be boolean.", "pass True or False")
+        msg = f"{name} must be boolean."
+        raise _error(msg, "pass True or False")
     return bool(value)
 
 
@@ -168,8 +168,9 @@ def _kind(value: Any, name: str, *, allow_none: bool = False) -> BoundaryKind | 
         return cast("BoundaryKind | None", value)
     choices = ", ".join(repr(kind) for kind in _BOUNDARY_KINDS)
     none = ", or None for an outline that is not a physical boundary"
+    msg = f"{name}={value!r} is not a boundary kind."
     raise _error(
-        f"{name}={value!r} is not a boundary kind.",
+        msg,
         f"pass one of {choices}{none if allow_none else ''}",
     )
 
@@ -181,8 +182,9 @@ def _wall_kinds(kinds: Any, names: tuple[str, ...]) -> tuple[BoundaryKind, ...]:
     if isinstance(kinds, Mapping):
         unknown = sorted(set(kinds) - set(names))
         if unknown:
+            msg = f"wall_kinds names walls that do not exist: {unknown}."
             raise _error(
-                f"wall_kinds names walls that do not exist: {unknown}.",
+                msg,
                 f"use the wall names {sorted(set(names))}",
             )
         return tuple(
@@ -193,8 +195,9 @@ def _wall_kinds(kinds: Any, names: tuple[str, ...]) -> tuple[BoundaryKind, ...]:
         )
     given = tuple(kinds)
     if len(given) != len(names):
+        msg = f"wall_kinds has {len(given)} kinds for {len(names)} walls."
         raise _error(
-            f"wall_kinds has {len(given)} kinds for {len(names)} walls.",
+            msg,
             "give one kind, a mapping from wall name to kind, or one kind per wall",
         )
     result = tuple(
@@ -206,8 +209,9 @@ def _wall_kinds(kinds: Any, names: tuple[str, ...]) -> tuple[BoundaryKind, ...]:
             kind for kind, owner in zip(result, names, strict=True) if owner == name
         }
         if len(named) > 1:
+            msg = f"Wall {name!r} has segments of different kinds: {sorted(named)}."
             raise _error(
-                f"Wall {name!r} has segments of different kinds: {sorted(named)}.",
+                msg,
                 "give every segment of one wall the same kind, or name them apart",
             )
     return result
@@ -268,8 +272,9 @@ def _query(
     # Read-only: containment never writes the positions, so they are not copied.
     query = np.atleast_2d(_real_array(positions, "positions", copy=False))
     if query.ndim != 2 or query.shape[1] != n_dims:
+        msg = f"Expected positions of shape (n_positions, {n_dims}), got {query.shape}."
         raise _error(
-            f"Expected positions of shape (n_positions, {n_dims}), got {query.shape}.",
+            msg,
             "pass one coordinate column per arena dimension",
         )
     return query, np.all(np.isfinite(query), axis=1)
@@ -304,8 +309,9 @@ def _polygon(value: Any, name: str = "polygon") -> Polygon | MultiPolygon:
             if isinstance(value, shapely.Geometry)
             else type(value).__name__
         )
+        msg = f"{name} must be a valid finite nonempty 2-D polygon: {reason}."
         raise _error(
-            f"{name} must be a valid finite nonempty 2-D polygon: {reason}.",
+            msg,
             "provide a valid Polygon or MultiPolygon; do not repair geometry implicitly",
         )
     return value
@@ -318,15 +324,17 @@ def _affine(matrix: Any, n_dims: int) -> NDArray[np.float64]:
         or not np.all(np.isfinite(owned))
         or not np.array_equal(owned[-1], np.r_[np.zeros(n_dims), 1.0])
     ):
+        msg = "matrix must be finite, affine and match the arena dimensions."
         raise _error(
-            "matrix must be finite, affine and match the arena dimensions.",
+            msg,
             "pass a homogeneous matrix with last row [0, ..., 0, 1]",
         )
     with np.errstate(under="ignore"):
         sign, _ = np.linalg.slogdet(owned[:-1, :-1])
     if sign == 0:
+        msg = "matrix must be invertible."
         raise _error(
-            "matrix must be invertible.",
+            msg,
             "use nonzero scales and an invertible linear map",
         )
     return owned
@@ -340,8 +348,9 @@ def _mapped(
             points @ matrix[:-1, :-1].T + matrix[:-1, -1], dtype=np.float64
         )
     if not np.all(np.isfinite(result)):
+        msg = "Transformed coordinates exceed floating-point range."
         raise _error(
-            "Transformed coordinates exceed floating-point range.",
+            msg,
             "rescale the coordinate units before transforming",
         )
     return result
@@ -444,15 +453,17 @@ class UnknownArena:
             or not isinstance(self.n_dims, (int, np.integer))
             or self.n_dims < 1
         ):
+            msg = "n_dims must be a positive integer."
             raise _error(
-                "n_dims must be a positive integer.",
+                msg,
                 "pass the number of coordinate columns",
             )
         if self.coordinate_kind not in ("cartesian", "polar") or (
             self.coordinate_kind == "polar" and self.n_dims != 2
         ):
+            msg = "coordinate_kind must be cartesian or two-dimensional polar."
             raise _error(
-                "coordinate_kind must be cartesian or two-dimensional polar.",
+                msg,
                 "use the coordinate kind and dimension of the stored bins",
             )
         object.__setattr__(self, "n_dims", int(self.n_dims))
@@ -470,8 +481,9 @@ class UnknownArena:
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Retain unknown Cartesian geometry after a valid affine map."""
         if self.coordinate_kind != "cartesian":
+            msg = "Cartesian affine maps do not apply to polar coordinates."
             raise _error(
-                "Cartesian affine maps do not apply to polar coordinates.",
+                msg,
                 "transform the original Cartesian observations instead",
             )
         _affine(matrix, self.n_dims)
@@ -479,11 +491,11 @@ class UnknownArena:
 
     def polygonal_domain(self) -> None:
         """Return no invented polygon."""
-        return None
+        return
 
     def domain_bounds(self) -> None:
         """An unknown domain has no bounds."""
-        return None
+        return
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -571,8 +583,9 @@ class OpenArena(_CappedContainment, ReadOnlyState):
     ) -> None:
         if isinstance(walls, Mapping):
             if wall_names is not None:
+                msg = "wall_names cannot be combined with a mapping of walls."
                 raise _error(
-                    "wall_names cannot be combined with a mapping of walls.",
+                    msg,
                     "name the walls with the mapping keys, or pass walls as a "
                     "sequence with wall_names",
                 )
@@ -586,14 +599,16 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                 else tuple(wall_names)
             )
         if len(names) != len(segments):
+            msg = f"wall_names has {len(names)} names for {len(segments)} walls."
             raise _error(
-                f"wall_names has {len(names)} names for {len(segments)} walls.",
+                msg,
                 "give one name per wall",
             )
         for name in names:
             if not isinstance(name, str) or not name:
+                msg = f"Wall names must be nonempty strings, got {name!r}."
                 raise _error(
-                    f"Wall names must be nonempty strings, got {name!r}.",
+                    msg,
                     'name each wall with a string such as "divider"',
                 )
         object.__setattr__(self, "polygon", polygon)
@@ -618,14 +633,18 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                 or not np.isfinite(wall.length)
                 or wall.length <= 0
             ):
-                raise _error(
+                msg = (
                     f"Wall {self.wall_names[index]!r} must be a finite nonempty "
-                    "2-D LineString.",
+                    "2-D LineString."
+                )
+                raise _error(
+                    msg,
                     "supply explicit physical wall segments",
                 )
             if not self.polygon.covers(wall):
+                msg = f"Wall {self.wall_names[index]!r} lies outside the arena domain."
                 raise _error(
-                    f"Wall {self.wall_names[index]!r} lies outside the arena domain.",
+                    msg,
                     "provide walls within the polygonal domain",
                 )
 
@@ -702,8 +721,9 @@ class MaskArena(_CappedContainment, ReadOnlyState):
             self.edges, None, self.active_mask, name="MaskArena"
         )
         if not np.any(mask):
+            msg = "MaskArena active_mask has no active cell."
             raise _error(
-                "MaskArena active_mask has no active cell.",
+                msg,
                 "pass a boolean cell mask with at least one active cell",
             )
         object.__setattr__(self, "edges", edges)
@@ -836,8 +856,9 @@ def _similarity_scale(matrix: NDArray[np.float64]) -> float:
     """
     measured = linear_scale(matrix[:-1, :-1])
     if not measured.is_similarity():
+        msg = "TrackArena transforms must be a similarity."
         raise _error(
-            "TrackArena transforms must be a similarity.",
+            msg,
             "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
         )
     return measured.scale
@@ -894,23 +915,26 @@ class TrackArena(_CappedContainment, ReadOnlyState):
             or segments.shape[2] < 1
             or not np.all(np.isfinite(segments))
         ):
+            msg = "segments must have finite shape (n_segments, 2, n_dims)."
             raise _error(
-                "segments must have finite shape (n_segments, 2, n_dims).",
+                msg,
                 "provide at least one centerline segment",
             )
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
             lengths = np.hypot.reduce(segments[:, 1] - segments[:, 0], axis=1)
         if np.any(~np.isfinite(lengths) | (lengths <= 0)):
+            msg = "segments must have positive representable lengths."
             raise _error(
-                "segments must have positive representable lengths.",
+                msg,
                 "remove coincident endpoints or rescale coordinates",
             )
         width = self.width
         if width is not None:
             # Half the width must also be representable.
             if not is_finite_real(width, positive=False) or width / 2 <= 0:
+                msg = "width must be a finite positive full track width or None."
                 raise _error(
-                    "width must be a finite positive full track width or None.",
+                    msg,
                     "supply a measured full width, or None for unknown geometry",
                 )
             object.__setattr__(self, "width", float(width))
@@ -962,15 +986,16 @@ class TrackArena(_CappedContainment, ReadOnlyState):
         scale = _similarity_scale(matrix)
         _mapped(self.segments, matrix)
         if self.width is not None and not np.isfinite(self.width * scale):
+            msg = "Transformed track width exceeds floating-point range."
             raise _error(
-                "Transformed track width exceeds floating-point range.",
+                msg,
                 "rescale the coordinate units before transforming",
             )
         return _TransformedArena(self, matrix)
 
     def polygonal_domain(self) -> None:
         """Do not approximate round caps with a polygonal buffer."""
-        return None
+        return
 
     def _feature_size(self) -> NDArray[np.float64]:
         if self.width is not None:
@@ -1069,8 +1094,9 @@ class EgocentricSurround:
                 or values[0] >= values[1]
                 or (name == "distance_range" and values[0] < 0)
             ):
+                msg = f"{name} must contain finite increasing limits."
                 raise _error(
-                    f"{name} must contain finite increasing limits.",
+                    msg,
                     "pass two ordered limits with nonnegative radial distances",
                 )
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
@@ -1079,16 +1105,20 @@ class EgocentricSurround:
             np.isclose(high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
         )
         if high - low > 2 * np.pi and not full_turn:
+            msg = "angle_range spans more than one full turn (2π)."
             raise _error(
-                "angle_range spans more than one full turn (2π).",
+                msg,
                 "pass at most one turn; angles a whole turn apart name one direction",
             )
         circular = _boolean(self.circular, "circular")
         if circular and not full_turn:
-            raise _error(
+            msg = (
                 f"angle_range={self.angle_range!r} spans {high - low:.6g} rad, "
                 "less than a full turn (2π), so its angle cannot wrap "
-                "(circular=True).",
+                "(circular=True)."
+            )
+            raise _error(
+                msg,
                 "pass circular=False for a partial angular window, or an "
                 "angle_range one full turn wide",
             )
@@ -1159,18 +1189,19 @@ class EgocentricSurround:
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Refuse Cartesian affine maps of radial/angular coordinates."""
+        msg = "Cartesian affine maps do not apply to EgocentricSurround."
         raise _error(
-            "Cartesian affine maps do not apply to EgocentricSurround.",
+            msg,
             "transform the Cartesian observations before computing egocentric coordinates",
         )
 
     def polygonal_domain(self) -> None:
         """A polar window is not a Cartesian polygon."""
-        return None
+        return
 
     def domain_bounds(self) -> None:
         """A polar window has no Cartesian box."""
-        return None
+        return
 
 
 @dataclass(frozen=True, eq=False)
@@ -1183,8 +1214,9 @@ class _TransformedArena(ReadOnlyState):
 
     def __post_init__(self) -> None:
         if self.base.coordinate_kind != "cartesian":
+            msg = "Only Cartesian arenas have affine frames."
             raise _error(
-                "Only Cartesian arenas have affine frames.",
+                msg,
                 "retain native polar coordinates",
             )
         forward = _affine(self.forward, self.base.n_dims)
@@ -1195,8 +1227,9 @@ class _TransformedArena(ReadOnlyState):
             _mapped(shapely.get_coordinates(self.base.polygon), forward)
         affine = AffineMap(forward)
         if affine.sensitivity is None:
+            msg = "The affine inverse has no useful floating-point error bound."
             raise _error(
-                "The affine inverse has no useful floating-point error bound.",
+                msg,
                 "rescale coordinates or use a better-conditioned affine map",
             )
         object.__setattr__(self, "forward", affine.forward)
@@ -1372,7 +1405,8 @@ class _CombinedArena:
             child.n_dims != children[0].n_dims or child.coordinate_kind != "cartesian"
             for child in children
         ):
-            raise ValueError("Combined arenas require matching Cartesian dimensions.")
+            msg = "Combined arenas require matching Cartesian dimensions."
+            raise ValueError(msg)
         object.__setattr__(self, "children", children)
 
     @property

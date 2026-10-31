@@ -94,11 +94,14 @@ class ImageMaskLayout(_GridMixin):
         self._begin_build()
 
         if not isinstance(image_mask, np.ndarray):
-            raise TypeError("image_mask must be a numpy array.")
+            msg = "image_mask must be a numpy array."
+            raise TypeError(msg)
         if image_mask.ndim != 2:
-            raise ValueError("image_mask must be a 2D array.")
+            msg = "image_mask must be a 2D array."
+            raise ValueError(msg)
         if not np.issubdtype(image_mask.dtype, np.bool_):
-            raise ValueError("image_mask must be a boolean array.")
+            msg = "image_mask must be a boolean array."
+            raise ValueError(msg)
 
         # One size, or (width, height) of a pixel, also as an ndarray read
         # back from to_dict.
@@ -106,7 +109,8 @@ class ImageMaskLayout(_GridMixin):
             pixel_size, name="pixel_size", n_dims=2
         ).tolist()
         if not np.any(image_mask):
-            raise ValueError("image_mask must contain at least one True value.")
+            msg = "image_mask must contain at least one True value."
+            raise ValueError(msg)
 
         n_rows, n_cols = image_mask.shape  # rows = y, cols = x
 

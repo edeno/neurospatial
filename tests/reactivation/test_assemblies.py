@@ -142,7 +142,7 @@ class TestDetectAssemblies:
             pattern.member_indices.tolist() for pattern in result.patterns
         )
         assert recovered == [
-            list(range(0, 5)),
+            list(range(5)),
             list(range(10, 15)),
             list(range(20, 25)),
         ]
@@ -162,7 +162,7 @@ class TestDetectAssemblies:
         result = detect_assemblies(spike_counts_with_assemblies, method="pca")
         weights = np.array([pattern.weights for pattern in result.patterns])
         assert weights.shape == (3, 50)
-        for cells in (range(0, 5), range(10, 15), range(20, 25)):
+        for cells in (range(5), range(10, 15), range(20, 25)):
             indicator = np.zeros(50)
             indicator[list(cells)] = 1 / np.sqrt(5)
             residual = indicator - weights.T @ (weights @ indicator)

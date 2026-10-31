@@ -68,12 +68,17 @@ class SnapshotAdapter:
             or not self.name
             or self.name != self.name.strip()
         ):
-            raise ValueError("SnapshotAdapter.name must be a nonempty codec name.")
+            msg = "SnapshotAdapter.name must be a nonempty codec name."
+            raise ValueError(msg)
         if type(self.version) is not int or self.version <= 0:
-            raise ValueError("SnapshotAdapter.version must be a positive integer.")
+            msg = "SnapshotAdapter.version must be a positive integer."
+            raise ValueError(msg)
         if self.role not in _ROLES:
-            raise ValueError(f"SnapshotAdapter.role must be one of {_ROLES!r}.")
+            msg = f"SnapshotAdapter.role must be one of {_ROLES!r}."
+            raise ValueError(msg)
         if not isinstance(self.provider_type, type):
-            raise TypeError("SnapshotAdapter.provider_type must be a Python type.")
+            msg = "SnapshotAdapter.provider_type must be a Python type."
+            raise TypeError(msg)
         if not callable(self.snapshot) or not callable(self.decode):
-            raise TypeError("SnapshotAdapter.snapshot and decode must be callable.")
+            msg = "SnapshotAdapter.snapshot and decode must be callable."
+            raise TypeError(msg)

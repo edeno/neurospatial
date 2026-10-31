@@ -40,11 +40,14 @@ class PromptTools:
         remove_radius: float = 12.0,
     ) -> None:
         if len(frame_shape) < 2 or min(frame_shape[:2]) <= 0:
-            raise ValueError("frame_shape must include a positive height and width.")
+            msg = "frame_shape must include a positive height and width."
+            raise ValueError(msg)
         if inside is outside or inside.ndim != 2 or outside.ndim != 2:
-            raise ValueError("Use two distinct, two-dimensional prompt point layers.")
+            msg = "Use two distinct, two-dimensional prompt point layers."
+            raise ValueError(msg)
         if not np.isfinite(remove_radius) or remove_radius <= 0:
-            raise ValueError("remove_radius must be a positive canvas distance.")
+            msg = "remove_radius must be a positive canvas distance."
+            raise ValueError(msg)
         self._viewer = viewer
         self._layers = (inside, outside)
         self._shape = np.asarray(frame_shape[:2])
@@ -89,7 +92,8 @@ class PromptTools:
         if layer is None:
             layer = self._layers[0]
         if layer not in self._layers:
-            raise ValueError("Activate an inside or outside prompt layer.")
+            msg = "Activate an inside or outside prompt layer."
+            raise ValueError(msg)
         self.deactivate()
         for prompt_layer in self._layers:
             if prompt_layer not in self._viewer.layers:

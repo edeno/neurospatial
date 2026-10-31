@@ -93,7 +93,8 @@ def test_discarding_an_unsavable_draft_closes_and_raises(viewer, monkeypatch):
         assert window.close()
 
     def prepare_result():
-        raise ValueError("Need at least 2 nodes")
+        msg = "Need at least 2 nodes"
+        raise ValueError(msg)
 
     monkeypatch.setattr(napari, "run", run)
     monkeypatch.setattr(

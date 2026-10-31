@@ -171,8 +171,9 @@ class Landmark:
             data = _owned_shape(self.data, kind=self.kind, owner=owner)
             _check_planar_geometry(data, owner=owner)
         else:
+            msg = f"Landmark {self.name!r} has unknown kind {self.kind!r}."
             raise _error(
-                f"Landmark {self.name!r} has unknown kind {self.kind!r}.",
+                msg,
                 'use "point", "line" or "polygon"',
             )
         object.__setattr__(self, "data", data)
@@ -232,9 +233,12 @@ class Landmark:
         """
         query = np.asarray(positions, dtype=np.float64)
         if query.ndim != 2 or query.shape[1] != self.n_dims:
-            raise _error(
+            msg = (
                 f"positions for landmark {self.name!r} must have shape "
-                f"(n_time, {self.n_dims}), got {query.shape}.",
+                f"(n_time, {self.n_dims}), got {query.shape}."
+            )
+            raise _error(
+                msg,
                 "pass one coordinate column per environment dimension",
             )
         result = np.full(query.shape, np.nan)
@@ -336,18 +340,21 @@ class Landmarks(Mapping[str, Landmark]):
         items: dict[str, Landmark] = {}
         for landmark in landmarks:
             if not isinstance(landmark, Landmark):
-                raise TypeError(
+                msg = (
                     f"Landmarks holds Landmark records, got {type(landmark).__name__}."
                 )
+                raise TypeError(msg)
             if landmark.name in items:
+                msg = f"Two landmarks are named {landmark.name!r}."
                 raise _error(
-                    f"Two landmarks are named {landmark.name!r}.",
+                    msg,
                     "give every landmark its own name",
                 )
             items[landmark.name] = landmark
         if len({landmark.n_dims for landmark in items.values()}) > 1:
+            msg = "Landmarks have different coordinate dimensions."
             raise _error(
-                "Landmarks have different coordinate dimensions.",
+                msg,
                 "give every landmark coordinates in the same environment",
             )
         self._items = items

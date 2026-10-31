@@ -43,9 +43,11 @@ class PolygonOutline:
             not isinstance(polygon, Polygon) or polygon.is_empty or not polygon.is_valid
             for polygon in polygons
         ):
-            raise ValueError("An outline needs nonempty, valid polygons.")
+            msg = "An outline needs nonempty, valid polygons."
+            raise ValueError(msg)
         if not MultiPolygon(polygons).is_valid:
-            raise ValueError("Outline components must form a valid MultiPolygon.")
+            msg = "Outline components must form a valid MultiPolygon."
+            raise ValueError(msg)
         object.__setattr__(self, "polygons", polygons)
         object.__setattr__(
             self, "simplify_tolerance_px", _tolerance(self.simplify_tolerance_px)
@@ -86,7 +88,8 @@ def simplify_polygon_outline(
     """
     tolerance = _tolerance(tolerance_px)
     if exact_outline.simplify_tolerance_px != 0.0:
-        raise ValueError("Simplify the cached exact outline, not an earlier preview.")
+        msg = "Simplify the cached exact outline, not an earlier preview."
+        raise ValueError(msg)
     if tolerance == 0.0:
         return exact_outline
     return PolygonOutline(

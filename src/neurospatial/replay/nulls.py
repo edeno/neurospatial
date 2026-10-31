@@ -134,7 +134,7 @@ def shuffle_cell_identity(
     n_neurons = spike_counts.shape[1]
 
     if encoding_models.shape[0] != n_neurons:
-        raise ValueError(
+        msg = (
             f"spike_counts has {n_neurons} neuron(s) (columns) but "
             f"encoding_models has {encoding_models.shape[0]} (rows). These must "
             f"match: row i of encoding_models is the place field for neuron i "
@@ -142,6 +142,7 @@ def shuffle_cell_identity(
             f"Fix: pass spike_counts shaped (n_time_bins, n_neurons) and "
             f"encoding_models shaped (n_neurons, n_bins)."
         )
+        raise ValueError(msg)
 
     active = (
         np.flatnonzero(np.asarray(spike_counts).sum(axis=0) > 0)
@@ -446,17 +447,19 @@ def shuffle_place_fields_circular_2d(
     )
     # Validate 2D environment
     if env.n_dims != 2:
-        raise ValueError(
+        msg = (
             f"shuffle_place_fields_circular_2d requires a 2D environment, "
             f"got {env.n_dims}D"
         )
+        raise ValueError(msg)
 
     # Get grid shape from environment
     if env.grid_shape is None:
-        raise ValueError(
+        msg = (
             "shuffle_place_fields_circular_2d requires environment with grid layout "
             "(grid_shape attribute)"
         )
+        raise ValueError(msg)
 
     grid_shape = env.grid_shape
     if len(grid_shape) != 2:
@@ -634,10 +637,11 @@ def shuffle_posterior_circular(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
     )
     if not isinstance(exclude_zero_shift, (bool, np.bool_)):
-        raise TypeError(
+        msg = (
             "shuffle_posterior_circular() needs exclude_zero_shift=True or "
             f"False, got {exclude_zero_shift!r}."
         )
+        raise TypeError(msg)
     return _roll_rows_along_track(
         posterior,
         order,
@@ -816,10 +820,11 @@ def _peak_probabilities(
         or not np.isfinite(edge_exclusion)
         or edge_exclusion < 0
     ):
-        raise ValueError(
+        msg = (
             f"{operation}: edge_exclusion must be a finite distance >= 0 in "
             f"the environment's units, got {edge_exclusion!r}."
         )
+        raise ValueError(msg)
     starts, stops = _require_track_extents(
         env, operation, alternative=_POSTERIOR_SHUFFLE_ALTERNATIVE
     )
@@ -936,10 +941,11 @@ def shuffle_spike_counts_circular(
     )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2:
-        raise ValueError(
+        msg = (
             f"spike_counts must be 2-D (n_time_bins, n_neurons), got shape "
             f"{counts.shape}."
         )
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     n_time, n_neurons = counts.shape
     rows = np.arange(n_time)[:, np.newaxis]
@@ -1031,11 +1037,12 @@ def shuffle_spike_counts_uniform(
     )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2 or np.any(counts < 0):
-        raise ValueError(
+        msg = (
             "shuffle_spike_counts_uniform(): spike_counts must be 2-D "
             "(n_time_bins, n_neurons) non-negative counts, got shape "
             f"{counts.shape}."
         )
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     n_time = len(counts)
     totals = counts.sum(axis=0)

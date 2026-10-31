@@ -56,10 +56,11 @@ def add_polygons(
     # Invalid geometry still loads, so it can be repaired; saving validates it.
     for polygon, name, _, _ in polygons:
         if polygon.geom_type != "Polygon":
-            raise TypeError(
+            msg = (
                 f"Initial polygon '{name}' must be a shapely Polygon, "
                 f"not {polygon.geom_type}."
             )
+            raise TypeError(msg)
     if not polygons:
         return
     vertices: list[NDArray[np.float64]] = []

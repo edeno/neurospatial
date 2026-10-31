@@ -741,7 +741,8 @@ def _check_test(
     )
     validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=prefix)
     if not isinstance(use_absolute, (bool, np.bool_)):
-        raise TypeError(f"{prefix}: use_absolute must be a bool, got {use_absolute!r}.")
+        msg = f"{prefix}: use_absolute must be a bool, got {use_absolute!r}."
+        raise TypeError(msg)
     if use_absolute and alternative != "greater":
         raise ValueError(
             _format_error(

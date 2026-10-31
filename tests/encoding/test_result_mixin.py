@@ -211,7 +211,8 @@ def test_result_mixin_requires_summary_and_offers_no_other_verb_stubs() -> None:
 def test_repr_names_a_failing_summary_instead_of_hiding_it() -> None:
     class Broken(ResultMixin):
         def summary(self) -> dict:
-            raise IndexError("bin 7")
+            msg = "bin 7"
+            raise IndexError(msg)
 
     assert repr(Broken()) == "Broken(<summary() failed: IndexError: bin 7>)"
     assert "IndexError" in Broken()._repr_html_()

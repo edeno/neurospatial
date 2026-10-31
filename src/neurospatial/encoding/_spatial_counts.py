@@ -85,7 +85,8 @@ class LinearSpatialIntervals:
 
 def _validate_time_allocation(time_allocation: str) -> None:
     if time_allocation not in ("start", "linear"):
-        raise ValueError("time_allocation must be 'start' or 'linear'.")
+        msg = "time_allocation must be 'start' or 'linear'."
+        raise ValueError(msg)
 
 
 def prepare_linear_spatial_intervals(
@@ -144,14 +145,16 @@ def prepare_linear_spatial_intervals(
     require_linear_allocation(env)
     binning, arena = env.binning, env.arena
     if env.n_dims != 2 or not binning.bins.has_measure_dim(2):
-        raise NotImplementedError(
+        msg = (
             "time_allocation='linear' spatial encoding requires exact planar "
             "Cartesian area cells. Use time_allocation='start' for this environment."
         )
+        raise NotImplementedError(msg)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     if positions.shape != (len(times), 2):
-        raise ValueError("linear spatial encoding needs (n_samples, 2) positions.")
+        msg = "linear spatial encoding needs (n_samples, 2) positions."
+        raise ValueError(msg)
     # This checks known nonmaterializable Arena support before any cell work.
     _uses_polygon_allocation(binning, arena)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -171,9 +174,8 @@ def prepare_linear_spatial_intervals(
     else:
         observed = np.asarray(interval_mask, dtype=bool)
         if observed.shape != (max(len(times) - 1, 0),):
-            raise ValueError(
-                "interval_mask must contain one value per observation interval."
-            )
+            msg = "interval_mask must contain one value per observation interval."
+            raise ValueError(msg)
     # A bridged gap is one straight segment between its valid samples.
     positions = fill_missing_positions(times, positions, time_allocation="linear")
     finite = np.all(np.isfinite(positions), axis=1)
@@ -200,12 +202,13 @@ def prepare_linear_spatial_intervals(
             else float(start + duration * piece.stop_fraction)
         )
         if right <= left:
-            raise ValueError(
+            msg = (
                 "Linear spatial support is shorter than this timestamp clock "
                 "can represent. Use elapsed timestamps (subtract the recording "
                 "origin from both trajectory and spike times) or coarser "
                 "spatial binning."
             )
+            raise ValueError(msg)
         if runs and left <= runs[-1][1]:
             runs[-1][1] = max(runs[-1][1], right)
         else:
@@ -555,12 +558,13 @@ def _bin_spike_train_with_stats(
         if linear_intervals is not None and np.any(
             (spike_counts > 0) & (linear_intervals.occupancy == 0)
         ):
-            raise ValueError(
+            msg = (
                 "Linear spatial encoding assigns spikes by boundary ownership "
                 "to a bin with zero dwell time, so its firing rate is undefined. "
                 "Adjust the spatial binning or tracking/time resolution to "
                 "provide positive exposure for that bin."
             )
+            raise ValueError(msg)
 
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
 
@@ -1222,10 +1226,11 @@ def compute_occupancy(
 
     # Validate input shapes
     if len(times) != len(positions):
-        raise ValueError(
+        msg = (
             f"in {context}: times length ({len(times)}) must match "
             f"positions length ({len(positions)})"
         )
+        raise ValueError(msg)
 
     # Handle 1D positions
     if positions.ndim == 1:

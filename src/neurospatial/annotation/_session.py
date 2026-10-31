@@ -124,11 +124,11 @@ def run_annotation_session(
         window.removeEventFilter(guard)
         viewer.close()
     if discarded:
-        raise RuntimeError(
-            f"Annotations were discarded without saving: {discarded[0]}"
-        ) from discarded[0]
+        msg = f"Annotations were discarded without saving: {discarded[0]}"
+        raise RuntimeError(msg) from discarded[0]
     if not results:
-        raise RuntimeError("Annotation window closed without a validated result.")
+        msg = "Annotation window closed without a validated result."
+        raise RuntimeError(msg)
     for warning in caught:
         warnings.warn(warning.message, stacklevel=3)
     return results[0]

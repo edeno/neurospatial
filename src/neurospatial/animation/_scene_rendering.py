@@ -169,7 +169,8 @@ class SceneRenderer:
 
     def render(self, time: float) -> np.ndarray:
         if not np.isfinite(time):
-            raise ValueError("time must be finite seconds.")
+            msg = "time must be finite seconds."
+            raise ValueError(msg)
         if not self._updates:
             self._build()
         for update in self._updates:

@@ -256,10 +256,11 @@ class PairwiseOrderMethod:
                 or len(set(values)) != len(values)
                 or any(value not in allowed for value in values)
             ):
-                raise ValueError(
+                msg = (
                     f"{prefix}: {name} must be one or more distinct values of "
                     f"{list(allowed)}, got {values!r}."
                 )
+                raise ValueError(msg)
         _check_n_shuffles(prefix, self.n_shuffles)
         validate_alpha(self.alpha, owner=prefix)
         validate_integer_at_least(
@@ -623,10 +624,11 @@ def pairwise_order_significance(
     )
     nulls = (nulls,) if isinstance(nulls, str) else tuple(nulls)
     if not nulls or len(set(nulls)) != len(nulls) or set(nulls) - set(_NULLS):
-        raise ValueError(
+        msg = (
             f"{operation}: nulls must be one or more distinct values of "
             f"{list(_NULLS)}, got {nulls!r}."
         )
+        raise ValueError(msg)
     _check_n_shuffles(operation, n_shuffles)
     fields = _place_fields(
         env,
@@ -844,10 +846,11 @@ class _EventSpikes:
 
 def _check_direction(operation: str, direction: str) -> None:
     if direction not in _DIRECTIONS:
-        raise ValueError(
+        msg = (
             f"{operation}: direction must be one of {list(_DIRECTIONS)}, got "
             f"{direction!r}."
         )
+        raise ValueError(msg)
 
 
 def _check_n_shuffles(prefix: str, n_shuffles: Any) -> None:
@@ -875,25 +878,28 @@ def _check_field_options(
         or not isinstance(field_threshold, numbers)
         or not 0 < field_threshold < 1
     ):
-        raise ValueError(
+        msg = (
             f"{prefix}: field_threshold must be a fraction in (0, 1) of the "
             f"highest rate, got {field_threshold!r} (Gupta et al. 2010: 0.05)."
         )
+        raise ValueError(msg)
     validate_integer_at_least(merge_gap_bins, 0, name="merge_gap_bins", owner=prefix)
     if field_center not in _FIELD_CENTERS:
-        raise ValueError(
+        msg = (
             f"{prefix}: field_center must be one of {list(_FIELD_CENTERS)}, got "
             f"{field_center!r}."
         )
+        raise ValueError(msg)
     if (
         isinstance(max_time_lag, bool)
         or not isinstance(max_time_lag, numbers)
         or not max_time_lag > 0
     ):
-        raise ValueError(
+        msg = (
             f"{prefix}: max_time_lag must be a positive time in seconds (np.inf "
             f"compares every pair), got {max_time_lag!r}."
         )
+        raise ValueError(msg)
 
 
 def _place_fields(

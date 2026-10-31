@@ -76,7 +76,8 @@ def _view(scene, *, fail=False):
             seek(time)
             native.captures.append(time)
             if fail:
-                raise RuntimeError("capture failed")
+                msg = "capture failed"
+                raise RuntimeError(msg)
             image = np.full((24, 32, 3), round((time - 100) * 100), dtype=np.uint8)
             image[0, 0] = native.color  # A user-added graphic/style.
             return image
@@ -180,7 +181,8 @@ def test_encoding_failure_restores_time_and_removes_partial_file(
 ):
     class BrokenWriter:
         def __enter__(self):
-            raise RuntimeError("encoder unavailable")
+            msg = "encoder unavailable"
+            raise RuntimeError(msg)
 
         def __exit__(self, *exc):
             pass

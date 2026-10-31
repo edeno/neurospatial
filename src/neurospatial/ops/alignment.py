@@ -59,18 +59,20 @@ def _validated_probabilities(
         ``source_probs`` as a float array.
     """
     if source_env.n_dims != target_env.n_dims:
-        raise ValueError(
+        msg = (
             f"Source and target environments must have the same number of dimensions: "
             f"{source_env.n_dims} != {target_env.n_dims}."
         )
+        raise ValueError(msg)
 
     probs = np.asarray(source_probs, dtype=np.float64)
     n_src = source_env.n_bins
     if probs.ndim != 1 or probs.shape[0] != n_src:
-        raise ValueError(
+        msg = (
             f"source_probs must be a 1D array of length {n_src}, got shape "
             f"{probs.shape}."
         )
+        raise ValueError(msg)
     bad = np.flatnonzero(~np.isfinite(probs))
     if bad.size:
         raise ValueError(
@@ -84,18 +86,21 @@ def _validated_probabilities(
             )
         )
     if np.any(probs < 0):
-        raise ValueError("source_probs must be nonnegative.")
+        msg = "source_probs must be nonnegative."
+        raise ValueError(msg)
 
     if mode not in ("nearest", "inverse-distance-weighted"):
-        raise ValueError(
+        msg = (
             f"Unrecognized mode '{mode}'. "
             "Supported: 'nearest' or 'inverse-distance-weighted'."
         )
+        raise ValueError(msg)
     if mode == "inverse-distance-weighted" and not is_integer_at_least(n_neighbors, 1):
-        raise ValueError(
+        msg = (
             f"In 'inverse-distance-weighted' mode, n_neighbors must be "
             f"an integer >= 1 (got n_neighbors={n_neighbors!r})."
         )
+        raise ValueError(msg)
     if not (np.isfinite(eps) and eps > 0):
         raise ValueError(
             _format_error(
@@ -186,10 +191,11 @@ def _check_source_transform(source_transform: object, n_dims: int) -> None:
             )
         )
     if source_transform.n_dims != n_dims:
-        raise ValueError(
+        msg = (
             f"source_transform is {source_transform.n_dims}-D but the "
             f"environments are {n_dims}-D."
         )
+        raise ValueError(msg)
 
 
 def _check_max_distance(max_distance: object) -> None:
@@ -199,11 +205,11 @@ def _check_max_distance(max_distance: object) -> None:
     if isinstance(max_distance, (bool, np.bool_)) or not isinstance(
         max_distance, (numbers.Real, np.floating, np.integer)
     ):
-        raise TypeError(
-            f"max_distance must be a distance or None, got {max_distance!r}."
-        )
+        msg = f"max_distance must be a distance or None, got {max_distance!r}."
+        raise TypeError(msg)
     if np.isnan(float(max_distance)) or float(max_distance) < 0:
-        raise ValueError(f"max_distance must be zero or more, got {max_distance!r}.")
+        msg = f"max_distance must be zero or more, got {max_distance!r}."
+        raise ValueError(msg)
 
 
 def _check_max_outside_fraction(max_outside_fraction: object) -> None:
@@ -211,15 +217,17 @@ def _check_max_outside_fraction(max_outside_fraction: object) -> None:
     if isinstance(max_outside_fraction, (bool, np.bool_)) or not isinstance(
         max_outside_fraction, (numbers.Real, np.floating, np.integer)
     ):
-        raise TypeError(
+        msg = (
             "max_outside_fraction must be a number from 0 to 1, got "
             f"{max_outside_fraction!r}."
         )
+        raise TypeError(msg)
     if not 0.0 <= float(max_outside_fraction) <= 1.0:
-        raise ValueError(
+        msg = (
             "max_outside_fraction must be from 0 to 1 (a share of the total "
             f"probability), got {max_outside_fraction!r}."
         )
+        raise ValueError(msg)
 
 
 def _outside_target(

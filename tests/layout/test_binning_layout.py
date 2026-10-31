@@ -115,7 +115,7 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
         with pytest.raises(ValueError, match=pattern):
             replace(binning, faces=KnownFaces(faces))
         return
-    elif mismatch in {"active_count", "grid_edges", "grid_shape"}:
+    if mismatch in {"active_count", "grid_edges", "grid_shape"}:
         grid = binning.rectilinear
         if mismatch == "active_count":
             mask = grid.active_mask.copy()

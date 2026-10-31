@@ -118,7 +118,7 @@ class TestPublicReExports:
 
 
 @pytest.mark.parametrize(
-    "name,builtin",
+    ("name", "builtin"),
     [
         ("NeurospatialError", Exception),
         ("RegionNotFoundError", KeyError),
@@ -170,7 +170,7 @@ def test_region_not_found_without_regions_leads_with_creating_one(available, arg
         assert "This environment has no regions" in str(exc)
 
 
-@pytest.mark.parametrize("name,available", [("hom", ["home"]), ("home", [])])
+@pytest.mark.parametrize(("name", "available"), [("hom", ["home"]), ("home", [])])
 def test_region_not_found_formats_a_list_argument_as_a_list(name, available):
     exc = RegionNotFoundError(
         name, available=available, argument="end_regions", in_list=True

@@ -70,7 +70,8 @@ def make_corridor_polygon(
     length = np.linalg.norm(direction)
 
     if length == 0:
-        raise ValueError("Start and end points must be different")
+        msg = "Start and end points must be different"
+        raise ValueError(msg)
 
     # Normalize and get perpendicular
     unit_dir = direction / length
@@ -229,7 +230,8 @@ def union_polygons(
     True
     """
     if not polygons:
-        raise ValueError("union_polygons requires at least one polygon")
+        msg = "union_polygons requires at least one polygon"
+        raise ValueError(msg)
 
     result = unary_union(polygons)
 
@@ -269,11 +271,12 @@ def single_floor(geometry: Polygon | MultiPolygon, dims: MazeDims) -> Polygon:
     if isinstance(geometry, Polygon) and not geometry.is_empty:
         return geometry
     n_pieces = len(getattr(geometry, "geoms", ()))
-    raise ValueError(
+    msg = (
         f"{dims!r} builds a maze floor in {n_pieces} separate pieces, so an "
         "animal could not walk between them. Choose dimensions whose "
         "corridors, rooms and boxes meet."
     )
+    raise ValueError(msg)
 
 
 def compass_quadrants(floor: Polygon) -> dict[str, Polygon]:

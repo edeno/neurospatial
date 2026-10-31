@@ -184,13 +184,15 @@ def owned_active_map(
         or np.any(raw < -1)
     ):
         cells = "cell" if size is None else f"of the {size} cells"
-        raise ValueError(
+        msg = (
             f"{name} must hold one integer index >= -1 for each {cells}, got "
             f"{raw.dtype} with shape {raw.shape}."
         )
+        raise ValueError(msg)
     active = raw[raw >= 0]
     if not np.array_equal(np.sort(active), np.arange(len(active))):
-        raise ValueError(f"{name} must number the active bins exactly once from zero.")
+        msg = f"{name} must number the active bins exactly once from zero."
+        raise ValueError(msg)
     owned = np.array(raw, dtype=np.intp, copy=True)
     owned.setflags(write=False)
     return owned
@@ -247,7 +249,8 @@ def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
     """
     mask = np.asarray(keep)
     if mask.dtype.kind != "b" or mask.shape != (n_items,):
-        raise ValueError("keep must be a boolean mask with one entry per cell.")
+        msg = "keep must be a boolean mask with one entry per cell."
+        raise ValueError(msg)
     return mask
 
 

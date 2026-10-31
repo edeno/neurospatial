@@ -629,7 +629,8 @@ def simulate_varied_smoothness() -> Callable[..., tuple[np.ndarray, np.ndarray]]
         seed: int = 0,
     ) -> tuple[np.ndarray, np.ndarray]:
         if len(sigmas) != len(centers):
-            raise ValueError("sigmas must have one width per center.")
+            msg = "sigmas must have one width per center."
+            raise ValueError(msg)
         rng = np.random.default_rng(seed)
         bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
         n_bins = env.n_bins

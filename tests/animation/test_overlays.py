@@ -1784,8 +1784,6 @@ class TestConvertOverlaysToData:
         class NotAnOverlay:
             """Class that does not implement OverlayProtocol."""
 
-            pass
-
         not_overlay = NotAnOverlay()
 
         with pytest.raises(TypeError, match="must implement OverlayProtocol"):

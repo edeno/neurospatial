@@ -51,8 +51,7 @@ def single_firing_rate(n_bins: int) -> np.ndarray:
     angles = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
     # Von Mises-like tuning curve
     kappa = 2.0  # Concentration parameter
-    firing_rate = 10.0 * np.exp(kappa * (np.cos(angles - preferred_dir) - 1))
-    return firing_rate
+    return 10.0 * np.exp(kappa * (np.cos(angles - preferred_dir) - 1))
 
 
 @pytest.fixture

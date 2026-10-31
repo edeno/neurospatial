@@ -25,12 +25,11 @@ def nwbfile():
 
     from pynwb import NWBFile
 
-    nwbfile = NWBFile(
+    return NWBFile(
         session_description="Test session",
         identifier="test_session_001",
         session_start_time=datetime(2025, 1, 1, 12, 0, 0),
     )
-    return nwbfile
 
 
 @pytest.fixture

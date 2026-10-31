@@ -209,11 +209,12 @@ class NapariScene:
         try:
             import napari
         except ImportError as error:
-            raise ImportError(
+            msg = (
                 "The napari view needs napari. Install it with "
                 "pip install 'neurospatial[animation]', or use "
                 "backend='widget' in a notebook or backend='fastplotlib'."
-            ) from error
+            )
+            raise ImportError(msg) from error
         from qtpy.QtCore import (  # type: ignore[attr-defined]
             QEvent,
             QObject,
@@ -735,7 +736,8 @@ class NapariScene:
                 else np.zeros((1, 1, 3), dtype=np.uint8)
             )
             if image is None:
-                raise ValueError("VideoOverlay's first mapped frame could not be read.")
+                msg = "VideoOverlay's first mapped frame could not be read."
+                raise ValueError(msg)
             # Video-to-environment transforms are x,y; napari uses y,x.
             matrix = video.pixel_to_env(image.shape[1], image.shape[0])
             order = [1, 0, 2]
@@ -811,15 +813,15 @@ class NapariScene:
 
     def _validate_time(self, time: float) -> float:
         if self._closed:
-            raise RuntimeError("This napari view is closed.")
+            msg = "This napari view is closed."
+            raise RuntimeError(msg)
         time = float(time)
         if (
             not np.isfinite(time)
             or not self.scene.frame_times[0] <= time <= self.scene.frame_times[-1]
         ):
-            raise ValueError(
-                "time must lie inside the scene's recording clock, in seconds."
-            )
+            msg = "time must lie inside the scene's recording clock, in seconds."
+            raise ValueError(msg)
         return time
 
     def _prepare(self, time: float) -> _PreparedFrame:
@@ -954,7 +956,8 @@ class NapariScene:
     @contextmanager
     def capture_session(self) -> Iterator[Any]:
         if self._closed:
-            raise RuntimeError("This napari view is closed.")
+            msg = "This napari view is closed."
+            raise RuntimeError(msg)
         state = self.capture_state()
         self.timer.stop()
         was_capturing = self._capturing

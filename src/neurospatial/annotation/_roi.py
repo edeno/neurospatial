@@ -33,7 +33,8 @@ def _frame_size(frame_shape: Sequence[int]) -> tuple[int, int]:
         or any(not isinstance(value, (int, np.integer)) for value in frame_shape[:2])
         or min(frame_shape[:2]) <= 0
     ):
-        raise ValueError("Frame shape must provide positive integer height and width.")
+        msg = "Frame shape must provide positive integer height and width."
+        raise ValueError(msg)
     return int(frame_shape[0]), int(frame_shape[1])
 
 
@@ -44,15 +45,15 @@ def validate_roi_bounds(bounds: ROIBounds, frame_shape: Sequence[int]) -> ROIBou
         isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer))
         for value in bounds
     ):
-        raise ValueError(
-            "Region of interest needs integer (x0, y0, x1, y1) pixel bounds."
-        )
+        msg = "Region of interest needs integer (x0, y0, x1, y1) pixel bounds."
+        raise ValueError(msg)
     x0, y0, x1, y1 = (int(value) for value in bounds)
     if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
-        raise ValueError(
+        msg = (
             f"Region of interest must be nonempty and inside the {width} by "
             f"{height} image; redraw it or choose Use full image."
         )
+        raise ValueError(msg)
     return x0, y0, x1, y1
 
 
@@ -69,16 +70,18 @@ def rectangle_to_roi_bounds(
     height, width = _frame_size(frame_shape)
     vertices = np.asarray(vertices_rc, dtype=np.float64)
     if vertices.shape != (4, 2) or not np.isfinite(vertices).all():
-        raise ValueError(
+        msg = (
             "Finish drawing one region-of-interest rectangle, or choose Use full image."
         )
+        raise ValueError(msg)
     minimum = vertices.min(axis=0)
     maximum = vertices.max(axis=0)
     if (maximum <= minimum).any():
-        raise ValueError(
+        msg = (
             "Region of interest must have positive width and height; "
             "redraw it or choose Use full image."
         )
+        raise ValueError(msg)
     lower = np.floor(minimum + 0.5)
     upper = np.ceil(maximum + 0.5)
     bounds = (
@@ -118,18 +121,20 @@ def _local_roi_prompt(
     x0, y0, x1, y1 = bounds
     points = prompt.points
     if not _inside_pixels(points, bounds):
-        raise ValueError(
+        msg = (
             "An inside or outside prompt lies outside the region of interest. "
             "Move or remove that point, enlarge the region, or choose Use full image."
         )
+        raise ValueError(msg)
     local_box = None
     if prompt.box is not None:
         bx0, by0, bx1, by1 = prompt.box
         if bx0 < x0 - 0.5 or by0 < y0 - 0.5 or bx1 > x1 - 0.5 or by1 > y1 - 0.5:
-            raise ValueError(
+            msg = (
                 "The prompt box extends outside the region of interest. "
                 "Enlarge the region or choose Use full image."
             )
+            raise ValueError(msg)
         local_box = prompt.box - np.array([x0, y0, x0, y0])
     return SegmentationPrompt(points - np.array([x0, y0]), prompt.labels, box=local_box)
 
@@ -149,10 +154,11 @@ def restore_roi_proposal(
     )
     expected = (y1 - y0, x1 - x0)
     if proposal.mask.shape != expected:
-        raise ValueError(
+        msg = (
             f"Provider returned mask shape {proposal.mask.shape}; the inference "
             f"image requires {expected}. Return one mask pixel per input pixel."
         )
+        raise ValueError(msg)
     if bounds is None:
         return proposal
     mask = np.zeros((height, width), dtype=bool)

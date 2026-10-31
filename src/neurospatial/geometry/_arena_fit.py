@@ -101,9 +101,8 @@ def _validate_components(root: CombinedLocator) -> None:
         if child_arena.walls:
             checked = apply_walls(child, child_arena)
             if not np.array_equal(checked.connections.pairs, child.connections.pairs):
-                raise ValueError(
-                    "Component connectivity crosses its declared physical walls."
-                )
+                msg = "Component connectivity crosses its declared physical walls."
+                raise ValueError(msg)
     if root.children[0].bins.n_dims == 2:
         centers = root.spatial_bins().centers
         for pair in root.bridge_pairs:
@@ -111,9 +110,8 @@ def _validate_components(root: CombinedLocator) -> None:
             if any(
                 link.intersects(wall) for domain in root.arenas for wall in domain.walls
             ):
-                raise ValueError(
-                    "A stored navigation bridge crosses a known physical wall."
-                )
+                msg = "A stored navigation bridge crosses a known physical wall."
+                raise ValueError(msg)
 
 
 def validate_arena(
@@ -128,17 +126,19 @@ def validate_arena(
         # The arena a combined environment's own transforms produce is its
         # components' union moved by every map on the way.
         if not same_encoded_arena(arena, expected):
-            raise ValueError("Combined arena disagrees with stored component domains.")
+            msg = "Combined arena disagrees with stored component domains."
+            raise ValueError(msg)
     if arena.n_dims != binning.bins.n_dims:
-        raise ValueError("Arena coordinate dimensions must match the binning.")
+        msg = "Arena coordinate dimensions must match the binning."
+        raise ValueError(msg)
     if arena.coordinate_kind != coordinates.kind:
-        raise ValueError(
+        msg = (
             f"Arena coordinate_kind must be {coordinates.kind!r} for this environment."
         )
+        raise ValueError(msg)
     if arena.domain_known and not np.all(arena.contains(binning.bins.centers)):
-        raise ValueError(
-            "Arena excludes a bin center; select bins by center before constructing the environment."
-        )
+        msg = "Arena excludes a bin center; select bins by center before constructing the environment."
+        raise ValueError(msg)
 
     if isinstance(binning.shapes, PolygonCells) and expected is None:
         domain = arena.polygonal_domain()
@@ -152,9 +152,10 @@ def validate_arena(
                     cell, reference_clearance=domain_clearance
                 )
                 if outside > allowance:
-                    raise ValueError(
+                    msg = (
                         f"Polygon cell {index} extends outside the saved arena domain."
                     )
+                    raise ValueError(msg)
 
 
 def _wall_cut_message(

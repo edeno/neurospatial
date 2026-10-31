@@ -386,7 +386,8 @@ def create_selected_overlays(
 
     dim_ranges = env.dimension_ranges
     if dim_ranges is None:
-        raise ValueError("Environment must have dimension_ranges set")
+        msg = "Environment must have dimension_ranges set"
+        raise ValueError(msg)
     dim_ranges_list: list[tuple[float, float]] = list(dim_ranges)
 
     # Generate trajectory for position-based overlays

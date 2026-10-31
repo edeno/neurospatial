@@ -505,7 +505,8 @@ def credible_region(
     1
     """
     if not 0 < level < 1:
-        raise ValueError(f"level must be between 0 and 1 (exclusive), got {level}")
+        msg = f"level must be between 0 and 1 (exclusive), got {level}"
+        raise ValueError(msg)
 
     from neurospatial.decoding._support import relative_bin_measures
 

@@ -308,8 +308,7 @@ class TestApplyTransformToEnvironment:
         data = rng.standard_normal((200, 2)) * 5
         env = Environment.from_samples(data, bin_size=2.0, name="test")
         env = env.with_metadata(units="cm")
-        env = env.with_metadata(frame="session1")
-        return env
+        return env.with_metadata(frame="session1")
 
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""

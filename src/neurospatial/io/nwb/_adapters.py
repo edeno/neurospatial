@@ -62,8 +62,9 @@ def select_one(
             if name in (path, path.rsplit("/", 1)[-1])
         ]
         if not candidates:
+            msg = f"{what} '{name}' not found. Available: {paths}"
             raise missing_error(
-                f"{what} '{name}' not found. Available: {paths}",
+                msg,
                 fix=f"pass {keyword}= with a name or path from this list.",
             )
     if len(candidates) > 1:
@@ -229,12 +230,13 @@ def require_unscaled_for_lazy(series: Any, *, context: str) -> None:
     """
     conversion, offset = scaling_from_series(series)
     if (conversion, offset) != (1.0, 0.0):
-        raise ValueError(
+        msg = (
             f"{context}(lazy=True) would return the stored values of '{series.name}', "
             f"but the series declares conversion={conversion} and offset={offset}, so "
             f"stored values are not in '{series.unit}'.\n"
             f"Fix: call {context}(..., lazy=False); values are converted on read."
         )
+        raise ValueError(msg)
 
 
 def timestamps_handle_from_series(series: Any) -> Any:
@@ -276,17 +278,19 @@ def timestamps_handle_from_series(series: Any) -> Any:
 
     rate = getattr(series, "rate", None)
     if rate is None:
-        raise ValueError(
+        msg = (
             "Series has neither 'timestamps' nor 'rate' attribute; cannot derive "
             "time axis."
         )
+        raise ValueError(msg)
 
     rate = float(rate)
     if not np.isfinite(rate) or rate <= 0:
-        raise ValueError(
+        msg = (
             f"Series 'rate' must be a finite positive value to derive a time "
             f"axis, got {rate!r}. Provide an explicit 'timestamps' array instead."
         )
+        raise ValueError(msg)
 
     starting_time = float(getattr(series, "starting_time", 0.0) or 0.0)
     return np.arange(len(series.data), dtype=np.float64) / rate + starting_time
@@ -317,9 +321,12 @@ def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataF
     df = events_table.to_dataframe()
 
     if "timestamp" not in df.columns:
-        raise missing_error(
+        msg = (
             f"EventsTable '{table_name}' does not have a 'timestamp' column, "
-            "so it may not be a valid EventsTable.",
+            "so it may not be a valid EventsTable."
+        )
+        raise missing_error(
+            msg,
             fix="read an ndx-events EventsTable, which stores event times in "
             "its 'timestamp' column.",
         )

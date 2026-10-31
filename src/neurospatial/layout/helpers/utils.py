@@ -101,11 +101,12 @@ def get_n_bins(
     # extent / small bin_size cannot silently overflow.
     n_bins_float = np.ceil(np.asarray(extent, dtype=np.float64) / bin_size_arr)
     if np.any(n_bins_float > np.iinfo(np.int64).max):
-        raise ValueError(
+        msg = (
             f"Requested binning overflows: extent / bin_size implies "
             f"{n_bins_float.max():.3g} bins, exceeding the int64 limit. "
             f"Increase bin_size or reduce the dimension range."
         )
+        raise ValueError(msg)
     n_bins = n_bins_float.astype(np.int64)
     n_bins[n_bins == 0] = 1  # Handle zero-extent case
     return np.asarray(n_bins, dtype=np.int64)
@@ -141,8 +142,9 @@ def _infer_dimension_ranges_from_samples(
 
     """
     if positions.ndim != 2:
+        msg = f"positions must be a 2D array, shape is {positions.shape}"
         raise ValueError(
-            f"positions must be a 2D array, shape is {positions.shape}",
+            msg,
         )
     n_dimensions = positions.shape[1]
 
@@ -167,9 +169,12 @@ def _infer_dimension_ranges_from_samples(
     elif buffer_array.shape == (n_dimensions,):
         buffer_values = buffer_array
     else:
-        raise ValueError(
+        msg = (
             f"buffer_around_data sequence length ({buffer_array.size}) "
-            f"must match number of dimensions ({n_dimensions}).",
+            f"must match number of dimensions ({n_dimensions})."
+        )
+        raise ValueError(
+            msg,
         )
 
     inferred_ranges = []
@@ -234,18 +239,25 @@ def map_active_data_to_grid(
 
     """
     if grid_shape is None or active_mask is None:
-        raise ValueError(
+        msg = (
             "This method is applicable only to grid-based environments "
-            "that have 'grid_shape' and 'active_mask' attributes.",
+            "that have 'grid_shape' and 'active_mask' attributes."
+        )
+        raise ValueError(
+            msg,
         )
     if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:
-        raise ValueError("active_bin_data must be a 1D NumPy array.")
+        msg = "active_bin_data must be a 1D NumPy array."
+        raise ValueError(msg)
 
     n_bins = active_mask.sum()
     if active_bin_data.shape[0] != n_bins:
-        raise ValueError(
+        msg = (
             f"Length of active_bin_data ({active_bin_data.shape[0]}) "
-            f"must match the number of active bins ({n_bins}).",
+            f"must match the number of active bins ({n_bins})."
+        )
+        raise ValueError(
+            msg,
         )
 
     # Create an array for the full grid, filled with the fill_value
@@ -325,8 +337,7 @@ def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     n_edges = n_bins * avg_edges_per_node / 2  # Divide by 2 (edges counted twice)
     edges_mb = (n_edges * 300) / (1024**2)
 
-    total_mb = bin_centers_mb + nodes_mb + edges_mb
-    return total_mb
+    return bin_centers_mb + nodes_mb + edges_mb
 
 
 def check_grid_size_safety(

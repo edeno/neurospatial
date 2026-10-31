@@ -42,22 +42,20 @@ class GridBinningSpec(ReadOnlyState):
             np.asarray(value).dtype.kind not in "iuf"
             for value in (self.origin, self.forward)
         ):
-            raise ValueError(
-                "Grid specification origin and forward must be real numeric arrays."
-            )
+            msg = "Grid specification origin and forward must be real numeric arrays."
+            raise ValueError(msg)
         origin = np.array(self.origin, dtype=np.float64, copy=True)
         matrix = np.array(self.forward, dtype=np.float64, copy=True)
         if origin.ndim != 1 or not len(origin) or not np.all(np.isfinite(origin)):
-            raise ValueError(
-                "Grid specification origin must be a finite coordinate vector."
-            )
+            msg = "Grid specification origin must be a finite coordinate vector."
+            raise ValueError(msg)
         _check_homogeneous(matrix)
         if matrix.shape != (len(origin) + 1, len(origin) + 1):
-            raise ValueError(
-                "Grid specification frame dimensions must match its origin."
-            )
+            msg = "Grid specification frame dimensions must match its origin."
+            raise ValueError(msg)
         if type(self.connect_diagonal) is not bool:
-            raise ValueError("Grid specification connect_diagonal must be boolean.")
+            msg = "Grid specification connect_diagonal must be boolean."
+            raise ValueError(msg)
         origin.setflags(write=False)
         matrix.setflags(write=False)
         object.__setattr__(self, "origin", origin)

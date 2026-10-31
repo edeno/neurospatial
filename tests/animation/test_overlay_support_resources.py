@@ -192,7 +192,8 @@ def test_single_conversion_failure_closes_previously_opened_reader(env, readers)
 
         def convert_to_data(self, frame_times, n_frames, env):
             self.calls += 1
-            raise ValueError("adapter conversion failed")
+            msg = "adapter conversion failed"
+            raise ValueError(msg)
 
     failing = Fails()
     with pytest.raises(ValueError, match="adapter"), pytest.warns(UserWarning):

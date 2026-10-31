@@ -246,10 +246,11 @@ def _field_streams(
             else [f"field {i + 1}" for i in range(len(fields))]
         )
         if len(names) != len(fields):
-            raise ValueError(
+            msg = (
                 f"layer_names has {len(names)} names for {len(fields)} fields. "
                 "Pass one name per field."
             )
+            raise ValueError(msg)
         streams = dict(zip(names, fields, strict=True))
     else:
         # Arrays, lazy readers (memmap, h5py) and lists of frames are one
@@ -293,7 +294,8 @@ def _field_streams(
         vmin = low if vmin is None else vmin
         vmax = high if vmax is None else vmax
         if vmin > vmax:
-            raise ValueError("vmin must be less than or equal to vmax.")
+            msg = "vmin must be less than or equal to vmax."
+            raise ValueError(msg)
         for name in plain:
             shared = copy.copy(built[name])
             object.__setattr__(shared, "vmin", vmin)
@@ -339,12 +341,13 @@ def _n_frames(fields: Any) -> int:
     if not isinstance(fields, Mapping) and not (
         hasattr(fields, "__getitem__") and hasattr(fields, "__len__")
     ):
-        raise TypeError(
+        msg = (
             "fields must be an array or an indexable sequence of rows "
             "(n_frames, n_bins), a list of such fields, or a mapping from name "
             f"to field; got {type(fields).__name__}. Fix: pass np.asarray(rows) "
             "or a memory-mapped array instead of an iterator."
         )
+        raise TypeError(msg)
     if isinstance(fields, Mapping):
         fields = next(iter(fields.values()), [])
     elif isinstance(fields, np.ndarray):
@@ -742,18 +745,16 @@ def subsample_frames(
     - 1000 Hz → 60 fps: takes frames at indices [0, 17, 33, 50, ...]
     """
     if target_fps > source_fps:
-        raise ValueError(
-            f"target_fps ({target_fps}) cannot exceed source_fps ({source_fps})"
-        )
+        msg = f"target_fps ({target_fps}) cannot exceed source_fps ({source_fps})"
+        raise ValueError(msg)
 
     indices = _subsample_indices(len(fields), source_fps, target_fps)
 
     if isinstance(fields, np.ndarray):
         result: NDArray | list = fields[indices]
         return result
-    else:
-        result_list: NDArray | list = [fields[i] for i in indices]
-        return result_list
+    result_list: NDArray | list = [fields[i] for i in indices]
+    return result_list
 
 
 def estimate_colormap_range_from_subset(

@@ -121,8 +121,9 @@ class RegularGridLayout(_GridMixin):
             self.dimension_ranges = dimension_ranges
         else:
             if positions is None:
+                msg = "dimension_ranges must be provided if positions is None."
                 raise ValueError(
-                    "dimension_ranges must be provided if positions is None.",
+                    msg,
                 )
 
             # Extend the range half a bin beyond the data on each side.

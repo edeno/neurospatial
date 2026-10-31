@@ -285,7 +285,7 @@ class TestDatasetTest:
         """
         rng = np.random.default_rng(5)
         times = np.arange(10) * DT
-        sweeps = [np.eye(track.n_bins)[start + np.arange(10)] for start in range(0, 10)]
+        sweeps = [np.eye(track.n_bins)[start + np.arange(10)] for start in range(10)]
         mean_p, share_p = [], []
         for _ in range(200):
             seed = int(rng.integers(2**32))

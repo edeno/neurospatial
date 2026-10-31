@@ -171,11 +171,12 @@ def calibrate_video(
     # Validate video path exists
     video_path = Path(video_path)
     if not video_path.exists():
-        raise FileNotFoundError(
+        msg = (
             f"WHAT: Video file not found at '{video_path}'.\n"
             f"WHY: The video_path must point to an existing file.\n"
             f"Fix: Check the file path and ensure the video file exists."
         )
+        raise FileNotFoundError(msg)
 
     # Get frame size from video
     frame_size_px = _get_video_frame_size(video_path)
@@ -190,7 +191,7 @@ def calibrate_video(
         methods_provided.append("cm_per_px")
 
     if len(methods_provided) == 0:
-        raise ValueError(
+        msg = (
             "WHAT: No calibration method specified.\n"
             "WHY: calibrate_video() requires one of: scale_bar, landmarks, or cm_per_px.\n"
             "Fix: Provide exactly one calibration parameter, e.g.:\n"
@@ -198,13 +199,15 @@ def calibrate_video(
             "     - landmarks_px=array, landmarks_env=array\n"
             "     - cm_per_px=0.25"
         )
+        raise ValueError(msg)
 
     if len(methods_provided) > 1:
-        raise ValueError(
+        msg = (
             f"WHAT: Multiple calibration methods specified: {methods_provided}.\n"
             f"WHY: scale_bar, landmarks, and cm_per_px are mutually exclusive.\n"
             f"Fix: Provide exactly one calibration method."
         )
+        raise ValueError(msg)
 
     env_scale = _calibration_units_per_cm(env)
 
@@ -214,11 +217,12 @@ def calibrate_video(
 
         # Validate inputs
         if known_length_cm <= 0:
-            raise ValueError(
+            msg = (
                 f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
                 f"WHY: A scale bar must have positive real-world length.\n"
                 f"Fix: Provide a positive value for known_length_cm."
             )
+            raise ValueError(msg)
 
         # Compute pixel distance between endpoints
         dx = p2_px[0] - p1_px[0]
@@ -226,11 +230,12 @@ def calibrate_video(
         px_distance = np.sqrt(dx * dx + dy * dy)
 
         if px_distance == 0:
-            raise ValueError(
+            msg = (
                 f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
                 f"WHY: Cannot compute scale from coincident endpoints.\n"
                 f"Fix: Provide two distinct points for the scale bar."
             )
+            raise ValueError(msg)
 
         # Compute scale factor
         cm_per_px_computed = known_length_cm / px_distance
@@ -245,17 +250,19 @@ def calibrate_video(
     elif landmarks_px is not None or landmarks_env is not None:
         # Validate both landmarks are provided
         if landmarks_px is None:
-            raise ValueError(
+            msg = (
                 "WHAT: landmarks_px is required when landmarks_env is provided.\n"
                 "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
                 "Fix: Provide landmarks_px array of shape (n_points, 2)."
             )
+            raise ValueError(msg)
         if landmarks_env is None:
-            raise ValueError(
+            msg = (
                 "WHAT: landmarks_env is required when landmarks_px is provided.\n"
                 "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
                 "Fix: Provide landmarks_env array of shape (n_points, 2)."
             )
+            raise ValueError(msg)
 
         # Ensure arrays
         landmarks_px = np.asarray(landmarks_px, dtype=np.float64)
@@ -263,12 +270,13 @@ def calibrate_video(
 
         # Validate same length
         if len(landmarks_px) != len(landmarks_env):
-            raise ValueError(
+            msg = (
                 f"WHAT: landmarks_px has {len(landmarks_px)} points but landmarks_env "
                 f"has {len(landmarks_env)} points.\n"
                 f"WHY: Each pixel landmark must have a corresponding environment point.\n"
                 f"Fix: Ensure landmarks_px and landmarks_env have the same number of points."
             )
+            raise ValueError(msg)
 
         transform = calibrate_from_landmarks(
             landmarks_px=landmarks_px,
@@ -281,11 +289,12 @@ def calibrate_video(
         # Direct scale factor with conditional Y-flip
         assert cm_per_px is not None  # Asserted by method validation above
         if cm_per_px <= 0:
-            raise ValueError(
+            msg = (
                 f"WHAT: cm_per_px must be positive (got {cm_per_px}).\n"
                 f"WHY: Scale factor must be positive to produce valid transforms.\n"
                 f"Fix: Provide a positive value, e.g., cm_per_px=0.25."
             )
+            raise ValueError(msg)
         _, frame_height = frame_size_px
 
         # Build transform with conditional Y-flip
@@ -329,16 +338,16 @@ def _get_video_frame_size(video_path: Path) -> tuple[int, int]:
 
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
-            raise ValueError(f"Cannot open video file: {video_path}")
+            msg = f"Cannot open video file: {video_path}"
+            raise ValueError(msg)
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
         if width <= 0 or height <= 0:
-            raise ValueError(
-                f"Invalid frame size ({width}, {height}) from {video_path}"
-            )
+            msg = f"Invalid frame size ({width}, {height}) from {video_path}"
+            raise ValueError(msg)
 
         return (width, height)
 
@@ -351,19 +360,21 @@ def _get_video_frame_size(video_path: Path) -> tuple[int, int]:
             # imageio returns size differently depending on backend
             if "size" in meta:
                 return tuple(meta["size"])
-            elif "shape" in meta:
+            if "shape" in meta:
                 # Shape is (height, width, channels) or (frames, height, width, channels)
                 shape = meta["shape"]
                 if len(shape) == 3:
                     return (shape[1], shape[0])
-                elif len(shape) == 4:
+                if len(shape) == 4:
                     return (shape[2], shape[1])
-            raise ValueError(f"Cannot determine frame size from {video_path}")
+            msg = f"Cannot determine frame size from {video_path}"
+            raise ValueError(msg)
         except ImportError as exc:
-            raise ImportError(
+            msg = (
                 "Neither cv2 (opencv-python) nor imageio is available. "
                 "Install one of them to read video files."
-            ) from exc
+            )
+            raise ImportError(msg) from exc
 
 
 def _validate_calibration_coverage(

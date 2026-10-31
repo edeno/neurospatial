@@ -91,8 +91,9 @@ def test_public_api_matches_snapshot() -> None:
                 tofile="public API (this checkout)",
             )
         )
-        raise AssertionError(
+        msg = (
             "The public API differs from tests/data/public_api.txt.\n"
             f"{diff}\nIf this change is intended, regenerate the snapshot and "
             f"commit it:\n    {UPDATE_CMD}"
         )
+        raise AssertionError(msg)

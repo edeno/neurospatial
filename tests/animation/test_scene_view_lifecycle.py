@@ -80,7 +80,8 @@ class Reader:
         self.events.append("reader")
         self.closed = True
         if self.fail:
-            raise RuntimeError("reader close failed")
+            msg = "reader close failed"
+            raise RuntimeError(msg)
 
 
 def animation(env, reader=None):
@@ -184,7 +185,8 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
 
     def failed_view_close():
         events.append("failed view")
-        raise ValueError("view close failed")
+        msg = "view close failed"
+        raise ValueError(msg)
 
     first = AnimationView._from_callbacks(
         scene, object(), seek=Mock(), close=failed_view_close
@@ -195,7 +197,8 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
 
     def failed_renderer_close():
         events.append("renderer")
-        raise RuntimeError("renderer close failed")
+        msg = "renderer close failed"
+        raise RuntimeError(msg)
 
     scene._renderer = SimpleNamespace(close=failed_renderer_close)
     from neurospatial.animation._resources import _cleanup_error
@@ -258,7 +261,8 @@ def test_context_preserves_body_failure_and_reports_cleanup_failure(
         close=Mock(side_effect=ValueError("cleanup failure")),
     )
     with pytest.raises(RuntimeError, match="body failure") as captured, scene:
-        raise RuntimeError("body failure")
+        msg = "body failure"
+        raise RuntimeError(msg)
     assert any("cleanup failure" in note for note in captured.value.__notes__)
     assert scene._closed
 
@@ -303,7 +307,8 @@ def test_view_close_callbacks_all_run_even_when_native_cleanup_fails(env):
 
     def failed_callback():
         calls.append("failed callback")
-        raise ValueError("callback failed")
+        msg = "callback failed"
+        raise ValueError(msg)
 
     view._add_close_callback(failed_callback)
     view._add_close_callback(lambda: calls.append("other callback"))

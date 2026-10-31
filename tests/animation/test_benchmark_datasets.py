@@ -31,9 +31,8 @@ def _load_benchmark_datasets() -> ModuleType:
         submodule_search_locations=[str(BENCHMARK_DATASETS_DIR)],
     )
     if spec is None or spec.loader is None:
-        raise RuntimeError(
-            f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
-        )
+        msg = f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
+        raise RuntimeError(msg)
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module

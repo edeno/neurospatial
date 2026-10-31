@@ -1256,10 +1256,11 @@ class FastplotlibAnimation:
             streams = list(scene.fields.values())
             names = list(scene.fields) if layer_names is None else list(layer_names)
             if len(names) != len(streams):
-                raise ValueError(
+                msg = (
                     f"layer_names has {len(names)} names for {len(streams)} "
                     "fields; pass one name per field."
                 )
+                raise ValueError(msg)
             frame_times = scene.frame_times
             self.n_frames = len(frame_times)
             # The widget's clock: seconds from the first frame, so session
@@ -1269,11 +1270,12 @@ class FastplotlibAnimation:
             self._clock = frame_times - self._start
             self._labels = None if frame_labels is None else list(frame_labels)
             if self._labels is not None and len(self._labels) != self.n_frames:
-                raise ValueError(
+                msg = (
                     f"frame_labels has {len(self._labels)} labels for "
                     f"{self.n_frames} frames. Pass one label per frame, or omit "
                     "frame_labels to label frames by their time."
                 )
+                raise ValueError(msg)
             data = scene._overlay_data
             groups = list(prepared.signal_groups.values())
             step, steps_per_second = _playback(
@@ -1354,10 +1356,11 @@ class FastplotlibAnimation:
             if rendering == "iso" and volume_threshold is not None:
                 for scale in scales:
                     if not scale.vmin <= volume_threshold <= scale.vmax:
-                        raise ValueError(
+                        msg = (
                             "volume_threshold must lie between fixed vmin and vmax "
                             f"({scale.vmin}, {scale.vmax}), in field data units."
                         )
+                        raise ValueError(msg)
 
             # The slider stops at the last frame.
             self.widget = fastplotlib.NDWidget(
@@ -1707,11 +1710,11 @@ class FastplotlibAnimation:
     def seek(self, time: float) -> None:
         """Move every panel to an absolute recording time, in seconds."""
         if self._closed:
-            raise RuntimeError(
-                "This animation is closed. Create a new view before seeking."
-            )
+            msg = "This animation is closed. Create a new view before seeking."
+            raise RuntimeError(msg)
         if not np.isfinite(time):
-            raise ValueError("time must be a finite recording time in seconds.")
+            msg = "time must be a finite recording time in seconds."
+            raise ValueError(msg)
         self.widget.indices = {
             "time": float(np.clip(time - self._start, 0, self._clock[-1]))
         }
@@ -1726,9 +1729,8 @@ class FastplotlibAnimation:
         Playback and asynchronous field reads stay suspended until exit.
         """
         if self._closed:
-            raise RuntimeError(
-                "This animation is closed. Create a new view before exporting."
-            )
+            msg = "This animation is closed. Create a new view before exporting."
+            raise RuntimeError(msg)
         self.show()
         original_time = self.time
         playing = playback_state(self.widget)
@@ -1740,7 +1742,8 @@ class FastplotlibAnimation:
 
         def update(time: float) -> None:
             if self._closed:
-                raise RuntimeError("This animation was closed during capture.")
+                msg = "This animation was closed during capture."
+                raise RuntimeError(msg)
             # Drawn at the recording time itself, not one rounded through
             # the widget's clock.
             time = float(np.clip(time, first, last))
@@ -1754,7 +1757,8 @@ class FastplotlibAnimation:
 
         def capture(time: float) -> NDArray[np.uint8]:
             if not np.isfinite(time):
-                raise ValueError("time must be a finite recording time in seconds.")
+                msg = "time must be a finite recording time in seconds."
+                raise ValueError(msg)
             update(time)
             # force_draw works on GUI, notebook and offscreen canvases. It
             # submits all updated GPU buffers before the snapshot reads back.

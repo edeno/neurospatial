@@ -233,9 +233,8 @@ def _validate_and_prepare_inputs(
     """
     if positions is None:
         if dimension_range is None:
-            raise ValueError(
-                "Either `positions` or `dimension_range` must be provided."
-            )
+            msg = "Either `positions` or `dimension_range` must be provided."
+            raise ValueError(msg)
         n_dims = len(dimension_range)
         return None, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
@@ -244,20 +243,23 @@ def _validate_and_prepare_inputs(
         samples = np.asarray(positions, dtype=float)
     except (TypeError, ValueError) as e:
         actual_type = type(positions).__name__
-        raise TypeError(
+        msg = (
             f"positions must be a numeric array-like object (e.g., numpy array, "
             f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-        ) from e
+        )
+        raise TypeError(msg) from e
 
     if samples.ndim != 2:
-        raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
+        msg = f"`positions` must be 2D, got shape {samples.shape}."
+        raise ValueError(msg)
     n_dims = samples.shape[1]
     finite = None
     if dimension_range is None:
         finite = samples[np.isfinite(samples).all(axis=1)]
         if finite.size == 0:
+            msg = "`positions` has no valid points and no `dimension_range` given."
             raise ValueError(
-                "`positions` has no valid points and no `dimension_range` given.",
+                msg,
             )
     return finite, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
@@ -298,7 +300,8 @@ def _compute_dimension_ranges(
     else:
         # Infer from `samples`
         if samples is None:
-            raise ValueError("Cannot infer ranges without samples")
+            msg = "Cannot infer ranges without samples"
+            raise ValueError(msg)
         ranges = []
         for dim in range(n_dims):
             dim_vals = samples[:, dim]

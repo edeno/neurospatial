@@ -329,9 +329,8 @@ class _ColumnView:
     def __getitem__(self, key: Any) -> Any:
         rows, *rest = key if isinstance(key, tuple) else (key,)
         if len(rest) > 1:
-            raise IndexError(
-                f"too many indices for a 2-D position array: {len(rest) + 1}"
-            )
+            msg = f"too many indices for a 2-D position array: {len(rest) + 1}"
+            raise IndexError(msg)
         selected = np.asarray(self._data[rows])[..., self._columns]
         return selected[..., rest[0]] if rest else selected
 
@@ -386,9 +385,12 @@ def _get_spatial_series(
     found = _find_containers_by_type(nwbfile, container_type)
     if processing_module is not None:
         if processing_module not in nwbfile.processing:
-            raise missing_error(
+            msg = (
                 f"Processing module '{processing_module}' not found in NWB "
-                f"file. Available modules: {list(nwbfile.processing.keys())}.",
+                f"file. Available modules: {list(nwbfile.processing.keys())}."
+            )
+            raise missing_error(
+                msg,
                 fix=fix,
             )
         found = [
@@ -400,8 +402,9 @@ def _get_spatial_series(
     else:
         searched = "processing/* and acquisition"
     if not found:
+        msg = f"No {type_name} data found in NWB file. Searched: {searched}."
         raise missing_error(
-            f"No {type_name} data found in NWB file. Searched: {searched}.",
+            msg,
             fix=fix,
         )
     candidates = [
@@ -410,9 +413,12 @@ def _get_spatial_series(
         for name in sorted(container.spatial_series)
     ]
     if not candidates:
-        raise missing_error(
+        msg = (
             f"{type_name} container(s) {[path for path, _ in found]} "
-            "has no SpatialSeries.",
+            "has no SpatialSeries."
+        )
+        raise missing_error(
+            msg,
             fix=f"add a SpatialSeries to the {type_name} container.",
         )
     series = select_one(

@@ -154,7 +154,7 @@ def test_population_summary_names_aggregation(rate_family_results, family):
     assert "max_peak_firing_rate=" in repr(result)
 
 
-@pytest.mark.parametrize("family", ("spatial", "directional"))
+@pytest.mark.parametrize("family", ["spatial", "directional"])
 def test_total_occupancy_is_shared_not_summed(rate_family_results, family):
     result = rate_family_results[family]
     assert result.occupancy.ndim == 1
@@ -189,7 +189,7 @@ def test_summary_table_single_matches_batch(rate_family_results, family):
         assert single.attrs == batch.attrs
 
 
-@pytest.mark.parametrize("family", ("view", "allocentric", "egocentric", "directional"))
+@pytest.mark.parametrize("family", ["view", "allocentric", "egocentric", "directional"])
 def test_singular_verdict_matches_table_and_classify(rate_family_results, family):
     result = rate_family_results[family]
     predicate = {
@@ -206,7 +206,7 @@ def test_singular_verdict_matches_table_and_classify(rate_family_results, family
         assert batch[predicate].iloc[i] == expected
 
 
-@pytest.mark.parametrize("family", ("spatial", "view", "allocentric", "egocentric"))
+@pytest.mark.parametrize("family", ["spatial", "view", "allocentric", "egocentric"])
 def test_summary_table_shows_both_terms_of_the_information_screen(
     rate_family_results, family
 ):

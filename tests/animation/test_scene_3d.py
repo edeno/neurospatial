@@ -89,7 +89,7 @@ def test_3d_grid_draws_only_active_cells_and_distinguishes_missing(env3d):
 
 
 @pytest.mark.parametrize(
-    "overlay,match",
+    ("overlay", "match"),
     [
         (
             HeadDirectionOverlay(np.array([0.0, 1.0]), np.array([0.0, 0.2])),
@@ -126,7 +126,7 @@ class _HeadingAdapter:
 
 
 @pytest.mark.parametrize(
-    "headings,match",
+    ("headings", "match"),
     [
         (np.array([0.0, 1.0]), "unit vectors"),
         (np.array([[1.0, 0.0], [0.0, 1.0]]), "Shape mismatch"),

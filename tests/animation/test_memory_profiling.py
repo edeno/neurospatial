@@ -40,10 +40,8 @@ def get_memory_usage_mb():
             # ru_maxrss is in KB on Linux, bytes on macOS
             if sys.platform == "darwin":
                 return usage.ru_maxrss / 1024 / 1024
-            else:
-                return usage.ru_maxrss / 1024
-        else:
-            pytest.skip("psutil required for memory profiling on Windows")
+            return usage.ru_maxrss / 1024
+        pytest.skip("psutil required for memory profiling on Windows")
 
 
 @pytest.mark.slow

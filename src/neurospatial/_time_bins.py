@@ -56,10 +56,11 @@ def _time_bin_rounding(
     """
     if not np.isfinite(windows).all():
         w = int(np.flatnonzero(~np.isfinite(windows).all(axis=1))[0])
-        raise ValueError(
+        msg = (
             f"{context}: window {w} is {windows[w].tolist()}; its bounds must "
             "be finite seconds.\nFix: pass finite start and stop times."
         )
+        raise ValueError(msg)
     start, stop = windows[:, 0], windows[:, 1]
     rounding = _edge_rounding(start, stop)
     imprecise = rounding > 1e-2 * dt
@@ -69,11 +70,12 @@ def _time_bin_rounding(
             "subtract a time origin first (e.g. times - times[0], and the same "
             "offset from spike times and windows), or use a larger dt."
         )
-        raise ValueError(
+        msg = (
             f"{context} of {width_name}={dt:g} s cannot be represented at timestamps near "
             f"{start[w]:.6g} s: float64 rounding there is {rounding[w]:.3g} s, more "
             f"than 1% of {width_name}.\nFix: {fix}"
         )
+        raise ValueError(msg)
     return rounding
 
 

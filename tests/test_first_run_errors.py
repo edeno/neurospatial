@@ -89,7 +89,7 @@ def test_egocentric_population_reports_length_and_dimensions_together(recording)
 
 
 @pytest.mark.parametrize(
-    "name,arguments",
+    ("name", "arguments"),
     [
         ("decode_position", "spike_counts, encoding_models, dt=dt"),
         ("decode_position_summary", "spike_counts, encoding_models, dt=dt"),

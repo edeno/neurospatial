@@ -99,8 +99,6 @@ class MazeDims:
     ValueError: TMazeDims(arm_length=-50.0) is not a length: ...
     """
 
-    pass
-
 
 def check_lengths(dims: MazeDims, *names: str, allow_zero: bool = False) -> None:
     """Refuse any of ``names`` that is not a finite, positive length in cm.
@@ -130,11 +128,12 @@ def check_lengths(dims: MazeDims, *names: str, allow_zero: bool = False) -> None
             or (value == 0 and not allow_zero)
         ):
             kind = "zero or more" if allow_zero else "positive"
-            raise ValueError(
+            msg = (
                 f"{type(dims).__name__}({name}={value!r}) is not a length: {name} "
                 f"must be a finite number of cm, {kind}. Pass a value such as the "
                 f"default, {name}={_default(dims, name)!r}."
             )
+            raise ValueError(msg)
 
 
 def check_count(dims: MazeDims, name: str, minimum: int, why: str) -> None:
@@ -158,10 +157,11 @@ def check_count(dims: MazeDims, name: str, minimum: int, why: str) -> None:
     """
     value = getattr(dims, name)
     if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
-        raise ValueError(
+        msg = (
             f"{type(dims).__name__}({name}={value!r}) cannot be built: {why}. "
             f"Use a whole number {name} of at least {minimum}."
         )
+        raise ValueError(msg)
 
 
 def check_longer_than_wide(dims: MazeDims, name: str, part: str) -> None:
@@ -210,7 +210,8 @@ def refuse(dims: MazeDims, names: Sequence[str], problem: str, fix: str) -> NoRe
         How to choose values that build it.
     """
     values = ", ".join(f"{name}={getattr(dims, name)!r}" for name in names)
-    raise ValueError(f"{type(dims).__name__}({values}) {problem}. {fix}")
+    msg = f"{type(dims).__name__}({values}) {problem}. {fix}"
+    raise ValueError(msg)
 
 
 def _default(dims: MazeDims, name: str) -> object:
@@ -381,17 +382,19 @@ class MazeEnvironments:
         if track is None:
             return
         if not track.is_linearized_track:
-            raise ValueError(
+            msg = (
                 f"env_track must be a linearized track, got a {track.n_dims}-D "
                 f"environment {track.name!r}. Build the track with "
                 "Environment.from_graph, or pass env_track=None for an open field."
             )
+            raise ValueError(msg)
         if track.units != self.env_2d.units:
-            raise ValueError(
+            msg = (
                 f"env_track is in {track.units!r} but env_2d is in "
                 f"{self.env_2d.units!r}, so positions would not match between "
                 "them. Build both in the same units."
             )
+            raise ValueError(msg)
         # The track names the same wells, arm ends and goals as the 2-D maze,
         # each point placed at the nearest location on the track.
         if not track.regions:

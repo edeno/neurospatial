@@ -91,14 +91,15 @@ def _pickled_scene(scene: Any, n_workers: int) -> dict[str, Any]:
         except Exception as error:
             if key == "overlay_data":
                 label = _unpicklable_overlay(value)
-            raise ValueError(
+            msg = (
                 f"Parallel export (n_workers={n_workers}) sends the scene to "
                 f"worker processes, but {label} cannot be pickled "
                 f"({type(error).__name__}: {error}). Pass n_workers=1 to render "
                 "in this process, or replace what cannot be pickled with plain "
                 "data: NumPy arrays, numbers, strings, and file paths instead of "
                 "open readers, locks, lambdas or local functions."
-            ) from error
+            )
+            raise ValueError(msg) from error
     return pickled
 
 

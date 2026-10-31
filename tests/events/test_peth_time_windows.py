@@ -22,7 +22,7 @@ def event_recording():
 
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize(
-    "keyword, kept, dropped", [("epochs", 3, 2), ("spike_window", 2, 3)]
+    ("keyword", "kept", "dropped"), [("epochs", 3, 2), ("spike_window", 2, 3)]
 )
 def test_drops_events_whose_window_leaves_recording(
     event_recording, population, keyword, kept, dropped
@@ -108,7 +108,7 @@ def test_defaults_keep_all_events(event_recording):
 
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize(
-    "window,bin_size,spikes,expected",
+    ("window", "bin_size", "spikes", "expected"),
     [
         ((0.1, 0.3), 0.1, [0.1, 0.2, 0.3], [1, 1]),
         ((0.0, 1.05), 0.25, [0.99, 1.0, 1.04], [0, 0, 0, 1]),

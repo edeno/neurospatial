@@ -21,10 +21,11 @@ def require_animation_support(fastplotlib: Any) -> None:
     """Fail before allocation when the supported widget contract is unavailable."""
     version = Version(fastplotlib.__version__)
     if not Version("0.7") <= version < Version("0.8"):
-        raise ImportError(
+        msg = (
             f"fastplotlib {version} is unsupported for animation. "
             "Install neurospatial[fastplotlib] (fastplotlib>=0.7,<0.8)."
         )
+        raise ImportError(msg)
     try:
         from fastplotlib.graphics import ImageVolumeGraphic
         from fastplotlib.layouts import Subplot
@@ -37,10 +38,11 @@ def require_animation_support(fastplotlib: Any) -> None:
         from fastplotlib.widgets.nd_widget._index import ReferenceIndices
         from fastplotlib.widgets.nd_widget._ui import NDWidgetUI
     except ImportError as error:
-        raise ImportError(
+        msg = (
             "fastplotlib animation requires the 0.7 NDWidget and imgui-bundle. "
             "Install neurospatial[fastplotlib] with its optional dependencies."
-        ) from error
+        )
+        raise ImportError(msg) from error
     required = (
         (ImageVolumeGraphic, ("data", "mode", "threshold", "plane", "world_object")),
         (Subplot, ("add_image_volume",)),
@@ -58,10 +60,11 @@ def require_animation_support(fastplotlib: Any) -> None:
         or not callable(run_sync)
         or any(not hasattr(cls, name) for cls, names in required for name in names)
     ):
-        raise ImportError(
+        msg = (
             "The installed fastplotlib NDWidget lacks required animation hooks. "
             "Reinstall fastplotlib>=0.7,<0.8 and imgui-bundle."
         )
+        raise ImportError(msg)
 
 
 def playback_state(widget: Any) -> dict[str, bool]:
@@ -207,11 +210,12 @@ def _iso_shader_source(code: str, version: str) -> str:
         r"let world_pos\s*=\s*[^;]*u_wobject\.world_transform[^;]*data_pos", iso
     ):
         return code
-    raise ImportError(
+    msg = (
         f"pygfx {version} has an unsupported isosurface shader: correct world "
         "depth cannot be verified. Use field_rendering='mip', 'slice', or 'points', "
         "or install pygfx>=0.17,<0.18 for the checked compatibility fix."
     )
+    raise ImportError(msg)
 
 
 def _volume_shader_source(code: str, common: str) -> str:
@@ -219,11 +223,12 @@ def _volume_shader_source(code: str, common: str) -> str:
     common_include = "{$ include 'pygfx.volume_common.wgsl' $}"
     color_include = "{$ include 'pygfx.image_sample.wgsl' $}"
     if code.count(common_include) != 1 or common.count(color_include) != 1:
-        raise ImportError(
+        msg = (
             "The installed pygfx volume shader lacks the checked scalar/color "
             "sampling hooks. Use field_rendering='points' or install "
             "pygfx>=0.17,<0.18."
         )
+        raise ImportError(msg)
     color = """
 fn sampled_value_to_color(value: vec4<f32>) -> vec4<f32> {
     if (value.g == 0.0) { return vec4<f32>(0.0); }
@@ -259,11 +264,12 @@ fn sampled_value_to_color(value: vec4<f32>) -> vec4<f32> {
     for old, new in replacements.items():
         expected = 3 if old == "var the_value : vec4<f32>;" else 1
         if code.count(old) != expected:
-            raise ImportError(
+            msg = (
                 "The installed pygfx volume raycaster lacks the checked "
                 "missing-support hooks. Use field_rendering='points' or install "
                 "pygfx>=0.17,<0.18."
             )
+            raise ImportError(msg)
         code = code.replace(old, new)
     return code
 

@@ -285,9 +285,8 @@ def _grid_field(
 
     # Validate 2D grid
     if len(grid.shape) != 2:
-        raise NotImplementedError(
-            f"pcolormesh requires 2D grids, got grid_shape={grid.shape}"
-        )
+        msg = f"pcolormesh requires 2D grids, got grid_shape={grid.shape}"
+        raise NotImplementedError(msg)
 
     # Convert to grid
     grid_data = map_active_data_to_grid(
@@ -295,7 +294,7 @@ def _grid_field(
     )
 
     x, y = _grid_mesh(grid, frame)
-    mesh = ax.pcolormesh(
+    return ax.pcolormesh(
         x,
         y,
         grid_data.T,
@@ -306,8 +305,6 @@ def _grid_field(
         shading="flat",
         **kwargs,
     )
-
-    return mesh
 
 
 def _polygon_field(
@@ -362,7 +359,7 @@ def _triangle_field(
     mesh_points = shapes.points
 
     # Plot using tripcolor
-    mesh = ax.tripcolor(
+    return ax.tripcolor(
         mesh_points[:, 0],
         mesh_points[:, 1],
         triangles,
@@ -373,8 +370,6 @@ def _triangle_field(
         rasterized=style.rasterized,
         **kwargs,
     )
-
-    return mesh
 
 
 def _track_field(
@@ -469,7 +464,7 @@ def _point_field(
     kwargs.setdefault("edgecolors", "none")
 
     # Plot
-    scatter = ax.scatter(
+    return ax.scatter(
         plot_centers[:, 0],
         plot_centers[:, 1],
         c=plot_values,
@@ -479,8 +474,6 @@ def _point_field(
         rasterized=style.rasterized,
         **kwargs,
     )
-
-    return scatter
 
 
 @dataclass(frozen=True)

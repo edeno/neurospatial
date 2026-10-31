@@ -54,7 +54,7 @@ def test_track_coordinates_retain_segment_spacing_and_missing_positions():
 
 
 @pytest.mark.parametrize(
-    "env_metadata, track_metadata, accepted",
+    ("env_metadata", "track_metadata", "accepted"),
     [
         ({}, {}, True),
         (

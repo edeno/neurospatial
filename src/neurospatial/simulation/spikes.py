@@ -158,17 +158,19 @@ def generate_poisson_spikes(
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
 
     if times.ndim != 1 or firing_rate.ndim != 1:
-        raise ValueError(
+        msg = (
             "firing_rate and times must be 1-D arrays, got "
             f"firing_rate.shape={firing_rate.shape}, times.shape={times.shape}."
         )
+        raise ValueError(msg)
     validate_finite_scalar(refractory_period, name="refractory_period", positive=False)
 
     if len(firing_rate) != len(times):
-        raise ValueError(
+        msg = (
             f"firing_rate and times must have the same length, got "
             f"firing_rate={len(firing_rate)}, times={len(times)}."
         )
+        raise ValueError(msg)
 
     firing_rate = validate_finite(firing_rate, name="firing_rate")
     negative = np.flatnonzero(firing_rate < 0)
@@ -189,7 +191,8 @@ def generate_poisson_spikes(
 
     if not np.all(np.isfinite(times)):
         n_bad = int(np.sum(~np.isfinite(times)))
-        raise ValueError(f"times must be finite, got {n_bad} NaN/inf entr(y/ies).")
+        msg = f"times must be finite, got {n_bad} NaN/inf entr(y/ies)."
+        raise ValueError(msg)
 
     if len(times) < 2:
         return np.array([], dtype=np.float64)

@@ -193,13 +193,15 @@ def _simplify_together(
     """
     geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
     if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
-        raise ValueError("Simplification did not preserve valid outline geometry.")
+        msg = "Simplification did not preserve valid outline geometry."
+        raise ValueError(msg)
     # GEOS may unwrap a one-component MultiPolygon into a Polygon.
     simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
     if len(simplified) != len(polygons) or sorted(
         len(polygon.interiors) for polygon in simplified
     ) != sorted(len(polygon.interiors) for polygon in polygons):
-        raise ValueError("Simplification did not preserve every component and hole.")
+        msg = "Simplification did not preserve every component and hole."
+        raise ValueError(msg)
     return simplified
 
 
@@ -944,7 +946,8 @@ def load_cvat_xml(
     try:
         root = ET.parse(path).getroot()
     except ET.ParseError as e:
-        raise ET.ParseError(f"Error parsing XML file {xml_path}: {e}") from e
+        msg = f"Error parsing XML file {xml_path}: {e}"
+        raise ET.ParseError(msg) from e
     if root.tag != "annotations":
         raise ValueError(
             _format_error(

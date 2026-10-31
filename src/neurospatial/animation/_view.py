@@ -37,7 +37,8 @@ class AnimationView:
     """
 
     def __init__(self) -> None:
-        raise TypeError("Create a view with Animation.show().")
+        msg = "Create a view with Animation.show()."
+        raise TypeError(msg)
 
     @classmethod
     def _from_callbacks(
@@ -115,9 +116,8 @@ class AnimationView:
         time = float(time)
         start, stop = self.animation.frame_times[[0, -1]]
         if not np.isfinite(time) or not start <= time <= stop:
-            raise ValueError(
-                f"time must be within the recording [{start:g}, {stop:g}] seconds."
-            )
+            msg = f"time must be within the recording [{start:g}, {stop:g}] seconds."
+            raise ValueError(msg)
         self._backend.seek(time)
         self._time = time
 
@@ -129,10 +129,11 @@ class AnimationView:
             not np.isfinite([start, stop]).all()
             or not bounds[0] <= start < stop <= bounds[1]
         ):
-            raise ValueError(
+            msg = (
                 "Select a nonempty interval within the animation's recording "
                 f"[{bounds[0]:g}, {bounds[1]:g}] seconds."
             )
+            raise ValueError(msg)
         self._selection = (float(start), float(stop))
         return self
 
@@ -154,7 +155,8 @@ class AnimationView:
         """
         self._require_open()
         if render not in {"view", "scene"}:
-            raise ValueError("render must be 'view' or 'scene'.")
+            msg = "render must be 'view' or 'scene'."
+            raise ValueError(msg)
         kwargs.setdefault("time_range", self._selection)
         if render == "scene" or self._backend.capture_session is None:
             return self.animation.export(path, **kwargs)
@@ -163,16 +165,18 @@ class AnimationView:
         from neurospatial.animation._prepared import iter_observation_clocks
 
         if "dpi" in kwargs or "figsize" in kwargs:
-            raise TypeError(
+            msg = (
                 "View capture uses the current viewer size. Resize the viewer "
                 "first, or use render='scene' with dpi/figsize."
             )
+            raise TypeError(msg)
         if kwargs.get("n_workers", 1) != 1:
-            raise ValueError(
+            msg = (
                 "View capture reads each frame from this viewer, so it renders in "
                 "this process. Pass n_workers=1, or render='scene' to render the "
                 "standard scene layout in worker processes."
             )
+            raise ValueError(msg)
         plan = prepare_export(
             path,
             self.animation.frame_times,
@@ -217,9 +221,8 @@ class AnimationView:
     def _require_open(self) -> None:
         self.animation._ensure_view_allowed()
         if self._closed:
-            raise RuntimeError(
-                "This view is closed. Call Animation.show() for a new view."
-            )
+            msg = "This view is closed. Call Animation.show() for a new view."
+            raise RuntimeError(msg)
 
     def __enter__(self) -> AnimationView:
         self._require_open()
@@ -246,10 +249,11 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     try:
         import ipywidgets as widgets
     except ImportError as exc:
-        raise ImportError(
+        msg = (
             "Notebook animation requires ipywidgets. Install it or choose "
             "backend='fastplotlib'."
-        ) from exc
+        )
+        raise ImportError(msg) from exc
 
     # require_scene_view checked these options.
     dpi = kwargs.get("dpi", 100)

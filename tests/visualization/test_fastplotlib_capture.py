@@ -215,7 +215,8 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
             np.testing.assert_allclose(animation._unit.field.values, rates[1])
             low, high = animation.figure["series 0"].x_range
             assert (low + high) / 2 == pytest.approx(0.8)
-            raise RuntimeError("writer failed")
+            msg = "writer failed"
+            raise RuntimeError(msg)
         assert animation.widget.indices["time"] == pytest.approx(0.2)
         assert animation.widget.ui_sliders._playing["time"]
         assert all(not graphic.pause for graphic in animation.widget.ndgraphics)
@@ -345,7 +346,8 @@ def test_native_constructor_failure_drains_allocated_workers(env, monkeypatch):
         monkeypatch.setattr(self.figure.canvas, "close", close_canvas)
         # Start a real read executor so the assertion verifies shutdown.
         self._frames._reader.submit(lambda: None).result()
-        raise RuntimeError("Initial source read failed")
+        msg = "Initial source read failed"
+        raise RuntimeError(msg)
 
     monkeypatch.setattr(FastplotlibAnimation, "_show", fail_initial_show)
     scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.1])

@@ -248,20 +248,21 @@ class _VideoReader:
 
         self._path = Path(path)
         if not self._path.exists():
-            raise FileNotFoundError(f"Video file not found: {self._path}")
+            msg = f"Video file not found: {self._path}"
+            raise FileNotFoundError(msg)
 
         self._downsample = downsample
         self._cache_size = cache_size
 
         if prefetch_ahead < 0:
-            raise ValueError(
-                f"prefetch_ahead must be non-negative, got {prefetch_ahead}"
-            )
+            msg = f"prefetch_ahead must be non-negative, got {prefetch_ahead}"
+            raise ValueError(msg)
         self._prefetch_ahead = prefetch_ahead
 
         capture = cv2.VideoCapture(str(self._path))
         if not capture.isOpened():
-            raise ValueError(f"Could not open video file: {self._path}")
+            msg = f"Could not open video file: {self._path}"
+            raise ValueError(msg)
         self._n_frames: int = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -399,9 +400,8 @@ class _VideoReader:
             If OpenCV cannot decode a frame inside the reported range.
         """
         if frame_idx < 0 or frame_idx >= self._n_frames:
-            raise IndexError(
-                f"Frame index {frame_idx} out of range [0, {self._n_frames})"
-            )
+            msg = f"Frame index {frame_idx} out of range [0, {self._n_frames})"
+            raise IndexError(msg)
         executor = self._prefetch_executor
         if executor is not None:
             self._trigger_prefetch(executor, frame_idx)

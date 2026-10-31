@@ -66,16 +66,18 @@ def validate_finite(
         first = int(np.argmax(bad))
         index = "flat index" if arr.ndim > 1 else "index"
         if allow_nan:
-            raise ValueError(
+            msg = (
                 f"{name} contains {n} infinite value(s) "
                 f"(first at {index} {first}: {float(arr.flat[first])}). "
                 "NaN marks a missing value; replace infinities with NaN."
             )
-        raise ValueError(
+            raise ValueError(msg)
+        msg = (
             f"{name} contains {n} non-finite value(s) "
             f"(first at {index} {first}: {float(arr.flat[first])}). "
             f"Remove or mask them before calling."
         )
+        raise ValueError(msg)
     return arr
 
 
@@ -468,7 +470,8 @@ def validate_alpha(alpha: object, *, owner: str) -> None:
         If ``alpha`` is not a number in (0, 1).
     """
     if not (is_finite_real(alpha, positive=True) and alpha < 1):
-        raise ValueError(f"{owner}: alpha must be in (0, 1), got {alpha!r}.")
+        msg = f"{owner}: alpha must be in (0, 1), got {alpha!r}."
+        raise ValueError(msg)
 
 
 def validate_float_dtype(
@@ -567,10 +570,11 @@ def validate_finite_scalar(
     if none_allowed and value is None:
         return
     if not is_finite_real(value, positive=positive):
-        raise ValueError(
+        msg = (
             f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
             f"{', or None' if none_allowed else ''}; got {value!r}."
         )
+        raise ValueError(msg)
 
 
 def validate_choice(

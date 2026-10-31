@@ -154,7 +154,8 @@ def _rebin(
         Which source bins to check for loss once the new bins are published.
     """
     if (factor is None) == (bin_size is None):
-        raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+        msg = "Pass exactly one of factor or bin_size to rebin()."
+        raise ValueError(msg)
     refuse_unsupported_rebin(
         binning, arena, provenance, factor=factor, bin_size=bin_size
     )
@@ -389,35 +390,30 @@ def _rebin_resolution(
     dims = len(spec.origin)
     raw = np.asarray(bin_size)
     if raw.dtype.kind not in "iuf" or raw.ndim > 1:
-        raise ValueError(
-            "bin_size must be a finite positive scalar or one value per grid axis."
-        )
+        msg = "bin_size must be a finite positive scalar or one value per grid axis."
+        raise ValueError(msg)
     sizes = np.full(dims, float(raw)) if raw.ndim == 0 else np.asarray(raw, dtype=float)
     if sizes.shape != (dims,) or np.any(~np.isfinite(sizes) | (sizes <= 0)):
-        raise ValueError(
-            f"bin_size must give {dims} finite positive physical axis lengths."
-        )
+        msg = f"bin_size must give {dims} finite positive physical axis lengths."
+        raise ValueError(msg)
     lengths = np.hypot.reduce(spec.forward[:-1, :-1], axis=0)
     with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
         spacing = sizes / lengths
     if np.any(~np.isfinite(spacing) | (spacing <= 0)):
-        raise ValueError(
-            "bin_size is not representable in the stored grid frame; rescale coordinates."
-        )
+        msg = "bin_size is not representable in the stored grid frame; rescale coordinates."
+        raise ValueError(msg)
     # Bound the domain in lattice coordinates. A conservative box is sufficient:
     # every candidate center is subsequently checked against the actual arena.
     local_arena = arena.transformed(
         np.asarray(np.linalg.inv(spec.forward), dtype=np.float64)
     )
     if not local_arena.domain_known:
-        raise NotImplementedError(
-            "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
-        )
+        msg = "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
+        raise NotImplementedError(msg)
     limits = local_arena.domain_bounds()
     if limits is None:
-        raise NotImplementedError(
-            "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
-        )
+        msg = "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
+        raise NotImplementedError(msg)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         low = np.floor((limits[0] - spec.origin) / spacing)
         high = np.ceil((limits[1] - spec.origin) / spacing)
@@ -427,9 +423,8 @@ def _rebin_resolution(
         or np.any(counts < 1)
         or np.any(counts >= np.iinfo(np.intp).max)
     ):
-        raise ValueError(
-            "bin_size produces unrepresentable grid dimensions; use larger bins or recenter coordinates."
-        )
+        msg = "bin_size produces unrepresentable grid dimensions; use larger bins or recenter coordinates."
+        raise ValueError(msg)
     shape = tuple(int(count) for count in counts)
     check_grid_size_safety(shape)
     edges = tuple(
@@ -441,9 +436,8 @@ def _rebin_resolution(
     if any(
         np.any(np.diff(edge) <= 0) or not np.all(np.isfinite(edge)) for edge in edges
     ):
-        raise ValueError(
-            "bin_size is too small at this coordinate precision; recenter coordinates or use larger bins."
-        )
+        msg = "bin_size is too small at this coordinate precision; recenter coordinates or use larger bins."
+        raise ValueError(msg)
     centers = grid_cell_centers(edges)
     mapped = centers @ spec.forward[:-1, :-1].T + spec.forward[:-1, -1]
     domain = arena.polygonal_domain()
@@ -455,9 +449,8 @@ def _rebin_resolution(
     # subset does not bring back the space it left out.
     keep &= _overlaps_bins(binning, spec.forward, edges).ravel()
     if not np.any(keep):
-        raise ValueError(
-            "Rebinning retains no bin center inside the original arena; use a smaller bin_size."
-        )
+        msg = "Rebinning retains no bin center inside the original arena; use a smaller bin_size."
+        raise ValueError(msg)
     layout = MaskedGridLayout()
     layout.build(
         active_mask=keep.reshape(shape),
@@ -695,10 +688,11 @@ def _rebin_factor(
     if arena.domain_known:
         keep &= arena.contains(coarse_bin_centers)
         if not np.any(keep):
-            raise ValueError(
+            msg = (
                 "Rebinning retains no coarse bin center inside the original arena. "
                 "Use a smaller factor or rebuild a grid with centers in the domain."
             )
+            raise ValueError(msg)
 
     # --- Build the coarse grid and publish it ---
 

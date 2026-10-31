@@ -91,37 +91,39 @@ def resolve_field_rendering(
 ) -> str:
     """Validate explicit requests without importing or allocating a viewer."""
     if mode not in {"auto", "points", "mip", "iso", "slice"}:
-        raise ValueError(
-            "field_rendering must be 'auto', 'points', 'mip', 'iso', or 'slice'."
-        )
+        msg = "field_rendering must be 'auto', 'points', 'mip', 'iso', or 'slice'."
+        raise ValueError(msg)
     supported = env.n_dims == 3 and uniform_grid(env) is not None
     if mode in {"mip", "iso", "slice"} and not supported:
-        raise ValueError(
+        msg = (
             f"field_rendering={mode!r} requires a uniform regular 3D grid "
             "(affine transformed grids are supported). Use field_rendering='points' "
             "or 'auto' for this environment."
         )
+        raise ValueError(msg)
     resolved = ("mip" if supported else "points") if mode == "auto" else mode
     if volume_threshold is not None:
         if resolved != "iso":
-            raise ValueError(
-                "volume_threshold is used only with field_rendering='iso'."
-            )
+            msg = "volume_threshold is used only with field_rendering='iso'."
+            raise ValueError(msg)
         if not np.isfinite(volume_threshold):
-            raise ValueError("volume_threshold must be finite, in field data units.")
+            msg = "volume_threshold must be finite, in field data units."
+            raise ValueError(msg)
     if slice_plane is not None:
         if resolved != "slice":
-            raise ValueError("slice_plane is used only with field_rendering='slice'.")
+            msg = "slice_plane is used only with field_rendering='slice'."
+            raise ValueError(msg)
         plane = np.asarray(slice_plane, dtype=float)
         if (
             plane.shape != (4,)
             or not np.all(np.isfinite(plane))
             or not np.any(plane[:3])
         ):
-            raise ValueError(
+            msg = (
                 "slice_plane must contain finite (a, b, c, d), with nonzero normal, "
                 "for the WORLD XYZ plane a*x + b*y + c*z + d = 0."
             )
+            raise ValueError(msg)
     return resolved
 
 
@@ -151,10 +153,11 @@ class VolumeField:
         self.scale = scale
         chosen = (scale.vmin + scale.vmax) / 2 if threshold is None else threshold
         if not scale.vmin <= chosen <= scale.vmax:
-            raise ValueError(
+            msg = (
                 "volume_threshold must lie between fixed vmin and vmax "
                 f"({scale.vmin}, {scale.vmax}), in field data units."
             )
+            raise ValueError(msg)
         self.graphic = subplot.add_image_volume(
             self.grid.encode(values),
             mode=mode,

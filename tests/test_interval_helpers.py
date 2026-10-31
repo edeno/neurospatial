@@ -229,7 +229,7 @@ def test_intersect_intervals():
 
 
 @pytest.mark.parametrize(
-    "mask,expected",
+    ("mask", "expected"),
     [
         ([True, True, False, True], [[0, 2], [3, 4]]),
         ([False, False], []),
@@ -379,7 +379,8 @@ def test_context_warnings_survive_an_error_in_the_block() -> None:
         _warnings_with_context("ctx"),
     ):
         warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
-        raise ValueError("nothing left")
+        msg = "nothing left"
+        raise ValueError(msg)
 
 
 def test_break_declared_on_a_missing_row_moves_to_the_next_kept_row():

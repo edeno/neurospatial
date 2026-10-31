@@ -72,8 +72,7 @@ def _repr(
     if len(name) > 40:
         name = name[:37] + "..."
 
-    if layout_type.endswith("Layout"):
-        layout_type = layout_type[:-6]  # Remove 'Layout' suffix
+    layout_type = layout_type.removesuffix("Layout")  # Remove 'Layout' suffix
 
     return f"{class_name}(name={name!r}, {n_dims}D, {n_bins} bins, {layout_type})"
 

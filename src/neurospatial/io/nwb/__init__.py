@@ -211,7 +211,8 @@ _LAZY_IMPORTS: dict[str, str] = {
 def __getattr__(name: str) -> Any:
     """Lazy import public API functions."""
     if name not in _LAZY_IMPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
 
     module_path, attr_name = _LAZY_IMPORTS[name].split(":")
     module = import_module(module_path)

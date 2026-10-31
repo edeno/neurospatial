@@ -56,7 +56,7 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
     blocks = re.findall(
         r"<!-- nwb-docs-test: run -->\s*```python\n(.*?)\n```",
         GUIDE.read_text(),
-        re.S,
+        re.DOTALL,
     )
     assert len(blocks) == 1, "Keep the complete NWB recipe executable."
     namespace = {"__name__": "__main__"}

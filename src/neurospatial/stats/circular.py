@@ -197,13 +197,14 @@ def _validate_weights(
     if np.any(weights < 0):
         n_neg = int(np.sum(weights < 0))
         first = int(np.argmax(weights < 0))
-        raise ValueError(
+        msg = (
             f"{name} must be non-negative (interpreted as counts/frequencies). "
             f"Found {n_neg} negative value(s) (first at index {first}: "
             f"{weights[first]!r}). "
             f"Fix: pass non-negative weights such as spike counts, not signed "
             f"quantities."
         )
+        raise ValueError(msg)
     return weights
 
 
@@ -336,7 +337,7 @@ def _valid_angles(
     nan_mask = np.isnan(angles)
     n_nan = int(np.sum(nan_mask))
     if n_nan and n_nan == len(angles) and min_samples > 0:
-        raise ValueError(
+        msg = (
             f"All angles are NaN ({len(angles)} samples). "
             f"Cannot compute circular statistics.\n"
             f"\n"
@@ -354,6 +355,7 @@ def _valid_angles(
             f"\n"
             f"Quick fix: Verify extraction with: np.isnan(angles).sum()"
         )
+        raise ValueError(msg)
     if n_nan:
         angles = angles[~nan_mask]
         if weights is not None:
@@ -368,18 +370,20 @@ def _valid_angles(
 
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
-        raise ValueError(
+        msg = (
             f"angles contains {n_inf} infinite values. "
             f"Cannot compute circular statistics.\n"
             f"Fix: Remove or replace infinite values before calling this function."
         )
+        raise ValueError(msg)
 
     if len(angles) < min_samples:
-        raise ValueError(
+        msg = (
             f"Need at least {min_samples} samples for circular statistics. "
             f"Got {len(angles)} valid samples in angles.\n"
             f"Fix: Provide more data points or use a different analysis method."
         )
+        raise ValueError(msg)
 
     return angles, weights
 
@@ -424,12 +428,13 @@ def _validate_paired_input(
     arr2 = np.asarray(arr2, dtype=np.float64).ravel()
 
     if len(arr1) != len(arr2):
-        raise ValueError(
+        msg = (
             f"{name1} and {name2} must have same length. "
             f"Got {name1}: {len(arr1)}, {name2}: {len(arr2)}.\n"
             f"Fix: Ensure both arrays represent the same events "
             f"(e.g., same spikes)."
         )
+        raise ValueError(msg)
 
     # Remove pairs where either is NaN
     nan_mask = np.isnan(arr1) | np.isnan(arr2)
@@ -446,11 +451,12 @@ def _validate_paired_input(
 
     # Check minimum samples after NaN removal
     if len(arr1) < min_samples:
-        raise ValueError(
+        msg = (
             f"Need at least {min_samples} valid pairs for analysis. "
             f"Got {len(arr1)} pairs after removing NaN values.\n"
             f"Fix: Provide more data points."
         )
+        raise ValueError(msg)
 
     return arr1, arr2
 
@@ -554,7 +560,7 @@ def rayleigh_test(
         angles, angle_unit, weights, min_samples=1 if weights is not None else 3
     )
     if weights is not None and np.any(weights != np.round(weights)):
-        raise ValueError(
+        msg = (
             "rayleigh_test weights must be whole-number counts (e.g., spike "
             "counts per phase bin). The test's sample size is sum(weights), so "
             "non-count weights such as occupancy times or rates make the "
@@ -562,14 +568,16 @@ def rayleigh_test(
             "Fix: pass integer counts, or use mean_resultant_length(angles, "
             "weights=...) for a descriptive weighted concentration."
         )
+        raise ValueError(msg)
     n_eff = float(np.sum(weights)) if weights is not None else float(len(angles))
     if n_eff < 3:
-        raise ValueError(
+        msg = (
             f"Need at least 3 total weight (sum of counts) for the weighted "
             f"Rayleigh test. Got sum(weights) = {n_eff:g}.\n"
             f"Fix: provide more spikes/counts (all-zero counts carry no "
             f"data), or use a different analysis method."
         )
+        raise ValueError(msg)
     r_mean = _mean_resultant_length(angles, weights=weights)
 
     # Rayleigh z-statistic: z = n_eff * R^2.
@@ -1131,23 +1139,24 @@ def _validated_cov(
             if intercept_allowed
             else "2x2 matrix for [beta_sin, beta_cos]"
         )
-        raise ValueError(
-            f"cov_matrix must be a {expected}, got shape {cov_matrix.shape}.\n{fix}"
-        )
+        msg = f"cov_matrix must be a {expected}, got shape {cov_matrix.shape}.\n{fix}"
+        raise ValueError(msg)
     if not np.all(np.isfinite(cov_matrix)):
-        raise ValueError(
+        msg = (
             f"cov_matrix must be finite, got {cov_matrix.tolist()}.\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
         )
+        raise ValueError(msg)
     scale = float(np.max(np.abs(cov_matrix)))
     if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
         np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
     ):
-        raise ValueError(
+        msg = (
             f"cov_matrix must be a symmetric positive semi-definite covariance "
             f"matrix, got {cov_matrix.tolist()}.\n{fix}"
         )
+        raise ValueError(msg)
     return cov_matrix
 
 
@@ -1191,12 +1200,13 @@ def _wald_test_magnitude(
 
     beta = np.array([beta_sin, beta_cos], dtype=np.float64)
     if not np.all(np.isfinite(beta)):
-        raise ValueError(
+        msg = (
             f"beta_sin and beta_cos must be finite, got ({beta_sin!r}, "
             f"{beta_cos!r}).\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
         )
+        raise ValueError(msg)
 
     # Wald statistic: beta.T @ inv(cov) @ beta
     # Use solve instead of inv for numerical stability
@@ -1307,13 +1317,14 @@ def circular_basis(
     """
     angles = np.asarray(angles, dtype=np.float64)
     if angles.ndim != 1 or not np.all(np.isfinite(angles)):
-        raise ValueError(
+        msg = (
             f"angles must be a 1-D array of finite values, got shape "
             f"{angles.shape} with {int(np.sum(~np.isfinite(angles)))} "
             f"non-finite value(s).\n"
             f"Fix: pass one angle per GLM sample, and drop the samples (with "
             f"their spike counts) where the angle is missing."
         )
+        raise ValueError(msg)
     return CircularBasisResult(angles=to_radians(angles, angle_unit))
 
 
@@ -1594,7 +1605,7 @@ def plot_circular_basis_tuning(
 
     # Validate show_data requirements
     if show_data and (angles is None or rates is None):
-        raise ValueError(
+        msg = (
             "show_data=True requires both angles and rates arguments.\n\n"
             "To show model fit over raw data:\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, "
@@ -1602,15 +1613,17 @@ def plot_circular_basis_tuning(
             "To show only the fitted curve:\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)"
         )
+        raise ValueError(msg)
 
     # Validate show_ci requirements
     if show_ci and cov_matrix is None:
-        raise ValueError(
+        msg = (
             "show_ci=True requires cov_matrix argument.\n\n"
             "To show confidence bands:\n"
             "  cov = model.cov_params()[:3, :3]  # intercept, sin, cos\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
         )
+        raise ValueError(msg)
 
     # Create figure if needed
     if ax is None:

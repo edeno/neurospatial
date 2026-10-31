@@ -148,9 +148,7 @@ def create_benchmark_env(n_bins: int, seed: int = 42):
     n_samples = max(1000, grid_size * 10)
     positions = rng.uniform(0, grid_size, size=(n_samples, 2))
 
-    env = Environment.from_samples(positions, bin_size=1.0)
-
-    return env
+    return Environment.from_samples(positions, bin_size=1.0)
 
 
 def create_benchmark_fields(
@@ -186,7 +184,8 @@ def create_benchmark_fields(
 
     if use_memmap:
         if tmpdir is None:
-            raise ValueError("tmpdir required for memmap")
+            msg = "tmpdir required for memmap"
+            raise ValueError(msg)
         memmap_path = tmpdir / "fields.dat"
         fields: NDArray[np.float64] = np.memmap(
             str(memmap_path),
@@ -201,9 +200,8 @@ def create_benchmark_fields(
             fields[start:end] = rng.random((end - start, n_bins))
         fields.flush()
         return fields, memmap_path
-    else:
-        fields = rng.random((n_frames, n_bins))
-        return fields, None
+    fields = rng.random((n_frames, n_bins))
+    return fields, None
 
 
 def create_colormap_lookup() -> NDArray[np.uint8]:

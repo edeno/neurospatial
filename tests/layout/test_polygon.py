@@ -63,7 +63,7 @@ def test_clip_mapping_owns_strided_indices_and_preserves_protection():
 
 
 @pytest.mark.parametrize(
-    "indices,count",
+    ("indices", "count"),
     [([0.5], 2), ([True], 2), ([-1], 2), ([2], 2), ([[0]], 2), ([0], -1), ([0], True)],
 )
 def test_mapping_rejects_invalid_indices(indices, count):
@@ -426,7 +426,7 @@ def test_centroid_centers_do_not_depend_on_clip_history():
     )
 
 
-@pytest.mark.parametrize("origin,scale", [(0.0, 1.0), (1e9, 1.0), (0.0, 1e-8)])
+@pytest.mark.parametrize(("origin", "scale"), [(0.0, 1.0), (1e9, 1.0), (0.0, 1e-8)])
 def test_numerical_certificate_uses_local_scales_and_rejects_actual_skew(origin, scale):
     cells = PolygonCells(
         (

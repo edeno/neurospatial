@@ -359,8 +359,9 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         segments = tuple(self.segment_results)
         subgoals = np.asarray(self.subgoal_positions, dtype=float)
         if subgoals.ndim != 2 or len(segments) != len(subgoals):
+            msg = "SubgoalEfficiencyResult"
             raise _result_error(
-                "SubgoalEfficiencyResult",
+                msg,
                 f"{len(segments)} segment results for subgoal_positions of "
                 f"shape {subgoals.shape}.",
                 why="each subgoal ends one segment.",
@@ -1266,7 +1267,8 @@ def distance_to_reward(
     )
     paths = metric_paths(metric, env, call=call)
     if mode not in ("nearest", "last", "next"):
-        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
+        msg = f"mode must be 'nearest', 'last', or 'next', got '{mode}'."
+        raise ValueError(msg)
 
     # Reward locations are interpolated between neighbouring samples and
     # rewards are assigned to recordings in time order, so times must be
@@ -1280,9 +1282,8 @@ def distance_to_reward(
         timestamps_of(reward_times, name="reward_times"), name="reward_times"
     )
     if reward_times.ndim != 1:
-        raise ValueError(
-            f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
-        )
+        msg = f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
+        raise ValueError(msg)
     n_samples = times.size
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, n_samples, call=call)
@@ -1301,11 +1302,12 @@ def distance_to_reward(
         if reward_positions.ndim == 1 and positions.shape[1] == 1:
             reward_positions = reward_positions.reshape(-1, 1)
         if len(reward_positions) != len(reward_times):
-            raise ValueError(
+            msg = (
                 f"reward_positions and reward_times must have same length. "
                 f"Got reward_positions: {len(reward_positions)}, "
                 f"reward_times: {len(reward_times)}."
             )
+            raise ValueError(msg)
         _warn_rewards_outside_recording(times, reward_times)
     else:
         reward_positions = _infer_reward_positions(
@@ -1728,10 +1730,11 @@ def distance_to_boundary(
         return np.array([], dtype=np.float64)
 
     if boundary_type == "region" and region_name is None:
-        raise ValueError(
+        msg = (
             "region_name is required when boundary_type='region'. "
             "Provide the name of the region to compute distance to."
         )
+        raise ValueError(msg)
 
     # Find boundary bins based on boundary_type
     if boundary_type == "edge":
@@ -1752,9 +1755,8 @@ def distance_to_boundary(
         )
 
     else:
-        raise ValueError(
-            f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."
-        )
+        msg = f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."
+        raise ValueError(msg)
 
     if len(boundary_bins) == 0:
         raise ValueError(

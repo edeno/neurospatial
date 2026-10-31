@@ -370,11 +370,11 @@ def heat_kernel_from_W(
     # Validate before the high-bin warning and the dense matrix exponential so a
     # bad argument fails fast rather than after paying the O(n^3) expm cost.
     if mode not in get_args(KernelMode):
-        raise ValueError(
-            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-        )
+        msg = f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+        raise ValueError(msg)
     if not (np.isfinite(bandwidth) and bandwidth > 0.0):
-        raise ValueError(f"bandwidth must be finite and > 0, got {bandwidth}.")
+        msg = f"bandwidth must be finite and > 0, got {bandwidth}."
+        raise ValueError(msg)
     _warn_dense_kernel(volumes.shape[0])
 
     # Clip round-off negatives (real cross-block lobes only appear under the
@@ -534,11 +534,12 @@ def _symmetric_eigenbasis(
     n_bins = S.shape[0]
     n_components, labels = scipy.sparse.csgraph.connected_components(S, directed=False)
     if rank is not None and rank < n_components:
-        raise ValueError(
+        msg = (
             f"rank={rank} is below n_components={n_components}: a truncation this "
             "small would drop a connected component's null mode and break "
             "mass conservation. Raise the bandwidth or the rank."
         )
+        raise ValueError(msg)
 
     if n_components == 1:
         return _block_eigenbasis(S, rank)
@@ -649,18 +650,20 @@ def _validate_occupancy(occupancy: NDArray[np.float64]) -> None:
     if not np.all(np.isfinite(occ)):
         bad = np.flatnonzero(~np.isfinite(occ))
         shown = bad[:10].tolist()
-        raise ValueError(
+        msg = (
             f"occupancy must be finite; {bad.size} non-finite bin(s) at "
             f"indices {shown}{'...' if bad.size > 10 else ''}."
         )
+        raise ValueError(msg)
     if np.any(occ < 0.0):
         bad = np.flatnonzero(occ < 0.0)
         shown = bad[:10].tolist()
-        raise ValueError(
+        msg = (
             f"occupancy must be non-negative (time/samples per bin); "
             f"{bad.size} negative bin(s) at indices "
             f"{shown}{'...' if bad.size > 10 else ''}."
         )
+        raise ValueError(msg)
 
 
 def _live_components(
@@ -759,11 +762,12 @@ def _null_mode_mask(
     """
     is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live_comp)
     if missing.size:
-        raise ValueError(
+        msg = (
             f"component(s) {missing.tolist()}: constant null mode not present in "
             "the supplied eigenbasis; grow it to include every component null "
             "before selecting."
         )
+        raise ValueError(msg)
     return is_null
 
 
@@ -841,24 +845,26 @@ def _select_live_basis(
     is_null = _null_mode_mask(Q, mode_comp, volumes, labels, live_comp)
     fill_idx = np.flatnonzero(np.isin(mode_comp, live_comp) & ~is_null)[:n_fill]
     if fill_idx.size != n_fill:
-        raise ValueError(
+        msg = (
             f"_select_live_basis needs {n_fill} fill mode(s) but only "
             f"{fill_idx.size} non-null live mode(s) are present in the "
             f"{Q.shape[1]}-mode eigenbasis. Grow the eigenbasis to full rank "
             "before selecting (Environment.get_mrf_basis does this)."
         )
+        raise ValueError(msg)
     d_fill = Lam[fill_idx]
     # A structurally non-null fill must carry a positive penalty weight. A
     # nonpositive weight means the mode's eigenvalue was clipped to <= 0 (a
     # numerically (near-)disconnected component) -- it would be an unpenalized
     # nonconstant direction contradicting the reported penalty_rank. Fail loudly.
     if d_fill.size and np.any(d_fill <= 0.0):
-        raise ValueError(
+        msg = (
             "a selected non-null fill mode has nonpositive penalty weight "
             f"(min {float(d_fill.min()):.3e}); its eigenvalue was clipped to "
             "<= 0, i.e. a numerically (near-)disconnected component. Check the "
             "environment connectivity / bin resolution."
         )
+        raise ValueError(msg)
     B_fill = (inv_sqrt_vol[:, None] * Q[:, fill_idx])[live_bins, :]
 
     B = np.concatenate([B_int, B_fill], axis=1)  # (n_live_bins, r_eff)
@@ -954,10 +960,11 @@ def apply_heat_operator(
         If ``F`` is not 2-D.
     """
     if F.ndim != 2:
-        raise ValueError(
+        msg = (
             f"F must be 2-D (n_bins, n_fields), got {F.ndim}-D. A 1-D field "
             "would silently broadcast to (n, n); reshape to (n_bins, 1)."
         )
+        raise ValueError(msg)
     t = sigma**2 / 2.0
     coeff = xp.exp(-t * Lam)  # (rank,)
     sqrt_m = xp.sqrt(volumes).reshape(-1, 1)  # (n, 1)
@@ -1000,9 +1007,8 @@ def _apply_modes(
     if mode == "density":
         m = _safe_denominator(_ht(volumes.reshape(-1, 1)), xp)
         return _h(F / m)
-    raise ValueError(
-        f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-    )
+    msg = f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+    raise ValueError(msg)
 
 
 def _safe_denominator(d: Any, xp: Any) -> Any:

@@ -175,14 +175,14 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
         if index is None:
             index = self.longest
         if isinstance(index, bool) or not isinstance(index, (int, np.integer)):
-            raise IndexError(
-                f"rows(): index must be an integer segment index, got {index!r}."
-            )
+            msg = f"rows(): index must be an integer segment index, got {index!r}."
+            raise IndexError(msg)
         if not -self.n_segments <= index < self.n_segments:
-            raise IndexError(
+            msg = (
                 f"rows(): segment {index} does not exist; there are "
                 f"{self.n_segments} segments."
             )
+            raise IndexError(msg)
         start, stop = self.segments[index]
         return slice(int(start), int(stop))
 
@@ -858,10 +858,11 @@ def _checked_options(
         operation=operation,
     )
     if min_peak_probability is not None and min_peak_probability >= 1:
-        raise ValueError(
+        msg = (
             f"{operation}: min_peak_probability must be below 1, got "
             f"{min_peak_probability}; every time bin would be rejected."
         )
+        raise ValueError(msg)
     if (merge_max_time_gap is None) != (merge_max_distance is None):
         raise ValueError(
             _format_error(
@@ -921,16 +922,14 @@ def _threshold(
 ) -> float:
     """A finite threshold, positive or non-negative."""
     if isinstance(value, bool) or not isinstance(value, (int, float, np.number)):
-        raise ValueError(
-            f"{operation}: {name} must be a number, got {type(value).__name__}."
-        )
+        msg = f"{operation}: {name} must be a number, got {type(value).__name__}."
+        raise ValueError(msg)
     threshold = float(value)
     too_small = threshold <= 0 if minimum == "positive" else threshold < 0
     if not np.isfinite(threshold) or too_small:
         bound = "> 0" if minimum == "positive" else ">= 0"
-        raise ValueError(
-            f"{operation}: {name} must be a finite number {bound}, got {value!r}."
-        )
+        msg = f"{operation}: {name} must be a finite number {bound}, got {value!r}."
+        raise ValueError(msg)
     return threshold
 
 
@@ -950,7 +949,6 @@ def _optional_threshold(
 def _count(name: str, value: Any, *, minimum: int, operation: str) -> int:
     """An integer of at least ``minimum``."""
     if not is_integer_at_least(value, minimum):
-        raise ValueError(
-            f"{operation}: {name} must be an integer >= {minimum}, got {value!r}."
-        )
+        msg = f"{operation}: {name} must be an integer >= {minimum}, got {value!r}."
+        raise ValueError(msg)
     return int(value)

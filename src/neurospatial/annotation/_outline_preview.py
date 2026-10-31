@@ -177,7 +177,8 @@ class OutlinePreviewControl(QWidget):
         """Synchronously vectorize current painted pixels and return shown paths."""
         self._timer.stop()
         if self._disposed:
-            raise ValueError("The outline preview is closed.")
+            msg = "The outline preview is closed."
+            raise ValueError(msg)
         can_adjust_detail = False
         try:
             if (
@@ -187,14 +188,15 @@ class OutlinePreviewControl(QWidget):
                 or self.polygon_layer is None
                 or self.polygon_layer not in self._viewer.layers
             ):
-                raise ValueError("The preview was removed. Suggest another outline.")
+                msg = "The preview was removed. Suggest another outline."
+                raise ValueError(msg)
             mask = np.asarray(self.mask_layer.data) != 0
             if mask.shape != self._proposal.mask.shape:
-                raise ValueError("Preview dimensions must match the suggested mask.")
+                msg = "Preview dimensions must match the suggested mask."
+                raise ValueError(msg)
             if not np.any(mask):
-                raise ValueError(
-                    "The outline is empty. Paint foreground before accepting."
-                )
+                msg = "The outline is empty. Paint foreground before accepting."
+                raise ValueError(msg)
             if self._exact is None or not np.array_equal(
                 mask, self._exact.proposal.mask
             ):

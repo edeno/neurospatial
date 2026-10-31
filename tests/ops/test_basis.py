@@ -602,7 +602,8 @@ class TestEstimateSpectralRadius:
         laplacian = self._laplacian(simple_2d_env)
 
         def _raise_value_error(*args, **kwargs):
-            raise ValueError("malformed input")
+            msg = "malformed input"
+            raise ValueError(msg)
 
         monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_value_error)
 
@@ -621,7 +622,8 @@ class TestEstimateSpectralRadius:
         laplacian = self._laplacian(simple_2d_env)
 
         def _raise_arpack(*args, **kwargs):
-            raise ArpackNoConvergence("did not converge", np.array([]), np.array([]))
+            msg = "did not converge"
+            raise ArpackNoConvergence(msg, np.array([]), np.array([]))
 
         monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
 

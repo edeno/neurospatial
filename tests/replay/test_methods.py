@@ -779,7 +779,8 @@ class TestSegmentationRecipes:
         import neurospatial.replay.significance as significance
 
         def refuse(*args, **kwargs):
-            raise AssertionError("no shuffles are needed")
+            msg = "no shuffles are needed"
+            raise AssertionError(msg)
 
         monkeypatch.setattr(significance, "replay_significance", refuse)
         env, rates = place_code

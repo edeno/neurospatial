@@ -23,7 +23,7 @@ def _environment():
 
 
 @pytest.mark.parametrize(
-    "name,value", [("name", "edited"), ("units", "m"), ("frame", "camera")]
+    ("name", "value"), [("name", "edited"), ("units", "m"), ("frame", "camera")]
 )
 def test_metadata_rejects_assignment_and_deletion(name, value):
     env = _environment()
@@ -40,7 +40,8 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     n_cached = len(env._cache)
 
     def fail(*args, **kwargs):
-        raise AssertionError("metadata replacement must not publish geometry again")
+        msg = "metadata replacement must not publish geometry again"
+        raise AssertionError(msg)
 
     from neurospatial.environment import _publication
 

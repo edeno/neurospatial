@@ -1057,7 +1057,8 @@ class TestLoadVideoFrame:
                 self._path = path
 
             def __getitem__(self, idx):
-                raise IndexError("out of range")
+                msg = "out of range"
+                raise IndexError(msg)
 
             def __enter__(self):
                 return self

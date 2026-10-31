@@ -216,9 +216,12 @@ def read_events(
 
     # Check if processing module exists
     if processing_module not in nwbfile.processing:
-        raise missing_error(
+        msg = (
             f"Processing module '{processing_module}' not found in NWB file. "
-            f"Available modules: {list(nwbfile.processing.keys())}.",
+            f"Available modules: {list(nwbfile.processing.keys())}."
+        )
+        raise missing_error(
+            msg,
             fix="pass processing_module= with a module from this list.",
         )
 
@@ -226,10 +229,13 @@ def read_events(
 
     # Check if table exists in module
     if table_name not in module.data_interfaces:
-        raise missing_error(
+        msg = (
             f"EventsTable '{table_name}' not found in processing/"
             f"{processing_module}. Available tables: "
-            f"{list(module.data_interfaces.keys())}.",
+            f"{list(module.data_interfaces.keys())}."
+        )
+        raise missing_error(
+            msg,
             fix="pass table_name= with a table from this list.",
         )
 
@@ -237,10 +243,11 @@ def read_events(
 
     # Validate it's an EventsTable
     if not isinstance(events_table, ndx_events_module.EventsTable):
-        raise TypeError(
+        msg = (
             f"'{table_name}' is not an EventsTable (got {type(events_table).__name__}). "
             "Use read_events() only for EventsTable containers."
         )
+        raise TypeError(msg)
 
     logger.debug(
         "Reading EventsTable '%s' from processing/%s", table_name, processing_module
@@ -322,9 +329,12 @@ def read_intervals(
         tables.setdefault(name, table)
 
     if interval_name not in tables:
-        raise missing_error(
+        msg = (
             f"TimeIntervals '{interval_name}' not found in NWB file. "
-            f"Available intervals: {list(tables)}.",
+            f"Available intervals: {list(tables)}."
+        )
+        raise missing_error(
+            msg,
             fix="pass interval_name= with a name from this list.",
         )
     logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
@@ -340,17 +350,19 @@ def _records(
 ) -> list[Any]:
     """Return ``records`` as a list after checking every element's type."""
     if not isinstance(records, (list, tuple)):
-        raise TypeError(
+        msg = (
             f"{argument} must be a list of {record_class.__name__} objects; got "
             f"{type(records).__name__}."
         )
+        raise TypeError(msg)
     for i, record in enumerate(records):
         if not isinstance(record, record_class):
-            raise TypeError(
+            msg = (
                 f"{argument}[{i}] is a {type(record).__name__}, not a "
                 f"{record_class.__name__}. Pass the list returned by the detector, "
                 f"or the {arrays} arrays instead."
             )
+            raise TypeError(msg)
     return list(records)
 
 
@@ -377,10 +389,11 @@ def _checked_event_times(values: object, argument: str) -> NDArray[np.float64]:
     """
     times = np.array(values, dtype=np.float64)
     if times.ndim != 1:
-        raise ValueError(
+        msg = (
             f"{argument} must be a 1-D array of times in seconds; got shape "
             f"{times.shape}."
         )
+        raise ValueError(msg)
     validate_finite(times, name=argument)
     negative = np.flatnonzero(times < 0)
     if negative.size:
@@ -402,10 +415,11 @@ def _refuse_reversed_intervals(
     backwards = np.flatnonzero(stop < start)
     if backwards.size:
         i = backwards[0]
-        raise ValueError(
+        msg = (
             f"stop_time must be >= start_time for every {record}. "
             f"{record.capitalize()} {i}: start_time={start[i]}, stop_time={stop[i]}"
         )
+        raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -538,9 +552,8 @@ def _record_columns(
 def _refuse_length(length: int, argument: str, n: int, reference: str) -> None:
     """Refuse an argument whose length differs from the reference's."""
     if length != n:
-        raise ValueError(
-            f"{argument} length ({length}) must match {reference} length ({n})."
-        )
+        msg = f"{argument} length ({length}) must match {reference} length ({n})."
+        raise ValueError(msg)
 
 
 def _column_values(
@@ -558,11 +571,12 @@ def _column_values(
     number or None into text before it is checked.
     """
     if isinstance(values, str):
-        raise TypeError(
+        msg = (
             f"{argument} must be a sequence with one value per record, not the "
             f"single string {values!r}; a string would be split into its "
             f"characters. Pass [{values!r}] * {n} to use it for every record."
         )
+        raise TypeError(msg)
     if hint is float or hint is int:
         numbers = np.array(values, dtype=np.float64 if hint is float else np.int64)
         _refuse_length(len(numbers), argument, n, reference)
@@ -765,10 +779,11 @@ def write_laps(
 
     _require_pynwb()
     if name in _PREDEFINED_INTERVALS:
-        raise ValueError(
+        msg = (
             f"write_laps cannot use name={name!r}: NWB reserves it for the "
             "predefined table of that name. Use another name, such as 'laps'."
         )
+        raise ValueError(msg)
 
     (start, stop), columns = _record_columns(
         Lap,
@@ -1078,12 +1093,13 @@ def write_trials(
     removed = nwbfile.trials is not None
     if removed:
         if not overwrite:
-            raise ValueError(
+            msg = (
                 "A trials table already exists in this NWB file. Pass "
                 "overwrite=True to replace it."
             )
+            raise ValueError(msg)
         if getattr(nwbfile, "read_io", None) is not None:
-            raise NotImplementedError(
+            msg = (
                 "Cannot replace the trials table of a file read from disk: "
                 "pynwb cannot remove a written trials table, and exporting the "
                 "file would silently keep the old trials. Build a new NWBFile "
@@ -1091,6 +1107,7 @@ def write_trials(
                 "another name with nwbfile.add_time_intervals(...) (read back "
                 "with read_intervals)."
             )
+            raise NotImplementedError(msg)
         old = nwbfile.trials
         referrers = sorted(
             f"column {obj.name!r} of {getattr(obj.parent, 'name', None)!r}"
@@ -1098,12 +1115,13 @@ def write_trials(
             if getattr(obj, "table", None) is old
         )
         if referrers:
-            raise ValueError(
+            msg = (
                 f"Cannot replace the trials table: {', '.join(referrers)} "
                 "refers to its rows and would point at a table that is no "
                 "longer in the file. Build a new NWBFile, or remove those "
                 "references first."
             )
+            raise ValueError(msg)
         # The trials attribute can be set only once; clearing the field and
         # detaching the old table is the only way to replace it in memory.
         nwbfile.fields.pop(PREDEFINED_TRIALS)

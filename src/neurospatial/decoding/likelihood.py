@@ -115,16 +115,18 @@ def log_poisson_likelihood(
     """
     dt = validate_dt(dt)
     if min_rate <= 0:
-        raise ValueError(
+        msg = (
             f"min_rate must be positive, got {min_rate}. "
             f"This floor prevents log(0) in likelihood computation."
         )
+        raise ValueError(msg)
     encoding_models = np.asarray(encoding_models)
     if encoding_models.ndim != 2:
-        raise ValueError(
+        msg = (
             f"encoding_models must be 2-D with shape (n_neurons, n_bins), "
             f"got ndim={encoding_models.ndim} with shape {encoding_models.shape}."
         )
+        raise ValueError(msg)
     invalid = ~np.isfinite(encoding_models) | (encoding_models < 0)
     if invalid.any():
         n_nan = int(np.isnan(encoding_models).sum())
@@ -175,12 +177,13 @@ class _PoissonRates:
         # A 1-D (n_neurons,) array would matmul to (n_bins,), silently dropping
         # the time axis.
         if spike_counts.ndim != 2:
-            raise ValueError(
+            msg = (
                 f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
                 f"got ndim={spike_counts.ndim} with shape {spike_counts.shape}. "
                 f"For a single time bin pass shape (1, n_neurons), e.g. "
                 f"`spike_counts[np.newaxis, :]`."
             )
+            raise ValueError(msg)
         n_neurons = self.log_expected.shape[0]
         if spike_counts.shape[1] != n_neurons:
             raise ValueError(

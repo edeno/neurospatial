@@ -223,7 +223,8 @@ def _record_arrays(record: Any, metadata: dict[str, Any]) -> dict[str, np.ndarra
         ``metadata["array_specs"]``.
     """
     if len(record) != 1:
-        raise ValueError("a binning record must contain exactly one row")
+        msg = "a binning record must contain exactly one row"
+        raise ValueError(msg)
     return {
         key: np.array(record[spec["column"]][0]).reshape(spec["shape"])
         for key, spec in metadata["array_specs"].items()
@@ -513,8 +514,9 @@ def read_environment(
 
     if name not in nwbfile.analysis:
         if name in nwbfile.scratch:
+            msg = f"Environment {name!r}"
             raise _earlier_location_error(
-                f"Environment {name!r}",
+                msg,
                 "NWB scratch space",
                 fix="recreate the environment with an Environment factory and "
                 "save it again with this version",

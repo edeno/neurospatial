@@ -253,9 +253,12 @@ class TrackGraphResult(NamedTuple):
         from neurospatial.environment import Environment
 
         if self.track_graph is None:
-            raise ValueError(
+            msg = (
                 "Cannot create Environment: no track graph. "
-                "Ensure at least 2 nodes and 1 edge were created.",
+                "Ensure at least 2 nodes and 1 edge were created."
+            )
+            raise ValueError(
+                msg,
             )
 
         graph_edges = list(self.track_graph.edges)
@@ -381,15 +384,16 @@ def build_track_graph_result(
         positions.shape != (len(node_positions), 2)
         or not np.all(np.isfinite(positions))
     ):
-        raise ValueError("Track nodes must have finite two-dimensional coordinates.")
+        msg = "Track nodes must have finite two-dimensional coordinates."
+        raise ValueError(msg)
     for first, second in edges:
         if not (0 <= first < len(node_positions) and 0 <= second < len(node_positions)):
-            raise ValueError("Track edges must reference existing nodes.")
+            msg = "Track edges must reference existing nodes."
+            raise ValueError(msg)
         length = float(np.linalg.norm(positions[second] - positions[first]))
         if not np.isfinite(length) or length <= 0:
-            raise ValueError(
-                "Track edges must have finite, strictly positive lengths in output units."
-            )
+            msg = "Track edges must have finite, strictly positive lengths in output units."
+            raise ValueError(msg)
 
     # Copy node labels
     node_labels = list(state.node_labels)

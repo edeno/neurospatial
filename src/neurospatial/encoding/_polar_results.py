@@ -174,10 +174,11 @@ def resolve_polar_grid(
         distance_bin_size = DEFAULT_RING_WIDTH_CM * per_cm
     width = float(distance_bin_size)
     if not (np.isfinite(width) and width > 0):
-        raise ValueError(
+        msg = (
             f"{context}: distance_bin_size must be a positive finite length, "
             f"got {distance_bin_size!r}."
         )
+        raise ValueError(msg)
     angle = float(direction_bin_size)
     if not (np.isfinite(angle) and 0 < angle <= 2 * np.pi):
         raise ValueError(
@@ -194,10 +195,11 @@ def resolve_polar_grid(
         return (0.0, n_rings * width), n_rings, n_direction_bins
     low, high = (float(value) for value in distance_range)
     if not (np.isfinite(low) and np.isfinite(high) and 0 <= low < high):
-        raise ValueError(
+        msg = (
             f"{context}: distance_range must be (min, max) with "
             f"0 <= min < max, got {distance_range!r}."
         )
+        raise ValueError(msg)
     return (low, high), max(1, round((high - low) / width)), n_direction_bins
 
 

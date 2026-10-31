@@ -141,21 +141,20 @@ def assert_environment_contract(
                     value.bin_at(refused)
                 except NotImplementedError as error:
                     if "track_width" not in str(error):
-                        raise AssertionError(
+                        msg = (
                             "a track without track_width refused a lookup "
                             f"without naming track_width: {error}"
-                        ) from error
+                        )
+                        raise AssertionError(msg) from error
                 else:
-                    raise AssertionError(
-                        "a track without track_width assigned positions to bins"
-                    )
+                    msg = "a track without track_width assigned positions to bins"
+                    raise AssertionError(msg)
             check_width(value)
             return
         actual = value.bin_at(query)
         if actual.dtype != np.dtype(np.intp):
-            raise AssertionError(
-                f"bin_at returned dtype {actual.dtype}; bin indices must be intp"
-            )
+            msg = f"bin_at returned dtype {actual.dtype}; bin indices must be intp"
+            raise AssertionError(msg)
         np.testing.assert_array_equal(actual, expected)
         np.testing.assert_array_equal(query, original_query)
         invalid = np.full((2, value.n_dims), np.nan)
@@ -169,7 +168,8 @@ def assert_environment_contract(
         except ValueError:
             pass
         else:
-            raise AssertionError("lookup accepted an incorrect coordinate width")
+            msg = "lookup accepted an incorrect coordinate width"
+            raise AssertionError(msg)
 
     check_lookup(env)
     centers = env.bin_centers.copy()
@@ -181,20 +181,23 @@ def assert_environment_contract(
     except ValueError:
         pass
     else:
-        raise AssertionError("bin_centers accepted an in-place write")
+        msg = "bin_centers accepted an in-place write"
+        raise AssertionError(msg)
     exported.shape = (exported.size,)
     np.testing.assert_array_equal(env.bin_centers, centers)
     graph = env.to_networkx()
     graph.clear()
     if env.connectivity.number_of_nodes() != env.n_bins:
-        raise AssertionError("editing env.to_networkx() changed the environment")
+        msg = "editing env.to_networkx() changed the environment"
+        raise AssertionError(msg)
     try:
         # Typed as a read-only Mapping; check the runtime object refuses too.
         cast("MutableMapping[str, Any]", env.regions).clear()
     except TypeError:
         pass
     else:
-        raise AssertionError("environment region snapshot accepted mutation")
+        msg = "environment region snapshot accepted mutation"
+        raise AssertionError(msg)
 
     same_geometry = [
         copy.copy(env),
@@ -211,10 +214,11 @@ def assert_environment_contract(
         read_back.append(type(env).from_file(path))
     for restored in same_geometry + read_back:
         if type(restored) is not type(env):
-            raise AssertionError(
+            msg = (
                 f"a copy or round trip returned {type(restored).__name__}, "
                 f"not {type(env).__name__}"
             )
+            raise AssertionError(msg)
         check_lookup(restored)
         np.testing.assert_array_equal(restored.bin_centers, centers)
         np.testing.assert_array_equal(restored.binning.bins.sizes, sizes)
@@ -226,7 +230,8 @@ def assert_environment_contract(
         except NotImplementedError:
             pass
         else:
-            raise AssertionError("numerical operator accepted missing face geometry")
+            msg = "numerical operator accepted missing face geometry"
+            raise AssertionError(msg)
 
 
 def _assigns_positions(env: Environment | PolarEnvironment) -> bool:

@@ -253,7 +253,9 @@ def test_region_name_order_does_not_change_events(region_env):
     ) == detect_region_visits(bins, times, region_env, region_names=["B", "A"])
 
 
-@pytest.mark.parametrize("bins,times", [([], []), ([1, 1], [0.0, 0.1]), ([-1], [0.0])])
+@pytest.mark.parametrize(
+    ("bins", "times"), [([], []), ([1, 1], [0.0, 0.1]), ([-1], [0.0])]
+)
 def test_no_observed_region_returns_empty_list(region_env, bins, times):
     assert (
         detect_region_visits(

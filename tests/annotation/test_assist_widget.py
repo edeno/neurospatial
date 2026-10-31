@@ -521,7 +521,8 @@ def test_error_allows_retry_and_accept_error_preserves_preview(assist):
     preview = widget._preview
 
     def reject(_proposal):
-        raise ValueError("Name the region first")
+        msg = "Name the region first"
+        raise ValueError(msg)
 
     widget._on_accept = reject
     widget._accept()

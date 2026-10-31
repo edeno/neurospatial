@@ -43,13 +43,15 @@ class Reader:
     def __getitem__(self, index):
         assert self.close_count == 0
         if self.fail_read:
-            raise ValueError("decode failed")
+            msg = "decode failed"
+            raise ValueError(msg)
         return np.full((2, 2, 3), 100, dtype=np.uint8)
 
     def close(self):
         self.close_count += 1
         if self.fail:
-            raise RuntimeError("decoder close failed")
+            msg = "decoder close failed"
+            raise RuntimeError(msg)
 
 
 class VideoAdapter:

@@ -256,10 +256,11 @@ def _drafts_to_regions(
         if not poly.is_valid:
             from shapely.validation import explain_validity
 
-            raise ValueError(
+            msg = (
                 f"Polygon '{name}' is invalid: {explain_validity(poly)}. "
                 "Edit its vertices or interior rings before saving."
             )
+            raise ValueError(msg)
 
         # Validate polygon geometry before simplification
         if validate:
@@ -272,9 +273,8 @@ def _drafts_to_regions(
             poly = poly.simplify(tolerance=simplify_tolerance, preserve_topology=True)
             # Ensure polygon is still valid after simplification
             if not poly.is_valid:
-                raise ValueError(
-                    f"Simplified polygon '{name}' is invalid; edit its vertices."
-                )
+                msg = f"Simplified polygon '{name}' is invalid; edit its vertices."
+                raise ValueError(msg)
 
         metadata = {
             **draft.metadata,
@@ -302,10 +302,13 @@ def _drafts_to_regions(
     if len(env_boundaries) > 1:
         if multiple_boundaries == "error":
             names_list = [b.name for b in env_boundaries]
-            raise ValueError(
+            msg = (
                 f"Multiple environment boundaries ({len(env_boundaries)}) were drawn: "
                 f"{names_list}. Set multiple_boundaries='last' or 'first' to select one, "
-                "or draw only one environment boundary.",
+                "or draw only one environment boundary."
+            )
+            raise ValueError(
+                msg,
             )
         if multiple_boundaries == "first":
             env_boundary = env_boundaries[0]
@@ -393,16 +396,16 @@ def subtract_holes_from_boundary(
 
     # Ensure result is valid
     if not result_poly.is_valid:
-        raise ValueError(
-            "Subtracting environment holes produced invalid geometry; edit the boundary or holes before saving."
-        )
+        msg = "Subtracting environment holes produced invalid geometry; edit the boundary or holes before saving."
+        raise ValueError(msg)
     if result_poly.geom_type != "Polygon":
-        raise ValueError(
+        msg = (
             f"Subtracting environment holes split the boundary into "
             f"{len(getattr(result_poly, 'geoms', ()))} separate areas. The "
             "environment must be one connected area: shrink or delete the hole "
             "that crosses it."
         )
+        raise ValueError(msg)
 
     # Create new region with updated polygon
     metadata = dict(boundary.metadata)
@@ -464,7 +467,8 @@ def env_from_boundary_region(
     from neurospatial.environment import Environment
 
     if boundary.kind != "polygon":
-        raise ValueError(f"Boundary must be polygon, got {boundary.kind}")
+        msg = f"Boundary must be polygon, got {boundary.kind}"
+        raise ValueError(msg)
 
     # Subtract holes if provided
     if holes:
@@ -534,24 +538,23 @@ def _validate_drawn_shapes(
         points = _to_world(vertices, calibration)
         try:
             if not np.isfinite(points).all():
-                raise ValueError("coordinates must be finite")
+                msg = "coordinates must be finite"
+                raise ValueError(msg)
             if shape_type in _AREA_SHAPES or role not in ("wall", "landmark"):
                 polygon = shp.Polygon(points)
                 if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
-                    raise ValueError(
-                        "invalid polygon: draw an area with positive area and no crossing edges"
-                    )
+                    msg = "invalid polygon: draw an area with positive area and no crossing edges"
+                    raise ValueError(msg)
             if role == "wall":
                 if shape_type == "ellipse" or len(points) < 2:
-                    raise ValueError("draw a wall as a path, line, or polygon")
+                    msg = "draw a wall as a path, line, or polygon"
+                    raise ValueError(msg)
                 line = shp.LineString(points)
                 if not line.is_valid or line.length <= 0:
-                    raise ValueError(
-                        "draw a wall with distinct vertices and positive length"
-                    )
+                    msg = "draw a wall with distinct vertices and positive length"
+                    raise ValueError(msg)
             elif role == "landmark":
                 _landmark_from_shape(str(name), shape_type, points)
         except (ValueError, TypeError) as exc:
-            raise ValueError(
-                f"Cannot save {role} '{name}': {exc}. Edit or delete this shape and try again."
-            ) from exc
+            msg = f"Cannot save {role} '{name}': {exc}. Edit or delete this shape and try again."
+            raise ValueError(msg) from exc

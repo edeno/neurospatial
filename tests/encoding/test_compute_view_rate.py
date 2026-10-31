@@ -400,7 +400,7 @@ class TestComputeViewRateSmoothing:
         )
         assert result.bandwidth == 8.0
 
-    @pytest.mark.parametrize("units, expected", [(None, 25.0), ("cm", 5.0)])
+    @pytest.mark.parametrize(("units", "expected"), [(None, 25.0), ("cm", 5.0)])
     def test_default_bandwidth_uses_units_or_bin_spacing(
         self,
         simple_env: Environment,

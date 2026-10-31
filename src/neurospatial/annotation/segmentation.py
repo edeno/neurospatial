@@ -76,13 +76,13 @@ class SegmentationPrompt(ReadOnlyArraysMixin):
         points = np.asarray(self.points, dtype=np.float64)
         labels = np.asarray(self.labels)
         if points.ndim != 2 or points.shape[1] != 2 or not np.isfinite(points).all():
-            raise ValueError(
-                "Prompt points must be finite pixel (x, y) pairs, shape (N, 2)."
-            )
+            msg = "Prompt points must be finite pixel (x, y) pairs, shape (N, 2)."
+            raise ValueError(msg)
         if labels.shape != (len(points),) or not np.isin(labels, [0, 1]).all():
-            raise ValueError(
+            msg = (
                 "Prompt labels must have shape (N,) with 1=foreground and 0=background."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "points", points)
         object.__setattr__(self, "labels", labels.astype(np.int64))
         if self.box is not None:
@@ -93,9 +93,8 @@ class SegmentationPrompt(ReadOnlyArraysMixin):
                 or bounds[0] >= bounds[2]
                 or bounds[1] >= bounds[3]
             ):
-                raise ValueError(
-                    "Prompt box must be finite (x_min, y_min, x_max, y_max) with increasing bounds."
-                )
+                msg = "Prompt box must be finite (x_min, y_min, x_max, y_max) with increasing bounds."
+                raise ValueError(msg)
             object.__setattr__(self, "box", bounds)
         self._own_arrays()
 
@@ -129,7 +128,8 @@ class SegmentationProposal(ReadOnlyArraysMixin):
     ) -> None:
         mask = _validate_mask(mask, nonempty=True)
         if score is not None and not np.isfinite(score):
-            raise ValueError("Proposal score must be finite, or None if unavailable.")
+            msg = "Proposal score must be finite, or None if unavailable."
+            raise ValueError(msg)
         owned_metadata = {} if metadata is None else deepcopy(dict(metadata))
         try:
             encoded = json.dumps(owned_metadata, allow_nan=False)
@@ -137,9 +137,8 @@ class SegmentationProposal(ReadOnlyArraysMixin):
             # Round-tripping also owns nested values and normalizes JSON tuples.
             owned_metadata = json.loads(encoded)
         except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(
-                "Proposal metadata must contain finite, JSON-compatible provenance."
-            ) from exc
+            msg = "Proposal metadata must contain finite, JSON-compatible provenance."
+            raise ValueError(msg) from exc
         object.__setattr__(self, "mask", read_only_copy(mask))
         object.__setattr__(self, "score", None if score is None else float(score))
         object.__setattr__(self, "_metadata", owned_metadata)
@@ -163,13 +162,13 @@ class SegmentationProvider(Protocol):
 def _validate_mask(mask: Any, *, nonempty: bool = False) -> NDArray[np.bool_]:
     array: NDArray[np.bool_] = np.asarray(mask)
     if array.dtype != np.bool_ or array.ndim != 2 or min(array.shape, default=0) == 0:
-        raise ValueError(
+        msg = (
             "Segmentation mask must be a nonzero-size 2D boolean array (height, width)."
         )
+        raise ValueError(msg)
     if nonempty and not array.any():
-        raise ValueError(
-            "Segmentation produced no foreground; add a foreground click or adjust the prompt/settings."
-        )
+        msg = "Segmentation produced no foreground; add a foreground click or adjust the prompt/settings."
+        raise ValueError(msg)
     return array
 
 
@@ -213,9 +212,8 @@ def _validate_image(image: NDArray[np.uint8]) -> NDArray[np.uint8]:
         or image.shape[2] != 3
         or min(image.shape[:2]) == 0
     ):
-        raise ValueError(
-            "Segmentation image must be a nonzero-size RGB uint8 array (height, width, 3)."
-        )
+        msg = "Segmentation image must be a nonzero-size RGB uint8 array (height, width, 3)."
+        raise ValueError(msg)
     return image
 
 
@@ -225,15 +223,13 @@ def _validate_inputs(
     image = _validate_image(image)
     height, width = image.shape[:2]
     if not _inside_pixels(prompt.points, (0, 0, width, height)):
-        raise ValueError(
-            f"Prompt (x, y) points fall outside the {width} by {height} image; use pixel coordinates."
-        )
+        msg = f"Prompt (x, y) points fall outside the {width} by {height} image; use pixel coordinates."
+        raise ValueError(msg)
     if prompt.box is not None:
         x0, y0, x1, y1 = prompt.box
         if x1 < -0.5 or y1 < -0.5 or x0 >= width - 0.5 or y0 >= height - 0.5:
-            raise ValueError(
-                "Prompt box lies outside the image; choose bounds intersecting the image."
-            )
+            msg = "Prompt box lies outside the image; choose bounds intersecting the image."
+            raise ValueError(msg)
     return image
 
 
@@ -260,9 +256,8 @@ class RegionGrowProvider:
 
     def __post_init__(self) -> None:
         if not np.isfinite(self.tolerance) or not 0 <= self.tolerance <= 1:
-            raise ValueError(
-                "Region-grow tolerance must be finite and between 0 and 1."
-            )
+            msg = "Region-grow tolerance must be finite and between 0 and 1."
+            raise ValueError(msg)
 
     def predict(
         self, image: NDArray[np.uint8], prompt: SegmentationPrompt
@@ -270,9 +265,8 @@ class RegionGrowProvider:
         """Return all color-matched components containing a foreground click."""
         image = _validate_inputs(image, prompt)
         if not (prompt.labels == 1).any():
-            raise ValueError(
-                "RegionGrowProvider needs at least one foreground click (label=1)."
-            )
+            msg = "RegionGrowProvider needs at least one foreground click (label=1)."
+            raise ValueError(msg)
         height, width = image.shape[:2]
         pixels = _pixel_indices(prompt.points)
         colors = image.astype(np.float64) / (255 * np.sqrt(3))
@@ -385,9 +379,10 @@ class SegmentAnythingProvider:
         if not callable(getattr(predictor, "set_image", None)) or not callable(
             getattr(predictor, "predict", None)
         ):
-            raise TypeError(
+            msg = (
                 "SAM predictor must provide callable set_image(image) and predict(...)."
             )
+            raise TypeError(msg)
         self._predictor = predictor
         self._cached_image: NDArray[np.uint8] | None = None
         self._refinement_owner = object()
@@ -437,11 +432,12 @@ class SegmentAnythingProvider:
         """
         checkpoint = Path(checkpoint_path).expanduser()
         if not checkpoint.is_file():
-            raise FileNotFoundError(
+            msg = (
                 f"SAM 2 checkpoint does not exist: {checkpoint}. Download "
                 f"SAM 2.1 Large once from {_SAM2_LARGE_URL} and pass its path; "
                 "weights are not downloaded automatically."
             )
+            raise FileNotFoundError(msg)
         smaller = next(
             (
                 size
@@ -451,11 +447,12 @@ class SegmentAnythingProvider:
             None,
         )
         if smaller is not None:
-            raise ValueError(
+            msg = (
                 f"{checkpoint.name} is the SAM 2 {smaller.replace('_', '+')} model. "
                 "Only SAM 2.1 Large is supported: smaller models flood dark, "
                 f"low-contrast arenas with background. Download {_SAM2_LARGE_URL}."
             )
+            raise ValueError(msg)
         try:
             torch = importlib.import_module("torch")
             build_sam2 = importlib.import_module("sam2.build_sam").build_sam2
@@ -470,13 +467,14 @@ class SegmentAnythingProvider:
                     "2.5+ has no packages: on Apple silicon, use an arm64 Python "
                     "(platform.machine() prints 'arm64')."
                 )
-            raise ImportError(
+            msg = (
                 "SegmentAnythingProvider.from_sam2 needs PyTorch and Meta's SAM 2. "
                 f'Install them with: pip install "{_SAM2_PACKAGE}" (the PyPI '
                 "package named sam2 is unrelated). With an NVIDIA GPU, install "
                 f"PyTorch with CUDA first.{hint} Without SAM 2, use "
                 "RegionGrowProvider."
-            ) from exc
+            )
+            raise ImportError(msg) from exc
         if device is None:
             device = (
                 "cuda"
@@ -489,12 +487,13 @@ class SegmentAnythingProvider:
             model = build_sam2(_SAM2_LARGE_CONFIG, str(checkpoint), device=device)
             predictor = predictor_class(model)
         except Exception as exc:
-            raise RuntimeError(
+            msg = (
                 f"Could not load {checkpoint.name} as SAM 2.1 Large on device "
                 f"{device!r}. Use the SAM 2.1 Large checkpoint from "
                 f"{_SAM2_LARGE_URL} (SAM 2.0 and smaller models do not fit), "
                 f"and a current SAM 2 install: {exc}"
-            ) from exc
+            )
+            raise RuntimeError(msg) from exc
         return cls(predictor)
 
     def predict(
@@ -511,9 +510,8 @@ class SegmentAnythingProvider:
                 self._set_image(image)
             except Exception as exc:
                 self._cached_image = None
-                raise RuntimeError(
-                    f"SAM image preparation failed; check the installed predictor: {exc}"
-                ) from exc
+                msg = f"SAM image preparation failed; check the installed predictor: {exc}"
+                raise RuntimeError(msg) from exc
 
     def _set_image(self, image: NDArray[np.uint8]) -> None:
         """Compute features unless this exact image is already cached."""
@@ -533,9 +531,10 @@ class SegmentAnythingProvider:
         """Return raw logits without committing them to any interaction session."""
         image = _validate_inputs(image, prompt)
         if not len(prompt.points) and prompt.box is None:
-            raise ValueError(
+            msg = (
                 "SAM segmentation needs foreground/background clicks or a bounding box."
             )
+            raise ValueError(msg)
         if previous is not None:
             if (
                 previous.owner is not self._refinement_owner
@@ -572,11 +571,11 @@ class SegmentAnythingProvider:
             except Exception as exc:
                 # A failed predictor may have changed its image state.
                 self._cached_image = None
-                raise RuntimeError(
-                    f"SAM segmentation failed; check the installed predictor and prompt: {exc}"
-                ) from exc
+                msg = f"SAM segmentation failed; check the installed predictor and prompt: {exc}"
+                raise RuntimeError(msg) from exc
         if not isinstance(output, tuple | list) or len(output) != 3:
-            raise ValueError("SAM predictor must return (masks, scores, logits).")
+            msg = "SAM predictor must return (masks, scores, logits)."
+            raise ValueError(msg)
         masks, scores, logits = (np.asarray(value) for value in output)
         if (
             masks.ndim != 3
@@ -594,9 +593,8 @@ class SegmentAnythingProvider:
             # Binary values are finite; boolean masks need no scan.
             or (masks.dtype != np.bool_ and not ((masks == 0) | (masks == 1)).all())
         ):
-            raise ValueError(
-                "SAM predictor returned invalid masks/scores/logits; expected finite binary masks (N, height, width), scores (N,), and finite logits."
-            )
+            msg = "SAM predictor returned invalid masks/scores/logits; expected finite binary masks (N, height, width), scores (N,), and finite logits."
+            raise ValueError(msg)
         selected = int(np.argmax(scores))
         steps = 0 if previous is None else previous.steps + 1
         proposal = SegmentationProposal(

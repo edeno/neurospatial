@@ -307,7 +307,7 @@ def test_wrong_declared_role_is_not_accepted(_registry):
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    ("field", "value"),
     [
         ("name", ""),
         ("version", True),

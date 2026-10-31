@@ -22,7 +22,7 @@ def validated_window_duration(window_duration: float, *, name: str, call: str) -
     """A finite, positive pre-decision window length in seconds."""
     duration = float(window_duration)
     if not (np.isfinite(duration) and duration > 0):
-        raise ValueError(
+        msg = (
             f"{call}() needs a finite, positive {name} in seconds; got "
             f"{window_duration!r}.\n"
             "Why: the pre-decision window is the stretch of time before the "
@@ -30,6 +30,7 @@ def validated_window_duration(window_duration: float, *, name: str, call: str) -
             "nothing.\n"
             f"Fix: pass {name} as the window length in seconds, e.g. {name}=1.0."
         )
+        raise ValueError(msg)
     return duration
 
 
@@ -39,7 +40,7 @@ def validated_entry_time(
     """A finite entry time inside the recording, ``[times[0], times[-1]]``."""
     entry = float(entry_time)
     if not (np.isfinite(entry) and times[0] <= entry <= times[-1]):
-        raise ValueError(
+        msg = (
             f"{call}() got entry_time={entry_time!r}, outside the recording "
             f"[{times[0]:g}, {times[-1]:g}] s.\n"
             "Why: the pre-decision window ends at the entry time, so an entry "
@@ -48,6 +49,7 @@ def validated_entry_time(
             "as times (a millisecond entry_time with times in seconds lands "
             "past the recording), e.g. from decision_region_entry_time()."
         )
+        raise ValueError(msg)
     return entry
 
 

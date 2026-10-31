@@ -381,23 +381,26 @@ class ReplaySegmentation:
         ]
         unknown = sorted(set(self.options) - set(accepted))
         if unknown:
-            raise ValueError(
+            msg = (
                 f"ReplaySegmentation: options has {unknown}, which "
                 f"replay_segments() does not take here; it takes {accepted}. "
                 "Pass valid_time_bins to detect_replay()."
             )
+            raise ValueError(msg)
         if "max_jump" not in self.options:
-            raise ValueError(
+            msg = (
                 "ReplaySegmentation: options needs max_jump, the largest step "
                 "of a trajectory (replay_segments() has no default)."
             )
+            raise ValueError(msg)
         unscaled = sorted(set(self.relative_to) - set(self.options))
         if unscaled:
-            raise ValueError(
+            msg = (
                 f"ReplaySegmentation: relative_to names {unscaled}, which are "
                 "not in options; add their values to options or remove them "
                 "from relative_to."
             )
+            raise ValueError(msg)
         mismatched = {
             name: scale
             for name, scale in self.relative_to.items()
@@ -443,10 +446,11 @@ class ReplaySegmentation:
         )
         cells = self.min_active_cells_per_time_bin
         if cells is not None and not is_integer_at_least(cells, 1):
-            raise ValueError(
+            msg = (
                 "ReplaySegmentation: min_active_cells_per_time_bin must be a "
                 f"positive integer or None, got {cells!r}."
             )
+            raise ValueError(msg)
 
     def __hash__(self) -> int:
         """Hash by value; the read-only mappings are not hashable."""
@@ -761,10 +765,11 @@ class ReplayMethod:
                 )
             )
         if self.score is None and any(c.quantity == "score" for c in self.criteria):
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: a method without a score cannot "
                 "threshold one."
             )
+            raise ValueError(msg)
         if (
             self.score is None
             and self.nulls
@@ -783,11 +788,12 @@ class ReplayMethod:
             c.label for c in self.criteria if c.quantity in _SEGMENT_QUANTITIES
         ]
         if segment_criteria and self.segmentation is None:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: criteria {segment_criteria} "
                 "describe a segment, but the method has no segmentation; give "
                 "it a ReplaySegmentation or use event-level quantities."
             )
+            raise ValueError(msg)
 
     def _check_segment_detection(self) -> None:
         """Refuse settings a segment-detection test cannot use."""
@@ -801,23 +807,25 @@ class ReplayMethod:
         # The detection test scores 0 or 1 against shuffles at least as
         # extreme, with the event's time-bin rules applied to each shuffle.
         if self.alternative != "greater" or self.use_absolute is not None:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: a segment-detection test is "
                 "one-sided on a 0/1 score; leave alternative='greater' and "
                 "use_absolute=None."
             )
+            raise ValueError(msg)
         moving = [name for name in self.nulls if name in _ROW_MOVING_NULLS]
         row_rules = (
             self.segmentation.min_active_cells_per_time_bin is not None
             or self.empty_time_bins != "keep"
         )
         if moving and row_rules:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: nulls {moving} move or change "
                 "the spikes in each time bin, so the event's active-cell "
                 "and empty-time-bin rules do not apply to its shuffles; "
                 "use nulls that keep the time bins in place."
             )
+            raise ValueError(msg)
 
     def _check_template_choice(self) -> None:
         """Refuse template choices the method cannot make."""
@@ -848,11 +856,12 @@ class ReplayMethod:
             ]
             decoding = [name for name in self.nulls if name in _DECODING_NULLS]
             if refused or decoding:
-                raise ValueError(
+                msg = (
                     f"ReplayMethod {self.name!r}: template_choice='sum' tests "
                     "the templates' summed posterior, which has no template to "
                     f"compare or decode again; remove {refused + decoding}."
                 )
+                raise ValueError(msg)
         distance = self.exclude_end_distance
         if not (
             isinstance(distance, (int, float, np.integer, np.floating))
@@ -860,33 +869,37 @@ class ReplayMethod:
             and np.isfinite(distance)
             and distance >= 0
         ):
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: exclude_end_distance must be a "
                 f"finite distance >= 0, got {distance!r}."
             )
+            raise ValueError(msg)
         if self.segmentation is None and any(
             c.quantity == "segment_template_fraction" for c in self.criteria
         ):
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: segment_template_fraction needs a "
                 "segmentation; give the method a ReplaySegmentation."
             )
+            raise ValueError(msg)
 
     def _check_nulls(self) -> None:
         """Refuse nulls the method cannot run."""
         unknown = [name for name in self.nulls if name not in _NULLS]
         if unknown:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: unknown nulls {unknown}; choose "
                 f"from {list(_NULLS)}."
             )
+            raise ValueError(msg)
         repeated = sorted({name for name in self.nulls if self.nulls.count(name) > 1})
         if repeated:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: nulls {repeated} are named more "
                 "than once; name each null once and set the number of shuffles "
                 "per null with n_shuffles."
             )
+            raise ValueError(msg)
         _checked_null_options(
             self.null_options, self.nulls, f"ReplayMethod {self.name!r}"
         )
@@ -990,10 +1003,11 @@ class ReplayMethod:
             name: tail for name, tail in tested.items() if tail not in _ALTERNATIVES
         }
         if tails:
-            raise ValueError(
+            msg = (
                 f"ReplayMethod {self.name!r}: tested_quantities tails must be "
                 f"one of {list(_ALTERNATIVES)}, got {tails}."
             )
+            raise ValueError(msg)
         refusals = (
             (
                 not self.nulls,
@@ -1038,18 +1052,20 @@ class ReplayMethod:
         """Refuse a score that is not callable or does not take score_options."""
         if self.score is None:
             if self.score_options:
-                raise ValueError(
+                msg = (
                     f"ReplayMethod {self.name!r}: score_options "
                     f"{sorted(self.score_options)} need a score; give one or "
                     "remove them."
                 )
+                raise ValueError(msg)
             return
         if not callable(self.score):
-            raise TypeError(
+            msg = (
                 f"ReplayMethod {self.name!r}: score must be a function "
                 "score(env, posterior, times, **score_options), such as "
                 f"weighted_correlation, or None; got {self.score!r}."
             )
+            raise TypeError(msg)
         options = dict(self.score_options)
         if "n_samples_per_time_bin" in options:
             options["n_samples"] = options.pop("n_samples_per_time_bin")
@@ -1287,31 +1303,34 @@ class RankOrderMethod:
     def _check_test(self, prefix: str) -> None:
         """Refuse settings the method's test cannot use."""
         if self.test == "t_distribution" and self.alternative != "two-sided":
-            raise ValueError(
+            msg = (
                 f"{prefix}: the t-distribution test of rho is two-sided; use "
                 "test='cell_order' for a one-sided test."
             )
+            raise ValueError(msg)
         if self.test == "pooled_ssi":
             if self.alternative != "greater" or self.spike_statistic == "all_spikes":
-                raise ValueError(
+                msg = (
                     f"{prefix}: the pooled SSI test is one-sided on one time "
                     "per cell; use alternative='greater' and a spike_statistic "
                     "other than 'all_spikes'."
                 )
+                raise ValueError(msg)
             if self.template_choice is not None:
-                raise ValueError(
+                msg = (
                     f"{prefix}: the pooled SSI test scores every template and "
                     "keeps the largest SSI; leave template_choice=None."
                 )
+                raise ValueError(msg)
             if self.min_active_fraction is not None:
-                raise ValueError(
+                msg = (
                     f"{prefix}: the pooled SSI test counts active cells only; "
                     "leave min_active_fraction=None."
                 )
+                raise ValueError(msg)
         elif self.min_epoch_events is not None:
-            raise ValueError(
-                f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
-            )
+            msg = f"{prefix}: min_epoch_events applies only to test='pooled_ssi'."
+            raise ValueError(msg)
 
     def _check_counts(self, prefix: str) -> None:
         """Refuse counts, fractions and rates out of their range."""
@@ -1339,9 +1358,8 @@ class RankOrderMethod:
                 or (upper is not None and value > upper)
             ):
                 bounds = "in (0, 1]" if upper is not None else "a positive rate in Hz"
-                raise ValueError(
-                    f"{prefix}: {field_name} must be {bounds} or None, got {value!r}."
-                )
+                msg = f"{prefix}: {field_name} must be {bounds} or None, got {value!r}."
+                raise ValueError(msg)
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -2054,10 +2072,11 @@ def _joint_share(
                 )
             template = max(reversed(list(fractions)), key=fractions.__getitem__)
         elif template not in joint.template_names:
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: template {template!r} is not a template of "
                 f"the joint decode; choose one of {list(joint.template_names)}."
             )
+            raise ValueError(msg)
         joint_env = joint.conditional[template].env
         if fractions:
             values["template_fraction"] = fractions[template]
@@ -2153,10 +2172,11 @@ def _event_spike_counts(
         # Summed counts say only which time bins have spikes.
         counts = counts[:, np.newaxis]
     if len(counts) != n_time_bins:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: spike_counts has {len(counts)} rows but posterior "
             f"has {n_time_bins}; pass one row of counts per posterior row."
         )
+        raise ValueError(msg)
     values: dict[str, float] = {}
     if counts_cells:
         values["n_active_cells"] = float(np.sum(counts.sum(axis=0) > 0))
@@ -3791,10 +3811,11 @@ def compare_replay_methods(
         ("valid_time_bins", valid_time_bins),
     ):
         if per_event is not None and len(per_event) != len(events):
-            raise ValueError(
+            msg = (
                 f"compare_replay_methods(): {name} has {len(per_event)} "
                 f"entries but there are {len(events)} events."
             )
+            raise ValueError(msg)
     event_times = _event_times(events)
     valid = _checked_event_inputs(
         env, events, event_times, template, spike_counts, valid_time_bins
@@ -4010,11 +4031,12 @@ def _check_compare_methods(
                 )
             )
         if needs.one_environment and several:
-            raise ValueError(
+            msg = (
                 f"compare_replay_methods(): {needs.kind} methods {names} take "
                 "events decoded on one environment, not joint decodes, "
                 "separately decoded templates or a mapping of environments."
             )
+            raise ValueError(msg)
     return any(needs.pool for needs in by_needs)
 
 
@@ -4086,10 +4108,11 @@ def _separate_times(
     """The times of an event's separately decoded templates, which must agree."""
     times = [decoded.times for decoded in event.values()]
     if not times:
-        raise ValueError(
+        msg = (
             f"compare_replay_methods(): event {index} is an empty mapping of "
             "templates; give each template's DecodingResult."
         )
+        raise ValueError(msg)
     if any(t is None for t in times):
         return None
     arrays = [np.asarray(t) for t in times]

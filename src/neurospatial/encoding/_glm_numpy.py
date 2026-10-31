@@ -63,9 +63,8 @@ def _constant_warm_start(
     """
     base = np.asarray(constant_base, dtype=np.float64)
     if base.shape != (B.shape[1],):
-        raise ValueError(
-            f"constant_base must have shape ({B.shape[1]},); got {base.shape}."
-        )
+        msg = f"constant_base must have shape ({B.shape[1]},); got {base.shape}."
+        raise ValueError(msg)
     return base[:, None] * log_rate0[None, :]
 
 
@@ -311,7 +310,7 @@ def _newton_fit_numpy(
     total_occ = float(occupancy.sum())
     # Warm start a constant log-rate per unit.
     rate0 = np.clip(
-        counts.sum(0) / (total_occ if total_occ > 1e-9 else 1e-9),
+        counts.sum(0) / (max(1e-09, total_occ)),
         1e-6,
         np.exp(_ETA_CLIP),
     )  # (n_units,)
@@ -549,12 +548,13 @@ def select_penalty_by_reml(
         options={"xatol": _REML_XATOL},
     )
     if not np.isfinite(result.fun):
-        raise ValueError(
+        msg = (
             "REML found no finite objective in the log-penalty interval "
             f"{_LOG_PENALTY_BOUNDS}: no lambda yielded a converged inner fit with "
             "a positive-definite Hessian. Reduce the basis rank, improve "
             "occupancy coverage, or supply a fixed penalty."
         )
+        raise ValueError(msg)
     lower, upper = _LOG_PENALTY_BOUNDS
     at_boundary = bool(min(result.x - lower, upper - result.x) <= _REML_BOUNDARY_TOL)
     return float(np.exp(result.x)), float(result.fun), at_boundary

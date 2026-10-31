@@ -86,7 +86,8 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
             for vertices in cell_boxes(locator.base)
         ]
     if not isinstance(locator, RectilinearLocator):
-        raise ValueError("No stored rectilinear cells.")
+        msg = "No stored rectilinear cells."
+        raise ValueError(msg)
     indices = np.flatnonzero(locator.active_mask.ravel())
     corners = np.array(list(product((0, 1), repeat=len(locator.shape))), dtype=np.intp)
     return [
@@ -192,9 +193,8 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
             )
             for segment in arena.segments
         ]
-    raise ValueError(
-        "Cannot certify component lookup support: unrestricted nearest lookup or unknown track footprint. Supply a finite lookup radius, a known domain, or disjoint subsets of the same parent locator."
-    )
+    msg = "Cannot certify component lookup support: unrestricted nearest lookup or unknown track footprint. Supply a finite lookup radius, a known domain, or disjoint subsets of the same parent locator."
+    raise ValueError(msg)
 
 
 def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
@@ -246,9 +246,8 @@ def _boxes_overlap(a: NDArray[np.float64], b: NDArray[np.float64]) -> bool:
     ):
         return True
     if dims != 3:
-        raise ValueError(
-            "Cannot certify transformed box overlap outside 3D; use an axis-aligned frame."
-        )
+        msg = "Cannot certify transformed box overlap outside 3D; use an axis-aligned frame."
+        raise ValueError(msg)
     ae = np.column_stack([a[1 << (dims - axis - 1)] - a[0] for axis in range(dims)])
     be = np.column_stack([b[1 << (dims - axis - 1)] - b[0] for axis in range(dims)])
     axes = [
@@ -272,9 +271,8 @@ def _boxes_overlap(a: NDArray[np.float64], b: NDArray[np.float64]) -> bool:
         )
         uncertain |= overlap <= error
     if uncertain:
-        raise ValueError(
-            "Cannot resolve transformed-cell contact at this coordinate precision; rescale the geometry."
-        )
+        msg = "Cannot resolve transformed-cell contact at this coordinate precision; rescale the geometry."
+        raise ValueError(msg)
     return True
 
 
@@ -298,9 +296,8 @@ def _overlap(a: _Piece, b: _Piece) -> bool:
         parallel = np.array_equal(u, v) or np.array_equal(u, -v)
         sine = float(np.hypot.reduce(v - (u @ v) * u))
         if not parallel and sine * sine <= 64 * np.finfo(float).eps:
-            raise ValueError(
-                "Cannot certify nearly parallel track clearance; restrict the domains or use a well-resolved geometry."
-            )
+            msg = "Cannot certify nearly parallel track clearance; restrict the domains or use a well-resolved geometry."
+            raise ValueError(msg)
         distance = segment_distance(ac, bc)
         scale = max(lu, lv, float(np.max(np.abs(ac))), float(np.max(np.abs(bc))))
         error = 256 * np.finfo(float).eps * scale / (1.0 if parallel else sine * sine)
@@ -308,9 +305,8 @@ def _overlap(a: _Piece, b: _Piece) -> bool:
             return False
         if distance < ar + br - error:
             return True
-        raise ValueError(
-            "Cannot resolve track contact at coordinate precision; rescale the geometry."
-        )
+        msg = "Cannot resolve track contact at coordinate precision; rescale the geometry."
+        raise ValueError(msg)
     if a.kind == "ball" and b.kind == "polygon":
         center, radius = a.data
         return bool(b.data.distance(Point(center)) < radius)
@@ -322,9 +318,8 @@ def _overlap(a: _Piece, b: _Piece) -> bool:
         capsule, cell = (a, b) if a.kind == "capsule" else (b, a)
         segment, radius = capsule.data
         return bool(cell.data.distance(LineString(segment)) < radius)
-    raise ValueError(
-        "Cannot certify disjoint mixed geometry with intersecting bounds; restrict the domains or use a shared supported representation."
-    )
+    msg = "Cannot certify disjoint mixed geometry with intersecting bounds; restrict the domains or use a shared supported representation."
+    raise ValueError(msg)
 
 
 def _grid_segment_intervals(
@@ -343,10 +338,11 @@ def _grid_segment_intervals(
     if isinstance(locator, TransformedLocator):
         local, propagated = locator.affine.project(segment, error)
         if not np.all(np.isfinite(local)) or not np.all(np.isfinite(propagated)):
-            raise ValueError(
+            msg = (
                 "Cannot represent automatic bridge coordinates in the grid frame; "
                 "rescale the inputs or disable auto_bridge."
             )
+            raise ValueError(msg)
         return _grid_segment_intervals(locator.base, local, selected, propagated)
     if not isinstance(locator, RectilinearLocator):
         return None
@@ -354,10 +350,11 @@ def _grid_segment_intervals(
         segment = segment.copy()
         for axis, edges in enumerate(locator.edges):
             if np.any(error[:, axis] >= np.min(np.diff(edges)) / 4):
-                raise ValueError(
+                msg = (
                     "Cannot resolve automatic bridge clearance at this grid's "
                     "coordinate precision; rescale the inputs or disable auto_bridge."
                 )
+                raise ValueError(msg)
             for row in range(2):
                 nearest = int(np.argmin(np.abs(edges - segment[row, axis])))
                 if abs(edges[nearest] - segment[row, axis]) <= error[row, axis]:
@@ -372,20 +369,22 @@ def _grid_segment_intervals(
             values = (edges - segment[0, axis]) / direction[axis]
             interior = values[(values > 0) & (values < 1)]
             if len(np.unique(interior)) != len(interior):
-                raise ValueError(
+                msg = (
                     "Cannot resolve distinct grid crossings along an automatic "
                     "bridge; rescale the inputs or disable auto_bridge."
                 )
+                raise ValueError(msg)
             cuts.extend(interior.tolist())
     ordered = sorted(set(cuts))
     intervals = []
     for low, high in pairwise(ordered):
         middle = (low + high) / 2
         if not low < middle < high:
-            raise ValueError(
+            msg = (
                 "Cannot resolve grid-interior bridge intervals at this precision; "
                 "rescale the inputs or disable auto_bridge."
             )
+            raise ValueError(msg)
         point = segment[0] + middle * direction
         # On an internal grid face every adjacent cell must be active for
         # this point to be interior to the union. An exterior face is excluded.
@@ -459,10 +458,11 @@ def _ball_segment_interval(
             min(1.0, float(projection) + span),
         )
         if not low < high:
-            raise ValueError(
+            msg = (
                 "Cannot resolve a bounded nearest footprint along an automatic bridge; "
                 "rescale the inputs or disable auto_bridge."
             )
+            raise ValueError(msg)
         return low, high
     if distance >= radius:
         return None
@@ -471,10 +471,11 @@ def _ball_segment_interval(
         low, high = (along - span) / length, (along + span) / length
     low, high = max(0.0, low), min(1.0, high)
     if low == high and 0 < along / length < 1:
-        raise ValueError(
+        msg = (
             "Cannot resolve a bounded nearest footprint along an automatic bridge; "
             "rescale the inputs or disable auto_bridge."
         )
+        raise ValueError(msg)
     return (low, high) if low < high else None
 
 
@@ -488,10 +489,11 @@ def _nearest_segment_intervals(
     base, mapping, inverse, _ = partition
     local = segment @ inverse[:-1, :-1].T + inverse[:-1, -1]
     if not np.all(np.isfinite(local)) or np.array_equal(local[0], local[1]):
-        raise ValueError(
+        msg = (
             "Cannot represent automatic bridge coordinates in the nearest frame; "
             "rescale the inputs or disable auto_bridge."
         )
+        raise ValueError(msg)
     direction = local[1] - local[0]
     intervals = []
     for center in base.centers[mapping >= 0]:
@@ -506,10 +508,11 @@ def _nearest_segment_intervals(
                 )
                 slope = float(2 * (direction @ difference))
             if not np.isfinite(intercept) or not np.isfinite(slope):
-                raise ValueError(
+                msg = (
                     "Cannot certify automatic bridge Voronoi geometry at this "
                     "coordinate scale; rescale the inputs or disable auto_bridge."
                 )
+                raise ValueError(msg)
             if slope == 0:
                 if intercept >= 0:
                     high = low
@@ -553,18 +556,18 @@ def _arena_segment_interior(
     if polygon is not None:
         return bool(LineString(segment).relate_pattern(polygon, "1********"))
     if isinstance(arena, _CombinedArena):
-        raise ValueError(
+        msg = (
             "Cannot certify automatic bridge clearance through a nonplanar union "
             "domain; disable auto_bridge."
         )
+        raise ValueError(msg)
     if isinstance(arena, TrackArena) and arena.width is not None:
         return any(
             segment_distance(segment, track) < arena.width / 2
             for track in arena.segments
         )
-    raise ValueError(
-        "Cannot certify automatic bridge clearance through this domain; disable auto_bridge."
-    )
+    msg = "Cannot certify automatic bridge clearance through this domain; disable auto_bridge."
+    raise ValueError(msg)
 
 
 def segment_enters_component(
@@ -590,9 +593,8 @@ def segment_enters_component(
                 support = support.intersection(domain)
             if domain is not None or not arena.domain_known:
                 return bool(LineString(segment).relate_pattern(support, "1********"))
-            raise ValueError(
-                "Cannot certify bridge clearance for polygon cells with a nonpolygonal domain; disable auto_bridge."
-            )
+            msg = "Cannot certify bridge clearance for polygon cells with a nonpolygonal domain; disable auto_bridge."
+            raise ValueError(msg)
     if intervals is None:
         intervals = _nearest_segment_intervals(binning.locator, segment)
     if intervals is None:
@@ -603,18 +605,20 @@ def segment_enters_component(
             and np.all(track.active_mask)
         ):
             return _arena_segment_interior(arena, segment)
-        raise ValueError(
+        msg = (
             "Cannot certify automatic bridge clearance through a third component; "
             "provide exact cells or a supported bounded footprint, or disable auto_bridge."
         )
+        raise ValueError(msg)
     direction = segment[1] - segment[0]
     for low, high in intervals:
         portion = segment[0] + np.array([low, high])[:, None] * direction
         if np.array_equal(portion[0], portion[1]):
-            raise ValueError(
+            msg = (
                 "Cannot resolve bridge clearance within the component domain; "
                 "rescale the inputs or disable auto_bridge."
             )
+            raise ValueError(msg)
         if _arena_segment_interior(arena, portion):
             return True
     return False
@@ -735,13 +739,11 @@ def certify_components(
                     _overlap(left[a], right[b])
                     for a, b in zip(*_bound_candidates(left, right), strict=True)
                 ):
-                    raise ValueError(
-                        "Overlapping cells or intersecting support bounds; disjoint lookup support cannot be certified. Restrict or separate the components."
-                    )
+                    msg = "Overlapping cells or intersecting support bounds; disjoint lookup support cannot be certified. Restrict or separate the components."
+                    raise ValueError(msg)
             except ValueError as error:
-                raise ValueError(
-                    f"Cannot combine {keys[i]!r} and {keys[j]!r}: {error}"
-                ) from error
+                msg = f"Cannot combine {keys[i]!r} and {keys[j]!r}: {error}"
+                raise ValueError(msg) from error
 
 
 BridgeEndpoint = tuple[str, int]
@@ -829,7 +831,8 @@ def combine_binnings(
         because a bridge's wall crossings cannot be certified there.
     """
     if type(auto_bridge) is not bool:
-        raise TypeError("auto_bridge must be boolean.")
+        msg = "auto_bridge must be boolean."
+        raise TypeError(msg)
     validate_finite_scalar(
         max_mnn_distance, name="max_mnn_distance", positive=False, none_allowed=True
     )
@@ -858,9 +861,8 @@ def combine_binnings(
                     other.bins.centers, child.bins.centers
                 )
                 if not np.all(np.isfinite(lengths)):
-                    raise ValueError(
-                        "Bridge distances exceed coordinate precision; rescale the inputs."
-                    )
+                    msg = "Bridge distances exceed coordinate precision; rescale the inputs."
+                    raise ValueError(msg)
                 for u, v in enumerate(right):
                     if left[v] != u:
                         continue
@@ -878,9 +880,8 @@ def combine_binnings(
                         ):
                             continue
                     elif any(arena.walls for arena in arenas):
-                        raise NotImplementedError(
-                            "Automatic bridges cannot certify wall crossings outside 2D; disable auto_bridge."
-                        )
+                        msg = "Automatic bridges cannot certify wall crossings outside 2D; disable auto_bridge."
+                        raise NotImplementedError(msg)
                     segment = np.array([child.bins.centers[u], other.bins.centers[v]])
                     if any(
                         segment_enters_component(segment, third, arenas[k])
@@ -899,28 +900,24 @@ def combine_binnings(
             (source_key, source_bin), (target_key, target_bin) = endpoints
             i, j = keys.index(source_key), keys.index(target_key)
         except (ValueError, TypeError) as error:
-            raise ValueError(
-                "Conductance keys must be pairs of (component_key, local_bin_id) endpoints."
-            ) from error
+            msg = "Conductance keys must be pairs of (component_key, local_bin_id) endpoints."
+            raise ValueError(msg) from error
         if any(
             not isinstance(index, (int, np.integer))
             or isinstance(index, (bool, np.bool_))
             or not 0 <= index < children[owner].bins.n_bins
             for index, owner in ((source_bin, i), (target_bin, j))
         ):
-            raise ValueError(
-                "Conductance endpoint bin IDs must be valid local integers."
-            )
+            msg = "Conductance endpoint bin IDs must be valid local integers."
+            raise ValueError(msg)
         edge = frozenset((int(offsets[i] + source_bin), int(offsets[j] + target_bin)))
         if edge not in by_pair:
-            raise ValueError(
-                "Conductance endpoints must identify an inferred bridge; inspect get_bridge_attributes()."
-            )
+            msg = "Conductance endpoints must identify an inferred bridge; inspect get_bridge_attributes()."
+            raise ValueError(msg)
         validate_finite_scalar(value, name="Bridge conductance", positive=False)
         if edge in assigned:
-            raise ValueError(
-                "Supply one conductance per unordered bridge; reversed endpoints duplicate the same connection."
-            )
+            msg = "Supply one conductance per unordered bridge; reversed endpoints duplicate the same connection."
+            raise ValueError(msg)
         assigned.add(edge)
         conductances[by_pair[edge]] = value
     locator = CombinedLocator(

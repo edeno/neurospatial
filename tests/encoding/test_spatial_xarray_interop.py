@@ -360,7 +360,8 @@ def test_spatial_rates_to_xarray_without_xarray_raises(rates_result, monkeypatch
 
     def _fake_import(name, *args, **kwargs):
         if name == "xarray":
-            raise ModuleNotFoundError("No module named 'xarray'", name="xarray")
+            msg = "No module named 'xarray'"
+            raise ModuleNotFoundError(msg, name="xarray")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", _fake_import)
@@ -400,7 +401,7 @@ def test_broken_xarray_install_is_not_reported_as_missing(
 
 
 @pytest.mark.parametrize(
-    "family", ("spatial", "view", "allocentric", "egocentric", "directional")
+    "family", ["spatial", "view", "allocentric", "egocentric", "directional"]
 )
 def test_singular_to_xarray_matches_batch_row(rate_family_results, family):
     xr = pytest.importorskip("xarray")

@@ -351,20 +351,22 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         name = type(self).__name__
         near = [label for label in labels if label == wanted]
         if near:
-            raise KeyError(
+            msg = (
                 f"unit_id {wanted!r} ({type(wanted).__name__}) is not in this "
                 f"{name}, which has the {type(near[0]).__name__} label "
                 f"{near[0]!r}. Labels of different kinds are different units "
                 "(1, 1.0 and True are three labels); pass "
                 f"sel(unit_id={near[0]!r})."
             )
+            raise KeyError(msg)
         shown = ", ".join(repr(label) for label in labels[:10])
         more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
-        raise KeyError(
+        msg = (
             f"unit_id {wanted!r} is not in this {name} "
             f"(unit_ids: {shown}{more}). Pass one of these labels to "
             "sel(), or use [i] to select the i-th unit by position."
         )
+        raise KeyError(msg)
 
     def _unit_position(self: _UnitContainer[Any], index: Any) -> int:
         """Validate a positional ``[]`` index, pointing label lookups at ``sel``."""
@@ -1069,7 +1071,8 @@ class ResultMixin:
         NotImplementedError
             If the concrete result class does not specialize this method.
         """
-        raise NotImplementedError(
+        msg = (
             f"{type(self).__name__} does not implement summary(). "
             f"summary() must be specialized per result type."
         )
+        raise NotImplementedError(msg)

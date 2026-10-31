@@ -128,7 +128,8 @@ def boundary_from_positions(
     # Validate and cast input
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 2:
-        raise ValueError(f"positions must have shape (n, 2), got {positions.shape}")
+        msg = f"positions must have shape (n, 2), got {positions.shape}"
+        raise ValueError(msg)
 
     # Filter out NaN/Inf values (common in tracking data for lost frames)
     valid_mask = np.all(np.isfinite(positions), axis=1)
@@ -146,16 +147,20 @@ def boundary_from_positions(
         )
 
     if len(positions) < 3:
-        raise ValueError(
+        msg = (
             f"positions must have at least 3 valid points, got {len(positions)} "
-            f"(after filtering {n_invalid} NaN/Inf values)",
+            f"(after filtering {n_invalid} NaN/Inf values)"
+        )
+        raise ValueError(
+            msg,
         )
 
     # Check for degenerate cases (all points identical or collinear)
     unique_points = np.unique(positions, axis=0)
     if len(unique_points) < 3:
+        msg = f"positions must have at least 3 unique points, got {len(unique_points)}"
         raise ValueError(
-            f"positions must have at least 3 unique points, got {len(unique_points)}",
+            msg,
         )
 
     # Build effective config
@@ -191,7 +196,8 @@ def boundary_from_positions(
             )
             boundary = _convex_hull_boundary(positions)
     else:
-        raise ValueError(f"Unknown method: {effective_method}")
+        msg = f"Unknown method: {effective_method}"
+        raise ValueError(msg)
 
     # Apply buffer (fraction of bbox diagonal)
     if effective_buffer > 0:
@@ -231,9 +237,12 @@ def _convex_hull_boundary(positions: NDArray[np.float64]) -> Polygon:
     try:
         hull = ConvexHull(positions)
     except QhullError as e:
-        raise ValueError(
+        msg = (
             "Cannot compute convex hull: points may be collinear or degenerate. "
-            f"Original error: {e}",
+            f"Original error: {e}"
+        )
+        raise ValueError(
+            msg,
         ) from e
 
     vertices = positions[hull.vertices]
@@ -273,9 +282,12 @@ def _alpha_shape_boundary(
     try:
         import alphashape
     except ImportError:
-        raise ImportError(
+        msg = (
             "alphashape package required for alpha_shape method. "
-            "Install with: pip install alphashape",
+            "Install with: pip install alphashape"
+        )
+        raise ImportError(
+            msg,
         ) from None
 
     from shapely.geometry import MultiPolygon, Polygon
@@ -320,7 +332,7 @@ def _alpha_shape_boundary(
     # input points are collinear, near-duplicate, or too sparse for the chosen
     # alpha; downstream code assumes a non-empty Polygon.
     if not isinstance(result, Polygon) or result.is_empty:
-        raise ValueError(
+        msg = (
             f"Alpha shape produced a degenerate boundary "
             f"({type(result).__name__}"
             f"{', empty' if getattr(result, 'is_empty', False) else ''}) "
@@ -331,7 +343,10 @@ def _alpha_shape_boundary(
             f"  1. Increase alpha from {alpha:.3f} to ~{alpha * 2:.3f} for a "
             f"looser boundary\n"
             f"  2. Use method='convex_hull' for a guaranteed single polygon\n"
-            f"  3. Add more position samples or remove duplicate points",
+            f"  3. Add more position samples or remove duplicate points"
+        )
+        raise ValueError(
+            msg,
         )
 
     return result

@@ -516,7 +516,7 @@ def _small_cell_environment(kind):
 # Each chain once failed the cell check of exact polygon cells (clipped cells
 # and reflected hexagons) by floating-point roundoff far below a cell's size.
 @pytest.mark.parametrize(
-    "angle,scale,reflect",
+    ("angle", "scale", "reflect"),
     [
         (-2.0965322377907283, 0.25, True),
         (0.8605556614246863, 0.5, False),
@@ -646,7 +646,9 @@ _ROUND_TRIP_CASES = [
 
 
 @pytest.mark.parametrize(
-    "derivation,built_environment", _ROUND_TRIP_CASES, indirect=["built_environment"]
+    ("derivation", "built_environment"),
+    _ROUND_TRIP_CASES,
+    indirect=["built_environment"],
 )
 def test_derived_round_trip(
     built_environment, derivation, round_trip_environment, forbid_layout_builds
@@ -824,7 +826,7 @@ def test_retained_affine_triangle_corruption_is_rejected(
 
 
 @pytest.mark.parametrize(
-    "built_environment,derivation,renderer",
+    ("built_environment", "derivation", "renderer"),
     [
         ("grid8", "translation", "QuadMesh"),
         ("grid8", "uniform_scaling", "QuadMesh"),

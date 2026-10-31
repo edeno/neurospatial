@@ -331,11 +331,12 @@ def write_spatial_rates(
     ]
     reserved_clash = [c for c in unit_table_columns if c in reserved_names]
     if reserved_clash:
-        raise ValueError(
+        msg = (
             f"unit_table has reserved column name(s) {reserved_clash}: "
             f"{reserved_names} are reserved for the spatial-rates "
             f"table's own columns. Rename these unit_table columns."
         )
+        raise ValueError(msg)
 
     # Check every name -- the table, its companion occupancy and the
     # environment record -- before the first mutation. The objects to replace
@@ -543,18 +544,20 @@ def _plan_spatial_rates_write(
 
     analysis = nwbfile.analysis
     if len({name, occupancy_name, env_name}) != 3:
-        raise ValueError(
+        msg = (
             f"write_spatial_rates: name={name!r}, its occupancy companion "
             f"{occupancy_name!r} and environment_name={env_name!r} must be three "
             "different /analysis names. Choose another environment_name."
         )
+        raise ValueError(msg)
     for own in (name, occupancy_name):
         if own in analysis and _is_environment_record(analysis[own]):
-            raise ValueError(
+            msg = (
                 f"write_spatial_rates: /analysis/{own} is an environment record, "
                 "which other spatial rates may use. Choose another name= for the "
                 "rates."
             )
+            raise ValueError(msg)
     old_names = [n for n in (name, occupancy_name) if n in analysis]
 
     # The replaced rates' own default environment record goes with them when
@@ -629,21 +632,25 @@ def _require_saved_environment(
     from neurospatial.environment import _environment_differences
 
     if env.n_bins != n_bins:
-        raise ValueError(
+        msg = (
             f"Environment n_bins ({env.n_bins}) does not match the stored "
             f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
             f"usually means a mismatched or stale env= was passed; pass the "
             f"Environment used to compute these rates."
         )
+        raise ValueError(msg)
     if _environment_content(env)[2] == fingerprint:
         return
     saved = read_environment(nwbfile, name=env_name)
     bins, topology = _environment_differences(saved, env)
     mismatch = bins or topology
     if mismatch is not None:
-        raise IncompatibleEnvironmentError(
+        msg = (
             f"read_spatial_rates: env= differs from the environment saved with "
-            f"spatial rates '{name}' in {mismatch}.",
+            f"spatial rates '{name}' in {mismatch}."
+        )
+        raise IncompatibleEnvironmentError(
+            msg,
             fix="omit env= to use the environment saved with these rates, or "
             "pass that same environment",
             first=saved,
@@ -733,15 +740,19 @@ def read_spatial_rates(
     if name not in analysis:
         earlier = nwbfile.processing.get(_EARLIER_MODULE)
         if earlier is not None and name in earlier.data_interfaces:
+            msg = f"Spatial rates {name!r}"
             raise _earlier_location_error(
-                f"Spatial rates {name!r}",
+                msg,
                 f"the processing module {_EARLIER_MODULE!r}",
                 fix=_RECREATE_FIX,
             )
         available = list(_analysis_records(nwbfile, SPATIAL_RATES_FORMAT))
-        raise missing_error(
+        msg = (
             f"Spatial rates '{name}' not found in /analysis. Saved spatial "
-            f"rates: {available}",
+            f"rates: {available}"
+        )
+        raise missing_error(
+            msg,
             fix=f"pass name= one of {available}"
             if available
             else "write the rates with write_spatial_rates first",
@@ -773,10 +784,11 @@ def read_spatial_rates(
 
     unit_ids_generated = _required_key(meta, "unit_ids_generated", name)
     if not isinstance(unit_ids_generated, bool):
-        raise ValueError(
+        msg = (
             f"Spatial rates '{name}' has invalid unit_ids_generated metadata; "
             "expected a boolean to distinguish generated from explicit labels."
         )
+        raise ValueError(msg)
     spike_window = as_intervals(
         _required_key(meta, "spike_window", name), name=f"{name}.spike_window"
     )
@@ -804,30 +816,35 @@ def read_spatial_rates(
         )
 
     if occupancy_name not in analysis:
-        raise missing_error(
+        msg = (
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
-            "in /analysis.",
+            "in /analysis."
+        )
+        raise missing_error(
+            msg,
             fix=_RECREATE_FIX,
         )
     occupancy_record = analysis[occupancy_name]
     if COL_OCCUPANCY not in getattr(occupancy_record, "colnames", ()):
-        raise ValueError(
+        msg = (
             f"Occupancy companion '{occupancy_name}' for spatial rates '{name}' is "
             f"not a table with an '{COL_OCCUPANCY}' column; the file may be "
             "corrupt or the name was reused for another object."
         )
+        raise ValueError(msg)
     occupancy = np.asarray(occupancy_record[COL_OCCUPANCY][:], dtype=np.float64)
 
     # Check the companion against the rates' bins, so a wrong-length
     # occupancy fails here rather than in a later analysis.
     n_bins = firing_rates.shape[1]
     if occupancy.shape != (n_bins,):
-        raise ValueError(
+        msg = (
             f"Occupancy companion '{occupancy_name}' has length "
             f"{occupancy.shape[0]} but the rates in '{name}' have {n_bins} bins. "
             "The stored occupancy does not match the rates; the file may be "
             "corrupt or the wrong companion was written."
         )
+        raise ValueError(msg)
 
     # The rates' environment is the record they name, unchanged since they
     # were written. An explicit env= is attached only when it matches that
@@ -909,11 +926,12 @@ def read_spatial_rates(
                 if c not in table.colnames
             ]
             if missing_cols:
-                raise ValueError(
+                msg = (
                     f"Spatial rates '{name}' is a per-unit glm record (per_unit=True) "
                     f"but is missing the per-unit column(s) {missing_cols}; the file "
                     "may be corrupt or truncated."
                 )
+                raise ValueError(msg)
             gam_fields["penalty"] = np.asarray(table[COL_PENALTY][:], dtype=np.float64)
             gam_fields["reml_objective"] = np.asarray(
                 table[COL_REML_OBJECTIVE][:], dtype=np.float64

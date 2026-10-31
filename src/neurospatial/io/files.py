@@ -97,18 +97,17 @@ def _validate_path_safety(path: PathLike) -> Path:
     # Check if any part of the ORIGINAL path contains parent directory reference
     # Must check before resolve() because resolve() normalizes away the '..'
     if ".." in path_obj.parts:
-        raise ValueError(
+        msg = (
             f"[E1005] Path traversal detected in path: {path}. "
             f"Environment save and load paths may not contain '..' components; "
             f"name the location directly, for example with an absolute path.\n\n"
             f"For more information, see: "
             f"https://edeno.github.io/neurospatial/errors/#e1005-path-traversal-detected"
         )
+        raise ValueError(msg)
 
     # Now resolve to absolute path
-    path_obj = path_obj.resolve()
-
-    return path_obj
+    return path_obj.resolve()
 
 
 def _environment_file_paths(path: Path) -> tuple[Path, Path]:
@@ -302,9 +301,8 @@ def from_file(path: PathLike) -> Environment[Any]:
     try:
         archive = np.load(npz_path, allow_pickle=False)
         if not isinstance(archive, np.lib.npyio.NpzFile):
-            raise ValueError(
-                "expected an NPZ archive containing named numerical arrays"
-            )
+            msg = "expected an NPZ archive containing named numerical arrays"
+            raise ValueError(msg)
         with archive:
             arrays = {key: archive[key] for key in archive.files}
     except (BadZipFile, EOFError, ValueError, zlib.error) as error:
@@ -444,7 +442,8 @@ def _reject_cyclic_metadata(metadata: dict[str, Any]) -> None:
             continue
         identity = id(value)
         if identity in active:
-            raise ValueError("Circular environment metadata is not supported.")
+            msg = "Circular environment metadata is not supported."
+            raise ValueError(msg)
         if identity in complete:
             continue
         active.add(identity)
@@ -477,37 +476,41 @@ def _restore_environment(
         _reject_cyclic_metadata(metadata)
         for key in _DECODED_KEYS:
             if key not in metadata:
-                raise ValueError(
+                msg = (
                     f"the record has no {key!r} entry, which every saved "
                     "environment contains; the record is incomplete or was edited"
                 )
+                raise ValueError(msg)
         for key, spec in metadata["array_specs"].items():
             array = arrays[key]
             if list(array.shape) != spec["shape"] or array.dtype.str != spec["dtype"]:
-                raise ValueError(
-                    f"array {key!r} does not match its stored shape or dtype"
-                )
+                msg = f"array {key!r} does not match its stored shape or dtype"
+                raise ValueError(msg)
         binning = decode(metadata["binning"], arrays, "binning")
         if not isinstance(binning, Binning):
-            raise ValueError("the binning payload is not a Binning")
+            msg = "the binning payload is not a Binning"
+            raise ValueError(msg)
         if (
             metadata["n_bins"] != binning.bins.n_bins
             or metadata["n_dims"] != binning.bins.n_dims
         ):
-            raise ValueError("stored bin counts/dimensions differ from the binning")
+            msg = "stored bin counts/dimensions differ from the binning"
+            raise ValueError(msg)
         centers = arrays["bin_centers"]
         if not np.all(np.isfinite(centers)):
-            raise ValueError("stored bin_centers contain non-finite coordinates")
+            msg = "stored bin_centers contain non-finite coordinates"
+            raise ValueError(msg)
         if not np.array_equal(centers, binning.bins.centers):
-            raise ValueError(
-                "stored bin_centers differ from the authoritative binning centers"
-            )
+            msg = "stored bin_centers differ from the authoritative binning centers"
+            raise ValueError(msg)
         coordinate_kind = metadata["coordinate_kind"]
         if coordinate_kind not in ("cartesian", "polar"):
-            raise ValueError("unknown coordinate_kind")
+            msg = "unknown coordinate_kind"
+            raise ValueError(msg)
         arena_metadata = metadata["arena"]
         if not isinstance(arena_metadata, dict):
-            raise ValueError("the arena record must be a metadata dictionary")
+            msg = "the arena record must be a metadata dictionary"
+            raise ValueError(msg)
         arena = decode_arena(
             arena_metadata,
             {
@@ -517,24 +520,25 @@ def _restore_environment(
             },
         )
         if arena.n_dims != binning.bins.n_dims:
-            raise ValueError("stored arena dimensions differ from the binning")
+            msg = "stored arena dimensions differ from the binning"
+            raise ValueError(msg)
         if arena.coordinate_kind != coordinate_kind:
-            raise ValueError(
-                "stored arena coordinate_kind differs from the environment"
-            )
+            msg = "stored arena coordinate_kind differs from the environment"
+            raise ValueError(msg)
         provenance = _saved_provenance(metadata)
         ranges = metadata.get("dimension_ranges")
         if ranges is not None and tuple(map(tuple, ranges)) != binning.dimension_ranges:
-            raise ValueError("stored dimension_ranges differ from the binning")
+            msg = "stored dimension_ranges differ from the binning"
+            raise ValueError(msg)
         if metadata["is_linearized_track"] != (binning.linearization is not None):
-            raise ValueError("stored is_linearized_track differs from the binning")
+            msg = "stored is_linearized_track differs from the binning"
+            raise ValueError(msg)
         context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
         ):
-            raise ValueError(
-                "Framed grid source axes cannot be stored as world grid_edges."
-            )
+            msg = "Framed grid source axes cannot be stored as world grid_edges."
+            raise ValueError(msg)
         if (
             binning.grid_frame is not None
             or binning.rectilinear is not None
@@ -545,16 +549,19 @@ def _restore_environment(
                 metadata.get("grid_shape") is not None
                 and tuple(metadata["grid_shape"]) != context.shape
             ):
-                raise ValueError("stored grid_shape differs from the binning")
+                msg = "stored grid_shape differs from the binning"
+                raise ValueError(msg)
             if "active_mask" in arrays and not np.array_equal(
                 arrays["active_mask"], context.active_mask
             ):
-                raise ValueError("stored active_mask differs from the binning")
+                msg = "stored active_mask differs from the binning"
+                raise ValueError(msg)
             for index, edges in enumerate(context.edges or ()):
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
-                    raise ValueError(f"stored {key} differs from the binning")
-        env = _publish(
+                    msg = f"stored {key} differs from the binning"
+                    raise ValueError(msg)
+        return _publish(
             Environment,
             binning,
             coordinate_kind=coordinate_kind,
@@ -568,7 +575,6 @@ def _restore_environment(
             landmarks=Landmarks.from_list(metadata["landmarks"]),
             arena=arena,
         )
-        return env
     except (
         ValueError,
         TypeError,
@@ -611,20 +617,23 @@ def _saved_provenance(metadata: dict[str, Any]) -> _Provenance:
 
     params = metadata["layout_parameters"]
     if not isinstance(params, dict):
-        raise ValueError("layout_parameters must be a dictionary of build choices")
+        msg = "layout_parameters must be a dictionary of build choices"
+        raise ValueError(msg)
     for key, value in params.items():
         try:
             build_choices({key: value}, owner="layout_parameters")
         except TypeError:
-            raise ValueError(
+            msg = (
                 f"layout_parameters[{key!r}] is not a build choice (a scalar or "
                 "a flat sequence of scalars), which is all an environment saves"
-            ) from None
+            )
+            raise ValueError(msg) from None
     derivations = metadata["derivations"]
     if not isinstance(derivations, list) or not all(
         isinstance(step, str) for step in derivations
     ):
-        raise ValueError("derivations must be a list of derivation names")
+        msg = "derivations must be a list of derivation names"
+        raise ValueError(msg)
     return _Provenance(params, tuple(derivations), metadata["length_scale"])
 
 
@@ -635,22 +644,27 @@ def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
         raw = np.asarray(metadata["arrays"][key])
         dtype = np.dtype(spec["dtype"])
         if dtype.kind not in "biuf":
-            raise ValueError(f"array {key!r} has unsupported dtype {dtype}")
+            msg = f"array {key!r} has unsupported dtype {dtype}"
+            raise ValueError(msg)
         if raw.size and raw.dtype.kind not in "biuf":
-            raise ValueError(f"array {key!r} must contain numerical values")
+            msg = f"array {key!r} must contain numerical values"
+            raise ValueError(msg)
         if (
             raw.size
             and dtype.kind in "iu"
             and raw.dtype.kind == "f"
             and np.any(~np.isfinite(raw) | (raw != np.floor(raw)))
         ):
-            raise ValueError(f"array {key!r} must contain integer indices")
+            msg = f"array {key!r} must contain integer indices"
+            raise ValueError(msg)
         if raw.size and dtype.kind in "iu":
             limits = np.iinfo(dtype)
             if np.any(raw < limits.min) or np.any(raw > limits.max):
-                raise ValueError(f"array {key!r} contains integers outside {dtype}")
+                msg = f"array {key!r} contains integers outside {dtype}"
+                raise ValueError(msg)
         if raw.size and dtype.kind == "b" and raw.dtype.kind != "b":
-            raise ValueError(f"array {key!r} must contain booleans")
+            msg = f"array {key!r} must contain booleans"
+            raise ValueError(msg)
         arrays[key] = np.asarray(raw, dtype=dtype).reshape(spec["shape"])
     return arrays
 

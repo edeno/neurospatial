@@ -106,26 +106,32 @@ class AnimationField:
             read_only_copy(_validated_signal_times(times, call="AnimationField")),
         )
         if not hasattr(values, "__getitem__") or not hasattr(values, "__len__"):
-            raise TypeError("values must be an indexable sequence of spatial rows.")
+            msg = "values must be an indexable sequence of spatial rows."
+            raise TypeError(msg)
         if len(values) != len(self.times):
-            raise ValueError("values and times must have the same number of samples.")
+            msg = "values and times must have the same number of samples."
+            raise ValueError(msg)
         shape = getattr(values, "shape", None)
         if shape is not None:
             if len(shape) != 2 or shape[1] == 0:
-                raise ValueError("values must have shape (n_samples, n_bins).")
+                msg = "values must have shape (n_samples, n_bins)."
+                raise ValueError(msg)
             object.__setattr__(self, "n_bins", int(shape[1]))
         else:
             first = np.asarray(values[0])
             if first.ndim != 1 or first.size == 0:
-                raise ValueError(
+                msg = (
                     "Each values row must be a nonempty one-dimensional spatial field."
                 )
+                raise ValueError(msg)
             object.__setattr__(self, "n_bins", first.size)
         for name, limit in (("vmin", vmin), ("vmax", vmax)):
             if limit is not None and not np.isfinite(limit):
-                raise ValueError(f"{name} must be finite or None.")
+                msg = f"{name} must be finite or None."
+                raise ValueError(msg)
         if vmin is not None and vmax is not None and vmin > vmax:
-            raise ValueError("vmin must be less than or equal to vmax.")
+            msg = "vmin must be less than or equal to vmax."
+            raise ValueError(msg)
         object.__setattr__(self, "values", values)
         for name, value in (
             ("cmap", cmap),
@@ -200,16 +206,16 @@ class AnimationField:
         # and the worker-to-GUI handoff without materializing the whole source.
         row = np.array(self.values[index], dtype=float, copy=True)
         if row.shape != (self.n_bins,):
-            raise ValueError(
-                f"Field row {index} has shape {row.shape}; expected ({self.n_bins},)."
-            )
+            msg = f"Field row {index} has shape {row.shape}; expected ({self.n_bins},)."
+            raise ValueError(msg)
         return row
 
     def sample(self, time: float) -> np.ndarray:
         """Return the previous sample within support, or an all-NaN row."""
         time = float(time)
         if not np.isfinite(time):
-            raise ValueError("time must be finite seconds.")
+            msg = "time must be finite seconds."
+            raise ValueError(msg)
         index = self._sample_index(time)
         if index is not None:
             return cast("np.ndarray", self[index])
@@ -305,22 +311,24 @@ class Animation:
 
             track = _checked_track(env, track)
         if env.n_dims not in (1, 2, 3):
-            raise ValueError(
-                "Animation supports one-, two- or three-dimensional environments."
-            )
+            msg = "Animation supports one-, two- or three-dimensional environments."
+            raise ValueError(msg)
         from neurospatial.animation._region_names import shown_region_names
 
         # The shown regions, resolved once: an unknown name raises here.
         region_names = tuple(shown_region_names(env, show_regions))
         if env.n_dims == 1 and region_names:
-            raise ValueError(
+            msg = (
                 "Animation cannot draw regions in a 1D environment. "
                 "Use a 2D environment for region display, or omit show_regions."
             )
+            raise ValueError(msg)
         if not np.isfinite(window_seconds) or window_seconds <= 0:
-            raise ValueError("window_seconds must be positive finite seconds.")
+            msg = "window_seconds must be positive finite seconds."
+            raise ValueError(msg)
         if not np.isfinite(region_alpha) or not 0 <= region_alpha <= 1:
-            raise ValueError("region_alpha must be between zero and one.")
+            msg = "region_alpha must be between zero and one."
+            raise ValueError(msg)
         clock = (
             None
             if frame_times is None
@@ -330,22 +338,19 @@ class Animation:
         if not streams or any(
             not isinstance(name, str) or not name for name in streams
         ):
-            raise ValueError(
-                "fields must contain at least one stream with a nonempty string name."
-            )
+            msg = "fields must contain at least one stream with a nonempty string name."
+            raise ValueError(msg)
         for name, field in streams.items():
             if not isinstance(field, AnimationField):
                 if clock is None:
-                    raise ValueError(
-                        "Plain field arrays require frame_times in seconds; use AnimationField for independent clocks."
-                    )
+                    msg = "Plain field arrays require frame_times in seconds; use AnimationField for independent clocks."
+                    raise ValueError(msg)
                 field = AnimationField(field, clock)
                 streams[name] = field
             streams[name] = copy.copy(field)
             if field.n_bins != env.n_bins:
-                raise ValueError(
-                    f"Field {name!r} has {field.n_bins} bins; the environment has {env.n_bins}."
-                )
+                msg = f"Field {name!r} has {field.n_bins} bins; the environment has {env.n_bins}."
+                raise ValueError(msg)
         self.env = env
         self.fields = MappingProxyType(streams)
         self.frame_times = (
@@ -370,11 +375,12 @@ class Animation:
                 for name in region_names
             )
             if planar_regions or scale_bar:
-                raise ValueError(
+                msg = (
                     "3D Animation cannot place planar regions or a 2D scale bar "
                     "unambiguously. Use 3D point regions and omit scale_bar; the 3D axes "
                     "show physical coordinates and units."
                 )
+                raise ValueError(msg)
         from neurospatial.animation.overlays import (
             _convert_overlays_to_data,
             _freeze_overlay_arrays,
@@ -417,11 +423,12 @@ class Animation:
             )
         )
         if clock[0] < self.frame_times[0] or clock[-1] > self.frame_times[-1]:
-            raise ValueError(
+            msg = (
                 "overlay_data frame_times must stay within the scene recording "
                 f"[{self.frame_times[0]:g}, {self.frame_times[-1]:g}] seconds. "
                 "Create a scene with a wider frame_times range to include those times."
             )
+            raise ValueError(msg)
         return _realign_prepared_overlays(self._overlay_data, clock)
 
     @classmethod
@@ -437,9 +444,8 @@ class Animation:
         isolated samples remain visible exactly.
         """
         if result.times is None:
-            raise ValueError(
-                "Decoding result has no times. Decode with times to preserve its physical clock."
-            )
+            msg = "Decoding result has no times. Decode with times to preserve its physical clock."
+            raise ValueError(msg)
         field_options = {
             name: kwargs.pop(name)
             for name in (
@@ -461,10 +467,11 @@ class Animation:
                 known if selected is None else intersect_intervals(known, selected)
             )
             if not len(selected):
-                raise ValueError(
+                msg = (
                     "epochs does not overlap the decoding result's known decoded "
                     f"time ({name}). Select epochs inside that support."
                 )
+                raise ValueError(msg)
         field_options["epochs"] = selected
         field_options.setdefault("label", "Probability")
         field = AnimationField(result.posterior, result.times, **field_options)
@@ -670,9 +677,8 @@ class Animation:
         with self._view_lock:
             self._ensure_open()
             if self._closing:
-                raise RuntimeError(
-                    "Animation is closing. Create a new scene to open a view."
-                )
+                msg = "Animation is closing. Create a new scene to open a view."
+                raise RuntimeError(msg)
 
     def close(self) -> None:
         """Stop and drain all views, then release owned figures and readers."""
@@ -717,9 +723,8 @@ class Animation:
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise RuntimeError(
-                "Animation is closed. Create a new scene to inspect or export it."
-            )
+            msg = "Animation is closed. Create a new scene to inspect or export it."
+            raise RuntimeError(msg)
 
     def __enter__(self) -> Animation:
         self._ensure_open()

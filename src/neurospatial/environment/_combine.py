@@ -41,14 +41,15 @@ def _combine(
     ``core`` imports this module; every component must be an instance of it.
     """
     if not isinstance(components, Mapping) or not components:
-        raise ValueError(
-            "components must be a nonempty ordered mapping of keys to environments."
-        )
+        msg = "components must be a nonempty ordered mapping of keys to environments."
+        raise ValueError(msg)
     keys, values = tuple(components), tuple(components.values())
     if any(not isinstance(key, str) or not key or "/" in key for key in keys):
-        raise ValueError("Component keys must be nonempty strings without '/'.")
+        msg = "Component keys must be nonempty strings without '/'."
+        raise ValueError(msg)
     if any(not isinstance(env, environment_type) for env in values):
-        raise TypeError("Environment.combine() takes Environment values.")
+        msg = "Environment.combine() takes Environment values."
+        raise TypeError(msg)
     for key, env in zip(keys, values, strict=True):
         require_cartesian(
             env.coordinate_system,
@@ -61,15 +62,17 @@ def _combine(
     first = values[0]
     for env in values[1:]:
         if env.n_dims != first.n_dims:
-            raise IncompatibleEnvironmentError(
+            msg = (
                 f"[E1003] Components must share coordinate dimensions: first has "
-                f"n_dims={first.n_dims}; another has n_dims={env.n_dims}.",
+                f"n_dims={first.n_dims}; another has n_dims={env.n_dims}."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix="build components with matching coordinate columns",
             )
         if (env.units, env.frame) != (first.units, first.frame):
-            raise ValueError(
-                "Component units and frame must match; calibrate and transform coordinates before combining."
-            )
+            msg = "Component units and frame must match; calibrate and transform coordinates before combining."
+            raise ValueError(msg)
     arenas = tuple(env.arena for env in values)
     binning, n_bridges = combine_binnings(
         keys,

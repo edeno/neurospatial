@@ -22,7 +22,7 @@ def test_exact_angular_division_keeps_the_requested_count(n_angle):
     np.testing.assert_array_equal(env.bin_centers[:, 1], (edges[:-1] + edges[1:]) / 2)
 
 
-@pytest.mark.parametrize("span,n_distance", [(1.0, 49), (10.0, 61), (100.0, 29)])
+@pytest.mark.parametrize(("span", "n_distance"), [(1.0, 49), (10.0, 61), (100.0, 29)])
 def test_exact_radial_division_keeps_the_requested_count(span, n_distance):
     env = Environment.from_polar_egocentric(
         distance_range=(0.0, span),

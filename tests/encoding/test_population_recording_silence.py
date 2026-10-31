@@ -43,7 +43,8 @@ def test_population_spike_window_restores_rate_and_suppresses_silence_warning(
 
 
 @pytest.mark.parametrize(
-    "n_units,silent_seconds,expected", [(5, 0, 0), (4, 100, 0), (5, 59, 0), (5, 61, 1)]
+    ("n_units", "silent_seconds", "expected"),
+    [(5, 0, 0), (4, 100, 0), (5, 59, 0), (5, 61, 1)],
 )
 def test_population_silence_thresholds(
     continuous_recording, n_units, silent_seconds, expected
@@ -88,7 +89,7 @@ def test_population_trailing_silence_warns_at_caller(continuous_recording):
     assert silence[0].filename == __file__
 
 
-@pytest.mark.parametrize("stop,expected", [(59.0, 0), (60.0, 1)])
+@pytest.mark.parametrize(("stop", "expected"), [(59.0, 0), (60.0, 1)])
 def test_population_silence_respects_analysis_epochs(
     continuous_recording, stop, expected
 ):

@@ -1261,10 +1261,11 @@ def _validate_gaze_model(gaze_model: str) -> None:
     """Raise ``ValueError`` unless ``gaze_model`` is a supported gaze model."""
     valid_gaze_models = {"fixed_distance", "ray_cast"}
     if gaze_model not in valid_gaze_models:
-        raise ValueError(
+        msg = (
             f"Invalid gaze_model: '{gaze_model}'. "
             f"Must be one of {sorted(valid_gaze_models)}"
         )
+        raise ValueError(msg)
 
 
 def _resolve_view_distance(
@@ -1315,10 +1316,11 @@ def _as_gaze_offsets(
         return None
     offsets = np.asarray(gaze_offsets, dtype=np.float64)
     if len(offsets) != n_samples:
-        raise ValueError(
+        msg = (
             f"gaze_offsets length ({len(offsets)}) must match "
             f"times length ({n_samples})"
         )
+        raise ValueError(msg)
     return offsets
 
 

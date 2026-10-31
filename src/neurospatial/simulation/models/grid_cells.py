@@ -183,12 +183,13 @@ class GridCellModel:
     def __post_init__(self) -> None:
         env = self.env
         if env.n_dims != 2:
-            raise ValueError(
+            msg = (
                 f"GridCellModel only works for 2D environments. "
                 f"Got {env.n_dims}D environment. "
                 f"Grid cells exhibit hexagonal spatial periodicity that "
                 f"requires exactly 2 spatial dimensions."
             )
+            raise ValueError(msg)
         require_cartesian(
             env.coordinate_system,
             "GridCellModel()",

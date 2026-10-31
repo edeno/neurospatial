@@ -303,10 +303,11 @@ def _plot_1d(
 def check_field(field: NDArray[np.float64], n_bins: int) -> None:
     """Refuse a field that is not one value per bin."""
     if field.ndim != 1 or field.shape[0] != n_bins:
-        raise ValueError(
+        msg = (
             f"field must be 1D array with length n_bins={n_bins}, "
             f"got shape {field.shape}"
         )
+        raise ValueError(msg)
 
 
 def field_color_limits(
@@ -353,11 +354,12 @@ def _plot_field(
 
     # Check dimensionality for spatial plots
     if not is_linearized_track and n_dims > 2:
-        raise NotImplementedError(
+        msg = (
             f"Cannot plot {n_dims}D fields spatially. "
             "Only 1D and 2D environments are supported. "
             "Consider using marginal plots, slicing, or 3D scatter plots instead."
         )
+        raise NotImplementedError(msg)
 
     # Polar envs render via the same dispatch but with polar-aware
     # axis labels and aspect ratio: bin_centers[:, 0] is

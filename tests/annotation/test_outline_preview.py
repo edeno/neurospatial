@@ -180,7 +180,8 @@ def test_simplification_failure_keeps_slider_available_for_exact_recovery(
 
     def reject_positive_tolerance(outline, tolerance):
         if tolerance > 0:
-            raise ValueError("Simplification could not preserve valid geometry.")
+            msg = "Simplification could not preserve valid geometry."
+            raise ValueError(msg)
         return original(outline, tolerance)
 
     monkeypatch.setattr(

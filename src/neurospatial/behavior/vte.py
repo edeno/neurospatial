@@ -213,10 +213,11 @@ class VTETrialResult(ResultMixin):
     def __post_init__(self) -> None:
         """Store plain Python scalars and check the status and window."""
         if self.status not in _VTE_TRIAL_STATUSES:
-            raise ValueError(
+            msg = (
                 f"VTETrialResult status must be one of {_VTE_TRIAL_STATUSES}; "
                 f"got {self.status!r}."
             )
+            raise ValueError(msg)
         for name in (
             "head_sweep_magnitude",
             "mean_speed",
@@ -232,15 +233,17 @@ class VTETrialResult(ResultMixin):
         if self.is_vte is not None:
             object.__setattr__(self, "is_vte", bool(self.is_vte))
         if self.window_start > self.window_end:
-            raise ValueError(
+            msg = (
                 f"VTETrialResult window_start ({self.window_start}) is after "
                 f"window_end ({self.window_end})."
             )
+            raise ValueError(msg)
         if self.status != "ok" and self.is_vte is not None:
-            raise ValueError(
+            msg = (
                 f"A VTE trial with status {self.status!r} was not measured, so "
                 "it cannot be classified: is_vte must be None."
             )
+            raise ValueError(msg)
 
     # Aliases for common terminology
     @property
@@ -346,10 +349,11 @@ class VTESessionResult(ResultMixin):
         trial_results = tuple(self.trial_results)
         for trial in trial_results:
             if not isinstance(trial, VTETrialResult):
-                raise TypeError(
+                msg = (
                     "VTESessionResult.trial_results must hold VTETrialResult "
                     f"objects; got {type(trial).__name__}."
                 )
+                raise TypeError(msg)
         object.__setattr__(self, "trial_results", trial_results)
 
     def _observed(self, name: str) -> NDArray[np.float64]:
@@ -823,10 +827,11 @@ def normalize_vte_scores(
     head_sweeps = np.asarray(head_sweeps, dtype=np.float64)
     speeds = np.asarray(speeds, dtype=np.float64)
     if len(head_sweeps) != len(speeds):
-        raise ValueError(
+        msg = (
             f"head_sweeps and speeds must have same length. "
             f"Got {len(head_sweeps)} and {len(speeds)}."
         )
+        raise ValueError(msg)
 
     z_head_sweeps = _observed_z_scores(
         head_sweeps,
@@ -920,7 +925,7 @@ def _validated_alpha(alpha: float, *, call: str) -> float:
     """A head-sweep weight in [0, 1]."""
     value = float(alpha)
     if not 0.0 <= value <= 1.0:
-        raise ValueError(
+        msg = (
             f"{call}() needs alpha in [0, 1]; got {alpha!r}.\n"
             "Why: alpha weights the head-sweep z-score and 1 - alpha the "
             "slowness z-score, so outside [0, 1] one of them counts against "
@@ -928,6 +933,7 @@ def _validated_alpha(alpha: float, *, call: str) -> float:
             "Fix: pass alpha=0.5 to weight both equally, 1.0 for head sweep "
             "only or 0.0 for slowness only."
         )
+        raise ValueError(msg)
     return value
 
 
@@ -972,12 +978,13 @@ def classify_vte(
     True
     """
     if not np.isfinite(threshold):
-        raise ValueError(
+        msg = (
             f"classify_vte() needs a finite threshold; got {threshold!r}.\n"
             "Why: no VTE index compares meaningfully with a NaN or infinite "
             "threshold.\n"
             "Fix: pass a finite threshold on the VTE index, e.g. threshold=0.5."
         )
+        raise ValueError(msg)
     if np.isnan(vte_index):
         return None
     return bool(vte_index >= threshold)
@@ -1437,7 +1444,7 @@ def compute_vte_session(
     )
     alpha = _validated_alpha(alpha, call="compute_vte_session")
     if not np.isfinite(vte_threshold):
-        raise ValueError(
+        msg = (
             f"compute_vte_session() needs a finite vte_threshold; got "
             f"{vte_threshold!r}.\n"
             "Why: no VTE index compares meaningfully with a NaN or infinite "
@@ -1445,6 +1452,7 @@ def compute_vte_session(
             "Fix: pass a finite threshold on the VTE index, e.g. "
             "vte_threshold=0.5."
         )
+        raise ValueError(msg)
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     motion = _Motion(
         min_speed=min_speed,

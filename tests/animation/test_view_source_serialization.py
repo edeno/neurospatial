@@ -33,7 +33,8 @@ class _Rows:
         return self.shape[0]
 
     def __array__(self, *args, **kwargs):
-        raise AssertionError("View preparation must keep sources lazy")
+        msg = "View preparation must keep sources lazy"
+        raise AssertionError(msg)
 
     def __getitem__(self, index):
         with self.mutex:

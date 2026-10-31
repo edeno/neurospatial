@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.parametrize("lag, count", [(1, 9998), (3, 9994)])
+@pytest.mark.parametrize(("lag", "count"), [(1, 9998), (3, 9994)])
 def test_transitions_skip_pairs_across_pause(two_epoch_recording, lag, count):
     r = two_epoch_recording
     matrix = r.env.transitions(
@@ -105,7 +105,7 @@ def test_max_gap_none_preserves_unrestricted_sequence(two_epoch_recording):
 
 @pytest.mark.parametrize("normalize", [False, True])
 @pytest.mark.parametrize(
-    "times, lag, epochs, warning",
+    ("times", "lag", "epochs", "warning"),
     [
         ([0.0, 2.0, 4.0], 1, None, "excluded ALL.*probably not in seconds"),
         ([0.0, 0.1, 0.2], 1, (1.0, 2.0), "excluded ALL.*epochs"),

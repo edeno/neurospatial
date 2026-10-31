@@ -468,7 +468,8 @@ class TestAnnotateTrackGraphVideoPath:
 
             def __getitem__(self, idx):
                 if idx >= self.n_frames:
-                    raise IndexError("Frame index out of range")
+                    msg = "Frame index out of range"
+                    raise IndexError(msg)
                 return np.zeros((100, 100, 3), dtype=np.uint8)
 
         # Create a fake video file
@@ -1025,7 +1026,6 @@ class _MockWidget:
 
     def sync_from_state(self):
         """Mock sync_from_state method - no-op for testing."""
-        pass
 
 
 # -----------------------------------------------------------------------------

@@ -217,7 +217,7 @@ def test_frame_window_errors_are_aggregated(frame_family, continuous_recording):
 
 
 @pytest.mark.parametrize(
-    "epochs,spike_window",
+    ("epochs", "spike_window"),
     [
         ((2, 1), "bad"),
         ((2, 1), None),

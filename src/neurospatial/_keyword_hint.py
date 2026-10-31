@@ -77,11 +77,13 @@ def keyword_hint(
         parameters = signature.parameters
         positional = [name for name, p in parameters.items() if p.kind in _POSITIONAL]
         if any(p.kind is p.VAR_POSITIONAL for p in parameters.values()):
-            raise TypeError("keyword_hint needs a function without *args.")
+            msg = "keyword_hint needs a function without *args."
+            raise TypeError(msg)
         options = [name for name, p in parameters.items() if p.kind is p.KEYWORD_ONLY]
         unknown = [name for name in order if name not in options]
         if unknown:
-            raise TypeError(f"keyword_hint order names unknown options {unknown}.")
+            msg = f"keyword_hint order names unknown options {unknown}."
+            raise TypeError(msg)
         required = dict(missing or {})
         optional = [
             name
@@ -90,9 +92,10 @@ def keyword_hint(
             or parameters[name].default is not inspect.Parameter.empty
         ]
         if optional:
-            raise TypeError(
+            msg = (
                 f"keyword_hint missing names options that are not required {optional}."
             )
+            raise TypeError(msg)
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
         # The caller neither passes nor sees the class or instance a

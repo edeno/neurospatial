@@ -74,7 +74,8 @@ def test_check_happens_before_rendering(animation_data, tmp_path, monkeypatch, b
     from neurospatial.animation import _scene_rendering
 
     def unexpected_render(*args, **kwargs):
-        raise AssertionError("An existing target must be refused before rendering")
+        msg = "An existing target must be refused before rendering"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(_scene_rendering, "SceneRenderer", unexpected_render)
     path = tmp_path / ("out.mp4" if backend == "video" else "out.html")

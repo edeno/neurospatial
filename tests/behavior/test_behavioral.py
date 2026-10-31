@@ -35,9 +35,7 @@ def simple_environment_with_regions():
     region_builder.add("start", point=(0.0, 0.0))  # Bottom-left bin
     region_builder.add("goal1", point=(10.0, 10.0))  # Top-right bin
     region_builder.add("goal2", point=(10.0, 0.0))
-    env = env.with_regions(region_builder)  # Bottom-right bin
-
-    return env
+    return env.with_regions(region_builder)  # Bottom-right bin
 
 
 @pytest.fixture
@@ -61,9 +59,7 @@ def environment_with_polygon_regions():
     region_builder = Regions(env.regions.values())
     region_builder.add("start_zone", polygon=start_polygon)
     region_builder.add("goal_zone", polygon=goal_polygon)
-    env = env.with_regions(region_builder)
-
-    return env
+    return env.with_regions(region_builder)
 
 
 # =============================================================================

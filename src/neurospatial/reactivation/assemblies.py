@@ -293,10 +293,11 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         """Validate the fields, resolve labels and own read-only copies."""
         weights = np.asarray(self.weights, dtype=np.float64)
         if weights.ndim != 1 or not np.all(np.isfinite(weights)):
-            raise ValueError(
+            msg = (
                 "AssemblyPattern: weights must be a finite 1-D array with one "
                 f"weight per neuron, got shape {weights.shape}."
             )
+            raise ValueError(msg)
         n_neurons = weights.size
         members = np.asarray(self.member_indices)
         if members.size == 0:
@@ -326,10 +327,11 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
             )
         ratio = float(self.explained_variance_ratio)
         if not 0.0 <= ratio <= 1.0:
-            raise ValueError(
+            msg = (
                 "AssemblyPattern: explained_variance_ratio is a fraction of "
                 f"the population's variance and must lie in [0, 1], got {ratio}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "weights", weights)
         object.__setattr__(self, "member_indices", members.astype(np.int64))
         object.__setattr__(self, "explained_variance_ratio", ratio)
@@ -445,10 +447,11 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Validate the fields, resolve labels and own read-only copies."""
         if self.component_threshold not in _COMPONENT_THRESHOLDS:
-            raise ValueError(
+            msg = (
                 "AssemblyDetectionResult: component_threshold must be one of "
                 f"{_COMPONENT_THRESHOLDS}, got {self.component_threshold!r}."
             )
+            raise ValueError(msg)
         object.__setattr__(
             self,
             "surrogate_max_eigenvalues",
@@ -456,21 +459,22 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         )
         patterns = tuple(self.patterns)
         if not all(isinstance(pattern, AssemblyPattern) for pattern in patterns):
-            raise TypeError(
-                "AssemblyDetectionResult: patterns must hold AssemblyPattern objects."
-            )
+            msg = "AssemblyDetectionResult: patterns must hold AssemblyPattern objects."
+            raise TypeError(msg)
         if self.method not in _METHODS:
-            raise ValueError(
+            msg = (
                 f"AssemblyDetectionResult: method must be one of {_METHODS}, "
                 f"got {self.method!r}."
             )
+            raise ValueError(msg)
         activations = np.asarray(self.activations, dtype=np.float64)
         if activations.ndim != 2 or activations.shape[1] != len(patterns):
-            raise ValueError(
+            msg = (
                 "AssemblyDetectionResult: activations must have shape "
                 f"(n_time_bins, n_assemblies) with n_assemblies == "
                 f"len(patterns) == {len(patterns)}, got shape {activations.shape}."
             )
+            raise ValueError(msg)
         # One eigenvalue per neuron, from the neurons' correlation matrix.
         resolve_record_unit_ids(
             self, len(self.eigenvalues), context="AssemblyDetectionResult"
@@ -479,11 +483,12 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
             if not np.array_equal(
                 np.asarray(pattern.unit_ids), np.asarray(self.unit_ids)
             ):
-                raise ValueError(
+                msg = (
                     "AssemblyDetectionResult: every pattern must carry the "
                     "result's unit_ids, the labels of the detection counts' "
                     "columns."
                 )
+                raise ValueError(msg)
         object.__setattr__(self, "patterns", patterns)
         object.__setattr__(self, "activations", activations)
         self._own_arrays()
@@ -678,9 +683,10 @@ def _validated_counts(
     """
     counts = np.asarray(spike_counts, dtype=np.float64)
     if counts.ndim != 2:
-        raise ValueError(
+        msg = (
             f"{argument} must be 2D (n_time_bins, n_neurons), got shape {counts.shape}"
         )
+        raise ValueError(msg)
     finite = np.isfinite(counts)
     if not finite.all():
         n_bad_bins = int(np.sum(~finite.all(axis=1)))
@@ -804,9 +810,11 @@ def marchenko_pastur_threshold(
         principal components analysis. Ann Stat 29(2):295-327.
     """
     if n_neurons <= 0:
-        raise ValueError(f"n_neurons must be positive, got {n_neurons}")
+        msg = f"n_neurons must be positive, got {n_neurons}"
+        raise ValueError(msg)
     if n_time_bins <= 0:
-        raise ValueError(f"n_time_bins must be positive, got {n_time_bins}")
+        msg = f"n_time_bins must be positive, got {n_time_bins}"
+        raise ValueError(msg)
 
     # Aspect ratio
     q = n_neurons / n_time_bins
@@ -1212,19 +1220,20 @@ def _detect(
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
     if method not in _METHODS:
-        raise ValueError(f"Unknown method: {method!r}. Use 'ica', 'pca', or 'nmf'.")
+        msg = f"Unknown method: {method!r}. Use 'ica', 'pca', or 'nmf'."
+        raise ValueError(msg)
 
     if n_neurons < 3:
-        raise ValueError(
-            f"Need at least 3 neurons for assembly detection, got {n_neurons}"
-        )
+        msg = f"Need at least 3 neurons for assembly detection, got {n_neurons}"
+        raise ValueError(msg)
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
     _check_component_threshold(component_threshold, percentile, n_shuffles)
     if member_rule not in _MEMBER_RULES:
-        raise ValueError(
+        msg = (
             f"detect_assemblies(): member_rule must be one of {_MEMBER_RULES}, "
             f"got {member_rule!r}."
         )
+        raise ValueError(msg)
 
     if n_time_bins < n_neurons:
         warnings.warn(
@@ -1444,11 +1453,11 @@ def _n_components(
     else:
         n_comp = int(n_components)
         if n_comp < 1:
-            raise ValueError(f"n_components must be >= 1, got {n_comp}")
+            msg = f"n_components must be >= 1, got {n_comp}"
+            raise ValueError(msg)
         if n_comp > n_neurons:
-            raise ValueError(
-                f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
-            )
+            msg = f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
+            raise ValueError(msg)
 
     # The factorization can yield at most min(n_retained, n_time_bins)
     # components. Requesting more (short recordings, excluded neurons) would
@@ -1589,10 +1598,11 @@ def _check_component_threshold(
     """
     call = "detect_assemblies()"
     if component_threshold not in _COMPONENT_THRESHOLDS:
-        raise ValueError(
+        msg = (
             f"{call}: component_threshold must be one of "
             f"{_COMPONENT_THRESHOLDS}, got {component_threshold!r}."
         )
+        raise ValueError(msg)
     surrogate = component_threshold in _SURROGATE_THRESHOLDS
     if surrogate and percentile is None:
         raise ValueError(
@@ -1618,7 +1628,8 @@ def _check_component_threshold(
             )
         )
     if percentile is not None and not 0.0 < float(percentile) < 100.0:
-        raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
+        msg = f"{call}: percentile must be in (0, 100), got {percentile}."
+        raise ValueError(msg)
     validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=call)
 
 
@@ -2169,10 +2180,11 @@ def assembly_activation(
     _n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons != len(pattern.weights):
-        raise ValueError(
+        msg = (
             f"spike_counts has {n_neurons} neurons but pattern has "
             f"{len(pattern.weights)} weights. Must match."
         )
+        raise ValueError(msg)
     weights = _unit_weights(pattern.weights, call=call)
 
     if z_score_input:
@@ -2345,15 +2357,17 @@ def pairwise_activation(
             )
         )
     if np.any(np.isinf(template)) or np.any(np.abs(template) > 1 + 1e-12):
-        raise ValueError(
+        msg = (
             f"{call}: template_correlations must be correlations in [-1, 1] "
             "or NaN; pass pairwise_correlations(template_counts)."
         )
+        raise ValueError(msg)
     if (unit_ids is None) != (template_unit_ids is None):
-        raise ValueError(
+        msg = (
             f"{call}: pass unit_ids= and template_unit_ids= together, so the "
             "columns can be matched to the template's units by label."
         )
+        raise ValueError(msg)
     if unit_ids is not None:
         labels = resolve_unit_ids(unit_ids, n_neurons, context=f"{call} for unit_ids")
         reference = resolve_unit_ids(
@@ -2361,11 +2375,12 @@ def pairwise_activation(
         )
         order, only_template, only_counts = _label_order(labels, reference)
         if only_template or only_counts:
-            raise ValueError(
+            msg = (
                 f"{call}: spike_counts must hold the template's units; only in "
                 f"the template: {only_template}, only in spike_counts: "
                 f"{only_counts}."
             )
+            raise ValueError(msg)
         spike_counts = spike_counts[:, order]
     else:
         labels, order = None, np.arange(n_neurons)
@@ -2500,10 +2515,11 @@ def _columns_by_label(
     if unit_ids is None:
         return spike_counts
     if spike_counts.ndim != 2:
-        raise ValueError(
+        msg = (
             f"{argument} must be 2D (n_time_bins, n_neurons), "
             f"got shape {spike_counts.shape}"
         )
+        raise ValueError(msg)
     labels = resolve_unit_ids(
         unit_ids, spike_counts.shape[1], context=f"{call} for {argument}"
     )
@@ -2851,11 +2867,12 @@ def assembly_reactivation(
     n_match_neurons = match_counts.shape[1]
     n_weights = len(pattern.weights)
     if n_control_neurons != n_weights or n_match_neurons != n_weights:
-        raise ValueError(
+        msg = (
             f"{call}: control_counts has {n_control_neurons} neurons and "
             f"match_counts has {n_match_neurons} neurons but pattern has "
             f"{n_weights} weights. All must match."
         )
+        raise ValueError(msg)
 
     weights = _unit_weights(pattern.weights, call=call)
     control_z, control_constant = _z_scores(control_counts)
@@ -3169,27 +3186,30 @@ def explained_variance_reactivation(
     match_correlations = np.asarray(match_correlations, dtype=np.float64)
 
     if len(template_correlations) != len(match_correlations):
-        raise ValueError(
+        msg = (
             f"template and match correlations must have same length. "
             f"Got {len(template_correlations)} and {len(match_correlations)}."
         )
+        raise ValueError(msg)
 
     n_pairs = len(template_correlations)
     _check_correlation_values(template_correlations, "template_correlations")
     _check_correlation_values(match_correlations, "match_correlations")
 
     if n_pairs < 3:
-        raise ValueError(f"Need at least 3 pairs for EV calculation, got {n_pairs}")
+        msg = f"Need at least 3 pairs for EV calculation, got {n_pairs}"
+        raise ValueError(msg)
 
     valid_mask = _selected_pairs(n_pairs, unit_groups, pair_mask, call=call)
     valid_mask &= np.isfinite(template_correlations) & np.isfinite(match_correlations)
     for index, control in enumerate(controls):
         name = "control_correlations" + (f"[{index}]" if n_controls > 1 else "")
         if len(control) != n_pairs:
-            raise ValueError(
+            msg = (
                 f"control correlations must have same length as template/match. "
                 f"Got {len(control)} for {name}, expected {n_pairs}."
             )
+            raise ValueError(msg)
         _check_correlation_values(control, name)
         valid_mask &= np.isfinite(control)
 

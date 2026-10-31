@@ -298,10 +298,11 @@ def _check_samples(
     ``call`` names the public function in error messages.
     """
     if direction_frame not in ("allocentric", "egocentric"):
-        raise ValueError(
+        msg = (
             f"direction_frame must be 'allocentric' or 'egocentric', got "
             f"{direction_frame!r}."
         )
+        raise ValueError(msg)
     positions = np.asarray(positions, dtype=np.float64)
     require_position_columns(positions, 2, call=call)
     if direction_frame == "allocentric" and headings is not None:
@@ -327,8 +328,9 @@ def _check_samples(
             )
         headings = np.asarray(headings, dtype=np.float64).ravel()
         if headings.shape != (len(positions),):
-            raise ValueError(
+            msg = (
                 f"headings must have one value per position: got "
                 f"{headings.shape[0]} headings for {len(positions)} positions."
             )
+            raise ValueError(msg)
     return positions, headings

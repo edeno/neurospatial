@@ -165,12 +165,13 @@ class SpikeTrains(UnitSelectionMixin):
         for i, train in enumerate(trains):
             arr = np.array(train, dtype=np.float64)
             if arr.ndim != 1:
-                raise ValueError(
+                msg = (
                     f"Each spike train must be 1-D, but train {i} has shape "
                     f"{arr.shape}.\n"
                     "  WHY: SpikeTrains holds one 1-D spike-time array per unit.\n"
                     "  Fix: pass a 1-D array of spike times for each unit."
                 )
+                raise ValueError(msg)
             coerced.append(arr)
         resolve_record_unit_ids(
             self, len(coerced), context="SpikeTrains", input_ids=group_ids
@@ -295,13 +296,14 @@ class SpikeTrains(UnitSelectionMixin):
         array([10, 30])
         """
         if self.unit_table is None:
-            raise ValueError(
+            msg = (
                 "Cannot filter a SpikeTrains with unit_table=None: there is no "
                 "per-unit metadata to query.\n"
                 "  WHY: filter() selects units by matching unit_table rows.\n"
                 "  Fix: construct SpikeTrains with a unit_table (one row per "
                 "unit) before calling filter()."
             )
+            raise ValueError(msg)
 
         import pandas as pd
 

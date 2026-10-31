@@ -368,10 +368,11 @@ def _check_gam_result_invariant(
 
     method = fields["method"]
     if method not in _SPATIAL_METHODS:
-        raise ValueError(
+        msg = (
             f"{kind} has method={method!r}, which is not a known estimator; "
             f"expected one of {list(_SPATIAL_METHODS)}."
         )
+        raise ValueError(msg)
 
     is_glm = method == "glm"
     required = {name: fields[name] for name in _GAM_REQUIRED_FIELDS}
@@ -387,15 +388,17 @@ def _check_gam_result_invariant(
     if is_glm:
         missing = [name for name, value in required.items() if value is None]
         if missing:
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' is missing required GAM field(s): "
                 f"{missing}. glm results carry all of {list(_GAM_REQUIRED_FIELDS)}."
             )
+            raise ValueError(msg)
         if fields["bandwidth"] is not None:
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' must have bandwidth=None (glm has no "
                 f"bandwidth); got {fields['bandwidth']!r}."
             )
+            raise ValueError(msg)
         # Full shape coupling: a mis-shaped diagnostic (e.g. coefficients
         # (rank, 1) on a 2-unit result) would construct and only IndexError when a
         # unit is later indexed. Pin every GAM array shape here. The singular
@@ -437,17 +440,19 @@ def _check_gam_result_invariant(
             ndim = np.ndim(value)
             if n_units is None:  # singular: must be a scalar
                 if ndim != 0:
-                    raise ValueError(
+                    msg = (
                         f"{kind} (single-unit) glm field {name!r} must be a scalar; "
                         f"got shape {tuple(np.shape(value))}."
                     )
+                    raise ValueError(msg)
             elif ndim not in (0, 1) or (
                 ndim == 1 and tuple(np.shape(value)) != (n_units,)
             ):  # plural: scalar or (n_units,)
-                raise ValueError(
+                msg = (
                     f"{kind} glm field {name!r} must be a scalar or a ({n_units},) "
                     f"vector; got shape {tuple(np.shape(value))}."
                 )
+                raise ValueError(msg)
         # State-machine coupling: the per-unit-lambda fields travel together, and
         # NWB persistence keys "is this per-unit?" off the provenance mask alone.
         # So the mask's presence must agree with the vector-ness of the other
@@ -469,23 +474,25 @@ def _check_gam_result_invariant(
             # three slots populated and per-unit-shaped (a scalar mask alongside
             # vector slots is exactly what crashes the NWB writer at len()).
             if fields["pooled"] is not False:
-                raise ValueError(
+                msg = (
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
                     f"but pooled={fields['pooled']!r}; per-unit lambda is only "
                     "produced under pooled=False."
                 )
+                raise ValueError(msg)
             missing_vec = [
                 n
                 for n in (*per_unit_slots, "penalty_selected_by_reml")
                 if not _is_per_unit_shaped(fields[n])
             ]
             if missing_vec:
-                raise ValueError(
+                msg = (
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
                     f"but {missing_vec} are not per-unit values; penalty, "
                     "reml_objective, reml_at_boundary, and penalty_selected_by_reml "
                     "must all be per-unit when the provenance mask is present."
                 )
+                raise ValueError(msg)
             # Semantic coupling of the per-unit provenance (values, not just
             # shapes), so a corrupt record cannot round-trip through NWB:
             selected = np.asarray(mask, dtype=bool)
@@ -493,10 +500,11 @@ def _check_gam_result_invariant(
             reml_vals = np.asarray(fields["reml_objective"], dtype=np.float64)
             # Every applied lambda is a finite, positive smoothing penalty.
             if not np.all(np.isfinite(penalty_vals) & (penalty_vals > 0.0)):
-                raise ValueError(
+                msg = (
                     f"{kind} per-unit penalty must be finite and > 0 (an applied "
                     f"smoothing lambda); got {penalty_vals}."
                 )
+                raise ValueError(msg)
             # A REML-selected unit carries a FINITE objective; a pooled-fallback
             # unit carries the ``nan`` sentinel specifically (not ``inf``). Check
             # the two partitions explicitly -- ``isfinite`` alone would let a
@@ -509,20 +517,22 @@ def _check_gam_result_invariant(
                 np.all(np.isfinite(reml_1d[sel_1d]))
                 and np.all(np.isnan(reml_1d[~sel_1d]))
             ):
-                raise ValueError(
+                msg = (
                     f"{kind} reml_objective must be finite for REML-selected units "
                     "and the nan sentinel for pooled-fallback units; got "
                     f"selected={selected}, reml_objective={reml_vals}."
                 )
+                raise ValueError(msg)
             # The per-unit vector path only exists with >= 1 informative unit
             # (population level). A singular slice may legitimately be a lone
             # fallback unit, so only pin this on the plural class.
             if n_units is not None and not selected.any():
-                raise ValueError(
+                msg = (
                     f"{kind} is a per-unit result but penalty_selected_by_reml is "
                     "all False; the per-unit lambda path requires at least one "
                     "informative (REML-selected) unit."
                 )
+                raise ValueError(msg)
         else:
             # Non-per-unit result: none of the three may be a per-unit vector
             # (this is exactly the state that crashes NWB writing).
@@ -532,48 +542,53 @@ def _check_gam_result_invariant(
                 if fields[n] is not None and np.ndim(fields[n]) != 0
             ]
             if stray_vec:
-                raise ValueError(
+                msg = (
                     f"{kind} has vector {stray_vec} but no penalty_selected_by_reml "
                     "mask; per-unit penalty / reml_objective / reml_at_boundary "
                     "require the provenance mask (a per-unit pooled=False result). "
                     "For a shared/fixed lambda these must be scalar or None."
                 )
+                raise ValueError(msg)
         # A boundary flag only exists when REML produced an objective, so
         # ``reml_at_boundary`` being set requires ``reml_objective`` set too. The
         # reverse is NOT required: a schema-2.1 file records ``reml_objective`` but
         # no ``reml_at_boundary`` (it predates the flag), and reads back with the
         # objective set and the boundary flag ``None`` -- a legitimate state.
         if fields["reml_at_boundary"] is not None and fields["reml_objective"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} has reml_at_boundary={fields['reml_at_boundary']!r} but "
                 "reml_objective=None; a boundary flag requires REML to have run "
                 "(so reml_objective must be populated)."
             )
+            raise ValueError(msg)
         # Symmetrically, a REML objective only exists when a lambda was applied, so
         # a set ``reml_objective`` requires a set ``penalty`` (both come from the
         # same selection; None together on REML-skip / no-data).
         if fields["reml_objective"] is not None and fields["penalty"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} has reml_objective={fields['reml_objective']!r} but "
                 "penalty=None; a REML objective requires an applied penalty."
             )
+            raise ValueError(msg)
         # The boolean diagnostics must be boolean (a float boundary flag or an
         # integer provenance mask would round-trip wrong through NWB).
         for name in ("reml_at_boundary", "penalty_selected_by_reml"):
             value = fields[name]
             if value is not None and np.asarray(value).dtype != np.bool_:
-                raise ValueError(
+                msg = (
                     f"{kind} glm field {name!r} must be boolean; got dtype "
                     f"{np.asarray(value).dtype}."
                 )
+                raise ValueError(msg)
         # ``pooled`` is a concrete bool for every glm result (the only reliable
         # NWB source, since scalar cases are value-identical under both settings).
         # Checked last so a more fundamental shape/required error surfaces first.
         if not isinstance(fields["pooled"], bool):
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' must carry pooled=True/False; got "
                 f"{fields['pooled']!r}."
             )
+            raise ValueError(msg)
     else:
         stray = [
             name
@@ -583,15 +598,17 @@ def _check_gam_result_invariant(
         if fields["pooled"] is not None:
             stray.append("pooled")
         if stray:
-            raise ValueError(
+            msg = (
                 f"{kind} with ratio method={fields['method']!r} must not carry GAM "
                 f"field(s): {stray}. GAM diagnostics belong only to method='glm'."
             )
+            raise ValueError(msg)
         if fields["bandwidth"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} with ratio method={fields['method']!r} must have a float "
                 "bandwidth; got None (bandwidth=None is reserved for method='glm')."
             )
+            raise ValueError(msg)
 
 
 SPATIAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
@@ -2337,12 +2354,13 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         """
         if idx is None:
             n_units = np.asarray(self.firing_rates).shape[0]
-            raise ValueError(
+            msg = (
                 f"plot() requires a unit index: this batch result holds "
                 f"{n_units} units, so there is no single rate map to plot. "
                 f"Pass a unit index, e.g. result.plot(0), or iterate the units "
                 f"with `for r in result: r.plot()` / `result[i].plot()`."
             )
+            raise ValueError(msg)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
@@ -2789,10 +2807,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             if value is not None:
                 array = np.asarray(value, dtype=np.float64)
                 if array.ndim != 1 or array.shape[0] != len(self):
-                    raise ValueError(
+                    msg = (
                         f"{name} must be a 1-D array of length {len(self)} (one "
                         f"per neuron), got shape {array.shape}"
                     )
+                    raise ValueError(msg)
                 given[name] = array
         scores, unavailable, inapplicable = _screen_scores(
             self, boundary_source=boundary_source, **given
@@ -3229,7 +3248,8 @@ def _check_spatial_env(
         env, context=context, arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
-        raise ValueError("time_allocation must be 'start' or 'linear'.")
+        msg = "time_allocation must be 'start' or 'linear'."
+        raise ValueError(msg)
     # Refuse polar before any default (such as the bandwidth) is resolved.
     if time_allocation == "start":
         require_allocentric(env, f"{context}()")
@@ -4679,10 +4699,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         for label in (label_a, label_b):
             if label not in self.firing_rates:
-                raise KeyError(
+                msg = (
                     f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
-                    + f" Fix: pass one of {tuple(self.firing_rates)}."
+                    f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
+                raise KeyError(msg)
         return field_stability(
             _to_numpy(self.firing_rates[label_a]).ravel(),
             _to_numpy(self.firing_rates[label_b]).ravel(),
@@ -4755,10 +4776,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         for label in (label_a, label_b):
             if label not in self.firing_rates:
-                raise KeyError(
+                msg = (
                     f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
-                    + f" Fix: pass one of {tuple(self.firing_rates)}."
+                    f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
+                raise KeyError(msg)
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
         observed = np.isfinite(a) & np.isfinite(b)
@@ -5118,10 +5140,11 @@ def compute_directional_place_fields(
     require_allocentric(env, "compute_directional_place_fields()")
 
     if len(direction_labels) != len(times):
-        raise ValueError(
+        msg = (
             f"direction_labels must have same length as times, "
             f"got {len(direction_labels)} and {len(times)}"
         )
+        raise ValueError(msg)
     breaks = validate_break_before(
         break_before, len(times), call="compute_directional_place_fields"
     )
@@ -5374,10 +5397,11 @@ def detect_place_fields(
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"firing_rate shape {firing_rate.shape} does not match "
             f"env.n_bins ({env.n_bins})"
         )
+        raise ValueError(msg)
     _check_place_field_arguments(
         threshold=threshold,
         min_peak_rate=min_peak_rate,
@@ -5405,7 +5429,8 @@ def _check_place_field_arguments(
 ) -> None:
     """Refuse invalid :func:`detect_place_fields` arguments."""
     if not 0 < threshold < 1:
-        raise ValueError(f"threshold must be in (0, 1), got {threshold}")
+        msg = f"threshold must be in (0, 1), got {threshold}"
+        raise ValueError(msg)
     if not (np.isfinite(min_peak_rate) and min_peak_rate >= 0):
         raise ValueError(
             _format_error(
@@ -6710,13 +6735,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             or spacing.shape != (observed.shape[0],)
             or bias.shape != (observed.shape[0],)
         ):
-            raise ValueError(
+            msg = (
                 "observed_scores must have shape (n_units, 3), null_scores "
                 "(n_units, n_shuffles, 3), and unit_ids, grid_spacing and "
                 "spatial_information_bias (n_units,); got "
                 f"{observed.shape}, {null.shape}, {np.shape(self.unit_ids)}, "
                 f"{spacing.shape} and {bias.shape}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "grid_spacing", spacing)
         object.__setattr__(self, "spatial_information_bias", bias)
         object.__setattr__(self, "observed_scores", observed)

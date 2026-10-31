@@ -412,7 +412,8 @@ def annotate_project(
     elif isinstance(project, AnnotationProject):
         draft = project
     else:
-        raise TypeError("project must be an AnnotationProject or a project file path.")
+        msg = "project must be an AnnotationProject or a project file path."
+        raise TypeError(msg)
     project_saved = (
         source is not None
         and project_path is not None
@@ -446,10 +447,11 @@ def _check_project_folder(project_path: str | Path) -> None:
     """Fail before editing when draft saves could not reach the destination."""
     folder = Path(project_path).parent
     if not folder.is_dir():
-        raise FileNotFoundError(
+        msg = (
             f"The folder for project_path does not exist: {folder}. Create it, "
             "or choose another project_path."
         )
+        raise FileNotFoundError(msg)
 
 
 def _require_napari() -> None:
@@ -457,10 +459,11 @@ def _require_napari() -> None:
     try:
         import napari  # noqa: F401 - verify the optional GUI dependency
     except ImportError as exc:
-        raise ImportError(
+        msg = (
             "napari is required for interactive annotation. "
             "Install with: pip install napari[all]"
-        ) from exc
+        )
+        raise ImportError(msg) from exc
 
 
 def _validate_autosave_interval(autosave_interval: float | None) -> None:
@@ -759,9 +762,12 @@ def _validate_annotate_params(
 
     """
     if mode in ("environment", "both") and bin_size is None:
-        raise ValueError(
+        msg = (
             f"bin_size is required when mode={mode!r}. "
-            "Provide bin_size for environment discretization.",
+            "Provide bin_size for environment discretization."
+        )
+        raise ValueError(
+            msg,
         )
 
 
@@ -791,7 +797,8 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
 
     """
     if not video_path.exists():
-        raise FileNotFoundError(f"Video file not found: {video_path}")
+        msg = f"Video file not found: {video_path}"
+        raise FileNotFoundError(msg)
 
     from neurospatial._video_io import _VideoReader
 
@@ -801,12 +808,15 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
         # Check the range here: a frame inside it that fails to decode raises
         # the reader's own OSError, which is not an indexing mistake.
         if not 0 <= frame_index < reader.n_frames:
-            raise IndexError(
+            msg = (
                 f"frame_index={frame_index} is out of range. "
                 f"Video '{video_path.name}' contains {reader.n_frames} frames "
                 f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
                 f"frame_index specifies which video frame to use for annotation "
-                "(0 = first frame).",
+                "(0 = first frame)."
+            )
+            raise IndexError(
+                msg,
             )
         return reader[frame_index]
 

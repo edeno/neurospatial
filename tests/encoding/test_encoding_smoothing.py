@@ -186,7 +186,7 @@ class TestSmoothRateMapDiffusionKDE:
         The rooms are 6 cm apart, closer than the 4 cm bandwidth's reach, so a
         Euclidean kernel leaks across; the graph diffusion cannot.
         """
-        room = np.array([[i, j] for i in range(0, 11) for j in range(0, 11)], float)
+        room = np.array([[i, j] for i in range(11) for j in range(11)], float)
         env = Environment.from_samples(
             np.vstack([room, room + np.array([16.0, 0.0])]), bin_size=2.0
         )
@@ -1148,7 +1148,8 @@ def test_gaussian_kernel_is_released_with_environment() -> None:
     _get_gaussian_kernel(env, bandwidth=1.0)
 
     def refuse() -> NDArray[np.float64]:
-        raise AssertionError("the kernel was not cached")
+        msg = "the kernel was not cached"
+        raise AssertionError(msg)
 
     kernel_ref = weakref.ref(env._cache.get_recent(GAUSSIAN_KERNELS, 1.0, refuse))
     assert kernel_ref() is not None

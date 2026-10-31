@@ -212,18 +212,24 @@ def annotate_track_graph(
     """
     # 1. Validate inputs
     if video_path is None and image is None:
-        raise ValueError(
+        msg = (
             "Either video_path or image must be provided. "
-            "Provide a video path to extract a frame, or pass an image array directly.",
+            "Provide a video path to extract a frame, or pass an image array directly."
+        )
+        raise ValueError(
+            msg,
         )
 
     # 2. Import napari (lazy to allow module to work without it)
     try:
         import napari
     except ImportError as e:
-        raise ImportError(
+        msg = (
             "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]",
+            "Install with: pip install napari[all]"
+        )
+        raise ImportError(
+            msg,
         ) from e
 
     # 3. Load background image
@@ -232,13 +238,17 @@ def annotate_track_graph(
 
         video_path = Path(video_path)
         if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+            msg = f"Video file not found: {video_path}"
+            raise FileNotFoundError(msg)
 
         reader = _VideoReader(str(video_path))
         if frame_index >= reader.n_frames:
-            raise IndexError(
+            msg = (
                 f"Frame index {frame_index} is out of range for video '{video_path.name}'. "
-                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1}).",
+                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
+            )
+            raise IndexError(
+                msg,
             )
         frame = reader[frame_index]  # (H, W, 3) RGB uint8
     else:
@@ -330,11 +340,12 @@ def annotate_track_graph(
                 if len(earliest) != len(new_nodes) or earliest != latest[::-1]:
                     pending_removal = ()
                     widget.sync_from_state()
-                    raise ValueError(
+                    msg = (
                         "Cannot identify surviving nodes in this data assignment. "
                         "Select nodes and use remove_selected() for deletion, or "
                         "move and delete nodes in separate edits."
                     )
+                    raise ValueError(msg)
                 surviving = set(earliest)
                 removed = tuple(
                     i for i in range(len(state.nodes)) if i not in surviving

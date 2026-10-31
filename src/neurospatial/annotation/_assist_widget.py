@@ -497,9 +497,11 @@ class AnnotationAssistWidget(QWidget):
         try:
             points = np.asarray(self._scale.data, dtype=float)
             if points.shape != (2, 2) or not np.all(np.isfinite(points)):
-                raise ValueError("Mark exactly two finite scale endpoints first.")
+                msg = "Mark exactly two finite scale endpoints first."
+                raise ValueError(msg)
             if np.array_equal(points[0], points[1]):
-                raise ValueError("The two scale endpoints must be distinct.")
+                msg = "The two scale endpoints must be distinct."
+                raise ValueError(msg)
             # napari points use (row, column); calibration expects (x, y).
             xy = points[:, ::-1]
             height, width = self._frame.shape[:2]

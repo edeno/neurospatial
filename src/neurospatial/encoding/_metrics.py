@@ -118,13 +118,14 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
                 return cast("NDArray[np.float64]", self.scores.copy())
             return self.scores
         if copy is False:
-            raise ValueError(
+            msg = (
                 "Unable to avoid copy while creating an array as requested. "
                 "If using `np.array(obj, copy=False)` replace it with "
                 "`np.asarray(obj)` to allow a copy when needed (no copy is "
                 "made if not required by the dtype). Note: np.asarray with "
                 "copy=False has the same behavior."
             )
+            raise ValueError(msg)
         return cast(
             "NDArray[np.float64]",
             self.scores.astype(target_dtype, copy=True),
@@ -261,12 +262,14 @@ def spatial_information(
     occupancy_arr = np.asarray(occupancy)
 
     if firing_rate_arr.shape != occupancy_arr.shape:
-        raise ValueError(
+        msg = (
             f"firing_rate shape {firing_rate_arr.shape} does not match "
             f"occupancy shape {occupancy_arr.shape}"
         )
+        raise ValueError(msg)
     if firing_rate_arr.size == 0:
-        raise ValueError("firing_rate and occupancy cannot be empty arrays")
+        msg = "firing_rate and occupancy cannot be empty arrays"
+        raise ValueError(msg)
 
     from neurospatial.encoding._core_numpy import spatial_information_single as _np_si
 
@@ -280,16 +283,17 @@ def _rates_and_occupancy(
     rates = np.asarray(firing_rates)
     occ = np.asarray(occupancy)
     if rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {rates.shape}"
-        )
+        msg = f"firing_rates must be 2D (n_neurons, n_bins), got shape {rates.shape}"
+        raise ValueError(msg)
     if occ.ndim != 1:
-        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occ.shape}")
+        msg = f"occupancy must be 1D (n_bins,), got shape {occ.shape}"
+        raise ValueError(msg)
     if rates.shape[1] != occ.shape[0]:
-        raise ValueError(
+        msg = (
             f"firing_rates has {rates.shape[1]} bins but "
             f"occupancy has {occ.shape[0]} bins"
         )
+        raise ValueError(msg)
     return rates, occ
 
 
@@ -848,12 +852,14 @@ def sparsity(
     occupancy_arr = np.asarray(occupancy)
 
     if firing_rate_arr.shape != occupancy_arr.shape:
-        raise ValueError(
+        msg = (
             f"firing_rate shape {firing_rate_arr.shape} does not match "
             f"occupancy shape {occupancy_arr.shape}"
         )
+        raise ValueError(msg)
     if firing_rate_arr.size == 0:
-        raise ValueError("firing_rate and occupancy cannot be empty arrays")
+        msg = "firing_rate and occupancy cannot be empty arrays"
+        raise ValueError(msg)
 
     from neurospatial.encoding._core_numpy import sparsity_single as _np_sp
 
@@ -1177,13 +1183,11 @@ def _unit_maps(env: Environment, firing_rates: ArrayLike) -> NDArray[np.float64]
     """Rate maps as an array of shape ``(n_neurons, env.n_bins)``, or raise."""
     maps = np.asarray(firing_rates)
     if maps.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {maps.shape}"
-        )
+        msg = f"firing_rates must be 2D (n_neurons, n_bins), got shape {maps.shape}"
+        raise ValueError(msg)
     if maps.shape[1] != env.n_bins:
-        raise ValueError(
-            f"firing_rates has {maps.shape[1]} bins but env has {env.n_bins} bins"
-        )
+        msg = f"firing_rates has {maps.shape[1]} bins but env has {env.n_bins} bins"
+        raise ValueError(msg)
     return maps
 
 
@@ -1338,8 +1342,7 @@ def selectivity(
         # Division by zero
         if peak_rate > 0:
             return np.inf
-        else:
-            return np.nan
+        return np.nan
 
     selectivity_value = peak_rate / mean_rate
 
@@ -1526,12 +1529,15 @@ def mutual_information(
     if joint.ndim != 2 or joint.size == 0:
         raise ValueError(migration)
     if not np.all(np.isfinite(joint)) or np.any(joint < 0):
-        raise ValueError("joint_counts must contain only finite, non-negative values.")
+        msg = "joint_counts must contain only finite, non-negative values."
+        raise ValueError(msg)
     if not np.isfinite(base) or base <= 1:
-        raise ValueError("base must be finite and greater than one (2 for bits).")
+        msg = "base must be finite and greater than one (2 for bits)."
+        raise ValueError(msg)
     scale = float(joint.max())
     if scale == 0:
-        raise ValueError("joint_counts must contain positive total mass.")
+        msg = "joint_counts must contain positive total mass."
+        raise ValueError(msg)
 
     # Scaling first avoids overflow when summing large but finite counts.
     joint = joint / scale
@@ -1645,12 +1651,13 @@ def spatial_coverage_single_cell(
     """
     firing_rate = np.asarray(firing_rate)
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"firing_rate has shape {firing_rate.shape}, but env has "
             f"{env.n_bins} bins.\nWhy: each bin's coverage is weighted by its "
             "measure, so the map must be estimated on env.\nFix: pass the "
             "environment the rate map was computed on (rates.env)."
         )
+        raise ValueError(msg)
     observed = np.isfinite(firing_rate)
     if not observed.any():
         return np.nan

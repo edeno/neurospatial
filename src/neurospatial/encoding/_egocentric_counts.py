@@ -142,32 +142,36 @@ def normalize_object_positions(
     # 1D array of length 2: single object [x, y]
     if arr.ndim == 1:
         if len(arr) != 2:
-            raise ValueError(
+            msg = (
                 f"1D object_positions must have length 2 (single object [x, y]), "
                 f"got length {len(arr)}.\n"
                 f"For multiple objects, pass a 2D array with shape (n_objects, 2)."
             )
+            raise ValueError(msg)
         return arr.reshape(1, 2)
 
     # 2D array: validate shape
     if arr.ndim == 2:
         if arr.shape[1] != 2:
-            raise ValueError(
+            msg = (
                 f"object_positions must have shape (n_objects, 2), "
                 f"got shape {arr.shape}.\n"
                 f"Each row should be [x, y] coordinates."
             )
+            raise ValueError(msg)
         if arr.shape[0] == 0:
-            raise ValueError(
+            msg = (
                 "object_positions cannot be empty. "
                 "Provide at least one object position."
             )
+            raise ValueError(msg)
         return arr
 
-    raise ValueError(
+    msg = (
         f"object_positions must be 1D (single object) or 2D (multiple objects), "
         f"got {arr.ndim}D array with shape {arr.shape}."
     )
+    raise ValueError(msg)
 
 
 def _landmark_names(object_positions: object) -> list[str] | None:
@@ -244,7 +248,8 @@ def resolve_object_positions(
         )
     landmarks = [env.landmarks[name] for name in names]
     if any(landmark.n_dims != 2 for landmark in landmarks):
-        raise ValueError("Egocentric encoding needs two-dimensional landmarks.")
+        msg = "Egocentric encoding needs two-dimensional landmarks."
+        raise ValueError(msg)
     if all(landmark.kind == "point" for landmark in landmarks):
         return np.array([landmark.position for landmark in landmarks]), names
     if metric == "geodesic":
@@ -336,10 +341,11 @@ def _compute_object_coords(
 
         # env validated by caller, this is for type narrowing
         if env is None:
-            raise ValueError(
+            msg = (
                 "env is required when metric='geodesic'. "
                 "This is a programming error if you see this message."
             )
+            raise ValueError(msg)
         distances_all = np.full((n_time, n_objects), np.nan, dtype=np.float64)
 
         # Vectorized: compute all position bins at once

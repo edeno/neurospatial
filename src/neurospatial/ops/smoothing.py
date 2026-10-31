@@ -345,19 +345,20 @@ def apply_kernel(
     """
     # Input validation
     if mode not in ("forward", "adjoint"):
-        raise ValueError(f"mode must be 'forward' or 'adjoint', got '{mode}'")
+        msg = f"mode must be 'forward' or 'adjoint', got '{mode}'"
+        raise ValueError(msg)
 
     # Check kernel is square
     if kernel.ndim != 2 or kernel.shape[0] != kernel.shape[1]:
-        raise ValueError(f"Kernel must be square, got shape {kernel.shape}")
+        msg = f"Kernel must be square, got shape {kernel.shape}"
+        raise ValueError(msg)
 
     n_bins = kernel.shape[0]
 
     # Check field size
     if field.shape != (n_bins,):
-        raise ValueError(
-            f"Field size {field.shape[0]} does not match kernel size {n_bins}"
-        )
+        msg = f"Field size {field.shape[0]} does not match kernel size {n_bins}"
+        raise ValueError(msg)
 
     non_finite = ~np.isfinite(field)
     if non_finite.any():
@@ -387,17 +388,19 @@ def apply_kernel(
     # Check bin_sizes size and validate positive values if provided
     if bin_sizes is not None:
         if bin_sizes.shape != (n_bins,):
-            raise ValueError(
+            msg = (
                 f"bin_sizes size {bin_sizes.shape[0]} does not match field size {n_bins}. "
                 f"bin_sizes should come from env.bin_sizes for the environment."
             )
+            raise ValueError(msg)
         # Validate bin_sizes for adjoint mode (division required)
         if mode == "adjoint" and np.any(bin_sizes <= 0):
-            raise ValueError(
+            msg = (
                 f"bin_sizes must have strictly positive values for adjoint mode. "
                 f"Found {np.sum(bin_sizes <= 0)} non-positive values. "
                 f"Check that env.bin_sizes contains valid bin areas/volumes."
             )
+            raise ValueError(msg)
 
     # Apply kernel based on mode
     if mode == "forward":

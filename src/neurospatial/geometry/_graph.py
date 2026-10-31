@@ -234,9 +234,8 @@ def graph_from_binning(
         with np.errstate(over="raise", invalid="raise"):
             vectors = places[high] - places[low]
     except FloatingPointError as exc:
-        raise ValueError(
-            "Pair displacement exceeds floating-point range; recenter coordinates."
-        ) from exc
+        msg = "Pair displacement exceeds floating-point range; recenter coordinates."
+        raise ValueError(msg) from exc
     columns = [
         low.tolist(),
         high.tolist(),

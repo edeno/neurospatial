@@ -432,16 +432,16 @@ def population_coverage(
            ensemble code for space. Science, 261(5124), 1055-1058.
     """
     if env.n_bins <= 0:
-        raise ValueError(f"Environment has no bins (n_bins={env.n_bins})")
+        msg = f"Environment has no bins (n_bins={env.n_bins})"
+        raise ValueError(msg)
 
     # Validate firing_rates shape
     if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
+        msg = f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
+        raise ValueError(msg)
 
     if firing_rates.shape[1] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"firing_rates shape mismatch: expected (n_neurons, {env.n_bins}) bins, "
             f"got (n_neurons, {firing_rates.shape[1]}) bins.\n\n"
             f"This usually happens when:\n"
@@ -451,16 +451,19 @@ def population_coverage(
             f"  from neurospatial.encoding import compute_spatial_rates\n"
             f"  firing_rates = compute_spatial_rates(env, spike_times, times, positions).firing_rates"
         )
+        raise ValueError(msg)
 
     # Validate detection parameters
     if not 0.0 < threshold < 1.0:
-        raise ValueError(
+        msg = (
             f"threshold must be in range (0, 1), got {threshold}. "
             f"This represents the fraction of peak firing rate for field boundaries."
         )
+        raise ValueError(msg)
 
     if max_mean_rate <= 0:
-        raise ValueError(f"max_mean_rate must be positive, got {max_mean_rate}")
+        msg = f"max_mean_rate must be positive, got {max_mean_rate}"
+        raise ValueError(msg)
 
     n_neurons = firing_rates.shape[0]
 
@@ -575,10 +578,11 @@ def plot_population_coverage(
     """
     # Validate result type
     if not isinstance(result, PopulationCoverageResult):
-        raise TypeError(
+        msg = (
             f"result must be PopulationCoverageResult, got {type(result).__name__}. "
             f"Use population_coverage() to compute the result first."
         )
+        raise TypeError(msg)
 
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -1290,36 +1294,40 @@ def population_vector_correlation(
     rates_1 = np.asarray(firing_rates_1, dtype=np.float64)
     rates_2 = np.asarray(firing_rates_2, dtype=np.float64)
     if rates_1.ndim != 2 or rates_2.ndim != 2:
-        raise ValueError(
+        msg = (
             "firing_rates_1 and firing_rates_2 must be 2-D (n_units, n_bins), "
             f"got shapes {rates_1.shape} and {rates_2.shape}. Pass one rate map "
             "per unit, for example rates.firing_rates from compute_spatial_rates."
         )
+        raise ValueError(msg)
     if rates_1.shape != rates_2.shape:
-        raise ValueError(
+        msg = (
             "firing_rates_1 and firing_rates_2 must have the same shape, got "
             f"{rates_1.shape} and {rates_2.shape}. Compute both maps for the same "
             "units on the same environment, with the units in the same row order."
         )
+        raise ValueError(msg)
     n_units, n_bins = rates_1.shape
     if n_units < _MIN_UNITS:
-        raise ValueError(
+        msg = (
             "A population-vector correlation needs at least three units, got "
             f"{n_units}: it correlates rates across cells at each location, and "
             "two cells always correlate at exactly +-1. For one cell, compare "
             "its two maps with field_stability."
         )
+        raise ValueError(msg)
 
     used = np.ones(n_bins, dtype=bool)
     if spatial_support is not None:
         support = np.asarray(spatial_support)
         if support.dtype != np.bool_ or support.shape != (n_bins,):
-            raise ValueError(
+            msg = (
                 f"spatial_support must be a bool array of shape ({n_bins},), got "
                 f"dtype {support.dtype} and shape {support.shape}. Pass the bins "
                 "observed in both conditions, for example "
                 "rates_1.spatial_support & rates_2.spatial_support."
             )
+            raise ValueError(msg)
         used &= support
     return _correlate_population_vectors(rates_1, rates_2, used)
 

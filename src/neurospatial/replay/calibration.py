@@ -184,19 +184,20 @@ def event_properties(
 
     operation = "event_properties()"
     if len(events) == 0:
-        raise ValueError(f"{operation}: events is empty; pass at least one event.")
+        msg = f"{operation}: events is empty; pass at least one event."
+        raise ValueError(msg)
     if spike_counts is not None and len(spike_counts) != len(events):
-        raise ValueError(
+        msg = (
             f"{operation}: spike_counts has {len(spike_counts)} entries but "
             f"there are {len(events)} events."
         )
+        raise ValueError(msg)
     rows = []
     for index, event in enumerate(events):
         event_env, posterior, times = _measured(env, event, template, index, operation)
         if times is None:
-            raise ValueError(
-                f"{operation}: event {index} has no times; decode with times=."
-            )
+            msg = f"{operation}: event {index} has no times; decode with times=."
+            raise ValueError(msg)
         counts = (
             None
             if spike_counts is None
@@ -250,15 +251,17 @@ def _checked_counts(
             )
         )
     if len(counts) != n_time_bins:
-        raise ValueError(
+        msg = (
             f"{operation}: spike_counts[{index}] has {len(counts)} rows "
             f"but event {index} has {n_time_bins} time bins."
         )
+        raise ValueError(msg)
     if np.any(counts < 0) or not np.all(np.equal(np.mod(counts, 1), 0)):
-        raise ValueError(
+        msg = (
             f"{operation}: spike_counts[{index}] has negative or "
             "non-integer counts; pass spike counts per time bin and cell."
         )
+        raise ValueError(msg)
     return counts
 
 
@@ -289,18 +292,18 @@ def _measured(
     if not isinstance(event, JointDecodingResult):
         if isinstance(env, Mapping):
             if template is None:
-                raise ValueError(
-                    f"{operation}: a mapping of environments needs template=."
-                )
+                msg = f"{operation}: a mapping of environments needs template=."
+                raise ValueError(msg)
             return checked(env[template], event.env), event.posterior, event.times
         return checked(env, event.env), event.posterior, event.times
     names = event.template_names
     if template is not None:
         if template not in names:
-            raise ValueError(
+            msg = (
                 f"{operation}: template {template!r} is not one of {list(names)} "
                 f"in event {index}."
             )
+            raise ValueError(msg)
         chosen = env[template] if isinstance(env, Mapping) else env
         return (
             checked(chosen, event.conditional[template].env),
@@ -484,24 +487,25 @@ def _check_rate_options(
     """Refuse invalid ``errors``, ``confidence``, ``expected_rate`` or ``alternative``."""
     validate_choice(errors, _ERRORS, name="errors", owner=operation)
     if not 0 < confidence < 1:
-        raise ValueError(
-            f"{operation}: confidence must be in (0, 1), got {confidence}."
-        )
+        msg = f"{operation}: confidence must be in (0, 1), got {confidence}."
+        raise ValueError(msg)
     if expected_rate is not None and not (
         isinstance(expected_rate, (int, float, np.integer, np.floating))
         and not isinstance(expected_rate, bool)
         and 0 < expected_rate < 1
     ):
-        raise ValueError(
+        msg = (
             f"{operation}: expected_rate must be a rate in (0, 1) or None, got "
             f"{expected_rate!r}; for the share of p < 0.05 events by chance, "
             "pass 0.05."
         )
+        raise ValueError(msg)
     if alternative not in ("two-sided", "greater", "less"):
-        raise ValueError(
+        msg = (
             f"{operation}: alternative must be 'two-sided', 'greater' or "
             f"'less', got {alternative!r}."
         )
+        raise ValueError(msg)
 
 
 def _property_bins(
@@ -516,10 +520,11 @@ def _property_bins(
     import pandas as pd
 
     if len(edges) < 2:
-        raise ValueError(
+        msg = (
             f"{operation}: by[{name!r}] needs at least two bin edges, got "
             f"{list(edges)}."
         )
+        raise ValueError(msg)
     if name in data:
         values = data[name]
     elif properties is not None and name in properties:
@@ -1036,7 +1041,8 @@ def matched_alpha(
 
     operation = "matched_alpha()"
     if not 0 < target < 1:
-        raise ValueError(f"{operation}: target must be in (0, 1), got {target!r}.")
+        msg = f"{operation}: target must be in (0, 1), got {target!r}."
+        raise ValueError(msg)
     data = _checked_table(null_table, groups, operation)
     methods = _alpha_methods(
         data, replay_methods, list(dict.fromkeys(data["method"])), operation
@@ -1190,17 +1196,19 @@ def apply_alpha(
     alphas = {str(name): float(value) for name, value in dict(alpha).items()}
     bad = {name: value for name, value in alphas.items() if not 0 < value <= 1}
     if bad:
-        raise ValueError(
+        msg = (
             f"{operation}: alphas must be in (0, 1], got {bad}; a NaN from "
             "matched_alpha means no alpha holds that method's rate."
         )
+        raise ValueError(msg)
     data = _checked_table(table, groups, operation)
     absent = sorted(set(alphas) - set(data["method"]))
     if absent:
-        raise ValueError(
+        msg = (
             f"{operation}: alpha names methods {absent} that are not in the "
             f"table, whose methods are {list(dict.fromkeys(data['method']))}."
         )
+        raise ValueError(msg)
     methods = _alpha_methods(data, replay_methods, list(alphas), operation)
     result = table.copy()
     own = {m.name: m.alpha for m in replay_methods}
@@ -1236,10 +1244,11 @@ def _alpha_methods(
             )
         )
     if "p_value" not in data:
-        raise ValueError(
+        msg = (
             f"{operation}: table lacks a p_value column; pass the table of "
             "compare_replay_methods()."
         )
+        raise ValueError(msg)
     tested: dict[str, _TestedMethod] = {}
     untested, choosing, segment_choosing = [], [], []
     for name in names:
@@ -1322,11 +1331,12 @@ def _verdicts(
     columns = [f"passes[{criterion.label}]" for criterion in method.criteria]
     absent = [column for column in columns if column not in frame]
     if absent:
-        raise ValueError(
+        msg = (
             f"{operation}: table lacks columns {absent} of method "
             f"{method.name!r}; pass the table of compare_replay_methods() made "
             "with this method."
         )
+        raise ValueError(msg)
     verdicts: NDArray[np.bool_] = ~frame["_error"].to_numpy(dtype=bool)
     for column in columns:
         verdicts &= frame[column].eq(True).to_numpy()
@@ -1370,15 +1380,17 @@ def _checked_table(
 
     missing = [c for c in ("event", "method", values, *groups) if c not in table]
     if missing:
-        raise ValueError(
+        msg = (
             f"{operation}: table lacks columns {missing}; pass the table of "
             "compare_replay_methods(), with any groups columns added."
         )
+        raise ValueError(msg)
     if values == "is_replay" and not pd.api.types.is_bool_dtype(table["is_replay"]):
-        raise ValueError(
+        msg = (
             f"{operation}: table's is_replay must be boolean, got "
             f"{table['is_replay'].dtype}."
         )
+        raise ValueError(msg)
     keys = [*groups, "event", "method"]
     repeated = table.duplicated(subset=keys)
     if repeated.any():
@@ -1659,10 +1671,11 @@ def null_events(
     trains = as_spike_trains(spike_times)
     chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
     if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
-        raise ValueError(
+        msg = (
             f"{operation}: cells must be one boolean per cell, shape "
             f"({len(trains)},), got dtype {chosen.dtype} and shape {chosen.shape}."
         )
+        raise ValueError(msg)
     randomized = np.flatnonzero(chosen)
     generator = np.random.default_rng(rng)
     durations = windows[:, 1] - windows[:, 0]

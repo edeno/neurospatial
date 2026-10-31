@@ -260,7 +260,8 @@ class TestOverwriteAtomicity:
 
         def _boom(obj):
             if obj.name == "rates_occupancy" and obj is not original_occupancy:
-                raise RuntimeError("injected occupancy write failure")
+                msg = "injected occupancy write failure"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", _boom)

@@ -276,7 +276,9 @@ def test_builtin_raster_snapshot_preserves_mixed_public_ids_and_rate_identity(
         np.testing.assert_array_equal(prepared.rates[:, 0], expected_rates)
 
 
-@pytest.mark.parametrize("labels, expected_kind", [([1, 2], "i"), (["a", "b"], "U")])
+@pytest.mark.parametrize(
+    ("labels", "expected_kind"), [([1, 2], "i"), (["a", "b"], "U")]
+)
 def test_builtin_raster_snapshot_keeps_homogeneous_public_id_dtype(
     env, labels, expected_kind
 ):

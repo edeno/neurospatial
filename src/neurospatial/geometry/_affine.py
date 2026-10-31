@@ -21,15 +21,15 @@ def _check_homogeneous(matrix: NDArray[np.float64]) -> None:
         or not np.all(np.isfinite(matrix))
         or not np.array_equal(matrix[-1], np.r_[np.zeros(len(matrix) - 1), 1.0])
     ):
-        raise ValueError(
-            "inverse/affine matrix must be finite, square and homogeneous."
-        )
+        msg = "inverse/affine matrix must be finite, square and homogeneous."
+        raise ValueError(msg)
     # Only the sign is read; a near-identity map can underflow harmlessly in
     # the factorization, which some LAPACK builds report.
     with np.errstate(under="ignore"):
         sign = np.linalg.slogdet(matrix[:-1, :-1])[0]
     if sign == 0:
-        raise ValueError("inverse/affine matrix must be invertible.")
+        msg = "inverse/affine matrix must be invertible."
+        raise ValueError(msg)
 
 
 def _gamma(n_dims: int) -> float:

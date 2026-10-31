@@ -779,11 +779,12 @@ def compute_shuffle_pvalue(
     ShuffleTestResult : Container for shuffle test results.
     """
     if not np.isfinite(observed):
-        raise ValueError(
+        msg = (
             f"observed must be a finite value, got {observed!r}. A non-finite "
             "observed score makes all comparisons against the null False, which "
             "would silently return the floor p-value 1/(n+1)."
         )
+        raise ValueError(msg)
     validate_choice(
         alternative, _ALTERNATIVES, name="alternative", owner="compute_shuffle_pvalue()"
     )
@@ -791,10 +792,11 @@ def compute_shuffle_pvalue(
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     undefined = np.isnan(null_scores)
     if undefined.all():
-        raise ValueError(
+        msg = (
             "null_scores contains no defined (non-NaN) values; cannot compute a "
             "shuffle p-value. Check that the shuffle produced valid scores."
         )
+        raise ValueError(msg)
     if undefined.any():
         warnings.warn(
             f"Dropped {int(undefined.sum())} undefined (NaN) null score(s) out "

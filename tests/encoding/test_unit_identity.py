@@ -613,7 +613,7 @@ def test_missing_unit_labels_are_refused(labels):
 
 
 @pytest.mark.parametrize(
-    "given,carried",
+    ("given", "carried"),
     [([1.0, 2.0], np.array([1, 2])), ([True, False], np.array([1, 0]))],
 )
 def test_unit_ids_must_match_the_input_labels_in_kind(given, carried):

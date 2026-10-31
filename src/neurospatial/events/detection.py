@@ -141,13 +141,14 @@ def add_positions(
         result="events between samples get NaN positions",
     )
     if not 1 <= xyz.shape[1] <= 3:
-        raise ValueError(
+        msg = (
             f"positions has {xyz.shape[1]} columns; add_positions writes x, y and "
             "z, so it takes 1 to 3 position dimensions.\n"
             "  Fix: pass positions of shape (n_samples, 1), (n_samples, 2) or "
             "(n_samples, 3); interpolate other per-sample signals with "
             "align_continuous_to_events."
         )
+        raise ValueError(msg)
 
     result = events.copy()
     for name, coordinate in zip("xyz", xyz.T, strict=False):

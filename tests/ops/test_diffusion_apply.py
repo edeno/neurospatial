@@ -782,7 +782,8 @@ def test_shift_invert_fallback_warning_points_at_the_caller(monkeypatch):
 
     def eigsh_without_shift_invert(*args, **kwargs):
         if "sigma" in kwargs:
-            raise RuntimeError("factorization failed")
+            msg = "factorization failed"
+            raise RuntimeError(msg)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(scipy.sparse.linalg, "eigsh", eigsh_without_shift_invert)

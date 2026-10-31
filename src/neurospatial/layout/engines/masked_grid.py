@@ -76,22 +76,25 @@ class MaskedGridLayout(_GridMixin):
         """
         self._begin_build()
         if not isinstance(active_mask, np.ndarray):
-            raise TypeError(
+            msg = (
                 f"active_mask must be a NumPy array, got {type(active_mask).__name__}."
             )
+            raise TypeError(msg)
         if active_mask.dtype != np.bool_:
-            raise ValueError(
+            msg = (
                 f"active_mask must have boolean dtype (np.bool_), got "
                 f"{active_mask.dtype}. Convert with `mask.astype(bool)` — but be "
                 f"sure the values are genuine True/False flags, not bin data."
             )
+            raise ValueError(msg)
         if len(grid_edges) != active_mask.ndim or len(grid_edges) == 0:
-            raise ValueError(
+            msg = (
                 f"grid_edges has {len(grid_edges)} edge arrays but active_mask is "
                 f"{active_mask.ndim}-D; one edge array per mask axis is required.\n"
                 "Fix: pass grid_edges=(edges_axis0, edges_axis1, ...) matching "
                 "active_mask.ndim."
             )
+            raise ValueError(msg)
         grid_edges = validate_uniform_edges(grid_edges)
 
         self.active_mask = active_mask
@@ -99,9 +102,12 @@ class MaskedGridLayout(_GridMixin):
         self.grid_shape = tuple(len(edge) - 1 for edge in grid_edges)
 
         if self.active_mask.shape != self.grid_shape:
-            raise ValueError(
+            msg = (
                 f"active_mask shape {self.active_mask.shape} must match "
-                f"the shape implied by grid_edges {self.grid_shape}.",
+                f"the shape implied by grid_edges {self.grid_shape}."
+            )
+            raise ValueError(
+                msg,
             )
 
         # Warn if the grid is very large.

@@ -120,8 +120,9 @@ class ScaleBarConfig:
         if self.length is not None and not (
             np.isfinite(self.length) and self.length > 0
         ):
+            msg = "length"
             raise _refuse(
-                "length",
+                msg,
                 self.length,
                 "a positive finite number in environment units, or None",
                 "Why: the bar shows a physical length, so a zero, negative or "
@@ -130,32 +131,36 @@ class ScaleBarConfig:
                 "to choose one from the plot's extent",
             )
         if self.position not in _POSITIONS:
+            msg = "position"
             raise _refuse(
-                "position",
+                msg,
                 self.position,
                 f"one of {', '.join(map(repr, _POSITIONS))}",
                 "Why: the bar is anchored in one corner of the axes.",
                 "pass one of those positions",
             )
         if not 0 <= self.background_alpha <= 1:
+            msg = "background_alpha"
             raise _refuse(
-                "background_alpha",
+                msg,
                 self.background_alpha,
                 "between 0 (transparent) and 1 (opaque)",
                 "Why: it is the opacity of the box behind the bar.",
                 "pass a value in [0, 1], such as background_alpha=0.7",
             )
         if not self.font_size > 0:
+            msg = "font_size"
             raise _refuse(
-                "font_size",
+                msg,
                 self.font_size,
                 "a positive size in points",
                 "Why: a label with no size cannot be read.",
                 "pass a positive size, such as font_size=10",
             )
         if self.box_style not in _BOX_STYLES:
+            msg = "box_style"
             raise _refuse(
-                "box_style",
+                msg,
                 self.box_style,
                 "'round', 'square' or None",
                 "Why: only those box styles are drawn.",
@@ -204,7 +209,8 @@ def _compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     """
     # Validate extent
     if not np.isfinite(extent) or extent <= 0:
-        raise ValueError(f"extent must be a positive finite number, got {extent}")
+        msg = f"extent must be a positive finite number, got {extent}"
+        raise ValueError(msg)
 
     target = extent * target_fraction
 

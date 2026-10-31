@@ -191,10 +191,11 @@ def _align_true_positions(
                 )
             )
     if true_positions.shape != (true_times.size, n_dims):
-        raise ValueError(
+        msg = (
             f"true_positions must have shape ({true_times.size}, {n_dims}) "
             f"to match true_times and the environment, got {true_positions.shape}."
         )
+        raise ValueError(msg)
     refuse_infinite(true_positions, name="true_positions", call=call)
     from neurospatial._intervals import (
         gap_endpoints,
@@ -795,17 +796,17 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         import matplotlib.pyplot as plt
 
         if (true_times is None) != (true_positions is None):
-            raise ValueError(
-                "Supply true_times and true_positions together for an overlay."
-            )
+            msg = "Supply true_times and true_positions together for an overlay."
+            raise ValueError(msg)
         aligned = None
         true_runs = None
         if true_times is not None and true_positions is not None:
             if self.times is None:
-                raise ValueError(
+                msg = (
                     "A true-position overlay requires decode times. "
                     "Provide times when constructing DecodingResult."
                 )
+                raise ValueError(msg)
             aligned, true_runs = _align_true_positions(
                 self.times,
                 true_times,
@@ -1247,12 +1248,13 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         from neurospatial.decoding.metrics import decoding_error
 
         if self.times is None:
-            raise ValueError(
+            msg = (
                 "error_against() requires decode times, but this "
                 "DecodingResult has times=None. Provide `times` when "
                 "constructing the result so the decode grid can be aligned "
                 "to the ground-truth track."
             )
+            raise ValueError(msg)
 
         aligned, _ = _align_true_positions(
             self.times,
@@ -1632,7 +1634,8 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             ax.set_title("MAP position over time")
             ax.legend()
         else:
-            raise ValueError(f"quantity must be 'entropy' or 'map', got {quantity!r}.")
+            msg = f"quantity must be 'entropy' or 'map', got {quantity!r}."
+            raise ValueError(msg)
 
         ax.set_xlabel(x_label)
         return ax

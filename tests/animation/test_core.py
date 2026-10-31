@@ -741,7 +741,8 @@ def test_lazy_reader_that_is_not_an_array_is_read_by_row(env):
             return np.full(env.n_bins, float(index))
 
         def __iter__(self):
-            raise AssertionError("the whole dataset was read")
+            msg = "the whole dataset was read"
+            raise AssertionError(msg)
 
     data = Dataset(1_000)
     times = np.arange(1_000) / 10
@@ -770,7 +771,8 @@ def test_napari_view_without_napari_says_how_to_install(env, monkeypatch):
 
     def without_napari(name, *args, **kwargs):
         if name == "napari" or name.startswith("napari."):
-            raise ModuleNotFoundError("No module named 'napari'")
+            msg = "No module named 'napari'"
+            raise ModuleNotFoundError(msg)
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", without_napari)

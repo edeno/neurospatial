@@ -84,7 +84,8 @@ class ShapelyPolygonLayout(_GridMixin):
         """
         self._begin_build()
         if not isinstance(polygon, Polygon):
-            raise TypeError("polygon must be a Shapely Polygon object.")
+            msg = "polygon must be a Shapely Polygon object."
+            raise TypeError(msg)
         if polygon.is_empty or not polygon.area > 0:
             raise ValueError(
                 _format_error(

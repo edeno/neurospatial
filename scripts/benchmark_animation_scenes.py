@@ -316,7 +316,8 @@ class NativeDriver:
             self._event_loop.run_until_complete(observe_until())
         elif seconds:
             # An offscreen canvas has no GUI loop; do not simulate playback.
-            raise RuntimeError("Offscreen canvas has no GUI event loop.")
+            msg = "Offscreen canvas has no GUI event loop."
+            raise RuntimeError(msg)
 
     def close(self) -> None:
         try:
@@ -513,9 +514,8 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                         or image.ndim != 3
                         or image.shape[2] != 3
                     ):
-                        raise RuntimeError(
-                            "Native capture did not return RGB uint8 pixels."
-                        )
+                        msg = "Native capture did not return RGB uint8 pixels."
+                        raise RuntimeError(msg)
                     measured[mode] = {
                         **timing_summary(latencies),
                         "frame_indices": indices.tolist(),

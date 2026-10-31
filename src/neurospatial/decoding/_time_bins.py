@@ -216,12 +216,13 @@ def bin_spikes_in_time(
     trains = as_spike_trains(spike_times)
     if epochs is not None:
         if t_start is not None or t_stop is not None:
-            raise ValueError(
+            msg = (
                 "bin_spikes_in_time got both epochs and t_start/t_stop. "
                 "\nWhy: epochs already defines where bins are formed. "
                 "\nFix: pass either epochs=[(start, stop), ...] or "
                 "t_start=..., t_stop=..., not both."
             )
+            raise ValueError(msg)
         windows = as_intervals(epochs, name="epochs")
         assert windows is not None
     else:
@@ -280,7 +281,6 @@ def bin_spikes_in_time(
     if orient == "neuron_x_time":
         counts = counts.T
     elif orient != "time_x_neuron":
-        raise ValueError(
-            f"orient must be 'time_x_neuron' or 'neuron_x_time', got {orient!r}."
-        )
+        msg = f"orient must be 'time_x_neuron' or 'neuron_x_time', got {orient!r}."
+        raise ValueError(msg)
     return counts, bin_centers

@@ -52,7 +52,8 @@ def test_overwrite_starts_a_new_project_over_an_existing_file(tmp_path, monkeypa
     path.write_bytes(b"old draft")
 
     def loaded(*args):
-        raise RuntimeError("reached the video")
+        msg = "reached the video"
+        raise RuntimeError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setattr(core, "_load_video_frame", loaded)
@@ -196,7 +197,8 @@ def test_failed_export_does_not_trigger_final_save_and_disposes_session(monkeypa
             calls.append("dispose")
 
     def fail(*args):
-        raise ValueError("Repair invalid boundary")
+        msg = "Repair invalid boundary"
+        raise ValueError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setitem(
@@ -357,7 +359,8 @@ def test_failed_session_start_closes_created_viewer(monkeypatch):
     draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
 
     def fail(*args, **kwargs):
-        raise RuntimeError("Cannot initialize assistance")
+        msg = "Cannot initialize assistance"
+        raise RuntimeError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setitem(
@@ -380,7 +383,7 @@ def test_failed_session_start_closes_created_viewer(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "shape_type,count",
+    ("shape_type", "count"),
     [
         ("polygon", 0),
         ("polygon", 1),
@@ -460,7 +463,8 @@ def test_failed_final_draft_save_still_returns_the_valid_result(monkeypatch):
             pass
 
         def save_if_path(self):
-            raise OSError("disk full")
+            msg = "disk full"
+            raise OSError(msg)
 
         def dispose(self):
             pass

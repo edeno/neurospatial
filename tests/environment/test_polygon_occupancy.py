@@ -442,9 +442,8 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
             return None
 
         def transformed(self, matrix):
-            raise NotImplementedError(
-                "This analytical provider has no affine transform"
-            )
+            msg = "This analytical provider has no affine transform"
+            raise NotImplementedError(msg)
 
     base = Environment.from_grid_mask(
         np.ones((1, 1), dtype=bool), grid_edges=(np.array([-1.0, 1.0]),) * 2

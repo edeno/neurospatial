@@ -43,7 +43,7 @@ class TestConvertToCm:
     """convert_to_cm scales pixels to centimeters with a y-flip."""
 
     @pytest.mark.parametrize(
-        "cm_per_px, point_px, expected_cm",
+        ("cm_per_px", "point_px", "expected_cm"),
         [
             # x_cm = cm_per_px * x_px; y_cm = cm_per_px * (H - y_px).
             (1.0, [3.0, 4.0], [3.0, 6.0]),

@@ -116,11 +116,12 @@ def encode(obj: object, prefix: str) -> Payload:
     name = type(obj).__name__
     codec = _CODECS.get(name)
     if codec is None or type(obj) is not codec.kind:
-        raise ValueError(
+        msg = (
             f"cannot save {name}: no codec is registered for it.\n"
             "Fix: use an environment with supported built-in binning data; "
             "layout-backed lookup and custom layout linearization cannot be saved."
         )
+        raise ValueError(msg)
     meta, arrays = codec.encode(obj, prefix)
     return _json_safe({"codec": name, "codec_version": codec.version, **meta}), arrays
 
@@ -151,27 +152,31 @@ def decode(
         If the codec is unknown, its version is unsupported, or data is invalid.
     """
     if not isinstance(meta, dict):
-        raise ValueError(f"invalid geometry metadata at {prefix}: expected a dict.")
+        msg = f"invalid geometry metadata at {prefix}: expected a dict."
+        raise ValueError(msg)
     name = meta.get("codec")
     codec = _CODECS.get(name) if isinstance(name, str) else None
     if codec is None:
         if isinstance(name, str):
             return _decode_snapshot(meta, arrays, prefix)
-        raise ValueError(
+        msg = (
             f"cannot load {name!r}: no codec is registered for it.\n"
             "Fix: use a neurospatial version supporting this geometry codec."
         )
+        raise ValueError(msg)
     version = meta.get("codec_version")
     supported = codec.version
     if type(version) is not int or version != supported:
-        raise ValueError(
+        msg = (
             f"cannot load {name} codec_version {version!r}; supported version is {supported}.\n"
             "Fix: recreate and save the environment with this neurospatial version."
         )
+        raise ValueError(msg)
     try:
         return codec.decode(meta, arrays, prefix)
     except (KeyError, ValueError, IndexError, OverflowError) as exc:
-        raise ValueError(f"invalid {name} payload at {prefix}: {exc}") from exc
+        msg = f"invalid {name} payload at {prefix}: {exc}"
+        raise ValueError(msg) from exc
 
 
 class _UnsupportedJSONValueError(ValueError):
@@ -201,16 +206,22 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     if isinstance(value, float) and not np.isfinite(value):
-        raise _UnsupportedJSONValueError(
+        msg = (
             "cannot save non-finite scalar metadata as JSON.\n"
-            "Fix: use finite values or None for missing graph metadata.",
+            "Fix: use finite values or None for missing graph metadata."
+        )
+        raise _UnsupportedJSONValueError(
+            msg,
             reason="non-finite number",
         )
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    raise _UnsupportedJSONValueError(
+    msg = (
         f"cannot save metadata value of type {type(value).__name__}.\n"
-        "Fix: store only JSON-compatible scalar values and sequences in graph attributes.",
+        "Fix: store only JSON-compatible scalar values and sequences in graph attributes."
+    )
+    raise _UnsupportedJSONValueError(
+        msg,
         reason=f"{type(value).__name__} value",
     )
 
@@ -243,29 +254,36 @@ def _array(
     """Read a typed array without silently truncating indices or masks."""
     key = f"{prefix}/{name}"
     if key not in arrays:
-        raise ValueError(f"missing array {key!r}.")
+        msg = f"missing array {key!r}."
+        raise ValueError(msg)
     raw = np.asarray(arrays[key])
     kind = np.dtype(dtype).kind
     if kind in "iu":
         if raw.dtype.kind not in "iuf" or np.any(~np.isfinite(raw)):
-            raise ValueError(f"{name} must contain finite integer values.")
+            msg = f"{name} must contain finite integer values."
+            raise ValueError(msg)
         if raw.dtype.kind == "f" and np.any(raw != np.floor(raw)):
-            raise ValueError(f"{name} must contain integer values.")
+            msg = f"{name} must contain integer values."
+            raise ValueError(msg)
         limits = np.iinfo(dtype)
         above = raw >= limits.max + 1 if raw.dtype.kind == "f" else raw > limits.max
         if np.any(raw < limits.min) or np.any(above):
-            raise ValueError(f"{name} contains an out-of-range integer.")
+            msg = f"{name} contains an out-of-range integer."
+            raise ValueError(msg)
     elif kind == "b" and raw.dtype.kind != "b":
-        raise ValueError(f"{name} must contain boolean values.")
+        msg = f"{name} must contain boolean values."
+        raise ValueError(msg)
     elif kind == "f" and raw.dtype.kind not in "biuf":
-        raise ValueError(f"{name} must contain real numeric values.")
+        msg = f"{name} must contain real numeric values."
+        raise ValueError(msg)
     return np.asarray(raw, dtype=dtype)
 
 
 def _flag(meta: dict[str, Any], name: str) -> bool:
     value = meta[name]
     if type(value) is not bool:
-        raise ValueError(f"{name} must be a boolean.")
+        msg = f"{name} must be a boolean."
+        raise ValueError(msg)
     return value
 
 
@@ -276,19 +294,23 @@ def _shape(meta: dict[str, Any], name: str = "shape") -> tuple[int, ...]:
         or not raw
         or any(type(value) is not int or value <= 0 for value in raw)
     ):
-        raise ValueError(f"{name} must contain positive integer cell counts.")
+        msg = f"{name} must contain positive integer cell counts."
+        raise ValueError(msg)
     return tuple(raw)
 
 
 def _finite(value: Any, name: str) -> float:
     if isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"{name} must be a finite numeric value, not a boolean.")
+        msg = f"{name} must be a finite numeric value, not a boolean."
+        raise ValueError(msg)
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be a finite numeric value.") from exc
+        msg = f"{name} must be a finite numeric value."
+        raise ValueError(msg) from exc
     if not np.isfinite(result):
-        raise ValueError(f"{name} must be finite.")
+        msg = f"{name} must be finite."
+        raise ValueError(msg)
     return result
 
 
@@ -406,7 +428,7 @@ def _refuse_json_attributes(graph: nx.Graph) -> None:
         try:
             _json_safe(value)
         except _UnsupportedJSONValueError as exc:
-            raise ValueError(
+            msg = (
                 f"cannot save track graph {element} attribute {key!r}: its "
                 f"value ({type(value).__name__}) is or contains a {exc.reason}, "
                 "which JSON cannot store.\n"
@@ -416,7 +438,8 @@ def _refuse_json_attributes(graph: nx.Graph) -> None:
                 "processes.\n"
                 f"Fix: store {key!r} as one of those values, or remove it, "
                 "before building the environment."
-            ) from exc
+            )
+            raise ValueError(msg) from exc
 
 
 def _encode_track(obj: TrackLinearization, prefix: str) -> Payload:
@@ -498,9 +521,8 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
     sidecar = graph_data.pop(_RESERVED_GRAPH_ATTRIBUTES, None)
     if sidecar is not None:
         if not isinstance(sidecar, dict) or not set(sidecar) <= {"nodes", "links"}:
-            raise ValueError(
-                "Reserved graph attributes must contain node/link sidecar rows."
-            )
+            msg = "Reserved graph attributes must contain node/link sidecar rows."
+            raise ValueError(msg)
         for group, rows in sidecar.items():
             identity = (
                 ("id",)
@@ -510,25 +532,21 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
                 else ("source", "target")
             )
             if not isinstance(rows, list) or len(rows) != len(graph_data[group]):
-                raise ValueError(
-                    "Reserved graph attribute sidecar length differs from its graph."
-                )
+                msg = "Reserved graph attribute sidecar length differs from its graph."
+                raise ValueError(msg)
             for row, record in zip(rows, graph_data[group], strict=True):
                 if not isinstance(row, dict) or set(row) != {*identity, "attributes"}:
-                    raise ValueError(
-                        "Reserved graph attribute rows need matching identities and attributes."
-                    )
+                    msg = "Reserved graph attribute rows need matching identities and attributes."
+                    raise ValueError(msg)
                 if any(_node_id(row[key]) != record[key] for key in identity):
-                    raise ValueError(
-                        "Reserved graph attribute sidecar identities differ from its graph."
-                    )
+                    msg = "Reserved graph attribute sidecar identities differ from its graph."
+                    raise ValueError(msg)
                 attributes = row["attributes"]
                 if not isinstance(attributes, dict) or not set(attributes) <= set(
                     identity
                 ):
-                    raise ValueError(
-                        "Reserved graph attribute sidecars may restore only reserved keys."
-                    )
+                    msg = "Reserved graph attribute sidecars may restore only reserved keys."
+                    raise ValueError(msg)
     graph = nx.node_link_graph(graph_data, edges="links")
     if sidecar is not None:
         for group, rows in sidecar.items():
@@ -587,11 +605,14 @@ def _mesh_arrays(
     points = _array(arrays, prefix, "points", np.float64)
     triangles = _array(arrays, prefix, triangle_name, np.intp)
     if points.ndim != 2 or points.shape[1] != 2 or np.any(~np.isfinite(points)):
-        raise ValueError("points must be finite with shape (n_points, 2).")
+        msg = "points must be finite with shape (n_points, 2)."
+        raise ValueError(msg)
     if triangles.ndim != 2 or triangles.shape[1] != 3:
-        raise ValueError(f"{triangle_name} must have shape (n_triangles, 3).")
+        msg = f"{triangle_name} must have shape (n_triangles, 3)."
+        raise ValueError(msg)
     if np.any((triangles < 0) | (triangles >= len(points))):
-        raise ValueError(f"{triangle_name} contains an out-of-range vertex index.")
+        msg = f"{triangle_name} contains an out-of-range vertex index."
+        raise ValueError(msg)
     return points, triangles
 
 
@@ -615,13 +636,16 @@ def _decode_outline(
 ) -> Outline:
     encoded = _array(arrays, prefix, "wkb", np.uint8)
     if encoded.ndim != 1:
-        raise ValueError("wkb must be a one-dimensional byte array.")
+        msg = "wkb must be a one-dimensional byte array."
+        raise ValueError(msg)
     try:
         geometry = shapely.from_wkb(encoded.tobytes())
     except shapely.errors.GEOSException as exc:
-        raise ValueError(f"invalid outline WKB: {exc}") from exc
+        msg = f"invalid outline WKB: {exc}"
+        raise ValueError(msg) from exc
     if not isinstance(geometry, (Polygon, MultiPolygon)) or not geometry.is_valid:
-        raise ValueError("outline WKB must contain a valid Polygon or MultiPolygon.")
+        msg = "outline WKB must contain a valid Polygon or MultiPolygon."
+        raise ValueError(msg)
     return Outline(geometry)
 
 
@@ -681,7 +705,8 @@ def _decode_mesh_locator(
         if not isinstance(component, Outline) or not isinstance(
             component.geometry, Polygon
         ):
-            raise ValueError("boundary must contain a polygon outline.")
+            msg = "boundary must contain a polygon outline."
+            raise ValueError(msg)
         boundary = component.geometry
     return MeshLocator(points, simplices, mapping, boundary)
 
@@ -703,9 +728,11 @@ def _decode_nearest_locator(
     centers = _array(arrays, prefix, "centers", np.float64)
     indices = _array(arrays, prefix, "bin_indices", np.intp)
     if centers.ndim != 2 or np.any(~np.isfinite(centers)):
-        raise ValueError("centers must be a finite two-dimensional array.")
+        msg = "centers must be a finite two-dimensional array."
+        raise ValueError(msg)
     if indices.shape != (len(centers),) or np.any(indices < 0):
-        raise ValueError("bin_indices must give one non-negative index per center.")
+        msg = "bin_indices must give one non-negative index per center."
+        raise ValueError(msg)
     maximum = meta["max_distance"]
     if _flag(meta, "unbounded"):
         maximum = math.inf
@@ -813,7 +840,8 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
 
 def _nonnegative_integer(value: Any, name: str) -> int:
     if type(value) is not int or value < 0:
-        raise ValueError(f"{name} must be a nonnegative integer.")
+        msg = f"{name} must be a nonnegative integer."
+        raise ValueError(msg)
     return int(value)
 
 
@@ -832,7 +860,8 @@ def _decode_polygon_cells(
     count = _nonnegative_integer(meta["n_cells"], "n_cells")
     data = np.asarray(arrays[f"{prefix}/wkb"])
     if data.ndim != 1 or data.dtype != np.uint8:
-        raise ValueError("wkb must be a one-dimensional uint8 array.")
+        msg = "wkb must be a one-dimensional uint8 array."
+        raise ValueError(msg)
     offsets = _array(arrays, prefix, "offsets", np.intp)
     if (
         offsets.shape != (count + 1,)
@@ -840,15 +869,18 @@ def _decode_polygon_cells(
         or offsets[-1] != len(data)
         or np.any(np.diff(offsets) <= 0)
     ):
-        raise ValueError("offsets must partition wkb into n_cells nonempty records.")
+        msg = "offsets must partition wkb into n_cells nonempty records."
+        raise ValueError(msg)
     polygons = []
     for index, (start, end) in enumerate(pairwise(offsets)):
         try:
             polygon = shapely.from_wkb(data[start:end].tobytes())
         except shapely.errors.GEOSException as exc:
-            raise ValueError(f"wkb cell {index} is malformed: {exc}") from exc
+            msg = f"wkb cell {index} is malformed: {exc}"
+            raise ValueError(msg) from exc
         if not isinstance(polygon, Polygon):
-            raise ValueError(f"wkb cell {index} must contain one connected Polygon.")
+            msg = f"wkb cell {index} must contain one connected Polygon."
+            raise ValueError(msg)
         polygons.append(polygon)
     return PolygonCells(tuple(polygons))
 
@@ -888,9 +920,8 @@ def _decode_clipped_locator(
         or not isinstance(cells, PolygonCells)
         or not isinstance(mapping, ClipMapping)
     ):
-        raise ValueError(
-            "clipped locator needs a base locator, polygon cells and clip mapping."
-        )
+        msg = "clipped locator needs a base locator, polygon cells and clip mapping."
+        raise ValueError(msg)
     return ClippedLocator(base, cells, mapping)
 
 
@@ -905,7 +936,8 @@ def _decode_subset_locator(
 ) -> SubsetLocator:
     base = decode(meta["base"], arrays, f"{prefix}/base")
     if not isinstance(base, _LOCATOR_TYPES):
-        raise ValueError("base must contain a point-lookup codec.")
+        msg = "base must contain a point-lookup codec."
+        raise ValueError(msg)
     return SubsetLocator(base, _array(arrays, prefix, "parent_to_child", np.intp))
 
 
@@ -920,7 +952,8 @@ def _decode_transformed_locator(
 ) -> TransformedLocator:
     base = decode(meta["base"], arrays, f"{prefix}/base")
     if not isinstance(base, _LOCATOR_TYPES):
-        raise ValueError("base must contain a point-lookup codec.")
+        msg = "base must contain a point-lookup codec."
+        raise ValueError(msg)
     return TransformedLocator(base, _array(arrays, prefix, "forward", np.float64))
 
 
@@ -933,18 +966,21 @@ def _decode_binning(
     tables = meta.get("snapshots")
     if tables is not None:
         if not isinstance(tables, dict):
-            raise ValueError("snapshots must contain typed snapshot tables.")
+            msg = "snapshots must contain typed snapshot tables."
+            raise ValueError(msg)
         for name, expected_kind in (
             ("polygon_cells", PolygonCells),
             ("clip_mappings", ClipMapping),
         ):
             entries = tables[name]
             if not isinstance(entries, list):
-                raise ValueError(f"{name} snapshots must be a list.")
+                msg = f"{name} snapshots must be a list."
+                raise ValueError(msg)
             for index, entry in enumerate(entries):
                 snapshot = decode(entry, arrays, f"{prefix}/snapshots/{name}/{index}")
                 if not isinstance(snapshot, expected_kind):
-                    raise ValueError(f"{name} snapshot has the wrong geometry kind.")
+                    msg = f"{name} snapshot has the wrong geometry kind."
+                    raise ValueError(msg)
                 if isinstance(snapshot, PolygonCells):
                     cells.append(snapshot)
                 else:
@@ -953,32 +989,36 @@ def _decode_binning(
 
     def referenced(value: Any, key: str) -> PolygonCells | ClipMapping:
         if not isinstance(value, dict) or set(value) != {key}:
-            raise ValueError(f"{key} must be a typed snapshot reference.")
+            msg = f"{key} must be a typed snapshot reference."
+            raise ValueError(msg)
         index = _nonnegative_integer(value[key], f"{key} snapshot reference")
         snapshots: Sequence[PolygonCells | ClipMapping] = (
             cells if key == "polygon_cells_ref" else mappings
         )
         if index >= len(snapshots):
-            raise ValueError(f"{key} snapshot reference is out of range.")
+            msg = f"{key} snapshot reference is out of range."
+            raise ValueError(msg)
         return snapshots[index]
 
     def locator_value(value: Any, path: str) -> Any:
         if not isinstance(value, dict):
-            raise ValueError("locator must contain geometry metadata.")
+            msg = "locator must contain geometry metadata."
+            raise ValueError(msg)
         kind = value.get("codec")
         if kind not in {"ClippedLocator", "SubsetLocator", "TransformedLocator"}:
             part = decode(value, arrays, path)
             if not isinstance(part, _LOCATOR_TYPES):
-                raise ValueError("locator must contain a point-lookup codec.")
+                msg = "locator must contain a point-lookup codec."
+                raise ValueError(msg)
             return part
         if type(value.get("codec_version")) is not int or value["codec_version"] != 1:
-            raise ValueError("locator codec_version must be 1.")
+            msg = "locator codec_version must be 1."
+            raise ValueError(msg)
         base = locator_value(value["base"], f"{path}/base")
         if kind == "ClippedLocator":
             if "cells_ref" not in value or "mapping_ref" not in value:
-                raise ValueError(
-                    "clipped locators in a binning need typed snapshot references."
-                )
+                msg = "clipped locators in a binning need typed snapshot references."
+                raise ValueError(msg)
             cell_snapshot = referenced(
                 {"polygon_cells_ref": value["cells_ref"]}, "polygon_cells_ref"
             )
@@ -1021,20 +1061,22 @@ def _decode_binning(
         else:
             part = decode(value, arrays, f"{prefix}/{name}")
             if isinstance(part, (PolygonCells, ClipMapping)):
-                raise ValueError(
-                    "polygon components in a binning need typed snapshot references."
-                )
+                msg = "polygon components in a binning need typed snapshot references."
+                raise ValueError(msg)
         if part is None and name in {"bins", "connections", "locator", "faces"}:
-            raise ValueError(f"{name} is required for a binning.")
+            msg = f"{name} is required for a binning."
+            raise ValueError(msg)
         if part is not None and not isinstance(part, kind):
-            raise ValueError(f"{name} has the wrong geometry codec kind.")
+            msg = f"{name} has the wrong geometry codec kind."
+            raise ValueError(msg)
         parts[name] = part
     ranges = meta["dimension_ranges"]
     if ranges is not None and (
         not isinstance(ranges, list)
         or any(not isinstance(axis, list) or len(axis) != 2 for axis in ranges)
     ):
-        raise ValueError("dimension_ranges must be one [low, high] pair per axis.")
+        msg = "dimension_ranges must be one [low, high] pair per axis."
+        raise ValueError(msg)
     return Binning(
         kind=meta["kind"],
         **parts,
@@ -1071,15 +1113,15 @@ def _decode_combined(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> CombinedLocator:
     if prefix.count("/children/") > 32:
-        raise ValueError(
-            "Composition nesting exceeds 32 levels; flatten the components."
-        )
+        msg = "Composition nesting exceeds 32 levels; flatten the components."
+        raise ValueError(msg)
     children, arenas = [], []
     for index, entry in enumerate(meta["children"]):
         path = f"{prefix}/children/{index}"
         child = decode(entry["binning"], arrays, f"{path}/binning")
         if not isinstance(child, Binning):
-            raise ValueError("Combined child must be a binning snapshot.")
+            msg = "Combined child must be a binning snapshot."
+            raise ValueError(msg)
         children.append(child)
         arenas.append(decode_arena(entry["arena"], _unnested(arrays, f"{path}/arena")))
     return CombinedLocator(
@@ -1141,7 +1183,8 @@ def _decode_grid_frame(
 ) -> FramedGrid:
     source = decode(meta["source"], arrays, f"{prefix}/source")
     if type(source) is not RectilinearGrid:
-        raise ValueError("FramedGrid.source needs a RectilinearGrid codec.")
+        msg = "FramedGrid.source needs a RectilinearGrid codec."
+        raise ValueError(msg)
     return FramedGrid(source, _array(arrays, prefix, "forward", np.float64))
 
 
@@ -1261,8 +1304,9 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
         arrays["forward"] = arena.forward.copy()
         arrays.update(_nested(base_arrays, "base"))
     else:
+        msg = f"Cannot encode unregistered arena type {type(arena).__name__!r}."
         raise _error(
-            f"Cannot encode unregistered arena type {type(arena).__name__!r}.",
+            msg,
             "use a built-in arena type with a supported codec",
         )
     return meta, arrays
@@ -1291,17 +1335,17 @@ def same_encoded_arena(first: Arena, second: Arena) -> bool:
 def _count(meta: Mapping[str, Any], name: str, *, minimum: int = 0) -> int:
     value = meta[name]
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise _error(
-            f"{name} must be an integer >= {minimum}.", "restore valid arena metadata"
-        )
+        msg = f"{name} must be an integer >= {minimum}."
+        raise _error(msg, "restore valid arena metadata")
     return int(value)
 
 
 def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry:
     data = np.asarray(arrays[name])
     if data.ndim != 1 or data.dtype != np.uint8:
+        msg = f"{name} must be a one-dimensional uint8 WKB array."
         raise _error(
-            f"{name} must be a one-dimensional uint8 WKB array.",
+            msg,
             "restore valid arena geometry bytes",
         )
     return cast("shapely.Geometry", shapely.from_wkb(data.tobytes()))
@@ -1317,11 +1361,13 @@ def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
             active.remove(id(value))
             continue
         if depth > 32:
-            raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
+            msg = "Arena nesting exceeds 32 levels; flatten the domains."
+            raise ValueError(msg)
         if not isinstance(value, Mapping):
             continue
         if id(value) in active:
-            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
+            msg = "Cyclic arena metadata cannot describe a valid domain."
+            raise ValueError(msg)
         active.add(id(value))
         stack.append((value, depth, True))
         if value.get("codec") == "_CombinedArena":
@@ -1358,14 +1404,18 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
         if isinstance(kind, str) and kind not in _ARENA_NAMES:
             snapshot = _decode_snapshot(meta, arrays, "")
             if not isinstance(snapshot, Arena):
-                raise ValueError("The installed adapter must decode an arena snapshot.")
+                msg = "The installed adapter must decode an arena snapshot."
+                raise ValueError(msg)
             return snapshot
         version = _count(meta, "codec_version", minimum=1)
         if version != _ARENA_VERSION:
-            raise _error(
+            msg = (
                 f"Arena codec version {version} is not supported; this version "
                 f"reads version {_ARENA_VERSION}, which records what each physical "
-                "boundary is (wall, transparent wall or drop edge).",
+                "boundary is (wall, transparent wall or drop edge)."
+            )
+            raise _error(
+                msg,
                 "recreate the environment with this neurospatial version and save "
                 "it again",
             )
@@ -1414,14 +1464,14 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             return _TransformedArena(
                 decode_arena(meta["base"], _unnested(arrays, "base")), arrays["forward"]
             )
+        msg = f"Unknown arena codec {kind!r}."
         raise _error(
-            f"Unknown arena codec {kind!r}.",
+            msg,
             "install a version supporting this required arena codec",
         )
     except (KeyError, TypeError, shapely.errors.GEOSException) as exc:
-        raise _error(
-            f"Malformed arena payload: {exc}.", "restore a complete valid arena record"
-        ) from exc
+        msg = f"Malformed arena payload: {exc}."
+        raise _error(msg, "restore a complete valid arena record") from exc
 
 
 _ARENA_TYPES: tuple[type[Arena], ...] = (
@@ -1449,32 +1499,37 @@ def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
         try:
             adapter = entry.load()
         except ImportError as exc:
-            raise ValueError(
+            msg = (
                 f"Cannot import snapshot adapter entry point {entry.value!r}. "
                 "Install its package and required dependencies."
-            ) from exc
+            )
+            raise ValueError(msg) from exc
         if not isinstance(adapter, SnapshotAdapter):
-            raise TypeError(
+            msg = (
                 f"Snapshot entry point {entry.value!r} must expose a "
                 "SnapshotAdapter object, rather than a class or factory."
             )
+            raise TypeError(msg)
         if adapter.name in reserved:
-            raise ValueError(
+            msg = (
                 f"Snapshot adapter {adapter.name!r} conflicts with a built-in codec. "
                 "Choose a globally unique adapter name."
             )
+            raise ValueError(msg)
         if adapter.name in names:
-            raise ValueError(
+            msg = (
                 f"duplicate snapshot adapter name {adapter.name!r}. "
                 "Rename the adapter or remove the conflicting installed package."
             )
+            raise ValueError(msg)
         provider_role = (adapter.provider_type, adapter.role)
         if provider_role in providers:
-            raise ValueError(
+            msg = (
                 "duplicate snapshot adapter for provider "
                 f"{adapter.provider_type.__module__}.{adapter.provider_type.__qualname__} "
                 f"and role {adapter.role!r}. Keep one installed adapter per provider role."
             )
+            raise ValueError(msg)
         names.add(adapter.name)
         providers.add(provider_role)
         adapters.append(adapter)
@@ -1485,7 +1540,8 @@ def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
     """Validate an adapter result and rebuild owned canonical data records."""
     if role == "arena":
         if type(value) not in _ARENA_TYPES:
-            raise ValueError("snapshot adapters must return a built-in arena record.")
+            msg = "snapshot adapters must return a built-in arena record."
+            raise ValueError(msg)
         meta, arrays = encode_arena(cast("Arena", value))
         return decode_arena(meta, arrays)
 
@@ -1495,7 +1551,8 @@ def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
         "binning": (Binning,),
     }
     if type(value) not in expected[role]:
-        raise ValueError(f"snapshot adapters must return a built-in {role} record.")
+        msg = f"snapshot adapters must return a built-in {role} record."
+        raise ValueError(msg)
     meta, arrays = encode(value, "snapshot")
     return decode(meta, arrays, "snapshot")
 
@@ -1532,11 +1589,12 @@ def snapshot_provider(provider: object, role: _SnapshotRole) -> object:
         if role == "binning"
         else ""
     )
-    raise TypeError(
+    msg = (
         f"No installed snapshot adapter for {type(provider).__name__} "
         f"with role {role!r}. Install the provider's adapter package or supply "
         f"supported built-in snapshot data.{hint}"
     )
+    raise TypeError(msg)
 
 
 def _decode_snapshot(
@@ -1549,11 +1607,12 @@ def _decode_snapshot(
             continue
         version = meta.get("codec_version")
         if type(version) is not int or version != adapter.version:
-            raise ValueError(
+            msg = (
                 f"Cannot load {name!r} codec version {version!r}; the installed "
                 f"adapter supports version {adapter.version}. Install an adapter "
                 "package supporting the saved version."
             )
+            raise ValueError(msg)
         detached_meta = copy.deepcopy(dict(meta))
         detached_arrays = {
             key: np.array(value, copy=True) for key, value in arrays.items()
@@ -1562,11 +1621,11 @@ def _decode_snapshot(
             value = adapter.decode(detached_meta, detached_arrays, prefix)
             return _normalize_snapshot(value, adapter.role)
         except (KeyError, ValueError, IndexError, OverflowError) as exc:
-            raise ValueError(
-                f"invalid {name} snapshot payload at {prefix}: {exc}"
-            ) from exc
-    raise ValueError(
+            msg = f"invalid {name} snapshot payload at {prefix}: {exc}"
+            raise ValueError(msg) from exc
+    msg = (
         f"cannot load {name!r}: no codec or installed snapshot adapter is "
         "registered for it. Fix: install the package providing this snapshot "
         "adapter, then load the original record and save canonical built-in data."
     )
+    raise ValueError(msg)

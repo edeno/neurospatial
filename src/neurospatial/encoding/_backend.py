@@ -174,10 +174,11 @@ def get_backend(name: BackendType) -> Any:
     the runtime environment.
     """
     if name not in SUPPORTED_BACKENDS:
-        raise ValueError(
+        msg = (
             f"Unknown backend: {name!r}. "
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
+        raise ValueError(msg)
 
     if name == "numpy":
         return np
@@ -189,9 +190,8 @@ def get_backend(name: BackendType) -> Any:
                 if sys.platform == "win32"
                 else " JAX is not installed. Install with: uv add jax jaxlib"
             )
-            raise ImportError(
-                f"JAX backend requested but JAX is not available.{platform_note}"
-            )
+            msg = f"JAX backend requested but JAX is not available.{platform_note}"
+            raise ImportError(msg)
         _enable_jax_float64()
         import jax.numpy as jnp
 
@@ -240,10 +240,11 @@ def get_backend_name(name: BackendType) -> ResolvedBackend:
     True
     """
     if name not in SUPPORTED_BACKENDS:
-        raise ValueError(
+        msg = (
             f"Unknown backend: {name!r}. "
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
+        raise ValueError(msg)
 
     if name == "numpy":
         return "numpy"
@@ -255,9 +256,8 @@ def get_backend_name(name: BackendType) -> ResolvedBackend:
                 if sys.platform == "win32"
                 else " JAX is not installed. Install with: uv add jax jaxlib"
             )
-            raise ImportError(
-                f"JAX backend requested but JAX is not available.{platform_note}"
-            )
+            msg = f"JAX backend requested but JAX is not available.{platform_note}"
+            raise ImportError(msg)
         _enable_jax_float64()
         return "jax"
 
@@ -308,10 +308,11 @@ def validate_and_resolve_backend(backend: str) -> ResolvedBackend:
     ValueError: Unknown backend: 'invalid'. ...
     """
     if backend not in SUPPORTED_BACKENDS:
-        raise ValueError(
+        msg = (
             f"Unknown backend: {backend!r}. "
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
+        raise ValueError(msg)
 
     return get_backend_name(backend)  # type: ignore[arg-type]
 

@@ -289,7 +289,8 @@ def test_to_xarray_without_xarray_names_the_extra(result, monkeypatch) -> None:
 
     def fake(name, *args, **kwargs):
         if name == "xarray":
-            raise ModuleNotFoundError("No module named 'xarray'", name="xarray")
+            msg = "No module named 'xarray'"
+            raise ModuleNotFoundError(msg, name="xarray")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake)

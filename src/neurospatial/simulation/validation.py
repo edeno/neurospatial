@@ -36,11 +36,12 @@ def _select_unit_indices(
     from neurospatial.simulation.session import SimulationSession
 
     if not isinstance(session, SimulationSession):
-        raise TypeError(
+        msg = (
             f"session must be a SimulationSession instance, got {type(session).__name__}.\n"
             "Why: validation and plotting need the simulator's ground truth.\n"
             "Fix: pass the holder returned by simulate_session() or open_field_session()."
         )
+        raise TypeError(msg)
     require_cartesian(
         session.env.coordinate_system,
         operation,
@@ -54,11 +55,12 @@ def _select_unit_indices(
     valid_ids = session.unit_ids.tolist()
     unknown = [label for label in unit_ids if label not in valid_ids]
     if unknown:
-        raise ValueError(
+        msg = (
             f"unit_ids contains unknown labels {unknown}. Valid labels: {valid_ids}.\n"
             "Why: unit_ids selects labels, not row indices.\n"
             "Fix: choose unit_ids from session.unit_ids."
         )
+        raise ValueError(msg)
     return [valid_ids.index(label) for label in unit_ids]
 
 

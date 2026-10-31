@@ -226,7 +226,9 @@ def test_unregistered_layout_linearization_refuses():
     assert "Fix:" in str(caught.value)
 
 
-@pytest.mark.parametrize("field,value", [("codec", "unknown"), ("codec_version", 999)])
+@pytest.mark.parametrize(
+    ("field", "value"), [("codec", "unknown"), ("codec_version", 999)]
+)
 def test_unknown_codec_or_version_refused(field, value):
     meta, arrays = encode(MissingFaces("No faces"), "faces")
     meta[field] = value
@@ -235,7 +237,7 @@ def test_unknown_codec_or_version_refused(field, value):
 
 
 @pytest.mark.parametrize(
-    "record,key,pattern",
+    ("record", "key", "pattern"),
     [
         ("bins", "centers", "centers"),
         ("bins", "sizes", "sizes"),

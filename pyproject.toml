@@ -176,9 +176,26 @@ select = [
     "TCH", # flake8-type-checking
     "PTH", # flake8-use-pathlib
     "RUF", # Ruff-specific rules
+    "ARG", # unused arguments
+    "EM",  # exception messages assigned before the raise
+    "EXE", # shebangs
+    "FURB", # refurb modernizations
+    "G",   # logging format
+    "ICN", # import conventions
+    "ISC", # implicit string concatenation
+    "NPY", # NumPy-specific rules
+    "PD",  # pandas-vet
+    "PERF", # performance anti-patterns
+    "PGH", # pygrep hooks (blanket noqa, type: ignore without code)
+    "PIE", # misc lints
+    "PT",  # pytest style
+    "RET", # return statements
+    "T20", # print statements
+    "YTT", # sys.version misuse
 ]
 ignore = [
     "E501",   # Line too long (handled by formatter)
+    "ISC001", # Conflicts with the formatter
     "B008",   # Function calls in argument defaults (common in dataclasses)
     "B028",   # No explicit stacklevel in warnings (can add if needed)
     "RUF002", # Ambiguous unicode in docstrings (allow × and math symbols)
@@ -191,6 +208,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Test files: Allow mathematical notation and test-specific patterns
 "tests/**/*.py" = [
+    "ARG",     # pytest fixtures are used by name, not by value
     "S101",    # Allow assert in tests
     "PLR2004", # Allow magic values in tests
     "N802",    # Allow non-lowercase function names in tests
@@ -202,6 +220,13 @@ ignore = [
 # allow imports inside narrative cells. Both locations get identical treatment
 # so ruff stays stable regardless of which cell an import lands in after a
 # jupytext round-trip (avoids the inline-noqa <-> RUF100 flip-flop).
+# Scripts, benchmarks and notebooks report their results with print().
+"examples/*" = ["EM", "T201"]  # tutorials raise with the message inline
+"docs/examples/*" = ["EM", "T201"]
+"docs/*.py" = ["T201"]
+"scripts/*" = ["T201"]
+"benchmarks/*" = ["T201"]
+"data/*" = ["T201"]
 "examples/*.py" = [
     "E402",  # Module level import not at top of file (common in notebook cells)
     "N803",  # Allow uppercase argument names (mathematical notation in examples)
@@ -298,50 +323,18 @@ exclude_lines = [
 ]
 
 [tool.mypy]
-# General mypy configuration for scientific Python package
 python_version = "3.10"
 exclude = [
     "docs/examples",  # Auto-generated from notebooks, not source code
 ]
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false  # Allow untyped defs in science code (too strict otherwise)
-disallow_any_generics = false  # Allow generic types without parameters (common in numpy)
-warn_redundant_casts = true
-warn_unused_ignores = true
-no_implicit_reexport = true
-strict_equality = true
+strict = true
 warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 pretty = true
 show_error_context = true
 show_column_numbers = true
-
-# Scientific computing: Allow untyped calls to libraries
-# Many scientific libraries have incomplete type stubs
-allow_untyped_calls = true
-allow_incomplete_defs = true
-check_untyped_defs = false
-
-# Ignore missing imports for libraries without type stubs
-# (napari, ipywidgets, IPython, etc. don't have complete type stubs)
-# This matches the pre-commit hook behavior: --ignore-missing-imports
+# napari, ipywidgets, IPython and others ship no complete stubs.
 ignore_missing_imports = true
-
-# Note: numpy.typing.mypy_plugin is deprecated in NumPy 2.3+
-
-[[tool.mypy.overrides]]
-module = [
-    "neurospatial.spatial",
-    "neurospatial.field_ops",
-    "neurospatial.spike_field",
-    "neurospatial.io",
-    "neurospatial.alignment",
-    "neurospatial.environment.core",
-    "neurospatial.simulation.validation",
-]
-disallow_untyped_defs = true
-check_untyped_defs = true
-# NumPy now has built-in type stubs that work without plugins
 
 # Ignore missing imports for libraries without type stubs
 [[tool.mypy.overrides]]
@@ -391,12 +384,6 @@ module = [
     "pynapple.*",
 ]
 ignore_missing_imports = true
-
-# Stricter checking for our own code
-[[tool.mypy.overrides]]
-module = "neurospatial.*"
-warn_return_any = true
-warn_unused_ignores = true
 
 # Optional Qt/magicgui attributes depend on the installed GUI backend and stubs.
 # Attribute ignores are needed in headless CI but can be unused with Qt installed.

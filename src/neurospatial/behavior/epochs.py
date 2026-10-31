@@ -309,11 +309,12 @@ def restrict(
     for i, arr in enumerate(arrays):
         arr_np = np.asarray(arr)
         if len(arr_np) != n:
-            raise ValueError(
+            msg = (
                 f"array at position {i} has len {len(arr_np)} but must be "
                 f"aligned to times (len {n}); every *arrays entry must have the "
                 "same first-axis length as times."
             )
+            raise ValueError(msg)
         coerced.append(arr_np)
 
     mask = in_epochs(times_arr, epochs, closed=closed)

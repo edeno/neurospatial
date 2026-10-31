@@ -139,7 +139,7 @@ class TestBiasSimilarity:
         assert np.isnan(bias_similarity(template, _ordered_template(3)))
 
     @pytest.mark.parametrize(
-        "matrix, problem",
+        ("matrix", "problem"),
         [
             (np.ones((2, 3)), "shape"),
             (np.array([[0.0, 2.0], [-2.0, 0.0]]), r"\[-1, 1\]"),

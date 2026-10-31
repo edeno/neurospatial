@@ -113,11 +113,12 @@ def maze_track_graph(
         # Order contract: [center, arm1, arm2, arm3, arm4].
         # Star topology: center connects to each of the four arm tips.
         if len(labels) != 5:
-            raise ValueError(
+            msg = (
                 "A plus maze needs exactly 5 nodes in `node_positions`, ordered "
                 "[center, arm1, arm2, arm3, arm4]: one center followed by four "
                 f"arm tips. Got {len(labels)}."
             )
+            raise ValueError(msg)
         center = labels[0]
         for arm in labels[1:]:
             add_edge_with_distance(graph, center, arm)
@@ -127,11 +128,12 @@ def maze_track_graph(
         # Order contract: [stem_end, junction, arm_left, arm_right].
         # Stem (stem_end->junction) + crossbar (junction->each arm tip).
         if len(labels) != 4:
-            raise ValueError(
+            msg = (
                 "A T maze needs exactly 4 nodes in `node_positions`, ordered "
                 "[stem_end, junction, arm_left, arm_right]. "
                 f"Got {len(labels)}."
             )
+            raise ValueError(msg)
         stem_end, junction, arm_left, arm_right = labels
         add_edge_with_distance(graph, stem_end, junction)
         edge_order.append((stem_end, junction))
@@ -146,12 +148,13 @@ def maze_track_graph(
         # vertical arm edge joining each base node to the arm tip at the
         # matching position in the documented order.
         if len(labels) != 6:
-            raise ValueError(
+            msg = (
                 "A W maze needs exactly 6 nodes in `node_positions`, ordered "
                 "[base_left, base_mid, base_right, arm_left, arm_mid, "
                 "arm_right]: three base/junction nodes followed by three arm "
                 f"tips (5 base+arm edges). Got {len(labels)}."
             )
+            raise ValueError(msg)
         base = labels[:3]
         arms = labels[3:]
         # Horizontal connector along the base (base_left -> base_mid -> base_right).

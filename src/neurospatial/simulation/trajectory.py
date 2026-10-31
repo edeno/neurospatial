@@ -1416,5 +1416,4 @@ def _simulate_trajectory_laps(
             "direction": directions,
         }
         return positions, times, metadata
-    else:
-        return positions, times
+    return positions, times

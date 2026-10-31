@@ -38,7 +38,7 @@ def test_time_bins_decimal_boundary():
     )
 
 
-@pytest.mark.parametrize("dt,stop,n", [(0.1, 0.3, 2), (0.025, 100.1, 4000)])
+@pytest.mark.parametrize(("dt", "stop", "n"), [(0.1, 0.3, 2), (0.025, 100.1, 4000)])
 def test_time_bins_large_offset(dt, stop, n):
     tile, count = helpers()
     left, right = tile(np.array([[1e9 + 0.1, 1e9 + stop]]), dt)
@@ -68,7 +68,7 @@ def test_time_bins_reject_insufficient_precision():
         tile(np.array([[1e9, 1e9 + 1e-6]]), 2e-7)
 
 
-@pytest.mark.parametrize("dt,n", [(5e-4, 20000), (2e-3, 5000)])
+@pytest.mark.parametrize(("dt", "n"), [(5e-4, 20000), (2e-3, 5000)])
 def test_time_bins_unix_epoch_timestamps(dt, n):
     tile, _ = helpers()
     left, right = tile(np.array([[1.7e9, 1.7e9 + 10]]), dt)

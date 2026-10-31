@@ -213,10 +213,11 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
     names = list(signature.parameters)
     samples = [(name, names.index(name)) for name in SAMPLE_ARGUMENTS if name in names]
     if not samples:
-        raise TypeError(
+        msg = (
             f"reads_pynapple_samples needs one of {SAMPLE_ARGUMENTS}; "
             f"{func.__qualname__} has {names}."
         )
+        raise TypeError(msg)
     takes_epochs = "epochs" in names
 
     def given(name: str, position: int, args: Any, kwargs: Any) -> Any:

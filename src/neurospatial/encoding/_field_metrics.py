@@ -436,7 +436,8 @@ def field_stability(
     elif method == "spearman":
         correlation, _ = stats.spearmanr(map1_clean, map2_clean)
     else:
-        raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
+        msg = f"Unknown method: {method}. Use 'pearson' or 'spearman'."
+        raise ValueError(msg)
 
     return float(correlation)
 
@@ -536,9 +537,8 @@ def rate_map_coherence(
     """
     # Validate inputs
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
-        )
+        msg = f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        raise ValueError(msg)
 
     # Remove NaN values for computing neighbor means
     # But track which bins are valid for final correlation
@@ -672,12 +672,13 @@ def in_out_field_ratio(
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"firing_rate has shape {firing_rate.shape}, but env has "
             f"{env.n_bins} bins.\nWhy: each rate is weighted by its bin's "
             "measure, so the map must be estimated on env.\nFix: pass the "
             "environment the rate map was computed on (rates.env)."
         )
+        raise ValueError(msg)
 
     # Validate field_bins
     if len(field_bins) == 0:
@@ -712,8 +713,7 @@ def in_out_field_ratio(
     if out_field_rate == 0:
         if in_field_rate > 0:
             return np.inf
-        else:
-            return np.nan
+        return np.nan
 
     ratio = in_field_rate / out_field_rate
 
@@ -1065,11 +1065,12 @@ def field_shift_distance(
            Trends Neurosci 31(9).
     """
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
+        msg = (
             f"metric must be 'euclidean' or 'geodesic', got {metric!r}.\n"
             "Fix: pass metric='euclidean' for straight-line distance or "
             "metric='geodesic' for the path through the environment."
         )
+        raise ValueError(msg)
     for argument, env in (("env_1", env_1), ("env_2", env_2)):
         require_cartesian(
             env.coordinate_system,
@@ -1090,11 +1091,14 @@ def field_shift_distance(
         bins, topology = _environment_differences(env_1, env_2)
         mismatch = bins or topology
         if mismatch is not None:
-            raise IncompatibleEnvironmentError(
+            msg = (
                 "field_shift_distance(metric='geodesic') needs env_1 and env_2 "
                 f"to have the same bins and connectivity; they differ in "
                 f"{mismatch}. A path is measured on one environment's graph, "
-                "and the other session's bins are not on it.",
+                "and the other session's bins are not on it."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix=(
                     "use metric='euclidean' to compare centroids across "
                     "environments in one coordinate frame, or compute both rate "
@@ -1290,17 +1294,16 @@ def compute_field_emd(
 
     # Validate inputs
     if len(firing_rate_1) != len(firing_rate_2):
-        raise ValueError(
-            f"firing_rate arrays must have same length, got {len(firing_rate_1)} and {len(firing_rate_2)}"
-        )
+        msg = f"firing_rate arrays must have same length, got {len(firing_rate_1)} and {len(firing_rate_2)}"
+        raise ValueError(msg)
 
     if len(firing_rate_1) != env.n_bins:
-        raise ValueError(
-            f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_1)}"
-        )
+        msg = f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_1)}"
+        raise ValueError(msg)
 
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+        msg = f"metric must be 'euclidean' or 'geodesic', got '{metric}'"
+        raise ValueError(msg)
     if metric == "euclidean":
         require_cartesian(
             env.coordinate_system,
@@ -1351,11 +1354,12 @@ def compute_field_emd(
         sum1 = np.sum(firing_rate_1)
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
-            raise ValueError(
+            msg = (
                 f"Unnormalized distributions must have equal total mass (rate x "
                 f"bin measure) on the bins finite in both maps. Got {sum1:.6f} "
                 f"and {sum2:.6f}. Set normalize=True to auto-normalize."
             )
+            raise ValueError(msg)
 
     # Filter to bins with non-zero mass in either distribution
     # This reduces problem size significantly for sparse fields

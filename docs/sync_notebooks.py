@@ -27,10 +27,11 @@ def sync_catalog() -> None:
             flags=re.MULTILINE,
         )
         if title is None or len(estimates) != 1 or prerequisites is None:
-            raise ValueError(
+            msg = (
                 f"{source.name} needs a title, one **Estimated time**: entry and "
                 "**Prerequisites**: links (or None) before syncing the catalog."
             )
+            raise ValueError(msg)
         dependencies = re.findall(
             r"\[[^\]]+\]\(([^)]+\.ipynb)\)", prerequisites.group(1)
         )

@@ -614,8 +614,7 @@ def grid_cell_firing_rate(regular_grid_env: Environment) -> NDArray[np.float64]:
         firing_rate += np.cos(phase)
 
     # Normalize to positive values
-    firing_rate = (firing_rate + 3) / 6 * 20.0  # Peak around 20 Hz
-    return firing_rate
+    return (firing_rate + 3) / 6 * 20.0  # Peak around 20 Hz
 
 
 @pytest.fixture
@@ -878,8 +877,7 @@ class TestSpatialRateResultRegionCoverage:
         region_builder.add("north", polygon=box(0, 30, 40, 40))
         region_builder.add("south", polygon=box(0, 0, 40, 10))
         region_builder.add("center", polygon=box(15, 15, 25, 25))
-        simple_env = simple_env.with_regions(region_builder)
-        return simple_env
+        return simple_env.with_regions(region_builder)
 
     def test_region_coverage_accepts_threshold_parameter(
         self,
@@ -2455,9 +2453,7 @@ def place_cell_spikes(
     dt = trajectory_times[1] - trajectory_times[0]
     spike_probs = firing_rates * dt
     spikes_mask = np.random.random(len(trajectory_times)) < spike_probs
-    spike_times = trajectory_times[spikes_mask]
-
-    return spike_times
+    return trajectory_times[spikes_mask]
 
 
 class TestComputeSpatialRateFunction:

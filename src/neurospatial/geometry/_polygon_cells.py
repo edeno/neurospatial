@@ -70,8 +70,9 @@ def _validate_polygons(polygons: Sequence[Polygon]) -> None:
 
 def _validate_polygon(geometry: Any, name: str) -> None:
     if not isinstance(geometry, (Polygon, MultiPolygon)):
+        msg = f"{name} must be a Polygon or MultiPolygon."
         raise _error(
-            f"{name} must be a Polygon or MultiPolygon.",
+            msg,
             "provide valid finite Cartesian 2-D polygon geometry",
         )
     if (
@@ -79,13 +80,15 @@ def _validate_polygon(geometry: Any, name: str) -> None:
         or geometry.has_z
         or not np.all(np.isfinite(shapely.get_coordinates(geometry)))
     ):
+        msg = f"{name} must be nonempty, finite and two-dimensional."
         raise _error(
-            f"{name} must be nonempty, finite and two-dimensional.",
+            msg,
             "remove non-finite or extra coordinates and provide a nonempty polygon",
         )
     if not geometry.is_valid or not np.isfinite(geometry.area) or geometry.area <= 0:
+        msg = f"{name} is invalid: {shapely.is_valid_reason(geometry)}."
         raise _error(
-            f"{name} is invalid: {shapely.is_valid_reason(geometry)}.",
+            msg,
             "correct the polygon without implicit geometry repair",
         )
 
@@ -100,8 +103,9 @@ class PolygonCells:
         polygons = tuple(self.polygons)
         for index, polygon in enumerate(polygons):
             if not isinstance(polygon, Polygon):
+                msg = f"cells[{index}] must be a connected Polygon."
                 raise _error(
-                    f"cells[{index}] must be a connected Polygon.",
+                    msg,
                     "split disconnected positive-area pieces into separate bins",
                 )
         _validate_polygons(polygons)
@@ -157,18 +161,16 @@ class ClipMapping(ReadOnlyState):
             or self.n_parent_bins < 0
             or self.n_parent_bins > np.iinfo(np.intp).max
         ):
-            raise ValueError(
-                "n_parent_bins must be a representable nonnegative integer."
-            )
+            msg = "n_parent_bins must be a representable nonnegative integer."
+            raise ValueError(msg)
         if (
             raw.ndim != 1
             or (raw.size and raw.dtype.kind not in "iu")
             or np.any(raw < 0)
             or np.any(raw >= self.n_parent_bins)
         ):
-            raise ValueError(
-                "parent_bin_indices must be one-dimensional integer indices in [0, n_parent_bins)."
-            )
+            msg = "parent_bin_indices must be one-dimensional integer indices in [0, n_parent_bins)."
+            raise ValueError(msg)
         indices = np.array(raw, dtype=np.intp, copy=True)
         indices.setflags(write=False)
         object.__setattr__(self, "parent_bin_indices", indices)
@@ -185,7 +187,8 @@ class ClippedLocator:
 
     def __post_init__(self) -> None:
         if len(self.cells.polygons) != len(self.mapping.parent_bin_indices):
-            raise ValueError("cells and mapping must contain the same number of bins.")
+            msg = "cells and mapping must contain the same number of bins."
+            raise ValueError(msg)
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -213,7 +216,8 @@ class ClippedLocator:
         """
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         if query.ndim != 2 or query.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {query.shape}.")
+            msg = f"Expected points of shape (M, 2), got {query.shape}."
+            raise ValueError(msg)
         result = np.full(len(query), -1, dtype=np.intp)
         rows = np.flatnonzero(np.all(np.isfinite(query), axis=1))
         if not len(rows) or not self.cells.polygons:
@@ -226,7 +230,8 @@ class ClippedLocator:
             half_open=half_open,
         )
         if np.any(parents >= self.mapping.n_parent_bins):
-            raise ValueError("base locator returned a parent outside n_parent_bins.")
+            msg = "base locator returned a parent outside n_parent_bins."
+            raise ValueError(msg)
         tree = _lookup_index(self, indexes, lambda: STRtree(self.cells.polygons))
         radius = np.hypot.reduce(np.asarray(error)[rows], axis=1)
         if np.any(radius > 0):
@@ -287,9 +292,8 @@ def clip_mapping_of(locator: Locator) -> ClipMapping | None:
             return None
         child = locator.parent_to_child
         if child.shape != mapping.parent_bin_indices.shape:
-            raise ValueError(
-                "A subset's parent count disagrees with the clip it selects from."
-            )
+            msg = "A subset's parent count disagrees with the clip it selects from."
+            raise ValueError(msg)
         kept = active_order(child)
         return ClipMapping(mapping.parent_bin_indices[kept], mapping.n_parent_bins)
     return None
@@ -322,9 +326,12 @@ def _check_disjoint(polygons: tuple[Polygon, ...]) -> None:
     )
     if overlap.size:
         pair = overlap[np.argmin(first[overlap])]
-        raise _error(
+        msg = (
             f"cells[{first[pair]}] and cells[{second[pair]}] overlap in their "
-            "interiors.",
+            "interiors."
+        )
+        raise _error(
+            msg,
             "provide a nonoverlapping cell partition",
         )
 
@@ -336,7 +343,8 @@ def transform_polygon_cells(
     matrix = np.asarray(matrix, dtype=np.float64)
     _check_homogeneous(matrix)
     if matrix.shape != (3, 3):
-        raise ValueError("polygon transform must have shape (3, 3).")
+        msg = "polygon transform must have shape (3, 3)."
+        raise ValueError(msg)
     # Node both sides before mapping: rounding an extra vertex in only one
     # ring can bend a formerly shared straight edge on only that side.
     tree = STRtree(cells.polygons)
@@ -346,14 +354,16 @@ def transform_polygon_cells(
         if len(owners):
             owner = int(owners[0])
             if owner in noded or not atom.equals(cells.polygons[owner]):
+                msg = "Shared cell boundaries could not be noded without changing support."
                 raise _error(
-                    "Shared cell boundaries could not be noded without changing support.",
+                    msg,
                     "provide a resolvable nonoverlapping polygon partition",
                 )
             noded[owner] = atom
     if len(noded) != len(cells.polygons):
+        msg = "Noding lost a cell's interior."
         raise _error(
-            "Noding lost a cell's interior.",
+            msg,
             "rescale coordinates or provide resolvable polygon geometry",
         )
     geometries = np.asarray([noded[i] for i in range(len(noded))], dtype=object)
@@ -386,8 +396,9 @@ def _polygon_coordinate_errors(polygon: Polygon | MultiPolygon) -> NDArray[np.fl
         .minimum_clearance
         < 1e4
     ):
-        raise ValueError(
+        msg = (
             "Polygon features are not resolvable at the stored coordinate precision. "
             "Rescale or recenter coordinates before clipping or transforming."
         )
+        raise ValueError(msg)
     return np.asarray(uncertainty, dtype=np.float64)

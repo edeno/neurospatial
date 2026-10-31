@@ -48,7 +48,8 @@ def _posterior_cell(path):
         )
         if plots_result:
             return cell_source
-    raise AssertionError(f"No posterior ground-truth overlay cell in {path}")
+    msg = f"No posterior ground-truth overlay cell in {path}"
+    raise AssertionError(msg)
 
 
 @pytest.mark.parametrize("path", EXAMPLES)

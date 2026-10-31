@@ -132,9 +132,7 @@ def create_benchmark_env(
     positions = rng.uniform(0, grid_extent, size=(n_samples, 2))
 
     # Create environment with bin_size=1.0 to get approximately grid_size bins
-    env = Environment.from_samples(positions, bin_size=1.0)
-
-    return env
+    return Environment.from_samples(positions, bin_size=1.0)
 
 
 def create_benchmark_fields(
@@ -290,7 +288,8 @@ def create_benchmark_overlays(
     n_frames = config.n_frames
     dim_ranges = env.dimension_ranges
     if dim_ranges is None:
-        raise ValueError("Environment must have dimension_ranges set")
+        msg = "Environment must have dimension_ranges set"
+        raise ValueError(msg)
     dim_ranges_list: list[tuple[float, float]] = list(dim_ranges)
 
     # Generate a smooth trajectory for position overlay

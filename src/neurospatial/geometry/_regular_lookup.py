@@ -72,11 +72,12 @@ def points_to_regular_grid_bin_ind(
     valid_points = points_atleast_2d[valid_input_mask]
     n_dims = valid_points.shape[1]
     if n_dims != len(grid_edges) or n_dims != len(grid_shape):
-        raise ValueError(
+        msg = (
             f"Dimensionality mismatch: points have {n_dims} dimension(s), but "
             f"grid_edges has {len(grid_edges)} and grid_shape has "
             f"{len(grid_shape)}. Points must match the grid's dimensionality."
         )
+        raise ValueError(msg)
 
     multi_bin_idx_list = []
     point_is_within_grid_bounds = np.ones(valid_points.shape[0], dtype=bool)

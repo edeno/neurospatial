@@ -32,7 +32,7 @@ def test_swapped_one_dimensional_arguments_name_swap():
 
 
 @pytest.mark.parametrize(
-    "times, positions",
+    ("times", "positions"),
     [
         ([0.0, np.nan, 0.2], [0.0, 1.0, 2.0]),
         ([0.0, 0.1, 0.2], [0.0, 1.0, 2.0, 3.0]),
@@ -144,7 +144,7 @@ def test_numeric_conversion_errors_are_named_together():
 
 
 @pytest.mark.parametrize(
-    "times, positions, other_problem",
+    ("times", "positions", "other_problem"),
     [
         ([1, 0], [["bad"], ["bad"]], "strictly increasing; it decreases"),
         (["bad"], np.zeros((1, 2, 1)), "got shape (1, 2, 1)"),

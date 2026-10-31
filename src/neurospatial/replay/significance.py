@@ -692,21 +692,24 @@ def _check_test_options(
 ) -> None:
     """Refuse a shuffle count, alternative or empty-bin rule that is not offered."""
     if not is_integer_at_least(n_shuffles, 1):
-        raise ValueError(
+        msg = (
             f"{_OPERATION} needs n_shuffles to be a positive integer, got "
             f"{n_shuffles!r}. Davidson et al. used 1500 per null, Tirole et al. "
             "1000."
         )
+        raise ValueError(msg)
     if alternative not in _ALTERNATIVES:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: alternative must be one of {_ALTERNATIVES}, got "
             f"{alternative!r}."
         )
+        raise ValueError(msg)
     if empty_time_bins not in ("keep", "zero"):
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: empty_time_bins must be 'keep' or 'zero', got "
             f"{empty_time_bins!r}."
         )
+        raise ValueError(msg)
 
 
 def _zeroed_event_rows(
@@ -1313,10 +1316,11 @@ def _zero_empty_rows(
     """The posterior with the rows of time bins without spikes set to zero."""
     counts = np.asarray(spike_counts)
     if counts.ndim != 2 or len(counts) != len(posterior):
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: spike_counts must have one row per posterior row "
             f"({len(posterior)}), got shape {counts.shape}."
         )
+        raise ValueError(msg)
     empty = counts.sum(axis=1) == 0
     zeroed: NDArray[np.float64] = np.where(empty[:, np.newaxis], 0.0, posterior)
     return zeroed
@@ -1358,10 +1362,11 @@ def _nulls_to_run(
         return tuple(name for name in _DEFAULT_NULLS if given[_NULL_SPECS[name].needs])
     unknown = [name for name in requested if name not in _NULLS]
     if unknown or not requested:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: nulls must name at least one of {_NULLS}, got "
             f"{requested!r}."
         )
+        raise ValueError(msg)
     lacking = [name for name in requested if not given[_NULL_SPECS[name].needs]]
     if lacking:
         needs = {
@@ -1450,11 +1455,12 @@ def _checked_null_options(
     if not isinstance(given, Mapping) or not all(
         isinstance(options, Mapping) for options in given.values()
     ):
-        raise ValueError(
+        msg = (
             f"{owner}: null_options must map null names to mappings of "
             "options, such as {'column_cycle_weighted': {'edge_exclusion': "
             f"10.0}}}}, got {null_options!r}."
         )
+        raise ValueError(msg)
     not_run = [name for name in given if name not in nulls]
     if not_run:
         raise ValueError(
@@ -1476,7 +1482,8 @@ def _checked_null_options(
             takes = (
                 f"it takes {sorted(defaults)}" if defaults else "it takes no options"
             )
-            raise ValueError(f"{owner}: null_options gives {name} {unknown}; {takes}.")
+            msg = f"{owner}: null_options gives {name} {unknown}; {takes}."
+            raise ValueError(msg)
         if defaults:
             checked[name] = {**defaults, **options}
     edge = checked.get("column_cycle_weighted", {}).get("edge_exclusion", 0.0)
@@ -1486,19 +1493,21 @@ def _checked_null_options(
         or not np.isfinite(edge)
         or edge < 0
     ):
-        raise ValueError(
+        msg = (
             f"{owner}: the edge_exclusion of column_cycle_weighted must be a "
             f"finite distance >= 0 in the environment's units, got {edge!r}."
         )
+        raise ValueError(msg)
     for name, option in (
         ("unit_identity", "active_only"),
         ("column_cycle", "exclude_zero_shift"),
     ):
         flag = checked.get(name, {}).get(option, False)
         if not isinstance(flag, (bool, np.bool_)):
-            raise ValueError(
+            msg = (
                 f"{owner}: the {option} of {name} must be True or False, got {flag!r}."
             )
+            raise ValueError(msg)
     return checked
 
 
@@ -1864,11 +1873,12 @@ def _unwrap_partial(
     if not isinstance(score, functools.partial):
         return score, options
     if score.args:
-        raise TypeError(
+        msg = (
             f"{_OPERATION}: score is a functools.partial with positional "
             "arguments; give the score's options as keywords, or in "
             "score_options."
         )
+        raise TypeError(msg)
     return score.func, {**score.keywords, **options}
 
 
@@ -1992,16 +2002,18 @@ def _scorer_for(
         accepted = list(inspect.signature(score).parameters)[3:]
         unknown = sorted(set(options) - set(accepted))
         if unknown:
-            raise TypeError(
+            msg = (
                 f"{_OPERATION}: score_options has {unknown}, which "
                 f"{score.__name__} does not take; it takes {accepted}."
             )
+            raise TypeError(msg)
         return spec.scorer(env, posterior, times, **options)
     if not callable(score):
-        raise TypeError(
+        msg = (
             f"{_OPERATION}: score must be a function such as "
             f"detect_trajectory_radon, got {type(score).__name__}."
         )
+        raise TypeError(msg)
     return _CallScorer(score, env, posterior, times, options)
 
 
@@ -2190,10 +2202,11 @@ class _CallScorer(_Scorer):
     def observe(self) -> Any:
         result = self.score(self.env, self.posterior, self.times, **self.options)
         if not hasattr(result, "score"):
-            raise TypeError(
+            msg = (
                 f"{_OPERATION}: score returned {type(result).__name__}, which has "
                 "no score attribute; return a result with a score."
             )
+            raise TypeError(msg)
         return result
 
     def scores(

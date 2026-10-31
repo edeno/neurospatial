@@ -35,10 +35,12 @@ class LazyRows:
         return np.full(self.shape[1], index, dtype=float)
 
     def __array__(self, *args, **kwargs):
-        raise AssertionError("Do not materialize caller-owned field sources")
+        msg = "Do not materialize caller-owned field sources"
+        raise AssertionError(msg)
 
     def __deepcopy__(self, memo):
-        raise AssertionError("Do not copy caller-owned field sources")
+        msg = "Do not copy caller-owned field sources"
+        raise AssertionError(msg)
 
 
 def test_independent_field_samples_own_reused_reader_buffers():
@@ -366,7 +368,8 @@ def test_1d_regions_rejected_before_any_field_reads_or_readers():
 
         def convert_to_data(self, *args):
             conversions.append(True)
-            raise AssertionError("Readers must not be acquired for an invalid scene")
+            msg = "Readers must not be acquired for an invalid scene"
+            raise AssertionError(msg)
 
     with pytest.raises(ValueError, match="cannot draw regions in a 1D environment"):
         Animation(
@@ -391,7 +394,8 @@ def test_unknown_region_names_rejected_before_any_field_reads_or_readers(env):
     class Video:
         def convert_to_data(self, *args):
             conversions.append(True)
-            raise AssertionError("Readers must not be acquired for an invalid scene")
+            msg = "Readers must not be acquired for an invalid scene"
+            raise AssertionError(msg)
 
     with pytest.raises(RegionNotFoundError, match="rewrd"):
         Animation(

@@ -48,11 +48,11 @@ SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 BENCHMARK_DATASETS_DIR = SCRIPTS_DIR / "benchmark_datasets"
 BENCHMARK_DATASETS_INIT_PATH = BENCHMARK_DATASETS_DIR / "__init__.py"
 if not SCRIPTS_DIR.exists():
-    raise RuntimeError(f"Scripts directory not found: {SCRIPTS_DIR}")
+    msg = f"Scripts directory not found: {SCRIPTS_DIR}"
+    raise RuntimeError(msg)
 if not BENCHMARK_DATASETS_INIT_PATH.exists():
-    raise RuntimeError(
-        f"Benchmark dataset package not found: {BENCHMARK_DATASETS_INIT_PATH}"
-    )
+    msg = f"Benchmark dataset package not found: {BENCHMARK_DATASETS_INIT_PATH}"
+    raise RuntimeError(msg)
 
 if TYPE_CHECKING:
     import napari
@@ -96,9 +96,8 @@ def benchmark_datasets_module() -> ModuleType:
         submodule_search_locations=[str(BENCHMARK_DATASETS_DIR)],
     )
     if spec is None or spec.loader is None:
-        raise RuntimeError(
-            f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
-        )
+        msg = f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
+        raise RuntimeError(msg)
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -188,7 +187,8 @@ def trajectory(benchmark_env: Environment) -> NDArray[np.float64]:
 
     dim_ranges = benchmark_env.dimension_ranges
     if dim_ranges is None:
-        raise ValueError("Environment must have dimension_ranges set")
+        msg = "Environment must have dimension_ranges set"
+        raise ValueError(msg)
     dim_ranges_list = list(dim_ranges)
 
     n_dims = len(dim_ranges_list)
