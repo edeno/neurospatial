@@ -12,6 +12,11 @@ from collections.abc import Iterator
 from functools import cached_property
 from pathlib import Path
 
+# Not resolved: frame filenames come from the same sys.path entry as
+# __file__, so resolving only this side would never match when the package
+# is imported through a symlink.
+_PACKAGE_DIR = Path(__file__).parent
+
 
 def _external_stacklevel(skip: int = 0) -> int:
     """Stacklevel, counted from the caller, of the first frame outside the package.
@@ -20,11 +25,10 @@ def _external_stacklevel(skip: int = 0) -> int:
     caller reached through a frame outside the package, such as
     ``contextlib``'s ``__exit__`` resuming a context-manager generator.
     """
-    package_dir = Path(__file__).resolve().parent
     frame = sys._getframe(1 + skip)
     level = 1 + skip
     while frame.f_back is not None and (
-        Path(frame.f_code.co_filename).is_relative_to(package_dir)
+        Path(frame.f_code.co_filename).is_relative_to(_PACKAGE_DIR)
         or frame.f_code is cached_property.__get__.__code__
     ):
         frame = frame.f_back
