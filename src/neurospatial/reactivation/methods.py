@@ -1341,7 +1341,7 @@ def _rest_counts(
     """
     if method.rest_bins == "fixed":
         assert method.bin_size is not None
-        return _counts(session.trains, window, method.bin_size), None
+        return _binned(session.trains, window, method.bin_size)[0], None
     events = _events_in(session.events[f"{period}_events"], window)
     _check_min_events(method, events.shape[0], period)
     return _event_counts(session.trains, events), events.shape[0]
@@ -1372,7 +1372,7 @@ def _template_counts(
             raise _MethodError("no template event starts inside template_epochs")
         return _event_counts(session.trains, events)
     assert method.bin_size is not None
-    return _counts(session.trains, session.template, method.bin_size)
+    return _binned(session.trains, session.template, method.bin_size)[0]
 
 
 class _MethodError(ValueError):
@@ -1438,13 +1438,6 @@ def _checked_groups(
             )
         checked[kind] = array
     return checked
-
-
-def _counts(
-    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], bin_size: float
-) -> NDArray[np.float64]:
-    """Spike counts in ``bin_size`` bins inside ``windows``, (n_bins, n_units)."""
-    return _binned(trains, windows, bin_size)[0]
 
 
 def _binned(
