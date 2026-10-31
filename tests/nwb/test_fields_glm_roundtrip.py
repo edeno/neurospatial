@@ -304,7 +304,7 @@ class TestSchemaVersionGuard:
         table.fields["description"] = json.dumps(meta)
 
     @pytest.mark.parametrize(
-        "bad", [_MISSING, "0.9", "1.0", "2.0", "2.3", "2.4", "2.6", "3.0"]
+        "bad", [_MISSING, "0.9", "1.0", "2.0", "2.4", "2.5", "2.7", "3.0"]
     )
     def test_other_schema_versions_refused(self, empty_nwb, sample_environment, bad):
         """Any other version is refused up front with recreate instructions,
@@ -318,5 +318,5 @@ class TestSchemaVersionGuard:
             read_spatial_rates(empty_nwb, env=env)
         message = str(caught.value)
         assert f"has schema_version={recorded!r}" in message
-        assert "reads only schema 2.5" in message
+        assert "reads only schema 2.6" in message
         assert "write them again with write_spatial_rates" in message
