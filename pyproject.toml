@@ -1,15 +1,16 @@
 [project]
 name = "neurospatial"
-version = "0.8.0"
+dynamic = ["version"]
 description = "Discretize continuous N-dimensional spatial environments into bins/nodes with connectivity graphs"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "alphashape>=1.3.0",
     "joblib>=1.1.1",  # parallel n_jobs paths in encoding; the scikit-learn 1.2 floor
     "matplotlib>=3.7.0",
-    "networkx>=3.0",
+    "networkx>=3.2.1",  # track-linearization 2.4 requires it
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "scikit-image>=0.19.0",
@@ -31,13 +32,13 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Information Analysis",
@@ -50,43 +51,6 @@ Repository = "https://github.com/edeno/neurospatial"
 Issues = "https://github.com/edeno/neurospatial/issues"
 
 [project.optional-dependencies]
-dev = [
-    # Testing
-    "pytest>=8.4.2",
-    "pytest-cov>=7.0.0",
-    "pytest-benchmark>=5.2.3",
-    "pytest-mpl>=0.18.0",
-    "pytest-xdist>=3.8.0",
-    "hypothesis>=6.92.0",
-    "coverage>=7.11.0",
-    # Code quality
-    "ruff>=0.14.3",
-    "pre-commit>=4.3.0",
-    "mypy>=1.18.2",
-    # Development tools
-    "ipython>=8.0.0",
-    # Test fixtures
-    "imageio>=2.35.0",  # For video test fixtures
-    "pyarrow>=22.0.0",  # For parquet test fixtures
-    "statsmodels>=0.14.0",  # GLM fitting in circular-basis doc snippet
-    "psutil>=5.9",
-]
-docs = [
-    "mkdocs>=1.6.0",
-    "mkdocs-material>=9.5.0",
-    "mkdocstrings[python]>=0.26.0",
-    "mkdocs-gen-files>=0.5.0",
-    "mkdocs-literate-nav>=0.6.0",
-    "mkdocs-section-index>=0.3.0",
-    "mkdocs-jupyter>=0.25.0",
-    "jupytext>=1.16.0",
-]
-notebooks = [
-    "jupyter>=1.1.1",
-    "nbconvert>=7.16.6",
-    "ipykernel>=6.0.0",
-    "jupytext>=1.16.0",
-]
 # Video support
 video = [
     "imageio>=2.35.0",           # Video reading (fallback backend)
@@ -133,47 +97,59 @@ xarray = ["xarray"]
 # array-first and never imports pynapple.
 pynapple = ["pynapple>=0.11.3"]
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27: PEP 639 license expressions
 build-backend = "hatchling.build"
 
-[tool.hatchling.build.targets.wheel]
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
 packages = ["src/neurospatial"]
 
-[tool.hatchling.build.targets.wheel.force-include]
-"src/neurospatial/py.typed" = "neurospatial/py.typed"
-
-[tool.hatchling.build.targets.sdist]
+[tool.hatch.build.targets.sdist]
+# Source, tests and the documentation the tests read; not agent, CI or
+# coverage files.
 include = [
-    "src/neurospatial/py.typed",
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/scripts",
+    "/benchmarks",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "mkdocs.yml",
 ]
 
 [tool.pytest.ini_options]
+minversion = "8.4"
 testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-# Enable parallel testing with pytest-xdist for significant speedup
-# -n auto: use all available CPU cores
-# --dist=loadscope: keep tests in same module/class together for fixture efficiency
-addopts = "-v --strict-markers -n auto --dist=loadscope -m \"not slow and not napari\""
-# Register custom markers to enable --strict-markers
+python_files = ["test_*.py"]
+# -n auto runs on every core; slow and napari tests run in their own CI jobs.
+addopts = [
+    "-ra",
+    "-v",
+    "--strict-config",
+    "--strict-markers",
+    "-n", "auto",
+    "-m", "not slow and not napari",
+]
+xfail_strict = true
+log_level = "INFO"
 markers = [
     "hypothesis: property tests driven by Hypothesis",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: integration tests with external dependencies",
-    "napari: napari GUI tests (require single-threaded execution)",
-    "pynapple: tests requiring the optional pynapple extra (run in a dedicated CI job)",
-    "benchmark: performance benchmark tests",
-    "hypothesis: property-based tests using Hypothesis",
-    "thread_unsafe: tests that cannot be parallelized safely",
-    "xdist_group(name): group tests to run together in same worker",
+    "gui: marks tests as requiring GUI/display (deselect with '-m \"not gui\"')",
+    "slow: marks tests as slow performance benchmarks (deselect with '-m \"not slow\"')",
+    "wallclock: asserts a wall-clock time or speedup bound; machine dependent, so CI deselects it (run locally)",
+    "napari: marks tests as requiring napari viewer (deselect with '-m \"not napari\"')",
+    "pynapple: marks tests as requiring the optional pynapple extra (run in a dedicated CI job)",
+    "nwb: marks tests as requiring the optional nwb extra (pynwb; run in a dedicated CI job)",
+    "integration: marks tests as cross-module integration tests (spike_field+plot, NWB, animation)",
 ]
-# Timeout for individual tests (in seconds) - prevents runaway tests
-timeout = 300
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
 fix = true
 show-fixes = true
 exclude = [
@@ -337,7 +313,6 @@ no_implicit_reexport = true
 strict_equality = true
 warn_unreachable = true
 pretty = true
-show_error_codes = true
 show_error_context = true
 show_column_numbers = true
 
@@ -457,6 +432,43 @@ module = "docs.examples.*"
 ignore_errors = true
 
 [dependency-groups]
+# Development only; `uv sync` installs `dev`, `--group docs` and
+# `--group notebooks` add the others (`pip install --group dev` with pip >= 25.1).
 dev = [
+    # Testing
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "pytest-benchmark>=5.2.3",
+    "pytest-mpl>=0.18.0",
+    "pytest-xdist>=3.8.0",
+    "hypothesis>=6.92.0",
+    "coverage>=7.11.0",
+    # Code quality
+    "ruff>=0.14.3",
+    "pre-commit>=4.3.0",
+    "mypy>=1.18.2",
+    # Development tools
+    "ipython>=8.0.0",
+    # Test fixtures
+    "imageio>=2.35.0",  # For video test fixtures
+    "pyarrow>=22.0.0",  # For parquet test fixtures
+    "statsmodels>=0.14.0",  # GLM fitting in circular-basis doc snippet
+    "psutil>=5.9",
+    "jupytext>=1.16.0",  # paired example notebooks
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.26.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-literate-nav>=0.6.0",
+    "mkdocs-section-index>=0.3.0",
+    "mkdocs-jupyter>=0.25.0",
+    "jupytext>=1.16.0",
+]
+notebooks = [
+    "jupyter>=1.1.1",
+    "nbconvert>=7.16.6",
+    "ipykernel>=6.0.0",
     "jupytext>=1.16.0",
 ]

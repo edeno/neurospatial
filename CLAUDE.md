@@ -38,8 +38,8 @@ are in the [project vision](docs/vision.md). Apply the
 ## Commands
 
 Run Python tools through `uv run`. Test and lint tooling lives in the `dev`
-extra (`uv add --optional dev <pkg>`), and `uv sync` removes extras you do not
-name, so keep it when adding another: `uv sync --extra dev --extra nwb`.
+dependency group (`uv add --dev <pkg>`), which `uv sync` installs by default.
+`uv sync` removes extras you do not name: `uv sync --extra nwb`.
 
 ```bash
 uv run pytest --doctest-modules src/neurospatial/ -n 0   # doctests run serially

@@ -7,7 +7,7 @@ paths:
 
 # NWB code
 
-- Install with `uv sync --extra dev --extra nwb`. CI runs NWB tests serially:
+- Install with `uv sync --extra nwb`. CI runs NWB tests serially:
   `uv run pytest tests/nwb -n 0`.
 - Import `ndx_events` and `ndx_pose` before opening an `NWBHDF5IO`. Otherwise
   pynwb builds generic classes for those types, and, for example, `read_events`

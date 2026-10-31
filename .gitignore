@@ -206,3 +206,4 @@ session.nwb
 
 # Development architecture checks
 .import_linter_cache/
+coverage.json

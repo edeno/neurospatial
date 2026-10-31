@@ -77,7 +77,7 @@ cd neurospatial
 3. Install development dependencies:
 
 ```bash
-uv sync --extra dev
+uv sync
 ```
 
 4. Set up pre-commit hooks:
@@ -694,7 +694,7 @@ Closes #42
 
 ```bash
 # Install docs dependencies
-uv sync --extra docs
+uv sync --group docs
 
 # Serve locally
 uv run mkdocs serve

@@ -91,7 +91,7 @@ cd neurospatial
 uv sync
 
 # Or with pip
-pip install -e ".[dev]"
+pip install -e . --group dev  # pip >= 25.1
 ```
 
 **Note**: This project uses `uv` for package management. If you have `uv` installed, all commands should be prefixed with `uv run` (e.g., `uv run pytest`).
