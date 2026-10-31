@@ -195,30 +195,11 @@ def event_properties(
             raise ValueError(
                 f"{operation}: event {index} has no times; decode with times=."
             )
-        counts = None
-        if spike_counts is not None:
-            counts = np.asarray(spike_counts[index])
-            if counts.ndim != 2:
-                raise ValueError(
-                    _format_error(
-                        f"{operation}: spike_counts[{index}] has shape "
-                        f"{counts.shape}, but the active cells are counted per "
-                        "cell.",
-                        why="spike counts summed over cells cannot count active "
-                        "cells: every spike would count as one cell",
-                        fix="pass (n_time_bins, n_cells) counts, one column per cell",
-                    )
-                )
-            if len(counts) != len(posterior):
-                raise ValueError(
-                    f"{operation}: spike_counts[{index}] has {len(counts)} rows "
-                    f"but event {index} has {len(posterior)} time bins."
-                )
-            if np.any(counts < 0) or not np.all(np.equal(np.mod(counts, 1), 0)):
-                raise ValueError(
-                    f"{operation}: spike_counts[{index}] has negative or "
-                    "non-integer counts; pass spike counts per time bin and cell."
-                )
+        counts = (
+            None
+            if spike_counts is None
+            else _checked_counts(spike_counts[index], len(posterior), index, operation)
+        )
         metrics = trajectory_metrics(
             event_env, posterior, np.asarray(times), spike_counts=counts
         )
@@ -245,6 +226,38 @@ def event_properties(
             row["empty_fraction"] = float(metrics.empty_fraction)
         rows.append(row)
     return pd.DataFrame(rows).set_index("event")
+
+
+def _checked_counts(
+    spike_counts: NDArray[np.int64],
+    n_time_bins: int,
+    index: int,
+    operation: str,
+) -> NDArray[Any]:
+    """An event's spike counts, checked to be ``(n_time_bins, n_cells)`` counts."""
+    counts = np.asarray(spike_counts)
+    if counts.ndim != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation}: spike_counts[{index}] has shape "
+                f"{counts.shape}, but the active cells are counted per "
+                "cell.",
+                why="spike counts summed over cells cannot count active "
+                "cells: every spike would count as one cell",
+                fix="pass (n_time_bins, n_cells) counts, one column per cell",
+            )
+        )
+    if len(counts) != n_time_bins:
+        raise ValueError(
+            f"{operation}: spike_counts[{index}] has {len(counts)} rows "
+            f"but event {index} has {n_time_bins} time bins."
+        )
+    if np.any(counts < 0) or not np.all(np.equal(np.mod(counts, 1), 0)):
+        raise ValueError(
+            f"{operation}: spike_counts[{index}] has negative or "
+            "non-integer counts; pass spike counts per time bin and cell."
+        )
+    return counts
 
 
 def _measured(
@@ -423,9 +436,50 @@ def detection_rates(
     0.09, p = 0.100
     """
     import pandas as pd
-    from scipy.stats import binomtest
 
     operation = "detection_rates()"
+    _check_rate_options(errors, confidence, expected_rate, alternative, operation)
+    data = _checked_table(table, groups, operation)
+    keys = ["method", *groups]
+    for name, edges in (by or {}).items():
+        data[name] = _property_bins(data, properties, name, edges, groups, operation)
+        keys.append(name)
+    # Group on integer codes, so a missing groups value (NaN or None) forms
+    # its own group, as in matched_alpha, and is found again below.
+    levels = {}
+    for key in ["method", *groups]:
+        codes, uniques = pd.factorize(data[key], use_na_sentinel=False)
+        data[f"_code[{key}]"] = codes
+        levels[key] = list(uniques)
+    for name in by or {}:
+        data[f"_code[{name}]"] = data[name].cat.codes
+        levels[name] = list(data[name].cat.categories)
+    coded = [f"_code[{key}]" for key in keys]
+    frames = dict(iter(data.groupby(coded, sort=False)))
+    rows = []
+    for group in itertools.product(*(range(len(levels[key])) for key in keys)):
+        row = {key: levels[key][code] for key, code in zip(keys, group, strict=True)}
+        row.update(
+            _stratum_rate(
+                frames.get(group, data.iloc[:0]),
+                errors,
+                confidence,
+                expected_rate,
+                alternative,
+            )
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _check_rate_options(
+    errors: str,
+    confidence: float,
+    expected_rate: float | None,
+    alternative: str,
+    operation: str,
+) -> None:
+    """Refuse invalid ``errors``, ``confidence``, ``expected_rate`` or ``alternative``."""
     validate_choice(errors, _ERRORS, name="errors", owner=operation)
     if not 0 < confidence < 1:
         raise ValueError(
@@ -446,93 +500,97 @@ def detection_rates(
             f"{operation}: alternative must be 'two-sided', 'greater' or "
             f"'less', got {alternative!r}."
         )
-    data = _checked_table(table, groups, operation)
-    keys = ["method", *groups]
-    for name, edges in (by or {}).items():
-        if len(edges) < 2:
-            raise ValueError(
-                f"{operation}: by[{name!r}] needs at least two bin edges, got "
-                f"{list(edges)}."
-            )
-        if name in data:
-            values = data[name]
-        elif properties is not None and name in properties:
-            values = _property_values(data, properties, name, groups, operation)
-        else:
-            raise ValueError(
-                _format_error(
-                    f"{operation}: {name!r} is neither a column of table nor of "
-                    "properties.",
-                    why="strata are bins of event properties",
-                    fix="pass properties=event_properties(env, events, ...) or "
-                    "add the column to the table",
-                )
-            )
-        binned = pd.cut(values, bins=list(edges), right=False)
-        outside = data.loc[binned.isna(), "event"].unique()
-        if outside.size:
-            raise ValueError(
-                _format_error(
-                    f"{operation}: events {sorted(outside.tolist())[:10]} have no "
-                    f"bin for {name!r} (NaN, outside {list(edges)}, or missing "
-                    "from properties).",
-                    why="they would silently drop out of every stratum",
-                    fix="widen the edges (e.g. end with np.inf), or leave those "
-                    "events out of the table first",
-                )
-            )
-        data[name] = binned
-        keys.append(name)
-    # Group on integer codes, so a missing groups value (NaN or None) forms
-    # its own group, as in matched_alpha, and is found again below.
-    levels = {}
-    for key in ["method", *groups]:
-        codes, uniques = pd.factorize(data[key], use_na_sentinel=False)
-        data[f"_code[{key}]"] = codes
-        levels[key] = list(uniques)
-    for name in by or {}:
-        data[f"_code[{name}]"] = data[name].cat.codes
-        levels[name] = list(data[name].cat.categories)
-    coded = [f"_code[{key}]" for key in keys]
-    frames = dict(iter(data.groupby(coded, sort=False)))
-    rows = []
-    for group in itertools.product(*(range(len(levels[key])) for key in keys)):
-        frame = frames.get(group, data.iloc[:0])
-        failed = frame["_error"]
-        calls = frame["is_replay"] & ~failed
-        n_events = int(len(frame) if errors == "not_replay" else (~failed).sum())
-        n_replay = int(calls.sum())
-        if n_events:
-            interval = binomtest(n_replay, n_events).proportion_ci(
-                confidence_level=confidence, method="exact"
-            )
-            rate, low, high = n_replay / n_events, interval.low, interval.high
-        else:
-            rate = low = high = np.nan
-        row = {key: levels[key][code] for key, code in zip(keys, group, strict=True)}
-        row.update(
-            n_events=n_events,
-            n_replay=n_replay,
-            rate=rate,
-            ci_low=low,
-            ci_high=high,
-            n_errors=int(failed.sum()),
+
+
+def _property_bins(
+    data: pd.DataFrame,
+    properties: pd.DataFrame | None,
+    name: str,
+    edges: Sequence[float],
+    groups: Sequence[str],
+    operation: str,
+) -> pd.Series:
+    """Each table row's bin of property ``name``, checked to hold every event."""
+    import pandas as pd
+
+    if len(edges) < 2:
+        raise ValueError(
+            f"{operation}: by[{name!r}] needs at least two bin edges, got "
+            f"{list(edges)}."
         )
-        if expected_rate is not None:
-            row["p_value"] = (
-                float(
-                    binomtest(
-                        n_replay,
-                        n_events,
-                        float(expected_rate),
-                        alternative=alternative,
-                    ).pvalue
-                )
-                if n_events
-                else np.nan
+    if name in data:
+        values = data[name]
+    elif properties is not None and name in properties:
+        values = _property_values(data, properties, name, groups, operation)
+    else:
+        raise ValueError(
+            _format_error(
+                f"{operation}: {name!r} is neither a column of table nor of "
+                "properties.",
+                why="strata are bins of event properties",
+                fix="pass properties=event_properties(env, events, ...) or "
+                "add the column to the table",
             )
-        rows.append(row)
-    return pd.DataFrame(rows)
+        )
+    binned = pd.cut(values, bins=list(edges), right=False)
+    outside = data.loc[binned.isna(), "event"].unique()
+    if outside.size:
+        raise ValueError(
+            _format_error(
+                f"{operation}: events {sorted(outside.tolist())[:10]} have no "
+                f"bin for {name!r} (NaN, outside {list(edges)}, or missing "
+                "from properties).",
+                why="they would silently drop out of every stratum",
+                fix="widen the edges (e.g. end with np.inf), or leave those "
+                "events out of the table first",
+            )
+        )
+    return binned
+
+
+def _stratum_rate(
+    frame: pd.DataFrame,
+    errors: str,
+    confidence: float,
+    expected_rate: float | None,
+    alternative: Literal["two-sided", "greater", "less"],
+) -> dict[str, Any]:
+    """One stratum's counts, rate, interval and, with ``expected_rate``, p-value."""
+    from scipy.stats import binomtest
+
+    failed = frame["_error"]
+    calls = frame["is_replay"] & ~failed
+    n_events = int(len(frame) if errors == "not_replay" else (~failed).sum())
+    n_replay = int(calls.sum())
+    if n_events:
+        interval = binomtest(n_replay, n_events).proportion_ci(
+            confidence_level=confidence, method="exact"
+        )
+        rate, low, high = n_replay / n_events, interval.low, interval.high
+    else:
+        rate = low = high = np.nan
+    stats: dict[str, Any] = {
+        "n_events": n_events,
+        "n_replay": n_replay,
+        "rate": rate,
+        "ci_low": low,
+        "ci_high": high,
+        "n_errors": int(failed.sum()),
+    }
+    if expected_rate is not None:
+        stats["p_value"] = (
+            float(
+                binomtest(
+                    n_replay,
+                    n_events,
+                    float(expected_rate),
+                    alternative=alternative,
+                ).pvalue
+            )
+            if n_events
+            else np.nan
+        )
+    return stats
 
 
 def _property_values(
@@ -1169,8 +1227,6 @@ def _alpha_methods(
     operation: str,
 ) -> dict[str, _TestedMethod]:
     """The named methods, checked to test a p-value against alpha."""
-    from neurospatial.replay.methods import RankOrderMethod
-
     by_name = {method.name: method for method in replay_methods}
     unknown = [name for name in names if name not in by_name]
     if unknown:
@@ -1192,13 +1248,10 @@ def _alpha_methods(
     untested, choosing, segment_choosing = [], [], []
     for name in names:
         method = by_name[name]
-        if isinstance(method, RankOrderMethod) and method.template_choice:
-            rows = data["method"] == name
-            if "template" in data and data.loc[rows, "template"].notna().any():
-                choosing.append(name)
-                continue
-        refusal = method._alpha_refusal
-        if refusal == "segment_choice":
+        refusal = _table_alpha_refusal(data, method)
+        if refusal == "template_choice":
+            choosing.append(name)
+        elif refusal == "segment_choice":
             segment_choosing.append(name)
         elif refusal == "no_test":
             untested.append(name)
@@ -1239,6 +1292,24 @@ def _alpha_methods(
             )
         )
     return tested
+
+
+def _table_alpha_refusal(
+    data: pd.DataFrame,
+    method: _AnyReplayMethod,
+) -> Literal["template_choice", "segment_choice", "no_test"] | None:
+    """Why ``method``'s verdicts in ``data`` cannot be redone at another alpha.
+
+    A rank-order method with ``template_choice`` refuses only when its rows
+    name the template it chose.
+    """
+    from neurospatial.replay.methods import RankOrderMethod
+
+    if isinstance(method, RankOrderMethod) and method.template_choice:
+        rows = data["method"] == method.name
+        if "template" in data and data.loc[rows, "template"].notna().any():
+            return "template_choice"
+    return method._alpha_refusal
 
 
 def _verdicts(
@@ -1595,20 +1666,7 @@ def null_events(
     validate_choice(kind, _NULL_KINDS, name="kind", owner=operation)
     validate_integer_at_least(n_copies, 1, name="n_copies", owner=operation)
     windows = _checked_intervals(intervals, operation)
-    ordered = windows[np.argsort(windows[:, 0], kind="stable")]
-    overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
-    if overlaps.size:
-        first = ordered[overlaps[0] : overlaps[0] + 2].tolist()
-        raise ValueError(
-            _format_error(
-                f"{operation}: {overlaps.size} intervals overlap the one before "
-                f"them, such as {first[0]} and {first[1]}.",
-                why="spikes in the overlap would be copied into two null "
-                "events, which are then not independent",
-                fix="merge overlapping candidate events, or pass one interval "
-                "per event without overlap",
-            )
-        )
+    _check_no_overlap(windows, operation)
     trains = as_spike_trains(spike_times)
     chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
     if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
@@ -1621,6 +1679,7 @@ def null_events(
     durations = windows[:, 1] - windows[:, 0]
     # Each interval's spikes, one list of trains per interval.
     by_window = list(_spikes_by_window(trains, windows))
+    rates: NDArray[np.float64] | None = None
     if kind == "rate_poisson":
         # Each cell's pooled rate: its spikes in every interval over their
         # summed duration.
@@ -1647,25 +1706,7 @@ def null_events(
         in_event = [spikes - start for spikes in spikes_in_window]
         for copy_number in range(n_copies):
             offset = slot * spacing
-            copies = list(in_event)
-            if kind == "cell_identity":
-                order = generator.permutation(randomized)
-                for cell, source in zip(randomized, order, strict=True):
-                    copies[cell] = in_event[source]
-            elif kind == "spike_shift":
-                for cell in randomized:
-                    shift = generator.uniform(0.0, duration)
-                    copies[cell] = np.mod(in_event[cell] + shift, duration)
-            elif kind == "spike_time_uniform":
-                for cell in randomized:
-                    copies[cell] = generator.uniform(
-                        0.0, duration, size=in_event[cell].size
-                    )
-            else:
-                for cell in randomized:
-                    copies[cell] = generator.uniform(
-                        0.0, duration, size=generator.poisson(rates[cell] * duration)
-                    )
+            copies = _null_copy(kind, in_event, randomized, duration, rates, generator)
             for cell, spikes in enumerate(copies):
                 placed[cell].append(np.sort(spikes) + offset)
             out_intervals.append((offset, offset + duration))
@@ -1681,6 +1722,59 @@ def null_events(
         copy_index=np.asarray(copy_numbers, dtype=np.intp),
         kind=kind,
     )
+
+
+def _check_no_overlap(windows: NDArray[np.float64], operation: str) -> None:
+    """Refuse intervals, ``(n_events, 2)``, that overlap one another."""
+    ordered = windows[np.argsort(windows[:, 0], kind="stable")]
+    overlaps = np.flatnonzero(ordered[1:, 0] < ordered[:-1, 1])
+    if overlaps.size:
+        first = ordered[overlaps[0] : overlaps[0] + 2].tolist()
+        raise ValueError(
+            _format_error(
+                f"{operation}: {overlaps.size} intervals overlap the one before "
+                f"them, such as {first[0]} and {first[1]}.",
+                why="spikes in the overlap would be copied into two null "
+                "events, which are then not independent",
+                fix="merge overlapping candidate events, or pass one interval "
+                "per event without overlap",
+            )
+        )
+
+
+def _null_copy(
+    kind: str,
+    in_event: list[NDArray[np.float64]],
+    randomized: NDArray[np.intp],
+    duration: float,
+    rates: NDArray[np.float64] | None,
+    generator: np.random.Generator,
+) -> list[NDArray[np.float64]]:
+    """One null copy of an event's spike trains, in seconds from its start.
+
+    ``in_event`` holds each cell's spikes in the event; only the cells in
+    ``randomized`` are redrawn, in that order, and ``rates`` are the pooled
+    rates ``"rate_poisson"`` draws from.
+    """
+    copies = list(in_event)
+    if kind == "cell_identity":
+        order = generator.permutation(randomized)
+        for cell, source in zip(randomized, order, strict=True):
+            copies[cell] = in_event[source]
+    elif kind == "spike_shift":
+        for cell in randomized:
+            shift = generator.uniform(0.0, duration)
+            copies[cell] = np.mod(in_event[cell] + shift, duration)
+    elif kind == "spike_time_uniform":
+        for cell in randomized:
+            copies[cell] = generator.uniform(0.0, duration, size=in_event[cell].size)
+    else:
+        assert rates is not None
+        for cell in randomized:
+            copies[cell] = generator.uniform(
+                0.0, duration, size=generator.poisson(rates[cell] * duration)
+            )
+    return copies
 
 
 def simulated_null_events(
