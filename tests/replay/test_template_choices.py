@@ -427,7 +427,10 @@ class TestRefusals:
 
     def test_compare_refuses_templates_at_different_times(self, track, separate):
         env, _ = track
-        shifted = dataclasses.replace(separate["in"], times=separate["in"].times + 1.0)
+        result = separate["in"]
+        shifted = dataclasses.replace(
+            result, times=result.times + 1.0, time_support=result.time_support + 1.0
+        )
         with pytest.raises(ValueError, match="decoded at different times"):
             compare_replay_methods(
                 env,

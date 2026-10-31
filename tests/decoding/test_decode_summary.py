@@ -387,6 +387,7 @@ class TestDecodingSummaryTerminalVerbs:
             "mean_peak_probability",
             "spike_window",
             "spike_window_assumed",
+            "decoded_duration",
         }
         assert s["spike_window"] is None
         assert s["spike_window_assumed"] is True

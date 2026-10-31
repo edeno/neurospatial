@@ -27,7 +27,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, read_only_copy
 from neurospatial.decoding._result import DecodingResult
-from neurospatial.decoding._time_bins import validate_dt
+from neurospatial.decoding._time_bins import centered_bin_support, validate_dt
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -234,7 +234,8 @@ def decode_jointly(
         proportional to the space its environment covers.
     times : NDArray[np.float64] or None, default=None
         Center time of each time bin in seconds, stored on each conditional
-        posterior.
+        posterior with the windows covered by the bins
+        ``[t - dt / 2, t + dt / 2)`` as its ``time_support``.
     validate : bool, default=True
         Run the input checks of :func:`decode_position` for each template.
 
@@ -402,7 +403,11 @@ def decode_jointly(
         )
         log_evidence.append(log_norm + np.log(total))
         conditional[name] = DecodingResult._from_owned_posterior(
-            posterior, env=envs[name], times=times, spike_window=None
+            posterior,
+            env=envs[name],
+            times=times,
+            spike_window=None,
+            time_support=centered_bin_support(times, dt),
         )
 
     log_evidence_array = np.column_stack(log_evidence)

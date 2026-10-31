@@ -34,7 +34,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_float_dtype
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
-from neurospatial.decoding._time_bins import validate_dt
+from neurospatial.decoding._time_bins import centered_bin_support, validate_dt
 from neurospatial.decoding.likelihood import _PoissonRates
 
 if TYPE_CHECKING:
@@ -414,7 +414,9 @@ def decode_position(
     method : {"poisson"}, default="poisson"
         Likelihood model. Only the Poisson model is available.
     times : NDArray[np.float64] | None, default=None
-        Time bin centers (seconds). If provided, stored in DecodingResult.
+        Time bin centers (seconds). If provided, stored in DecodingResult,
+        whose ``time_support`` records the windows covered by the bins
+        ``[t - dt / 2, t + dt / 2)``.
     validate : bool, default=True
         If True (the default), run extra validation checks before and
         after the core computation:
@@ -534,6 +536,7 @@ def decode_position(
         time_chunk=time_chunk,
         times=times,
         spike_window=None,
+        time_support=centered_bin_support(times, dt),
     )
 
 
@@ -817,6 +820,7 @@ def _decode_posterior(
     time_chunk: int | None,
     times: NDArray[np.float64] | None,
     spike_window: Any,
+    time_support: NDArray[np.float64] | None,
 ) -> DecodingResult:
     """Decode the full posterior into one preallocated array; see ``_posterior_blocks``."""
     posterior = np.empty((n_time, env.n_bins), dtype=dtype)
@@ -833,7 +837,11 @@ def _decode_posterior(
     # Nothing else references the posterior, so the result takes it without a
     # copy; its constructor checks every row.
     return DecodingResult._from_owned_posterior(
-        posterior, env=env, times=times, spike_window=spike_window
+        posterior,
+        env=env,
+        times=times,
+        spike_window=spike_window,
+        time_support=time_support,
     )
 
 
@@ -849,6 +857,7 @@ def _decode_summary(
     validate: bool,
     times: NDArray[np.float64] | None,
     spike_window: Any,
+    time_support: NDArray[np.float64] | None,
     context: str,
 ) -> DecodingSummary:
     """Reduce each posterior block to per-time estimates and discard it.
@@ -897,6 +906,7 @@ def _decode_summary(
         map_bin=map_bin,
         env=env,
         spike_window=spike_window,
+        time_support=time_support,
     )
 
 
@@ -943,7 +953,9 @@ def decode_position_summary(
     method : {"poisson"}, default="poisson"
         Likelihood model. Currently only Poisson is supported.
     times : NDArray[np.float64] | None, default=None
-        Time-bin centers (seconds). Stored in the returned summary.
+        Time-bin centers (seconds). Stored in the returned summary, whose
+        ``time_support`` records the windows covered by the bins
+        ``[t - dt / 2, t + dt / 2)``.
     validate : bool, default=True
         Run the same input validation as :func:`decode_position`, and check
         each posterior block as a :class:`DecodingResult` checks its
@@ -1041,5 +1053,6 @@ def decode_position_summary(
         validate=validate,
         times=times_arr,
         spike_window=None,
+        time_support=centered_bin_support(times_arr, dt),
         context="decode_position_summary",
     )

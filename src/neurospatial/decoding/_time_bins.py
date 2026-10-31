@@ -46,6 +46,52 @@ def validate_dt(dt: float) -> float:
     return float(dt)
 
 
+def bin_time_support(
+    left: NDArray[np.float64], right: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Merge sorted time bins ``[left, right)`` into the windows they cover.
+
+    Parameters
+    ----------
+    left, right : ndarray, shape (n_time_bins,)
+        Bin edges in seconds, sorted by ``left``, with ``n_time_bins >= 1``.
+
+    Returns
+    -------
+    ndarray, shape (n_windows, 2)
+        Half-open ``[start, stop)`` windows. Bins whose edges meet within a
+        few ulp, the rounding of an edge computed as ``center +/- dt / 2``,
+        join one window.
+    """
+    running_stop = np.maximum.accumulate(right)
+    slack = 4.0 * np.spacing(np.abs(running_stop[:-1]))
+    opens = np.r_[True, left[1:] > running_stop[:-1] + slack]
+    first = np.flatnonzero(opens)
+    last = np.r_[first[1:] - 1, left.size - 1]
+    return np.column_stack([left[first], running_stop[last]])
+
+
+def centered_bin_support(
+    times: NDArray[np.float64] | None, dt: float
+) -> NDArray[np.float64] | None:
+    """Windows covered by time bins of width ``dt`` centered on ``times``.
+
+    Returns ``None`` when ``times`` is ``None`` or cannot label time bins
+    (not 1-D, empty, non-finite or not strictly increasing); the decode
+    result then reports the invalid ``times``.
+    """
+    if times is None:
+        return None
+    centers = np.asarray(times, dtype=np.float64)
+    if (
+        centers.ndim != 1
+        or centers.size == 0
+        or not np.all(np.isfinite(centers))
+        or np.any(np.diff(centers) <= 0)
+    ):
+        return None
+    return bin_time_support(centers - dt / 2.0, centers + dt / 2.0)
+
 @reads_pynapple_samples
 def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],

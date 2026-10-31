@@ -321,7 +321,8 @@ def decode_session(
     Decode time bins are formed separately within each run of samples whose
     gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
     ``spike_window``; no bin spans a pause, and spikes between runs are not
-    counted. ``result.times`` may therefore be non-contiguous. A gap is the
+    counted. ``result.times`` may therefore be non-contiguous, and
+    ``result.time_support`` records the windows the bins cover. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
     ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
@@ -521,6 +522,7 @@ def _prepare_session_decode(
     NDArray[np.float64] | None,
     NDArray[np.float64],
     NDArray[np.float64],
+    NDArray[np.float64],
 ]:
     """Tile decode bins inside the observed runs and prepare the rate maps.
 
@@ -540,10 +542,13 @@ def _prepare_session_decode(
         Decode bin centers in seconds.
     spike_window : NDArray[np.float64] or None
         The resolved spike-recording windows.
+    time_support : NDArray[np.float64], shape (n_windows, 2)
+        The merged ``[start, stop)`` windows that the decode bins cover.
     """
     from neurospatial._intervals import TimeSupport, interval_valid_mask
     from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial._time_bins import _time_bins_in_windows
+    from neurospatial.decoding._time_bins import bin_time_support
     from neurospatial.decoding.posterior import _prepare_decode_inputs
     from neurospatial.encoding import _validate_times
 
@@ -619,6 +624,7 @@ def _prepare_session_decode(
         prior,
         bin_left + dt / 2.0,
         spike_window,
+        bin_time_support(bin_left, bin_right),
     )
 
 
@@ -775,7 +781,14 @@ def _decode_with_models(
     """Decode existing models on the per-run recording clock."""
     from neurospatial.decoding.posterior import _decode_posterior
 
-    count_block, rates, prior, centers, spike_window = _prepare_session_decode(
+    (
+        count_block,
+        rates,
+        prior,
+        centers,
+        spike_window,
+        time_support,
+    ) = _prepare_session_decode(
         env,
         spike_times,
         times,
@@ -804,6 +817,7 @@ def _decode_with_models(
         time_chunk=time_chunk,
         times=centers,
         spike_window=spike_window,
+        time_support=time_support,
     )
 
 
@@ -904,7 +918,8 @@ warn_on_drop, dtype
     Decode time bins are formed separately within each run of samples whose
     gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
     ``spike_window``; no bin spans a pause, and spikes between runs are not
-    counted. ``result.times`` may therefore be non-contiguous. A gap is the
+    counted. ``result.times`` may therefore be non-contiguous, and
+    ``result.time_support`` records the windows the bins cover. A gap is the
     time between consecutive tracked samples: a NaN position is missing
     tracking, bridged like a deleted row, so a tracking loss longer than
     ``max_gap`` is not decoded. Without ``spike_window``, spikes are assumed
@@ -1004,7 +1019,14 @@ def _decode_with_models_summary(
     """
     from neurospatial.decoding.posterior import _decode_summary
 
-    count_block, rates, prior, centers, spike_window = _prepare_session_decode(
+    (
+        count_block,
+        rates,
+        prior,
+        centers,
+        spike_window,
+        time_support,
+    ) = _prepare_session_decode(
         env,
         spike_times,
         times,
@@ -1034,5 +1056,6 @@ def _decode_with_models_summary(
         validate=validate,
         times=centers,
         spike_window=spike_window,
+        time_support=time_support,
         context=context,
     )
