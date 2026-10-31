@@ -81,6 +81,78 @@ class VideoReaderProtocol(Protocol):
         ...
 
 
+def _validate_frame_processing(
+    frame_size_px: tuple[int, int],
+    crop: tuple[int, int, int, int] | None,
+    downsample: int,
+) -> None:
+    """Refuse a crop or downsample factor that does not fit the video frame.
+
+    Parameters
+    ----------
+    frame_size_px : tuple of (width, height)
+        Size of the decoded video frame in pixels.
+    crop : tuple of (x, y, width, height) or None
+        Region cut from each frame before downsampling, in pixels.
+    downsample : int
+        Factor by which the (cropped) frame is shrunk.
+
+    Raises
+    ------
+    ValueError
+        If ``downsample`` is not a positive integer, ``crop`` is not four
+        whole-pixel values with a non-negative corner and positive size
+        inside the frame, or the processed frame has no pixels.
+    """
+    width, height = frame_size_px
+    if (
+        isinstance(downsample, bool)
+        or not isinstance(downsample, (int, np.integer))
+        or downsample < 1
+    ):
+        raise ValueError(
+            _format_error(
+                f"downsample must be a positive integer; got {downsample!r}.",
+                why="the frame is shrunk by this whole-number factor in each direction.",
+                fix="pass downsample=1 to keep full resolution, or 2 to halve it.",
+            )
+        )
+    if crop is not None:
+        values = tuple(crop) if np.iterable(crop) else ()
+        if (
+            len(values) != 4
+            or any(
+                isinstance(value, bool) or not isinstance(value, (int, np.integer))
+                for value in values
+            )
+            or values[0] < 0
+            or values[1] < 0
+            or values[2] <= 0
+            or values[3] <= 0
+            or values[0] + values[2] > width
+            or values[1] + values[3] > height
+        ):
+            raise ValueError(
+                _format_error(
+                    "crop must be (x, y, width, height) in whole pixels, with a "
+                    "non-negative corner and positive size inside the "
+                    f"{width}x{height} video frame; got {crop!r}.",
+                    why="the crop is cut from each decoded frame before "
+                    "downsampling, measured from the top-left pixel.",
+                    fix=f"pass four integers that fit the frame, e.g. "
+                    f"crop=(0, 0, {width}, {height}) for the whole frame.",
+                )
+            )
+        width, height = values[2], values[3]
+    if width // downsample < 1 or height // downsample < 1:
+        raise ValueError(
+            _format_error(
+                "downsample leaves no video pixels.",
+                fix="use a smaller downsample factor or a larger crop.",
+            )
+        )
+
+
 class CacheInfo(NamedTuple):
     """Cache statistics for _VideoReader.
 
@@ -178,9 +250,6 @@ class _VideoReader:
         if not self._path.exists():
             raise FileNotFoundError(f"Video file not found: {self._path}")
 
-        # Validate downsample
-        if downsample < 1:
-            raise ValueError(f"downsample must be a positive integer, got {downsample}")
         self._downsample = downsample
         self._cache_size = cache_size
 
@@ -204,14 +273,10 @@ class _VideoReader:
         finally:
             cap.release()
 
-        # Validate and store crop
+        _validate_frame_processing((width, height), crop, downsample)
         self._crop = crop
         if crop is not None:
             crop_x, crop_y, crop_w, crop_h = crop
-            if (crop_x + crop_w > width) or (crop_y + crop_h > height):
-                raise ValueError(
-                    f"Crop region {crop} extends beyond frame bounds ({width}x{height})"
-                )
             self._crop_offset_px = (crop_x, crop_y)
             effective_width = crop_w
             effective_height = crop_h

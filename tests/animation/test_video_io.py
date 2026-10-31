@@ -323,6 +323,29 @@ class TestVideoReaderErrorHandling:
         assert "reports 5 frames" in message
         assert "Fix:" in message
 
+    @pytest.mark.parametrize(
+        "crop",
+        [
+            (0, 0, 16),
+            (0, 0, 16, 16, 1),
+            (-1, 0, 8, 8),
+            (0, 0, 0, 8),
+            (0, 0, 8, -2),
+            (0.5, 0, 8, 8),
+            (20, 0, 16, 8),
+        ],
+    )
+    def test_reader_malformed_crop_explains_the_expected_form(
+        self, larger_video_path: Path, crop
+    ):
+        """A malformed crop names the (x, y, width, height) form and the frame."""
+        with pytest.raises(ValueError) as exc_info:
+            _VideoReader(larger_video_path, crop=crop)
+        message = str(exc_info.value)
+        assert "crop must be (x, y, width, height)" in message
+        assert "32x32" in message
+        assert "Fix:" in message
+
     def test_reader_invalid_downsample_raises(self, larger_video_path: Path):
         """Test that invalid downsample raises ValueError."""
         with pytest.raises(ValueError):
