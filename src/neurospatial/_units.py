@@ -55,8 +55,8 @@ def units_per_centimeter(units: str | None) -> float | None:
     Returns
     -------
     float or None
-        For example 100.0 for ``"mm"`` and 0.01 for ``"m"``; None for pixels,
-        custom units and unset units.
+        For example 0.01 for ``"m"``, 10.0 for ``"mm"`` and 10000.0 for
+        ``"um"``; None for pixels, custom units and unset units.
     """
     centimeters = _CENTIMETERS_PER_UNIT.get(normalize_position_units(str(units or "")))
     return None if centimeters is None else 1.0 / centimeters
