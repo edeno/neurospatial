@@ -1,7 +1,7 @@
-"""Internal utilities for stats module.
+"""Private random-stream and rate helpers.
 
-This module contains shared utility functions used across the stats submodules.
-These functions are private (underscore prefix) and not part of the public API.
+Shared by the stats, encoding, replay and reactivation packages; not part of
+the public API.
 """
 
 from __future__ import annotations

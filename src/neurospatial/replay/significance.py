@@ -228,10 +228,7 @@ class ReplaySignificanceResult(ResultMixin):
         (NaN); those are left out.
         """
         return MappingProxyType(
-            {
-                name: int(np.isfinite(test.null_scores).sum())
-                for name, test in self.shuffles.items()
-            }
+            {name: test.n_shuffles_used for name, test in self.shuffles.items()}
         )
 
     def summary(self) -> dict[str, Any]:
@@ -680,7 +677,6 @@ def replay_significance(
         score=float(observed_result.score),
         alternative=alternative,
         n_shuffles=n_shuffles,
-        stacklevel=3,
     )
     return ReplaySignificanceResult(
         observed=observed_result,
@@ -1062,22 +1058,19 @@ def _shuffle_tests(
     score: float,
     alternative: Literal["greater", "less", "two-sided"],
     n_shuffles: int,
-    stacklevel: int,
 ) -> dict[str, ShuffleTestResult]:
     """One shuffle test per null, leaving out shuffles with an undefined score.
 
     ``observed`` and ``null_statistics`` are the tested statistic (the
     absolute score when it is tested); ``score`` is the event's score,
-    reported when a null has no defined shuffle. ``stacklevel`` points the
-    warning about undefined shuffles at the caller of the public function.
+    reported when a null has no defined shuffle. ``ShuffleTestResult.from_null``
+    warns when it leaves out undefined shuffles.
     """
     from neurospatial.stats.shuffle import ShuffleTestResult
 
     shuffles = {}
     for name, statistic in null_statistics.items():
-        defined = np.isfinite(statistic)
-        n_used = int(defined.sum())
-        if n_used == 0:
+        if np.isnan(statistic).all():
             raise _UndefinedNullError(
                 _format_error(
                     f"{_OPERATION}: all {n_shuffles} {name} shuffles have an "
@@ -1089,14 +1082,6 @@ def _shuffle_tests(
                 ),
                 score=score,
                 null=name,
-            )
-        if n_used < n_shuffles:
-            warnings.warn(
-                f"{_OPERATION}: {n_shuffles - n_used} of {n_shuffles} {name} "
-                "shuffles have an undefined (NaN) score and are left out; the "
-                f"{name} p-value counts the other {n_used} (n_shuffles_used).",
-                UserWarning,
-                stacklevel=stacklevel,
             )
         shuffles[name] = ShuffleTestResult.from_null(
             observed, statistic, shuffle_type=name, tail=alternative
@@ -1224,7 +1209,6 @@ def _max_over_templates(
         score=scores[best],
         alternative="greater",
         n_shuffles=n_shuffles,
-        stacklevel=4,
     )
     return ReplaySignificanceResult(
         observed=results[best].observed,

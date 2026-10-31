@@ -4569,8 +4569,8 @@ def object_vector_cell_significance(
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
-    This costs about n_shuffles population-map recomputes. The result's
-    is_significant property uses 0.05; compare p_value < alpha for another level.
+    This costs about n_shuffles population-map recomputes. Each result's
+    is_significant(alpha=0.05) compares its p_value with alpha.
 
     A significant test is not an object-vector verdict on its own: an
     object-vector cell also needs bias-corrected information
@@ -4804,8 +4804,8 @@ def egocentric_object_vector_cell_significance(
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
-    This costs about n_shuffles population-map recomputes. The result's
-    is_significant property uses 0.05; compare p_value < alpha for another level.
+    This costs about n_shuffles population-map recomputes. Each result's
+    is_significant(alpha=0.05) compares its p_value with alpha.
 
     A significant test is not an object-vector verdict on its own: an
     object-vector cell also needs bias-corrected information

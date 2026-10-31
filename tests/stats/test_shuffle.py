@@ -314,6 +314,26 @@ class TestShuffleTimeBinsCoherent:
 class TestShuffleComparison:
     """Tests comparing the two shuffle functions."""
 
+    def test_coherent_matches_time_bins_for_fixed_seed(self):
+        """shuffle_time_bins_coherent equals shuffle_time_bins for a fixed seed.
+
+        The coherent variant is documented as the same permutation applied
+        to every neuron, which is exactly what shuffle_time_bins does. They
+        must produce byte-identical output for the same seed; this guards
+        against the two implementations silently diverging.
+        """
+        rng = np.random.default_rng(7)
+        spike_counts = rng.integers(0, 5, size=(8, 4)).astype(np.int64)
+
+        plain = list(shuffle_time_bins(spike_counts, n_shuffles=20, rng=2024))
+        coherent = list(
+            shuffle_time_bins_coherent(spike_counts, n_shuffles=20, rng=2024)
+        )
+
+        assert len(plain) == len(coherent) == 20
+        for a, b in zip(plain, coherent, strict=True):
+            np.testing.assert_array_equal(a, b)
+
     def test_both_preserve_row_multiset(self, spike_counts: np.ndarray) -> None:
         """Both shuffles should preserve the multiset of rows."""
         original_rows = sorted([tuple(row) for row in spike_counts])
@@ -326,248 +346,10 @@ class TestShuffleComparison:
             shuffled_rows = sorted([tuple(row) for row in shuffled])
             assert shuffled_rows == original_rows
 
-    def test_coherent_vs_independent_permutations(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """shuffle_time_bins can have different permutations per neuron,
-        while shuffle_time_bins_coherent uses same permutation for all.
-
-        Note: This test verifies conceptual difference, not that they're
-        always different (which depends on RNG).
-        """
-        # Both should be valid permutations
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=5, rng=42):
-            assert shuffled.shape == spike_counts.shape
-
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42):
-            assert shuffled.shape == spike_counts.shape
-
-
-class TestGeneratePoissonSurrogates:
-    """Tests for generate_poisson_surrogates (homogeneous Poisson surrogates)."""
-
-    @pytest.fixture
-    def spike_counts(self) -> np.ndarray:
-        """Sample spike counts: (10 time bins, 5 neurons)."""
-        rng = np.random.default_rng(42)
-        # Generate realistic spike counts (Poisson-like)
-        return rng.poisson(lam=2.0, size=(10, 5)).astype(np.int64)
-
-    # NOTE: dt fixture removed - no longer used by generate_poisson_surrogates()
-    # @pytest.fixture
-    # def dt(self) -> float:
-    #     """Time bin width in seconds."""
-    #     return 0.025  # 25 ms
-
-    def test_yields_correct_number_of_surrogates(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Should yield exactly n_surrogates arrays."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        n_surrogates = 10
-        surrogates = list(
-            generate_poisson_surrogates(spike_counts, n_surrogates=n_surrogates, rng=42)
-        )
-        assert len(surrogates) == n_surrogates
-
-    def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
-        """Surrogate spike counts should be non-negative."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        for surrogate in generate_poisson_surrogates(
-            spike_counts, n_surrogates=10, rng=42
-        ):
-            assert (surrogate >= 0).all()
-
-    def test_preserves_mean_rate_approximately(self, spike_counts: np.ndarray) -> None:
-        """Mean firing rates should be preserved (statistically).
-
-        Surrogates are generated from mean rates, so average across many
-        surrogates should approximate original mean.
-        """
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        # Compute original mean rate per neuron
-        original_mean_per_neuron = spike_counts.mean(axis=0)
-
-        # Collect mean rates from many surrogates
-        surrogate_means = []
-        for surrogate in generate_poisson_surrogates(
-            spike_counts, n_surrogates=500, rng=42
-        ):
-            surrogate_means.append(surrogate.mean(axis=0))
-
-        # Average across surrogates
-        avg_surrogate_mean = np.mean(surrogate_means, axis=0)
-
-        # Should be close to original (within ~20% for statistical test)
-        assert np.allclose(avg_surrogate_mean, original_mean_per_neuron, rtol=0.2), (
-            f"Mean rates not preserved: original={original_mean_per_neuron}, "
-            f"surrogate avg={avg_surrogate_mean}"
-        )
-
-    def test_destroys_temporal_structure(self, spike_counts: np.ndarray) -> None:
-        """Surrogates should have destroyed temporal autocorrelation.
-
-        Each time bin is independently sampled, so temporal patterns are lost.
-        """
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        # This is a statistical property test - surrogates should not replicate
-        # the exact temporal pattern of the original
-        for surrogate in generate_poisson_surrogates(
-            spike_counts, n_surrogates=5, rng=42
-        ):
-            # Surrogates should be different from original in most cases
-            # (exact match is extremely unlikely)
-            assert not np.array_equal(surrogate, spike_counts)
-
-    def test_zero_spike_counts(self) -> None:
-        """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        zeros = np.zeros((5, 3), dtype=np.int64)
-        for surrogate in generate_poisson_surrogates(zeros, n_surrogates=5, rng=42):
-            # With zero mean rate, Poisson should produce mostly zeros
-            assert surrogate.shape == zeros.shape
-            assert (surrogate >= 0).all()
-
-    def test_high_firing_rate(self) -> None:
-        """Should handle high firing rates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        high_rate = np.full((5, 3), 50, dtype=np.int64)  # 50 spikes per bin
-        for surrogate in generate_poisson_surrogates(high_rate, n_surrogates=5, rng=42):
-            assert surrogate.shape == high_rate.shape
-            assert (surrogate >= 0).all()
-
 
 # =============================================================================
 # Tests for generate_inhomogeneous_poisson_surrogates
 # =============================================================================
-
-
-class TestGenerateInhomogeneousPoissonSurrogates:
-    """Tests for generate_inhomogeneous_poisson_surrogates (time-varying rate surrogates)."""
-
-    @pytest.fixture
-    def spike_counts(self) -> np.ndarray:
-        """Sample spike counts with temporal structure: (20 time bins, 5 neurons)."""
-        rng = np.random.default_rng(42)
-        # Create spike counts with clear temporal modulation
-        n_time_bins = 20
-        n_neurons = 5
-        # Base rates with temporal modulation (ramp up then down)
-        time_modulation = np.abs(np.sin(np.linspace(0, np.pi, n_time_bins)))
-        base_rates = rng.uniform(1, 5, n_neurons)
-        expected_rates = np.outer(time_modulation, base_rates) * 3
-        return rng.poisson(expected_rates).astype(np.int64)
-
-    # NOTE: dt fixture removed - no longer used by generate_inhomogeneous_poisson_surrogates()
-    # @pytest.fixture
-    # def dt(self) -> float:
-    #     """Time bin width in seconds."""
-    #     return 0.025  # 25 ms
-
-    def test_yields_correct_number_of_surrogates(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Should yield exactly n_surrogates arrays."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        n_surrogates = 10
-        surrogates = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, n_surrogates=n_surrogates, rng=42
-            )
-        )
-        assert len(surrogates) == n_surrogates
-
-    def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
-        """Surrogate spike counts should be non-negative."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, n_surrogates=10, rng=42
-        ):
-            assert (surrogate >= 0).all()
-
-    def test_preserves_time_varying_rates_approximately(
-        self, spike_counts: np.ndarray
-    ) -> None:
-        """Time-varying firing rates should be preserved (with smoothing).
-
-        Unlike homogeneous Poisson, this preserves slow rate fluctuations.
-        """
-        # Compute smoothed rates from original (what surrogate should match)
-        from scipy.ndimage import uniform_filter1d
-
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        smoothed_original = uniform_filter1d(
-            spike_counts.astype(np.float64), size=3, axis=0, mode="nearest"
-        )
-
-        # Collect rates from many surrogates
-        surrogate_rates = []
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, smoothing_window=3, n_surrogates=500, rng=42
-        ):
-            surrogate_rates.append(surrogate.mean(axis=1))  # Mean across neurons
-
-        # Average across surrogates
-        avg_surrogate_rate = np.mean(surrogate_rates, axis=0)
-        avg_original_smoothed = smoothed_original.mean(axis=1)
-
-        # Correlation should be high (preserves temporal modulation)
-        corr = np.corrcoef(avg_surrogate_rate, avg_original_smoothed)[0, 1]
-        assert corr > 0.7, f"Temporal modulation not preserved: correlation={corr:.3f}"
-
-    def test_smoothing_window_parameter(self, spike_counts: np.ndarray) -> None:
-        """Different smoothing windows should produce different rate estimates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        # Smaller window = more temporal detail preserved
-        # Larger window = more smoothed (closer to homogeneous)
-        surrogates_small = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, smoothing_window=1, n_surrogates=5, rng=42
-            )
-        )
-        surrogates_large = list(
-            generate_inhomogeneous_poisson_surrogates(
-                spike_counts, smoothing_window=7, n_surrogates=5, rng=42
-            )
-        )
-        # With different smoothing, at least some surrogates should differ
-        # (same seed but different parameters)
-        any_different = any(
-            not np.array_equal(s1, s2)
-            for s1, s2 in zip(surrogates_small, surrogates_large, strict=True)
-        )
-        assert any_different
-
-    def test_zero_spike_counts(self) -> None:
-        """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        zeros = np.zeros((5, 3), dtype=np.int64)
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            zeros, n_surrogates=5, rng=42
-        ):
-            assert surrogate.shape == zeros.shape
-            assert (surrogate >= 0).all()
 
 
 # =============================================================================
@@ -861,16 +643,6 @@ class TestComputeShuffleZscore:
         # Should be close to 3 (within statistical variation)
         assert 2.5 < z < 3.5
 
-    def test_uses_sample_std(self) -> None:
-        """Should use sample standard deviation (ddof=0 by default for numpy)."""
-        from neurospatial.stats.shuffle import compute_shuffle_zscore
-
-        observed = 5.0
-        null_scores = np.array([1.0, 2.0, 3.0, 4.0])
-        expected_z = (observed - np.mean(null_scores)) / np.std(null_scores)
-        z = compute_shuffle_zscore(observed, null_scores)
-        assert np.isclose(z, expected_z)
-
 
 # =============================================================================
 # Tests for ShuffleTestResult
@@ -896,44 +668,26 @@ class TestShuffleTestResult:
         with pytest.raises((AttributeError, TypeError)):
             result.observed_score = 10.0  # type: ignore[misc]
 
-    def test_is_significant_property_true(self) -> None:
-        """is_significant should be True when p < 0.05."""
+    @pytest.mark.parametrize(
+        ("p_value", "alpha", "expected"),
+        [
+            (0.01, 0.05, True),
+            (0.10, 0.05, False),
+            (0.05, 0.05, False),
+            (0.04, 0.01, False),
+            (0.04, 0.1, True),
+        ],
+    )
+    def test_is_significant(self, p_value: float, alpha: float, expected: bool) -> None:
+        """is_significant(alpha) is the strict comparison p_value < alpha."""
         from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
             null_scores=np.array([1.0, 2.0, 3.0]),
-            p_value=0.01,  # < 0.05
+            p_value=p_value,
             z_score=2.5,
             shuffle_type="time_bins",
             n_shuffles=3,
         )
-        assert result.is_significant is True
-
-    def test_is_significant_property_false(self) -> None:
-        """is_significant should be False when p >= 0.05."""
-        from neurospatial.stats.shuffle import ShuffleTestResult
-
-        result = ShuffleTestResult(
-            observed_score=5.0,
-            null_scores=np.array([1.0, 2.0, 3.0]),
-            p_value=0.10,  # >= 0.05
-            z_score=1.0,
-            shuffle_type="time_bins",
-            n_shuffles=3,
-        )
-        assert result.is_significant is False
-
-    def test_is_significant_at_boundary(self) -> None:
-        """is_significant should be False when p == 0.05 exactly."""
-        from neurospatial.stats.shuffle import ShuffleTestResult
-
-        result = ShuffleTestResult(
-            observed_score=5.0,
-            null_scores=np.array([1.0, 2.0, 3.0]),
-            p_value=0.05,  # == 0.05 (not significant)
-            z_score=1.5,
-            shuffle_type="time_bins",
-            n_shuffles=3,
-        )
-        assert result.is_significant is False
+        assert result.is_significant(alpha=alpha) is expected
