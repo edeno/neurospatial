@@ -1,21 +1,17 @@
-"""io.py - Stable serialization for Environment objects
-========================================================
+"""Versioned JSON + NPZ serialization of Environment objects.
 
-This module provides versioned JSON + npz serialization for Environment objects,
-enabling reproducible workflows and cross-tool interoperability.
+An environment saved with prefix ``path`` is a pair of files:
 
-Schema
-------
-The serialization format uses:
-- JSON for metadata, structure, and small arrays
-- NumPy .npz for large numerical arrays (bin_centers, etc.)
+- ``{path}.json``: schema version (``Environment-v3``), library version,
+  creation time, name, coordinate metadata, build choices and derivation
+  history, the binning and Arena records, the connectivity graph in
+  node-link form, regions and landmarks, and the shape and dtype of every
+  array.
+- ``{path}.npz``: the numerical arrays (bin centers, binning and Arena
+  arrays, grid edges and active mask), compressed.
 
-Files are saved as a directory (or zip) containing:
-- metadata.json: Schema version, library version, timestamps, parameters
-- arrays.npz: Binary arrays (bin_centers, etc.)
-- graph.json: NetworkX graph in node-link format
-- regions.json: Regions data (if present)
-
+:func:`to_dict` and :func:`from_dict` carry the same record in memory with
+the arrays as nested lists.
 """
 
 from __future__ import annotations
@@ -103,28 +99,29 @@ def _get_library_version() -> str:
 
 
 def _validate_path_safety(path: PathLike) -> Path:
-    """Validate that a path is safe from directory traversal attacks.
+    """Refuse a path with ``..`` components and return it resolved.
 
     Parameters
     ----------
     path : str or Path
-        Path to validate.
+        Path to check.
 
     Returns
     -------
     Path
-        Resolved Path object if safe.
+        The absolute, resolved path.
 
     Raises
     ------
     ValueError
-        If path contains parent directory traversal ('..' components).
+        If the path contains a ``..`` component.
 
     Notes
     -----
-    This function prevents path traversal attacks by checking for '..'
-    components in the path before resolution. It helps ensure that file
-    operations stay within intended directories.
+    This is input hygiene, not a security boundary: only literal ``..``
+    components are refused, and absolute paths (or symbolic links) may name
+    any location. Callers that accept untrusted paths must confine them
+    themselves.
 
     """
     # Convert to Path but don't resolve yet
@@ -135,8 +132,8 @@ def _validate_path_safety(path: PathLike) -> Path:
     if ".." in path_obj.parts:
         raise ValueError(
             f"[E1005] Path traversal detected in path: {path}. "
-            f"Use absolute paths or paths without '..' components. "
-            f"This restriction helps prevent security vulnerabilities.\n\n"
+            f"Environment save and load paths may not contain '..' components; "
+            f"name the location directly, for example with an absolute path.\n\n"
             f"For more information, see: "
             f"https://edeno.github.io/neurospatial/errors/#e1005-path-traversal-detected"
         )
@@ -174,8 +171,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
         A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
         part of the prefix, so ``rat1.day1`` creates ``rat1.day1.json`` and
         ``rat1.day1.npz``.
-        Paths containing '..' components are rejected to prevent
-        directory traversal attacks.
+        Paths containing ``..`` components are refused.
     overwrite : bool, default=False
         If ``False`` (the default), raise :class:`FileExistsError` when either
         ``{path}.json`` or ``{path}.npz`` already exists, so an accidental
@@ -185,7 +181,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     Raises
     ------
     ValueError
-        If path contains parent directory traversal ('..' components).
+        If path contains a ``..`` component.
     FileExistsError
         If ``overwrite`` is ``False`` and a target file already exists.
 
@@ -206,11 +202,10 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     The JSON + npz format does not execute arbitrary code at load time and
     is portable across Python versions and platforms.
 
-    For security, paths are validated to prevent directory traversal attacks.
-    Use absolute paths or relative paths without '..' components.
+    Paths with ``..`` components are refused as input hygiene; this does not
+    confine where an absolute path may write.
 
     """
-    # Validate path for security
     path_obj = _validate_path_safety(path)
     json_path, npz_path = _environment_file_paths(path_obj)
 
@@ -264,9 +259,7 @@ def from_file(path: PathLike) -> Environment[Any]:
     path : str or Path
         Prefix to load from. Reads ``{path}.json`` and ``{path}.npz``.
         A trailing ``.json`` or ``.npz`` may be supplied; other dots remain
-        part of the prefix.
-        Paths containing '..' components are rejected to prevent
-        directory traversal attacks.
+        part of the prefix. Paths containing ``..`` components are refused.
 
     Returns
     -------
@@ -281,8 +274,9 @@ def from_file(path: PathLike) -> Environment[Any]:
     FileNotFoundError
         If required files are not found.
     ValueError
-        If schema version is incompatible, data is malformed, or path
-        contains parent directory traversal ('..' components).
+        If the files are not an ``Environment-v3`` record, are malformed or
+        inconsistent with their binning, or the path contains a ``..``
+        component.
 
     Examples
     --------
@@ -301,11 +295,10 @@ def from_file(path: PathLike) -> Environment[Any]:
 
     Notes
     -----
-    For security, paths are validated to prevent directory traversal attacks.
-    Use absolute paths or relative paths without '..' components.
+    Paths with ``..`` components are refused as input hygiene; this does not
+    confine where an absolute path may read.
 
     """
-    # Validate path for security
     path_obj = _validate_path_safety(path)
     json_path, npz_path = _environment_file_paths(path_obj)
 
@@ -707,7 +700,6 @@ def to_dict(env: Environment) -> dict[str, Any]:
     to_file : Save to disk with efficient binary format
 
     """
-    # Similar to to_file but with arrays as lists
     metadata, arrays = _environment_payload(env)
     metadata["arrays"] = {key: value.tolist() for key, value in arrays.items()}
     return metadata
@@ -732,6 +724,14 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
         ``Environment[Any]`` because the stored data decides. Check
         ``env.coordinate_kind`` before calling Cartesian-only methods.
 
+    Raises
+    ------
+    ValueError
+        If the dictionary is not an ``Environment-v3`` record, an array does
+        not match its stored shape and dtype, an entry the writers always
+        save is missing, or the saved data is inconsistent with its binning.
+        The message names what failed.
+
     Examples
     --------
     >>> import numpy as np
@@ -748,7 +748,6 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
     from_file : Load from disk files
 
     """
-    # Check schema version
     _check_schema(data, "the environment dictionary")
     try:
         arrays = _arrays_from_lists(data)
