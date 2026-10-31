@@ -14,12 +14,14 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._units import same_coordinate_declaration
+from neurospatial._units import (
+    declared_frame,
+    declared_units,
+    same_coordinate_declaration,
+)
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     missing_error,
-    position_frame_from_series,
-    position_units_from_series,
     require_unscaled_for_lazy,
     select_one,
     timestamps_from_series,
@@ -206,8 +208,8 @@ def read_pose(
                     )
                 )
 
-        series_units = position_units_from_series(series)
-        series_frame = position_frame_from_series(series)
+        series_units = declared_units(series.unit)
+        series_frame = declared_frame(series.reference_frame)
         for label, declared, shared in (
             ("units", series_units, units),
             ("reference_frame", series_frame, frame),

@@ -24,31 +24,12 @@ from neurospatial._results import (
     read_only_copy,
     reduce_through_constructor,
 )
+from neurospatial._units import declared_frame, declared_units
 
 if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial.animation.skeleton import Skeleton
-
-
-def _declared_units(units: str | None) -> str | None:
-    """Return a unit declaration in canonical spelling, or None when blank.
-
-    Recognized spellings become ``"m"``, ``"cm"``, ``"mm"``, ``"um"`` or
-    ``"px"``; any other declaration is kept with surrounding whitespace
-    removed. Values are never rescaled.
-    """
-    if units is None or not str(units).strip():
-        return None
-    from neurospatial._units import _UNIT_SPELLINGS
-
-    declaration = str(units).strip()
-    return _UNIT_SPELLINGS.get(declaration.lower(), declaration)
-
-
-def _declared_frame(frame: str | None) -> str | None:
-    """Return a reference-frame description verbatim, or None when blank."""
-    return str(frame) if frame is not None and str(frame).strip() else None
 
 
 def _require_rows(
@@ -134,8 +115,8 @@ class NWBPosition(ReadOnlyArraysMixin):
 
     def __post_init__(self) -> None:
         _require_rows("NWBPosition", self.times, positions=(self.positions, (1, 2)))
-        object.__setattr__(self, "units", _declared_units(self.units))
-        object.__setattr__(self, "frame", _declared_frame(self.frame))
+        object.__setattr__(self, "units", declared_units(self.units))
+        object.__setattr__(self, "frame", declared_frame(self.frame))
         self._own_arrays()
 
 
@@ -180,7 +161,7 @@ class NWBHeadDirection(ReadOnlyArraysMixin):
 
     def __post_init__(self) -> None:
         _require_rows("NWBHeadDirection", self.times, headings=(self.headings, (1,)))
-        object.__setattr__(self, "frame", _declared_frame(self.frame))
+        object.__setattr__(self, "frame", declared_frame(self.frame))
         self._own_arrays()
 
 
@@ -431,8 +412,8 @@ class NWBPose(ReadOnlyArraysMixin):
             object.__setattr__(self, "confidence", _owned_mapping(self.confidence))
         _require_rows("NWBPose", self.times, **arrays)
         object.__setattr__(self, "bodyparts", _owned_mapping(self.bodyparts))
-        object.__setattr__(self, "units", _declared_units(self.units))
-        object.__setattr__(self, "frame", _declared_frame(self.frame))
+        object.__setattr__(self, "units", declared_units(self.units))
+        object.__setattr__(self, "frame", declared_frame(self.frame))
         self._own_arrays()
 
     def __reduce__(self) -> Any:

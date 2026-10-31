@@ -23,24 +23,6 @@ from numpy.typing import NDArray
 DEFAULT_STARTING_TIME: float = 0.0
 
 
-def position_units_from_series(series: Any) -> str | None:
-    """Return declared coordinate units without assuming a fallback or rescaling.
-
-    Recognized spellings are canonical (pynwb's default ``"meters"`` is
-    ``"m"``); other declarations are kept without surrounding whitespace.
-    """
-    from neurospatial.io.nwb._holders import _declared_units
-
-    return _declared_units(getattr(series, "unit", None))
-
-
-def position_frame_from_series(series: Any) -> str | None:
-    """Preserve a nonempty reference-frame description without interpretation."""
-    from neurospatial.io.nwb._holders import _declared_frame
-
-    return _declared_frame(getattr(series, "reference_frame", None))
-
-
 def missing_error(what: str, *, fix: str) -> KeyError:
     """A ``KeyError`` for a missing named object, printed as written."""
     from neurospatial._exceptions import _format_error
