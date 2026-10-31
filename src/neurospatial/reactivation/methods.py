@@ -52,6 +52,11 @@ from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_alpha,
+    validate_integer_at_least,
+)
 from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _activation_strength,
@@ -140,15 +145,6 @@ _MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
 _Z_MEMBER_RULES = ("abs_z", "positive_z")
 _DETECTION_UNITS = ("all", "each_region", "each_region_and_cross_region")
 _ZSCORE_OVER = ("period", "control_and_match", "all_periods")
-
-
-def _is_count(value: Any) -> bool:
-    """Whether ``value`` is a positive integer, not a bool or a float."""
-    return (
-        isinstance(value, (int, np.integer))
-        and not isinstance(value, bool)
-        and bool(value >= 1)
-    )
 
 
 @dataclass(frozen=True)
@@ -248,7 +244,7 @@ class ReactivationWindows:
                 "ReactivationWindows: clock must be 'concatenated' or 'wall', "
                 f"got {self.clock!r}."
             )
-        if self.count is not None and not _is_count(self.count):
+        if self.count is not None and not is_integer_at_least(self.count, 1):
             raise ValueError(
                 f"ReactivationWindows: count must be a positive integer or None, "
                 f"got {self.count!r}."
@@ -654,7 +650,7 @@ class ReactivationMethod:
         self._check_options_apply(where)
         self._check_member_threshold(where)
         if self.min_events is not None and (
-            not _is_count(self.min_events) or not self.needs_events
+            not is_integer_at_least(self.min_events, 1) or not self.needs_events
         ):
             raise ValueError(
                 f"{where}: min_events must be a positive integer for a method "
@@ -845,20 +841,15 @@ class ReactivationMethod:
                 f"{where}: the cell-identity shuffle compares each bin with a "
                 "percentile of its shuffles; pass percentile=."
             )
-        if not _is_count(self.n_shuffles):
-            raise ValueError(
-                f"{where}: n_shuffles must be a positive integer, got "
-                f"{self.n_shuffles!r}."
-            )
-        if not 0 < self.alpha < 1:
-            raise ValueError(f"{where}: alpha must be in (0, 1), got {self.alpha!r}.")
+        validate_integer_at_least(self.n_shuffles, 1, name="n_shuffles", owner=where)
+        validate_alpha(self.alpha, owner=where)
 
     def _check_rate_subsamples(self, where: str) -> None:
         """Refuse rate subsampling where Giri et al. (2019)'s control does not fit."""
         subsamples = self.n_rate_subsamples
         if subsamples is None:
             return
-        if not _is_count(subsamples):
+        if not is_integer_at_least(subsamples, 1):
             raise ValueError(
                 f"{where}: n_rate_subsamples must be a positive integer or "
                 f"None, got {subsamples!r}."
