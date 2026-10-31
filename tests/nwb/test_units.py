@@ -498,3 +498,31 @@ class TestUnitTableReview:
         table = read_units(nwbfile).unit_table
         assert table["electrode_group"].tolist() == ["tetrode1", "tetrode2"]
         assert table["electrode_location"].tolist() == ["CA1", "PFC"]
+
+    def test_lazy_read_skips_multidimensional_columns_unread(self, tmp_path):
+        """waveform_mean is skipped from its shape, without reading values."""
+        import h5py
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_units
+
+        path = tmp_path / "units.nwb"
+        with NWBHDF5IO(path, "w") as io:
+            io.write(_units_with_metadata())
+        read_datasets = []
+        original = h5py.Dataset.__getitem__
+
+        def recording_getitem(self, key):
+            read_datasets.append(self.name)
+            return original(self, key)
+
+        with NWBHDF5IO(path, "r") as io:
+            nwbfile = io.read()
+            h5py.Dataset.__getitem__ = recording_getitem
+            try:
+                units = read_units(nwbfile, lazy=True)
+            finally:
+                h5py.Dataset.__getitem__ = original
+        assert "waveform_mean" not in units.unit_table.columns
+        assert not any(name.endswith("/waveform_mean") for name in read_datasets)
+        assert not any(name.endswith("/spike_times") for name in read_datasets)

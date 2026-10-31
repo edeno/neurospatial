@@ -263,7 +263,8 @@ def _unit_table(units: Any, rows: list[int], unit_ids: NDArray[Any]) -> pd.DataF
 
     Keeps every Units column holding one scalar per unit (ragged columns,
     references to other tables and multi-dimensional columns such as
-    ``waveform_mean`` are skipped) and adds ``electrode_location`` and
+    ``waveform_mean`` are skipped, the last from their shape without
+    reading values) and adds ``electrode_location`` and
     ``electrode_group`` from the unit's electrodes unless the file has
     columns of those names. A file
     column named ``unit_id`` becomes ``file_unit_id``, since the index holds
@@ -291,6 +292,10 @@ def _unit_table(units: Any, rows: list[int], unit_ids: NDArray[Any]) -> pd.DataF
         if name in _NOT_METADATA or isinstance(
             column, (VectorIndex, DynamicTableRegion)
         ):
+            continue
+        # A file-backed dataset tells its shape without reading values.
+        shape = getattr(column.data, "shape", None)
+        if shape is not None and len(shape) != 1:
             continue
         values = column.data[:]
         if not all(np.ndim(value) == 0 for value in values):
