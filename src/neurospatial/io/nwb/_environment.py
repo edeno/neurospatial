@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from neurospatial.regions import Region
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
-_READABLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0", "3.0"})
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
 # Older records keep the version in this column; it is read only to refuse them.
 COL_METADATA = "metadata"
@@ -41,8 +40,8 @@ def write_environment(
 
     Bins, lookup, cell faces, drawing components, graph attributes, regions,
     landmarks, coordinate metadata and Arena are saved losslessly. Reading decodes these
-    data without rebuilding a layout. Environment records from schemas 1.0 and
-    1.1 are refused.
+    data without rebuilding a layout. :func:`read_environment` reads only
+    schema 3.0 and refuses records from earlier schemas.
 
     Parameters
     ----------
@@ -165,9 +164,9 @@ def read_environment(
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
-    smoothing, boundary bins, plotting and track linearization. Schema 2.0 records
-    retain their bins with an explicitly unknown Arena. Older environment
-    records (1.0 and 1.1) must be recreated with a factory and saved again.
+    smoothing, boundary bins, plotting and track linearization. Only schema 3.0
+    records are read; records from earlier schemas must be recreated with a
+    factory and saved again.
 
     Parameters
     ----------
@@ -241,11 +240,12 @@ def read_environment(
             )
         ) from error
     version = metadata.get("schema_version")
-    if not isinstance(version, str) or version not in _READABLE_SCHEMA_VERSIONS:
+    if version != ENVIRONMENT_SCHEMA_VERSION:
         raise ValueError(
             _format_error(
-                f"Unsupported NWB environment schema {version!r} in {source}; expected '3.0' (or legacy '2.0').",
-                why="Why: older records do not store the complete binning needed to restore its capabilities.",
+                f"NWB environment schema {version!r} in {source} is no longer readable; "
+                f"this version reads only {ENVIRONMENT_SCHEMA_VERSION!r}.",
+                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )
@@ -260,9 +260,7 @@ def read_environment(
             arrays[key] = values.reshape(spec["shape"]).copy()
     except (ValueError, TypeError, KeyError, IndexError) as error:
         raise ValueError(f"Invalid environment arrays in {source}: {error}") from error
-    return _restore_environment(
-        metadata, source=source, arrays=arrays, legacy_arena=version == "2.0"
-    )
+    return _restore_environment(metadata, source=source, arrays=arrays)
 
 
 @keyword_hint("bin_size")

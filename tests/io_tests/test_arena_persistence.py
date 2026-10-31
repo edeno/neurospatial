@@ -1,4 +1,4 @@
-"""Environment transports retain arena semantics and explicit legacy uncertainty."""
+"""Environment transports retain arena semantics and refuse records without one."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def test_nested_transformed_mask_arena_round_trip(round_trip_environment, n_dims
     assert loaded.arena.outline is None
 
 
-def _make_legacy(metadata, arrays):
+def _make_version_2(metadata, arrays):
     metadata["schema_version"] = (
         "2.0" if metadata["schema_version"] == "3.0" else "Environment-v2"
     )
@@ -106,27 +106,16 @@ def _make_legacy(metadata, arrays):
             arrays.pop(name)
 
 
-def test_v2_restores_unknown_arena_or_refuses_polar(
+def test_version_2_records_are_refused_with_recreation_instructions(
     built_environment, corrupted_environment_round_trip, request
 ):
-    from neurospatial.arena import UnknownArena
-
+    """Version 2 stored no Arena; reading one must not invent an unknown domain."""
     request.getfixturevalue("forbid_layout_builds")
-    original = built_environment
-    if original.coordinate_kind == "polar":
-        # Without a stored arena, nothing declares whether the angle wraps.
-        with pytest.raises(ValueError, match="EgocentricSurround"):
-            corrupted_environment_round_trip(_make_legacy)
-        return
-    loaded = corrupted_environment_round_trip(_make_legacy)
-    assert isinstance(loaded.arena, UnknownArena)
-    assert loaded.arena.domain_known is False
-    assert loaded.arena.outline is None
-    assert loaded.arena.n_dims == original.n_dims
-    assert loaded.arena.coordinate_kind == original.arena.coordinate_kind
-    assert not loaded.arena.walls
-    np.testing.assert_array_equal(loaded.bin_centers, original.bin_centers)
-    np.testing.assert_array_equal(loaded.bin_sizes, original.bin_sizes)
+    with pytest.raises(ValueError, match=r"is no longer readable") as error:
+        corrupted_environment_round_trip(_make_version_2)
+    message = str(error.value)
+    assert "'2.0'" in message or "'Environment-v2'" in message
+    assert "Fix: recreate the environment with an Environment factory" in message
 
 
 @pytest.mark.parametrize("built_environment", ["polygon"], indirect=True)

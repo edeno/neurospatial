@@ -143,9 +143,9 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     - `path.json`: Metadata, graph structure, and small arrays
     - `path.npz`: Large numerical arrays (bin_centers, etc.)
 
-    The v3 format stores bins, lookup, cell faces, drawing components and Arena.
-    Loading decodes these data without rebuilding a layout. Version 2 remains
-    readable with an explicitly unknown Arena; version 1 must be recreated.
+    The ``Environment-v3`` format stores bins, lookup, cell faces, drawing
+    components and Arena. Loading decodes these data without rebuilding a
+    layout.
 
     Parameters
     ----------
@@ -238,8 +238,8 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 def from_file(path: PathLike) -> Environment[Any]:
     """Load binning and Arena data without running a layout builder.
 
-    Version 2 files retain their bins with an explicitly unknown Arena. Version 1
-    files are refused; recreate and re-save them with a factory.
+    Only ``Environment-v3`` files are read. Files saved by earlier versions are
+    refused; recreate the environment with a factory and save it again.
 
     Parameters
     ----------
@@ -337,12 +337,7 @@ def from_file(path: PathLike) -> Environment[Any]:
                 fix="restore the original JSON and NPZ file pair, or re-save the original environment",
             )
         ) from error
-    return _restore_environment(
-        metadata,
-        source=str(json_path),
-        arrays=arrays,
-        legacy_arena=metadata["schema_version"] == "Environment-v2",
-    )
+    return _restore_environment(metadata, source=str(json_path), arrays=arrays)
 
 
 def _environment_payload(
@@ -406,11 +401,12 @@ def _check_schema(metadata: dict[str, Any], source: str) -> None:
             )
         )
     version = metadata.get("schema_version")
-    if version not in ("Environment-v2", _SCHEMA_VERSION):
+    if version != _SCHEMA_VERSION:
         raise ValueError(
             _format_error(
-                f"Unsupported environment schema {version!r} in {source}; expected {_SCHEMA_VERSION!r}.",
-                why="Why: this version stores the binning itself and does not rebuild older layout records.",
+                f"Environment schema {version!r} in {source} is no longer readable; "
+                f"this version reads only {_SCHEMA_VERSION!r}.",
+                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )
@@ -455,7 +451,6 @@ def _restore_environment(
     *,
     source: str,
     arrays: dict[str, NDArray[Any]],
-    legacy_arena: bool = False,
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
     from neurospatial.environment import (
@@ -465,12 +460,10 @@ def _restore_environment(
         _publish,
     )
     from neurospatial.geometry import (
-        Arena,
         Binning,
         HexLocator,
         MeshLocator,
         TrackLinearization,
-        UnknownArena,
         decode,
         decode_arena,
         grid_index,
@@ -504,28 +497,23 @@ def _restore_environment(
         coordinate_kind = metadata.get("coordinate_kind", "cartesian")
         if coordinate_kind not in ("cartesian", "polar"):
             raise ValueError("unknown coordinate_kind")
-        arena: Arena
-        if legacy_arena:
-            # Older records describe bins and drawing outlines, not physical walls.
-            arena = UnknownArena(binning.bins.n_dims, coordinate_kind)
-        else:
-            arena_metadata = metadata["arena"]
-            if not isinstance(arena_metadata, dict):
-                raise ValueError("the arena record must be a metadata dictionary")
-            arena = decode_arena(
-                arena_metadata,
-                {
-                    key.removeprefix("arena/"): arrays[key]
-                    for key in metadata["array_specs"]
-                    if key.startswith("arena/")
-                },
+        arena_metadata = metadata["arena"]
+        if not isinstance(arena_metadata, dict):
+            raise ValueError("the arena record must be a metadata dictionary")
+        arena = decode_arena(
+            arena_metadata,
+            {
+                key.removeprefix("arena/"): arrays[key]
+                for key in metadata["array_specs"]
+                if key.startswith("arena/")
+            },
+        )
+        if arena.n_dims != binning.bins.n_dims:
+            raise ValueError("stored arena dimensions differ from the binning")
+        if arena.coordinate_kind != coordinate_kind:
+            raise ValueError(
+                "stored arena coordinate_kind differs from the environment"
             )
-            if arena.n_dims != binning.bins.n_dims:
-                raise ValueError("stored arena dimensions differ from the binning")
-            if arena.coordinate_kind != coordinate_kind:
-                raise ValueError(
-                    "stored arena coordinate_kind differs from the environment"
-                )
         binning = replace(
             binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
         )
@@ -830,9 +818,10 @@ def to_dict(env: Environment) -> dict[str, Any]:
 
 
 def from_dict(data: dict[str, Any]) -> Environment[Any]:
-    """Decode bins and Arena without rebuilding; v2 Arenas remain unknown.
+    """Decode bins and Arena from a dictionary made by :func:`to_dict`.
 
-    Version 1 dictionaries must be recreated with a factory and saved again.
+    No layout builder runs. Only ``Environment-v3`` dictionaries are read;
+    recreate older ones with an Environment factory.
 
     Parameters
     ----------
@@ -872,8 +861,5 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
             f"Invalid arrays in the environment dictionary: {error}"
         ) from error
     return _restore_environment(
-        data,
-        source="the environment dictionary",
-        arrays=arrays,
-        legacy_arena=data["schema_version"] == "Environment-v2",
+        data, source="the environment dictionary", arrays=arrays
     )

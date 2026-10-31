@@ -15,9 +15,8 @@ paths:
 - Environment records write schema `3.0`: Arena, explicit walls, exact binning,
   lookup, faces, components, clip mapping, graph attributes and coordinate
   metadata are saved. Loading publishes owned binning data directly and never runs a layout
-  builder. Schema `2.0` remains readable with an explicit `UnknownArena`;
-  never infer a physical footprint from old outlines, parameters or masks.
-  Schemas `1.0` and `1.1` are refused with recreation instructions.
+  builder. Only schema `3.0` is read: every earlier schema (`1.x`, `2.0`) is
+  refused with recreation instructions, never converted or given a guessed Arena.
   Standard one-row ragged columns hold
   arrays; one description JSON attribute maps canonical keys to columns,
   shapes and dtypes. Check scientific outputs against the original after read-back.
