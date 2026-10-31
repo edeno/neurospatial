@@ -127,9 +127,9 @@ def gaussian_pair_weights(
         ``dt = times[i + lag] - times[i]``; 0 for pairs more than
         ``4 * sigma`` apart.
     """
-    # Each difference is exact to a few ulp of the timestamps' magnitude.
-    rounding = 8.0 * np.spacing(max(abs(times[0]), abs(times[-1])))
-    reach = 4.0 * sigma + rounding
+    from neurospatial._intervals import _timestamp_rounding
+
+    reach = 4.0 * sigma + _timestamp_rounding(times[0], times[-1])
     # The widest reach of any sample, forward or backward, bounds the lags.
     index = np.arange(times.size)
     lo = np.searchsorted(times, times - reach, side="left")

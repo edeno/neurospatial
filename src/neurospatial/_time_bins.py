@@ -10,6 +10,20 @@ from numpy.typing import NDArray
 from neurospatial._intervals import ragged_arange
 
 
+def _edge_rounding(
+    starts: NDArray[np.float64], stops: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Rounding, in seconds, of edges computed between ``starts`` and ``stops``.
+
+    Edges computed as ``time + offset`` are off by a few ulp of the largest
+    magnitude involved.
+    """
+    rounding: NDArray[np.float64] = 4.0 * np.spacing(
+        np.maximum(np.abs(starts), np.abs(stops))
+    )
+    return rounding
+
+
 def _time_bin_rounding(
     windows: NDArray[np.float64],
     dt: float,
@@ -47,9 +61,7 @@ def _time_bin_rounding(
             "be finite seconds.\nFix: pass finite start and stop times."
         )
     start, stop = windows[:, 0], windows[:, 1]
-    rounding: NDArray[np.float64] = 4.0 * np.spacing(
-        np.maximum(np.abs(start), np.abs(stop))
-    )
+    rounding = _edge_rounding(start, stop)
     imprecise = rounding > 1e-2 * dt
     if imprecise.any():
         w = int(np.flatnonzero(imprecise)[0])

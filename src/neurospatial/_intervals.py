@@ -1085,80 +1085,157 @@ def warn_excluded_intervals(
         return
     times = np.asarray(times, dtype=np.float64)
     dt = np.diff(times)
-    median_dt = float(np.median(dt))
-    n_long = n_rounded = 0
-    slow_clock = False
-    if max_gap is not None:
-        # Each difference is exact to a few ulp of the timestamps' magnitude;
-        # an excess within that is rounding, not a gap.
-        rounding = 8.0 * np.spacing(np.maximum(np.abs(times[:-1]), np.abs(times[1:])))
-        excess = dt - max_gap
-        n_long = int(np.count_nonzero(excess > rounding))
-        n_rounded = int(np.count_nonzero((excess > 0) & (excess <= rounding)))
-        slow_clock = float(np.median(excess - rounding)) > 0
-    clock = (
+    if interval_mask.any():
+        # Data are kept, so only intervals longer than max_gap can warn.
+        if max_gap is None or not np.any(dt > max_gap):
+            return
+        message = _kept_intervals_message(times, dt, max_gap)
+        if message is None:
+            return
+    else:
+        message = _all_excluded_message(
+            times,
+            dt,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+            min_speed=min_speed,
+            start_bin_gate=start_bin_gate,
+            samples=samples,
+            break_before=break_before,
+            sample_valid=sample_valid,
+            result=result,
+        )
+    warnings.warn(
+        f"{message} {suppress_hint}".rstrip(),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _timestamp_rounding(
+    a: NDArray[np.float64], b: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Rounding allowance, in seconds, of the difference of timestamps ``a``, ``b``.
+
+    Each difference is exact to a few ulp of the timestamps' magnitude, so an
+    excess within this allowance is rounding, not a gap.
+    """
+    rounding: NDArray[np.float64] = 8.0 * np.spacing(np.maximum(np.abs(a), np.abs(b)))
+    return rounding
+
+
+def _gap_excess(
+    times: NDArray[np.float64], dt: NDArray[np.float64], max_gap: float | None
+) -> tuple[int, int, bool]:
+    """Intervals longer than ``max_gap``: beyond rounding, by rounding only, median.
+
+    Returns the number of intervals longer than ``max_gap`` by more than
+    the timestamps' rounding, the number longer only by rounding, and
+    whether the median interval is longer beyond rounding (a clock that is
+    probably not in seconds). All zero or False when ``max_gap`` is None.
+    """
+    if max_gap is None:
+        return 0, 0, False
+    rounding = _timestamp_rounding(times[:-1], times[1:])
+    excess = dt - max_gap
+    n_long = int(np.count_nonzero(excess > rounding))
+    n_rounded = int(np.count_nonzero((excess > 0) & (excess <= rounding)))
+    return n_long, n_rounded, float(np.median(excess - rounding)) > 0
+
+
+def _clock_problem(median_dt: float, max_gap: float | None) -> str:
+    return (
         f"the median sampling interval is {median_dt:.4g} s, longer than "
         f"max_gap={max_gap} s, so `times` are probably not in seconds"
     )
-    rounded = (
-        f"{n_rounded} of {dt.size} sampling intervals exceed max_gap={max_gap} s "
+
+
+def _rounded_problem(n_rounded: int, n_intervals: int, max_gap: float | None) -> str:
+    return (
+        f"{n_rounded} of {n_intervals} sampling intervals exceed max_gap={max_gap} s "
         "only by float rounding of the timestamps, so max_gap equals the "
         "sampling interval"
     )
-    rounded_fix = (
+
+
+def _rounded_fix(median_dt: float) -> str:
+    return (
         f"set max_gap above the sampling interval, e.g. max_gap={1.5 * median_dt:.3g}"
     )
-    if interval_mask.any():
-        if slow_clock:
-            message = (
-                f"{n_long} of {dt.size} sampling intervals are longer than "
-                f"max_gap={max_gap} s and are excluded as recording gaps: {clock}. "
-                f"Fix: convert times to seconds (divide milliseconds by 1000); "
-                f"if the sampling really is this coarse, raise max_gap above "
-                f"{median_dt:.4g} or pass max_gap=None to disable gap gating. "
-                f"{suppress_hint}"
-            )
-        elif n_rounded:
-            message = (
-                f"{rounded}; they are excluded as recording gaps. "
-                f"Fix: {rounded_fix}. {suppress_hint}"
-            )
-        else:
-            return
-        warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
-        return
 
+
+def _kept_intervals_message(
+    times: NDArray[np.float64], dt: NDArray[np.float64], max_gap: float
+) -> str | None:
+    """The warning for a selection that keeps data, or None when ``times`` look right."""
+    n_long, n_rounded, slow_clock = _gap_excess(times, dt, max_gap)
+    median_dt = float(np.median(dt))
+    if slow_clock:
+        return (
+            f"{n_long} of {dt.size} sampling intervals are longer than "
+            f"max_gap={max_gap} s and are excluded as recording gaps: "
+            f"{_clock_problem(median_dt, max_gap)}. "
+            f"Fix: convert times to seconds (divide milliseconds by 1000); "
+            f"if the sampling really is this coarse, raise max_gap above "
+            f"{median_dt:.4g} or pass max_gap=None to disable gap gating."
+        )
+    if n_rounded:
+        return (
+            f"{_rounded_problem(n_rounded, dt.size, max_gap)}; they are excluded "
+            f"as recording gaps. Fix: {_rounded_fix(median_dt)}."
+        )
+    return None
+
+
+def _all_excluded_message(
+    times: NDArray[np.float64],
+    dt: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+    min_speed: float | None,
+    start_bin_gate: bool,
+    samples: Literal["positions", "headings"],
+    break_before: NDArray[np.bool_] | None,
+    sample_valid: NDArray[np.bool_] | None,
+    result: str,
+) -> str:
+    """The warning for a selection that excludes every interval."""
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
         # No interval has an observed sample on each side: the missing samples
         # leave nothing to gate, whatever the gates are.
         n_observed = int(np.count_nonzero(sample_valid))
-        message = (
+        return (
             "Interval filtering excluded ALL trajectory intervals: only "
             f"{n_observed} of {times.size} samples are observed, and an interval "
             f"needs an observed sample on each side, so {result}. Fix: check "
             "that the samples are finite, observed values (NaN marks a missing "
-            f"sample). {suppress_hint}"
+            "sample)."
         )
-        warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
-        return
 
+    n_long, n_rounded, slow_clock = _gap_excess(times, dt, max_gap)
+    median_dt = float(np.median(dt))
     gates = [f"max_gap={max_gap}"] if max_gap is not None else []
     fixes = []
     if slow_clock:
         fixes.append(
-            f"{clock}: convert times to seconds, raise max_gap above "
-            f"{median_dt:.4g}, or pass max_gap=None to disable gap gating"
+            f"{_clock_problem(median_dt, max_gap)}: convert times to seconds, "
+            f"raise max_gap above {median_dt:.4g}, or pass max_gap=None to "
+            "disable gap gating"
         )
     elif n_rounded:
-        fixes.append(f"{rounded}: {rounded_fix}")
+        fixes.append(
+            f"{_rounded_problem(n_rounded, dt.size, max_gap)}: "
+            f"{_rounded_fix(median_dt)}"
+        )
     elif n_long:
         fixes.append("pass max_gap=None to disable gap gating")
     elif max_gap is not None and sample_valid is not None:
         start, end, linked = gap_endpoints(sample_valid)
         bridged = times[end] - times[start]
-        rounding = 8.0 * np.spacing(
-            np.maximum(np.abs(times[start]), np.abs(times[end]))
-        )
+        rounding = _timestamp_rounding(times[start], times[end])
         n_bridged_long = int(np.count_nonzero(linked & (bridged - max_gap > rounding)))
         if n_bridged_long:
             fixes.append(
@@ -1204,8 +1281,7 @@ def warn_excluded_intervals(
     if not fixes:
         fixes.append("check that the samples are finite, observed values")
     active = f" (active gate(s) {', '.join(gates)})" if gates else ""
-    message = (
+    return (
         f"Interval filtering excluded ALL trajectory intervals{active}, so "
-        f"{result}. Fix: {'; '.join(fixes)}. {suppress_hint}"
+        f"{result}. Fix: {'; '.join(fixes)}."
     )
-    warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
