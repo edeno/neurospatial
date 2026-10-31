@@ -282,15 +282,17 @@ def _parse_intervals(
     elif (
         isinstance(value, (tuple, list))
         and len(value) == 2
-        and all(isinstance(v, np.ndarray) and v.ndim == 1 for v in value)
+        and all(not isinstance(v, (list, tuple)) and np.ndim(v) == 1 for v in value)
     ):
-        # The retired parallel (starts, stops) form. With two length-2 arrays
-        # it also has shape (2, 2), so reading it as rows would be silent.
+        # A pair of 1-D arrays (or Series, ...) is ambiguous: two
+        # [start, stop) rows, or parallel starts and stops. With two windows
+        # both readings have shape (2, 2), so either guess could be silently
+        # wrong. Plain lists stay rows, the documented form.
         return None, [
-            f"{name} is a pair of 1-D arrays, the retired parallel "
-            f"(starts, stops) form; pass np.column_stack([starts, stops]) for "
-            f"those windows, or np.asarray(rows) if each array is one "
-            f"[start, stop) row"
+            f"{name} is a pair of 1-D arrays, which could be two [start, stop) "
+            f"rows or parallel starts and stops; pass np.column_stack([starts, "
+            f"stops]) for starts and stops, or np.asarray(rows) if each array "
+            f"is one row"
         ]
     else:
         try:
@@ -303,7 +305,15 @@ def _parse_intervals(
         if rows.shape == (2,):
             rows = rows.reshape(1, 2)
         if rows.ndim != 2 or rows.shape[1] != 2:
-            return None, [f"{name} has shape {rows.shape}; expected (2,) or (n, 2)"]
+            hint = (
+                "; if its rows are starts and stops, pass "
+                "np.column_stack([starts, stops])"
+                if rows.ndim == 2 and rows.shape[0] == 2
+                else ""
+            )
+            return None, [
+                f"{name} has shape {rows.shape}; expected (2,) or (n, 2){hint}"
+            ]
     if rows.shape[0] == 0:
         return None, [f"{name} has no rows, so it would exclude all data"]
 
