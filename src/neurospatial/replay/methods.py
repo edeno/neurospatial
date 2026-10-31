@@ -2174,11 +2174,6 @@ def _measure_event(
     Returns a result without a verdict for an event without a segment, an
     undefined score, or a null without a defined shuffle.
     """
-    from neurospatial.replay.significance import (
-        _UndefinedNullError,
-        _UndefinedScoreError,
-    )
-
     nulls = replay_method.nulls if test else ()
     quantities = replay_method.tested_quantities if test else {}
     untested = dict.fromkeys(quantities, np.nan)
@@ -2191,13 +2186,7 @@ def _measure_event(
     segment: int | None = None
     quantity_test: _QuantityTest | None = None
     values = dict(event.values)
-    shuffle_seed = score_seed = None
-    if quantities:
-        # The score's test and every quantity's test start from one seed, so
-        # they draw the same shuffles; a sampled score gets its own seed.
-        generator = np.random.default_rng(rng)
-        rng = shuffle_seed = int(generator.integers(2**63 - 1))
-        score_seed = int(generator.integers(2**63 - 1))
+    rng, shuffle_seed, score_seed = _test_seeds(rng, bool(quantities))
     # Rows of the event still tested, to cut it and a per-time-bin prior.
     rows = np.arange(len(event.posterior))
     if replay_method.segmentation is not None:
@@ -2232,51 +2221,38 @@ def _measure_event(
     # the template, unless the score is built for joint weights.
     condition = _conditions_share(replay_method, event, options)
     if replay_method.score is not None and nulls:
-        separate = (
-            None
-            if event.separate is None
-            else {name: share[rows] for name, share in event.separate.items()}
+        tested = _tested_score(
+            replay_method,
+            event,
+            rows,
+            posterior,
+            times,
+            counts,
+            options,
+            condition,
+            rng,
         )
-        try:
-            result = _score_test(
-                replay_method,
-                event,
-                separate if separate is not None else posterior,
-                times,
-                counts=counts,
-                rows=rows,
-                options=options,
-                condition=condition,
-                rng=rng,
-            )
-        except _UndefinedScoreError:
-            pass  # The event's score is NaN: no verdict, below.
-        except _UndefinedNullError as undefined:
+        if tested.undefined_null_score is not None:
             # The score is defined but a null left no shuffle to compare with.
             return _no_verdict(
                 replay_method.name,
                 replay_method.criteria,
                 _UNDEFINED_QUANTITY if quantities else _UNDEFINED_NULL,
-                score=undefined.score,
+                score=tested.undefined_null_score,
                 segments=segments,
                 segment=segment,
                 template=template,
                 tested_values=untested,
                 tested_p_values=untested,
             )
-        else:
-            score, p_value = float(result.observed.score), float(result.p_value)
-            n_shuffles_used = min(result.n_shuffles_used.values())
-            z_scores = {
-                name: float(test.z_score) for name, test in result.shuffles.items()
-            }
-            if separate is not None:
-                # Criteria are evaluated on the template with the largest score.
-                assert result.template is not None and event.template_envs is not None
-                template = result.template
-                posterior = separate[template]
-                track_env = event.template_envs[template]
-                track_length = _criteria_track_length(replay_method, track_env)
+        score, p_value = tested.score, tested.p_value
+        n_shuffles_used, z_scores = tested.n_shuffles_used, dict(tested.z_scores)
+        if tested.posterior is not None:
+            # Criteria are evaluated on the template with the largest score.
+            assert tested.template is not None and event.template_envs is not None
+            template, posterior = tested.template, tested.posterior
+            track_env = event.template_envs[template]
+            track_length = _criteria_track_length(replay_method, track_env)
     elif replay_method.score is not None:
         score = _untested_score(
             replay_method, track_env, posterior, times, counts, options, condition, rng
@@ -2300,18 +2276,15 @@ def _measure_event(
             tested_p_values=untested,
         )
     if quantities:
-        if quantity_test is None:
-            assert shuffle_seed is not None
-            quantity_test = _quantity_test(replay_method, event, rows, shuffle_seed)
-        # Every test must reject: the largest p-value, NaN when one is NaN.
-        tests = [quantity_test.p_value] + (
-            [] if replay_method.score is None else [p_value]
+        quantity_test, p_value, n_shuffles_used = _with_quantity_test(
+            replay_method,
+            event,
+            rows,
+            quantity_test,
+            shuffle_seed,
+            p_value,
+            n_shuffles_used,
         )
-        p_value = float(np.max(tests))
-        used = [
-            n for n in (quantity_test.n_shuffles_used, n_shuffles_used) if n is not None
-        ]
-        n_shuffles_used = min(used) if used else None
     return _Measured(
         score=score,
         p_value=p_value,
@@ -2328,6 +2301,117 @@ def _measure_event(
         values=values,
         quantity_test=quantity_test,
     )
+
+
+class _TestedScore(NamedTuple):
+    """The score's shuffle test on an event's tested rows.
+
+    ``score`` is NaN when the event's score is undefined. With templates
+    decoded separately, ``template`` and ``posterior`` are those of the
+    template with the largest score, else None. ``undefined_null_score``
+    is the score when it is defined but a null left no shuffle to compare
+    with, else None.
+    """
+
+    score: float = np.nan
+    p_value: float = np.nan
+    n_shuffles_used: int | None = None
+    z_scores: Mapping[str, float] = MappingProxyType({})
+    template: str | None = None
+    posterior: NDArray[np.float64] | None = None
+    undefined_null_score: float | None = None
+
+
+def _tested_score(
+    replay_method: ReplayMethod,
+    event: _Event,
+    rows: NDArray[np.intp],
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    counts: NDArray[np.int64] | None,
+    options: dict[str, Any],
+    condition: bool,
+    rng: np.random.Generator | int | None,
+) -> _TestedScore:
+    """Test the event's score against the method's nulls."""
+    from neurospatial.replay.significance import (
+        _UndefinedNullError,
+        _UndefinedScoreError,
+    )
+
+    separate = (
+        None
+        if event.separate is None
+        else {name: share[rows] for name, share in event.separate.items()}
+    )
+    try:
+        result = _score_test(
+            replay_method,
+            event,
+            separate if separate is not None else posterior,
+            times,
+            counts=counts,
+            rows=rows,
+            options=options,
+            condition=condition,
+            rng=rng,
+        )
+    except _UndefinedScoreError:
+        return _TestedScore()  # The event's score is NaN: no verdict.
+    except _UndefinedNullError as undefined:
+        return _TestedScore(undefined_null_score=undefined.score)
+    return _TestedScore(
+        score=float(result.observed.score),
+        p_value=float(result.p_value),
+        n_shuffles_used=min(result.n_shuffles_used.values()),
+        z_scores={name: float(test.z_score) for name, test in result.shuffles.items()},
+        template=None if separate is None else result.template,
+        posterior=None if separate is None else separate[result.template],
+    )
+
+
+def _test_seeds(
+    rng: np.random.Generator | int | None, shared: bool
+) -> tuple[np.random.Generator | int | None, int | None, int | None]:
+    """The stream of the event's tests, and the shuffle and score seeds.
+
+    With tested quantities (``shared``), the score's test and every
+    quantity's test start from one seed, so they draw the same shuffles,
+    and a sampled score gets its own seed; otherwise ``rng`` is used as it
+    is and there are no seeds.
+    """
+    if not shared:
+        return rng, None, None
+    generator = np.random.default_rng(rng)
+    shuffle_seed = int(generator.integers(2**63 - 1))
+    score_seed = int(generator.integers(2**63 - 1))
+    return shuffle_seed, shuffle_seed, score_seed
+
+
+def _with_quantity_test(
+    replay_method: ReplayMethod,
+    event: _Event,
+    rows: NDArray[np.intp],
+    quantity_test: _QuantityTest | None,
+    shuffle_seed: int | None,
+    p_value: float,
+    n_shuffles_used: int | None,
+) -> tuple[_QuantityTest, float, int | None]:
+    """The quantity test and the event's p-value and shuffle count with it.
+
+    A segmentation that tests the quantities has already run their test;
+    otherwise they are tested on ``rows``. Every test must reject: the
+    p-value is the largest of the quantities' and the score's, NaN when
+    one is NaN.
+    """
+    if quantity_test is None:
+        assert shuffle_seed is not None
+        quantity_test = _quantity_test(replay_method, event, rows, shuffle_seed)
+    tests = [quantity_test.p_value] + ([] if replay_method.score is None else [p_value])
+    used = [
+        n for n in (quantity_test.n_shuffles_used, n_shuffles_used) if n is not None
+    ]
+    return quantity_test, float(np.max(tests)), min(used) if used else None
 
 
 def _event_quantities(names: Sequence[str], measured: _Measured) -> dict[str, float]:
