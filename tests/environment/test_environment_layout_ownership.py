@@ -176,12 +176,11 @@ def test_track_build_record_keeps_choices_and_refuses_data():
     source.build(
         graph_definition=graph,
         edge_order=[(0, 1), (1, 2)],
-        edge_spacing=0.0,
         bin_size=2.0,
     )
-    assert source._build_params_used == {"edge_spacing": 0.0, "bin_size": 2.0}
+    assert source._build_params_used == {"edge_spacing": None, "bin_size": 2.0}
     env = publish_environment(layout=source)
-    assert env.layout_parameters == {"edge_spacing": 0.0, "bin_size": 2.0}
+    assert env.layout_parameters == {"edge_spacing": None, "bin_size": 2.0}
 
     source._build_params_used["graph_definition"] = graph
     with pytest.raises(TypeError, match="'graph_definition' is not a build choice"):
@@ -315,7 +314,6 @@ _TRACK.add_edge(1, 2, distance=6.0)
             {
                 "graph_definition": _TRACK,
                 "edge_order": [(0, 1), (1, 2)],
-                "edge_spacing": 0.0,
                 "bin_size": 1.0,
             },
         ),

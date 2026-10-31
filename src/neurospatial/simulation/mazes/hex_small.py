@@ -498,7 +498,6 @@ def _create_hex_track_graph(
     return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=widest_corridor(floor, segments),
         name="small_hex_maze_1d",

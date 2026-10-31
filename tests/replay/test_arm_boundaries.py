@@ -23,7 +23,6 @@ def y_maze():
     env = Environment.from_graph(
         graph,
         edge_order=[(1, 0), (0, 2), (0, 3)],
-        edge_spacing=0.0,
         bin_size=4.0,
         units="cm",
     )

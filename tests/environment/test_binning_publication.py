@@ -449,9 +449,7 @@ def _center_lookup_paths():
         "from_pixel_mask": lambda: Environment.from_pixel_mask(
             np.ones((3, 3), dtype=bool), pixel_size=2.0
         ),
-        "from_graph": lambda: Environment.from_graph(
-            track, [(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ),
+        "from_graph": lambda: Environment.from_graph(track, [(0, 1)], bin_size=2.0),
         "from_layout": lambda: Environment.from_layout(
             create_layout(
                 "TriangularMesh", boundary_polygon=box(0, 0, 8, 8), point_spacing=2.0

@@ -60,7 +60,7 @@ FACTORIES = {
         np.ones((6, 6), dtype=bool), pixel_size=2.0
     ),
     "from_graph": lambda: Environment.from_graph(
-        _track_graph(), edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=1.0
+        _track_graph(), edge_order=[(0, 1), (1, 2)], bin_size=1.0
     ),
     "linear_track": lambda: Environment.linear_track(
         endpoints=[(0.0, 0.0), (10.0, 0.0)], bin_size=1.0

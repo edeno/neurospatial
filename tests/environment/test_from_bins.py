@@ -1204,7 +1204,7 @@ def _cell_descriptions():
     graph.add_node(1, pos=(6.0, 0.0))
     graph.add_edge(0, 1, distance=6.0)
     track = Environment.from_graph(
-        graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=1.0
+        graph, edge_order=[(0, 1)], bin_size=2.0, track_width=1.0
     )
     hexagons = Environment.from_layout(
         create_layout("Hexagonal", hexagon_width=1.0, dimension_ranges=[(0, 3), (0, 3)])

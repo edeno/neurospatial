@@ -1144,7 +1144,6 @@ class TestSubsetPreservesGraphLayout:
         return Environment.from_graph(
             graph,
             edge_order=[("A", "B"), ("B", "C")],
-            edge_spacing=0.0,
             bin_size=2.0,
         )
 

@@ -759,9 +759,10 @@ env = Environment.open_field(positions, bin_size=2.0, fill_holes=False)
 ### Track factories
 
 `from_graph` keeps the graph and edge order positional; `bin_size` and
-`edge_spacing` are keywords. `edge_spacing` defaults to `0.0`, the same as in
-`linear_track` and `maze`, so a track whose edges join end to end needs no
-spacing argument:
+`edge_spacing` are keywords. By default `edge_spacing` leaves no gap where an
+edge starts at the node where the previous edge ends and puts a 15-unit gap
+where it does not, the same as in `linear_track` and `maze`, so a track whose
+edges join end to end needs no spacing argument:
 
 <!-- docs-test: run -->
 ```python

@@ -316,7 +316,6 @@ def graph_env(
     return Environment.from_graph(
         plus_maze_graph,
         plus_maze_edge_order,
-        edge_spacing=0.0,
         bin_size=0.5,
         track_width=0.5,
         name="PlusMazeGraph",
@@ -388,7 +387,6 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
     layout_build_params = {
         "graph_definition": simple_graph_for_layout,
         "edge_order": edge_order,
-        "edge_spacing": 0.0,
         "bin_size": 0.5,
     }
     layout_instance = GraphLayout()
@@ -476,7 +474,6 @@ def ymaze_env(ymaze_graph: nx.Graph) -> Environment:
     layout_build_params = {
         "graph_definition": ymaze_graph,
         "edge_order": edge_order,
-        "edge_spacing": 0.0,
         "bin_size": 1.0,
     }
     layout_instance = GraphLayout()
@@ -527,7 +524,6 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
     layout_build_params = {
         "graph_definition": tmaze_graph,
         "edge_order": edge_order,
-        "edge_spacing": 0.0,
         "bin_size": 1.0,
     }
     layout_instance = GraphLayout()
@@ -992,7 +988,6 @@ def _build_environment(kind: str) -> Environment:
         return Environment.from_graph(
             graph,
             edge_order=edge_order,
-            edge_spacing=0.0,
             bin_size=2.0,
             track_width=2.0,
         )

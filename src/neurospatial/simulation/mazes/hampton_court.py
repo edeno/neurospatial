@@ -457,7 +457,6 @@ def _create_hampton_court_track_graph(
     return Environment.from_graph(
         graph=graph,
         edge_order=list(nx.edge_dfs(graph, "entrance")),
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="hampton_court_1d",

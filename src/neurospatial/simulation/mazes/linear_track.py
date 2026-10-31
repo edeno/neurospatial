@@ -259,7 +259,6 @@ def _create_linear_track_graph(
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
-        edge_spacing=0.0,  # No spacing between edges (just one edge)
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="linear_track_1d",

@@ -34,7 +34,10 @@ class TestEnvironmentFromGraph:
         assert graph_env.bin_centers.shape[1] == 2
         assert graph_env.connectivity.number_of_nodes() == 16
         assert graph_env.active_mask is not None
-        assert np.all(graph_env.active_mask)
+        # West arm -> centre continues into the north arm; the east and south
+        # arms start at the centre, not where the previous arm ended, so one
+        # inactive gap bin precedes each of them.
+        assert (~graph_env.active_mask).sum() == 2
 
     def test_from_graph_measures_edges_between_their_nodes(self):
         """An edge's length is the distance between its nodes' positions.
@@ -52,9 +55,7 @@ class TestEnvironmentFromGraph:
         g.add_node(2, pos=(10.0, 10.0))
         g.add_edge(0, 1)  # no 'distance': computed from 'pos'
         g.add_edge(1, 2)
-        env = Environment.from_graph(
-            g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.5
-        )
+        env = Environment.from_graph(g, edge_order=[(0, 1), (1, 2)], bin_size=2.5)
         np.testing.assert_allclose(env.bin_centers[3:5], [[8.75, 0.0], [10.0, 1.25]])
         assert env.to_linear(np.array([[10.0, 5.0]])) == pytest.approx([15.0])
         assert env._binning.linearization.grid_edges[0][-1] == pytest.approx(20.0)
@@ -62,9 +63,7 @@ class TestEnvironmentFromGraph:
 
         g.edges[0, 1]["distance"] = 20.0
         with pytest.raises(ValueError, match=r"\(0, 1\): distance=20, 10 apart"):
-            Environment.from_graph(
-                g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.5
-            )
+            Environment.from_graph(g, edge_order=[(0, 1), (1, 2)], bin_size=2.5)
 
     def test_bin_at(self, graph_env: Environment):
         """Test mapping points to bin indices."""
@@ -105,7 +104,7 @@ class TestEnvironmentFromGraph:
     ):
         """A centerline alone cannot say whether a point is on the track."""
         env = Environment.from_graph(
-            plus_maze_graph, plus_maze_edge_order, edge_spacing=0.0, bin_size=0.5
+            plus_maze_graph, plus_maze_edge_order, bin_size=0.5
         )
         points = np.array([[-1.0, 0.0], [10.0, 10.0]])
         for lookup in (env.bin_at, env.contains):
@@ -968,7 +967,6 @@ def env_path_graph_3nodes() -> Environment:
     layout_params = {
         "graph_definition": g,
         "edge_order": [(0, 1), (1, 2)],  # Needs edge_order for GraphLayout
-        "edge_spacing": 0.0,
         "bin_size": 0.8,  # Should result in 1 bin per edge segment approx.
         # This detail depends on GraphLayout binning logic.
         # For testing degree, actual binning isn't critical, only connectivity.

@@ -316,7 +316,6 @@ def _create_t_maze_track_graph(
         },
         bin_size=bin_size,
         track_width=dims.corridor_width,
-        edge_spacing=0.0,
         name="t_maze_1d",
         units="cm",
     )
