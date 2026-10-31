@@ -600,6 +600,7 @@ def interval_valid_mask(
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     start_bin: NDArray[np.intp] | None = None,
+    require_end_bin: bool = False,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
@@ -629,6 +630,8 @@ def interval_valid_mask(
         (\\text{min\\_speed is None or } \\text{speed}_a \\ge \\text{min\\_speed})
         \\;\\wedge\\;
         (\\text{start\\_bin}_a \\ge 0)
+        \\;\\wedge\\;
+        (\\neg\\,\\text{require\\_end\\_bin} \\text{ or } \\text{start\\_bin}_b \\ge 0)
         \\;\\wedge\\;
         ([t_a, t_b) \\subseteq \\text{epochs})
         \\;\\wedge\\;
@@ -668,6 +671,12 @@ def interval_valid_mask(
     start_bin : ndarray of intp, shape (n_samples,), or None
         Bin of every sample (``-1`` outside the active bins), for the
         out-of-bounds-start gate. ``None`` applies no bounds gate.
+    require_end_bin : bool, default=False
+        Also require each gap's end sample ``b`` to be in a bin: the
+        complete-case rule of spatial rate maps and ``env.occupancy``, where
+        the animal's place during an interval is known only when both of its
+        samples are inside the environment; one that ends outside is left
+        out rather than imputing where the animal was. Needs ``start_bin``.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept gap must lie wholly inside one row of each supplied
@@ -688,10 +697,15 @@ def interval_valid_mask(
     Raises
     ------
     ValueError
-        If ``max_gap`` is not None or a positive finite number, or if
-        ``min_speed`` is given without ``speed``.
+        If ``max_gap`` is not None or a positive finite number, if
+        ``min_speed`` is given without ``speed``, or if ``require_end_bin``
+        is set without ``start_bin``.
     """
     validate_max_gap(max_gap)
+    if require_end_bin and start_bin is None:
+        raise ValueError(
+            "require_end_bin=True needs start_bin, the bin of every sample."
+        )
     if min_speed is not None and speed is None:
         raise ValueError(
             _format_error(
@@ -726,7 +740,10 @@ def interval_valid_mask(
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
     if start_bin is not None:
-        valid_mask &= np.asarray(start_bin)[start] >= 0
+        bins = np.asarray(start_bin)
+        valid_mask &= bins[start] >= 0
+        if require_end_bin:
+            valid_mask &= bins[end] >= 0
     for windows in (epochs, spike_window):
         if windows is not None:
             valid_mask &= intervals_contain(windows, t_start, t_end)

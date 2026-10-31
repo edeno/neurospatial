@@ -801,3 +801,55 @@ def test_isolated_tracking_dropouts_do_not_bias_rate():
     occupied = result.occupancy > 1
     pooled = np.nansum(result.firing_rate[occupied] * result.occupancy[occupied])
     assert pooled / result.occupancy[occupied].sum() == pytest.approx(5.0, rel=0.05)
+
+
+def test_require_end_bin_gates_the_end_of_each_bridged_gap():
+    """Complete-case rule: a gap counts only when both of its samples are binned.
+
+    Sample 2 is missing, so samples 1 and 3 bound one bridged gap; sample 3
+    was tracked outside the environment.
+    """
+    times = np.arange(6) * 0.1
+    start_bin = np.array([0, 1, -1, -1, 2, 3])
+    valid = np.array([True, True, False, True, True, True])
+    start_only = interval_valid_mask(times, start_bin=start_bin, sample_valid=valid)
+    both = interval_valid_mask(
+        times, start_bin=start_bin, sample_valid=valid, require_end_bin=True
+    )
+    np.testing.assert_array_equal(start_only, [True, True, True, False, True])
+    np.testing.assert_array_equal(both, [True, False, False, False, True])
+
+
+def test_require_end_bin_needs_bins():
+    with pytest.raises(ValueError, match="require_end_bin"):
+        interval_valid_mask(np.arange(3) * 0.1, require_end_bin=True)
+
+
+def test_gap_ending_outside_is_dropped_from_spikes_and_occupancy_alike(env_1d):
+    """A bridged gap that ends outside counts toward neither side of the rate.
+
+    Rows 3-4 are missing and row 5 was tracked outside the environment, so
+    the gap from row 2 to row 5 is left out exactly as if rows 3-4 had been
+    deleted, and spikes in it are not counted.
+    """
+    times = np.arange(10) * 0.1
+    x = np.array([10.0, 11.0, 12.0, np.nan, np.nan, -50.0, 30.0, 31.0, 32.0, 33.0])
+    positions = x.reshape(-1, 1)
+    spikes = np.array([0.05, 0.25, 0.35, 0.45, 0.65, 0.75])
+    occupancy = compute_occupancy(env_1d, times, positions)
+    counts = bin_spike_trains(env_1d, [spikes], times, positions, warn_on_drop=False)[
+        0
+    ][0]
+    env_occupancy = env_1d.occupancy(times, positions)
+
+    kept = np.isfinite(x)
+    deleted_occupancy = compute_occupancy(env_1d, times[kept], positions[kept])
+    deleted_counts = bin_spike_trains(
+        env_1d, [spikes], times[kept], positions[kept], warn_on_drop=False
+    )[0][0]
+    np.testing.assert_allclose(occupancy, deleted_occupancy, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(env_occupancy, deleted_occupancy, rtol=1e-12, atol=0)
+    np.testing.assert_array_equal(counts, deleted_counts)
+    # Kept: [0, 0.2) before the gap and [0.6, 0.9) after the outside sample.
+    assert occupancy.sum() == pytest.approx(0.5)
+    assert counts.sum() == 3  # spikes at 0.05, 0.65 and 0.75

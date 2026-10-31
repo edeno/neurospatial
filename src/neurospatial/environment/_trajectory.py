@@ -28,7 +28,6 @@ from neurospatial._intervals import (
     as_intervals,
     drop_missing_samples,
     fill_missing_positions,
-    gap_endpoints,
     hold_last_valid,
     interval_valid_mask,
     observed_interval_mask,
@@ -217,6 +216,9 @@ def _occupancy(
         min_speed=min_speed,
         max_gap=max_gap,
         start_bin=None if observation_only else bin_indices,
+        # Complete-case rule, shared with spike binning: the animal's place
+        # during a gap is known only when both of its samples are inside.
+        require_end_bin=not observation_only,
         epochs=resolved_epochs,
         break_before=breaks,
         sample_valid=finite,
@@ -227,10 +229,6 @@ def _occupancy(
         time_allocation=time_allocation,
     )
     if time_allocation == "start":
-        # Complete-case rule, shared with spike binning: the animal's place
-        # during a gap is known only when both of its samples are inside.
-        _, gap_end, _ = gap_endpoints(finite)
-        valid_mask &= bin_indices[gap_end] >= 0
         bin_indices = hold_last_valid(bin_indices, finite, fill=-1)
     else:
         bin_indices = locate(
