@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+### File and NWB I/O: review fixes
+
+**Fixed**
+
+- `from_pynapple` dispatches on the pynapple class. A single spike train
+  (`Ts`, e.g. `tsgroup[unit]`) returned its first and last spike as one
+  interval; it now returns the spike times.
+- `read_head_direction` accepts only radian or degree units. Degrees saved
+  without a unit (pynwb's default is `"meters"`) were read as radians.
+  `NWBHeadDirection.frame` carries the series `reference_frame`; headings are
+  read as 0 = East, counterclockwise, so check it.
+- Rate maps no longer share one `bin_centers` per file: a second environment's
+  map pointed at the first environment's coordinates and units.
+- `overwrite=True` builds and checks the replacement before deleting the
+  original, so a bad replacement no longer destroys it. In a file opened with
+  `"r+"` or `"a"`, where pynwb cannot delete written objects, overwrite raises
+  `NotImplementedError` with the open-with-`"r"`-and-export recipe instead of
+  failing later in `io.write`.
+- Readers (`read_position`, `read_head_direction`, `read_pose`) raise and list
+  the candidates when several containers match, instead of taking the first.
+  `position_name`, `compass_name` and `pose_estimation_name` also accept a full
+  path such as `"processing/behavior/Position/xy"`.
+- `environment_from_position` keeps the series units and frame: a conflicting
+  `units=` or `frame=` raises instead of relabelling coordinates, and a series
+  with no declared unit needs `units=`.
+- pynapple time support is kept. `from_pynapple` returns epochs for every type,
+  `to_pynapple` uses a decoding result's `spike_window` (or `epochs=`), and a
+  pynapple `IntervalSet`'s inclusive ends become half-open stops everywhere an
+  `IntervalSet` is accepted, so a spike at an interval's end is kept.
+- `from_pynapple` refuses a `TsdFrame` whose x/y/z columns are out of order,
+  and copies arrays instead of sharing pynapple's buffers.
+- `write_laps` stores laps as an NWB `TimeIntervals` table (read with
+  `read_intervals`, loaded by pynapple as an `IntervalSet`) and accepts `Lap`
+  objects or `start_times`/`stop_times`/`directions` with the `Lap.direction`
+  vocabulary. Lap types were cast with `int()`, truncating 0.6 to 0.
+- Empty trials, laps, crossings and event tables are written as empty tables
+  instead of nothing. `write_trials` refuses region or outcome arrays passed
+  together with `trials=`, and its `description` is now stored.
+- `read_spatial_rates` and environment loading refuse records with missing
+  entries instead of filling defaults (generated unit labels were read as
+  explicit, a missing `spike_window` as full coverage, missing regions dropped,
+  a missing `length_scale` guessed as 1.0).
+- `NWBPosition`, `NWBHeadDirection` and `NWBUnits` check shapes, own read-only
+  arrays and normalize units; `NWBUnits.spike_window` is derived from
+  `obs_intervals`. `read_units` refuses repeated unit ids.
+
+**Changed**
+
+- `read_place_field` is now `read_spatial_rates`, the reader for
+  `write_spatial_rates`. `write_place_field` and `write_occupancy` are removed;
+  `write_spatial_rates` stores rate maps, occupancy and their environment.
+- `read_pose` returns an `NWBPose` holder with `bodyparts`, `times`,
+  `skeleton`, `units`, `frame` and ndx-pose `confidence` (not applied as a mask).
+- `from_pynapple` returns `(spike_times, epochs)` for `Ts`,
+  `(times, values, epochs)` for `Tsd`/`TsdFrame`, `(trains, unit_ids, epochs)`
+  for `TsGroup`, and one `(n, 2)` array for `IntervalSet`.
+- Environment records from schema version 2 (files and NWB) and spatial-rates
+  records older than schema 2.5 are refused with recreation instructions.
+- `bodypart_overlay_from_nwb` refuses skeleton nodes that are not bodypart
+  series names when it is built.
+
 ### Reactivation: less repeated work, shared cores
 
 **Changed**
