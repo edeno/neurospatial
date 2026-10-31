@@ -1769,18 +1769,27 @@ def _bootstrap_ev_minus_rev(
     n_pairs = template.size
     if n_pairs < 3:
         return np.full(n_resamples, np.nan)
-    # How often each pair is drawn in each resample, shape (n_resamples, n_pairs).
-    weights = (
-        generator.multinomial(n_pairs, np.full(n_pairs, 1 / n_pairs), n_resamples)
-        / n_pairs
-    )
-    vectors = {"t": template, "m": match, "c": control}
-    means = {name: weights @ values for name, values in vectors.items()}
+    t, m, c = template, match, control
+    products = ["t", "m", "c", "tt", "mm", "cc", "tm", "tc", "mc"]
+    columns = np.column_stack([t, m, c, t * t, m * m, c * c, t * m, t * c, m * c])
+    # Every resample's weighted mean of each product, shape (n_resamples, 9).
+    # The resamples are drawn in blocks of about 4 million counts, in the
+    # order of one draw of all of them.
+    sums = np.empty((n_resamples, len(products)))
+    block = max(1, 4_000_000 // n_pairs)
+    uniform = np.full(n_pairs, 1 / n_pairs)
+    for first in range(0, n_resamples, block):
+        size = min(block, n_resamples - first)
+        # How often each pair is drawn in each resample, shape (size, n_pairs).
+        sums[first : first + size] = (
+            generator.multinomial(n_pairs, uniform, size) @ columns
+        )
+    moment = dict(zip(products, (sums / n_pairs).T, strict=True))
 
     def correlation(a: str, b: str) -> NDArray[np.float64]:
-        covariance = weights @ (vectors[a] * vectors[b]) - means[a] * means[b]
-        variance_a = weights @ vectors[a] ** 2 - means[a] ** 2
-        variance_b = weights @ vectors[b] ** 2 - means[b] ** 2
+        covariance = moment[a + b] - moment[a] * moment[b]
+        variance_a = moment[a + a] - moment[a] ** 2
+        variance_b = moment[b + b] - moment[b] ** 2
         with np.errstate(invalid="ignore", divide="ignore"):
             result: NDArray[np.float64] = covariance / np.sqrt(variance_a * variance_b)
         return result
