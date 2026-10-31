@@ -441,7 +441,6 @@ def _create_honeycomb_track_graph(
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
-        edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
         track_width=2.0 * dims.platform_side,
         name="honeycomb_1d",

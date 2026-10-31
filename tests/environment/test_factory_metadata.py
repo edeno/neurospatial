@@ -45,7 +45,6 @@ def _create(kind, **metadata):
         return Environment.from_graph(
             graph,
             [(0, 1)],
-            edge_spacing=0.0,
             bin_size=1.0,
             track_width=1.0,
             **metadata,

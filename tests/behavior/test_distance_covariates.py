@@ -991,7 +991,6 @@ class TestDistanceToBoundary:
         env = Environment.from_graph(
             graph,
             edge_order=[(0, 1), (1, 2), (1, 3)],
-            edge_spacing=0.0,
             bin_size=5.0,
             track_width=5.0,
         )
@@ -1020,7 +1019,6 @@ class TestDistanceToBoundary:
         env = Environment.from_graph(
             graph,
             edge_order=list(graph.edges),
-            edge_spacing=0.0,
             bin_size=5.0,
             track_width=5.0,
         )

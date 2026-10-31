@@ -23,9 +23,7 @@ def linear_track_env():
     g.add_node(2, pos=(100.0,))
     g.add_edge(0, 1, distance=50.0)
     g.add_edge(1, 2, distance=50.0)
-    env = Environment.from_graph(
-        graph=g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
-    )
+    env = Environment.from_graph(graph=g, edge_order=[(0, 1), (1, 2)], bin_size=2.0)
     env = env.with_metadata(units="cm")
     return env
 
@@ -842,7 +840,6 @@ class TestSimulateTrajectorysinusoidal:
         track = Environment.from_graph(
             graph,
             edge_order=[(i, (i + 1) % n_nodes) for i in range(n_nodes)],
-            edge_spacing=0.0,
             bin_size=2.0,
             track_width=5.0,
             units="cm",
@@ -910,7 +907,6 @@ class TestSimulateTrajectorysinusoidal:
         track = Environment.from_graph(
             graph,
             edge_order=edges,
-            edge_spacing=0.0,
             bin_size=2.0,
             track_width=5.0,
             units="cm",
@@ -977,7 +973,6 @@ class TestSimulateTrajectorysinusoidal:
         track_m = Environment.from_graph(
             graph=graph,
             edge_order=[(0, 1), (1, 2)],
-            edge_spacing=0.0,
             bin_size=0.02,
             units="m",
         )

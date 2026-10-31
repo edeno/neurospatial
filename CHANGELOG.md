@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Linear track positions name one place
+
+**Fixed**
+
+- On a branching track, an edge that does not start where the previous edge
+  in `edge_order` ends (an arm starting at a junction after the previous arm
+  ended at its well) no longer shares its first linear position with that
+  well. With `edge_spacing=0.0` both places had the same linear position, so
+  `linear_to_nd` returned the junction for the well. This moved built-in maze
+  regions onto the wrong part of the track (the repeated Y maze's
+  `food_box` sat next to the entrance; 92 rat HexMaze node regions moved, some
+  by more than 3 m), and could misplace simulated replay positions and the bin
+  edges drawn by `plot()` and `plot_1d()` at those boundaries. Bins were not
+  affected.
+
+**Changed**
+
+- `Environment.from_graph`, `linear_track`, `maze` and the graph layout take
+  `edge_spacing=None` by default: no gap where an edge starts at the node
+  where the previous edge ends, and a 15-unit gap where it does not, the gap
+  the track annotation tool already inserted. A fixed length keeps every place
+  at the same linear position at every bin size. Linear positions on branching
+  tracks built with the old default shift by 15 for each such boundary before
+  them; a polyline track is unchanged.
+- A zero gap between an edge and a next edge that does not start where it ends
+  raises `ValueError`, from the factories and when a saved track is loaded;
+  omit `edge_spacing` or give that boundary a positive gap.
+- The built-in mazes use the automatic gaps.
+- `simulate_session(coverage="uniform")` spaces place-field centers by
+  distance along a track, so gaps between track segments no longer leave
+  uneven spacing around them.
+
 ### Smoothing tracked positions
 
 **Added**

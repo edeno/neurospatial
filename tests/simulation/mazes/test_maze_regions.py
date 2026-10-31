@@ -27,3 +27,36 @@ def test_track_carries_the_2d_regions_and_they_cover_bins(maze):
     assert list(track.regions) == list(maze.env_2d.regions)
     empty = [name for name in track.regions if len(track.bins_in_region(name)) == 0]
     assert empty == []
+
+
+def test_track_point_regions_sit_at_the_nearest_centerline_point(maze):
+    """A 2-D point region moves onto the track by the shortest distance.
+
+    The nearest centreline point is computed independently with shapely, so a
+    region placed on the wrong segment (for example at another node sharing
+    its linear position) fails, however far away it lands.
+    """
+    if maze.env_track is None:
+        pytest.skip("open-field maze without a track")
+    import numpy as np
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+
+    graph = maze.env_track._binning.linearization.graph
+    centerline = unary_union(
+        [
+            LineString([graph.nodes[u]["pos"], graph.nodes[v]["pos"]])
+            for u, v in graph.edges
+        ]
+    )
+    misplaced = []
+    for name, region in maze.env_2d.regions.items():
+        if region.kind != "point":
+            continue
+        point = np.asarray(region.data, dtype=float)
+        on_track = np.asarray(maze.env_track.regions[name].data, dtype=float)
+        moved = float(np.linalg.norm(on_track - point))
+        nearest = centerline.distance(Point(point))
+        if moved > nearest + 1e-6:
+            misplaced.append((name, round(moved, 2), round(nearest, 2)))
+    assert misplaced == []

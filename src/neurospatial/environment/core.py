@@ -3685,7 +3685,7 @@ class Environment(Generic[_C]):
         endpoints: Sequence[Sequence[float]] | None = None,
         node_positions: Sequence[Sequence[float]] | None = None,
         bin_size: float,
-        edge_spacing: float | Sequence[float] = 0.0,
+        edge_spacing: float | Sequence[float] | None = None,
         track_width: float | None = None,
         name: str = "",
         units: str | None = None,
@@ -3714,9 +3714,10 @@ class Environment(Generic[_C]):
         bin_size : float
             Length of each bin along the linearized track, in the units of the
             node coordinates.
-        edge_spacing : float or sequence of floats, default 0.0
+        edge_spacing : float, sequence of floats, or None, default None
             Spacing inserted between consecutive edges during linearization.
-            For a single contiguous track this is typically 0.0.
+            None (the default) leaves no gap: the waypoints form one
+            continuous track.
         track_width : float or None, optional
             Full physical track width. Required for contains(); bin_at()
             remains nearest-track projection when width is unknown.
@@ -3790,7 +3791,7 @@ class Environment(Generic[_C]):
         track_graph: nx.Graph | None = None,
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
-        edge_spacing: float | Sequence[float] = 0.0,
+        edge_spacing: float | Sequence[float] | None = None,
         track_width: float | None = None,
         name: str = "",
         units: str | None = None,
@@ -3866,8 +3867,10 @@ class Environment(Generic[_C]):
             `kind` topology is assembled. Mutually exclusive with `track_graph`.
         bin_size : float
             Length of each bin along the linearized track.
-        edge_spacing : float or sequence of floats, default 0.0
+        edge_spacing : float, sequence of floats, or None, default None
             Spacing inserted between consecutive edges during linearization.
+            None puts a 15-unit gap wherever an arm does not start where the
+            previous one ends, as :meth:`from_graph` describes.
         track_width : float or None, optional
             Full physical track width. Required for contains(); bin_at()
             remains nearest-track projection when width is unknown.
@@ -3939,7 +3942,7 @@ class Environment(Generic[_C]):
         edge_order: list[tuple[Any, Any]],
         *,
         bin_size: float,
-        edge_spacing: float | Sequence[float] = 0.0,
+        edge_spacing: float | Sequence[float] | None = None,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
@@ -3971,12 +3974,17 @@ class Environment(Generic[_C]):
             The length of each bin along the linearized track, in the same units
             as the graph node coordinates. For example, if node positions are in
             centimeters, bin_size=2.0 creates 2cm bins along the track.
-        edge_spacing : float or sequence of floats, default 0.0
+        edge_spacing : float, sequence of floats, or None, default None
             The spacing to insert between consecutive edges in `edge_order`
             during linearization, in the same units as the graph node coordinates.
             If a float, applies to all gaps. If a sequence, specifies spacing for
-            each gap. The default 0.0 places consecutive edges end to end, as in
-            :meth:`linear_track` and :meth:`maze`.
+            each gap. None (the default) leaves no gap where an edge starts at
+            the node where the previous edge ends, and a gap of 15 (in the node
+            coordinates' units, independent of ``bin_size``) where it does not.
+            A gap is needed there: with none,
+            the end of one edge and the start of the next would share a linear
+            position, which ``linear_to_nd`` could map back to only one of
+            them. A zero gap at such a boundary raises ``ValueError``.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
@@ -4031,9 +4039,9 @@ class Environment(Generic[_C]):
         T-maze. A central stem with two arms branching at the
         decision point. ``edge_order`` controls the linearization
         sequence (here: stem first, then left arm, then right arm).
-        ``edge_spacing`` inserts a gap between non-contiguous arm
-        endpoints so the linearized coordinate doesn't fold both
-        arms onto the same range:
+        The left arm ends at its tip but the right arm starts at the
+        decision point, so they need a gap; omitting ``edge_spacing``
+        inserts 15 cm there. Here a 10 cm gap is chosen instead:
 
         >>> g = nx.Graph()
         >>> g.add_nodes_from(

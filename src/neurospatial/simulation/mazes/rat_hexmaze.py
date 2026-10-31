@@ -306,7 +306,6 @@ def make_rat_hexmaze(
         env_track = Environment.from_graph(
             graph=graph,
             edge_order=list(graph.edges),
-            edge_spacing=0.0,
             bin_size=bin_size,
             track_width=dims.corridor_width,
             name="rat_hexmaze_1d",

@@ -41,7 +41,7 @@ def l_track():
     graph.add_edge(0, 1)
     graph.add_edge(1, 2)
     return Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=10.0, units="cm"
+        graph, edge_order=[(0, 1), (1, 2)], bin_size=10.0, units="cm"
     )
 
 

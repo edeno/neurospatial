@@ -239,7 +239,6 @@ class TestSpatialAutocorrelation:
         env = Environment.from_graph(
             graph,
             edge_order=list(graph.edges),
-            edge_spacing=0.0,
             bin_size=2.0,
         )
         firing_rate = np.linspace(0.0, 1.0, env.n_bins)

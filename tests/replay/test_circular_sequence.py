@@ -24,7 +24,7 @@ N_NODES = 16
 RADIUS = 40.0  # an 80 cm diameter track, as in Wikenheiser & Redish (2013)
 
 
-def _loop(n_nodes=N_NODES, radii=None, edge_order=None, edge_spacing=0.0):
+def _loop(n_nodes=N_NODES, radii=None, edge_order=None, edge_spacing=None):
     """A closed polygonal track; ``radii`` makes its sides unequal."""
     radii = np.full(n_nodes, RADIUS) if radii is None else np.asarray(radii)
     graph = nx.cycle_graph(n_nodes)

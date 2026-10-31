@@ -421,7 +421,6 @@ def _create_repeated_t_maze_track_graph(
     return Environment.from_graph(
         graph=graph,
         edge_order=edges,
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="repeated_t_maze_1d",

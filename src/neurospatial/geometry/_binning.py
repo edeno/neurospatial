@@ -23,7 +23,11 @@ from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid, framed_locator
 from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
-from neurospatial.geometry._track import project_1d_to_2d, project_nd_to_1d
+from neurospatial.geometry._track import (
+    project_1d_to_2d,
+    project_nd_to_1d,
+    zero_gap_problem,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry._native_faces import NativeFaces
@@ -715,7 +719,9 @@ class TrackLinearization(ReadOnlyState):
         ``graph``.
     edge_spacing : float or sequence of float
         Finite, non-negative gaps between successive segments: one value for
-        every gap, or ``len(edge_order) - 1`` values.
+        every gap, or ``len(edge_order) - 1`` values. A segment that does not
+        start where the previous one ends needs a positive gap, so that every
+        linear position names one place.
     grid_edges : tuple of ndarray
         Full linear bin edges, including gaps: one finite, strictly
         increasing axis.
@@ -731,7 +737,8 @@ class TrackLinearization(ReadOnlyState):
         If ``graph`` is not an undirected simple ``networkx.Graph``, a node
         has no finite ``pos``, ``edge_order`` names a pair that is not a
         graph edge, ``edge_spacing`` is not finite and nonnegative or has the
-        wrong count, or ``grid_edges`` is not one linear axis matching
+        wrong count or leaves no gap between segments that do not meet, or
+        ``grid_edges`` is not one linear axis matching
         ``active_mask``.
     """
 
@@ -782,6 +789,12 @@ class TrackLinearization(ReadOnlyState):
         object.__setattr__(
             self, "edge_spacing", _edge_spacing(self.edge_spacing, len(edge_order))
         )
+        problem = zero_gap_problem(edge_order, self.edge_spacing)
+        if problem is not None:
+            raise ValueError(
+                f"TrackLinearization: {problem}. Give that boundary a positive "
+                "gap in edge_spacing."
+            )
         if len(self.grid_edges) != 1:
             raise ValueError(
                 "TrackLinearization.grid_edges must hold one linear axis, got "

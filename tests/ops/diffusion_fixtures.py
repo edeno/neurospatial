@@ -69,7 +69,6 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
     params = {
         "graph_definition": tg,
         "edge_order": [(0, 1)],
-        "edge_spacing": 0.0,
         "bin_size": bin_size,
     }
     layout = GraphLayout()

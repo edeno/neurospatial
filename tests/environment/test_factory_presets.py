@@ -474,9 +474,10 @@ class TestFactoryMetadataKwargs:
 # which networkx groups by node: (bl,bm), (bl,al), (bm,br), (bm,am), (br,ar).
 _W_COORDS = [(0, 0), (50, 0), (100, 0), (0, 50), (50, 50), (100, 50)]
 _W_QUERY = np.array([(25, 0), (75, 0), (0, 40), (50, 25), (100, 25), (100, 45)], float)
-# Along-track distance with edge_order bl-bm, bm-br, bl-al, bm-am, br-ar
-# (50 cm each, no spacing).
-_W_EXPECTED = np.array([25.0, 75.0, 140.0, 175.0, 225.0, 245.0])
+# Linear position with edge_order bl-bm, bm-br, bl-al, bm-am, br-ar (50 cm
+# each). The base runs end to end; each arm starts where the previous edge does
+# not end, so a 15 cm gap precedes it: arms start at 115, 180 and 245.
+_W_EXPECTED = np.array([25.0, 75.0, 155.0, 205.0, 270.0, 290.0])
 
 
 def _w_maze(labels, track_width=None):
@@ -537,7 +538,7 @@ class TestGraphLinearization:
             graph.add_edge(u, v, distance=50.0, edge_id=edge_id)
         caller_ids = dict(nx.get_edge_attributes(graph, "edge_id"))
 
-        env = Environment.from_graph(graph, edge_order, edge_spacing=0.0, bin_size=5.0)
+        env = Environment.from_graph(graph, edge_order, bin_size=5.0)
 
         np.testing.assert_allclose(env.to_linear(_W_QUERY), _W_EXPECTED, atol=1e-9)
         assert nx.get_edge_attributes(graph, "edge_id") == caller_ids
@@ -554,13 +555,16 @@ class TestGraphLinearization:
                 "plus",
                 {"c": (0, 0), "n": (0, 50), "s": (0, -50), "e": (50, 0), "w": (-50, 0)},
                 [(0, 25), (0, -30), (40, 0), (-10, 0), (0, 49)],
-                [25.0, 80.0, 140.0, 160.0, 49.0],
+                # Every arm starts at the centre: 15 cm gaps, arms at 0, 65, 130, 195.
+                [25.0, 95.0, 170.0, 205.0, 49.0],
             ),
             (
                 "t",
                 {"stem": (50, 0), "j": (50, 50), "l": (0, 50), "r": (100, 50)},
                 [(50, 10), (50, 45), (20, 50), (80, 50), (99, 50)],
-                [10.0, 45.0, 80.0, 130.0, 149.0],
+                # Stem runs into the left arm; the right arm starts at the
+                # junction after a 15 cm gap, at 115.
+                [10.0, 45.0, 80.0, 145.0, 164.0],
             ),
         ],
     )
@@ -599,7 +603,6 @@ class TestGraphLinearization:
             lambda: Environment.from_graph(
                 _graph_with_positions([(0, 0), (10, 0), (10, 0)]),
                 edge_order=[(0, 1), (1, 2)],
-                edge_spacing=0.0,
                 bin_size=2.0,
             ),
             id="from_graph",

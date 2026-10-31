@@ -376,7 +376,7 @@ def test_projected_track_uses_its_own_stable_scale(scene_env):
     graph.add_node(0, pos=(0.0, 5.0))
     graph.add_node(1, pos=(10.0, 5.0))
     graph.add_edge(0, 1, distance=10.0)
-    track = Environment.from_graph(graph, [(0, 1)], bin_size=5, edge_spacing=0)
+    track = Environment.from_graph(graph, [(0, 1)], bin_size=5)
     scene = Animation(
         scene_env,
         {

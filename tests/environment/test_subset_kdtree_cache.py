@@ -22,9 +22,7 @@ def linearized_parent_and_subset() -> tuple[Environment, Environment, np.ndarray
     edge_order = [(u, v) for u, v in zip(range(19), range(1, 20), strict=False)]
     for u, v in edge_order:
         g.add_edge(u, v, distance=1.0)
-    env = Environment.from_graph(
-        g, edge_order=edge_order, edge_spacing=0.0, bin_size=1.0
-    )
+    env = Environment.from_graph(g, edge_order=edge_order, bin_size=1.0)
     keep = np.zeros(env.n_bins, dtype=bool)
     keep[: env.n_bins // 2] = True
     return env, env.subset(mask=keep), keep

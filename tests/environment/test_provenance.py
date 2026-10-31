@@ -26,9 +26,7 @@ def _track():
         graph.add_node(node, pos=pos)
     graph.add_edge(0, 1, distance=10.0)
     graph.add_edge(1, 2, distance=10.0)
-    return Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=1.0
-    )
+    return Environment.from_graph(graph, edge_order=[(0, 1), (1, 2)], bin_size=1.0)
 
 
 FACTORIES = {
@@ -144,7 +142,7 @@ def test_one_dimensional_masks_are_data_not_choices():
 
 def test_track_geometry_is_owned_by_the_binning_not_provenance():
     env = _track()
-    assert env.layout_parameters == {"edge_spacing": 0.0, "bin_size": 1.0}
+    assert env.layout_parameters == {"edge_spacing": None, "bin_size": 1.0}
     linearization = env.binning.linearization
     assert list(linearization.graph.edges) == [(0, 1), (1, 2)]
     assert tuple(linearization.edge_order) == ((0, 1), (1, 2))

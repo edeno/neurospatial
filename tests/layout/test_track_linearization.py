@@ -50,7 +50,9 @@ def _assert_previous_projection(component, layout, prefix, recorded):
                 with warnings.catch_warnings(record=True) as caught:
                     warnings.simplefilter("always", RuntimeWarning)
                     actual = getattr(target, method)(points)
-                np.testing.assert_array_equal(actual, expected)
+                # The track's coordinates were shifted by the gap that now separates
+                # its third edge, so values agree to rounding, not bit for bit.
+                np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-12)
                 messages = [
                     f"{warning.category.__name__}: {warning.message}"
                     for warning in caught

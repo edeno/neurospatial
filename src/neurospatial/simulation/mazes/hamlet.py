@@ -504,7 +504,6 @@ def _create_hamlet_track_graph(
     return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="hamlet_maze_1d",

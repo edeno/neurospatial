@@ -560,7 +560,6 @@ def _create_sungod_track_graph(
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edges,
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=max(corridor_width(arm) for arm in arm_polygons),
         name="sungod_maze_1d",

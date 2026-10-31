@@ -50,9 +50,7 @@ def test_transformed_bent_track_keeps_similarity_lengths_and_refuses_anisotropy(
         [(0, {"pos": (0, 0)}), (1, {"pos": (6, 0)}), (2, {"pos": (6, 6)})]
     )
     graph.add_edges_from([(0, 1, {"distance": 6.0}), (1, 2, {"distance": 6.0})])
-    env = Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
-    )
+    env = Environment.from_graph(graph, edge_order=[(0, 1), (1, 2)], bin_size=2.0)
     transformed = env.apply_transform(scale_2d(2))
     expected = env.bin_sizes * 2
     np.testing.assert_allclose(transformed.bin_sizes, expected)

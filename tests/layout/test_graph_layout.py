@@ -10,7 +10,7 @@ from neurospatial import Environment
 from neurospatial.layout.engines.graph import GraphLayout
 
 
-def _build_graph_layout(simple_y_maze_graph, bin_size=1.0, edge_spacing=0.0):
+def _build_graph_layout(simple_y_maze_graph, bin_size=1.0, edge_spacing=None):
     graph, edge_order = simple_y_maze_graph
     layout = GraphLayout()
     layout.build(
@@ -206,7 +206,6 @@ def test_every_segment_end_at_a_junction_is_a_neighbor(maze):
         layout.build(
             graph_definition=graph,
             edge_order=[(0, node) for node in order],
-            edge_spacing=0.0,
             bin_size=2.5,
         )
         ends = _junction_bins(layout)
@@ -238,7 +237,6 @@ def test_cross_junction_edges_are_measured_along_the_track(maze):
     layout.build(
         graph_definition=graph,
         edge_order=[(0, node) for node in graph.neighbors(0)],
-        edge_spacing=0.0,
         bin_size=2.5,
     )
     ends = list(_junction_bins(layout).values())
@@ -283,7 +281,6 @@ def test_junction_faces_conserve_flux_of_a_balanced_linear_field():
     layout.build(
         graph_definition=graph,
         edge_order=[(0, node) for node in (1, 2, 3)],
-        edge_spacing=0.0,
         bin_size=2.0,
     )
     segments = layout._segment_ids
@@ -326,7 +323,6 @@ def test_separate_tracks_crossing_at_one_point_keep_their_junction_faces():
         layout.build(
             graph_definition=graph,
             edge_order=list(graph.edges()),
-            edge_spacing=0.0,
             bin_size=1.0,
         )
         faces = layout.binning().build_faces()
@@ -358,7 +354,6 @@ def test_an_edge_between_coincident_nodes_is_refused_by_name():
         GraphLayout().build(
             graph_definition=graph,
             edge_order=edge_order,
-            edge_spacing=0.0,
             bin_size=2.0,
         )
     assert "\nWhy: " in str(excinfo.value)

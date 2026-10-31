@@ -104,7 +104,6 @@ def build_track(bin_size: float, *, straight: bool) -> Environment:
     params = {
         "graph_definition": tg,
         "edge_order": edge_order,
-        "edge_spacing": 0.0,
         "bin_size": bin_size,
     }
     layout = GraphLayout()

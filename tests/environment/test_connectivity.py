@@ -387,7 +387,6 @@ class TestConnectivityMultipleLayouts:
         env = Environment.from_graph(
             graph=graph,
             edge_order=[(0, 1), (1, 2), (2, 3)],
-            edge_spacing=0.0,
             bin_size=0.5,
         )
 
@@ -421,7 +420,6 @@ class TestConnectivityMultipleLayouts:
         env = Environment.from_graph(
             graph=graph,
             edge_order=[(0, 1), (1, 2), (3, 4), (4, 5)],
-            edge_spacing=0.0,
             bin_size=0.5,
         )
 
