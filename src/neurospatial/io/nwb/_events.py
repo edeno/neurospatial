@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import ndx_events
     from pynwb import NWBFile
 
-    from neurospatial.behavior.segmentation import Lap, Outcome, Trial
+    from neurospatial.behavior.segmentation import Crossing, Lap, Outcome, Trial
 
 # =============================================================================
 # Constants for NWB events
@@ -48,6 +48,9 @@ _PREDEFINED_INTERVALS: tuple[str, ...] = (
 _LAP_DIRECTION_DESCRIPTION = (
     "Direction of the lap: clockwise, counter-clockwise or unknown"
 )
+_REGION_DESCRIPTION = "Name of the region crossed"
+_CROSSING_DIRECTION_DESCRIPTION = "Direction of the crossing: entry or exit"
+_BIN_INDEX_DESCRIPTION = "Environment bin index of the sample at the crossing time"
 _OVERLAP_SCORE_DESCRIPTION = (
     "Jaccard overlap of the lap's bins with the template lap's bins, in [0, 1]; "
     "NaN when laps were detected without a template (method='region')"
@@ -292,7 +295,13 @@ def read_intervals(
     return tables[interval_name].to_dataframe()
 
 
-def _records(records: object, record_class: type, argument: str) -> list[Any]:
+def _records(
+    records: object,
+    record_class: type,
+    argument: str,
+    *,
+    arrays: str = "start_times/stop_times",
+) -> list[Any]:
     """Return ``records`` as a list after checking every element's type."""
     if not isinstance(records, (list, tuple)):
         raise TypeError(
@@ -304,7 +313,7 @@ def _records(records: object, record_class: type, argument: str) -> list[Any]:
             raise TypeError(
                 f"{argument}[{i}] is a {type(record).__name__}, not a "
                 f"{record_class.__name__}. Pass the list returned by the detector, "
-                "or the start_times/stop_times arrays instead."
+                f"or the {arrays} arrays instead."
             )
     return list(records)
 
@@ -355,14 +364,22 @@ def _checked_intervals(
     return start, stop
 
 
-def _per_record(values: Sequence[Any] | None, argument: str, n: int) -> list[Any]:
-    """Return one value per record, checking the length against start_times."""
+def _per_record(
+    values: Sequence[Any] | None, argument: str, n: int, reference: str = "start_times"
+) -> list[Any]:
+    """Return one value per record, checking the length against ``reference``."""
     if values is None:
         return []
+    if isinstance(values, str):
+        raise TypeError(
+            f"{argument} must be a sequence with one value per record, not the "
+            f"single string {values!r}; a string would be split into its "
+            f"characters. Pass [{values!r}] * {n} to use it for every record."
+        )
     values = list(values)
     if len(values) != n:
         raise ValueError(
-            f"{argument} length ({len(values)}) must match start_times length ({n})."
+            f"{argument} length ({len(values)}) must match {reference} length ({n})."
         )
     return values
 
@@ -493,7 +510,8 @@ def write_laps(
         If ``name`` is reserved by NWB, or a table with that name exists and
         ``overwrite=False``.
     TypeError
-        If ``laps`` is not a list of ``Lap`` objects.
+        If ``laps`` is not a list of ``Lap`` objects, or ``directions`` is a
+        single string.
     NotImplementedError
         If ``overwrite=True`` would replace a table in a file opened with
         ``"r+"`` or ``"a"``.
@@ -595,114 +613,151 @@ def write_laps(
 @keyword_hint("description")
 def write_region_crossings(
     nwbfile: NWBFile,
-    crossing_times: NDArray[np.float64],
-    region_names: NDArray[np.str_],
-    event_types: NDArray[np.str_],
+    crossings: Sequence[Crossing] | None = None,
     *,
-    description: str = "Region crossing events",
+    times: NDArray[np.float64] | None = None,
+    regions: Sequence[str] | None = None,
+    directions: Sequence[str] | None = None,
     name: str = DEFAULT_REGION_CROSSINGS_NAME,
+    description: str = "Region crossing events",
     overwrite: bool = False,
 ) -> None:
     """
-    Write region crossing events to NWB EventsTable.
+    Write region crossings to an NWB EventsTable.
 
-    Creates an EventsTable in the processing/behavior/ module containing
-    region crossing event timestamps with region name and event type columns.
+    Each crossing is a point event, so crossings are stored as an ndx-events
+    ``EventsTable`` in the ``processing/behavior`` module, with ``region`` and
+    ``direction`` columns. Read them back with ``read_events(nwbfile,
+    table_name="region_crossings")``.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    crossing_times : NDArray[np.float64], shape (n_crossings,)
-        Crossing timestamps in seconds. Must be 1D array.
-    region_names : NDArray[np.str_], shape (n_crossings,)
-        Name of the region for each crossing (e.g., "start", "goal").
-        Must have same length as crossing_times.
-    event_types : NDArray[np.str_], shape (n_crossings,)
-        Type of crossing event, such as ``Crossing.direction`` from
-        :func:`~neurospatial.behavior.segmentation.detect_region_crossings`
-        (``'entry'`` or ``'exit'``). Other strings are allowed (e.g.,
-        'approach', 'dwell').
-        Must have same length as crossing_times.
-    description : str, default "Region crossing events"
-        Description for the EventsTable.
+    crossings : Sequence[Crossing], optional
+        Crossings from
+        :func:`~neurospatial.behavior.segmentation.detect_region_crossings`.
+        Writes the ``region``, ``direction`` and ``bin_index`` of every
+        crossing. Cannot be combined with the array arguments.
+    times : NDArray[np.float64], shape (n_crossings,), optional
+        Crossing times in seconds. Required if ``crossings`` is not given.
+    regions : Sequence[str], shape (n_crossings,), optional
+        Name of the region crossed. Required if ``crossings`` is not given.
+    directions : Sequence[str], shape (n_crossings,), optional
+        ``"entry"`` or ``"exit"`` for each crossing, as in
+        :class:`~neurospatial.behavior.segmentation.Crossing`. Required if
+        ``crossings`` is not given.
     name : str, default "region_crossings"
-        Name for the EventsTable in NWB.
+        Name of the EventsTable.
+    description : str, default "Region crossing events"
+        Description of the EventsTable.
     overwrite : bool, default False
-        If True, replace existing EventsTable with same name.
-        If False, raise ValueError on duplicate name.
+        If True, replace an existing table with the same name. Replacing a
+        table in a file opened with ``"r+"`` or ``"a"`` is refused; open it
+        with ``"r"`` and export a copy instead.
 
     Raises
     ------
     ValueError
-        If EventsTable with same name exists and overwrite=False.
-        If crossing_times is not 1D.
-        If region_names or event_types length doesn't match crossing_times.
-        If crossing_times contains non-finite or negative values.
+        If ``crossings`` is combined with array arguments, or neither is given.
+        If ``times`` is not 1-D, the arrays' lengths differ, or a direction is
+        not ``"entry"`` or ``"exit"``.
+        If times are non-finite or negative.
+        If a table with the same name exists and ``overwrite=False``.
+    TypeError
+        If ``crossings`` is not a list of ``Crossing`` objects, ``regions`` or
+        ``directions`` is a single string, or a region is not a string.
+    NotImplementedError
+        If ``overwrite=True`` would replace a table in a file opened with
+        ``"r+"`` or ``"a"``.
     ImportError
         If ndx-events is not installed.
 
-    Notes
-    -----
-    The EventsTable is stored in the processing/behavior/ module, following
-    NWB conventions for behavioral data. Each row represents a single crossing
-    event with timestamp, region name, and event type (entry/exit).
+    See Also
+    --------
+    detect_region_crossings : Detect entries into and exits from a region.
+    read_events : Read the crossings back as a DataFrame.
 
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> import numpy as np  # doctest: +SKIP
-    >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])  # doctest: +SKIP
-    >>> region_names = np.array(["start", "goal", "start", "goal"])  # doctest: +SKIP
-    >>> event_types = np.array(["entry", "entry", "exit", "exit"])  # doctest: +SKIP
+    >>> from neurospatial.behavior import detect_region_crossings  # doctest: +SKIP
+    >>> crossings = detect_region_crossings(  # doctest: +SKIP
+    ...     position_bins, times, env, region_name="goal"
+    ... )
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+    ...     write_region_crossings(nwbfile, crossings)
     ...     io.write(nwbfile)
     """
+    from neurospatial.behavior.segmentation import Crossing
     from neurospatial.io.nwb._core import _require_ndx_events, logger
 
     # Check ndx-events first so users see the install hint.
     _require_ndx_events()
 
-    # Validate crossing_times is 1D
-    crossing_times = np.asarray(crossing_times, dtype=np.float64)
-    if crossing_times.ndim != 1:
-        raise ValueError(
-            f"crossing_times must be 1D array, got shape {crossing_times.shape}. "
-            "Each element should be a single timestamp."
+    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
+    if crossings is not None:
+        _refuse_records_with_arrays(
+            "crossings",
+            {"times": times, "regions": regions, "directions": directions},
         )
-
-    # Validate timestamps are finite and non-negative
-    if len(crossing_times) > 0:
-        if not np.all(np.isfinite(crossing_times)):
-            raise ValueError("crossing_times contains non-finite values (NaN or Inf)")
-        if np.any(crossing_times < 0):
-            raise ValueError("crossing_times contains negative timestamps")
-
-    # Convert region_names and event_types to arrays
-    region_names = np.asarray(region_names)
-    event_types = np.asarray(event_types)
-
-    # Validate lengths match
-    if len(region_names) != len(crossing_times):
-        raise ValueError(
-            f"region_names length ({len(region_names)}) must match "
-            f"crossing_times length ({len(crossing_times)})."
+        records = _records(crossings, Crossing, "crossings", arrays="times")
+        crossing_times = np.array([c.time for c in records], dtype=np.float64)
+        regions_list = [c.region for c in records]
+        directions_list: list[Any] = [c.direction for c in records]
+        columns["bin_index"] = (
+            _BIN_INDEX_DESCRIPTION,
+            np.array([c.bin_index for c in records], dtype=np.int64),
         )
-    if len(event_types) != len(crossing_times):
-        raise ValueError(
-            f"event_types length ({len(event_types)}) must match "
-            f"crossing_times length ({len(crossing_times)})."
+    else:
+        if times is None or regions is None or directions is None:
+            raise ValueError(
+                "write_region_crossings needs either 'crossings' (from "
+                "detect_region_crossings) or all of 'times', 'regions' and "
+                "'directions'."
+            )
+        crossing_times = np.array(times, dtype=np.float64)
+        if crossing_times.ndim != 1:
+            raise ValueError(
+                "times must be a 1-D array of crossing times in seconds; got "
+                f"shape {crossing_times.shape}."
+            )
+        regions_list = _per_record(regions, "regions", len(crossing_times), "times")
+        directions_list = _per_record(
+            directions, "directions", len(crossing_times), "times"
         )
+        _refuse_unknown(
+            directions_list,
+            get_args(get_type_hints(Crossing)["direction"]),
+            argument="directions",
+            what="crossing direction",
+            why="the direction column uses the vocabulary of Crossing.direction.",
+        )
+    missing = [
+        i for i, region in enumerate(regions_list) if not isinstance(region, str)
+    ]
+    if missing:
+        raise TypeError(
+            f"Crossing {missing[0]} has region {regions_list[missing[0]]!r}; every "
+            "crossing needs the region name as a string."
+        )
+    if not np.all(np.isfinite(crossing_times)):
+        raise ValueError("times contains non-finite values (NaN or Inf)")
+    if np.any(crossing_times < 0):
+        raise ValueError("times contains negative timestamps")
 
     events_table = _build_events_table(
         name,
         description,
         crossing_times,
         {
-            "region": ("Region name", region_names.astype(str)),
-            "event_type": ("Crossing event type", event_types.astype(str)),
+            "region": (_REGION_DESCRIPTION, np.array(regions_list, dtype=str)),
+            "direction": (
+                _CROSSING_DIRECTION_DESCRIPTION,
+                np.array(directions_list, dtype=str),
+            ),
+            **columns,
         },
     )
     _add_events_table(
@@ -768,15 +823,10 @@ def write_trials(
     description : str, default "Behavioral trials"
         Description of the trials table.
     overwrite : bool, default False
-        If False, raise ``ValueError`` when trials already exist. If True,
-        raise ``NotImplementedError``: pynwb provides no public API to remove
-        or reset the predefined trials table (and it cannot be deleted once
-        written), so overwriting it is unsupported. Write to a fresh NWBFile,
-        or store these intervals under a different name by adding a separate
-        ``pynwb.epoch.TimeIntervals`` table (via ``nwbfile.add_time_intervals``)
-        with its own ``start_time``/``stop_time`` columns; such a table is
-        readable back via ``read_intervals``. (Do not use
-        ``write_region_crossings``: it stores point events, not intervals.)
+        If True, replace an existing trials table in an ``NWBFile`` built in
+        memory. A file read from disk keeps its written trials table: pynwb
+        cannot remove it, and an export would silently keep the old trials,
+        so replacing it raises ``NotImplementedError``.
 
     Raises
     ------
@@ -786,12 +836,14 @@ def write_trials(
         If array lengths don't match, or an outcome is not one of the four.
         If stop_times < start_times for any trial.
         If timestamps contain non-finite or negative values.
-        If a trials table already exists and ``overwrite=False``.
+        If a trials table already exists and ``overwrite=False``, or another
+        table refers to the rows of the trials table being replaced.
     TypeError
-        If ``trials`` is not a list of ``Trial`` objects.
+        If ``trials`` is not a list of ``Trial`` objects, or a per-trial
+        argument is a single string.
     NotImplementedError
-        If a trials table already exists and ``overwrite=True`` (overwriting
-        the predefined trials table is not supported).
+        If ``overwrite=True`` would replace the trials table of a file read
+        from disk.
     ImportError
         If pynwb is not installed.
 
@@ -886,29 +938,44 @@ def write_trials(
             np.array(outcomes_list, dtype=str),
         )
 
+    table = _build_time_intervals(PREDEFINED_TRIALS, description, start, stop, columns)
     if nwbfile.trials is not None:
         if not overwrite:
             raise ValueError(
-                "A trials table already exists in this NWB file, and pynwb "
-                "cannot replace it. Write these trials to a fresh NWBFile."
+                "A trials table already exists in this NWB file. Pass "
+                "overwrite=True to replace it."
             )
-        # pynwb provides no public API to delete or reset the predefined
-        # trials table, and it cannot be removed at all once the file is
-        # written.
-        raise NotImplementedError(
-            "Overwriting an existing NWB trials table is not supported: pynwb "
-            "exposes no public API to remove or reset the predefined trials "
-            "table, and it cannot be deleted once the file is written. Write "
-            "trials to a fresh NWBFile, or store these intervals under a "
-            "different name by adding a separate TimeIntervals table via "
-            "nwbfile.add_time_intervals(...) with start_time/stop_time columns "
-            "(readable back via read_intervals). Do not use "
-            "write_region_crossings(): it stores point events, not intervals."
+        if getattr(nwbfile, "read_io", None) is not None:
+            raise NotImplementedError(
+                "Cannot replace the trials table of a file read from disk: "
+                "pynwb cannot remove a written trials table, and exporting the "
+                "file would silently keep the old trials. Build a new NWBFile "
+                "and write the trials there, or store these intervals under "
+                "another name with nwbfile.add_time_intervals(...) (read back "
+                "with read_intervals)."
+            )
+        old = nwbfile.trials
+        referrers = sorted(
+            f"column {obj.name!r} of {getattr(obj.parent, 'name', None)!r}"
+            for obj in nwbfile.all_children()
+            if getattr(obj, "table", None) is old
         )
-
-    nwbfile.trials = _build_time_intervals(
-        PREDEFINED_TRIALS, description, start, stop, columns
-    )
+        if referrers:
+            raise ValueError(
+                f"Cannot replace the trials table: {', '.join(referrers)} "
+                "refers to its rows and would point at a table that is no "
+                "longer in the file. Build a new NWBFile, or remove those "
+                "references first."
+            )
+        # The trials attribute can be set only once; clearing the field and
+        # detaching the old table is the only way to replace it in memory.
+        nwbfile.fields.pop(PREDEFINED_TRIALS)
+        old.reset_parent()
+        logger.info("Overwriting existing trials table")
+    nwbfile.trials = table
+    if overwrite:
+        # all_children() rebuilt pynwb's object cache with the old table in it.
+        nwbfile.all_children()
     logger.debug("Wrote %d trials to NWB file", len(start))
 
 

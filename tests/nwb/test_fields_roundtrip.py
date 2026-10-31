@@ -562,30 +562,97 @@ class TestSpatialRatesRoundTrip:
         np.testing.assert_array_equal(back_b.env.bin_centers, env_b.bin_centers)
         assert back_b.env.units == "m"
 
+    def _replace_occupancy(self, nwbfile, record):
+        analysis = nwbfile.processing["analysis"]
+        del analysis.data_interfaces["spatial_rates_occupancy"]
+        analysis.add(record)
+
     def test_wrong_length_occupancy_raises_at_read(self, empty_nwb, sample_environment):
         """A companion occupancy of wrong length raises at READ time."""
+        from hdmf.common import DynamicTable, VectorData
+
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        self._replace_occupancy(
+            empty_nwb,
+            DynamicTable(
+                name="spatial_rates_occupancy",
+                description="wrong length",
+                columns=[
+                    VectorData(
+                        name="occupancy",
+                        description="s",
+                        data=np.zeros(env.n_bins + 3),
+                    )
+                ],
+            ),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=rf"has length {env.n_bins + 3} but spatial-rates table 'spatial_rates' "
+            rf"records n_bins={env.n_bins}",
+        ):
+            read_spatial_rates(empty_nwb, env=env)
+
+    def test_occupancy_time_series_is_refused(self, empty_nwb, sample_environment):
+        """Occupancy must be the bin-indexed table, not a time series."""
         from pynwb import TimeSeries
+
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        self._replace_occupancy(
+            empty_nwb,
+            TimeSeries(
+                name="spatial_rates_occupancy",
+                data=np.zeros((1, env.n_bins)),
+                unit="seconds",
+                timestamps=[0.0],
+            ),
+        )
+
+        with pytest.raises(
+            ValueError, match="is not a table with an 'occupancy' column"
+        ):
+            read_spatial_rates(empty_nwb, env=env)
+
+    def test_occupancy_is_stored_per_bin_not_over_time(
+        self, empty_nwb, sample_environment, tmp_path
+    ):
+        """Occupancy is a table with one row per bin, so NWB tools never read the
+        bins as samples of a time series."""
+        from pynwb import NWBHDF5IO, TimeSeries
 
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         result = _make_rates_result(env)
         write_spatial_rates(empty_nwb, result)
+        path = tmp_path / "rates.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
 
-        # Corrupt the occupancy companion to a wrong length after the write.
-        analysis = empty_nwb.processing["analysis"]
-        del analysis.data_interfaces["spatial_rates_occupancy"]
-        analysis.add(
-            TimeSeries(
-                name="spatial_rates_occupancy",
-                data=np.zeros((1, env.n_bins + 3)),
-                unit="seconds",
-                timestamps=[0.0],
+        with NWBHDF5IO(str(path), "r") as io:
+            nwbfile = io.read()
+            analysis = nwbfile.processing["analysis"]
+            assert not any(
+                isinstance(obj, TimeSeries) for obj in analysis.data_interfaces.values()
             )
-        )
+            occupancy = analysis["spatial_rates_occupancy"].to_dataframe()
+            assert list(occupancy.columns) == ["occupancy"]
+            np.testing.assert_array_equal(occupancy["occupancy"], result.occupancy)
+            back = read_spatial_rates(nwbfile)
+            np.testing.assert_array_equal(back.occupancy, result.occupancy)
 
-        with pytest.raises(ValueError, match="Occupancy companion"):
-            read_spatial_rates(empty_nwb, env=env)
+        nap = pytest.importorskip("pynapple")
+        # pynapple loads time series; a per-bin table is not one of them.
+        loaded = nap.load_file(str(path))
+        with pytest.raises(KeyError, match="spatial_rates_occupancy"):
+            loaded["spatial_rates_occupancy"]
 
     def test_wrong_table_name_raises_clear_error(self, empty_nwb, sample_environment):
         """A name pointing at a non-spatial-rates table raises a clear error."""

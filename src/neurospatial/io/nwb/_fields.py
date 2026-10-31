@@ -44,7 +44,7 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
 # Schema version of the spatial-rates metadata blob; the reader accepts only
 # this version.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.5"
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.6"
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
@@ -58,14 +58,11 @@ COL_PENALTY: str = "penalty"
 COL_REML_OBJECTIVE: str = "reml_objective"
 COL_REML_AT_BOUNDARY: str = "reml_at_boundary"
 COL_PENALTY_SELECTED: str = "penalty_selected_by_reml"
+# Column of the occupancy companion table (one row per bin).
+COL_OCCUPANCY: str = "occupancy"
 
 # Default processing module for analysis results
 DEFAULT_ANALYSIS_MODULE: str = "analysis"
-
-DEFAULT_OCCUPANCY_UNIT: str = "seconds"
-
-# Default timestamp for static data
-DEFAULT_STATIC_TIMESTAMP: float = 0.0
 
 
 # =============================================================================
@@ -97,8 +94,9 @@ def write_spatial_rates(
     ``occupancy_name``, ``unit_ids_generated``, ``min_occupancy`` (seconds),
     ``n_spikes_outside_intervals``, ``analysis_settings``, ``spike_window``
     and, for ``method="glm"``, a ``gam`` block (below). Occupancy is stored once
-    (it is shared across units) as a companion ``TimeSeries`` in seconds named
-    ``f"{name}_occupancy"``.
+    (it is shared across units) as a companion ``DynamicTable`` named
+    ``f"{name}_occupancy"`` with one row per bin and an ``occupancy`` column in
+    seconds. It is not a ``TimeSeries``: its axis is space, not time.
 
     For ``method="glm"`` results the GAM diagnostics are persisted alongside the
     rates: the scalars ``penalty`` / ``rank`` / ``n_iter`` / ``converged`` /
@@ -138,7 +136,7 @@ def write_spatial_rates(
         ``nwbfile.processing["analysis"]``.
     overwrite : bool, default False
         If True, replace an existing container and *all* its companions (the
-        ``f"{name}_occupancy"`` TimeSeries and the ``f"{name}_environment"``
+        ``f"{name}_occupancy"`` table and the ``f"{name}_environment"``
         environment). If False, raise ``ValueError`` when any of those names is
         already present. Replacing works on an in-memory ``NWBFile`` or one read
         with mode ``"r"`` and then exported to a new path with
@@ -164,7 +162,7 @@ def write_spatial_rates(
     Notes
     -----
     This function mutates only ``nwbfile`` (adds the DynamicTable and the
-    companion occupancy TimeSeries to the processing module ``analysis``, and the
+    companion occupancy table to the processing module ``analysis``, and the
     persisted environment to ``scratch``). The ``result`` object and its arrays
     are never modified -- ``firing_rates`` and ``occupancy`` are copied before
     being handed to the NWB containers, so the written data never aliases the
@@ -184,7 +182,6 @@ def write_spatial_rates(
     """
     _require_pynwb()
     from hdmf.common import DynamicTable, VectorData
-    from pynwb import TimeSeries
 
     from neurospatial.io.nwb._environment import write_environment
 
@@ -423,14 +420,22 @@ def write_spatial_rates(
         ],
     )
 
-    # Occupancy is shared across units: store once as (1, n_bins) TimeSeries.
-    occupancy_ts = TimeSeries(
+    # Occupancy is shared across units: store it once, one row per bin. A
+    # TimeSeries would claim a time axis, and NWB tools would read the bins as
+    # samples at t = 0.
+    occupancy_table = DynamicTable(
         name=occupancy_name,
-        description=f"Occupancy (seconds) shared across units for '{name}'",
-        data=occupancy.reshape(1, -1),
-        unit=DEFAULT_OCCUPANCY_UNIT,
-        timestamps=[DEFAULT_STATIC_TIMESTAMP],
-        comments=f"Occupancy for spatial rates '{name}', n_bins={env.n_bins}.",
+        description=(
+            f"Occupancy shared across units for spatial rates '{name}'. Rows are "
+            f"the {env.n_bins} bins of the environment saved as '{env_name}'."
+        ),
+        columns=[
+            VectorData(
+                name=COL_OCCUPANCY,
+                description="Time spent in each bin, in seconds",
+                data=occupancy,
+            )
+        ],
     )
 
     # Remove any originals (overwrite=True), then add the table, its companion
@@ -448,7 +453,7 @@ def write_spatial_rates(
             removed.append((namespace, obj_name, _obj))
         analysis.add(table)
         added.append(("analysis", name))
-        analysis.add(occupancy_ts)
+        analysis.add(occupancy_table)
         added.append(("analysis", occupancy_name))
         write_environment(nwbfile, env, name=env_name)
         added.append(("scratch", env_name))
@@ -695,7 +700,14 @@ def read_spatial_rates(
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
             f"in processing module '{DEFAULT_ANALYSIS_MODULE}'."
         )
-    occupancy = np.asarray(analysis[occupancy_name].data[:]).reshape(-1)
+    occupancy_record = analysis[occupancy_name]
+    if COL_OCCUPANCY not in getattr(occupancy_record, "colnames", ()):
+        raise ValueError(
+            f"Occupancy companion '{occupancy_name}' for spatial rates '{name}' is "
+            f"not a table with an '{COL_OCCUPANCY}' column; the file may be "
+            "corrupt or the name was reused for another object."
+        )
+    occupancy = np.asarray(occupancy_record[COL_OCCUPANCY][:], dtype=np.float64)
 
     # Check the companion against the table's own recorded n_bins, so a
     # wrong-length occupancy fails here rather than in a later analysis.
@@ -861,9 +873,10 @@ def _require_current_schema(meta: dict[str, Any], name: str) -> None:
                 f"Spatial rates '{name}' has schema_version={recorded!r}; this "
                 f"version of neurospatial reads only schema "
                 f"{SPATIAL_RATES_SCHEMA_VERSION}.",
-                why="other versions store different metadata (records before "
-                "2.5 lack the occupancy threshold that defines spatial_support), "
-                "and reading them would mean guessing the missing values",
+                why="other versions store different data (records before 2.6 "
+                "store occupancy as a time series, and records before 2.5 lack "
+                "the occupancy threshold that defines spatial_support), and "
+                "reading them would mean guessing",
                 fix=_RECREATE_FIX,
             )
         )
