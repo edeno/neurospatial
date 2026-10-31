@@ -22,8 +22,11 @@
 - One overwrite rule for every NWB writer: an existing object raises
   "The <object> already exists. Pass overwrite=True to replace it."
 - NWB environment records store the same `Environment-v4` version as saved
-  files (they stored `4.0`); environment and spatial-rates records are both
+  files (they stored `4.0`, and those records are now refused with
+  recreation instructions); environment and spatial-rates records are both
   identified by their `format` marker.
+- `Environment.to_dict()` returns JSON-ready lists where it returned tuples
+  (region coordinates, `dimension_ranges`).
 - A missing NWB object (environment, spatial rates, units table, position,
   events) raises a `KeyError` whose message prints as written. A missing units
   table was a `ValueError`.
