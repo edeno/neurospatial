@@ -3,7 +3,7 @@ Tests for NWB environment functions.
 
 Tests for:
 - environment_from_position() - creates an Environment from NWB Position data
-- write_environment() - writes Environment to NWB scratch space
+- write_environment() - writes Environment to the NWB /analysis group
 """
 
 from __future__ import annotations
@@ -514,22 +514,22 @@ class TestWriteEnvironment:
     """Tests for write_environment() function."""
 
     def test_basic_environment_writing(self, empty_nwb, sample_environment):
-        """Test basic Environment writing to scratch/."""
+        """Test basic Environment writing to /analysis."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment, name="test_env")
 
-        # Should exist in scratch
-        assert "test_env" in empty_nwb.scratch
-        scratch_data = empty_nwb.scratch["test_env"]
-        assert scratch_data is not None
+        # Should exist in /analysis
+        assert "test_env" in empty_nwb.analysis
+        record = empty_nwb.analysis["test_env"]
+        assert record is not None
 
     def test_bin_centers_dataset(self, empty_nwb, sample_environment):
         """Centers retain their exact shape in a typed ragged column."""
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-        table = empty_nwb.scratch["spatial_environment"]
+        table = empty_nwb.analysis["spatial_environment"]
         centers = _stored_array(table, "binning/bins/centers")
         assert centers.shape == (sample_environment.n_bins, sample_environment.n_dims)
         np.testing.assert_array_equal(centers, sample_environment.bin_centers)
@@ -539,7 +539,7 @@ class TestWriteEnvironment:
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-        table = empty_nwb.scratch["spatial_environment"]
+        table = empty_nwb.analysis["spatial_environment"]
         edges = _stored_array(table, "binning/connections/all_pairs")
         np.testing.assert_array_equal(
             edges, list(sample_environment.connectivity.edges)
@@ -550,7 +550,7 @@ class TestWriteEnvironment:
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-        table = empty_nwb.scratch["spatial_environment"]
+        table = empty_nwb.analysis["spatial_environment"]
         actual = _stored_array(table, "binning/connections/all_distances")
         expected = [
             d["distance"]
@@ -563,7 +563,7 @@ class TestWriteEnvironment:
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         np.testing.assert_array_equal(
             metadata["dimension_ranges"], sample_environment.dimension_ranges
         )
@@ -575,11 +575,9 @@ class TestWriteEnvironment:
         sample_environment = sample_environment.with_metadata(units="cm")
         write_environment(empty_nwb, sample_environment)
 
-        scratch_data = empty_nwb.scratch["spatial_environment"]
+        record = empty_nwb.analysis["spatial_environment"]
         # Access via description or comments which hold metadata
-        assert (
-            "cm" in scratch_data.description or "units=cm" in scratch_data.description
-        )
+        assert "cm" in record.description or "units=cm" in record.description
 
     def test_group_attributes_frame(self, empty_nwb, sample_environment):
         """Test frame attribute is stored on group."""
@@ -588,10 +586,10 @@ class TestWriteEnvironment:
         sample_environment = sample_environment.with_metadata(frame="session_001")
         write_environment(empty_nwb, sample_environment)
 
-        scratch_data = empty_nwb.scratch["spatial_environment"]
+        record = empty_nwb.analysis["spatial_environment"]
         assert (
-            "session_001" in scratch_data.description
-            or "frame=session_001" in scratch_data.description
+            "session_001" in record.description
+            or "frame=session_001" in record.description
         )
 
     def test_group_attributes_n_dims(self, empty_nwb, sample_environment):
@@ -599,7 +597,7 @@ class TestWriteEnvironment:
         from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
-        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         assert metadata["n_dims"] == sample_environment.n_dims
 
     def test_group_attributes_layout_type(self, empty_nwb, sample_environment):
@@ -608,10 +606,10 @@ class TestWriteEnvironment:
 
         write_environment(empty_nwb, sample_environment)
 
-        scratch_data = empty_nwb.scratch["spatial_environment"]
+        record = empty_nwb.analysis["spatial_environment"]
         # Layout type should be stored in description
         layout_type = sample_environment.layout_type
-        assert layout_type in scratch_data.description
+        assert layout_type in record.description
 
     def test_custom_name(self, empty_nwb, sample_environment):
         """Test custom name parameter."""
@@ -619,8 +617,8 @@ class TestWriteEnvironment:
 
         write_environment(empty_nwb, sample_environment, name="linear_track")
 
-        assert "linear_track" in empty_nwb.scratch
-        assert "spatial_environment" not in empty_nwb.scratch
+        assert "linear_track" in empty_nwb.analysis
+        assert "spatial_environment" not in empty_nwb.analysis
 
     def test_duplicate_name_error(self, empty_nwb, sample_environment):
         """Test ValueError when writing duplicate name without overwrite."""
@@ -646,8 +644,8 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, modified_env, overwrite=True)
 
         # Check new data is present
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert "meters" in scratch_data.description
+        record = empty_nwb.analysis["spatial_environment"]
+        assert "meters" in record.description
 
     def test_overwrite_in_a_file_opened_for_writing_is_refused(
         self, empty_nwb, sample_environment, tmp_path
@@ -665,7 +663,7 @@ class TestWriteEnvironment:
             with pytest.raises(NotImplementedError, match="mode='r\\+'"):
                 write_environment(nwbfile, replacement, overwrite=True)
             # The original record is untouched.
-            assert "spatial_environment" in nwbfile.scratch
+            assert "spatial_environment" in nwbfile.analysis
         with pynwb.NWBHDF5IO(str(path), "r") as io:
             restored = read_environment(io.read())
         np.testing.assert_array_equal(
@@ -701,7 +699,7 @@ class TestWriteEnvironment:
         region_builder.add("center", point=(50.0, 50.0))
         sample_environment = sample_environment.with_regions(region_builder)
         write_environment(empty_nwb, sample_environment)
-        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         expected = sample_environment.regions["center"].to_dict()
         assert expected in metadata["regions"]
 
@@ -720,7 +718,7 @@ class TestWriteEnvironment:
         region_builder.add("reward_zone", polygon=triangle)
         env = env.with_regions(region_builder)
         write_environment(empty_nwb, env)
-        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         expected = json.loads(json.dumps(env.regions["reward_zone"].to_dict()))
         assert expected in metadata["regions"]
 
@@ -737,8 +735,8 @@ class TestWriteEnvironment:
         # Should work without error
         write_environment(empty_nwb, env)
 
-        scratch_data = empty_nwb.scratch["spatial_environment"]
-        assert scratch_data is not None
+        record = empty_nwb.analysis["spatial_environment"]
+        assert record is not None
 
     def test_metadata_json_stored(self, empty_nwb, sample_environment):
         """The description stores versioned JSON metadata, separate from arrays."""
@@ -746,7 +744,7 @@ class TestWriteEnvironment:
 
         sample_environment = sample_environment.with_metadata(name="test_arena")
         write_environment(empty_nwb, sample_environment)
-        metadata = json.loads(empty_nwb.scratch["spatial_environment"].description)
+        metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         assert metadata["name"] == "test_arena"
         assert metadata["schema_version"] == "4.0"
 
@@ -756,7 +754,7 @@ class TestWriteEnvironment:
 
         expected = sample_environment.bin_centers.copy()
         write_environment(empty_nwb, sample_environment)
-        table = empty_nwb.scratch["spatial_environment"]
+        table = empty_nwb.analysis["spatial_environment"]
         np.testing.assert_array_equal(
             _stored_array(table, "binning/bins/centers"), expected
         )
@@ -767,7 +765,7 @@ class TestWriteEnvironment:
 
         expected = np.array(list(sample_environment.connectivity.edges))
         write_environment(empty_nwb, sample_environment)
-        table = empty_nwb.scratch["spatial_environment"]
+        table = empty_nwb.analysis["spatial_environment"]
         np.testing.assert_array_equal(
             _stored_array(table, "binning/connections/all_pairs"), expected
         )
@@ -777,7 +775,7 @@ class TestReadEnvironment:
     """Tests for read_environment() function."""
 
     def test_basic_environment_reading(self, empty_nwb, sample_environment):
-        """Test basic Environment reading from scratch/."""
+        """Test basic Environment reading from /analysis."""
         from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
@@ -905,7 +903,7 @@ class TestReadEnvironment:
         np.testing.assert_array_almost_equal(loaded_coords, original_coords)
 
     def test_error_when_environment_not_found(self, empty_nwb):
-        """Test KeyError when environment not found in scratch/."""
+        """Test KeyError when environment not found in /analysis."""
         from neurospatial.io.nwb import read_environment
 
         with pytest.raises(KeyError, match="No environment named 'nonexistent'"):
@@ -917,7 +915,7 @@ class TestReadEnvironment:
         from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
-        record = empty_nwb.scratch["spatial_environment"]
+        record = empty_nwb.analysis["spatial_environment"]
         record.add_row(
             **{
                 name: list(record[name][0])
@@ -938,7 +936,7 @@ class TestReadEnvironment:
         from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
-        record = empty_nwb.scratch["spatial_environment"]
+        record = empty_nwb.analysis["spatial_environment"]
         metadata = json.loads(record.description)
         assert metadata["array_specs"]["bin_centers"]["dtype"] == "<f8"
         metadata["array_specs"]["bin_centers"]["dtype"] = "<f4"
@@ -1881,15 +1879,15 @@ class TestEnvironmentFromNwb:
     """Tests for Environment.from_nwb() classmethod."""
 
     def test_from_nwb_reads_a_named_record(self, tmp_path, sample_environment):
-        """from_nwb loads the scratch record with the given name."""
+        """from_nwb loads the /analysis record with the given name."""
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
         from neurospatial.io.nwb import write_environment
 
-        nwb_path = tmp_path / "test_from_nwb_scratch.nwb"
+        nwb_path = tmp_path / "test_from_nwb_analysis.nwb"
 
-        # Write environment to scratch
+        # Write environment to /analysis
         with NWBHDF5IO(str(nwb_path), "w") as io:
             nwbfile = _create_nwb_for_test()
             write_environment(nwbfile, sample_environment, name="my_environment")
@@ -1985,14 +1983,14 @@ class TestEnvironmentToNwb:
         """Test basic writing to NWB file using to_nwb method."""
         sample_environment.to_nwb(empty_nwb)
 
-        assert "spatial_environment" in empty_nwb.scratch
+        assert "spatial_environment" in empty_nwb.analysis
 
     def test_to_nwb_custom_name(self, empty_nwb, sample_environment):
         """Test custom name parameter for to_nwb."""
         sample_environment.to_nwb(empty_nwb, name="my_env")
 
-        assert "my_env" in empty_nwb.scratch
-        assert "spatial_environment" not in empty_nwb.scratch
+        assert "my_env" in empty_nwb.analysis
+        assert "spatial_environment" not in empty_nwb.analysis
 
     def test_to_nwb_overwrite_parameter(self, empty_nwb, sample_environment):
         """Test overwrite parameter for to_nwb."""
@@ -2007,7 +2005,7 @@ class TestEnvironmentToNwb:
         sample_environment = sample_environment.with_metadata(units="meters")
         sample_environment.to_nwb(empty_nwb, overwrite=True)
 
-        assert "meters" in empty_nwb.scratch["spatial_environment"].description
+        assert "meters" in empty_nwb.analysis["spatial_environment"].description
 
     def test_to_nwb_roundtrip(self, tmp_path, sample_environment):
         """Test that to_nwb and from_nwb work together."""
@@ -2186,7 +2184,7 @@ class TestGraphGeometryRoundTrip:
         path = Path(__file__).parent / "data/environment_schema_1_0.nwb"
         with (
             NWBHDF5IO(str(path), "r") as io,
-            pytest.raises(ValueError, match=r"1\.0") as caught,
+            pytest.raises(ValueError, match="is in NWB scratch space") as caught,
         ):
             read_environment(io.read())
         assert "Fix:" in str(caught.value)
@@ -2312,7 +2310,70 @@ def test_nwb_writer_names_a_json_only_track_attribute(empty_nwb, key, value, rea
         write_environment(empty_nwb, track)
 
     assert reason in str(error.value)
-    assert DEFAULT_ENVIRONMENT_NAME not in empty_nwb.scratch
+    assert DEFAULT_ENVIRONMENT_NAME not in empty_nwb.analysis
     # The same check sees a record the writer does store under that name.
     write_environment(empty_nwb, clean)
-    assert DEFAULT_ENVIRONMENT_NAME in empty_nwb.scratch
+    assert DEFAULT_ENVIRONMENT_NAME in empty_nwb.analysis
+
+
+def _other_analysis_table(name: str):
+    from hdmf.common import DynamicTable, VectorData
+
+    return DynamicTable(
+        name=name,
+        description="Spike-sorting quality metrics",
+        columns=[VectorData(name="snr", description="SNR", data=[4.0, 6.0])],
+    )
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_writer_never_replaces_another_analysis_object(
+    empty_nwb, sample_environment, overwrite
+):
+    """/analysis is shared with other results; an environment never displaces one."""
+    from neurospatial.io.nwb import write_environment
+
+    other = _other_analysis_table("quality")
+    empty_nwb.add_analysis(other)
+    with pytest.raises(ValueError, match="not an environment record") as error:
+        write_environment(
+            empty_nwb, sample_environment, name="quality", overwrite=overwrite
+        )
+    assert "Fix: store the environment under another name" in str(error.value)
+    assert empty_nwb.analysis["quality"] is other
+
+
+def test_reader_names_a_non_environment_record_and_lists_environments(
+    empty_nwb, sample_environment
+):
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    empty_nwb.add_analysis(_other_analysis_table("quality"))
+    write_environment(empty_nwb, sample_environment, name="open_field")
+
+    with pytest.raises(ValueError, match="/analysis/quality is not an environment"):
+        read_environment(empty_nwb, name="quality")
+    with pytest.raises(KeyError) as missing:
+        read_environment(empty_nwb, name="absent")
+    assert "saved environments: ['open_field']" in str(missing.value)
+
+
+def test_environment_record_is_found_in_analysis_after_reading_from_disk(
+    empty_nwb, sample_environment, tmp_path
+):
+    """Shareable results live in /analysis, not scratch, on disk too."""
+    import h5py
+    from pynwb import NWBHDF5IO
+
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    write_environment(empty_nwb, sample_environment, name="open_field")
+    path = tmp_path / "env.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with h5py.File(path, "r") as raw:
+        assert "analysis/open_field/binning.connections.all_pairs" in raw
+        assert "open_field" not in raw.get("scratch", {})
+    with NWBHDF5IO(str(path), "r") as io:
+        restored = read_environment(io.read(), name="open_field")
+    np.testing.assert_array_equal(restored.edge_pairs, sample_environment.edge_pairs)

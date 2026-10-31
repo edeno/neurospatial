@@ -41,7 +41,7 @@ def _save_and_read(env, how, tmp_path: Path):
         session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
     )
     write_environment(nwbfile, env)
-    saved = json.loads(nwbfile.scratch["spatial_environment"].description)
+    saved = json.loads(nwbfile.analysis["spatial_environment"].description)
     return saved, read_environment(nwbfile)
 
 

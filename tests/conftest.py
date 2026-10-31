@@ -1154,7 +1154,7 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
             datetime(2020, 1, 1, tzinfo=timezone.utc),
         )
         write_environment(nwbfile, target)
-        record = nwbfile.scratch["spatial_environment"]
+        record = nwbfile.analysis["spatial_environment"]
         metadata = json.loads(record.description)
         arrays = {
             name: np.asarray(record[spec["column"]][0]).reshape(spec["shape"]).copy()
@@ -1163,7 +1163,8 @@ def corrupted_environment_round_trip(built_environment, request, tmp_path):
         corrupt(metadata, arrays)
         record.fields["description"] = json.dumps(metadata)
         for name, spec in metadata["array_specs"].items():
-            record[spec["column"]].target.data[:] = arrays[name].reshape(-1)
+            # The writer wraps each column in H5DataIO (gzip); edit its array.
+            record[spec["column"]].target.data.data[:] = arrays[name].reshape(-1)
         return read_environment(nwbfile)
 
     return restore_after

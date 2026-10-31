@@ -105,7 +105,7 @@ def test_malformed_nwb_metadata_has_a_contextual_value_error(metadata):
         "malformed", "malformed", datetime(2020, 1, 1, tzinfo=timezone.utc)
     )
     write_environment(nwbfile, _environment())
-    nwbfile.scratch["spatial_environment"].fields["description"] = metadata
+    nwbfile.analysis["spatial_environment"].fields["description"] = metadata
     with pytest.raises(ValueError, match="Invalid environment metadata") as error:
         read_environment(nwbfile)
     assert "Fix:" in str(error.value)

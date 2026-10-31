@@ -17,14 +17,14 @@ Reading Functions:
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_units : Read spike-time arrays from an NWB units table
     read_spatial_rates : Read a SpatialRatesResult saved by write_spatial_rates
-    read_environment : Read Environment from NWB scratch space
+    read_environment : Read an Environment saved in the NWB /analysis group
 
 Writing Functions:
     write_spatial_rates : Write a SpatialRatesResult with its occupancy and environment
     write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write laps to an NWB TimeIntervals table
     write_region_crossings : Write region crossing events
-    write_environment : Write Environment to NWB scratch space
+    write_environment : Write an Environment to the NWB /analysis group
 
 Factory Functions:
     environment_from_position : Create Environment from NWB Position data

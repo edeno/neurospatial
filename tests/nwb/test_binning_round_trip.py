@@ -44,7 +44,8 @@ def test_old_versions_refused(version):
     with pynwb.NWBHDF5IO(str(path), "r") as io, pytest.raises(ValueError) as caught:
         read_environment(io.read())
     text = str(caught.value)
-    assert version in text
+    # Every earlier schema saved environments in NWB scratch space.
+    assert "is in NWB scratch space" in text
     assert "Why:" in text
     assert "Fix:" in text
     assert "save" in text.lower()
@@ -73,7 +74,7 @@ def test_nwb_geometry_transport_is_a_single_typed_ragged_row(
         io.write(nwbfile)
     with pynwb.NWBHDF5IO(str(path), "r") as io:
         loaded_nwb = io.read()
-        record = loaded_nwb.scratch["spatial_environment"]
+        record = loaded_nwb.analysis["spatial_environment"]
         metadata = json.loads(record.description)
         expected = to_dict(env)
         assert len(record) == 1
@@ -82,9 +83,9 @@ def test_nwb_geometry_transport_is_a_single_typed_ragged_row(
         assert len(record.colnames) == len(metadata["array_specs"])
         for key, spec in metadata["array_specs"].items():
             name = spec["column"]
-            assert name.startswith("array_")
-            assert "/" not in name
+            assert name == key.replace("/", ".")
             assert isinstance(record[name], VectorIndex)
+            assert record[name].target.data.compression == "gzip"
             actual = np.asarray(record[name][0])
             assert actual.ndim == 1
             assert actual.dtype.str == spec["dtype"]

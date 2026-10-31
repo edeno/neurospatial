@@ -4524,7 +4524,7 @@ class Environment(Generic[_C]):
         *,
         name: str = "spatial_environment",
     ) -> Environment[Any]:
-        """Load an Environment saved in an NWB file's scratch space.
+        """Load an Environment saved in an NWB file's ``/analysis`` group.
 
         Reads a record written by :meth:`to_nwb` (or
         :func:`neurospatial.io.nwb.write_environment`). Schema 4.0 restores the
@@ -4537,7 +4537,7 @@ class Environment(Generic[_C]):
         nwbfile : NWBFile
             The NWB file to read from. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
-            Name of the stored record in scratch/, as passed to
+            Name of the stored record in ``/analysis``, as passed to
             :meth:`to_nwb`. The restored environment keeps its own saved
             ``env.name``.
 
@@ -4553,7 +4553,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         KeyError
-            If no record called `name` is in the NWB scratch space. The
+            If no record called `name` is in the NWB ``/analysis`` group. The
             message lists the saved environments and points to
             :func:`neurospatial.io.nwb.environment_from_position`.
         TypeError
@@ -5336,9 +5336,9 @@ class Environment(Generic[_C]):
         name: str = "spatial_environment",
         overwrite: bool = False,
     ) -> None:
-        """Write Environment to NWB file scratch space.
+        """Write Environment to the NWB file's ``/analysis`` group.
 
-        Serializes the Environment to the NWB file's scratch space, allowing
+        Serializes the Environment to the NWB file's ``/analysis`` group, allowing
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
@@ -5353,7 +5353,7 @@ class Environment(Generic[_C]):
         nwbfile : NWBFile
             The NWB file to write to. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
-            Name for the environment in scratch/. Use this name when loading
+            Name for the environment in ``/analysis``. Use this name when loading
             with ``Environment.from_nwb(nwbfile, name=name)``.
         overwrite : bool, default False
             If True, replace existing environment with the same name.

@@ -146,7 +146,7 @@ def test_malformed_arena_names_source(corrupted_environment_round_trip, corrupti
 
     with pytest.raises(
         ValueError,
-        match=r"environment dictionary|corrupt_environment\.json|NWB scratch/spatial_environment",
+        match=r"environment dictionary|corrupt_environment\.json|NWB analysis/spatial_environment",
     ) as error:
         corrupted_environment_round_trip(corrupt)
     assert "arena" in str(error.value).lower()
@@ -171,7 +171,7 @@ def test_malformed_arena_wkb_names_source(corrupted_environment_round_trip):
 
     with pytest.raises(
         ValueError,
-        match=r"environment dictionary|corrupt_environment\.json|NWB scratch/spatial_environment",
+        match=r"environment dictionary|corrupt_environment\.json|NWB analysis/spatial_environment",
     ) as error:
         corrupted_environment_round_trip(corrupt)
     assert "arena" in str(error.value).lower()

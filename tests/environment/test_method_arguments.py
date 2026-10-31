@@ -229,4 +229,4 @@ def test_to_nwb_by_position_names_the_keyword(names):
     fix = str(caught.value).splitlines()[-1]
     assert fix.endswith("as in env.to_nwb(nwbfile, name='arena')")
     eval(fix.split("as in ", 1)[1], {**names, "nwbfile": nwbfile})
-    assert "arena" in nwbfile.scratch
+    assert "arena" in nwbfile.analysis
