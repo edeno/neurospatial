@@ -102,36 +102,31 @@ class TestWriteTrialsFromTrialObjects:
         end_region = nwbfile.trials["end_region"][0]
         assert end_region in ("", "None", None)
 
-    def test_zero_trials_write_an_empty_table(self, tmp_path):
-        """A session without trials reads back as an empty table, not a KeyError."""
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"trials": []}, {"start_times": [], "stop_times": []}],
+        ids=["records", "arrays"],
+    )
+    def test_zero_trials_write_nothing_and_warn(self, tmp_path, kwargs):
+        """NWB files should not hold empty tables, so no trials table is added."""
         from pynwb import NWBHDF5IO
 
         from neurospatial.io.nwb import read_trials, write_trials
 
         nwbfile = create_roundtrip_nwb()
-        write_trials(nwbfile, trials=[])
+        with pytest.warns(
+            UserWarning, match="write_trials wrote nothing: there are no trials"
+        ):
+            write_trials(nwbfile, **kwargs)
+        assert nwbfile.trials is None
         with NWBHDF5IO(str(tmp_path / "trials.nwb"), "w") as io:
             io.write(nwbfile)
 
-        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "r") as io:
-            recovered = read_trials(io.read())
-        assert len(recovered) == 0
-        assert set(recovered.columns) == {
-            "start_time",
-            "stop_time",
-            "start_region",
-            "end_region",
-            "outcome",
-        }
-
-    def test_zero_trials_from_arrays_write_an_empty_table(self, empty_nwb):
-        from neurospatial.io.nwb import read_trials, write_trials
-
-        write_trials(empty_nwb, start_times=[], stop_times=[])
-
-        recovered = read_trials(empty_nwb)
-        assert len(recovered) == 0
-        assert set(recovered.columns) == {"start_time", "stop_time"}
+        with (
+            NWBHDF5IO(str(tmp_path / "trials.nwb"), "r") as io,
+            pytest.raises(KeyError, match="'trials' not found"),
+        ):
+            read_trials(io.read())
 
     @pytest.mark.parametrize(
         ("trials", "message"),
@@ -426,6 +421,15 @@ class TestWriteTrialsOverwrite:
         np.testing.assert_array_equal(back["start_time"], [100.0])
         np.testing.assert_array_equal(back["stop_time"], [105.0])
         assert list(back["outcome"]) == ["reached"]
+
+    def test_overwrite_with_zero_trials_removes_the_table(self, empty_nwb):
+        from neurospatial.io.nwb import write_trials
+
+        write_trials(empty_nwb, start_times=[0.0, 5.0], stop_times=[4.0, 9.0])
+        with pytest.warns(UserWarning, match="existing table 'trials' was removed"):
+            write_trials(empty_nwb, trials=[], overwrite=True)
+
+        assert empty_nwb.trials is None
 
     def test_invalid_replacement_keeps_the_original(self, empty_nwb):
         from neurospatial.io.nwb import read_trials, write_trials

@@ -219,3 +219,14 @@ class TestValidateLengths:
     def test_raises_valueerror_exact_type(self) -> None:
         with pytest.raises(ValueError):
             validate_lengths({"a": np.array([1.0]), "b": np.array([1.0, 2.0])})
+
+
+def test_non_pynapple_t_attribute_is_not_read_as_times() -> None:
+    """Only pynapple objects are read by ``.t``: an xarray DataArray with a
+    ``t`` dimension exposes its index there, not the event times."""
+    xr = pytest.importorskip("xarray")
+    from neurospatial.events import time_to_nearest_event
+
+    times = np.array([10.0, 20.0, 30.0])
+    events = xr.DataArray([10.0, 20.0, 30.0], dims="t")
+    np.testing.assert_array_equal(time_to_nearest_event(times, events), [0, 0, 0])

@@ -71,8 +71,8 @@ def time_to_nearest_event(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Times at which to compute regressor (seconds).
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event timestamps (seconds).
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event timestamps (seconds). A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     signed : bool, default=True
         If True, return signed time (negative before event, positive after).
         If False, return absolute distance to nearest event.
@@ -265,8 +265,8 @@ def event_count_in_window(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Times at which to compute count (seconds).
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event timestamps (seconds).
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event timestamps (seconds). A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple[float, float]
         Time window (start, end) relative to each sample time, in seconds.
         E.g., (-1.0, 0.0) counts events in previous 1 second.
@@ -402,8 +402,8 @@ def event_indicator(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Sample timestamps (seconds).
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event timestamps (seconds).
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event timestamps (seconds). A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple[float, float]
         Time window (start, stop) relative to each sample time (seconds), half-open
         ``[time + start, time + stop)``. Required: no window is

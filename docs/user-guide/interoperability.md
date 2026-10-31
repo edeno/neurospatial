@@ -445,6 +445,12 @@ been recorded wherever position was tracked. Use the group's time support as
 `TsGroup` built from spike times alone gets a default support that runs from
 its first spike to its last, which is not recording coverage.
 
+Event times passed as `event_times=`, `reward_times=` or `theta_peak_times=`
+accept a pynapple `Ts` or `Tsd` directly, and are read by its timestamps: a
+`Tsd` of reward sizes aligns to the reward times, not to the sizes. A `TsGroup`
+there is refused, because it holds one spike train per unit; pass
+`tsgroup[unit_id]` for one unit's spikes.
+
 Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
 time support is the decode's `spike_window`, so decoding over several windows
 stays several intervals instead of one interval spanning the gaps:
@@ -632,6 +638,24 @@ file with `"r"`, call `write_spatial_rates(..., overwrite=True)`, and save a
 copy with `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb
 cannot delete objects already written to a file opened with `"r+"`, so
 `overwrite=True` refuses such files.
+
+### Trials, laps, crossings and events
+
+`write_trials`, `write_laps`, `write_region_crossings` and `write_events` store
+behavioral records as NWB tables. A session with zero records writes no table:
+NWB best practice is not to write empty tables (nwbinspector reports them, and
+some of its checks crash on them, so `dandi validate` exits with an error). The
+writer warns instead, and reading that table back raises `KeyError`,
+so treat a missing table as zero trials, laps, crossings or events. Laps found
+without a template lap (`detect_laps(..., method="region")`) have no overlap
+score, so their table has no `overlap_score` column.
+
+Event tables (`write_events`, `write_region_crossings`) are `EventsTable`s.
+With pynwb 4 or later (NWB schema 2.10+), `EventsTable` is part of the NWB core
+schema, and a file written with it cannot be read by pynwb 3: the older reader
+does not know the newer core types, so `read_events` reports the table as
+missing. Use pynwb 4 or later to read files written with pynwb 4 or later.
+Files written with pynwb 3 read with either version.
 
 ## See Also
 

@@ -608,6 +608,22 @@ class TestWriteRegionCrossings:
         events = read_events(empty_nwb, table_name="region_crossings")
         np.testing.assert_array_equal(events["timestamp"], [1.5])
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"crossings": []}, {"times": [], "regions": [], "directions": []}],
+        ids=["records", "arrays"],
+    )
+    def test_zero_crossings_write_nothing_and_warn(self, empty_nwb, kwargs):
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.warns(
+            UserWarning,
+            match="write_region_crossings wrote nothing: there are no region crossings",
+        ):
+            write_region_crossings(empty_nwb, **kwargs)
+
+        assert "behavior" not in empty_nwb.processing
+
     def test_behavior_module_is_reused(self, empty_nwb):
         from pynwb.behavior import Position, SpatialSeries
 
@@ -816,35 +832,6 @@ def _disk_round_trip(nwbfile, path):
 @pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
 class TestEventTablesOnDisk:
     """Event tables keep their columns and dtypes through a file."""
-
-    def test_zero_region_crossings_round_trip(self, tmp_path):
-        from neurospatial.io.nwb import read_events, write_region_crossings
-
-        nwbfile = create_roundtrip_nwb()
-        write_region_crossings(nwbfile, times=np.array([]), regions=[], directions=[])
-
-        with _disk_round_trip(nwbfile, tmp_path / "crossings.nwb") as io:
-            recovered = read_events(io.read(), table_name="region_crossings")
-        assert len(recovered) == 0
-        assert set(recovered.columns) == {"timestamp", "region", "direction"}
-
-    def test_zero_events_keep_their_columns(self, tmp_path):
-        from neurospatial.io.nwb import read_events, write_events
-
-        nwbfile = create_roundtrip_nwb()
-        events = pd.DataFrame(
-            {
-                "timestamp": np.array([], dtype=float),
-                "label": np.array([], dtype=object),
-                "value": np.array([], dtype=float),
-            }
-        )
-        write_events(nwbfile, events, name="rewards")
-
-        with _disk_round_trip(nwbfile, tmp_path / "events.nwb") as io:
-            recovered = read_events(io.read(), table_name="rewards")
-        assert len(recovered) == 0
-        assert set(recovered.columns) == {"timestamp", "label", "value"}
 
     def test_boolean_column_round_trips_as_bool(self, tmp_path):
         from neurospatial.io.nwb import read_events, write_events

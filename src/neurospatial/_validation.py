@@ -10,7 +10,7 @@ into downstream computations.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import _is_pynapple_object
 
 
 def validate_finite(
@@ -73,6 +74,54 @@ def validate_finite(
             f"Remove or mask them before calling."
         )
     return arr
+
+
+def timestamps_of(values: Any, *, name: str) -> Any:
+    """Return the timestamps a times input carries.
+
+    A pynapple ``Ts``, ``Tsd`` or ``TsdFrame`` keeps its timestamps in ``.t``
+    and its data in ``.d``. ``np.asarray`` returns the data, which for a
+    ``Tsd`` of reward sizes or peak amplitudes is not the times, so read
+    ``.t`` from a pynapple object. Other objects pass through unchanged, even
+    with a ``.t`` attribute: an xarray ``DataArray`` with a ``t`` dimension
+    exposes its index there, not its values.
+
+    Parameters
+    ----------
+    values : Any
+        Times input: an array of times in seconds or a pynapple ``Ts``,
+        ``Tsd`` or ``TsdFrame``.
+    name : str
+        Argument name, used in the error message.
+
+    Returns
+    -------
+    Any
+        ``values.t`` for a pynapple object, else ``values``.
+
+    Raises
+    ------
+    ValueError
+        If ``values`` is a spike group (pynapple ``TsGroup`` or a dict of
+        trains), which holds one train per unit, not one set of times.
+    """
+    if isinstance(values, Mapping):
+        raise ValueError(
+            _format_error(
+                f"{name} is a spike group ({type(values).__name__}), not one set "
+                "of times.",
+                why=f"Why: a TsGroup or dict holds one spike train per unit; "
+                f"{name} takes one 1-D array of times in seconds.",
+                fix="pass one unit's train, e.g. group[unit_id], or event times "
+                "as an array or pynapple Ts; pass a whole spike group as "
+                "spike_times to a population function.",
+            )
+        )
+    if _is_pynapple_object(values):
+        t = getattr(values, "t", None)
+        if t is not None and np.ndim(t) == 1:
+            return t
+    return values
 
 
 def validate_lengths(name_to_array: dict[str, NDArray]) -> None:

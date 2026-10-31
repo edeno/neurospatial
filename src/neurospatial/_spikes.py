@@ -30,6 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import _is_pynapple_object
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
 
 
@@ -258,9 +259,10 @@ def _single_train(obj: Any) -> Any | None:
     """
     if isinstance(obj, Mapping):
         return None
-    t = getattr(obj, "t", None)
-    if t is not None and np.ndim(t) == 1:
-        return t
+    if _is_pynapple_object(obj):
+        t = getattr(obj, "t", None)
+        if t is not None and np.ndim(t) == 1:
+            return t
     if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
         return obj.to_numpy()
     return None

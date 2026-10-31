@@ -57,8 +57,8 @@ def align_spikes_to_events(
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Spike times in seconds. Does not need to be sorted.
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event times (e.g., stimulus onset) in seconds.
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, half-open
         ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
@@ -267,8 +267,8 @@ def peri_event_histogram(
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Spike times in seconds.
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event times (e.g., stimulus onset) in seconds.
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, half-open
         ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
@@ -392,8 +392,8 @@ def population_peri_event_histogram(
         Spike times in seconds, one 1-D array of shape (n_spikes_for_unit,)
         per unit, or a labelled spike group such as a pynapple ``TsGroup``.
         A group's index becomes the result's ``unit_ids``.
-    event_times : NDArray[np.float64], shape (n_events,)
-        Event times (e.g., stimulus onset) in seconds.
+    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, in seconds,
         half-open ``[start, stop)``: a spike exactly at ``event + stop`` is

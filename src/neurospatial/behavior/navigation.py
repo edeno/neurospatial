@@ -1079,8 +1079,8 @@ def distance_to_reward(
         dimensionality (e.g., 2D for grid environments). A row with a NaN
         coordinate is a missing sample (a lost tracking frame): its distance
         is NaN.
-    reward_times : NDArray[np.float64], shape (n_events,)
-        Reward event timestamps (seconds).
+    reward_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+        Reward event timestamps (seconds). A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     reward_positions : NDArray[np.float64], shape (n_events, n_dims), optional
         Reward locations in environment coordinates. If None, each reward
         location is read from the tracked positions at its reward time (see
@@ -1243,6 +1243,7 @@ def distance_to_reward(
     from neurospatial._intervals import as_intervals, validate_max_gap
     from neurospatial._observation import empty_samples_error, validate_break_before
     from neurospatial._validation import (
+        timestamps_of,
         validate_finite,
         validate_strictly_increasing,
         validate_times_positions,
@@ -1271,7 +1272,9 @@ def distance_to_reward(
     positions = validate_finite(
         positions.reshape(times.size, -1), name="positions", allow_nan=True
     )
-    reward_times = validate_finite(reward_times, name="reward_times")
+    reward_times = validate_finite(
+        timestamps_of(reward_times, name="reward_times"), name="reward_times"
+    )
     if reward_times.ndim != 1:
         raise ValueError(
             f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
