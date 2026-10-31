@@ -158,20 +158,18 @@ def _find_containers_by_type(
     found = []
 
     # Search processing modules
-    for mod_name in sorted(nwbfile.processing.keys()):
-        module = nwbfile.processing[mod_name]
-        for obj_name in sorted(module.data_interfaces.keys()):
-            obj = module.data_interfaces[obj_name]
+    for mod_name, module in nwbfile.processing.items():
+        for obj_name, obj in module.data_interfaces.items():
             if isinstance(obj, target_type):
                 found.append((f"processing/{mod_name}/{obj_name}", obj))
 
     # Search acquisition
-    for obj_name in sorted(nwbfile.acquisition.keys()):
-        obj = nwbfile.acquisition[obj_name]
+    for obj_name, obj in nwbfile.acquisition.items():
         if isinstance(obj, target_type):
             found.append((f"acquisition/{obj_name}", obj))
 
-    # Sort with priority: processing/behavior first, then alphabetically
+    # Paths are unique, so this one sort fixes the order: processing/behavior
+    # first, then other processing modules, then acquisition, each by path.
     def sort_key(item: tuple[str, Any]) -> tuple[int, str]:
         path = item[0]
         if path.startswith("processing/behavior/"):
