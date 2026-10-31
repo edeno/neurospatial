@@ -141,8 +141,8 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import asdict, dataclass, field
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -150,6 +150,9 @@ from scipy import linalg, stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_integer_at_least
+from neurospatial.stats._utils import _ensure_rng
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -555,16 +558,7 @@ class AssemblyReactivationResult(ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {
-            "mean_activation_difference": self.mean_activation_difference,
-            "control_mean_activation": self.control_mean_activation,
-            "match_mean_activation": self.match_mean_activation,
-            "control_threshold": self.control_threshold,
-            "fraction_above_control_threshold": (self.fraction_above_control_threshold),
-            "percentile": self.percentile,
-            "n_control_bins": self.n_control_bins,
-            "n_match_bins": self.n_match_bins,
-        }
+        return asdict(self)
 
 
 @dataclass(frozen=True, repr=False)
@@ -650,15 +644,7 @@ class ExplainedVarianceResult(ResultMixin):
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {
-            "explained_variance": self.explained_variance,
-            "reversed_explained_variance": self.reversed_explained_variance,
-            "partial_correlation": self.partial_correlation,
-            "semipartial_correlation": self.semipartial_correlation,
-            "p_value": self.p_value,
-            "n_pairs": self.n_pairs,
-            "n_controls": self.n_controls,
-        }
+        return asdict(self)
 
 
 def _validated_counts(
@@ -831,7 +817,7 @@ def marchenko_pastur_threshold(
             "Marchenko-Pastur threshold may be unreliable. "
             "Consider using more time bins or fewer neurons.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Upper bound of Marchenko-Pastur distribution
@@ -1120,6 +1106,109 @@ def detect_assemblies(
     Johnstone IM (2001). On the distribution of the largest eigenvalue in
         principal components analysis. Ann Stat 29(2):295-327.
     """
+    unit_ids_generated = unit_ids is None
+    found = _detect(
+        spike_counts,
+        method=method,
+        n_components=n_components,
+        component_threshold=component_threshold,
+        percentile=percentile,
+        n_shuffles=n_shuffles,
+        member_rule=member_rule,
+        member_threshold=member_threshold,
+        rng=rng,
+        unit_ids=unit_ids,
+    )
+    # Activation strength of every pattern in every detection bin,
+    # shape (n_time_bins, n_found); excluded neurons have weight 0.
+    activations = _activation_strength(found.spike_counts_z.T, found.patterns)
+    assembly_patterns = tuple(
+        _embedded_pattern(
+            weights,
+            members,
+            explained_variance_ratio,
+            found.retained,
+            found.labels,
+            unit_ids_generated=unit_ids_generated,
+        )
+        for weights, members, explained_variance_ratio in zip(
+            found.patterns, found.member_masks, found.explained_variance, strict=True
+        )
+    )
+    return AssemblyDetectionResult(
+        patterns=assembly_patterns,
+        activations=activations,
+        method=method,
+        n_significant=found.n_significant,
+        eigenvalues=found.eigenvalues,
+        threshold=found.threshold,
+        unit_ids=found.labels,
+        component_threshold=component_threshold,
+        surrogate_max_eigenvalues=found.surrogate_max,
+        _unit_ids_generated=unit_ids_generated,
+    )
+
+
+class _Detection(NamedTuple):
+    """Patterns of the neurons that vary, before activations and embedding.
+
+    Attributes
+    ----------
+    patterns : ndarray, shape (n_found, n_retained)
+        Unit-length weights of the varying neurons, highest explained
+        variance first, each oriented so its largest-magnitude weight is
+        positive.
+    explained_variance : ndarray, shape (n_found,)
+        Fraction of the total variance each pattern explains.
+    member_masks : ndarray of bool, shape (n_found, n_retained)
+        Core members of each pattern among the varying neurons.
+    retained : ndarray of intp, shape (n_retained,)
+        Columns of the varying neurons, increasing.
+    spike_counts_z : ndarray, shape (n_retained, n_time_bins)
+        Z-scored counts of the varying neurons.
+    eigenvalues : ndarray, shape (n_neurons,)
+        Correlation eigenvalues, descending, 0 for each excluded neuron.
+    threshold : float
+        Eigenvalue threshold of the component-threshold rule.
+    n_significant : int
+        Number of eigenvalues above ``threshold``.
+    surrogate_max : ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate; empty for analytical rules.
+    labels : ndarray, shape (n_neurons,)
+        Label of each column.
+    """
+
+    patterns: NDArray[np.float64]
+    explained_variance: NDArray[np.float64]
+    member_masks: NDArray[np.bool_]
+    retained: NDArray[np.intp]
+    spike_counts_z: NDArray[np.float64]
+    eigenvalues: NDArray[np.float64]
+    threshold: float
+    n_significant: int
+    surrogate_max: NDArray[np.float64]
+    labels: NDArray[Any]
+
+
+def _detect(
+    spike_counts: NDArray[np.float64],
+    *,
+    method: AssemblyMethod = "ica",
+    n_components: int | Literal["auto"] = "auto",
+    component_threshold: ComponentThreshold = "marchenko_pastur",
+    percentile: float | None = None,
+    n_shuffles: int = 1000,
+    member_rule: MemberRule = "abs_z",
+    member_threshold: float = 2.0,
+    rng: int | np.random.Generator | None = None,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> _Detection:
+    """Validate the counts and find the patterns of :func:`detect_assemblies`.
+
+    Takes the arguments of :func:`detect_assemblies`, raises and warns as it
+    does, and returns the patterns of the varying neurons without computing
+    their activation strength.
+    """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
     if method not in _METHODS:
@@ -1129,7 +1218,6 @@ def detect_assemblies(
         raise ValueError(
             f"Need at least 3 neurons for assembly detection, got {n_neurons}"
         )
-    unit_ids_generated = unit_ids is None
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
     _check_component_threshold(component_threshold, percentile, n_shuffles)
     if member_rule not in _MEMBER_RULES:
@@ -1147,7 +1235,7 @@ def detect_assemblies(
             "matrix is TRANSPOSED (n_neurons, n_time_bins); otherwise the "
             "recording is simply short and results may be unreliable.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # A neuron whose count never changes has no variance to correlate: it
@@ -1176,7 +1264,7 @@ def detect_assemblies(
             "other neurons. They are excluded from detection and get weight 0 "
             "in every pattern.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Work internally in (n_neurons, n_time_bins): the assembly structure is a
@@ -1194,7 +1282,8 @@ def detect_assemblies(
 
     # Derive an integer seed for sklearn from the public ``rng`` argument.
     # sklearn estimators accept an int seed (or RandomState), not a numpy
-    # Generator, so normalize a Generator to a reproducible integer seed.
+    # Generator, so normalize a Generator to a reproducible integer seed. A
+    # Generator gives the seed before it draws any surrogate.
     if rng is None:
         seed: int | None = None
     elif isinstance(rng, np.random.Generator):
@@ -1202,59 +1291,18 @@ def detect_assemblies(
     else:
         seed = int(rng)
 
-    mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
-    surrogate_max = np.zeros(0)
-    if component_threshold == "marchenko_pastur":
-        threshold = mp_threshold
-    elif component_threshold == "tracy_widom":
-        threshold = mp_threshold + n_retained ** (-2.0 / 3.0)
-    else:
-        surrogate_max = _surrogate_max_eigenvalues(
-            spike_counts_z,
-            component_threshold,
-            n_shuffles,
-            rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng),
-        )
-        assert percentile is not None  # checked by _check_component_threshold
-        threshold = float(np.percentile(surrogate_max, percentile))
+    threshold, surrogate_max = _eigenvalue_threshold(
+        component_threshold, spike_counts_z, percentile, n_shuffles, rng
+    )
     n_significant = int(np.sum(eigenvalues > threshold))
-
-    # Determine number of components
-    if n_components == "auto":
-        n_comp = n_significant
-        if n_comp == 0:
-            warnings.warn(
-                f"detect_assemblies(): no eigenvalue of the correlation matrix "
-                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
-                f"{threshold:.3f} (largest "
-                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
-                "structure beyond what independent neurons would give. The "
-                "result has no patterns; pass n_components= to fit exploratory "
-                "patterns anyway.",
-                UserWarning,
-                stacklevel=2,
-            )
-    else:
-        n_comp = int(n_components)
-        if n_comp < 1:
-            raise ValueError(f"n_components must be >= 1, got {n_comp}")
-        if n_comp > n_neurons:
-            raise ValueError(
-                f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
-            )
-
-    # The factorization can yield at most min(n_retained, n_time_bins)
-    # components. Requesting more (short recordings, excluded neurons) would
-    # index past the SVD output; clamp with a warning.
-    max_rank = min(n_retained, n_time_bins)
-    if n_comp > max_rank:
-        warnings.warn(
-            f"n_components ({n_comp}) exceeds the achievable rank "
-            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
-            UserWarning,
-            stacklevel=2,
-        )
-        n_comp = max_rank
+    n_comp = _n_components(
+        n_components,
+        n_significant,
+        eigenvalues,
+        threshold,
+        component_threshold,
+        min(n_retained, n_time_bins),
+    )
 
     # Perform dimensionality reduction
     if n_comp == 0:
@@ -1273,7 +1321,7 @@ def detect_assemblies(
             f"components carry no variance (the counts span only {n_found} "
             "dimensions), so they define no pattern and are dropped.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Order patterns by explained variance, highest first. PCA eigenvectors
@@ -1291,36 +1339,169 @@ def detect_assemblies(
     largest = patterns[np.arange(n_found), np.argmax(np.abs(patterns), axis=1)]
     patterns = patterns * np.where(largest < 0, -1.0, 1.0)[:, None]
 
-    # Activation strength of every pattern in every detection bin,
-    # shape (n_time_bins, n_found); excluded neurons have weight 0.
-    activations = _activation_strength(spike_counts_z.T, patterns)
-
-    # Members among the retained neurons; shape (n_found, n_retained).
-    member_masks = _member_masks(patterns, member_rule, member_threshold, n_neurons)
-    full_patterns = np.zeros((n_found, n_neurons))
-    full_patterns[:, retained] = patterns
-
-    assembly_patterns = tuple(
-        AssemblyPattern(
-            weights=full_patterns[i],
-            member_indices=retained[member_masks[i]].astype(np.int64),
-            explained_variance_ratio=explained_var[i],
-            unit_ids=labels,
-            _unit_ids_generated=unit_ids_generated,
-        )
-        for i in range(n_found)
-    )
-
-    return AssemblyDetectionResult(
-        patterns=assembly_patterns,
-        activations=activations,
-        method=method,
-        n_significant=n_significant,
+    return _Detection(
+        patterns=patterns,
+        explained_variance=explained_var,
+        member_masks=_member_masks(patterns, member_rule, member_threshold, n_neurons),
+        retained=retained,
+        spike_counts_z=spike_counts_z,
         eigenvalues=eigenvalues,
         threshold=threshold,
-        unit_ids=labels,
-        component_threshold=component_threshold,
-        surrogate_max_eigenvalues=surrogate_max,
+        n_significant=n_significant,
+        surrogate_max=surrogate_max,
+        labels=labels,
+    )
+
+
+def _eigenvalue_threshold(
+    component_threshold: str,
+    spike_counts_z: NDArray[np.float64],
+    percentile: float | None,
+    n_shuffles: int,
+    rng: int | np.random.Generator | None,
+) -> tuple[float, NDArray[np.float64]]:
+    """Eigenvalue threshold of a component-threshold rule.
+
+    Parameters
+    ----------
+    component_threshold : str
+        One of ``_COMPONENT_THRESHOLDS``.
+    spike_counts_z : ndarray, shape (n_retained, n_time_bins)
+        Z-scored counts of the varying neurons.
+    percentile : float or None
+        Percentile of the surrogate maxima, for the surrogate rules.
+    n_shuffles : int
+        Number of surrogate matrices.
+    rng : int, numpy.random.Generator or None
+        Source of the surrogates.
+
+    Returns
+    -------
+    threshold : float
+    surrogate_max : ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate; empty for the analytical rules.
+    """
+    n_retained, n_time_bins = spike_counts_z.shape
+    # Computed for every rule: it warns when there are more neurons than bins.
+    mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
+    if component_threshold == "marchenko_pastur":
+        return mp_threshold, np.zeros(0)
+    if component_threshold == "tracy_widom":
+        return mp_threshold + n_retained ** (-2.0 / 3.0), np.zeros(0)
+    surrogate_max = _surrogate_max_eigenvalues(
+        spike_counts_z, component_threshold, n_shuffles, _ensure_rng(rng)
+    )
+    assert percentile is not None  # checked by _check_component_threshold
+    return float(np.percentile(surrogate_max, percentile)), surrogate_max
+
+
+def _n_components(
+    n_components: int | Literal["auto"],
+    n_significant: int,
+    eigenvalues: NDArray[np.float64],
+    threshold: float,
+    component_threshold: str,
+    max_rank: int,
+) -> int:
+    """Number of components to fit.
+
+    Parameters
+    ----------
+    n_components : int or "auto"
+        Requested number; ``"auto"`` takes ``n_significant``.
+    n_significant : int
+        Number of eigenvalues above ``threshold``.
+    eigenvalues : ndarray, shape (n_neurons,)
+        Correlation eigenvalues, descending.
+    threshold : float
+        Eigenvalue threshold, named in the warning when none exceeds it.
+    component_threshold : str
+        The rule that set ``threshold``.
+    max_rank : int
+        ``min(n_varying_neurons, n_time_bins)``, the most components the
+        factorization can give.
+
+    Returns
+    -------
+    int
+        At most ``max_rank``.
+    """
+    n_neurons = eigenvalues.size
+    if n_components == "auto":
+        n_comp = n_significant
+        if n_comp == 0:
+            warnings.warn(
+                f"detect_assemblies(): no eigenvalue of the correlation matrix "
+                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
+                f"{threshold:.3f} (largest "
+                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
+                "structure beyond what independent neurons would give. The "
+                "result has no patterns; pass n_components= to fit exploratory "
+                "patterns anyway.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+    else:
+        n_comp = int(n_components)
+        if n_comp < 1:
+            raise ValueError(f"n_components must be >= 1, got {n_comp}")
+        if n_comp > n_neurons:
+            raise ValueError(
+                f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
+            )
+
+    # The factorization can yield at most min(n_retained, n_time_bins)
+    # components. Requesting more (short recordings, excluded neurons) would
+    # index past the SVD output; clamp with a warning.
+    if n_comp > max_rank:
+        warnings.warn(
+            f"n_components ({n_comp}) exceeds the achievable rank "
+            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        n_comp = max_rank
+    return n_comp
+
+
+def _embedded_pattern(
+    weights: NDArray[np.float64],
+    members: NDArray[np.bool_] | NDArray[np.intp],
+    explained_variance_ratio: float,
+    positions: NDArray[np.intp],
+    unit_ids: NDArray[Any],
+    *,
+    unit_ids_generated: bool = False,
+) -> AssemblyPattern:
+    """A pattern of some units, with weight 0 for every other unit.
+
+    Parameters
+    ----------
+    weights : ndarray, shape (n_positions,)
+        Weights of the units at ``positions``.
+    members : ndarray of bool or of int
+        Core members among those units, as a mask or as indices.
+    explained_variance_ratio : float
+        The pattern's explained variance.
+    positions : ndarray of intp, shape (n_positions,)
+        Column of each weighted unit among all units.
+    unit_ids : ndarray, shape (n_units,)
+        Labels of all units.
+    unit_ids_generated : bool, default=False
+        Whether ``unit_ids`` were generated.
+
+    Returns
+    -------
+    AssemblyPattern
+        Weights over all units; members as sorted columns among them.
+    """
+    full = np.zeros(len(unit_ids))
+    full[positions] = weights
+    return AssemblyPattern(
+        weights=full,
+        member_indices=np.sort(positions[members]).astype(np.int64),
+        explained_variance_ratio=explained_variance_ratio,
+        unit_ids=unit_ids,
         _unit_ids_generated=unit_ids_generated,
     )
 
@@ -1438,14 +1619,7 @@ def _check_component_threshold(
         )
     if percentile is not None and not 0.0 < float(percentile) < 100.0:
         raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{call}: n_shuffles must be a positive integer, got {n_shuffles!r}."
-        )
+    validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=call)
 
 
 def _surrogate_max_eigenvalues(
@@ -1671,6 +1845,54 @@ def _z_scores(
     return z, constant
 
 
+def _correlations(
+    values: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Pearson correlation between the columns, NaN with a constant column.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n_samples, n_variables)
+        Finite values.
+
+    Returns
+    -------
+    correlations : ndarray, shape (n_variables, n_variables)
+        ``z.T @ z / n_samples`` of the z-scored columns, clipped to [-1, 1];
+        the rows and columns of a constant column are NaN.
+    constant : ndarray of bool, shape (n_variables,)
+        Columns with the same value in every sample.
+    """
+    z, constant = _z_scores(values)
+    matrix = z.T @ z / len(z)
+    matrix[constant, :] = np.nan
+    matrix[:, constant] = np.nan
+    correlations: NDArray[np.float64] = np.clip(matrix, -1.0, 1.0)
+    return correlations, constant
+
+
+def _pairwise_correlations(
+    spike_counts: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Pearson correlation of each pair of neurons, without a warning.
+
+    Parameters
+    ----------
+    spike_counts : ndarray, shape (n_time_bins, n_neurons)
+        Finite counts.
+
+    Returns
+    -------
+    correlations : ndarray, shape (n_neurons * (n_neurons - 1) / 2,)
+        In ``np.triu_indices(n_neurons, k=1)`` order; NaN for a pair with a
+        constant neuron.
+    constant : ndarray of bool, shape (n_neurons,)
+        Neurons with the same count in every time bin.
+    """
+    matrix, constant = _correlations(spike_counts)
+    return matrix[np.triu_indices(spike_counts.shape[1], k=1)], constant
+
+
 def _activation_strength(
     spike_counts_z: NDArray[np.float64], weights: NDArray[np.float64]
 ) -> NDArray[np.float64]:
@@ -1693,6 +1915,100 @@ def _activation_strength(
     projection = spike_counts_z @ weights.T
     activation: NDArray[np.float64] = projection**2 - spike_counts_z**2 @ (weights**2).T
     return activation
+
+
+def _renormalized(
+    weights: NDArray[np.float64], excluded: NDArray[np.bool_]
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Patterns without the excluded units, rescaled to unit length.
+
+    Parameters
+    ----------
+    weights : ndarray, shape (n_patterns, n_units)
+        Pattern weights.
+    excluded : ndarray of bool, shape (n_units,)
+        Units to give weight 0.
+
+    Returns
+    -------
+    weights : ndarray, shape (n_patterns, n_units)
+        Unit-length rows; a row with no weight left stays 0.
+    defined : ndarray of bool, shape (n_patterns,)
+        Rows with weight left.
+    """
+    renormalized = np.where(excluded, 0.0, weights)
+    norms = np.linalg.norm(renormalized, axis=1)
+    defined = norms > 0
+    renormalized[defined] /= norms[defined, None]
+    return renormalized, defined
+
+
+class _ActivationComparison(NamedTuple):
+    """R(t) of patterns in a control and a match period, compared.
+
+    Attributes
+    ----------
+    control, match : ndarray, shape (n_bins, n_patterns)
+        Activation strength of each pattern in each period's bins.
+    control_mean, match_mean : ndarray, shape (n_patterns,)
+        Mean of each pattern's R(t) over the period.
+    threshold : ndarray, shape (n_patterns,)
+        The percentile of each pattern's control R(t); NaN without one.
+    fraction_above : ndarray, shape (n_patterns,)
+        Share of match bins with R(t) strictly above ``threshold``.
+    """
+
+    control: NDArray[np.float64]
+    match: NDArray[np.float64]
+    control_mean: NDArray[np.float64]
+    match_mean: NDArray[np.float64]
+    threshold: NDArray[np.float64]
+    fraction_above: NDArray[np.float64]
+
+
+def _compared_activations(
+    control_z: NDArray[np.float64],
+    match_z: NDArray[np.float64],
+    weights: NDArray[np.float64],
+    percentile: float | None,
+) -> _ActivationComparison:
+    """Activation strength of each pattern in two periods, and its comparison.
+
+    Parameters
+    ----------
+    control_z, match_z : ndarray, shape (n_bins, n_units)
+        Z-scored counts of the control and the match period.
+    weights : ndarray, shape (n_patterns, n_units)
+        Pattern weights, with the units left out of either period at 0.
+    percentile : float or None
+        Percentile of the control R(t) used as each pattern's threshold;
+        None for no threshold (NaN threshold and fraction).
+
+    Returns
+    -------
+    _ActivationComparison
+    """
+    control = _activation_strength(control_z, weights)
+    match = _activation_strength(match_z, weights)
+    # One pattern's R(t) at a time, as a 1-D array: the column means and
+    # percentiles then do not depend on how many patterns are compared.
+    control_mean = np.array([column.mean() for column in control.T])
+    match_mean = np.array([column.mean() for column in match.T])
+    if percentile is None:
+        undefined = np.full(weights.shape[0], np.nan)
+        return _ActivationComparison(
+            control, match, control_mean, match_mean, undefined, undefined
+        )
+    threshold = np.array([np.percentile(column, percentile) for column in control.T])
+    fraction_above = np.array(
+        [
+            np.mean(column > value)
+            for column, value in zip(match.T, threshold, strict=True)
+        ]
+    )
+    return _ActivationComparison(
+        control, match, control_mean, match_mean, threshold, fraction_above
+    )
 
 
 # =============================================================================
@@ -2311,9 +2627,7 @@ def pairwise_correlations(
     ... )
     """
     spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
-    n_neurons = spike_counts.shape[1]
-
-    constant = np.ptp(spike_counts, axis=0) == 0
+    correlations, constant = _pairwise_correlations(spike_counts)
     if np.any(constant):
         warnings.warn(
             f"pairwise_correlations(): neuron columns "
@@ -2324,15 +2638,6 @@ def pairwise_correlations(
             UserWarning,
             stacklevel=2,
         )
-    corr_matrix = np.full((n_neurons, n_neurons), np.nan)
-    varying = np.flatnonzero(~constant)
-    if varying.size >= 2:
-        corr_matrix[np.ix_(varying, varying)] = np.corrcoef(
-            spike_counts[:, varying], rowvar=False
-        )
-
-    # Extract upper triangle (excluding diagonal)
-    correlations: NDArray[np.float64] = corr_matrix[np.triu_indices(n_neurons, k=1)]
     return correlations
 
 
@@ -2599,17 +2904,15 @@ def assembly_reactivation(
             )
         weights = weights / norm
 
-    control_activation = _activation_strength(control_z, weights[None])[:, 0]
-    match_activation = _activation_strength(match_z, weights[None])[:, 0]
-    control_mean = float(np.mean(control_activation))
-    match_mean = float(np.mean(match_activation))
-    threshold = float(np.percentile(control_activation, percentile))
+    comparison = _compared_activations(control_z, match_z, weights[None], percentile)
+    control_mean = float(comparison.control_mean[0])
+    match_mean = float(comparison.match_mean[0])
     return AssemblyReactivationResult(
         mean_activation_difference=match_mean - control_mean,
         control_mean_activation=control_mean,
         match_mean_activation=match_mean,
-        control_threshold=threshold,
-        fraction_above_control_threshold=float(np.mean(match_activation > threshold)),
+        control_threshold=float(comparison.threshold[0]),
+        fraction_above_control_threshold=float(comparison.fraction_above[0]),
         percentile=float(percentile),
         n_control_bins=n_control_bins,
         n_match_bins=n_match_bins,
@@ -2916,7 +3219,7 @@ def explained_variance_reactivation(
     vectors = np.vstack([template_correlations, match_correlations, *controls])[
         :, valid_mask
     ]
-    period_correlations = _correlation_matrix(vectors)
+    period_correlations, _ = _correlations(vectors.T)
     control_rows = list(range(2, 2 + n_controls))
     # EV: variance of match correlations explained by template, after
     # partialling out the control periods; the plain correlation without one.
@@ -3037,12 +3340,8 @@ def _selected_pairs(
         selected &= mask
     if unit_groups is not None:
         groups = np.asarray(unit_groups)
-        n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-        if (
-            groups.ndim != 1
-            or groups.size != n_units
-            or n_units * (n_units - 1) // 2 != n_pairs
-        ):
+        n_units = _n_units_from_pairs(n_pairs)
+        if groups.ndim != 1 or n_units is None or groups.size != n_units:
             raise ValueError(
                 _format_error(
                     f"{call}: unit_groups must hold one group per unit; got shape "
@@ -3082,6 +3381,23 @@ def _selected_pairs(
     return selected
 
 
+def _n_units_from_pairs(n_pairs: int) -> int | None:
+    """Number of units with ``n_pairs`` pairs, None if no count has that many.
+
+    Parameters
+    ----------
+    n_pairs : int
+        Length of a pair vector.
+
+    Returns
+    -------
+    int or None
+        ``n`` with ``n * (n - 1) / 2 == n_pairs``, or None.
+    """
+    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
+    return n_units if n_units * (n_units - 1) // 2 == n_pairs else None
+
+
 def _check_correlation_values(correlations: NDArray[np.float64], argument: str) -> None:
     """Refuse infinite values; NaN marks an undefined pair and is allowed.
 
@@ -3103,25 +3419,37 @@ def _check_correlation_values(correlations: NDArray[np.float64], argument: str) 
         )
 
 
-def _correlation_matrix(vectors: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Pearson correlations between the rows, NaN for a constant row.
+def _residual_covariance(
+    correlations: NDArray[np.float64], x: int, y: int, controls: Sequence[int]
+) -> NDArray[np.float64] | None:
+    """Covariance of the residuals of x and y regressed on ``controls``.
 
     Parameters
     ----------
-    vectors : ndarray, shape (n_vectors, n_pairs)
-        Finite values.
+    correlations : ndarray, shape (n_vectors, n_vectors)
+        Correlation matrix of all vectors; NaN propagates.
+    x, y : int
+        Rows of the two vectors to residualize.
+    controls : sequence of int
+        Rows of the vectors to regress out; at least one.
 
     Returns
     -------
-    ndarray, shape (n_vectors, n_vectors)
-        Correlation matrix; rows and columns of a constant vector are NaN.
+    ndarray, shape (2, 2), or None
+        The Schur complement of the controls' block for ``(x, y)``. None
+        when an entry is NaN or the controls are collinear (within
+        rounding), which leaves the regression undefined.
     """
-    constant = np.ptp(vectors, axis=1) == 0
-    matrix = np.full((len(vectors), len(vectors)), np.nan)
-    varying = np.flatnonzero(~constant)
-    if varying.size:
-        matrix[np.ix_(varying, varying)] = np.atleast_2d(np.corrcoef(vectors[varying]))
-    return matrix
+    pair, rows = [x, y], list(controls)
+    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+        return None
+    between_controls = correlations[np.ix_(rows, rows)]
+    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
+        return None
+    with_controls = correlations[np.ix_(pair, rows)]
+    explained = with_controls @ np.linalg.solve(between_controls, with_controls.T)
+    residual: NDArray[np.float64] = correlations[np.ix_(pair, pair)] - explained
+    return residual
 
 
 def _partial_correlation(
@@ -3150,19 +3478,11 @@ def _partial_correlation(
     """
     if not controls:
         return float(correlations[x, y])
-    pair, rows = [x, y], list(controls)
-    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
+    residual = _residual_covariance(correlations, x, y, controls)
+    if residual is None:
         return np.nan
-    between_controls = correlations[np.ix_(rows, rows)]
-    # Collinear controls (within rounding) leave the regression undefined.
-    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
-        return np.nan
-    with_controls = correlations[np.ix_(pair, rows)]
-    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
-        between_controls, with_controls.T
-    )
     unexplained_x, unexplained_y = residual[0, 0], residual[1, 1]
-    # |r| within rounding of 1 (np.corrcoef of identical vectors can return
+    # |r| within rounding of 1 (identical vectors can correlate at
     # 1 - 2e-16) leaves a residual of pure rounding error.
     if not (unexplained_x > 1e-12 and unexplained_y > 1e-12):
         return np.nan
@@ -3194,19 +3514,37 @@ def _semipartial_correlation(
     """
     if not controls:
         return float(correlations[x, y])
-    pair, rows = [x, y], list(controls)
-    if np.isnan(correlations[np.ix_(pair + rows, pair + rows)]).any():
-        return np.nan
-    between_controls = correlations[np.ix_(rows, rows)]
-    if not np.linalg.eigvalsh(between_controls).min() > 1e-12:
-        return np.nan
-    with_controls = correlations[np.ix_(pair, rows)]
-    residual = correlations[np.ix_(pair, pair)] - with_controls @ np.linalg.solve(
-        between_controls, with_controls.T
-    )
-    if not residual[1, 1] > 1e-12:
+    residual = _residual_covariance(correlations, x, y, controls)
+    if residual is None or not residual[1, 1] > 1e-12:
         return np.nan
     return float(residual[0, 1] / np.sqrt(residual[1, 1]))
+
+
+def _one_control_ev(
+    r_xy: NDArray[np.float64], r_xz: NDArray[np.float64], r_yz: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Squared partial correlation of x and y controlling for one z.
+
+    EV is ``_one_control_ev(r_tm, r_tc, r_mc)`` and REV is
+    ``_one_control_ev(r_tc, r_tm, r_mc)`` for template t, match m and
+    control c.
+
+    Parameters
+    ----------
+    r_xy, r_xz, r_yz : ndarray
+        Correlations of the three pairs, broadcast together.
+
+    Returns
+    -------
+    ndarray
+        ``(r_xy - r_xz r_yz)**2 / ((1 - r_xz**2) (1 - r_yz**2))``; NaN or
+        infinite where a correlation is NaN or ``|r_xz|`` or ``|r_yz|`` is 1.
+    """
+    with np.errstate(invalid="ignore", divide="ignore"):
+        explained: NDArray[np.float64] = (r_xy - r_xz * r_yz) ** 2 / (
+            (1 - r_xz**2) * (1 - r_yz**2)
+        )
+    return explained
 
 
 def _partial_correlation_p_value(correlation: float, df: int) -> float:
@@ -3413,8 +3751,8 @@ def _pair_labels(
             )
         )
     n_pairs = correlations.size
-    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-    if n_units * (n_units - 1) // 2 != n_pairs:
+    n_units = _n_units_from_pairs(n_pairs)
+    if n_units is None:
         raise ValueError(
             _format_error(
                 f"{call}: {argument} has {n_pairs} entries, which is not "

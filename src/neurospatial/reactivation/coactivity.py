@@ -34,9 +34,12 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _columns_by_label,
     _label_order,
+    _n_units_from_pairs,
+    _one_control_ev,
+    _pairwise_correlations,
+    _selected_pairs,
     _validated_counts,
     explained_variance_reactivation,
-    pairwise_correlations,
 )
 
 __all__ = [
@@ -233,8 +236,11 @@ def assembly_member_cofiring(
     member_labels = np.asarray(pattern.unit_ids)[members]
     correlations = []
     for counts, period in zip(periods, ("control_counts", "match_counts"), strict=True):
-        constant = np.ptp(counts[:, members], axis=0) == 0 if counts.size else []
-        if members.size >= 2 and np.any(constant):
+        if members.size < 2:
+            correlations.append(np.zeros(0))
+            continue
+        pairs, constant = _pairwise_correlations(counts[:, members])
+        if np.any(constant):
             warnings.warn(
                 f"{call}: members {member_labels[constant].tolist()} have the "
                 f"same count in every bin of {period}, so their pairs have no "
@@ -242,13 +248,7 @@ def assembly_member_cofiring(
                 UserWarning,
                 stacklevel=2,
             )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            correlations.append(
-                pairwise_correlations(counts[:, members])
-                if members.size >= 2
-                else np.zeros(0)
-            )
+        correlations.append(pairs)
     control, match = correlations
     if members.size < 2:
         warnings.warn(
@@ -1083,22 +1083,14 @@ def explained_variance_contributions(
             f"{call}: the correlation vectors must be 1-D with the same length, "
             f"got shapes {[vector.shape for vector in vectors]}."
         )
-    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-    if n_units * (n_units - 1) // 2 != n_pairs:
+    n_units = _n_units_from_pairs(n_pairs)
+    if n_units is None:
         raise ValueError(
             f"{call}: {n_pairs} pairs is not n_units * (n_units - 1) / 2 for any "
             "number of units; pass pairwise_correlations() output."
         )
     labels = resolve_unit_ids(unit_ids, n_units, context=call)
-    valid = np.ones(n_pairs, dtype=bool)
-    if pair_mask is not None:
-        mask = np.asarray(pair_mask)
-        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
-            raise ValueError(
-                f"{call}: pair_mask must be a boolean array with one entry per "
-                f"pair ({n_pairs}), got dtype {mask.dtype} and shape {mask.shape}."
-            )
-        valid &= mask
+    valid = _selected_pairs(n_pairs, None, pair_mask, call=call)
     for vector in vectors:
         valid &= np.isfinite(vector)
     n_valid = int(valid.sum())
@@ -1120,16 +1112,16 @@ def explained_variance_contributions(
         c = vectors[2][valid]
         r_tc = _leave_one_out_correlations(t, c)
         r_mc = _leave_one_out_correlations(m, c)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            without = (r_tm - r_tc * r_mc) ** 2 / ((1 - r_tc**2) * (1 - r_mc**2))
+        without = _one_control_ev(r_tm, r_tc, r_mc)
     pair_contributions = np.full(n_pairs, np.nan)
     pair_contributions[valid] = total - without
     first, second = np.triu_indices(n_units, k=1)
-    sums = np.zeros(n_units)
-    counts = np.zeros(n_units)
-    for units in (first[valid], second[valid]):
-        np.add.at(sums, units, pair_contributions[valid])
-        np.add.at(counts, units, 1)
+    # Each pair counts toward both of its units.
+    units = np.concatenate([first[valid], second[valid]])
+    sums = np.bincount(
+        units, weights=np.tile(pair_contributions[valid], 2), minlength=n_units
+    )
+    counts = np.bincount(units, minlength=n_units)
     with np.errstate(invalid="ignore", divide="ignore"):
         unit_contributions = np.where(counts > 0, sums / counts, np.nan)
     return ExplainedVarianceContributionResult(

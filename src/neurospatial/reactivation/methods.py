@@ -65,9 +65,13 @@ from neurospatial.reactivation.assemblies import (
     _MEMBER_RULES,
     AssemblyPattern,
     _activation_strength,
+    _compared_activations,
+    _detect,
+    _embedded_pattern,
+    _pairwise_correlations,
+    _renormalized,
     _selected_pairs,
     _z_scores,
-    detect_assemblies,
     explained_variance_reactivation,
 )
 from neurospatial.reactivation.calibration import equalize_firing_rates
@@ -1445,12 +1449,7 @@ def _pair_correlations(counts: NDArray[np.float64]) -> NDArray[np.float64]:
     ndarray, shape (n_units * (n_units - 1) / 2,)
         In ``np.triu_indices(n_units, k=1)`` order.
     """
-    z, constant = _z_scores(counts)
-    matrix = z.T @ z / len(z)
-    matrix[constant, :] = np.nan
-    matrix[:, constant] = np.nan
-    correlations: NDArray[np.float64] = matrix[np.triu_indices(counts.shape[1], k=1)]
-    return correlations
+    return _pairwise_correlations(counts)[0]
 
 
 def _windows_or_error(
@@ -1829,7 +1828,7 @@ def _detected_patterns(
     failures = []
     for units, region in sets:
         try:
-            detection = detect_assemblies(
+            found = _detect(
                 counts[:, units],
                 method=method.detection,  # type: ignore[arg-type]
                 member_rule=method.member_rule,
@@ -1855,19 +1854,17 @@ def _detected_patterns(
                 stacklevel=2,
             )
             continue
-        for pattern in detection.patterns:
-            members = units[pattern.member_indices]
+        # Columns of the units the detection kept, among all units.
+        positions = units[found.retained]
+        for weights, members, explained_variance_ratio in zip(
+            found.patterns, found.member_masks, found.explained_variance, strict=True
+        ):
             if region == "cross_region":
-                member_regions = session.groups["region"][members]
+                member_regions = session.groups["region"][positions[members]]
                 if np.unique(member_regions).size < 2:
                     continue
-            weights = np.zeros(n_units)
-            weights[units] = pattern.weights
-            full = AssemblyPattern(
-                weights=weights,
-                member_indices=np.sort(members).astype(np.int64),
-                explained_variance_ratio=pattern.explained_variance_ratio,
-                unit_ids=session.labels,
+            full = _embedded_pattern(
+                weights, members, explained_variance_ratio, positions, session.labels
             )
             patterns.append((full, region))
     return patterns
@@ -1918,14 +1915,12 @@ def _assembly_rows(
         # A unit without a z-score (constant over the samples it is z-scored
         # over) is left out of both periods, as assembly_reactivation() does,
         # and the weights are rescaled.
-        weights = all_weights.copy()
-        weights[:, ~included] = 0.0
-        norms = np.linalg.norm(weights, axis=1)
-        defined = norms > 0
-        weights[defined] /= norms[defined, None]
+        weights, defined = _renormalized(all_weights, ~included)
+        comparison = _compared_activations(
+            control_z, match_z, weights, method.percentile
+        )
         # Shape (n_bins, n_components).
-        control_activation = _activation_strength(control_z, weights)
-        match_activation = _activation_strength(match_z, weights)
+        control_activation, match_activation = comparison.control, comparison.match
         if method.test == "cell_identity_shuffle":
             assert method.percentile is not None
             # One set of shuffles per period, shared by the components.
@@ -1964,10 +1959,8 @@ def _assembly_rows(
             if not defined[component]:
                 rows.append(row)
                 continue
-            control_strength = control_activation[:, component]
-            match_strength = match_activation[:, component]
-            control_mean = float(control_strength.mean())
-            match_mean = float(match_strength.mean())
+            control_mean = float(comparison.control_mean[component])
+            match_mean = float(comparison.match_mean[component])
             row.update(
                 value=match_mean - control_mean,
                 control_mean_activation=control_mean,
@@ -1976,18 +1969,19 @@ def _assembly_rows(
             if method.event_response is not None:
                 row.update(event_columns["components"][component])
             if method.percentile is not None:
-                threshold = np.percentile(control_strength, method.percentile)
                 row["fraction_above_control_threshold"] = float(
-                    np.mean(match_strength > threshold)
+                    comparison.fraction_above[component]
                 )
             if method.activation_threshold is not None:
                 row["control_activation_rate"] = _activation_rate(
-                    control_strength,
+                    control_activation[:, component],
                     control_samples.segments,
                     method.activation_threshold,
                 )
                 row["match_activation_rate"] = _activation_rate(
-                    match_strength, match_samples.segments, method.activation_threshold
+                    match_activation[:, component],
+                    match_samples.segments,
+                    method.activation_threshold,
                 )
             if method.test == "cell_identity_shuffle":
                 row["control_fraction_above_shuffle"] = control_shares[component]
