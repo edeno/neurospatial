@@ -241,3 +241,15 @@ def test_clock_validation_crosses_chunk_boundaries(empty_nwb, lazy):
     _add_pose(empty_nwb, clocks=({"timestamps": times},) * 2, n_samples=n_samples)
     with pytest.raises(ValueError, match=r"nose.*finite and strictly increasing"):
         read_pose(empty_nwb, lazy=lazy)
+
+
+def test_custom_units_are_spelled_as_position_reads_them(empty_nwb):
+    """Pose and position readers normalize unit declarations identically."""
+    from neurospatial.io.nwb._adapters import position_units_from_series
+
+    pose = _add_pose(empty_nwb, units=(" Arena ", "Arena"))
+    overlay = bodypart_overlay_from_nwb(empty_nwb)
+    assert overlay.units == "Arena"
+    assert overlay.units == position_units_from_series(
+        pose.pose_estimation_series["nose"]
+    )

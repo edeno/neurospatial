@@ -14,10 +14,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._units import (
-    normalize_position_units,
-    same_coordinate_declaration,
-)
+from neurospatial._units import same_coordinate_declaration
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     position_frame_from_series,
@@ -209,8 +206,6 @@ def _read_pose_with_metadata(
                 )
 
         series_units = position_units_from_series(series)
-        if series_units is not None:
-            series_units = normalize_position_units(series_units)
         series_frame = position_frame_from_series(series)
         for label, declared, shared in (
             ("units", series_units, units),
