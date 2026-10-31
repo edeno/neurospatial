@@ -40,9 +40,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_spike_trains
 from neurospatial.reactivation.assemblies import _validated_counts
+from neurospatial.stats._utils import _ensure_rng
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -125,11 +126,11 @@ def null_reactivation_data(
         raise ValueError(
             f"null_reactivation_data(): kind must be one of {_KINDS}, got {kind!r}."
         )
-    generator = np.random.default_rng(rng)
+    generator = _ensure_rng(rng)
     trains = as_spike_trains(spike_times)
     epochs = as_intervals(match_epochs, name="match_epochs")
     assert epochs is not None
-    inside = [_in_epochs(train, epochs) for train in trains]
+    inside = [times_in_intervals(epochs, train) for train in trains]
     outside = [train[~mask] for train, mask in zip(trains, inside, strict=True)]
     within = [train[mask] for train, mask in zip(trains, inside, strict=True)]
     if kind == "cell_identity":
@@ -148,30 +149,24 @@ def null_reactivation_data(
     ]
 
 
-def _in_epochs(
-    train: NDArray[np.float64], epochs: NDArray[np.float64]
-) -> NDArray[np.bool_]:
-    """Spikes inside any half-open ``[start, stop)`` epoch."""
-    index = np.searchsorted(epochs[:, 0], train, side="right") - 1
-    inside: NDArray[np.bool_] = (index >= 0) & (
-        train < epochs[np.clip(index, 0, None), 1]
-    )
-    return inside
-
-
 def _rotated(
     train: NDArray[np.float64],
     epochs: NDArray[np.float64],
     generator: np.random.Generator,
 ) -> NDArray[np.float64]:
-    """Rotate the spikes of each epoch by a uniform offset within it."""
-    pieces = []
-    for start, stop in epochs:
-        spikes = train[(train >= start) & (train < stop)]
-        length = stop - start
-        offset = generator.uniform(0.0, length)
-        pieces.append(start + np.mod(spikes - start + offset, length))
-    return np.concatenate(pieces) if pieces else train
+    """Rotate the spikes of each epoch by a uniform offset within it.
+
+    ``train`` holds only spikes inside the epochs; one offset is drawn per
+    epoch, in epoch order.
+    """
+    lengths = epochs[:, 1] - epochs[:, 0]
+    offsets = generator.uniform(0.0, lengths)
+    epoch = np.searchsorted(epochs[:, 0], train, side="right") - 1
+    start = epochs[epoch, 0]
+    rotated: NDArray[np.float64] = start + np.mod(
+        train - start + offsets[epoch], lengths[epoch]
+    )
+    return rotated
 
 
 def _poisson(
@@ -318,7 +313,7 @@ def simulated_reactivation_session(
     ):
         if not (np.isfinite(value) and value >= 0):
             raise ValueError(f"{call}: {name} must be finite and >= 0, got {value!r}.")
-    generator = np.random.default_rng(rng)
+    generator = _ensure_rng(rng)
     control = np.array([[0.0, duration]])
     template = np.array([[duration, 2 * duration]])
     match = np.array([[2 * duration, 3 * duration]])
@@ -514,7 +509,7 @@ def equalize_firing_rates(
             )
     if control.shape[0] == 0 or match.shape[0] == 0:
         raise ValueError(f"{call}: each period needs at least one time bin.")
-    generator = np.random.default_rng(rng)
+    generator = _ensure_rng(rng)
     rate = np.minimum(control.mean(axis=0), match.mean(axis=0))
     return (
         _thinned(control, np.round(rate * len(control)).astype(np.int64), generator),
@@ -552,8 +547,9 @@ def _thinned(
     order = np.lexsort((generator.random(cells.size), units))
     totals = counts.sum(axis=0).astype(np.int64)
     first = np.concatenate([[0], np.cumsum(totals)[:-1]])
-    rank = np.arange(cells.size) - first[units[order]]
-    kept = cells[order][rank < keep[units[order]]]
+    ordered_units = units[order]
+    rank = np.arange(cells.size) - first[ordered_units]
+    kept = cells[order][rank < keep[ordered_units]]
     thinned = np.bincount(kept, minlength=flat.size).reshape(counts.shape)
     return thinned.astype(np.float64)
 

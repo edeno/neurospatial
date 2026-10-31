@@ -1776,18 +1776,27 @@ def _bootstrap_ev_minus_rev(
     n_pairs = template.size
     if n_pairs < 3:
         return np.full(n_resamples, np.nan)
-    # How often each pair is drawn in each resample, shape (n_resamples, n_pairs).
-    weights = (
-        generator.multinomial(n_pairs, np.full(n_pairs, 1 / n_pairs), n_resamples)
-        / n_pairs
-    )
-    vectors = {"t": template, "m": match, "c": control}
-    means = {name: weights @ values for name, values in vectors.items()}
+    t, m, c = template, match, control
+    products = ["t", "m", "c", "tt", "mm", "cc", "tm", "tc", "mc"]
+    columns = np.column_stack([t, m, c, t * t, m * m, c * c, t * m, t * c, m * c])
+    # Every resample's weighted mean of each product, shape (n_resamples, 9).
+    # The resamples are drawn in blocks of about 4 million counts, in the
+    # order of one draw of all of them.
+    sums = np.empty((n_resamples, len(products)))
+    block = max(1, 4_000_000 // n_pairs)
+    uniform = np.full(n_pairs, 1 / n_pairs)
+    for first in range(0, n_resamples, block):
+        size = min(block, n_resamples - first)
+        # How often each pair is drawn in each resample, shape (size, n_pairs).
+        sums[first : first + size] = (
+            generator.multinomial(n_pairs, uniform, size) @ columns
+        )
+    moment = dict(zip(products, (sums / n_pairs).T, strict=True))
 
     def correlation(a: str, b: str) -> NDArray[np.float64]:
-        covariance = weights @ (vectors[a] * vectors[b]) - means[a] * means[b]
-        variance_a = weights @ vectors[a] ** 2 - means[a] ** 2
-        variance_b = weights @ vectors[b] ** 2 - means[b] ** 2
+        covariance = moment[a + b] - moment[a] * moment[b]
+        variance_a = moment[a + a] - moment[a] ** 2
+        variance_b = moment[b + b] - moment[b] ** 2
         with np.errstate(invalid="ignore", divide="ignore"):
             result: NDArray[np.float64] = covariance / np.sqrt(variance_a * variance_b)
         return result
@@ -2130,9 +2139,11 @@ def _period_samples(
     ``activation_step`` when it is given. With a smoothing bandwidth, spike
     trains convolved with a Gaussian of that standard deviation and sampled
     every ``activation_step`` (default half the bandwidth). Each epoch piece
-    is binned and smoothed on its own, so nothing crosses a gap; a piece
+    is tiled with bins and smoothed on its own, so nothing crosses a gap; a piece
     shorter than one bin holds no sample.
     """
+    from itertools import pairwise
+
     from scipy.ndimage import gaussian_filter1d
 
     assert method.bin_size is not None  # assembly methods have one
@@ -2140,11 +2151,19 @@ def _period_samples(
     step = _sample_step(method)
     width = method.bin_size if smoothing is None else step
     per_bin = round(width / step)
-    values, times = [], []
-    for piece in window:
-        if piece[1] - piece[0] < width:
-            continue
-        counts, centers = _binned(trains, piece[None, :], step)
+    pieces = window[window[:, 1] - window[:, 0] >= width]
+    if not len(pieces):
+        raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
+    # One pass over the spikes bins every piece; each piece's steps are then
+    # summed or smoothed on their own and packed in place, as a piece has no
+    # more samples than steps.
+    values, times = _binned(trains, pieces, step)
+    piece_of_step = np.searchsorted(pieces[:, 0], times, side="right") - 1
+    bounds = np.searchsorted(piece_of_step, np.arange(len(pieces) + 1))
+    n_samples = 0
+    segments = []
+    for first, stop in pairwise(bounds):
+        counts, centers = values[first:stop], times[first:stop]
         if smoothing is not None:
             counts = gaussian_filter1d(
                 counts, sigma=smoothing / step, axis=0, mode="constant"
@@ -2156,17 +2175,15 @@ def _period_samples(
             )
             counts = cumulative[per_bin:] - cumulative[:-per_bin]
             centers = centers[: counts.shape[0]] - step / 2 + width / 2
-        if counts.shape[0]:
-            values.append(counts)
-            times.append(centers)
-    if not values:
+        n = counts.shape[0]
+        if n:
+            values[n_samples : n_samples + n] = counts
+            times[n_samples : n_samples + n] = centers
+            segments.append((n_samples, n_samples + n, step))
+            n_samples += n
+    if not n_samples:
         raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
-    stops = np.cumsum([len(piece) for piece in values])
-    segments = [
-        (int(stop - len(piece)), int(stop), step)
-        for stop, piece in zip(stops, values, strict=True)
-    ]
-    return _Samples(np.vstack(values), np.concatenate(times), segments)
+    return _Samples(values[:n_samples], times[:n_samples], segments)
 
 
 def _sample_step(method: ReactivationMethod) -> float:
@@ -2310,15 +2327,14 @@ def _fraction_above_cell_shuffle(
     """
     actual = _activation_strength(z, weights)
     n_bins, n_units = z.shape
-    squared = weights**2
     above = np.zeros(len(weights))
     # Bins per block so a block's shuffles hold about 4 million values.
     block = max(1, 4_000_000 // max(1, n_shuffles * n_units))
     for first in range(0, n_bins, block):
-        values = np.repeat(z[first : first + block, None, :], n_shuffles, axis=1)
-        shuffled = generator.permuted(values, axis=2)
+        shuffled = np.repeat(z[first : first + block, None, :], n_shuffles, axis=1)
+        generator.permuted(shuffled, axis=2, out=shuffled)
         # Shape (n_block_bins, n_shuffles, n_components).
-        strength = (shuffled @ weights.T) ** 2 - shuffled**2 @ squared.T
+        strength = _activation_strength(shuffled, weights)
         bound = np.percentile(strength, percentile, axis=1)
         above += np.sum(actual[first : first + block] > bound, axis=0)
     shares: NDArray[np.float64] = above / n_bins
