@@ -807,15 +807,10 @@ def write_trials(
     description : str, default "Behavioral trials"
         Description of the trials table.
     overwrite : bool, default False
-        If False, raise ``ValueError`` when trials already exist. If True,
-        raise ``NotImplementedError``: pynwb provides no public API to remove
-        or reset the predefined trials table (and it cannot be deleted once
-        written), so overwriting it is unsupported. Write to a fresh NWBFile,
-        or store these intervals under a different name by adding a separate
-        ``pynwb.epoch.TimeIntervals`` table (via ``nwbfile.add_time_intervals``)
-        with its own ``start_time``/``stop_time`` columns; such a table is
-        readable back via ``read_intervals``. (Do not use
-        ``write_region_crossings``: it stores point events, not intervals.)
+        If True, replace an existing trials table in an ``NWBFile`` built in
+        memory. A file read from disk keeps its written trials table: pynwb
+        cannot remove it, and an export would silently keep the old trials,
+        so replacing it raises ``NotImplementedError``.
 
     Raises
     ------
@@ -829,8 +824,8 @@ def write_trials(
     TypeError
         If ``trials`` is not a list of ``Trial`` objects.
     NotImplementedError
-        If a trials table already exists and ``overwrite=True`` (overwriting
-        the predefined trials table is not supported).
+        If ``overwrite=True`` would replace the trials table of a file read
+        from disk.
     ImportError
         If pynwb is not installed.
 
@@ -925,29 +920,27 @@ def write_trials(
             np.array(outcomes_list, dtype=str),
         )
 
+    table = _build_time_intervals(PREDEFINED_TRIALS, description, start, stop, columns)
     if nwbfile.trials is not None:
         if not overwrite:
             raise ValueError(
-                "A trials table already exists in this NWB file, and pynwb "
-                "cannot replace it. Write these trials to a fresh NWBFile."
+                "A trials table already exists in this NWB file. Pass "
+                "overwrite=True to replace it."
             )
-        # pynwb provides no public API to delete or reset the predefined
-        # trials table, and it cannot be removed at all once the file is
-        # written.
-        raise NotImplementedError(
-            "Overwriting an existing NWB trials table is not supported: pynwb "
-            "exposes no public API to remove or reset the predefined trials "
-            "table, and it cannot be deleted once the file is written. Write "
-            "trials to a fresh NWBFile, or store these intervals under a "
-            "different name by adding a separate TimeIntervals table via "
-            "nwbfile.add_time_intervals(...) with start_time/stop_time columns "
-            "(readable back via read_intervals). Do not use "
-            "write_region_crossings(): it stores point events, not intervals."
-        )
-
-    nwbfile.trials = _build_time_intervals(
-        PREDEFINED_TRIALS, description, start, stop, columns
-    )
+        if getattr(nwbfile, "read_io", None) is not None:
+            raise NotImplementedError(
+                "Cannot replace the trials table of a file read from disk: "
+                "pynwb cannot remove a written trials table, and exporting the "
+                "file would silently keep the old trials. Build a new NWBFile "
+                "and write the trials there, or store these intervals under "
+                "another name with nwbfile.add_time_intervals(...) (read back "
+                "with read_intervals)."
+            )
+        # The trials attribute can be set only once; clearing the field is
+        # the only way to replace the table of an in-memory file.
+        nwbfile.fields.pop(PREDEFINED_TRIALS)
+        logger.info("Overwriting existing trials table")
+    nwbfile.trials = table
     logger.debug("Wrote %d trials to NWB file", len(start))
 
 

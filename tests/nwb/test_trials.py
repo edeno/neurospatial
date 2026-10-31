@@ -385,50 +385,84 @@ class TestWriteTrialsOverwrite:
         write_trials(nwbfile, trials)
 
         # Try to write again without overwrite
-        with pytest.raises(ValueError, match="A trials table already exists"):
+        with pytest.raises(ValueError, match="Pass overwrite=True to replace it"):
             write_trials(nwbfile, trials)
 
-    def test_overwrite_true_raises_not_implemented(self, empty_nwb):
-        """Overwriting the predefined NWB trials table is not supported.
-
-        pynwb exposes no public API to remove or reset the built-in trials
-        table (and it cannot be deleted once written). write_trials refuses
-        explicitly rather than reaching into private pynwb internals.
-        """
+    @staticmethod
+    def _trials(start: float, n: int = 1):
         from neurospatial.behavior.segmentation import Trial
-        from neurospatial.io.nwb import write_trials
 
-        nwbfile = empty_nwb
-        original_trials = [
+        return [
             Trial(
-                start_time=0.0,
-                end_time=5.0,
+                start_time=start + 10.0 * i,
+                end_time=start + 10.0 * i + 5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
             )
-        ]
-        new_trials = [
-            Trial(
-                start_time=10.0,
-                end_time=15.0,
-                start_region="start",
-                end_region="reward",
-                outcome="reached",
-            ),
+            for i in range(n)
         ]
 
-        # Write original
-        write_trials(nwbfile, original_trials)
-        assert len(nwbfile.trials) == 1
+    def test_overwrite_replaces_trials_in_memory(self, empty_nwb, tmp_path):
+        """An in-memory file's trials are replaced, and only the new trials
+        reach the file on disk."""
+        from pynwb import NWBHDF5IO
 
-        # Overwrite is refused with a clear, actionable error.
-        with pytest.raises(NotImplementedError, match="trials table is not supported"):
-            write_trials(nwbfile, new_trials, overwrite=True)
+        from neurospatial.io.nwb import read_trials, write_trials
 
-        # Original table is left untouched.
-        assert len(nwbfile.trials) == 1
-        assert nwbfile.trials["start_time"][0] == pytest.approx(0.0)
+        write_trials(empty_nwb, self._trials(0.0, n=2))
+        write_trials(
+            empty_nwb, self._trials(100.0), description="redone", overwrite=True
+        )
+
+        np.testing.assert_array_equal(read_trials(empty_nwb)["start_time"], [100.0])
+        path = tmp_path / "trials.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
+        with NWBHDF5IO(str(path), "r") as io:
+            nwbfile = io.read()
+            back = read_trials(nwbfile)
+            assert nwbfile.trials.description == "redone"
+        np.testing.assert_array_equal(back["start_time"], [100.0])
+        np.testing.assert_array_equal(back["stop_time"], [105.0])
+        assert list(back["outcome"]) == ["reached"]
+
+    def test_invalid_replacement_keeps_the_original(self, empty_nwb):
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        write_trials(empty_nwb, self._trials(0.0))
+        with pytest.raises(ValueError, match="stop_times contains negative"):
+            write_trials(
+                empty_nwb,
+                start_times=np.array([1.0]),
+                stop_times=np.array([-1.0]),
+                overwrite=True,
+            )
+        np.testing.assert_array_equal(read_trials(empty_nwb)["start_time"], [0.0])
+
+    @pytest.mark.parametrize("mode", ["r", "r+", "a"])
+    def test_overwrite_in_a_file_read_from_disk_is_refused(
+        self, empty_nwb, tmp_path, mode
+    ):
+        """Export would silently keep the written trials, so even mode 'r'
+        is refused."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        write_trials(empty_nwb, self._trials(0.0))
+        path = tmp_path / "trials.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(empty_nwb)
+
+        with NWBHDF5IO(str(path), mode) as io:
+            nwbfile = io.read()
+            with pytest.raises(
+                NotImplementedError,
+                match="Cannot replace the trials table of a file read from disk",
+            ):
+                write_trials(nwbfile, self._trials(100.0), overwrite=True)
+            np.testing.assert_array_equal(read_trials(nwbfile)["start_time"], [0.0])
 
 
 class TestReadTrials:
