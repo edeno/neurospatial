@@ -43,7 +43,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_spike_trains
 from neurospatial.reactivation.assemblies import _validated_counts
-from neurospatial.stats._utils import _ensure_rng
+from neurospatial.stats._utils import _binomial_rate, _ensure_rng
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -622,7 +622,6 @@ def reactivation_detection_rates(
     [{'method': 'a', 'n_tested': 3, 'n_reactivated': 2}, {'method': 'b', 'n_tested': 0, 'n_reactivated': 0}]
     """
     import pandas as pd
-    from scipy.stats import binomtest
 
     call = "reactivation_detection_rates()"
     if not 0 < confidence < 1:
@@ -648,13 +647,7 @@ def reactivation_detection_rates(
         keys = key if isinstance(key, tuple) else (key,)
         n_tested = int(frame["_tested"].sum())
         n_called = int(frame["_called"].sum())
-        if n_tested:
-            interval = binomtest(n_called, n_tested).proportion_ci(
-                confidence_level=confidence, method="exact"
-            )
-            rate, low, high = n_called / n_tested, interval.low, interval.high
-        else:
-            rate = low = high = np.nan
+        rate, low, high = _binomial_rate(n_called, n_tested, confidence)
         values = frame["value"].to_numpy(dtype=float)
         finite = values[np.isfinite(values)]
         rows.append(
