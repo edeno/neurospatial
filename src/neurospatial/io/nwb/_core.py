@@ -8,9 +8,6 @@ including container discovery, import helpers, and validation.
 from __future__ import annotations
 
 import logging
-import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -19,49 +16,39 @@ if TYPE_CHECKING:
 logger = logging.getLogger("neurospatial.nwb")
 
 
-@contextmanager
-def open_nwbfile(
-    path_or_file: str | os.PathLike[str] | NWBFile,
-) -> Iterator[NWBFile]:
-    """Yield an open ``NWBFile`` from a path, or pass through an open one.
+def _refuse_in_place_replacement(nwbfile: NWBFile, what: str) -> None:
+    """Refuse to replace an object in a file opened for in-place writing.
 
-    NWB file opening imports pynwb lazily here via :func:`_require_pynwb`.
+    pynwb cannot delete an object that is already written to disk, so removing
+    one from a file opened with ``"r+"`` or ``"a"`` makes the next
+    ``io.write`` fail. Replacing it in a file opened with ``"r"`` and exporting
+    to a new path works, as does replacing it in an in-memory ``NWBFile``.
 
     Parameters
     ----------
-    path_or_file : str, os.PathLike, or NWBFile
-        A filesystem path to an ``.nwb`` file -- opened read-only and **closed**
-        when the context exits -- or an already-open ``NWBFile``, which is
-        yielded unchanged (its lifecycle stays with the caller; this helper does
-        not close it).
+    nwbfile : NWBFile
+        The file about to have an object replaced.
+    what : str
+        Description of the object, e.g. ``"events table 'rewards'"``.
 
-    Yields
+    Raises
     ------
-    NWBFile
-        The open NWB file.
-
-    Notes
-    -----
-    Path opening uses eager reads (the readers materialize arrays inside the
-    ``with`` block). A lazily-materialized read path is a separate, later
-    addition.
-
-    Examples
-    --------
-    >>> from neurospatial.io.nwb._core import open_nwbfile
-    >>> with open_nwbfile("session.nwb") as nwbfile:  # doctest: +SKIP
-    ...     pos = read_position(nwbfile)
+    NotImplementedError
+        If ``nwbfile`` was read from disk by an IO opened with ``"r+"`` or
+        ``"a"``.
     """
-    if isinstance(path_or_file, (str, os.PathLike)):
-        pynwb = _require_pynwb()
-        io = pynwb.NWBHDF5IO(str(path_or_file), mode="r")
-        try:
-            yield io.read()
-        finally:
-            io.close()
-    else:
-        # Already-open NWBFile: yield as-is; the caller owns its lifecycle.
-        yield path_or_file
+    read_io = getattr(nwbfile, "read_io", None)
+    mode = getattr(read_io, "mode", None)
+    if mode in (None, "r"):
+        return
+    raise NotImplementedError(
+        f"Cannot replace the {what}: the file was opened with mode={mode!r}, "
+        "and pynwb cannot delete an object that is already written to disk. "
+        "Open the file with mode='r', call this function with overwrite=True, "
+        "then save a copy with "
+        "NWBHDF5IO(new_path, 'w').export(src_io=io, nwbfile=nwbfile). "
+        "Or write under a different name."
+    )
 
 
 def _require_pynwb() -> Any:
@@ -166,7 +153,7 @@ def _find_containers_by_type(
     Returns
     -------
     list[tuple[str, Any]]
-        List of (path, container) tuples, sorted alphabetically by path.
+        List of (path, container) tuples in the search order below.
         Path format is "processing/{module_name}/{obj_name}" or "acquisition/{obj_name}".
 
     Notes
