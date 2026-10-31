@@ -131,6 +131,7 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     ("to_pynapple", "values"),
     # Records written to the file.
     ("write_laps", "laps"),
+    ("write_region_crossings", "crossings"),
     ("write_trials", "trials"),
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
@@ -195,11 +196,11 @@ REQUIRED_DATA_NAMES = {
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
     *("spike_times", "spike_counts", "control_counts", "match_counts"),
     *("targets", "ego_points", "object_positions", "cue_positions"),
-    *("goal", "goal_bins", "start", "subgoals", "regions", "region_names"),
+    *("goal", "goal_bins", "start", "subgoals", "regions"),
     *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
-    *("event_types", "entry_time", "reward_times", "crossing_times"),
+    *("entry_time", "reward_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("template_epochs", "match_epochs"),
     *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
@@ -287,7 +288,7 @@ def test_free_function_required_data_lists_are_current():
         ("read_intervals", 1, "interval_name", "trials"),
         ("write_events", 2, "name", "rewards"),
         ("write_laps", 2, "description", "laps"),
-        ("write_region_crossings", 4, "description", "crossings"),
+        ("write_region_crossings", 2, "description", "crossings"),
         ("dataframe_to_events_table", 1, "name", "rewards"),
     ],
 )

@@ -422,320 +422,169 @@ class TestReadIntervals:
         )
 
 
+def _crossings():
+    from neurospatial.behavior.segmentation import Crossing
+
+    return [
+        Crossing(time=1.5, direction="entry", bin_index=4, region="goal"),
+        Crossing(time=3.2, direction="exit", bin_index=7, region="goal"),
+        Crossing(time=7.8, direction="entry", bin_index=0, region="start"),
+    ]
+
+
 @pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
 class TestWriteRegionCrossings:
-    """Tests for write_region_crossings() function (requires ndx-events)."""
+    """write_region_crossings stores Crossing records or explicit arrays."""
 
-    def test_basic_crossing_times_writing(self, empty_nwb):
-        """Test writing basic region crossing times to NWB file."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, 2.5, 5.0, 8.2])
-        region_names = np.array(["start", "goal", "start", "goal"])
-        event_types = np.array(["enter", "enter", "exit", "exit"])
-
-        # Write crossings
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        # Verify EventsTable was created
-        assert "behavior" in nwbfile.processing
-        assert "region_crossings" in nwbfile.processing["behavior"].data_interfaces
-
-        # Verify data
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert len(crossings_table) == 4
-
-        # Check timestamps
-        np.testing.assert_array_almost_equal(
-            crossings_table["timestamp"][:], crossing_times
-        )
-
-    def test_region_name_column(self, empty_nwb):
-        """Test that region name column is properly stored."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, 2.0, 3.0])
-        region_names = np.array(["start", "goal", "reward_zone"])
-        event_types = np.array(["enter", "enter", "enter"])
-
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-
-        # Check region column exists
-        assert "region" in crossings_table.colnames
-
-        # Check region values
-        assert list(crossings_table["region"][:]) == ["start", "goal", "reward_zone"]
-
-    def test_event_type_column(self, empty_nwb):
-        """Test that event_type column (enter/exit) is properly stored."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, 2.0, 3.0, 4.0])
-        region_names = np.array(["goal", "goal", "start", "start"])
-        event_types = np.array(["enter", "exit", "enter", "exit"])
-
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-
-        # Check event_type column exists
-        assert "event_type" in crossings_table.colnames
-
-        # Check event_type values
-        assert list(crossings_table["event_type"][:]) == [
-            "enter",
-            "exit",
-            "enter",
-            "exit",
-        ]
-
-    def test_events_table_creation_in_behavior(self, empty_nwb):
-        """Test EventsTable is created in processing/behavior/ module."""
-        from ndx_events import EventsTable
-
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        # Verify processing/behavior exists
-        assert "behavior" in nwbfile.processing
-
-        # Verify region_crossings is an EventsTable
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert isinstance(crossings_table, EventsTable)
-
-    def test_custom_description(self, empty_nwb):
-        """Test custom description parameter."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-
-        write_region_crossings(
-            nwbfile,
-            crossing_times,
-            region_names,
-            event_types,
-            description="Custom crossing description",
-        )
-
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert crossings_table.description == "Custom crossing description"
-
-    def test_default_description(self, empty_nwb):
-        """Test default description is used."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert "Region crossing events" in crossings_table.description
-
-    def test_custom_name(self, empty_nwb):
-        """Test writing crossings with custom table name."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-
-        write_region_crossings(
-            nwbfile,
-            crossing_times,
-            region_names,
-            event_types,
-            name="maze_crossings",
-        )
-
-        # Verify custom name used
-        assert "maze_crossings" in nwbfile.processing["behavior"].data_interfaces
-        assert "region_crossings" not in nwbfile.processing["behavior"].data_interfaces
-
-    def test_duplicate_name_error(self, empty_nwb):
-        """Test error when crossings table already exists without overwrite."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-
-        # Write crossings first time
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        # Try to write again without overwrite
-        with pytest.raises(ValueError, match="'region_crossings' already exists"):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_overwrite_replaces_existing(self, empty_nwb):
-        """Test overwrite=True replaces existing crossings table."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        original_times = np.array([1.0])
-        original_regions = np.array(["start"])
-        original_types = np.array(["enter"])
-
-        new_times = np.array([5.0, 10.0, 15.0])
-        new_regions = np.array(["goal", "start", "goal"])
-        new_types = np.array(["enter", "exit", "exit"])
-
-        # Write original crossings
-        write_region_crossings(
-            nwbfile, original_times, original_regions, original_types
-        )
-
-        # Overwrite with new data
-        write_region_crossings(
-            nwbfile, new_times, new_regions, new_types, overwrite=True
-        )
-
-        # Verify new data
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert len(crossings_table) == 3
-        np.testing.assert_array_almost_equal(crossings_table["timestamp"][:], new_times)
-
-    def test_empty_crossing_times(self, empty_nwb):
-        """Test writing empty crossing times array."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([])
-        region_names = np.array([])
-        event_types = np.array([])
-
-        # Write empty crossings - should succeed
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-        crossings_table = nwbfile.processing["behavior"]["region_crossings"]
-        assert len(crossings_table) == 0
-
-    def test_crossing_times_must_be_1d(self, empty_nwb):
-        """Test error when crossing_times is not 1D."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
-        region_names = np.array(["goal", "goal"])
-        event_types = np.array(["enter", "exit"])
-
-        with pytest.raises(ValueError, match=r"1D|one-dimensional"):
-            write_region_crossings(
-                nwbfile, crossing_times_2d, region_names, event_types
-            )
-
-    def test_region_names_length_mismatch(self, empty_nwb):
-        """Test error when region_names length doesn't match crossing_times."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, 2.0, 3.0])
-        region_names = np.array(["goal", "start"])  # Wrong length
-        event_types = np.array(["enter", "exit", "enter"])
-
-        with pytest.raises(
-            ValueError, match=r"region_names length \(\d+\) must match crossing_times"
-        ):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_event_types_length_mismatch(self, empty_nwb):
-        """Test error when event_types length doesn't match crossing_times."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, 2.0, 3.0])
-        region_names = np.array(["goal", "start", "goal"])
-        event_types = np.array(["enter", "exit"])  # Wrong length
-
-        with pytest.raises(
-            ValueError, match=r"event_types length \(\d+\) must match crossing_times"
-        ):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_crossing_times_with_nan_raises_error(self, empty_nwb):
-        """Test error when crossing_times contains NaN values."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, np.nan, 3.0])
-        region_names = np.array(["goal", "start", "goal"])
-        event_types = np.array(["enter", "exit", "enter"])
-
-        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_crossing_times_with_inf_raises_error(self, empty_nwb):
-        """Test error when crossing_times contains Inf values."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.0, np.inf, 3.0])
-        region_names = np.array(["goal", "start", "goal"])
-        event_types = np.array(["enter", "exit", "enter"])
-
-        with pytest.raises(ValueError, match="crossing_times contains non-finite"):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_crossing_times_negative_raises_error(self, empty_nwb):
-        """Test error when crossing_times contains negative timestamps."""
-        from neurospatial.io.nwb import write_region_crossings
-
-        nwbfile = empty_nwb
-        crossing_times = np.array([-1.0, 1.0, 3.0])
-        region_names = np.array(["goal", "start", "goal"])
-        event_types = np.array(["enter", "exit", "enter"])
-
-        with pytest.raises(ValueError, match="crossing_times contains negative"):
-            write_region_crossings(nwbfile, crossing_times, region_names, event_types)
-
-    def test_data_integrity(self, empty_nwb):
-        """Test data integrity via round-trip with read_events()."""
+    def test_crossing_records_round_trip(self, empty_nwb):
         from neurospatial.io.nwb import read_events, write_region_crossings
 
-        nwbfile = empty_nwb
-        crossing_times = np.array([1.5, 3.2, 7.8, 12.1])
-        region_names = np.array(["start", "goal", "goal", "start"])
-        event_types = np.array(["enter", "enter", "exit", "exit"])
+        write_region_crossings(empty_nwb, _crossings())
 
-        # Write crossings
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+        events = read_events(empty_nwb, table_name="region_crossings")
+        np.testing.assert_array_equal(events["timestamp"], [1.5, 3.2, 7.8])
+        assert list(events["region"]) == ["goal", "goal", "start"]
+        assert list(events["direction"]) == ["entry", "exit", "entry"]
+        assert list(events["bin_index"]) == [4, 7, 0]
 
-        # Read back using read_events
-        events = read_events(nwbfile, table_name="region_crossings")
+    def test_detected_crossings_write_directly(self, empty_nwb):
+        """The detector's output is accepted as is."""
+        from shapely.geometry import box
 
-        # Verify data matches
-        np.testing.assert_array_almost_equal(events["timestamp"].values, crossing_times)
-        assert list(events["region"]) == list(region_names)
-        assert list(events["event_type"]) == list(event_types)
+        from neurospatial import Environment
+        from neurospatial.behavior.segmentation import detect_region_crossings
+        from neurospatial.io.nwb import read_events, write_region_crossings
+        from neurospatial.regions import Regions
 
-    def test_behavior_module_reuse(self, empty_nwb):
-        """Test that existing behavior module is reused."""
+        x = np.r_[np.linspace(0.0, 10.0, 51), np.linspace(10.0, 0.0, 51)]
+        positions = np.column_stack([x, np.full_like(x, 1.0)])
+        times = np.arange(len(x)) * 0.1
+        env = Environment.from_samples(positions, bin_size=1.0, units="cm")
+        regions = Regions(env.regions.values())
+        regions.add("goal", polygon=box(7, 0, 11, 2))
+        env = env.with_regions(regions)
+        crossings = detect_region_crossings(
+            env.bin_at(positions), times, env, region_name="goal"
+        )
+        assert [c.direction for c in crossings] == ["entry", "exit"]
+
+        write_region_crossings(empty_nwb, crossings)
+
+        events = read_events(empty_nwb, table_name="region_crossings")
+        np.testing.assert_array_equal(events["timestamp"], [c.time for c in crossings])
+        assert list(events["direction"]) == ["entry", "exit"]
+        assert list(events["bin_index"]) == [c.bin_index for c in crossings]
+
+    def test_arrays_round_trip(self, empty_nwb):
+        from neurospatial.io.nwb import read_events, write_region_crossings
+
+        write_region_crossings(
+            empty_nwb,
+            times=np.array([1.0, 2.5]),
+            regions=["start", "goal"],
+            directions=["entry", "exit"],
+        )
+
+        events = read_events(empty_nwb, table_name="region_crossings")
+        np.testing.assert_array_equal(events["timestamp"], [1.0, 2.5])
+        assert list(events["region"]) == ["start", "goal"]
+        assert list(events["direction"]) == ["entry", "exit"]
+        assert "bin_index" not in events.columns
+
+    def test_records_and_arrays_together_are_refused(self, empty_nwb):
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(ValueError, match="Cannot combine 'crossings' with times"):
+            write_region_crossings(empty_nwb, _crossings(), times=np.array([1.0]))
+
+    def test_missing_arrays_are_refused(self, empty_nwb):
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(ValueError, match="all of 'times', 'regions' and"):
+            write_region_crossings(empty_nwb, times=np.array([1.0]), regions=["goal"])
+
+    def test_non_crossing_records_are_refused(self, empty_nwb):
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(
+            TypeError, match=r"crossings\[0\] is a float, not a Crossing"
+        ):
+            write_region_crossings(empty_nwb, [1.0])
+
+    def test_unknown_direction_is_refused(self, empty_nwb):
+        """'enter' is not the Crossing vocabulary; it would not match a detector."""
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(
+            ValueError, match="directions contains 'enter', which is not a crossing"
+        ):
+            write_region_crossings(
+                empty_nwb,
+                times=np.array([1.0]),
+                regions=["goal"],
+                directions=["enter"],
+            )
+
+    @pytest.mark.parametrize(
+        ("argument", "values", "message"),
+        [
+            (
+                "regions",
+                ["goal"],
+                r"regions length \(1\) must match times length \(2\)",
+            ),
+            (
+                "directions",
+                ["entry"],
+                r"directions length \(1\) must match times length \(2\)",
+            ),
+        ],
+    )
+    def test_length_mismatch_names_the_argument(
+        self, empty_nwb, argument, values, message
+    ):
+        from neurospatial.io.nwb import write_region_crossings
+
+        arrays = {"regions": ["goal", "goal"], "directions": ["entry", "exit"]}
+        arrays[argument] = values
+        with pytest.raises(ValueError, match=message):
+            write_region_crossings(empty_nwb, times=np.array([1.0, 2.0]), **arrays)
+
+    @pytest.mark.parametrize(
+        ("times", "message"),
+        [
+            (np.array([[1.0, 2.0]]), "times must be a 1-D array"),
+            (np.array([1.0, np.nan]), "times contains non-finite"),
+            (np.array([1.0, np.inf]), "times contains non-finite"),
+            (np.array([-1.0, 1.0]), "times contains negative"),
+        ],
+    )
+    def test_bad_times_are_refused(self, empty_nwb, times, message):
+        from neurospatial.io.nwb import write_region_crossings
+
+        n = times.shape[-1]
+        with pytest.raises(ValueError, match=message):
+            write_region_crossings(
+                empty_nwb, times=times, regions=["goal"] * n, directions=["entry"] * n
+            )
+
+    def test_duplicate_name_needs_overwrite(self, empty_nwb):
+        from neurospatial.io.nwb import read_events, write_region_crossings
+
+        write_region_crossings(empty_nwb, _crossings())
+        with pytest.raises(ValueError, match="already exists"):
+            write_region_crossings(empty_nwb, _crossings())
+
+        write_region_crossings(empty_nwb, _crossings()[:1], overwrite=True)
+        events = read_events(empty_nwb, table_name="region_crossings")
+        np.testing.assert_array_equal(events["timestamp"], [1.5])
+
+    def test_behavior_module_is_reused(self, empty_nwb):
         from pynwb.behavior import Position, SpatialSeries
 
         from neurospatial.io.nwb import write_region_crossings
 
-        nwbfile = empty_nwb
-
-        # Create behavior module with Position data first
-        behavior = nwbfile.create_processing_module(
+        behavior = empty_nwb.create_processing_module(
             name="behavior", description="Behavioral data"
         )
         position = Position(name="Position")
@@ -750,15 +599,11 @@ class TestWriteRegionCrossings:
         )
         behavior.add(position)
 
-        # Write crossings - should reuse existing module
-        crossing_times = np.array([1.0])
-        region_names = np.array(["goal"])
-        event_types = np.array(["enter"])
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+        write_region_crossings(empty_nwb, _crossings())
 
-        # Verify both Position and region_crossings exist in same module
-        assert "Position" in nwbfile.processing["behavior"].data_interfaces
-        assert "region_crossings" in nwbfile.processing["behavior"].data_interfaces
+        assert {"Position", "region_crossings"} <= set(
+            empty_nwb.processing["behavior"].data_interfaces
+        )
 
 
 @pytest.mark.slow
@@ -767,40 +612,30 @@ class TestWriteRegionCrossingsDiskRoundTrip:
     """write_region_crossings survives a real disk write -> reopen cycle."""
 
     def test_region_crossings_survive_disk_roundtrip(self, tmp_path):
-        """Region-crossing events survive write -> close -> reopen."""
         from pynwb import NWBHDF5IO
 
         from neurospatial.io.nwb import read_events, write_region_crossings
 
-        # 8 enter/exit events across 2 regions.
-        crossing_times = np.array([1.0, 2.5, 5.0, 8.2, 9.0, 11.0, 12.5, 14.0])
-        region_names = np.array(
-            ["start", "goal", "start", "goal", "start", "goal", "start", "goal"]
-        )
-        event_types = np.array(
-            ["enter", "enter", "exit", "exit", "enter", "enter", "exit", "exit"]
-        )
-
         nwbfile = create_roundtrip_nwb()
-        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+        write_region_crossings(nwbfile, _crossings())
 
         nwb_path = tmp_path / "crossings.nwb"
         with NWBHDF5IO(str(nwb_path), "w") as io:
             io.write(nwbfile)
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
-            reopened = io.read()
-            recovered = read_events(reopened, table_name="region_crossings")
+            recovered = read_events(io.read(), table_name="region_crossings")
 
         expected = pd.DataFrame(
             {
-                "timestamp": crossing_times,
-                "region": region_names,
-                "event_type": event_types,
+                "timestamp": [1.5, 3.2, 7.8],
+                "region": ["goal", "goal", "start"],
+                "direction": ["entry", "exit", "entry"],
+                "bin_index": [4, 7, 0],
             }
         )
         pd.testing.assert_frame_equal(
-            recovered.reset_index(drop=True)[["timestamp", "region", "event_type"]],
+            recovered.reset_index(drop=True)[list(expected.columns)],
             expected,
             check_dtype=False,
         )
@@ -866,9 +701,9 @@ def _write_crossings(nwbfile, times, *, overwrite=False):
     n = len(times)
     write_region_crossings(
         nwbfile,
-        times,
-        np.array(["goal"] * n),
-        np.array(["entry"] * n),
+        times=times,
+        regions=["goal"] * n,
+        directions=["entry"] * n,
         name="rewards",
         overwrite=overwrite,
     )
@@ -957,12 +792,12 @@ class TestEventTablesOnDisk:
         from neurospatial.io.nwb import read_events, write_region_crossings
 
         nwbfile = create_roundtrip_nwb()
-        write_region_crossings(nwbfile, np.array([]), np.array([]), np.array([]))
+        write_region_crossings(nwbfile, times=np.array([]), regions=[], directions=[])
 
         with _disk_round_trip(nwbfile, tmp_path / "crossings.nwb") as io:
             recovered = read_events(io.read(), table_name="region_crossings")
         assert len(recovered) == 0
-        assert set(recovered.columns) == {"timestamp", "region", "event_type"}
+        assert set(recovered.columns) == {"timestamp", "region", "direction"}
 
     def test_zero_events_keep_their_columns(self, tmp_path):
         from neurospatial.io.nwb import read_events, write_events
