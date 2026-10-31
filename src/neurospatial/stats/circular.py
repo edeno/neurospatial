@@ -34,7 +34,7 @@ Which Function Should I Use?
     ``plot_phase_precession()``.
 
 **GLM-based circular regression?**
-    Use ``circular_basis()`` to create design matrix [cos(φ), sin(φ)].
+    Use ``circular_basis()`` to create design matrix [sin(φ), cos(φ)].
     Fit with statsmodels/scikit-learn, then interpret with ``circular_basis_metrics()``.
     Visualize with ``plot_circular_basis_tuning()``.
 
@@ -47,13 +47,10 @@ Which Function Should I Use?
 
 Angle Units
 -----------
-All functions accept an ``angle_unit`` parameter: ``'rad'`` (default) or ``'deg'``.
-Internally, all computations use radians. Output angles are in radians unless
-otherwise specified.
-
-**Note**: Most neuroscience software uses degrees by default (especially for
-head direction). We use radians to match scipy conventions. If your data is
-in degrees, set ``angle_unit='deg'``.
+Functions that take angles accept an ``angle_unit`` parameter: ``'rad'``
+(default) or ``'deg'``; any other value raises. Computations use radians, and
+output angles are in radians, the package-wide convention. If your data is in
+degrees, set ``angle_unit='deg'``.
 
 Common Use Cases
 ----------------
@@ -74,15 +71,22 @@ Common Use Cases
 
 **GLM circular tuning (head direction or theta phase)**::
 
-    # 1. Create design matrix from circular variable
-    result = circular_basis(head_directions)  # or: circular_basis(theta_phases)
-    X = result.design_matrix  # shape (n_spikes, 2): [cos, sin]
+    # 1. Create design matrix from the heading in every time bin (not only
+    #    at spikes): headings and spike_counts have shape (n_time_bins,)
+    result = circular_basis(headings)  # or: circular_basis(theta_phases)
+    X = result.design_matrix  # shape (n_time_bins, 2): [sin, cos]
 
-    # 2. Fit GLM (statsmodels example)
+    # 2. Fit a Poisson GLM (statsmodels example); the log(dt) offset makes
+    #    exp(intercept) a rate in Hz
     import statsmodels.api as sm
 
     X_with_intercept = sm.add_constant(X)
-    model = sm.GLM(spike_counts, X_with_intercept, family=sm.families.Poisson()).fit()
+    model = sm.GLM(
+        spike_counts,
+        X_with_intercept,
+        family=sm.families.Poisson(),
+        offset=np.full(len(spike_counts), np.log(dt)),
+    ).fit()
 
     # 3. Extract and interpret coefficients
     beta_sin, beta_cos = model.params[1], model.params[2]
@@ -122,18 +126,18 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
 __all__ = [  # noqa: RUF022
-    # Core circular statistics (from metrics/circular.py)
+    # Tests and correlations
     "rayleigh_test",
     "circular_linear_correlation",
     "circular_circular_correlation",
     "phase_position_correlation",
-    # Public circular statistics (formerly private in metrics/circular.py)
+    # Descriptive statistics
     "circular_mean",
     "circular_variance",
     "mean_resultant_length",
     # Angle utilities
     "wrap_angle",
-    # GLM circular basis (from metrics/circular_basis.py)
+    # GLM circular basis
     "CircularBasisResult",
     "circular_basis",
     "circular_basis_metrics",
@@ -164,9 +168,20 @@ def _to_radians(
     -------
     ndarray of shape (n,)
         Angles in radians.
+
+    Raises
+    ------
+    ValueError
+        If ``angle_unit`` is not ``'rad'`` or ``'deg'``.
     """
     if angle_unit == "deg":
         return np.radians(angles)
+    if angle_unit != "rad":
+        raise ValueError(
+            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
+            f"Fix: pass angle_unit='deg' for degrees or 'rad' (default) for "
+            f"radians."
+        )
     return angles
 
 
@@ -219,9 +234,43 @@ def _validate_weights(
             f"{name} must be non-negative (interpreted as counts/frequencies). "
             f"Found {n_neg} negative value(s) (first at index {first}: "
             f"{weights[first]!r}). "
-            f"Fix: pass spike counts or occupancy times, not signed quantities."
+            f"Fix: pass non-negative weights such as spike counts, not signed "
+            f"quantities."
         )
     return weights
+
+
+def _mean_vector(
+    angles: NDArray[np.float64],
+    weights: NDArray[np.float64] | None = None,
+) -> tuple[float, float]:
+    """
+    Weighted mean of (cos, sin) over validated angles.
+
+    Parameters
+    ----------
+    angles : ndarray of shape (n,)
+        Angles in radians, without NaN.
+    weights : ndarray of shape (n,), optional
+        Validated non-negative weights. If None, uniform weights are used.
+
+    Returns
+    -------
+    mean_cos, mean_sin : float
+        Both NaN when no angle carries weight (including empty input).
+    """
+    if weights is None:
+        if len(angles) == 0:
+            return np.nan, np.nan
+        return float(np.mean(np.cos(angles))), float(np.mean(np.sin(angles)))
+    total = np.sum(weights)
+    if total == 0:
+        return np.nan, np.nan
+    normalized = weights / total
+    return (
+        float(np.sum(normalized * np.cos(angles))),
+        float(np.sum(normalized * np.sin(angles))),
+    )
 
 
 def _mean_resultant_length(
@@ -231,20 +280,17 @@ def _mean_resultant_length(
     """
     Compute mean resultant length (Rayleigh vector length).
 
-    This is an internal helper function. Unweighted angles use
-    scipy.stats.directional_stats; weighted angles are averaged directly.
-
     Parameters
     ----------
     angles : ndarray of shape (n,)
-        Angles in radians.
+        Angles in radians, without NaN.
     weights : ndarray of shape (n,), optional
-        Weights for each angle. If None, uniform weights are used.
+        Validated non-negative weights. If None, uniform weights are used.
 
     Returns
     -------
     float
-        Mean resultant length R in [0, 1].
+        Mean resultant length R in [0, 1]; NaN when no angle carries weight.
 
     Notes
     -----
@@ -254,30 +300,27 @@ def _mean_resultant_length(
 
     where w are the weights (uniform if not specified).
     """
-    if len(angles) == 0:
-        return np.nan
-
-    # Convert to unit vectors
-    cos_angles = np.cos(angles)
-    sin_angles = np.sin(angles)
-
-    if weights is not None:
-        # Validate (equal length, non-negative); reject length-1 broadcast.
-        weights = _validate_weights(np.ravel(angles), weights)
-        weight_sum = np.sum(weights)
-        if weight_sum == 0:
-            return np.nan
-        weights_norm = weights / weight_sum
-        mean_cos = np.sum(weights_norm * cos_angles)
-        mean_sin = np.sum(weights_norm * sin_angles)
-    else:
-        # Imported on use: scipy.stats adds ~0.2 s to importing the package.
-        from scipy.stats import directional_stats
-
-        vectors = np.column_stack([cos_angles, sin_angles])
-        return float(directional_stats(vectors).mean_resultant_length)
-
+    mean_cos, mean_sin = _mean_vector(angles, weights)
     return float(np.sqrt(mean_cos**2 + mean_sin**2))
+
+
+def _valid_angles(
+    angles: NDArray[np.float64],
+    angle_unit: Literal["rad", "deg"],
+    weights: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
+    """
+    Angles in radians with NaN angles, and their weights, dropped.
+
+    NaN angles are dropped with a ``UserWarning``. Empty or all-NaN input
+    returns no angles, so descriptive statistics come out NaN.
+    """
+    angles = _to_radians(np.asarray(angles, dtype=np.float64).ravel(), angle_unit)
+    if np.isnan(angles).all():
+        if weights is not None:
+            _validate_weights(angles, weights)
+        return angles[:0], None
+    return _validate_circular_input(angles, "angles", min_samples=1, weights=weights)
 
 
 def _validate_circular_input(
@@ -285,7 +328,6 @@ def _validate_circular_input(
     name: str = "angles",
     *,
     min_samples: int = 3,
-    check_range: bool = True,
     weights: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """
@@ -299,8 +341,6 @@ def _validate_circular_input(
         Name for error messages.
     min_samples : int, default=3
         Minimum required samples.
-    check_range : bool, default=True
-        If True, warn if angles outside [0, 2pi].
     weights : ndarray of shape (n,), optional
         Optional per-angle weights to keep aligned with ``angles``. If
         supplied they are validated (equal length, non-negative) up front
@@ -373,17 +413,6 @@ def _validate_circular_input(
             f"Got {len(angles)} valid samples in {name}.\n"
             f"Fix: Provide more data points or use a different analysis method."
         )
-
-    # Check range (warning only)
-    if check_range and (np.any(angles < 0) or np.any(angles > 2 * np.pi)):
-        warnings.warn(
-            f"{name} contains values outside [0, 2pi]. "
-            f"Range: [{angles.min():.3f}, {angles.max():.3f}]. "
-            f"Values will be wrapped to [0, 2pi] using modulo.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        angles = angles % (2 * np.pi)
 
     return angles, weights
 
@@ -459,79 +488,6 @@ def _validate_paired_input(
     return arr1, arr2
 
 
-def _validate_tuning_data(
-    bin_centers: NDArray[np.float64],
-    firing_rates: NDArray[np.float64],
-    *,
-    require_variation: bool = True,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """
-    Validate tuning curve data (bin centers and firing rates).
-
-    Parameters
-    ----------
-    bin_centers : ndarray of shape (n_bins,)
-        Center of each angular bin in radians.
-    firing_rates : ndarray of shape (n_bins,)
-        Firing rate in each bin (Hz).
-    require_variation : bool, default=True
-        If True, require non-zero and non-constant firing rates.
-        Set to False for plotting functions that can handle edge cases.
-
-    Returns
-    -------
-    bin_centers : ndarray of shape (n_bins,)
-        Validated bin centers as float64 array.
-    firing_rates : ndarray of shape (n_bins,)
-        Validated firing rates as float64 array.
-
-    Raises
-    ------
-    ValueError
-        If validation fails with actionable error message.
-    """
-    bin_centers = np.asarray(bin_centers, dtype=np.float64).ravel()
-    firing_rates = np.asarray(firing_rates, dtype=np.float64).ravel()
-
-    # Check matching lengths
-    if len(bin_centers) != len(firing_rates):
-        raise ValueError(
-            f"bin_centers and firing_rates must have same length. "
-            f"Got {len(bin_centers)} and {len(firing_rates)}.\n"
-            f"Fix: Ensure both came from the same tuning curve computation."
-        )
-
-    # Check non-empty
-    if len(bin_centers) == 0:
-        raise ValueError(
-            "bin_centers and firing_rates must not be empty. Got empty arrays."
-        )
-
-    # Check for negative firing rates
-    if np.any(firing_rates < 0):
-        raise ValueError(
-            f"firing_rates cannot be negative. Found {np.sum(firing_rates < 0)} "
-            f"negative values. Check your spike count or time normalization."
-        )
-
-    if require_variation:
-        # Check for all-zero firing rates
-        if np.sum(firing_rates) == 0:
-            raise ValueError(
-                "All firing rates are zero. Cannot compute metrics.\n"
-                "Fix: Check if neuron has any spikes in this recording."
-            )
-
-        # Check for constant (non-zero) firing rates
-        if np.ptp(firing_rates) == 0:
-            raise ValueError(
-                "All firing rates are constant. Cannot compute metrics.\n"
-                "Fix: Neuron shows no directional tuning (uniform firing)."
-            )
-
-    return bin_centers, firing_rates
-
-
 # =============================================================================
 # Public API - Core Circular Statistics
 # =============================================================================
@@ -552,33 +508,35 @@ def rayleigh_test(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. Values outside [0, 2pi] (or [0, 360] for degrees)
-        will be wrapped.
+        Sample of angles. NaN angles are dropped with a warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
-        Weights for each angle, interpreted as **counts/frequencies**
+        Whole-number weights for each angle, interpreted as **counts**
         (e.g., spike counts per phase bin). If None, uniform unit weights
-        are used. Under this count convention, weighting an angle by an
-        integer ``k`` is equivalent to observing that angle ``k`` times;
-        the test statistic is ``z = sum(weights) * R**2`` (see Notes).
+        are used. Weighting an angle by ``k`` is equivalent to observing
+        that angle ``k`` times; the test statistic is
+        ``z = sum(weights) * R**2`` (see Notes). Occupancy times or rates
+        are not counts: the p-value would change with their units.
 
     Returns
     -------
     z : float
         Rayleigh z-statistic (n * R^2 where R is mean resultant length).
-        Range: [0, n]. Higher values indicate stronger directionality.
+        Range: [0, n], with n = sum(weights) for weighted input. Higher
+        values indicate stronger directionality.
     pval : float
-        P-value from Rayleigh approximation with finite-sample correction.
-        Small p-values (< 0.05) indicate non-uniform distribution.
+        P-value in (0, 1] from Zar's approximation (see Notes). Small
+        p-values (< 0.05) indicate a non-uniform distribution.
 
     Raises
     ------
     ValueError
-        If angles array is empty, all NaN, or too short; if ``weights`` is
-        not the same length as ``angles`` (a length-1 array is rejected,
-        not broadcast) or contains negative values; or if the total weight
-        (sum of weights) is zero.
+        If ``angle_unit`` is unknown; if angles are empty, all NaN, contain
+        Inf, or number fewer than 3; if ``weights`` is not the same length
+        as ``angles`` (a length-1 array is rejected, not broadcast), is not
+        finite, or contains negative or non-integer values; or if the total
+        weight (sum of weights) is below 3.
 
     See Also
     --------
@@ -587,20 +545,30 @@ def rayleigh_test(
     Notes
     -----
     The unweighted statistic is ``z = n * R**2`` where ``R`` is the mean
-    resultant length and ``n`` the number of angles. A finite-sample
-    correction from Mardia & Jupp (2000, Section 5.3.2, p. 94) is applied
-    for accurate p-values when the (effective) sample size is < 50.
+    resultant length and ``n`` the number of angles. The p-value is Zar's
+    approximation (Zar 1999, p. 617), as in CircStat's ``circ_rtest``::
 
-    **Weighted variant.** When ``weights`` are supplied this implements the
-    count-based (grouped-data) weighted Rayleigh test of Mardia & Jupp
-    (2000, Section 5.3.5): weights are treated as frequencies, the resultant
+        p = exp(sqrt(1 + 4n + 4(n**2 - (n R)**2)) - (1 + 2n))
+
+    It is positive, decreases as ``R`` grows, and is accurate for small
+    samples, where ``exp(-z)`` is anti-conservative. For n < 6 it is
+    conservative (p too large) below p = 0.01.
+
+    **Weighted variant.** When ``weights`` are supplied this is the
+    grouped-data Rayleigh test: weights are frequencies, the resultant
     length is the weighted mean resultant length
-    ``R = |sum_i w_i exp(i theta_i)| / sum_i w_i``, and the statistic is
-    ``z = (sum_i w_i) * R**2`` with the finite-sample correction evaluated
-    at ``n = sum_i w_i``. With unit weights this reduces exactly to the
-    unweighted statistic, and integer weights match physically replicating
-    each angle by its weight. This is intentionally *not* the
-    effective-sample-size form ``n_eff = (sum w)**2 / sum(w**2)``.
+    ``R = |sum_i w_i exp(i theta_i)| / sum_i w_i``, and ``n = sum_i w_i``.
+    With unit weights this reduces exactly to the unweighted test, and
+    integer weights match physically replicating each angle by its weight.
+    This is intentionally *not* the effective-sample-size form
+    ``n_eff = (sum w)**2 / sum(w**2)``. When the counts come from phase
+    bins, ``R`` is biased low by the bin width (grouping).
+
+    References
+    ----------
+    Zar, J.H. (1999). Biostatistical Analysis, 4th ed. Prentice Hall.
+    Berens, P. (2009). CircStat: a MATLAB toolbox for circular statistics.
+        Journal of Statistical Software, 31(10).
 
     Examples
     --------
@@ -632,18 +600,26 @@ def rayleigh_test(
         angles,
         "angles",
         min_samples=validator_min_samples,
-        check_range=False,
         weights=weights,
     )
 
     n = len(angles)
 
+    if weights is not None and np.any(weights != np.round(weights)):
+        raise ValueError(
+            "rayleigh_test weights must be whole-number counts (e.g., spike "
+            "counts per phase bin). The test's sample size is sum(weights), so "
+            "non-count weights such as occupancy times or rates make the "
+            "p-value depend on their units.\n"
+            "Fix: pass integer counts, or use mean_resultant_length(angles, "
+            "weights=...) for a descriptive weighted concentration."
+        )
+
     # Weighted mean resultant length (weights already validated above).
     r_mean = _mean_resultant_length(angles, weights=weights)
 
-    # Effective count for the z-statistic and finite-sample correction.
-    # Count-based (grouped-data) weighted Rayleigh (Mardia & Jupp 2000,
-    # Section 5.3.5): n_eff = sum(weights); for unit weights, n_eff = n.
+    # Count for the z-statistic and p-value: for the grouped-data test,
+    # n_eff = sum(weights); for unit weights, n_eff = n.
     if weights is not None:
         n_eff: float = float(np.sum(weights))
     else:
@@ -675,22 +651,12 @@ def rayleigh_test(
     # Rayleigh z-statistic: z = n_eff * R^2.
     z = n_eff * r_mean**2
 
-    # P-value with finite-sample correction (Mardia & Jupp, p. 94)
-    # For large n, p = exp(-z) is a good approximation
-    # For small n, we use the correction formula
-    pval = float(np.exp(-z))
-
-    # Apply finite-sample correction for more accurate p-values
-    # From Mardia & Jupp (2000), Section 5.3.2, equation 5.3.6
-    if n_eff < 50:
-        # Correction terms
-        term1 = (2 * z - z**2) / (4 * n_eff)
-        term2 = (24 * z - 132 * z**2 + 76 * z**3 - 9 * z**4) / (288 * n_eff**2)
-        pval = pval * (1 + term1 - term2)
-
-    # Ensure p-value is in valid range
-    pval = float(np.clip(pval, 0.0, 1.0))
-
+    # Zar (1999, p. 617), with the exponent sqrt(a) - b rewritten as
+    # (a - b**2) / (sqrt(a) + b) = -4 R_n**2 / (sqrt(a) + b) to avoid
+    # cancellation for large n.
+    r_n = n_eff * r_mean
+    root = np.sqrt(1 + 4 * n_eff + 4 * (n_eff**2 - r_n**2))
+    pval = float(np.exp(-4 * r_n**2 / (root + 1 + 2 * n_eff)))
     return float(z), pval
 
 
@@ -718,14 +684,20 @@ def circular_linear_correlation(
     Returns
     -------
     r : float
-        Correlation coefficient in [0, 1]. Note: always non-negative.
+        Correlation coefficient in [0, 1]. It has no sign, so it cannot tell
+        phase precession from procession; for slope and direction use
+        ``compute_phase_precession``. NaN, with a ``RuntimeWarning``, when
+        the correlation is undefined: constant ``linear_values`` or
+        constant angles.
     pval : float
-        P-value from chi-squared distribution with 2 df.
+        P-value from the large-sample chi-squared approximation (see Notes).
+        NaN when ``r`` is undefined.
 
     Raises
     ------
     ValueError
-        If arrays have different lengths or insufficient samples.
+        If ``angle_unit`` is unknown, the arrays have different lengths, or
+        fewer than 3 pairs remain after dropping pairs with NaN.
 
     See Also
     --------
@@ -734,17 +706,22 @@ def circular_linear_correlation(
 
     Notes
     -----
-    The circular-linear correlation is computed using the formula from
-    Mardia & Jupp (2000, Section 11.3):
+    ``r`` is the multiple correlation of the linear variable on cos(angles)
+    and sin(angles): ``r**2`` is the fraction of its variance a least-squares
+    fit ``x ~ a + b cos(angles) + c sin(angles)`` explains (Mardia & Jupp
+    2000, ch. 11). With full-rank cos/sin columns this equals
 
         r^2 = (r_xs^2 + r_xc^2 - 2*r_xs*r_xc*r_cs) / (1 - r_cs^2)
 
-    where:
-    - r_xs: Pearson correlation between linear variable x and sin(angles)
-    - r_xc: Pearson correlation between linear variable x and cos(angles)
-    - r_cs: Pearson correlation between cos(angles) and sin(angles)
+    where r_xs, r_xc and r_cs are the Pearson correlations of x with
+    sin(angles), of x with cos(angles), and of cos(angles) with sin(angles).
+    The projection form stays defined when cos and sin are collinear, for
+    example when the angles take only two values; the fit then has one
+    degree of freedom instead of two.
 
-    The result is always non-negative because r is the square root of r^2.
+    Under independence, ``n * r**2`` is approximately chi-squared with as many
+    degrees of freedom as the fit (2, or 1 for collinear cos/sin). The
+    approximation is conservative for small samples (n < 20).
 
     Examples
     --------
@@ -757,7 +734,7 @@ def circular_linear_correlation(
     True
     """
     # scipy.stats is imported on use; it adds ~0.2 s to importing the package.
-    from scipy.stats import chi2, pearsonr
+    from scipy.stats import chi2
 
     # Convert to arrays and radians if needed
     angles = np.asarray(angles, dtype=np.float64)
@@ -771,60 +748,36 @@ def circular_linear_correlation(
 
     n = len(angles)
 
-    # Compute sin and cos of angles
-    sin_angles = np.sin(angles)
-    cos_angles = np.cos(angles)
-
-    # Check for degenerate case: no variation in linear variable
-    linear_std = np.std(linear_values)
-    if linear_std < 1e-10:
+    if np.ptp(linear_values) == 0:
         warnings.warn(
-            "Linear variable has no variation (constant values). "
-            "Circular-linear correlation is undefined. Returning r=0.",
+            "linear_values are constant, so the circular-linear correlation is "
+            "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
             stacklevel=2,
         )
-        return 0.0, 1.0
+        return np.nan, np.nan
 
-    # Compute Pearson correlations
-    # r_xs: correlation between x (linear) and sin(angles)
-    # r_xc: correlation between x (linear) and cos(angles)
-    # r_cs: correlation between cos(angles) and sin(angles)
-    r_xs, _ = pearsonr(linear_values, sin_angles)
-    r_xc, _ = pearsonr(linear_values, cos_angles)
-    r_cs, _ = pearsonr(cos_angles, sin_angles)
-
-    # Handle degenerate case: r_cs near 1 (cos and sin perfectly correlated)
-    # This shouldn't happen for real circular data but handle it anyway
-    if np.abs(r_cs) > 0.9999:
+    # Project the centered linear variable onto the span of the centered
+    # cos/sin columns. cos and sin lie in [-1, 1], so an absolute singular
+    # value cutoff (RMS spread 1e-10) decides which directions exist.
+    x = linear_values - linear_values.mean()
+    basis = np.column_stack([np.cos(angles), np.sin(angles)])
+    basis -= basis.mean(axis=0)
+    u, singular_values, _ = np.linalg.svd(basis, full_matrices=False)
+    rank = int(np.sum(singular_values > 1e-10 * np.sqrt(n)))
+    if rank == 0:
         warnings.warn(
-            "Degenerate case: cos(angles) and sin(angles) are nearly perfectly "
-            "correlated. This suggests angles have very limited range. "
-            "Returning r=0.",
+            "angles are constant, so the circular-linear correlation is "
+            "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
             stacklevel=2,
         )
-        return 0.0, 1.0
+        return np.nan, np.nan
 
-    # Mardia & Jupp formula for circular-linear correlation
-    # r^2 = (r_xs^2 + r_xc^2 - 2*r_xs*r_xc*r_cs) / (1 - r_cs^2)
-    r_squared = (r_xs**2 + r_xc**2 - 2 * r_xs * r_xc * r_cs) / (1 - r_cs**2)
-
-    # Ensure r_squared is non-negative (numerical issues can make it slightly negative)
-    r_squared = max(0.0, r_squared)
-
-    # r is always non-negative by definition
-    r = float(np.sqrt(r_squared))
-
-    # P-value from chi-squared distribution with 2 degrees of freedom
-    # Test statistic: n * r^2 follows chi-squared(2) under null hypothesis
-    chi2_stat = n * r_squared
-    pval = float(chi2.sf(chi2_stat, df=2))
-
-    # Ensure p-value is in valid range
-    pval = float(np.clip(pval, 0.0, 1.0))
-
-    return r, pval
+    projection = u[:, :rank].T @ x
+    r_squared = min(float(projection @ projection) / float(x @ x), 1.0)
+    pval = float(chi2.sf(n * r_squared, df=rank))
+    return float(np.sqrt(r_squared)), pval
 
 
 def phase_position_correlation(
@@ -872,8 +825,9 @@ def circular_circular_correlation(
     """
     Circular-circular correlation coefficient.
 
-    Computes the Fisher & Lee (1983) circular correlation coefficient
-    between two circular variables.
+    Computes the Jammalamadaka & Sarma (1988) circular correlation
+    coefficient between two circular variables, as CircStat's
+    ``circ_corrcc``.
 
     Parameters
     ----------
@@ -892,13 +846,16 @@ def circular_circular_correlation(
         - r > 0: positive association (angles increase together)
         - r < 0: negative association (angles move in opposite directions)
         - r = 0: no circular correlation
+        NaN, with a ``RuntimeWarning``, when either variable is constant.
     pval : float
-        P-value from normal approximation.
+        Two-sided p-value from the large-sample normal approximation. NaN
+        when ``r`` is undefined or the statistic's variance is zero.
 
     Raises
     ------
     ValueError
-        If arrays have different lengths or insufficient samples.
+        If ``angle_unit`` is unknown, the arrays have different lengths, or
+        fewer than 5 pairs remain after dropping pairs with NaN.
 
     See Also
     --------
@@ -906,7 +863,7 @@ def circular_circular_correlation(
 
     Notes
     -----
-    **Formula** (Fisher & Lee, 1983; Jammalamadaka & SenGupta, 2001, p. 176):
+    **Formula** (Jammalamadaka & SenGupta, 2001, p. 176):
 
         rho = sum(sin(a1 - mean1) * sin(a2 - mean2)) /
               sqrt(sum(sin(a1 - mean1)^2) * sum(sin(a2 - mean2)^2))
@@ -933,10 +890,14 @@ def circular_circular_correlation(
     >>> r > 0.8
     True
 
+    This is not the Fisher & Lee (1983) coefficient, which is built from
+    pairwise angle differences and gives different values.
+
     References
     ----------
-    Fisher, N.I. & Lee, A.J. (1983). A correlation coefficient for circular data.
-        Biometrika, 70(2), 327-332.
+    Jammalamadaka, S.R. & Sarma, Y.R. (1988). A correlation coefficient for
+        angular variables. In Statistical Theory and Data Analysis II,
+        349-364. North-Holland.
     Jammalamadaka, S.R. & SenGupta, A. (2001). Topics in Circular Statistics.
         World Scientific, p. 176.
     """
@@ -963,20 +924,19 @@ def circular_circular_correlation(
     sin_dev1 = np.sin(angles1 - alpha_bar)
     sin_dev2 = np.sin(angles2 - beta_bar)
 
-    # Compute correlation coefficient (Fisher & Lee formula)
-    num = np.sum(sin_dev1 * sin_dev2)
-    den = np.sqrt(np.sum(sin_dev1**2) * np.sum(sin_dev2**2))
-
-    if den == 0:
-        # Degenerate case: no variation in one or both variables
+    # A spread below 1e-10 rad RMS is rounding error around a constant angle.
+    if min(np.mean(sin_dev1**2), np.mean(sin_dev2**2)) <= 1e-20:
         warnings.warn(
-            "No variation in one or both circular variables. "
-            "This may indicate constant angles. Returning r=0.",
+            "One or both circular variables are constant, so the "
+            "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
             stacklevel=2,
         )
-        return 0.0, 1.0
+        return np.nan, np.nan
 
+    # Jammalamadaka & Sarma coefficient
+    num = np.sum(sin_dev1 * sin_dev2)
+    den = np.sqrt(np.sum(sin_dev1**2) * np.sum(sin_dev2**2))
     rho = num / den
 
     # Clip to valid range (numerical stability)
@@ -990,11 +950,12 @@ def circular_circular_correlation(
 
     if l22 == 0:
         warnings.warn(
-            "Cannot compute p-value: variance product is zero. Returning p=1.0.",
+            "Cannot compute the p-value: no pair varies in both variables at "
+            "once, so the statistic's variance is zero. Returning p=NaN.",
             category=RuntimeWarning,
             stacklevel=2,
         )
-        return rho, 1.0
+        return rho, np.nan
 
     # Test statistic follows standard normal under null hypothesis
     ts = np.sqrt((n * l20 * l02) / l22) * rho
@@ -1023,17 +984,21 @@ def circular_mean(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
-        Must be the same length as ``angles`` and non-negative.
+        Must be the same length as ``angles``, finite and non-negative.
 
     Returns
     -------
     float
-        Circular mean in radians, range [-π, π].
+        Circular mean in radians, range [-π, π], whatever ``angle_unit``.
+        NaN when no angle carries weight, or when the mean direction is
+        undefined because the resultant vector is zero (e.g., two opposite
+        angles).
 
     Examples
     --------
@@ -1044,35 +1009,10 @@ def circular_mean(
     >>> bool(np.abs(mean - np.pi / 4) < 0.1)
     True
     """
-    angles = np.asarray(angles, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
-
-    if len(angles) == 0:
+    mean_cos, mean_sin = _mean_vector(*_valid_angles(angles, angle_unit, weights))
+    # A resultant below rounding error has no direction (NaN fails the test).
+    if not np.hypot(mean_cos, mean_sin) > 1e-12:
         return np.nan
-
-    if weights is not None:
-        # Co-filter NaN angles together with their paired weights (same rule
-        # as the weighted Rayleigh path), then compute on the remainder.
-        # Non-finite WEIGHTS still raise inside the validator -- only NaN
-        # ANGLES are legitimately dropped here.
-        angles, weights = _validate_circular_input(
-            angles, "angles", min_samples=1, check_range=False, weights=weights
-        )
-        assert weights is not None  # validator returns weights when given them
-        cos_angles = np.cos(angles)
-        sin_angles = np.sin(angles)
-        weight_sum = np.sum(weights)
-        if weight_sum == 0:
-            return np.nan
-        weights_norm = weights / weight_sum
-        mean_cos = np.sum(weights_norm * cos_angles)
-        mean_sin = np.sum(weights_norm * sin_angles)
-    else:
-        cos_angles = np.cos(angles)
-        sin_angles = np.sin(angles)
-        mean_cos = np.mean(cos_angles)
-        mean_sin = np.mean(sin_angles)
-
     return float(np.arctan2(mean_sin, mean_cos))
 
 
@@ -1091,18 +1031,20 @@ def circular_variance(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
-        Must be the same length as ``angles`` and non-negative.
+        Must be the same length as ``angles``, finite and non-negative.
 
     Returns
     -------
     float
         Circular variance in [0, 1]. 0 indicates all angles are identical,
-        1 indicates maximum dispersion (uniform distribution).
+        1 indicates maximum dispersion (uniform distribution). NaN when no
+        angle carries weight.
 
     Examples
     --------
@@ -1114,18 +1056,7 @@ def circular_variance(
     >>> var < 0.1
     True
     """
-    angles = np.asarray(angles, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
-
-    if weights is not None:
-        # Co-filter NaN angles with their paired weights (same rule as the
-        # weighted Rayleigh path). Non-finite WEIGHTS still raise.
-        angles, weights = _validate_circular_input(
-            angles, "angles", min_samples=1, check_range=False, weights=weights
-        )
-
-    r = _mean_resultant_length(angles, weights=weights)
-    return float(1.0 - r)
+    return 1.0 - _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
 
 
 def mean_resultant_length(
@@ -1144,17 +1075,18 @@ def mean_resultant_length(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
-        Must be the same length as ``angles`` and non-negative.
+        Must be the same length as ``angles``, finite and non-negative.
 
     Returns
     -------
     float
-        Mean resultant length R in [0, 1].
+        Mean resultant length R in [0, 1]. NaN when no angle carries weight.
 
     Notes
     -----
@@ -1171,17 +1103,7 @@ def mean_resultant_length(
     >>> bool(np.abs(r - 1.0) < 0.01)
     True
     """
-    angles = np.asarray(angles, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
-
-    if weights is not None:
-        # Co-filter NaN angles with their paired weights (same rule as the
-        # weighted Rayleigh path). Non-finite WEIGHTS still raise.
-        angles, weights = _validate_circular_input(
-            angles, "angles", min_samples=1, check_range=False, weights=weights
-        )
-
-    return _mean_resultant_length(angles, weights=weights)
+    return _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
 
 
 # =============================================================================
@@ -1194,20 +1116,20 @@ class CircularBasisResult(ReadOnlyArraysMixin):
     """
     Result from circular_basis() function.
 
-    Contains sin/cos components for use in GLM design matrices, plus the
-    original angles for reference.
+    Holds the angles of a circular predictor; the sin/cos components for a
+    GLM design matrix are derived from them.
 
     Attributes
+    ----------
+    angles : ndarray, shape (n_samples,)
+        Angles in radians (converted from degrees if ``angle_unit='deg'``).
+
+    Properties
     ----------
     sin_component : ndarray, shape (n_samples,)
         Sine of angles: sin(angles).
     cos_component : ndarray, shape (n_samples,)
         Cosine of angles: cos(angles).
-    angles : ndarray, shape (n_samples,)
-        Original angles (in radians).
-
-    Properties
-    ----------
     design_matrix : ndarray, shape (n_samples, 2)
         Design matrix with columns [sin_component, cos_component].
 
@@ -1221,17 +1143,22 @@ class CircularBasisResult(ReadOnlyArraysMixin):
     (100, 2)
     """
 
-    sin_component: NDArray[np.float64]
-    cos_component: NDArray[np.float64]
     angles: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        """Own the components and angles as read-only float64 copies."""
-        for name in ("sin_component", "cos_component", "angles"):
-            object.__setattr__(
-                self, name, np.asarray(getattr(self, name), dtype=np.float64)
-            )
+        """Own the angles as a read-only float64 copy."""
+        object.__setattr__(self, "angles", np.asarray(self.angles, dtype=np.float64))
         self._own_arrays()
+
+    @property
+    def sin_component(self) -> NDArray[np.float64]:
+        """Sine of the angles, shape (n_samples,)."""
+        return np.sin(self.angles)
+
+    @property
+    def cos_component(self) -> NDArray[np.float64]:
+        """Cosine of the angles, shape (n_samples,)."""
+        return np.cos(self.angles)
 
     @property
     def design_matrix(self) -> NDArray[np.float64]:
@@ -1243,7 +1170,7 @@ class CircularBasisResult(ReadOnlyArraysMixin):
         ndarray, shape (n_samples, 2)
             Design matrix suitable for GLM.
         """
-        return np.column_stack([self.sin_component, self.cos_component])
+        return np.column_stack([np.sin(self.angles), np.cos(self.angles)])
 
 
 # =============================================================================
@@ -1273,7 +1200,14 @@ def _wald_test_magnitude(
     Returns
     -------
     float
-        P-value from chi-squared distribution with 2 df.
+        P-value from chi-squared distribution with 2 df; NaN, with a
+        warning, when ``cov_matrix`` is singular.
+
+    Raises
+    ------
+    ValueError
+        If the coefficients or ``cov_matrix`` are not finite, or
+        ``cov_matrix`` is not symmetric positive semi-definite.
 
     Notes
     -----
@@ -1282,25 +1216,38 @@ def _wald_test_magnitude(
     """
     from scipy.stats import chi2
 
-    beta = np.array([beta_sin, beta_cos])
+    beta = np.array([beta_sin, beta_cos], dtype=np.float64)
+    if not (np.all(np.isfinite(beta)) and np.all(np.isfinite(cov_matrix))):
+        raise ValueError(
+            f"beta_sin, beta_cos and cov_matrix must be finite, got "
+            f"beta=({beta_sin!r}, {beta_cos!r}) and cov_matrix={cov_matrix.tolist()}.\n"
+            f"Fix: check that the GLM fit converged before testing its "
+            f"coefficients."
+        )
+    scale = float(np.max(np.abs(cov_matrix)))
+    if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
+        np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
+    ):
+        raise ValueError(
+            f"cov_matrix must be a symmetric positive semi-definite covariance "
+            f"matrix, got {cov_matrix.tolist()}.\n"
+            f"Fix: pass model.cov_params()[1:3, 1:3], the rows and columns "
+            f"for [sin, cos] of the fitted GLM's covariance."
+        )
 
     # Wald statistic: beta.T @ inv(cov) @ beta
     # Use solve instead of inv for numerical stability
     try:
         wald_stat = float(beta @ np.linalg.solve(cov_matrix, beta))
     except np.linalg.LinAlgError:
-        # Singular covariance matrix
         warnings.warn(
-            "Covariance matrix is singular. Cannot compute p-value.",
+            "Covariance matrix is singular. Cannot compute p-value; returning NaN.",
             stacklevel=3,
             category=UserWarning,
         )
         return np.nan
 
-    # P-value from chi-squared with 2 df
-    pval = float(chi2.sf(wald_stat, df=2))
-
-    return float(np.clip(pval, 0.0, 1.0))
+    return float(chi2.sf(wald_stat, df=2))
 
 
 # =============================================================================
@@ -1323,26 +1270,32 @@ def circular_basis(
     Parameters
     ----------
     angles : array, shape (n_samples,)
-        Circular variable. Common use cases:
+        Circular variable, one value per GLM sample (e.g., per time bin).
+        Common use cases:
 
-        - **Head direction**: Animal's facing direction (typically in degrees)
-        - **Theta phase**: LFP phase at spike times (0 to 2π radians)
+        - **Head direction**: Animal's facing direction
+        - **Theta phase**: LFP phase in each time bin
         - **Running direction**: Direction of movement
         - **Time of day**: Circadian phase
 
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of input angles. Use ``'deg'`` for head direction data that
-        is typically recorded in degrees.
+        Unit of input angles. Use ``'deg'`` for angles recorded in degrees.
 
     Returns
     -------
     CircularBasisResult
         Result object containing:
 
+        - angles: angles in radians
         - sin_component: sin(angles)
         - cos_component: cos(angles)
-        - angles: original angles (in radians)
         - design_matrix property: (n_samples, 2) array for GLM
+
+    Raises
+    ------
+    ValueError
+        If ``angle_unit`` is unknown, or ``angles`` is not a 1-D array of
+        finite values.
 
     See Also
     --------
@@ -1374,33 +1327,31 @@ def circular_basis(
 
     >>> import numpy as np
     >>> from neurospatial.stats.circular import circular_basis
-    >>> # Head direction at each spike (in degrees)
-    >>> hd_at_spikes = np.array([45, 50, 48, 52, 180, 185, 170])  # degrees
-    >>> result = circular_basis(hd_at_spikes, angle_unit="deg")
+    >>> # Head direction in each time bin (in degrees)
+    >>> headings = np.array([45, 50, 48, 52, 180, 185, 170])  # degrees
+    >>> result = circular_basis(headings, angle_unit="deg")
     >>> result.design_matrix.shape
     (7, 2)
 
     **Theta phase modulation**:
 
-    >>> # LFP phase at each spike (in radians)
-    >>> theta_phases = np.random.uniform(0, 2 * np.pi, 100)
+    >>> # LFP phase in each time bin (in radians)
+    >>> theta_phases = np.random.default_rng(0).uniform(0, 2 * np.pi, 100)
     >>> result = circular_basis(theta_phases)  # angle_unit='rad' is default
     >>> X = result.design_matrix
-    >>> # Now fit GLM: model.fit(sm.add_constant(X), spike_counts)
+    >>> # Now fit a Poisson GLM of the spike counts per time bin, e.g.
+    >>> # sm.GLM(spike_counts, sm.add_constant(X), family=sm.families.Poisson())
     """
-    # Convert to radians if needed
-    angles = np.asarray(angles, dtype=np.float64).ravel()
-    angles_rad = _to_radians(angles, angle_unit)
-
-    # Compute sin/cos components
-    sin_component = np.sin(angles_rad)
-    cos_component = np.cos(angles_rad)
-
-    return CircularBasisResult(
-        sin_component=sin_component,
-        cos_component=cos_component,
-        angles=angles_rad,
-    )
+    angles = np.asarray(angles, dtype=np.float64)
+    if angles.ndim != 1 or not np.all(np.isfinite(angles)):
+        raise ValueError(
+            f"angles must be a 1-D array of finite values, got shape "
+            f"{angles.shape} with {int(np.sum(~np.isfinite(angles)))} "
+            f"non-finite value(s).\n"
+            f"Fix: pass one angle per GLM sample, and drop the samples (with "
+            f"their spike counts) where the angle is missing."
+        )
+    return CircularBasisResult(angles=_to_radians(angles, angle_unit))
 
 
 def circular_basis_metrics(
@@ -1435,8 +1386,15 @@ def circular_basis_metrics(
         Preferred phase angle in radians, range [-π, π].
         Computed as atan2(beta_sin, beta_cos).
     pvalue : float or None
-        P-value testing H0: amplitude = 0 (no modulation).
-        None if cov_matrix not provided.
+        Wald-test p-value for H0: amplitude = 0 (no modulation). None if
+        ``cov_matrix`` is not provided; NaN, with a warning, if it is
+        singular.
+
+    Raises
+    ------
+    ValueError
+        If ``cov_matrix`` is not 2x2, is not finite, or is not symmetric
+        positive semi-definite, or the coefficients are not finite.
 
     See Also
     --------
@@ -1444,11 +1402,12 @@ def circular_basis_metrics(
 
     Notes
     -----
-    **Interpretation**:
+    **Interpretation** (log link, as in a Poisson GLM):
 
-    - amplitude > 0.3 typically indicates meaningful modulation
+    - the rate peaks at ``phase`` and is lowest opposite it; the
+      peak-to-trough rate ratio is ``exp(2 * amplitude)``, so amplitude 0.2
+      is a 1.49-fold and 0.5 a 2.7-fold modulation
     - pvalue < 0.05 indicates statistically significant modulation
-    - phase tells you the preferred angle (e.g., preferred head direction)
 
     Examples
     --------
@@ -1507,18 +1466,11 @@ def is_modulated(
         Minimum modulation magnitude (amplitude) required.
         Amplitude = sqrt(beta_sin^2 + beta_cos^2).
 
-        **Default justification (0.2)**: This threshold provides a balance
-        between sensitivity and specificity for detecting biologically
-        meaningful circular modulation in neural data. Based on typical
-        GLM coefficient scales for head direction cells and phase precession:
-
-        - Weak modulation: 0.1-0.3 (may be noise)
-        - Moderate modulation: 0.3-0.6 (reliable signal)
-        - Strong modulation: >0.6 (clear tuning)
-
-        The 0.2 threshold filters out very weak effects while maintaining
-        sensitivity to moderate modulation. Adjust based on your data scale
-        and scientific question.
+        With a log link (Poisson GLM) the peak-to-trough rate ratio is
+        ``exp(2 * amplitude)``, so the default 0.2 asks for at least a
+        1.49-fold modulation of the rate. This is a screening convention,
+        not a statistical criterion; set it from the effect size that
+        matters for your question.
 
     Returns
     -------
@@ -1526,7 +1478,14 @@ def is_modulated(
         True if BOTH:
         - p-value < alpha (statistically significant)
         - magnitude >= min_magnitude (practically meaningful)
-        False otherwise.
+        False otherwise, including when ``cov_matrix`` is singular (the
+        p-value is then NaN, with a warning).
+
+    Raises
+    ------
+    ValueError
+        If ``cov_matrix`` is not a finite, symmetric positive semi-definite
+        2x2 matrix, or the coefficients are not finite.
 
     See Also
     --------
@@ -1552,13 +1511,11 @@ def is_modulated(
     >>> is_modulated(0.1, 0.1, np.array([[1.0, 0], [0, 1.0]]))
     False
     """
-    amplitude, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix)
-
-    # pvalue should never be None since cov_matrix is required, but handle it
-    if pvalue is None:
-        return False
-
-    return pvalue < alpha and amplitude >= min_magnitude
+    amplitude, _, pvalue = circular_basis_metrics(
+        beta_sin, beta_cos, np.asarray(cov_matrix, dtype=np.float64)
+    )
+    # A covariance was given, so there is a p-value (NaN when singular).
+    return bool(cast("float", pvalue) < alpha and amplitude >= min_magnitude)
 
 
 def plot_circular_basis_tuning(
@@ -1604,11 +1561,15 @@ def plot_circular_basis_tuning(
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure with appropriate projection.
     intercept : float, default=0.0
-        Intercept (baseline) coefficient from GLM. For Poisson GLM, this
-        controls the baseline firing rate: exp(intercept).
+        Intercept coefficient from GLM. The curve is
+        ``exp(intercept + beta_sin sin + beta_cos cos)``: a rate in Hz if
+        the GLM had a ``log(dt)`` offset, otherwise the expected count per
+        time bin.
     cov_matrix : ndarray, shape (2, 2), optional
         Covariance matrix for [beta_sin, beta_cos] from GLM fit.
-        Required if ``show_ci=True`` to compute confidence bands.
+        Required if ``show_ci=True`` to compute confidence bands. The band
+        leaves out the intercept's uncertainty, so it is narrower than a
+        full pointwise interval for the rate.
     projection : {'polar', 'linear'}, default='polar'
         Plot projection type.
     n_points : int, default=100
@@ -1652,6 +1613,9 @@ def plot_circular_basis_tuning(
 
     Notes
     -----
+    The curve assumes a log link (Poisson GLM). Data points from
+    ``show_data`` share its axis, so give ``rates`` in the curve's units.
+
     The polar projection draws angles as in the arena: 0 = East (right),
     π/2 = North (up), counter-clockwise, the convention in which
     ``circular_basis_metrics`` reports the preferred direction. A

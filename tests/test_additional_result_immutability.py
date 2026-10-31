@@ -314,8 +314,6 @@ CASES = [
     (
         CircularBasisResult,
         {
-            "sin_component": np.sin([0.0, 1.0]),
-            "cos_component": np.cos([0.0, 1.0]),
             "angles": np.array([0.0, 1.0]),
         },
     ),

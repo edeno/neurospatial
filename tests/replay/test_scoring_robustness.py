@@ -422,7 +422,9 @@ class TestUndefinedShuffles:
     def test_counts_used_shuffles_and_names_the_null(self, track, posterior):
         env, _ = track
         times = np.arange(len(posterior)) * DT
-        with pytest.warns(UserWarning, match="column_cycle shuffles have an undefined"):
+        with pytest.warns(
+            UserWarning, match=r"column_cycle: \d+ of 200 shuffles have an undefined"
+        ):
             result = replay_significance(
                 env,
                 posterior,

@@ -175,7 +175,7 @@ def test_rayleigh_test_all_zero_weights_raises(concentrated_angles):
 def test_rayleigh_test_nan_cofilters_weights(concentrated_angles):
     """A NaN angle and its weight are dropped together, keeping alignment."""
     angles = concentrated_angles.copy()
-    weights = np.linspace(1.0, 2.0, len(angles))
+    weights = np.arange(1.0, len(angles) + 1.0)  # counts
 
     # Insert a NaN at a known index; the matched weight must drop with it.
     nan_idx = 7
@@ -316,3 +316,278 @@ def test_circular_basis_plot_north_is_up(caller_axis, polar_display_offset):
     assert abs(east_dy) < 1e-6 * east_dx
     assert east_dx > 0
     plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# Rayleigh p-value: Zar's approximation, checked against Monte Carlo.
+# ---------------------------------------------------------------------------
+
+
+def _uniform_resultant_lengths(n: int, n_draws: int, seed: int) -> np.ndarray:
+    """Mean resultant lengths of ``n_draws`` uniform samples of size ``n``."""
+    angles = np.random.default_rng(seed).uniform(0, 2 * np.pi, (n_draws, n))
+    return np.hypot(np.cos(angles).mean(axis=1), np.sin(angles).mean(axis=1))
+
+
+def _angles_with_resultant(n: int, r: float) -> np.ndarray:
+    """``n`` angles, symmetric about 0, whose mean resultant length is ``r``."""
+    from scipy.optimize import brentq
+
+    def resultant(spread: float) -> float:
+        return float(np.mean(np.cos(np.linspace(-spread, spread, n)))) - r
+
+    return np.linspace(-1, 1, n) * brentq(resultant, 1e-9, np.pi)
+
+
+@pytest.mark.parametrize("n", [6, 8, 15, 30])
+def test_rayleigh_pvalue_matches_monte_carlo_tail(n):
+    """p(R) is the chance that a uniform sample of size n has a resultant >= R.
+
+    Below n = 6 the approximation is conservative in the far tail (p too
+    large), so the check starts at 6.
+    """
+    null_r = _uniform_resultant_lengths(n, 200_000, seed=n)
+    for target in (0.05, 0.005):
+        r = float(np.quantile(null_r, 1 - target))
+        _, p = rayleigh_test(_angles_with_resultant(n, r))
+        assert p == pytest.approx(target, rel=0.15)
+
+
+@pytest.mark.parametrize("n", [3, 6, 8, 10, 12, 20, 49, 50, 200])
+def test_rayleigh_pvalue_positive_and_decreasing_in_r(n):
+    """Tighter clustering never raises p, and p never reaches zero."""
+    p_values = [
+        rayleigh_test(_angles_with_resultant(n, r))[1]
+        for r in np.linspace(0.05, 0.999, 40)
+    ]
+    p_values.append(rayleigh_test(np.zeros(n))[1])  # R = 1
+    assert np.all(np.array(p_values) > 0)
+    assert np.all(np.diff(p_values) <= 1e-15)
+
+
+def test_rayleigh_pvalue_identical_small_sample_matches_zar():
+    """Eight identical angles: Zar's formula, not the old clipped 0.0."""
+    n = 8
+    _, p = rayleigh_test(np.zeros(n))
+    expected = np.exp(np.sqrt(1 + 4 * n + 4 * (n**2 - n**2)) - (1 + 2 * n))
+    assert p == pytest.approx(expected, rel=1e-10)
+    assert p > 0
+
+
+@pytest.mark.parametrize("n", [5, 10, 30])
+def test_rayleigh_false_positive_rate_under_uniform_null(n):
+    """Under H0, P(p < 0.05) is close to 0.05."""
+    rng = np.random.default_rng(100 + n)
+    p_values = np.array(
+        [rayleigh_test(rng.uniform(0, 2 * np.pi, n))[1] for _ in range(4000)]
+    )
+    # Binomial SD at 4000 draws is 0.0034; allow a small approximation bias.
+    assert np.mean(p_values < 0.05) == pytest.approx(0.05, abs=0.012)
+
+
+def test_rayleigh_rejects_non_count_weights():
+    """Occupancy-like weights would make the p-value depend on their units."""
+    angles = np.linspace(0, 1, 8)
+    with pytest.raises(ValueError, match="whole-number counts"):
+        rayleigh_test(angles, weights=np.full(8, 0.5))
+
+
+# ---------------------------------------------------------------------------
+# Circular-linear and circular-circular correlation.
+# ---------------------------------------------------------------------------
+
+
+def test_circular_linear_r_squared_is_least_squares_r_squared():
+    """r**2 is the R**2 of x ~ 1 + cos + sin, and matches Mardia's formula."""
+    from scipy.stats import chi2, pearsonr
+
+    from neurospatial.stats.circular import circular_linear_correlation
+
+    rng = np.random.default_rng(3)
+    angles = rng.vonmises(1.0, 2.0, 60)  # cos and sin correlated
+    x = 2.0 * np.cos(angles - 0.4) + rng.normal(0, 1.5, 60)
+
+    design = np.column_stack([np.ones(60), np.cos(angles), np.sin(angles)])
+    fitted = design @ np.linalg.lstsq(design, x, rcond=None)[0]
+    r_squared = 1 - np.sum((x - fitted) ** 2) / np.sum((x - x.mean()) ** 2)
+
+    r_xs = pearsonr(x, np.sin(angles))[0]
+    r_xc = pearsonr(x, np.cos(angles))[0]
+    r_cs = pearsonr(np.cos(angles), np.sin(angles))[0]
+    mardia = (r_xs**2 + r_xc**2 - 2 * r_xs * r_xc * r_cs) / (1 - r_cs**2)
+
+    r, p = circular_linear_correlation(angles, x)
+    assert abs(r_cs) > 0.1  # the cross term matters
+    assert r**2 == pytest.approx(r_squared, rel=1e-10)
+    assert r**2 == pytest.approx(mardia, rel=1e-10)
+    assert p == pytest.approx(chi2.sf(60 * r_squared, 2), rel=1e-10)
+
+
+def test_circular_linear_two_valued_angles_use_one_degree_of_freedom():
+    """With collinear cos/sin the fit has one predictor: r = |corr(x, cos)|."""
+    from scipy.stats import chi2
+
+    from neurospatial.stats.circular import circular_linear_correlation
+
+    angles = np.tile([0.0, 1.0], 10)
+    x = np.arange(20.0) + 3.0 * (angles == 1.0)
+    r, p = circular_linear_correlation(angles, x)
+    expected = abs(np.corrcoef(x, np.cos(angles))[0, 1])
+    assert r == pytest.approx(expected, rel=1e-10)
+    assert p == pytest.approx(chi2.sf(20 * expected**2, 1), rel=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("angles", "linear"),
+    [
+        (np.linspace(0, 3, 10), np.full(10, 2.0)),  # constant linear variable
+        (np.full(10, 1.3), np.arange(10.0)),  # constant angles
+    ],
+)
+def test_circular_linear_undefined_is_nan(angles, linear):
+    """An undefined correlation is NaN, not r=0, p=1 ("no correlation")."""
+    from neurospatial.stats.circular import circular_linear_correlation
+
+    with pytest.warns(RuntimeWarning, match="undefined"):
+        r, p = circular_linear_correlation(angles, linear)
+    assert np.isnan(r) and np.isnan(p)
+
+
+def test_circular_circular_exact_identities_and_pvalue():
+    """r(a, a) = r(a, a + c) = 1 and r(a, -a) = -1; p from the J-S statistic."""
+    from scipy.stats import norm
+
+    from neurospatial.stats.circular import circular_circular_correlation
+
+    rng = np.random.default_rng(5)
+    a = rng.vonmises(0.3, 1.0, 40)
+    assert circular_circular_correlation(a, a)[0] == pytest.approx(1.0, abs=1e-12)
+    assert circular_circular_correlation(a, a + 2.0)[0] == pytest.approx(1.0, abs=1e-12)
+    assert circular_circular_correlation(a, -a)[0] == pytest.approx(-1.0, abs=1e-12)
+
+    b = a + rng.normal(0, 1.0, 40)
+    rho, p = circular_circular_correlation(a, b)
+    ma = np.angle(np.mean(np.exp(1j * a)))
+    mb = np.angle(np.mean(np.exp(1j * b)))
+    sa, sb = np.sin(a - ma), np.sin(b - mb)
+    expected_rho = np.sum(sa * sb) / np.sqrt(np.sum(sa**2) * np.sum(sb**2))
+    ts = (
+        np.sqrt(40 * np.mean(sa**2) * np.mean(sb**2) / np.mean(sa**2 * sb**2))
+        * expected_rho
+    )
+    assert rho == pytest.approx(expected_rho, rel=1e-10)
+    assert p == pytest.approx(2 * norm.sf(abs(ts)), rel=1e-8)
+
+
+# ---------------------------------------------------------------------------
+# Descriptive statistics: one NaN rule, NaN when undefined.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "func", [circular_mean, circular_variance, mean_resultant_length]
+)
+def test_nan_angles_dropped_the_same_with_or_without_weights(func):
+    """Unit weights must not change how NaN angles are treated."""
+    angles = np.array([0.1, np.nan, 0.3, 0.2])
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        unweighted = func(angles)
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        weighted = func(angles, weights=np.ones(4))
+    expected = func(np.array([0.1, 0.3, 0.2]))
+    assert unweighted == pytest.approx(weighted, rel=1e-12)
+    assert unweighted == pytest.approx(expected, rel=1e-12)
+
+
+def test_circular_mean_matches_scipy_and_returns_radians_for_degrees():
+    from scipy.stats import circmean
+
+    angles = np.random.default_rng(2).vonmises(2.5, 3.0, 50)
+    assert wrap_angle(circular_mean(angles) - circmean(angles)) == pytest.approx(
+        0.0, abs=1e-12
+    )
+    assert circular_mean(np.degrees(angles), angle_unit="deg") == pytest.approx(
+        circular_mean(angles), abs=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    "angles",
+    [
+        np.array([0.0, np.pi]),  # opposite angles: zero resultant
+        np.linspace(0, 2 * np.pi, 8, endpoint=False),
+        np.array([]),
+        np.array([np.nan, np.nan]),
+    ],
+)
+def test_circular_mean_undefined_is_nan(angles):
+    """No direction (zero resultant) or no angles gives NaN, not an angle."""
+    assert np.isnan(circular_mean(angles))
+
+
+def test_descriptive_stats_empty_or_all_nan_are_nan():
+    for angles in (np.array([]), np.array([np.nan, np.nan])):
+        assert np.isnan(mean_resultant_length(angles))
+        assert np.isnan(circular_variance(angles))
+    assert np.isnan(mean_resultant_length(np.array([1.0, 2.0]), weights=np.zeros(2)))
+
+
+# ---------------------------------------------------------------------------
+# GLM circular basis and Wald test.
+# ---------------------------------------------------------------------------
+
+
+def test_wald_pvalue_with_correlated_covariance():
+    """p = chi2.sf(beta' inv(cov) beta, 2), from an explicit 2x2 inverse."""
+    from scipy.stats import chi2
+
+    beta = np.array([0.3, 0.1])  # [sin, cos]
+    cov = np.array([[0.04, 0.01], [0.01, 0.01]])
+    det = cov[0, 0] * cov[1, 1] - cov[0, 1] ** 2
+    inverse = np.array([[cov[1, 1], -cov[0, 1]], [-cov[0, 1], cov[0, 0]]]) / det
+    expected = chi2.sf(beta @ inverse @ beta, 2)
+    _, _, p = circular_basis_metrics(beta[0], beta[1], cov)
+    assert p == pytest.approx(expected, rel=1e-12)
+    # Swapping the coefficients changes the answer: the order is [sin, cos].
+    _, _, swapped = circular_basis_metrics(beta[1], beta[0], cov)
+    assert swapped != pytest.approx(expected, rel=1e-3)
+
+
+@pytest.mark.parametrize(
+    ("beta_sin", "cov", "match"),
+    [
+        (0.3, np.array([[-0.01, 0.0], [0.0, -0.01]]), "positive semi-definite"),
+        (0.3, np.array([[0.01, 0.02], [0.0, 0.01]]), "symmetric"),
+        (0.3, np.array([[np.nan, 0.0], [0.0, 0.01]]), "finite"),
+        (np.nan, np.eye(2) * 0.01, "finite"),
+    ],
+)
+def test_wald_rejects_invalid_inputs(beta_sin, cov, match):
+    """An invalid covariance or coefficient raises instead of returning p=1."""
+    with pytest.raises(ValueError, match=match):
+        circular_basis_metrics(beta_sin, 0.2, cov)
+    with pytest.raises(ValueError, match=match):
+        is_modulated(beta_sin, 0.2, cov)
+
+
+def test_singular_covariance_gives_nan_and_not_modulated():
+    singular = np.array([[0.01, 0.01], [0.01, 0.01]])
+    with pytest.warns(UserWarning, match="singular"):
+        _, _, p = circular_basis_metrics(0.5, 0.5, singular)
+    assert np.isnan(p)
+    with pytest.warns(UserWarning, match="singular"):
+        assert is_modulated(0.5, 0.5, singular) is False
+
+
+@pytest.mark.parametrize(
+    "angles", [np.array([[0.0, 1.0], [2.0, 3.0]]), np.array([0.0, np.nan, 1.0])]
+)
+def test_circular_basis_rejects_non_1d_or_non_finite(angles):
+    with pytest.raises(ValueError, match="1-D array of finite values"):
+        circular_basis(angles)
+
+
+def test_circular_basis_components_derive_from_angles():
+    result = circular_basis(np.array([0.0, 90.0, 180.0]), angle_unit="deg")
+    assert_allclose(result.angles, [0.0, np.pi / 2, np.pi])
+    assert_allclose(result.design_matrix, [[0, 1], [1, 0], [0, -1]], atol=1e-12)
