@@ -19,9 +19,9 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -661,6 +661,107 @@ def _nanmean(values: NDArray[np.float64], axis: int) -> NDArray[np.float64]:
     return mean
 
 
+def _mean_over_events(responses: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Mean of each series' defined responses, shape (n_series,)."""
+    return _nanmean(responses, axis=0)
+
+
+def _mean_of_defined_events(responses: NDArray[np.float64]) -> NDArray[np.float64]:
+    """:func:`_mean_over_events`, averaging each series' defined responses alone.
+
+    Summed without the undefined events, so it can differ in the last bit.
+    """
+    means = []
+    for series in responses.T:
+        defined = series[np.isfinite(series)]
+        means.append(defined.mean() if defined.size else np.nan)
+    return np.array(means, dtype=np.float64)
+
+
+class _PeriEventResponses(NamedTuple):
+    """Peri-event measures of R(t) series, from :func:`_peri_event_responses`.
+
+    Attributes
+    ----------
+    lags : ndarray, shape (n_lags,)
+    peri_event_mean : ndarray, shape (n_lags, n_series)
+        Mean over the events at each lag.
+    responses : ndarray, shape (n_events, n_series)
+        Each event's mean over the response lags.
+    summary : ndarray, shape (n_series,)
+        The ``event_mean`` of the responses, or with ``reduce="peak"`` the
+        largest finite peri-event mean over the response lags.
+    baselines : ndarray, shape (n_events, n_series), or None
+        Each event's mean over the baseline lags.
+    """
+
+    lags: NDArray[np.float64]
+    peri_event_mean: NDArray[np.float64]
+    responses: NDArray[np.float64]
+    summary: NDArray[np.float64]
+    baselines: NDArray[np.float64] | None
+
+
+def _peri_event_responses(
+    times: NDArray[np.float64],
+    activation: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    step: float,
+    window: tuple[float, float],
+    response_window: tuple[float, float],
+    baseline_window: tuple[float, float] | None,
+    reduce: Literal["mean", "peak"],
+    event_mean: Callable[
+        [NDArray[np.float64]], NDArray[np.float64]
+    ] = _mean_over_events,
+) -> _PeriEventResponses:
+    """Event responses of R(t) series sampled every ``step``.
+
+    The windows must already be checked (:func:`_checked_event_windows`).
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times (bin centers), increasing.
+    activation : ndarray, shape (n_samples, n_series)
+    event_times : ndarray, shape (n_events,)
+    step : float
+        Sample spacing, seconds.
+    window, response_window, baseline_window : tuple of float
+        Seconds relative to the events, half-open; ``baseline_window`` may be
+        None.
+    reduce : {"mean", "peak"}
+    event_mean : callable
+        Maps the responses, shape (n_events, n_series), to their mean over
+        the defined events, shape (n_series,); formulations round
+        differently.
+
+    Returns
+    -------
+    _PeriEventResponses
+    """
+    lags = _lags(window, step)
+    in_response = _in_lag_window(lags, response_window, step)
+    # Shape (n_events, n_lags, n_series).
+    values = _peri_event_values(times, activation, step, event_times, lags)
+    peri_event_mean = _nanmean(values, axis=0)
+    responses = _nanmean(values[:, in_response], axis=1)
+    if reduce == "mean":
+        summary = event_mean(responses)
+    else:
+        peak = peri_event_mean[in_response]
+        finite = np.isfinite(peak)
+        summary = np.where(
+            finite.any(axis=0), np.max(np.where(finite, peak, -np.inf), axis=0), np.nan
+        )
+    baselines = (
+        None
+        if baseline_window is None
+        else _nanmean(values[:, _in_lag_window(lags, baseline_window, step)], axis=1)
+    )
+    return _PeriEventResponses(lags, peri_event_mean, responses, summary, baselines)
+
+
 def _signed_rank_p(
     responses: NDArray[np.float64], baselines: NDArray[np.float64]
 ) -> tuple[float, float]:
@@ -808,45 +909,32 @@ def assembly_event_response(
     full, response, baseline = _checked_event_windows(
         window, response_window, baseline_window, call, step
     )
-    lags = _lags(full, step)
-    masks = {
-        name: _in_lag_window(lags, part, step)
-        for name, part in (("response_window", response), ("baseline_window", baseline))
-        if part is not None
-    }
-    values = _peri_event_values(sample_times, strength[:, None], step, events, lags)[
-        :, :, 0
-    ]
-    peri_event_mean = _nanmean(values, axis=0)
-    event_responses = _nanmean(values[:, masks["response_window"]], axis=1)
-    baseline_responses = (
-        _nanmean(values[:, masks["baseline_window"]], axis=1)
-        if baseline is not None
-        else np.full(events.size, np.nan)
+    measured = _peri_event_responses(
+        sample_times,
+        strength[:, None],
+        events,
+        step,
+        full,
+        response,
+        baseline,
+        reduce,
+        event_mean=_mean_of_defined_events,
     )
-    defined = np.isfinite(event_responses)
-    if reduce == "mean":
-        value = float(event_responses[defined].mean()) if defined.any() else np.nan
+    event_responses = measured.responses[:, 0]
+    if measured.baselines is None:
+        baseline_responses = np.full(events.size, np.nan)
+        p_value = np.nan
     else:
-        peak = peri_event_mean[masks["response_window"]]
-        value = (
-            float(np.max(peak[np.isfinite(peak)]))
-            if np.isfinite(peak).any()
-            else np.nan
-        )
-    p_value = (
-        _signed_rank_p(event_responses, baseline_responses)[0]
-        if baseline is not None
-        else np.nan
-    )
+        baseline_responses = measured.baselines[:, 0]
+        p_value = _signed_rank_p(event_responses, baseline_responses)[0]
     return AssemblyEventResponseResult(
-        lags=lags,
-        peri_event_mean=peri_event_mean,
+        lags=measured.lags,
+        peri_event_mean=measured.peri_event_mean[:, 0],
         event_responses=event_responses,
         baseline_responses=baseline_responses,
-        response=value,
+        response=float(measured.summary[0]),
         p_value=p_value,
-        n_events=int(defined.sum()),
+        n_events=int(np.isfinite(event_responses).sum()),
         window=full,
         response_window=response,
         baseline_window=baseline,

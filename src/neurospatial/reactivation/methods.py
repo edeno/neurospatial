@@ -64,13 +64,10 @@ from neurospatial.reactivation.coactivity import (
     _checked_event_windows,
     _in_lag_window,
     _lags,
-    _peri_event_values,
+    _peri_event_responses,
     _signed_rank_p,
     assembly_member_cofiring,
     ev_rev_contrast,
-)
-from neurospatial.reactivation.coactivity import (
-    _nanmean as _nanmean_along,
 )
 from neurospatial.stats._utils import _entropy, _name_key, _stream
 
@@ -2012,40 +2009,27 @@ def _event_response_columns(
     response = method.event_response
     assert response is not None
     step = _sample_step(method)
-    lags = _lags(response.window, step)
-    in_response = _in_lag_window(lags, response.response_window, step)
     periods = {}
     for name, (window, times, activation) in (("control", control), ("match", match)):
         onsets = _events_in(session.events[f"{name}_events"], window)[:, 0]
         _check_min_events(method, onsets.size, name)
-        # Shape (n_events, n_lags, n_components).
-        values = _peri_event_values(times, activation, step, onsets, lags)
-        responses = _nanmean_along(values[:, in_response], axis=1)
-        if response.reduce == "mean":
-            summary = _nanmean_along(responses, axis=0)
-        else:
-            peri_event = _nanmean_along(values, axis=0)[in_response]
-            summary = np.where(
-                np.isfinite(peri_event).any(axis=0),
-                np.nanmax(
-                    np.where(np.isfinite(peri_event), peri_event, -np.inf), axis=0
-                ),
-                np.nan,
-            )
-        baselines = (
-            _nanmean_along(
-                values[:, _in_lag_window(lags, response.baseline_window, step)], axis=1
-            )
-            if response.baseline_window is not None
-            else None
+        periods[name] = _peri_event_responses(
+            times,
+            activation,
+            onsets,
+            step,
+            response.window,
+            response.response_window,
+            response.baseline_window,
+            response.reduce,
         )
-        periods[name] = (onsets.size, responses, summary, baselines)
-    n_control, control_responses, control_summary, _ = periods["control"]
-    n_match, match_responses, match_summary, match_baselines = periods["match"]
+    control_responses = periods["control"].responses
+    match_responses = periods["match"].responses
+    match_baselines = periods["match"].baselines
     components = []
     for component in range(control_responses.shape[1]):
-        before = float(control_summary[component])
-        after = float(match_summary[component])
+        before = float(periods["control"].summary[component])
+        after = float(periods["match"].summary[component])
         if method.statistic == "event_response_ratio":
             value = (after - before) / before if before > 0 else np.nan
             if not before > 0:
@@ -2097,7 +2081,10 @@ def _event_response_columns(
             )
         components.append(columns)
     return {
-        "shared": {"n_control_events": n_control, "n_match_events": n_match},
+        "shared": {
+            "n_control_events": len(control_responses),
+            "n_match_events": len(match_responses),
+        },
         "components": components,
     }
 
