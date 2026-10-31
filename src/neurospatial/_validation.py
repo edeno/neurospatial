@@ -10,7 +10,7 @@ into downstream computations.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +73,52 @@ def validate_finite(
             f"Remove or mask them before calling."
         )
     return arr
+
+
+def timestamps_of(values: Any, *, name: str) -> Any:
+    """Return the timestamps a times input carries.
+
+    A pynapple ``Ts``, ``Tsd`` or ``TsdFrame`` keeps its timestamps in ``.t``
+    and its data in ``.d``. ``np.asarray`` returns the data, which for a
+    ``Tsd`` of reward sizes or peak amplitudes is not the times, so read
+    ``.t`` from any object with a 1-D ``.t``. Arrays, lists and pandas
+    ``Series`` pass through unchanged.
+
+    Parameters
+    ----------
+    values : Any
+        Times input: an array of times in seconds or a pynapple ``Ts``,
+        ``Tsd`` or ``TsdFrame``.
+    name : str
+        Argument name, used in the error message.
+
+    Returns
+    -------
+    Any
+        ``values.t`` for a timestamped object, else ``values``.
+
+    Raises
+    ------
+    ValueError
+        If ``values`` is a spike group (pynapple ``TsGroup`` or a dict of
+        trains), which holds one train per unit, not one set of times.
+    """
+    if isinstance(values, Mapping):
+        raise ValueError(
+            _format_error(
+                f"{name} is a spike group ({type(values).__name__}), not one set "
+                "of times.",
+                why=f"Why: a TsGroup or dict holds one spike train per unit; "
+                f"{name} takes one 1-D array of times in seconds.",
+                fix="pass one unit's train, e.g. group[unit_id], or event times "
+                "as an array or pynapple Ts; pass a whole spike group as "
+                "spike_times to a population function.",
+            )
+        )
+    t = getattr(values, "t", None)
+    if t is not None and np.ndim(t) == 1:
+        return t
+    return values
 
 
 def validate_lengths(name_to_array: dict[str, NDArray]) -> None:

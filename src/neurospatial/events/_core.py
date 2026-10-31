@@ -28,6 +28,7 @@ from neurospatial._results import (
     resolve_unit_ids,
 )
 from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
+from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -65,9 +66,11 @@ def _finite_times(
 ) -> NDArray[np.float64]:
     """Return ``values`` as a 1-D float64 array of finite seconds.
 
-    ``non_empty`` also refuses an empty array, for analyses that need at
-    least one event to align to.
+    A pynapple ``Ts``/``Tsd``/``TsdFrame`` is read by its timestamps, not its
+    values. ``non_empty`` also refuses an empty array, for analyses that need
+    at least one event to align to.
     """
+    values = timestamps_of(values, name=name)
     try:
         times = np.asarray(values, dtype=np.float64)
     except (TypeError, ValueError):

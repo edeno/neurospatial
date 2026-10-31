@@ -785,7 +785,7 @@ def align_continuous_to_events(
         observation.
     event_times : ArrayLike, shape (n_input_events,)
         Event times in seconds, on the same clock. Input order is kept and
-        duplicate times are separate events.
+        duplicate times are separate events. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple of float
         ``(start, stop)`` in seconds relative to each event, half-open,
         ``start < stop``. For example ``(-1.0, 2.0)``.

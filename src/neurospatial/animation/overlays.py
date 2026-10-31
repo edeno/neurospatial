@@ -30,7 +30,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import warnings
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
@@ -53,7 +53,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._units import same_coordinate_declaration
-from neurospatial._validation import validate_finite
+from neurospatial._validation import timestamps_of, validate_finite
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
     observed_support,
@@ -850,6 +850,8 @@ class EventOverlay(_Overlay):
         - Single event type: 1D array of event times
         - Multiple event types: dict mapping event names to time arrays
 
+        A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+
     event_positions : NDArray[np.float64] | dict[str, NDArray[np.float64]] | None
         **Position Mode A - Explicit positions** (for rewards, stimuli, zone events):
         Explicit event positions in environment coordinates.
@@ -1089,9 +1091,24 @@ class EventOverlay(_Overlay):
 
     def __post_init__(self) -> None:
         """Validate inputs and normalize event_times to dict format."""
-        # Normalize event_times to dict format
-        if isinstance(self.event_times, np.ndarray):
-            object.__setattr__(self, "event_times", {"event": self.event_times})
+        # Normalize event_times to a dict of float arrays. A pynapple Ts/Tsd
+        # is read by its timestamps, not its values.
+        if isinstance(self.event_times, Mapping):
+            event_times = {
+                name: np.asarray(
+                    timestamps_of(times, name=f"event_times[{name!r}]"),
+                    dtype=np.float64,
+                )
+                for name, times in self.event_times.items()
+            }
+        else:
+            event_times = {
+                "event": np.asarray(
+                    timestamps_of(self.event_times, name="event_times"),
+                    dtype=np.float64,
+                )
+            }
+        object.__setattr__(self, "event_times", event_times)
 
         # Normalize event_positions to dict format if provided
         if self.event_positions is not None and isinstance(

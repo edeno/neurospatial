@@ -29,6 +29,7 @@ from scipy import stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._validation import timestamps_of
 from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
@@ -813,8 +814,9 @@ def assembly_event_response(
         :func:`~neurospatial.reactivation.assembly_activation` of counts
         binned with :func:`~neurospatial.decoding.bin_spikes_in_time`. NaN
         marks a missing sample.
-    event_times : array-like, shape (n_events,)
+    event_times : array-like, shape (n_events,), or pynapple Ts/Tsd
         Event times, for example SWR onsets, on the clock of ``times``.
+        A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     window : tuple of float
         ``(start, stop)`` of the peri-event lags, seconds relative to each
         event, half-open; for example ``(-0.5, 0.5)``.
@@ -886,7 +888,9 @@ def assembly_event_response(
     call = "assembly_event_response()"
     sample_times = np.asarray(times, dtype=np.float64)
     strength = np.asarray(activation, dtype=np.float64)
-    events = np.asarray(event_times, dtype=np.float64)
+    events = np.asarray(
+        timestamps_of(event_times, name="event_times"), dtype=np.float64
+    )
     if sample_times.ndim != 1 or sample_times.size < 2:
         raise ValueError(f"{call}: times must be 1-D with at least 2 samples.")
     if strength.shape != sample_times.shape:

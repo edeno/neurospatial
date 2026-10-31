@@ -29,6 +29,7 @@ from neurospatial._results import (
 )
 from neurospatial._validation import (
     is_integer_at_least,
+    timestamps_of,
     validate_alpha,
     validate_integer_at_least,
 )
@@ -96,7 +97,7 @@ def surrogate_spike_trains(
         al.: 0 to 50 ms, later only).
     theta_peak_times : NDArray[np.float64] of shape (n_peaks,), optional
         ``"theta_phase"``: the times of the peaks of the theta-filtered LFP,
-        in seconds; at least two.
+        in seconds; at least two. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed.
 
@@ -171,7 +172,9 @@ def _checked_surrogate_options(
                 "as theta_peak_times=, or leave out 'theta_phase'",
             )
         )
-    peaks = np.asarray(theta_peak_times, dtype=np.float64)
+    peaks = np.asarray(
+        timestamps_of(theta_peak_times, name="theta_peak_times"), dtype=np.float64
+    )
     if peaks.ndim != 1 or peaks.size < 2 or not np.isfinite(peaks).all():
         raise ValueError(
             f"{operation}: theta_peak_times must be a 1-D array of at least two "
@@ -699,7 +702,7 @@ def recurring_sequences_significance(
         The reference cell, as an index into ``spike_times``.
     theta_peak_times : NDArray[np.float64] of shape (n_peaks,), optional
         Peak times of the theta-filtered LFP in seconds, for the
-        ``"theta_phase"`` surrogate.
+        ``"theta_phase"`` surrogate. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     rng : np.random.Generator, int, or None, default=None
         Random number generator or seed. Each surrogate kind draws from its
         own stream, so leaving one out does not change the others.

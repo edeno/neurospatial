@@ -46,6 +46,7 @@ def plot_peri_event_response(
         The complete original event array, in its original order and on the
         same clock as ``spike_times``. Include the events dropped by the
         histogram's exposure filter. Duplicate timestamps remain distinct rows.
+        A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
     result : PeriEventResult
         A single-unit result with known ``event_indices``, returned by
         ``peri_event_histogram`` or selected from a population with
