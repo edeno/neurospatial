@@ -131,6 +131,15 @@
   largest value now count as 0; larger negative values are still refused.
   `env.smooth` itself is unchanged and stays exactly linear for signed
   fields.
+- `TriangularMesh` layouts triangulate a triangular lattice of points instead
+  of a square one, so interior triangles are equilateral. On the right
+  triangles of the square lattice, the line between neighboring centers
+  crossed the shared side about 27 degrees off the perpendicular, and
+  `divergence(gradient(x))` inside a box was 1.1, 2.2 and 4.4 at spacings 1,
+  0.5 and 0.25 instead of 0; it is now 0 to roundoff, and the smoothing
+  kernel is isotropic. Lattice points closer than half a spacing to the
+  outline are left out, so the boundary triangles stay well shaped. Meshes
+  built with the same `point_spacing` have different bins than before.
 
 ### Exporting decoding and behavior results to pynapple
 

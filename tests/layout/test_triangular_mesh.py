@@ -66,6 +66,67 @@ class TestGenerateInteriorPoints:
         assert points.shape[1] == 2
         assert points.shape[0] > 0
 
+    def test_lattice_neighbors_are_one_spacing_apart(self):
+        """Every point's nearest neighbors are one spacing away, six inside."""
+        from scipy.spatial import cKDTree
+
+        points = _generate_interior_points_for_mesh(
+            shapely.geometry.box(0, 0, 20, 20), 1.0
+        )
+        distances, _ = cKDTree(points).query(points, k=7)
+        interior = np.all((points > 2) & (points < 18), axis=1)
+        np.testing.assert_allclose(distances[interior, 1:], 1.0, atol=1e-12)
+
+
+def test_mesh_divergence_of_a_linear_gradient_vanishes_inside():
+    """Two-point flux is exact for a linear field on the mesh's interior.
+
+    The interior triangles are equilateral, so the line between neighboring
+    centroids crosses their shared side at a right angle. On right triangles
+    the error grew as the spacing shrank (1.1, 2.2, 4.4 at 1, 0.5, 0.25).
+    Cells at the outline are excluded: there the no-flux boundary makes
+    ``divergence(gradient(x))`` nonzero on any layout.
+    """
+    from neurospatial import Environment
+    from neurospatial.layout import create_layout
+    from neurospatial.ops import divergence, gradient
+
+    for spacing in (1.0, 0.5, 0.25):
+        env = Environment.from_layout(
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=shapely.geometry.box(0, 0, 8, 8),
+                point_spacing=spacing,
+            )
+        )
+        xy = env.bin_centers
+        inside = np.all((xy > 2) & (xy < 6), axis=1)
+        for axis in (0, 1):
+            laplacian = divergence(env, gradient(env, xy[:, axis]))
+            assert np.abs(laplacian[inside]).max() < 1e-9, (spacing, axis)
+
+
+def test_mesh_smoothing_kernel_is_isotropic():
+    """A smoothed impulse spreads by the bandwidth along x and y, without tilt."""
+    from neurospatial import Environment
+    from neurospatial.layout import create_layout
+
+    env = Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=shapely.geometry.box(0, 0, 20, 20),
+            point_spacing=1.0,
+        )
+    )
+    xy = env.bin_centers
+    source = int(np.argmin(np.linalg.norm(xy - 10.0, axis=1)))
+    impulse = np.zeros(env.n_bins)
+    impulse[source] = 1.0
+    mass = env.smooth(impulse, bandwidth=2.0, mode="transition")
+    offsets = xy - xy[source]
+    covariance = np.einsum("b,bi,bj->ij", mass, offsets, offsets)
+    np.testing.assert_allclose(covariance / 4.0, np.eye(2), atol=2e-3)
+
 
 class TestSamplePolygonBoundary:
     """Tests for _sample_polygon_boundary helper function."""
