@@ -1015,6 +1015,11 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
         _equal(links.all_pairs, expected_links.all_pairs, f"{label} neighbor pairs")
         _equal(links.is_open, expected_links.is_open, f"{label} open pairs")
         _equal(links.closed_by, expected_links.closed_by, f"{label} closing walls")
+        _equal(
+            links.open_fraction,
+            expected_links.open_fraction,
+            f"{label} open face fractions",
+        )
         if computed:
             u, v = links.all_pairs.T
             error = np.linalg.norm(
@@ -1041,8 +1046,8 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
                     "bridges or missing child faces."
                 )
             stored, expected_faces = (
-                binning.build_faces(),
-                expected_binning.build_faces(),
+                binning.shared_faces(),
+                expected_binning.shared_faces(),
             )
             for name in ("A", "distance"):
                 actual = getattr(stored, name)

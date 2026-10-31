@@ -99,6 +99,37 @@ def test_bin_connections_rejects_is_open_of_wrong_shape_or_dtype(connection_arra
             BinConnections.from_arrays(**connection_arrays, is_open=is_open)
 
 
+@pytest.mark.parametrize(
+    ("is_open", "open_fraction"),
+    [
+        ([True, True], [1.0]),
+        ([True, True], [1.0, 0.0]),
+        ([True, True], [1.0, 1.5]),
+        ([True, True], [1.0, np.nan]),
+        ([True, False], [1.0, 0.5]),
+    ],
+)
+def test_bin_connections_rejects_invalid_open_fraction(
+    connection_arrays, is_open, open_fraction
+):
+    """An open pair's face share is in (0, 1]; a closed pair's is 0."""
+    with pytest.raises(ValueError, match="open_fraction"):
+        BinConnections.from_arrays(
+            **connection_arrays, is_open=is_open, open_fraction=open_fraction
+        )
+
+
+def test_bin_connections_open_fraction_follows_closing_and_selection():
+    connections = BinConnections.from_arrays(
+        [[0, 1], [1, 2], [0, 2]], [1.0, 1.0, 2.0], open_fraction=[0.25, 1.0, 0.5]
+    )
+    closed = connections.closed(np.array([True, False, True]))
+    np.testing.assert_array_equal(closed.open_fraction, [0.25, 0.0, 0.5])
+    np.testing.assert_array_equal(closed.pair_open_fraction, [0.25, 0.5])
+    selected, _ = closed.select(np.array([0, -1, 1]))
+    np.testing.assert_array_equal(selected.open_fraction, [0.5])
+
+
 def test_bin_connections_check_bins_names_an_out_of_range_pair(connection_arrays):
     """A pair naming a bin that does not exist is caught against the bin count."""
     connection_arrays["pairs"] = np.array([[2, 1], [3, 0]])
@@ -138,7 +169,11 @@ def test_spatial_bins_owns_read_only_arrays(constructor):
     [
         BinConnections.from_arrays,
         lambda pairs, pair_distances, is_open: BinConnections(
-            pairs, pair_distances, is_open, np.where(is_open, -1, 0)
+            pairs,
+            pair_distances,
+            is_open,
+            np.where(is_open, -1, 0),
+            np.where(is_open, 1.0, 0.0),
         ),
     ],
 )

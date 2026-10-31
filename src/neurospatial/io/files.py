@@ -12,7 +12,8 @@ An environment saved with prefix ``path`` is a pair of files:
 The bin connectivity graph is not stored: loading rebuilds it from the
 binning. Other tools read bin adjacency from the arrays
 ``binning/connections/all_pairs`` (bin index pairs), ``all_distances``,
-``is_open`` (False where a wall closes the pair) and ``closed_by``.
+``is_open`` (False where a wall closes the pair), ``closed_by`` and
+``open_fraction`` (the share of each pair's shared face no wall covers).
 
 :func:`to_dict` and :func:`from_dict` carry the same record in memory with
 the arrays as nested lists.

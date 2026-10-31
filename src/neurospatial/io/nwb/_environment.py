@@ -89,7 +89,8 @@ def write_environment(
     the remaining metadata and, under ``array_specs``, each array's column,
     shape and dtype. Other tools read bin adjacency from the
     ``binning.connections.all_pairs`` (bin index pairs), ``all_distances``,
-    ``is_open`` (False where a wall closes the pair) and ``closed_by``
+    ``is_open`` (False where a wall closes the pair), ``closed_by`` and
+    ``open_fraction`` (the share of each pair's shared face no wall covers)
     columns.
 
     Examples

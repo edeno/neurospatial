@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Literal
 
@@ -718,8 +718,10 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     outline sticks out past it, where no wall can be. Cells that meet only at
     a corner close when the corner touches a wall or the line between their
     centers crosses one. A closed pair stays listed in ``binning.connections``
-    but leaves paths and finite-volume faces. A partly covered edge stays open
-    with the open share of its face. Pairs already closed stay closed. Every
+    but leaves paths and finite-volume faces. A partly covered edge stays open,
+    and ``connections.open_fraction`` records the share of its face no wall
+    covers; the shared face itself is kept, so republishing never narrows it
+    twice. Pairs already closed stay closed. Every
     closed pair a wall of ``arena`` would close records that wall in
     ``connections.closed_by``; a pair closed for another reason records -1.
     """
@@ -731,11 +733,15 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     binning = _close_outside_outline(binning, arena)
     links = binning.connections
     if not arena.walls:
-        if np.all(links.closed_by < 0):
+        if np.all(links.closed_by < 0) and np.all(links.pair_open_fraction == 1.0):
             return binning
-        # No wall of this arena closes a pair; drop indices into other walls.
+        # No wall of this arena closes or narrows a pair; drop records of
+        # other walls.
         unattributed = np.full(len(links.closed_by), -1, dtype=np.intp)
-        return replace(binning, connections=replace(links, closed_by=unattributed))
+        links = replace(links, closed_by=unattributed)
+        return replace(
+            binning, connections=links.with_open_fraction(np.ones(len(links.pairs)))
+        )
 
     cells, wall_segments, centers, domain, errors = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
@@ -819,43 +825,28 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     connections = replace(
         connections,
         closed_by=_closing_walls(connections, cells, wall_segments, centers, errors),
-    )
-    if np.all(keep) and np.all(open_share == 1.0):
+    ).with_open_fraction(open_share[keep])
+    if np.all(keep):
         return replace(binning, connections=connections)
-
-    def narrowed(area: NDArray[np.float64]) -> None:
-        # The open length in the published coordinates; taking the minimum
-        # keeps a face that was already narrowed unchanged when the
-        # environment is published again.
-        for index in np.flatnonzero(open_share < 1.0):
-            u, v = pairs[index]
-            full = published_contact(u, v)
-            area[index] = min(area[index], open_share[index] * full)
-
-    return _with_closed_pairs(binning, connections, keep, narrowed)
+    return _with_closed_pairs(binning, connections, keep)
 
 
 def _with_closed_pairs(
     binning: Binning,
     connections: BinConnections,
     keep: NDArray[np.bool_],
-    narrow: Callable[[NDArray[np.float64]], None] | None = None,
 ) -> Binning:
     """``binning`` with ``connections``, its faces and normals kept to ``keep``.
 
-    ``keep`` flags the open pairs of ``binning.connections`` that stay open;
-    ``narrow`` may shrink face measures in place before the closed ones go.
+    ``keep`` flags the open pairs of ``binning.connections`` that stay open.
     """
     faces = binning.faces
     if faces.available:
-        source = binning.build_faces()
-        area = source.A.copy()
-        if narrow is not None:
-            narrow(area)
+        source = binning.shared_faces()
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,
-                area[keep],
+                source.A[keep],
                 source.distance[keep],
                 binning.bins.sizes,
             )
