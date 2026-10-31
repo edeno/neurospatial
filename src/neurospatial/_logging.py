@@ -14,9 +14,8 @@ Enable logging to console::
 
     from neurospatial import Environment
 
-    env = Environment.from_samples(data, bin_size=2.0)
-    # INFO:neurospatial:Building layout: regular_grid
-    # INFO:neurospatial:Environment created: 245 bins, 2 dims
+    env = Environment.from_samples(positions, bin_size=2.0)
+    # INFO:neurospatial:Environment created: 245 bins, 2D
 
 Enable logging with more detail::
 
@@ -39,7 +38,6 @@ Filter to only neurospatial logs::
 """
 
 import logging
-from typing import Any
 
 # Create package logger
 logger = logging.getLogger("neurospatial")
@@ -47,44 +45,6 @@ logger = logging.getLogger("neurospatial")
 # Add NullHandler to prevent "No handler found" warnings
 # Users must explicitly enable logging
 logger.addHandler(logging.NullHandler())
-
-
-def log_layout_build(layout_type: str, params: dict[str, Any]) -> None:
-    """Log layout engine build operation.
-
-    Parameters
-    ----------
-    layout_type : str
-        Type of layout being built (e.g., 'regular_grid', 'hexagonal').
-    params : dict
-        Parameters used to build the layout.
-    """
-    logger.info(
-        "Building layout: %s",
-        layout_type,
-        extra={"layout_type": layout_type, "params": params},
-    )
-
-
-def log_graph_validation(n_nodes: int, n_edges: int, n_dims: int) -> None:
-    """Log graph validation operation.
-
-    Parameters
-    ----------
-    n_nodes : int
-        Number of nodes in the connectivity graph.
-    n_edges : int
-        Number of edges in the connectivity graph.
-    n_dims : int
-        Number of spatial dimensions.
-    """
-    logger.debug(
-        "Validating connectivity graph: %d nodes, %d edges, %dD",
-        n_nodes,
-        n_edges,
-        n_dims,
-        extra={"n_nodes": n_nodes, "n_edges": n_edges, "n_dims": n_dims},
-    )
 
 
 def log_environment_created(
@@ -139,81 +99,5 @@ def log_environment_combine(n_subenvs: int, total_bins: int, n_bridges: int) -> 
             "n_subenvs": n_subenvs,
             "total_bins": total_bins,
             "n_bridges": n_bridges,
-        },
-    )
-
-
-def log_region_added(
-    region_name: str, region_kind: str, env_name: str | None = None
-) -> None:
-    """Log region addition to environment.
-
-    Parameters
-    ----------
-    region_name : str
-        Name of the region added.
-    region_kind : str
-        Type of region ('point' or 'polygon').
-    env_name : str or None
-        Optional name of the environment.
-    """
-    env_str = f" to '{env_name}'" if env_name else ""
-    logger.debug(
-        "Region '%s' (%s) added%s",
-        region_name,
-        region_kind,
-        env_str,
-        extra={
-            "region_name": region_name,
-            "region_kind": region_kind,
-            "env_name": env_name,
-        },
-    )
-
-
-def log_spatial_query(query_type: str, n_points: int, n_results: int) -> None:
-    """Log spatial query operation.
-
-    Parameters
-    ----------
-    query_type : str
-        Type of query ('bin_at', 'contains', 'neighbors', etc.).
-    n_points : int
-        Number of points queried.
-    n_results : int
-        Number of results returned.
-    """
-    logger.debug(
-        "Spatial query '%s': %d points -> %d results",
-        query_type,
-        n_points,
-        n_results,
-        extra={"query_type": query_type, "n_points": n_points, "n_results": n_results},
-    )
-
-
-def log_performance_warning(
-    operation: str, duration_ms: float, threshold_ms: float
-) -> None:
-    """Log performance warning when operation exceeds threshold.
-
-    Parameters
-    ----------
-    operation : str
-        Name of the operation.
-    duration_ms : float
-        Actual duration in milliseconds.
-    threshold_ms : float
-        Expected threshold in milliseconds.
-    """
-    logger.warning(
-        "Performance warning: %s took %.1fms (expected <%.1fms)",
-        operation,
-        duration_ms,
-        threshold_ms,
-        extra={
-            "operation": operation,
-            "duration_ms": duration_ms,
-            "threshold_ms": threshold_ms,
         },
     )
