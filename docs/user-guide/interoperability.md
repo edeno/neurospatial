@@ -438,12 +438,18 @@ been recorded wherever position was tracked. Use the group's time support as
 `TsGroup` built from spike times alone gets a default support that runs from
 its first spike to its last, which is not recording coverage.
 
-Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`:
+Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
+time support is the decode's `spike_window`, so decoding over several windows
+stays several intervals instead of one interval spanning the gaps:
 
 ```python
-tsdframe = to_pynapple(result)                  # DecodingResult
-tsd = to_pynapple(times, linear_position)       # plain arrays
+tsdframe = to_pynapple(result)                              # DecodingResult
+tsd = to_pynapple(times, linear_position, epochs=epochs)    # plain arrays
 ```
+
+A decode result does not record the `epochs=` it was decoded over; if you
+restricted decoding that way, pass the same windows as `to_pynapple(result,
+epochs=...)`.
 
 ## NWB interop
 

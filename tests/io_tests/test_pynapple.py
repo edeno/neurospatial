@@ -369,6 +369,68 @@ def test_to_pynapple_roundtrips_a_track() -> None:
 
 
 @_pynapple_test
+def test_to_pynapple_epochs_become_the_time_support() -> None:
+    times = np.array([0.5, 1.5, 11.0, 12.0])
+    values = np.array([1.0, 2.0, 3.0, 4.0])
+
+    tsd = to_pynapple(times, values, epochs=[[0.0, 2.0], [10.5, 12.5]])
+
+    np.testing.assert_array_equal(tsd.time_support.values, [[0.0, 2.0], [10.5, 12.5]])
+    out_times, out_values, epochs = from_pynapple(tsd)
+    np.testing.assert_array_equal(out_times, times)
+    np.testing.assert_array_equal(out_values, values)
+    np.testing.assert_array_equal(epochs, [[0.0, 2.0], [10.5, 12.5]])
+
+
+def test_to_pynapple_refuses_times_outside_epochs() -> None:
+    # pynapple would silently drop the sample at 5.0; validation runs before
+    # pynapple is imported.
+    with pytest.raises(
+        ValueError, match=r"1 of 3 timestamp\(s\) lie outside"
+    ) as excinfo:
+        to_pynapple(
+            np.array([0.5, 5.0, 11.0]),
+            np.array([1.0, 2.0, 3.0]),
+            epochs=[[0.0, 2.0], [10.0, 12.0]],
+        )
+    assert "\nFix:" in str(excinfo.value)
+
+
+def test_to_pynapple_decode_result_without_times_raises() -> None:
+    from neurospatial.decoding import DecodingResult
+
+    env = Environment.from_samples(np.array([[0.0, 0.0], [10.0, 10.0]]), bin_size=5.0)
+    result = DecodingResult(
+        posterior=np.full((3, env.n_bins), 1.0 / env.n_bins), env=env
+    )
+
+    with pytest.raises(ValueError, match="decode result has no `times`"):
+        to_pynapple(result)
+
+
+@_pynapple_test
+def test_to_pynapple_decode_result_keeps_multi_window_spike_window() -> None:
+    from neurospatial.decoding import decode_session
+
+    rng = np.random.default_rng(4)
+    times = np.linspace(0.0, 40.0, 401)
+    positions = np.column_stack(
+        [np.linspace(0.0, 100.0, 401), rng.uniform(0.0, 40.0, 401)]
+    )
+    env = Environment.from_samples(positions, bin_size=10.0)
+    spikes = [np.sort(rng.uniform(0.0, 40.0, 80)) for _ in range(3)]
+    windows = np.array([[0.0, 10.0], [25.0, 35.0]])
+    result = decode_session(env, spikes, times, positions, dt=0.5, spike_window=windows)
+
+    tsdframe = to_pynapple(result)
+
+    # One interval per spike window: the 10-25 s gap is not decoded time.
+    np.testing.assert_array_equal(tsdframe.time_support.values, windows)
+    np.testing.assert_array_equal(tsdframe.t, result.times)
+    np.testing.assert_array_equal(tsdframe.values, result.map_position)
+
+
+@_pynapple_test
 def test_to_pynapple_non_result_without_values_raises_typeerror() -> None:
     # values=None + a `times` that is not a decode result (no `.times` /
     # `.map_position`) must raise a clear TypeError naming the expected inputs,
