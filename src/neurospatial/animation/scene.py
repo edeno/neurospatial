@@ -26,19 +26,11 @@ from neurospatial._observation import (
     validate_break_before,
 )
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import read_only_copy
 
 if TYPE_CHECKING:
     from neurospatial.animation._view import AnimationView
     from neurospatial.decoding import DecodingResult
-
-
-def _readonly(value: Any, dtype: Any = None) -> np.ndarray:
-    result = np.array(value, dtype=dtype, copy=True)
-    if result.dtype.hasobject:
-        result.flags.writeable = False
-        return result
-    # Immutable backing prevents callers from re-enabling writes on metadata.
-    return np.frombuffer(result.tobytes(), dtype=result.dtype).reshape(result.shape)
 
 
 @dataclass(frozen=True, init=False, eq=False)
@@ -111,7 +103,7 @@ class AnimationField:
         object.__setattr__(
             self,
             "times",
-            _readonly(_validated_signal_times(times, call="AnimationField")),
+            read_only_copy(_validated_signal_times(times, call="AnimationField")),
         )
         if not hasattr(values, "__getitem__") or not hasattr(values, "__len__"):
             raise TypeError("values must be an indexable sequence of spatial rows.")
@@ -147,11 +139,11 @@ class AnimationField:
             break_before, len(self.times), call="AnimationField"
         )
         object.__setattr__(
-            self, "break_before", None if flags is None else _readonly(flags)
+            self, "break_before", None if flags is None else read_only_copy(flags)
         )
         windows = as_intervals(epochs, name="epochs")
         object.__setattr__(
-            self, "epochs", None if windows is None else _readonly(windows)
+            self, "epochs", None if windows is None else read_only_copy(windows)
         )
         sample_valid = (
             np.ones(len(self.times), dtype=bool)
@@ -168,10 +160,12 @@ class AnimationField:
             break_before=self.break_before,
             result="the animation shows exact samples only",
         )
-        object.__setattr__(self, "sample_valid", _readonly(sample_valid))
+        object.__setattr__(self, "sample_valid", read_only_copy(sample_valid))
         # A held [start, stop) row needs no observation at its excluded stop.
         # Keep canonical interval gates separate from exact-sample membership.
-        object.__setattr__(self, "interval_valid", _readonly(support.interval_gates))
+        object.__setattr__(
+            self, "interval_valid", read_only_copy(support.interval_gates)
+        )
         object.__setattr__(self, "_extremes", {})
 
     def __copy__(self) -> AnimationField:
@@ -191,7 +185,7 @@ class AnimationField:
                 in {"times", "break_before", "epochs", "sample_valid", "interval_valid"}
                 and value is not None
             ):
-                value = _readonly(value)
+                value = read_only_copy(value)
             object.__setattr__(self, name, value)
 
     def __len__(self) -> int:
@@ -330,7 +324,7 @@ class Animation:
         clock = (
             None
             if frame_times is None
-            else _readonly(_validated_signal_times(frame_times, call="Animation"))
+            else read_only_copy(_validated_signal_times(frame_times, call="Animation"))
         )
         streams = dict(fields) if isinstance(fields, Mapping) else {"field": fields}
         if not streams or any(
@@ -357,7 +351,7 @@ class Animation:
         self.frame_times = (
             clock
             if clock is not None
-            else _readonly(
+            else read_only_copy(
                 np.unique(np.concatenate([field.times for field in streams.values()]))
             )
         )
@@ -418,7 +412,7 @@ class Animation:
         clock = (
             self.frame_times
             if frame_times is None
-            else _readonly(
+            else read_only_copy(
                 _validated_signal_times(frame_times, call="Animation.overlay_data")
             )
         )

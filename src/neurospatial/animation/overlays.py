@@ -53,6 +53,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import timestamps_of, validate_finite
@@ -193,13 +194,11 @@ class _Overlay:
     _owned_mappings: ClassVar[tuple[str, ...]] = ()
 
     def _snapshot(self: _OverlayT) -> _OverlayT:
-        from neurospatial.animation.scene import _readonly
-
         result = copy.copy(self)
         for name in self._owned_arrays:
             value = getattr(result, name)
             if value is not None:
-                setattr(result, name, _readonly(value))
+                setattr(result, name, read_only_copy(value))
         for name in self._owned_objects:
             setattr(result, name, copy.deepcopy(getattr(result, name)))
         for name in self._owned_mappings:
@@ -1086,12 +1085,10 @@ class EventOverlay(_Overlay):
     _owned_mappings: ClassVar[tuple[str, ...]] = ("event_positions",)
 
     def _snapshot(self) -> EventOverlay:
-        from neurospatial.animation.scene import _readonly
-
         result = super()._snapshot()
         assert isinstance(result.event_times, dict)  # normalized in __post_init__
         result.event_times = {
-            name: _readonly(times) for name, times in result.event_times.items()
+            name: read_only_copy(times) for name, times in result.event_times.items()
         }
         return result
 
@@ -2064,13 +2061,12 @@ class SpikeRasterOverlay(_Overlay):
 
     def _snapshot(self) -> SpikeRasterOverlay:
         from neurospatial._results import as_label_array
-        from neurospatial.animation.scene import _readonly
 
         result = super()._snapshot()
         if result.unit_ids is not None:
-            result.unit_ids = _readonly(as_label_array(result.unit_ids))
+            result.unit_ids = read_only_copy(as_label_array(result.unit_ids))
         rows, ids = result._rows
-        result._rows = (list(rows), _readonly(ids))
+        result._rows = (list(rows), read_only_copy(ids))
         return result
 
     def __post_init__(self) -> None:

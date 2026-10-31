@@ -156,8 +156,8 @@ def test_epochs_owned_immutable_after_copy_and_pickle(operation):
     np.testing.assert_array_equal(restored.epochs, [[0, 0.1], [0.2, 0.3]])
     with pytest.raises(FrozenInstanceError):
         restored.epochs = np.array([[0, 99]])
-    with pytest.raises(ValueError):
-        restored.epochs.flags.writeable = True
+    with pytest.raises(ValueError, match="read-only"):
+        restored.epochs[0, 1] = 99
     assert np.isnan(restored.sample(0.15)).all()
 
 

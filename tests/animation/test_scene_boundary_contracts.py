@@ -93,8 +93,8 @@ def test_field_descriptor_is_frozen_and_scene_owns_metadata_without_reading(env)
                 descriptor.max_gap = 20
             for name in ("times", "break_before", "sample_valid", "interval_valid"):
                 array = getattr(descriptor, name)
-                with pytest.raises(ValueError):
-                    array.flags.writeable = True
+                with pytest.raises(ValueError, match="read-only"):
+                    array[0] = array[0]
         np.testing.assert_array_equal(scene.frame_times, [100, 100.1, 100.2])
         np.testing.assert_array_equal(scene.sample_fields(100.05)["rate"], 0)
         assert np.isnan(scene.sample_fields(100.15)["rate"]).all()
