@@ -1450,3 +1450,66 @@ class TestEventsOverwrite:
         with NWBHDF5IO(str(copy), "r") as io:
             replaced = read_events(io.read(), table_name="rewards")
         np.testing.assert_array_equal(replaced["timestamp"].to_numpy(), [5.0, 6.0, 7.0])
+
+
+def _disk_round_trip(nwbfile, path):
+    """Write ``nwbfile`` to ``path`` and return a reader for the reopened file."""
+    from pynwb import NWBHDF5IO
+
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+    return NWBHDF5IO(str(path), "r")
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestEventTablesOnDisk:
+    """Event tables keep their columns and dtypes through a file."""
+
+    def test_zero_region_crossings_round_trip(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_region_crossings
+
+        nwbfile = create_roundtrip_nwb()
+        write_region_crossings(nwbfile, np.array([]), np.array([]), np.array([]))
+
+        with _disk_round_trip(nwbfile, tmp_path / "crossings.nwb") as io:
+            recovered = read_events(io.read(), table_name="region_crossings")
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {"timestamp", "region", "event_type"}
+
+    def test_zero_events_keep_their_columns(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_events
+
+        nwbfile = create_roundtrip_nwb()
+        events = pd.DataFrame(
+            {
+                "timestamp": np.array([], dtype=float),
+                "label": np.array([], dtype=object),
+                "value": np.array([], dtype=float),
+            }
+        )
+        write_events(nwbfile, events, name="rewards")
+
+        with _disk_round_trip(nwbfile, tmp_path / "events.nwb") as io:
+            recovered = read_events(io.read(), table_name="rewards")
+        assert len(recovered) == 0
+        assert set(recovered.columns) == {"timestamp", "label", "value"}
+
+    def test_boolean_column_round_trips_as_bool(self, tmp_path):
+        from neurospatial.io.nwb import read_events, write_events
+
+        nwbfile = create_roundtrip_nwb()
+        events = pd.DataFrame(
+            {
+                "timestamp": [1.0, 2.0, 3.0],
+                "rewarded": [True, False, True],
+                "count": [1, 2, 3],
+            }
+        )
+        write_events(nwbfile, events, name="rewards")
+
+        with _disk_round_trip(nwbfile, tmp_path / "events.nwb") as io:
+            recovered = read_events(io.read(), table_name="rewards")
+        assert recovered["rewarded"].dtype == np.bool_
+        np.testing.assert_array_equal(recovered["rewarded"], [True, False, True])
+        assert np.issubdtype(recovered["count"].dtype, np.integer)
+        np.testing.assert_array_equal(recovered["count"], [1, 2, 3])

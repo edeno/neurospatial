@@ -39,6 +39,50 @@ PREDEFINED_EPOCHS: str = "epochs"
 PREDEFINED_INVALID_TIMES: str = "invalid_times"
 
 
+def _build_events_table(
+    name: str,
+    description: str,
+    timestamps: NDArray[np.float64],
+    columns: dict[str, tuple[str, NDArray[np.generic]]],
+) -> ndx_events.EventsTable:
+    """Build an EventsTable column by column.
+
+    Each column is stored from a typed array, so a table with no events keeps
+    its columns and dtypes when written to disk.
+
+    Parameters
+    ----------
+    name, description : str
+        Name and description of the table.
+    timestamps : NDArray[np.float64], shape (n_events,)
+        Event times in seconds from session start.
+    columns : dict[str, tuple[str, NDArray]]
+        Extra columns, each ``name -> (description, values)`` with values of
+        shape ``(n_events,)``.
+    """
+    from hdmf.common import VectorData
+
+    from neurospatial.io.nwb._core import _require_ndx_events
+
+    ndx_events_module = _require_ndx_events()
+    timestamp = ndx_events_module.TimestampVectorData(
+        name="timestamp",
+        description="Time of each event, in seconds from the session start.",
+        data=np.array(timestamps, dtype=np.float64),
+    )
+    return ndx_events_module.EventsTable(
+        name=name,
+        description=description,
+        columns=[
+            timestamp,
+            *(
+                VectorData(name=column, description=text, data=values)
+                for column, (text, values) in columns.items()
+            ),
+        ],
+    )
+
+
 def _add_events_table(
     nwbfile: NWBFile,
     events_table: ndx_events.EventsTable,
@@ -520,9 +564,8 @@ def write_region_crossings(
     """
     from neurospatial.io.nwb._core import _require_ndx_events, logger
 
-    # Verify ndx-events is installed BEFORE importing EventsTable
-    # This ensures users see the friendly error message
-    ndx_events_module = _require_ndx_events()
+    # Check ndx-events first so users see the install hint.
+    _require_ndx_events()
 
     # Validate crossing_times is 1D
     crossing_times = np.asarray(crossing_times, dtype=np.float64)
@@ -555,21 +598,15 @@ def write_region_crossings(
             f"crossing_times length ({len(crossing_times)})."
         )
 
-    # Create EventsTable
-    events_table = ndx_events_module.EventsTable(name=name, description=description)
-
-    # Add region and event_type columns
-    events_table.add_column(name="region", description="Region name")
-    events_table.add_column(name="event_type", description="Crossing event type")
-
-    # Add rows for each crossing
-    for i, timestamp in enumerate(crossing_times):
-        events_table.add_row(
-            timestamp=float(timestamp),
-            region=str(region_names[i]),
-            event_type=str(event_types[i]),
-        )
-
+    events_table = _build_events_table(
+        name,
+        description,
+        crossing_times,
+        {
+            "region": ("Region name", region_names.astype(str)),
+            "event_type": ("Crossing event type", event_types.astype(str)),
+        },
+    )
     _add_events_table(
         nwbfile,
         events_table,
@@ -995,7 +1032,7 @@ def dataframe_to_events_table(
     from neurospatial.io.nwb._core import _require_ndx_events
 
     # Verify ndx-events is installed
-    ndx_events_module = _require_ndx_events()
+    _require_ndx_events()
 
     # Validate input
     if not isinstance(df, pd.DataFrame):
@@ -1012,44 +1049,30 @@ def dataframe_to_events_table(
             f"  Fix: Add timestamp column. Available columns: {list(df.columns)}"
         )
 
-    # Validate timestamps if not empty
-    if len(df) > 0:
-        timestamps = df["timestamp"].values
-        if not np.all(np.isfinite(timestamps)):
-            raise ValueError(
-                "timestamp column contains non-finite values (NaN or Inf).\n"
-                "  WHY: EventsTable requires valid numeric timestamps.\n"
-                "  Fix: Remove or replace NaN/Inf values in timestamp column."
-            )
-        if np.any(timestamps < 0):
-            raise ValueError(
-                "timestamp column contains negative values.\n"
-                "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
-                "  Fix: Adjust timestamps to be relative to session start."
-            )
+    timestamps = np.array(df["timestamp"], dtype=np.float64)
+    if not np.all(np.isfinite(timestamps)):
+        raise ValueError(
+            "timestamp column contains non-finite values (NaN or Inf).\n"
+            "  WHY: EventsTable requires valid numeric timestamps.\n"
+            "  Fix: Remove or replace NaN/Inf values in timestamp column."
+        )
+    if np.any(timestamps < 0):
+        raise ValueError(
+            "timestamp column contains negative values.\n"
+            "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
+            "  Fix: Adjust timestamps to be relative to session start."
+        )
 
-    # Create EventsTable
-    events_table = ndx_events_module.EventsTable(name=name, description=description)
-
-    # Add additional columns (excluding timestamp which is built-in)
-    extra_columns = [col for col in df.columns if col != "timestamp"]
-    for col in extra_columns:
-        events_table.add_column(name=col, description=f"Column: {col}")
-
-    # Add rows
-    for _, row in df.iterrows():
-        row_data = {"timestamp": float(row["timestamp"])}
-        for col in extra_columns:
-            value = row[col]
-            # Convert numpy types to Python types for NWB compatibility
-            if isinstance(value, (np.integer, np.floating)):
-                value = value.item()
-            elif isinstance(value, np.bool_):
-                value = bool(value)
-            row_data[col] = value
-        events_table.add_row(**row_data)
-
-    return events_table
+    return _build_events_table(
+        name,
+        description,
+        timestamps,
+        {
+            str(col): (f"Column: {col}", df[col].to_numpy(copy=True))
+            for col in df.columns
+            if col != "timestamp"
+        },
+    )
 
 
 @keyword_hint("name")
