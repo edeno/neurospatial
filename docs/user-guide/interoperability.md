@@ -385,7 +385,8 @@ environment's connectivity graph.
 ## pynapple interop
 
 pynapple objects convert to and from plain arrays **at the boundary** with
-`from_pynapple` / `to_pynapple`.
+`from_pynapple` / `to_pynapple`, or pass straight into analysis functions
+(see [Passing pynapple objects directly](#passing-pynapple-objects-directly)).
 
 !!! note "Requires the `pynapple` extra"
     `pip install neurospatial[pynapple]`. Only these two adapter functions
@@ -429,30 +430,6 @@ holds: a sample or spike at an epoch end, such as the last spike of a `TsGroup`'
 default support, stays inside. An `IntervalSet` passed directly as `epochs=` or
 `spike_window=` is converted the same way, and `to_pynapple` converts back.
 
-A raw `TsGroup` can also supply spikes and unit labels directly, and an
-`IntervalSet` is accepted directly as `epochs=` or `spike_window=`:
-
-```python
-from neurospatial.decoding import decode_session
-
-result = decode_session(
-    env, tsgroup, times, positions, dt=0.1, spike_window=recording_intervals
-)
-```
-
-Passed directly, a `TsGroup` contributes only its spike times and labels; its
-`time_support` is ignored. Without `spike_window=`, spikes are assumed to have
-been recorded wherever position was tracked. Use the group's time support as
-`spike_window=` only if you set it to the true acquisition intervals: a
-`TsGroup` built from spike times alone gets a default support that runs from
-its first spike to its last, which is not recording coverage.
-
-Event times passed as `event_times=`, `reward_times=` or `theta_peak_times=`
-accept a pynapple `Ts` or `Tsd` directly, and are read by its timestamps: a
-`Tsd` of reward sizes aligns to the reward times, not to the sizes. A `TsGroup`
-there is refused, because it holds one spike train per unit; pass
-`tsgroup[unit_id]` for one unit's spikes.
-
 Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
 time support is the decode's `spike_window`, so decoding over several windows
 stays several intervals instead of one interval spanning the gaps:
@@ -465,6 +442,103 @@ tsd = to_pynapple(times, linear_position, epochs=epochs)    # plain arrays
 A decode result does not record the `epochs=` it was decoded over; if you
 restricted decoding that way, pass the same windows as `to_pynapple(result,
 epochs=...)`.
+
+### Passing pynapple objects directly
+
+Analysis functions also take pynapple objects without conversion. They apply
+the conversions `from_pynapple` applies (time support as epochs, inclusive
+ends, x/y/z column order), so both routes give the same numbers; a `TsGroup`
+passed directly also brings its metadata.
+
+**A `TsGroup` as spike input** supplies the spike times, the unit labels (its
+index) and its metadata. Population results carry the metadata as
+`unit_table`, so you can select units by region or quality after the analysis.
+pynapple's `rate` column is left out: pynapple computes it as spike count over
+the group's time support, which is not the time the analysis observed, so it
+is not a property of the unit. `SpikeTrains(tsgroup)` builds the same labelled
+container, and `restrict_spike_trains(tsgroup, epochs)` returns a `SpikeTrains`
+that keeps the labels and metadata, so units 5, 6 and 7 are still 5, 6 and 7
+after restricting.
+
+```python
+from neurospatial.decoding import decode_session
+
+rates = compute_spatial_rates(env, tsgroup, times, positions)
+rates.unit_table              # tsgroup.metadata without the rate column
+ca1 = SpikeTrains(tsgroup).filter("region == 'CA1'")
+
+result = decode_session(
+    env, tsgroup, times, positions, dt=0.1, spike_window=recording_intervals
+)
+```
+
+A `TsGroup`'s `time_support` is not used: without `spike_window=`, spikes are
+assumed to have been recorded wherever position was tracked. Use the group's
+time support as `spike_window=` only if you set it to the true acquisition
+intervals: a `TsGroup` built from spike times alone gets a default support
+that runs from its first spike to its last, which is not recording coverage.
+
+**A `TsdFrame` or `Tsd` as `positions` or `headings`** keeps its time support.
+With `epochs=None`, every analysis that takes `epochs` uses the sample's
+`time_support` as its epochs, so a tracking gap shorter than `max_gap` is not
+counted as occupancy. The adopted windows are stored in the result's
+`analysis_settings["epochs"]`. An explicit `epochs=` wins; when `positions`
+and `headings` are both pynapple objects with different supports, the call is
+refused until you pass `epochs=` (for example their intersection). A
+`TsdFrame` whose columns are x/y/z in another order is refused, as by
+`from_pynapple`.
+
+```python
+# Same occupancy: the TsdFrame's two recording epochs are kept.
+env.occupancy(tsdframe.t, tsdframe)
+env.occupancy(tsdframe.t, tsdframe.values, epochs=tsdframe.time_support)
+```
+
+**An `IntervalSet`** is accepted wherever neurospatial takes intervals:
+`epochs=`, `spike_window=`, `filter_by_intervals`, `intervals_to_events`
+(its metadata columns can be preserved), `mean_pairwise_bias`, and, as a
+one-row set, the `interval=` of the one-event replay functions. Each inclusive
+`end` becomes the next float above it, so a point at `end` stays inside, as in
+pynapple. Pass the set itself rather than `iset.as_dataframe()`: that table's
+`end` column is inclusive, but read as a stop it would be treated as
+exclusive. A time series is not a set of intervals: `epochs=tsd` is refused
+with a pointer to `tsd.time_support`.
+
+Event times passed as `event_times=`, `reward_times=` or `theta_peak_times=`
+accept a pynapple `Ts` or `Tsd` directly, and are read by its timestamps: a
+`Tsd` of reward sizes aligns to the reward times, not to the sizes. A `TsGroup`
+there is refused, because it holds one spike train per unit; pass
+`tsgroup[unit_id]` for one unit's spikes.
+
+### Trials and laps written to NWB
+
+`write_trials` and `write_laps` store each row as `start_time` and
+`stop_time`, and neurospatial reads every row as the half-open window
+`[start_time, stop_time)`: a sample exactly at `stop_time` is outside it.
+NWB does not say whether `stop_time` is inclusive, and pynapple's `load_file`
+reads the same table as an `IntervalSet` with an inclusive `end`. When trials
+stop exactly on a sample, the two routes select different samples:
+
+| Route | Meaning of `stop_time` | Samples kept (two trials, 100 Hz) |
+| --- | --- | --- |
+| `read_trials(nwbfile)` rows as `epochs=` | exclusive | 500 |
+| `nap.load_file(path)["trials"]` with pynapple's `restrict` | inclusive | 502 |
+| that `IntervalSet` as `epochs=` | inclusive | 502 |
+
+To get identical selections, pick one meaning and use it on both routes:
+
+```python
+rows = read_trials(nwbfile)[["start_time", "stop_time"]].to_numpy()
+iset = nap.load_file(path)["trials"]
+
+# Half-open, as written: plain arrays are read as [start, stop).
+in_epochs(times, rows)
+in_epochs(times, np.column_stack([iset.start, iset.end]))
+
+# Inclusive, as pynapple reads it.
+in_epochs(times, rows, closed="both")
+in_epochs(times, iset)
+```
 
 ### Checking results against pynapple
 

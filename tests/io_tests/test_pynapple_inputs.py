@@ -434,3 +434,45 @@ def test_mean_pairwise_bias_accepts_an_intervalset(nap):
     np.testing.assert_array_equal(
         mean_pairwise_bias(spikes, cycles), [[0.0, 0.0], [0.0, 0.0]]
     )
+
+
+# ---------------------------------------------------------------------------
+# NWB trials read by neurospatial and by pynapple
+# ---------------------------------------------------------------------------
+
+
+def test_trial_stop_closedness_routes_and_how_to_match_them(nap, tmp_path):
+    """The documented recipes give one selection on both routes."""
+    pytest.importorskip("pynwb")
+    from datetime import datetime, timezone
+
+    from pynwb import NWBHDF5IO, NWBFile
+
+    from neurospatial.behavior import in_epochs
+    from neurospatial.io.nwb import read_trials, write_trials
+
+    times = np.round(np.arange(1000) * 0.01, 10)
+    nwbfile = NWBFile(
+        session_description="trials",
+        identifier="closedness",
+        session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    # Each trial stops exactly on a sample.
+    write_trials(nwbfile, start_times=times[[100, 400]], stop_times=times[[300, 700]])
+    path = tmp_path / "trials.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+    with NWBHDF5IO(str(path), "r") as io:
+        rows = read_trials(io.read())[["start_time", "stop_time"]].to_numpy()
+    iset = nap.load_file(str(path))["trials"]
+
+    half_open = in_epochs(times, rows)
+    inclusive = in_epochs(times, iset)
+    assert half_open.sum() == 500
+    assert inclusive.sum() == len(nap.Ts(times).restrict(iset)) == 502
+
+    # Half-open meaning from pynapple's table; inclusive meaning from rows.
+    np.testing.assert_array_equal(
+        in_epochs(times, np.column_stack([iset.start, iset.end])), half_open
+    )
+    np.testing.assert_array_equal(in_epochs(times, rows, closed="both"), inclusive)

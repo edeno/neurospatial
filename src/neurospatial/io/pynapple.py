@@ -3,11 +3,13 @@
 These two functions are the only code in neurospatial that imports pynapple,
 and they import it lazily: ``import pynapple`` runs *inside* the functions, so
 the package and the array path keep working when pynapple is not installed.
-Analysis functions also accept a pynapple ``TsGroup`` / ``Ts`` as spike input
-and an ``IntervalSet`` as ``epochs=`` / ``spike_window=``, by duck typing and
-without importing pynapple; they read only timestamps, unit labels and
-interval bounds. :func:`from_pynapple` additionally returns each object's
-``time_support`` as epochs, so gaps between recording epochs are not lost.
+Analysis functions also accept pynapple objects directly, by duck typing and
+without importing pynapple: a ``TsGroup`` / ``Ts`` as spike input (a
+``TsGroup`` brings its labels and metadata), a ``TsdFrame`` / ``Tsd`` as
+``positions`` or ``headings`` (its ``time_support`` becomes ``epochs`` when
+none are given), and an ``IntervalSet`` as ``epochs=`` / ``spike_window=``.
+:func:`from_pynapple` returns each object's ``time_support`` as epochs, so
+gaps between recording epochs are not lost on the array route either.
 
 Functions
 ---------

@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### pynapple inputs keep their metadata and time support
+
+**Changed**
+
+- A pynapple `TsdFrame` or `Tsd` passed directly as `positions` or `headings`
+  keeps its `time_support`: with `epochs=None`, every analysis that takes
+  `epochs` uses it as the epochs and records the windows in
+  `analysis_settings["epochs"]`. A tracking gap shorter than `max_gap` was
+  counted as occupancy before (39.99 s instead of 39.49 s for a 0.5 s gap in
+  40 s). An explicit `epochs=` wins; positions and headings with different
+  supports are refused until you pass `epochs=`.
+- `restrict_spike_trains` returns a `SpikeTrains` that keeps the input's unit
+  labels and metadata. It returned a plain list, so a restricted `TsGroup`
+  with units 5, 6, 7 was renumbered 0, 1, 2 by every later analysis.
+- `SpikeTrains` accepts a `TsGroup` or a dict of unit id to train, taking
+  labels (and a `TsGroup`'s metadata) from it.
+
+**Fixed**
+
+- A `TsGroup` passed to a population encoder or
+  `population_peri_event_histogram` keeps its metadata as `unit_table`
+  (pynapple's computed `rate` column is dropped). `SpikeTrains` metadata now
+  also reaches `population_peri_event_histogram`.
+- A `TsdFrame` of positions with columns `["y", "x"]` passed directly is
+  refused, as `from_pynapple` already did, instead of silently swapping axes.
+- `epochs=tsd` (or a `Ts` / `TsdFrame`) says to pass `tsd.time_support`
+  instead of failing with "shapes () and ()".
+- `filter_by_intervals`, `intervals_to_events`, `mean_pairwise_bias` and the
+  `interval=` of one-event replay functions accept a pynapple `IntervalSet`,
+  keeping a point at its inclusive `end` inside. `pairwise_bias_matrix`
+  labels its rows with a spike group's own unit ids.
+
+**Documentation**
+
+- `write_trials`, `write_laps`, `read_intervals`, `read_trials` and the
+  interoperability guide state that `stop_time` is exclusive in neurospatial
+  but inclusive when pynapple loads the table, and how to get identical
+  selections on both routes.
+
 ### Shareable NWB layout for environments and spatial rates
 
 **Changed**
