@@ -5233,10 +5233,8 @@ class Environment(Generic[_C]):
         Notes
         -----
         Environment-v3 restores Arena, bins, lookup, faces, drawing components
-        and clip mapping without rebuilding a layout. Environment-v2 remains
-        readable with an explicitly unknown Arena; old outlines and masks do
-        not establish a physical footprint. Recreate version 1 environments
-        with a factory and save them again.
+        and clip mapping without rebuilding a layout. Only Environment-v3 is
+        read; recreate older environments with a factory and save them again.
 
         """
         from neurospatial.io import from_file
@@ -5248,8 +5246,8 @@ class Environment(Generic[_C]):
 
         Stores Environment-v3 binning and Arena data with numerical arrays as
         lists and explicit shapes/dtypes. Loading decodes this data without
-        rebuilding a layout. Version 2 remains readable with an unknown Arena;
-        version 1 must be recreated with a factory.
+        rebuilding a layout. Only version 3 is read; recreate older
+        environments with a factory and save them again.
 
         Returns
         -------
@@ -5287,8 +5285,8 @@ class Environment(Generic[_C]):
     def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
         """Decode Environment-v3 binning and Arena without rebuilding a layout.
 
-        Version 2 dictionaries retain bins with an explicitly unknown Arena.
-        Version 1 must be recreated and re-saved with an Environment factory.
+        Only version 3 is read; recreate older environments with a factory
+        and save them again.
 
         Parameters
         ----------
@@ -5347,8 +5345,8 @@ class Environment(Generic[_C]):
         Environment schema 3.0 stores Arena, explicit walls, bins, exact lookup,
         cell faces, drawing components, clip mapping, track linearization, graph
         attributes, regions and coordinate metadata. Loading does not rebuild a
-        layout. Schema 2.0 remains readable with an unknown Arena; schemas 1.0
-        and 1.1 must be recreated with a factory and saved again.
+        layout. Only schema 3.0 is read; recreate older environments with a
+        factory and save them again.
 
         Parameters
         ----------
