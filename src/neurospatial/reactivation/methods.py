@@ -73,10 +73,9 @@ from neurospatial.reactivation.assemblies import (
 from neurospatial.reactivation.calibration import equalize_firing_rates
 from neurospatial.reactivation.coactivity import (
     _checked_event_windows,
-    _in_lag_window,
-    _lags,
     _peri_event_responses,
     _signed_rank_p,
+    _window_holds_lag,
     assembly_member_cofiring,
     ev_rev_contrast,
 )
@@ -798,10 +797,11 @@ class ReactivationMethod:
             )
         if self.event_response is not None:
             step = _sample_step(self)
-            lags = _lags(self.event_response.window, step)
             for name in ("response_window", "baseline_window"):
                 part = getattr(self.event_response, name)
-                if part is not None and not _in_lag_window(lags, part, step).any():
+                if part is not None and not _window_holds_lag(
+                    self.event_response.window, part, step
+                ):
                     raise ValueError(
                         _format_error(
                             f"{where}: event_response {name}={part} holds no lag "
@@ -1723,13 +1723,6 @@ def _rate_equalized_ev_summary(
     return draws[int(ordered[(ordered.size - 1) // 2])]
 
 
-def _missing() -> Any:
-    """pandas' missing value, imported lazily."""
-    import pandas as pd
-
-    return pd.NA
-
-
 def _verdict(p_value: float, effect: float, alpha: float) -> bool | None:
     """Reactivated when ``p_value < alpha`` and ``effect > 0``; missing for a NaN p."""
     return bool(p_value < alpha and effect > 0) if np.isfinite(p_value) else None
@@ -2094,11 +2087,7 @@ def _event_response_columns(
                 match_responses[:, component], match_baselines[:, component]
             )
             columns["p_value"] = p_value
-            columns["is_reactivated"] = (
-                bool(p_value < method.alpha and median > 0)
-                if np.isfinite(p_value)
-                else _missing()
-            )
+            columns["is_reactivated"] = _verdict(p_value, median, method.alpha)
         components.append(columns)
     return {
         "shared": {
