@@ -484,9 +484,16 @@ With `epochs=None`, every analysis that takes `epochs` uses the sample's
 counted as occupancy. The adopted windows are stored in the result's
 `analysis_settings["epochs"]`. An explicit `epochs=` wins; when `positions`
 and `headings` are both pynapple objects with different supports, the call is
-refused until you pass `epochs=` (for example their intersection). A
-`TsdFrame` whose columns are x/y/z in another order is refused, as by
-`from_pynapple`.
+refused until you pass `epochs=` (for example their intersection). Every
+function that takes `positions`, including `Environment.from_samples` and
+`env.bin_at`, refuses a `TsdFrame` whose columns are x/y/z in another order,
+as `from_pynapple` does.
+
+**A pynapple object as `times`** (or `frame_times`, `true_times`) is read as
+its timestamps, `.t`. `np.asarray(tsd)` would give the values instead, so
+`times=speed_tsd` would read speeds as seconds; neurospatial never does that.
+The time support of a pynapple `times` is not adopted as epochs; pass
+`epochs=times.time_support` if you need it.
 
 ```python
 # Same occupancy: the TsdFrame's two recording epochs are kept.

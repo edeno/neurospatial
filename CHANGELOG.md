@@ -25,8 +25,13 @@
   `population_peri_event_histogram` keeps its metadata as `unit_table`
   (pynapple's computed `rate` column is dropped). `SpikeTrains` metadata now
   also reaches `population_peri_event_histogram`.
-- A `TsdFrame` of positions with columns `["y", "x"]` passed directly is
-  refused, as `from_pynapple` already did, instead of silently swapping axes.
+- A `TsdFrame` of positions with columns `["y", "x"]` passed directly to any
+  public function taking `positions` (including `Environment.from_samples` and
+  `env.bin_at`) is refused, as `from_pynapple` already did, instead of
+  silently swapping axes.
+- A pynapple object passed as `times`, `frame_times` or `true_times` is read
+  as its timestamps (`.t`). `np.asarray(tsd)` gave its values, so a `Tsd`
+  passed as `times` had its data read as seconds.
 - `epochs=tsd` (or a `Ts` / `TsdFrame`) says to pass `tsd.time_support`
   instead of failing with "shapes () and ()".
 - `filter_by_intervals`, `intervals_to_events`, `mean_pairwise_bias` and the
