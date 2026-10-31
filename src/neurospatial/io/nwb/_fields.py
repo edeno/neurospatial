@@ -32,6 +32,7 @@ from neurospatial.io.nwb._environment import (
     _environment_record,
     _record_metadata,
     _require_record,
+    read_environment,
 )
 
 if TYPE_CHECKING:
@@ -635,26 +636,34 @@ def _abort_message(
     )
 
 
-def _verify_saved_environment(
-    nwbfile: NWBFile, env: Environment, *, name: str, env_name: str
+def _require_saved_environment(
+    nwbfile: NWBFile,
+    env: Environment,
+    fingerprint: str,
+    n_bins: int,
+    *,
+    name: str,
+    env_name: str,
 ) -> None:
-    """Refuse an explicit ``env=`` that differs from the rates' saved environment."""
+    """Refuse an explicit ``env=`` that differs from the rates' saved environment.
+
+    ``env`` matches when its record would have the saved ``fingerprint``.
+    Otherwise the saved environment is restored to name the difference; one
+    that leaves bins, units, frame and topology unchanged, such as the
+    environment's name, is accepted.
+    """
     from neurospatial._exceptions import IncompatibleEnvironmentError
     from neurospatial.environment import _environment_differences
-    from neurospatial.io.nwb._environment import read_environment
 
-    if env_name not in nwbfile.analysis:
+    if env.n_bins != n_bins:
         raise ValueError(
-            _format_error(
-                f"read_spatial_rates: cannot verify env= against spatial rates "
-                f"'{name}': the file stores no environment for them "
-                f"('{env_name}' is missing).",
-                why="equal bin counts do not show that env= has the bins, units, "
-                "frame and connectivity the rates were estimated on",
-                fix="rewrite them with write_spatial_rates, which saves the "
-                "environment with the rates",
-            )
+            f"Environment n_bins ({env.n_bins}) does not match the stored "
+            f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
+            f"usually means a mismatched or stale env= was passed; pass the "
+            f"Environment used to compute these rates."
         )
+    if _environment_content(env)[2] == fingerprint:
+        return
     saved = read_environment(nwbfile, name=env_name)
     bins, topology = _environment_differences(saved, env)
     mismatch = bins or topology
@@ -717,20 +726,19 @@ def read_spatial_rates(
         If the named table or its companion occupancy is missing from
         ``nwbfile.analysis``.
     ValueError
-        If ``name`` points at a table not written by ``write_spatial_rates``; if
-        the record was written with a schema version other than
-        ``SPATIAL_RATES_SCHEMA_VERSION``, including rates an earlier version
-        wrote to the processing module ``analysis`` (recompute and rewrite the
-        rates); if
-        a metadata key the writer always stores is missing or the recorded unit
-        count does not match the table; if the companion occupancy length does not match the table's recorded
-        ``n_bins``; if no persisted environment is in the file (whether or not
-        ``env=`` is given, since an explicit ``env=`` cannot be verified
-        without it); if the environment record has changed since the rates
-        were written (its content no longer matches the stored
-        ``environment_sha256``); or if the obtained environment's ``n_bins``
-        does not match the stored ``firing_rates`` (a mismatched or stale
-        ``env=``).
+        If ``name`` points at an object whose description does not declare
+        the format ``write_spatial_rates`` writes; if the record was written
+        with a schema version other than ``SPATIAL_RATES_SCHEMA_VERSION``,
+        including rates an earlier version wrote to the processing module
+        ``analysis`` (recompute and rewrite the rates); if a metadata key the
+        writer always stores is missing or the recorded unit count does not
+        match the table; if the companion occupancy length does not match the
+        rates' bin count; if the environment record the rates name is not in
+        the file (whether or not ``env=`` is given, since an explicit ``env=``
+        cannot be verified without it); if that record has changed since the
+        rates were written (its content no longer matches the stored
+        ``environment_sha256``); or if ``env=`` has another ``n_bins`` than
+        the stored ``firing_rates`` (a mismatched or stale ``env=``).
     IncompatibleEnvironmentError
         If ``env=`` has the right bin count but differs from the persisted
         environment in bins, units, frame or topology.
@@ -779,7 +787,6 @@ def read_spatial_rates(
         fix=_RECREATE_FIX,
     )
     method = _required_key(meta, "method", name)
-    meta_n_bins = int(_required_key(meta, "n_bins", name))
     bandwidth = _required_key(meta, "bandwidth", name)
     n_units = int(_required_key(meta, "n_units", name))
     unit_table_columns = _required_key(meta, "unit_table_columns", name)
@@ -834,50 +841,45 @@ def read_spatial_rates(
         )
     occupancy = np.asarray(occupancy_record[COL_OCCUPANCY][:], dtype=np.float64)
 
-    # Check the companion against the table's own recorded n_bins, so a
-    # wrong-length occupancy fails here rather than in a later analysis.
-    if occupancy.shape != (meta_n_bins,):
+    # Check the companion against the rates' bins, so a wrong-length
+    # occupancy fails here rather than in a later analysis.
+    n_bins = firing_rates.shape[1]
+    if occupancy.shape != (n_bins,):
         raise ValueError(
             f"Occupancy companion '{occupancy_name}' has length "
-            f"{occupancy.shape[0]} but spatial-rates table '{name}' records "
-            f"n_bins={meta_n_bins}. The stored occupancy does not match the rates; "
-            f"the file may be corrupt or the wrong companion was written."
+            f"{occupancy.shape[0]} but the rates in '{name}' have {n_bins} bins. "
+            "The stored occupancy does not match the rates; the file may be "
+            "corrupt or the wrong companion was written."
         )
 
-    # The rates' environment is the record they name (full connectivity +
-    # geometry). An explicit env= is
-    # attached only after it is verified against that saved environment, so a
-    # same-size env with other units, frame, bins or topology cannot relabel
-    # the maps. No connectivity-less fabrication from bin centers.
-    from neurospatial.io.nwb._environment import read_environment
-
+    # The rates' environment is the record they name, unchanged since they
+    # were written. An explicit env= is attached only when it matches that
+    # record, so a same-size env with other units, frame, bins or topology
+    # cannot relabel the maps.
     env_name = _required_key(meta, "environment_name", name)
     env_fingerprint = _required_key(meta, "environment_sha256", name)
-    if env_name in analysis:
-        _require_unchanged_environment(
-            analysis[env_name], env_fingerprint, name=name, env_name=env_name
-        )
-    verify_env = env is not None
-    if env is None:
-        if env_name not in analysis:
-            raise ValueError(
-                f"Spatial rates '{name}' has no attached environment: no "
-                f"persisted environment '{env_name}' is in the file. Rewrite the "
-                f"rates with write_spatial_rates, which saves their environment."
-            )
-        env = read_environment(nwbfile, name=env_name)
-
-    # The obtained env must match the stored rates' bin count.
-    n_bins = int(firing_rates.shape[1])
-    if env.n_bins != n_bins:
+    if env_name not in analysis:
         raise ValueError(
-            f"Environment n_bins ({env.n_bins}) does not match the stored "
-            f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
-            f"usually means a mismatched or stale env= was passed; pass the "
-            f"Environment used to compute these rates."
+            _format_error(
+                f"Spatial rates '{name}' have no saved environment: "
+                f"'{env_name}', the environment record they name, is not in "
+                "/analysis.",
+                why="Why: rates are read with the environment they were "
+                "estimated on; equal bin counts do not show equal bins, units "
+                "or connectivity.",
+                fix="restore the environment record, or recompute the rates and "
+                "write them again with write_spatial_rates, which saves it",
+            )
         )
-    if verify_env:
-        _verify_saved_environment(nwbfile, env, name=name, env_name=env_name)
+    _require_unchanged_environment(
+        analysis[env_name], env_fingerprint, name=name, env_name=env_name
+    )
+    if env is None:
+        env = read_environment(nwbfile, name=env_name)
+    else:
+        _require_saved_environment(
+            nwbfile, env, env_fingerprint, n_bins, name=name, env_name=env_name
+        )
 
     # GAM (method="glm") diagnostics: reconstruct from the JSON blob + the
     # per-unit columns, preserving shapes. Absent (ratio methods) -> all None,
@@ -886,19 +888,7 @@ def read_spatial_rates(
     # reconstructed fields must satisfy the SpatialRatesResult None-iff-glm
     # invariant (checked at construction below) -- a wrong shape or a missing field
     # raises there, so a corrupt glm record fails loudly.
-    gam_fields: dict[str, object | None] = {
-        "coefficients": None,
-        "penalty": None,
-        "penalty_weights": None,
-        "rank": None,
-        "deviance": None,
-        "converged": None,
-        "n_iter": None,
-        "reml_objective": None,
-        "reml_at_boundary": None,
-        "penalty_selected_by_reml": None,
-        "pooled": None,
-    }
+    gam_fields: dict[str, object] = {}
     if method == "glm":
         gam = _required_key(meta, "gam", name)
         if not isinstance(gam, dict):
@@ -965,7 +955,6 @@ def read_spatial_rates(
             gam_fields["reml_at_boundary"] = (
                 None if reml_at_boundary is None else bool(reml_at_boundary)
             )
-            gam_fields["penalty_selected_by_reml"] = None
 
     return SpatialRatesResult(
         firing_rates=firing_rates,

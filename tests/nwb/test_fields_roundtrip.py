@@ -314,7 +314,7 @@ class TestSpatialRatesRoundTrip:
         # Drop the persisted environment so neither source is available.
         del empty_nwb.analysis["spatial_rates_environment"]
 
-        with pytest.raises(ValueError, match="no attached environment"):
+        with pytest.raises(ValueError, match="have no saved environment"):
             read_spatial_rates(empty_nwb)  # env=None
 
     def test_mismatched_explicit_env_raises(self, empty_nwb, sample_environment):
@@ -390,7 +390,7 @@ class TestSpatialRatesRoundTrip:
         write_spatial_rates(empty_nwb, _make_rates_result(env))
         del empty_nwb.analysis["spatial_rates_environment"]
 
-        with pytest.raises(ValueError, match="cannot verify"):
+        with pytest.raises(ValueError, match="have no saved environment"):
             read_spatial_rates(empty_nwb, env=env)
 
     def test_overwrite_semantics(self, empty_nwb, sample_environment):
@@ -591,8 +591,8 @@ class TestSpatialRatesRoundTrip:
 
         with pytest.raises(
             ValueError,
-            match=rf"has length {env.n_bins + 3} but spatial-rates table 'spatial_rates' "
-            rf"records n_bins={env.n_bins}",
+            match=rf"has length {env.n_bins + 3} but the rates in 'spatial_rates' "
+            rf"have {env.n_bins} bins",
         ):
             read_spatial_rates(empty_nwb, env=env)
 
