@@ -23,7 +23,8 @@
 - `write_trials`, `write_laps`, `write_region_crossings` and `write_events`
   with zero records write no table (and create no processing module), and
   warn. NWB best practice is not to write empty tables: nwbinspector reports
-  `check_empty_table` and DANDI validation fails on them. Reading the table
+  `check_empty_table`, and several of its checks crash on zero-row columns,
+  which makes `dandi validate` exit with an error. Reading the table
   back raises `KeyError`; treat a missing table as zero records. With
   `overwrite=True`, zero records still remove the table they replace.
 - `write_laps` leaves out the `overlap_score` column when every lap's score is

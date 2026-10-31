@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import _is_pynapple_object
 
 
 def validate_finite(
@@ -81,8 +82,9 @@ def timestamps_of(values: Any, *, name: str) -> Any:
     A pynapple ``Ts``, ``Tsd`` or ``TsdFrame`` keeps its timestamps in ``.t``
     and its data in ``.d``. ``np.asarray`` returns the data, which for a
     ``Tsd`` of reward sizes or peak amplitudes is not the times, so read
-    ``.t`` from any object with a 1-D ``.t``. Arrays, lists and pandas
-    ``Series`` pass through unchanged.
+    ``.t`` from a pynapple object. Other objects pass through unchanged, even
+    with a ``.t`` attribute: an xarray ``DataArray`` with a ``t`` dimension
+    exposes its index there, not its values.
 
     Parameters
     ----------
@@ -95,7 +97,7 @@ def timestamps_of(values: Any, *, name: str) -> Any:
     Returns
     -------
     Any
-        ``values.t`` for a timestamped object, else ``values``.
+        ``values.t`` for a pynapple object, else ``values``.
 
     Raises
     ------
@@ -115,9 +117,10 @@ def timestamps_of(values: Any, *, name: str) -> Any:
                 "spike_times to a population function.",
             )
         )
-    t = getattr(values, "t", None)
-    if t is not None and np.ndim(t) == 1:
-        return t
+    if _is_pynapple_object(values):
+        t = getattr(values, "t", None)
+        if t is not None and np.ndim(t) == 1:
+            return t
     return values
 
 
