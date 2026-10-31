@@ -16,7 +16,16 @@ SPELLINGS = {
     "m": ["m", "meter", "Meters", "metre", "metres"],
     "cm": ["cm", "centimeter", "centimeters", "centimetre", " centimetres "],
     "mm": ["mm", "millimeter", "millimeters", "millimetre", "millimetres"],
-    "um": ["um", "µm", "micrometer", "micrometers", "micrometre", "micrometres"],
+    # Micro sign U+00B5 and Greek small mu U+03BC look identical.
+    "um": [
+        "um",
+        "\u00b5m",
+        "\u03bcm",
+        "micrometer",
+        "micrometers",
+        "micrometre",
+        "micrometres",
+    ],
     "px": ["px", "pixel", "pixels"],
 }
 
