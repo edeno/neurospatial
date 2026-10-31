@@ -16,11 +16,11 @@ Reading Functions:
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_units : Read spike-time arrays from an NWB units table
-    read_spatial_rates : Read a population SpatialRatesResult from NWB analysis/
+    read_spatial_rates : Read a SpatialRatesResult saved by write_spatial_rates
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
-    write_spatial_rates : Write a population SpatialRatesResult to NWB analysis/
+    write_spatial_rates : Write a SpatialRatesResult with its occupancy and environment
     write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write lap events to NWB processing/behavior/
     write_region_crossings : Write region crossing events

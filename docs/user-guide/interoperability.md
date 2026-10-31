@@ -578,6 +578,13 @@ with NWBHDF5IO("session.nwb", "r") as io:
     restored.firing_rates.shape   # (n_units, n_bins)
 ```
 
+The record is a table in the processing module `analysis`, plus its occupancy
+(seconds) and a saved copy of the environment. To replace a record, open the
+file with `"r"`, call `write_spatial_rates(..., overwrite=True)`, and save a
+copy with `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb
+cannot delete objects already written to a file opened with `"r+"`, so
+`overwrite=True` refuses such files.
+
 ## See Also
 
 - **[Complete Workflows](workflows.md)**: End-to-end encode / decode examples

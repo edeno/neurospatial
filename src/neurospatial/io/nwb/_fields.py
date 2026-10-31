@@ -88,13 +88,17 @@ def write_spatial_rates(
     :func:`read_spatial_rates` reconstructs an equal ``SpatialRatesResult``.
 
     The container is a :class:`~hdmf.common.DynamicTable` (one row per unit) in
-    the ``analysis`` processing module, with a ``unit_id`` column, a 2-D
+    the processing module ``nwbfile.processing["analysis"]`` (not NWB's
+    top-level ``/analysis`` group), with a ``unit_id`` column, a 2-D
     ``firing_rate`` column of shape ``(n_units, n_bins)`` on the bin axis, and
-    one column per ``unit_table`` field. ``method``, ``bandwidth``,
-    ``n_bins``, ``n_units``, ``unit_ids_generated``, ``spike_window`` and the
-    ``unit_table`` column names are stored as a JSON blob in the table
-    description. Occupancy is stored once (it is shared
-    across units) as a companion ``TimeSeries`` named ``f"{name}_occupancy"``.
+    one column per ``unit_table`` field. The table description is a JSON blob
+    holding ``schema_version``, ``method``, ``bandwidth``, ``n_bins``,
+    ``n_units``, the ``unit_table`` column names (``unit_table_columns``),
+    ``occupancy_name``, ``unit_ids_generated``, ``min_occupancy`` (seconds),
+    ``n_spikes_outside_intervals``, ``analysis_settings``, ``spike_window``
+    and, for ``method="glm"``, a ``gam`` block (below). Occupancy is stored once
+    (it is shared across units) as a companion ``TimeSeries`` in seconds named
+    ``f"{name}_occupancy"``.
 
     For ``method="glm"`` results the GAM diagnostics are persisted alongside the
     rates: the scalars ``penalty`` / ``rank`` / ``n_iter`` / ``converged`` /
@@ -130,7 +134,8 @@ def write_spatial_rates(
         ``unit_ids`` (including whether generated), ``spike_window``,
         ``unit_table``, ``method`` and ``bandwidth`` are all preserved.
     name : str, default "spatial_rates"
-        Name for the spatial-rates DynamicTable in ``analysis/``.
+        Name for the spatial-rates DynamicTable in
+        ``nwbfile.processing["analysis"]``.
     overwrite : bool, default False
         If True, replace an existing container and *all* its companions (the
         ``f"{name}_occupancy"`` TimeSeries and the ``f"{name}_environment"``
@@ -158,12 +163,12 @@ def write_spatial_rates(
 
     Notes
     -----
-    This function mutates only ``nwbfile`` (adds the DynamicTable, the companion
-    occupancy TimeSeries and the persisted environment in ``scratch/``). The
-    ``result`` object and its arrays
-    are never modified -- ``firing_rates`` and ``occupancy`` are defensively
-    copied before being handed to the NWB containers, so mutating the live result
-    after the write does not change what was written (and vice versa).
+    This function mutates only ``nwbfile`` (adds the DynamicTable and the
+    companion occupancy TimeSeries to the processing module ``analysis``, and the
+    persisted environment to ``scratch``). The ``result`` object and its arrays
+    are never modified -- ``firing_rates`` and ``occupancy`` are copied before
+    being handed to the NWB containers, so the written data never aliases the
+    result's memory.
 
     Examples
     --------
@@ -559,7 +564,8 @@ def read_spatial_rates(
     nwbfile : NWBFile
         The NWB file to read from.
     name : str, default "spatial_rates"
-        Name of the spatial-rates DynamicTable in ``analysis/``.
+        Name of the spatial-rates DynamicTable in
+        ``nwbfile.processing["analysis"]``.
     env : Environment, optional
         Environment to attach to the result. When omitted, the result gets the
         environment :func:`write_spatial_rates` persisted under
@@ -583,8 +589,8 @@ def read_spatial_rates(
     Raises
     ------
     KeyError
-        If the ``analysis`` module, the named table, or its companion occupancy
-        is missing from ``nwbfile``.
+        If the processing module ``analysis``, the named table, or its companion
+        occupancy is missing from ``nwbfile``.
     ValueError
         If ``name`` points at a table not written by ``write_spatial_rates``; if
         the record was written with a schema version other than
@@ -621,7 +627,8 @@ def read_spatial_rates(
     if name not in analysis.data_interfaces:
         available = list(analysis.data_interfaces.keys())
         raise KeyError(
-            f"Spatial rates '{name}' not found in analysis/. Available: {available}"
+            f"Spatial rates '{name}' not found in processing module "
+            f"'{DEFAULT_ANALYSIS_MODULE}'. Available: {available}"
         )
 
     table = analysis[name]
@@ -686,7 +693,7 @@ def read_spatial_rates(
     if occupancy_name not in analysis.data_interfaces:
         raise KeyError(
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
-            "in analysis/."
+            f"in processing module '{DEFAULT_ANALYSIS_MODULE}'."
         )
     occupancy = np.asarray(analysis[occupancy_name].data[:]).reshape(-1)
 
