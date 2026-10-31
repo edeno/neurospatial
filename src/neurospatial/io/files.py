@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import zlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -62,44 +62,6 @@ _DECODED_KEYS = (
     "landmarks",
     "coordinate_kind",
 )
-
-
-def _convert_arrays_to_lists(obj: Any) -> Any:
-    """Recursively convert numpy arrays to lists for JSON serialization.
-
-    Parameters
-    ----------
-    obj : Any
-        Object that may contain numpy arrays.
-
-    Returns
-    -------
-    Any
-        Object with numpy arrays converted to lists.
-
-    """
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, Mapping):
-        return {k: _convert_arrays_to_lists(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_convert_arrays_to_lists(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(_convert_arrays_to_lists(item) for item in obj)
-    elif isinstance(obj, (np.integer, np.floating)):
-        return obj.item()
-    else:
-        return obj
-
-
-def _get_library_version() -> str:
-    """Get the neurospatial library version."""
-    from importlib.metadata import PackageNotFoundError, version
-
-    try:
-        return version("neurospatial")
-    except PackageNotFoundError:
-        return "unknown"
 
 
 def _validate_path_safety(path: PathLike) -> Path:
@@ -359,14 +321,16 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
+    from neurospatial._results import software_version
     from neurospatial.environment import _build_record
     from neurospatial.geometry import encode, encode_arena
+    from neurospatial.geometry._codecs import _json_safe
 
     binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
     metadata: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
-        "library_version": _get_library_version(),
+        "library_version": software_version(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "name": env.name,
         "n_dims": env.n_dims,
@@ -401,7 +365,7 @@ def _environment_payload(
         key: {"shape": list(value.shape), "dtype": value.dtype.str}
         for key, value in arrays.items()
     }
-    return cast("dict[str, Any]", _convert_arrays_to_lists(metadata)), arrays
+    return _json_safe(metadata), arrays
 
 
 def _check_schema(metadata: dict[str, Any], source: str) -> None:

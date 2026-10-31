@@ -144,7 +144,6 @@ def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]
     from neurospatial.io.files import _environment_payload
 
     metadata, arrays = _environment_payload(env)
-    metadata = json.loads(json.dumps(metadata))
     fingerprint = _payload_fingerprint(metadata, arrays)
     metadata["format"] = ENVIRONMENT_FORMAT
     metadata["schema_version"] = ENVIRONMENT_SCHEMA_VERSION
@@ -227,7 +226,7 @@ def _environment_fingerprint(env: Environment) -> str:
     from neurospatial.io.files import _environment_payload
 
     metadata, arrays = _environment_payload(env)
-    return _payload_fingerprint(json.loads(json.dumps(metadata)), arrays)
+    return _payload_fingerprint(metadata, arrays)
 
 
 def _record_metadata(record: object) -> dict[str, Any] | None:
