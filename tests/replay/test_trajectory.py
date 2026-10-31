@@ -1033,9 +1033,10 @@ class TestLinearFitFollowsThePapers:
     def test_sampled_fit_is_one_least_squares_line_through_the_samples(self):
         """The fit equals scipy's linregress on the same sampled points.
 
-        The draws are rebuilt independently: equal shares per time bin in
-        time-bin order, each the first bin whose cumulative mass exceeds the
-        uniform times the row total.
+        The draws are rebuilt independently: equal shares per time bin, the
+        earliest taking the remainder, split among the position bins by one
+        multinomial draw per time bin from the row's posterior, and each
+        sample placed at its bin's center.
         """
         from scipy.stats import linregress
 
@@ -1052,14 +1053,14 @@ class TestLinearFitFollowsThePapers:
 
         shares = np.full(8, n_samples // 8)
         shares[:5] += 1
-        time_bins = np.repeat(np.arange(8), shares)
-        uniforms = np.random.default_rng(3).random(n_samples)
-        cumulative = np.cumsum(posterior, axis=1)
-        drawn = [
-            np.argmax(cumulative[t] > u * cumulative[t, -1])
-            for t, u in zip(time_bins, uniforms, strict=True)
-        ]
-        expected = linregress(times[time_bins], env.bin_centers[drawn, 0])
+        rows = posterior / posterior.sum(axis=1, keepdims=True)
+        counts = np.random.default_rng(3).multinomial(shares[None], rows)[0]
+        time_bins, drawn = np.nonzero(counts)
+        repeats = counts[time_bins, drawn]
+        expected = linregress(
+            np.repeat(times[time_bins], repeats),
+            np.repeat(env.bin_centers[drawn, 0], repeats),
+        )
 
         assert result.slope == pytest.approx(expected.slope, rel=1e-10)
         assert result.intercept == pytest.approx(expected.intercept, rel=1e-10)
@@ -1668,7 +1669,9 @@ class TestSampledFitAllocation:
         whole = trajectory.fit_linear_trajectory(
             env, posterior, times, n_samples=1200, n_resamples=6, rng=3
         )
-        monkeypatch.setattr(trajectory, "_SAMPLE_BLOCK", 2400)  # 2 resamples a block
+        monkeypatch.setattr(
+            trajectory, "_COUNT_BLOCK", 2 * posterior.size
+        )  # 2 resamples a block
         blocked = trajectory.fit_linear_trajectory(
             env, posterior, times, n_samples=1200, n_resamples=6, rng=3
         )
