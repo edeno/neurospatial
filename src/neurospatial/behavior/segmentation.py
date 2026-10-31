@@ -1611,11 +1611,9 @@ def detect_laps(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    # Validate method
-    if method not in ("auto", "reference", "region"):
-        raise ValueError(
-            f"method must be one of 'auto', 'reference', 'region', got '{method}'"
-        )
+    validate_choice(
+        method, ("auto", "reference", "region"), name="method", owner="detect_laps()"
+    )
     if direction not in ("both", "clockwise", "counter-clockwise"):
         raise ValueError(
             _format_error(
@@ -2932,9 +2930,12 @@ def trajectory_similarity(
     if len(position_bins1) == 0 or len(position_bins2) == 0:
         raise ValueError("Trajectories cannot be empty")
 
-    valid_methods = ["jaccard", "correlation", "hausdorff", "dtw"]
-    if method not in valid_methods:
-        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+    validate_choice(
+        method,
+        ("jaccard", "correlation", "hausdorff", "dtw"),
+        name="method",
+        owner="trajectory_similarity()",
+    )
     if method == "correlation":
         from neurospatial.environment import _require_track_extents
 

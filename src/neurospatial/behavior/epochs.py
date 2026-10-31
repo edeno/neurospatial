@@ -76,6 +76,7 @@ from neurospatial._results import (
     read_only_copy,
 )
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -91,6 +92,7 @@ __all__ = [
 ]
 
 _Closed = Literal["both", "left", "right", "neither"]
+_CLOSED_CHOICES = ("both", "left", "right", "neither")
 
 
 def _mask_in_intervals(
@@ -123,16 +125,9 @@ def _mask_in_intervals(
 
     Notes
     -----
-    ``closed`` is validated here too, so this stays safe to call directly (e.g.
-    per train from :func:`restrict_spike_trains`); :func:`in_epochs` validates it
-    a second time, up front, only to report a bad ``closed`` *before* a malformed
-    ``epochs`` (this helper runs after ``as_intervals``).
+    Callers validate ``closed`` before normalizing ``epochs``, so a bad value
+    is reported first.
     """
-    if closed not in ("both", "left", "right", "neither"):
-        raise ValueError(
-            f"closed must be one of 'both', 'left', 'right', 'neither', got {closed!r}."
-        )
-
     t_arr = np.asarray(t, dtype=np.float64)
 
     if intervals is None:
@@ -217,10 +212,7 @@ def in_epochs(
     # Validate ``closed`` up front -- before ``as_intervals`` and the
     # empty-epochs early return -- so a bad value always raises (even with no
     # intervals) AND is reported before a malformed ``epochs``.
-    if closed not in ("both", "left", "right", "neither"):
-        raise ValueError(
-            f"closed must be one of 'both', 'left', 'right', 'neither', got {closed!r}."
-        )
+    validate_choice(closed, _CLOSED_CHOICES, name="closed", owner="in_epochs()")
 
     intervals = as_intervals(epochs, name="epochs")
     return _mask_in_intervals(t, intervals, closed=closed)
@@ -419,6 +411,9 @@ def restrict_spike_trains(
     # front, and each train is then masked against the same pre-normalized
     # ``(n, 2)`` array via ``_mask_in_intervals`` -- avoiding the per-unit
     # re-normalization that ``in_epochs`` would repeat on every call.
+    validate_choice(
+        closed, _CLOSED_CHOICES, name="closed", owner="restrict_spike_trains()"
+    )
     intervals = as_intervals(epochs, name="epochs")
     trains, unit_ids = as_labelled_spike_trains(
         spike_times, None, context="restrict_spike_trains"

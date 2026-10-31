@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_choice
+
 if TYPE_CHECKING:
     from neurospatial.ops._protocols import GraphConsumer
 
@@ -158,9 +160,9 @@ def neighbor_reduce(
             f"expected ({env.n_bins},))"
         )
 
-    valid_ops = {"sum", "mean", "max", "min", "std"}
-    if op not in valid_ops:
-        raise ValueError(f"op must be one of {valid_ops}, got '{op}'")
+    validate_choice(
+        op, ("sum", "mean", "max", "min", "std"), name="op", owner="neighbor_reduce()"
+    )
 
     if weights is not None:
         if weights.shape[0] != env.n_bins:

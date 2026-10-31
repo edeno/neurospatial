@@ -58,6 +58,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2845,9 +2846,7 @@ def _directional_rates(
     # "auto" resolves to "numpy" or "jax".
     resolved_backend = validate_and_resolve_backend(backend)
 
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+    validate_choice(angle_unit, ("rad", "deg"), name="angle_unit", owner=f"{context}()")
 
     if single_unit:
         spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
