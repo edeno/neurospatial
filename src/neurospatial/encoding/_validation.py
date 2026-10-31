@@ -28,6 +28,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
+    refuse_infinite,
     times_positions_problems,
 )
 from neurospatial.environment import Environment
@@ -234,8 +235,9 @@ def validate_trajectory(
 ) -> None:
     """Check trajectory shapes, aligned sample rows and timestamp validity.
 
-    All detected problems are reported together. Non-finite positions and
-    headings remain valid missing observations for the binning layer to drop.
+    All detected problems are reported together. NaN positions and headings
+    remain valid missing observations for the binning layer to drop; an
+    infinite one is refused (:func:`~neurospatial._validation.refuse_infinite`).
     Headings read as radians that look like degrees warn
     (:func:`warn_if_angles_look_like_degrees`).
 
@@ -259,7 +261,8 @@ def validate_trajectory(
     Raises
     ------
     ValueError
-        If timestamp validity, shapes, coordinate dimensions or lengths disagree.
+        If timestamp validity, shapes, coordinate dimensions or lengths
+        disagree, or if positions or headings hold an infinite value.
 
     Warns
     -----
@@ -296,6 +299,9 @@ def validate_trajectory(
                 positions=positions is not None,
             )
         )
+    for name, values in (("positions", positions), ("headings", headings)):
+        if values is not None:
+            refuse_infinite(values, name=name, call=context)
     if headings is not None and heading_unit != "deg":
         warn_if_angles_look_like_degrees(
             headings,

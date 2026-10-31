@@ -436,7 +436,11 @@ class TestHeadingDirectionLabels:
             (np.zeros((3, 1)), np.ones(3), r"1-D headings.*\(3, 1\)"),
             (np.zeros(3), np.ones((1, 3)), r"1-D speeds.*\(1, 3\)"),
             (np.zeros(()), np.ones(()), r"1-D headings"),
-            (np.array([0.0, np.inf, 0.0]), np.ones(3), r"infinite heading at sample 1"),
+            (
+                np.array([0.0, np.inf, 0.0]),
+                np.ones(3),
+                r"infinite value\(s\) in headings, first at index 1",
+            ),
             (np.zeros(3), np.array([1.0, -0.5, 1.0]), r"speeds\[1\] = -0.5"),
             (np.zeros(3), np.array([1.0, 1.0, np.inf]), r"speeds\[2\] = inf"),
         ],

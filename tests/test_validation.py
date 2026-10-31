@@ -83,6 +83,41 @@ def test_times_positions_preserves_duplicates_and_missing_positions():
     assert t.dtype == p.dtype == np.float64
 
 
+def _refusing_calls():
+    """Entry points of every analysis family that take sampled coordinates."""
+    from neurospatial import Environment
+    from neurospatial.behavior import compute_speed
+    from neurospatial.encoding import compute_directional_rate, compute_spatial_rate
+
+    rng = np.random.default_rng(0)
+    env = Environment.from_samples(rng.uniform(0, 10, (500, 2)), bin_size=2.0)
+    times = np.arange(20) * 0.1
+    positions = rng.uniform(1, 9, (20, 2))
+    positions[4, 1] = np.inf
+    headings = np.zeros(20)
+    headings[4] = -np.inf
+    spikes = np.array([0.5, 1.0])
+    return {
+        "from_samples": lambda: Environment.from_samples(positions, bin_size=2.0),
+        "occupancy": lambda: env.occupancy(times, positions),
+        "spatial_rate": lambda: compute_spatial_rate(env, spikes, times, positions),
+        "directional_rate": lambda: compute_directional_rate(spikes, times, headings),
+        "compute_speed": lambda: compute_speed(times, positions),
+    }
+
+
+@pytest.mark.parametrize(
+    "call",
+    ["from_samples", "occupancy", "spatial_rate", "directional_rate", "compute_speed"],
+)
+def test_infinite_samples_are_refused_everywhere(call):
+    """NaN is the only missing-sample marker; inf is refused, not dropped."""
+    with pytest.raises(
+        ValueError, match=r"1 infinite value\(s\) in (positions|headings)"
+    ):
+        _refusing_calls()[call]()
+
+
 def test_numeric_conversion_errors_are_named_together():
     from neurospatial._validation import validate_times_positions
 

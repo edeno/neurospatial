@@ -178,7 +178,7 @@ def _align_true_positions(
         Coordinates at query times and their observed-run identifiers. Missing
         query positions have NaN coordinates and run identifier -1.
     """
-    from neurospatial._validation import validate_finite
+    from neurospatial._validation import refuse_infinite, validate_finite
 
     times = validate_finite(times, name="times")
     true_times = validate_finite(true_times, name="true_times")
@@ -199,8 +199,7 @@ def _align_true_positions(
             f"true_positions must have shape ({true_times.size}, {n_dims}) "
             f"to match true_times and the environment, got {true_positions.shape}."
         )
-    if np.any(np.isinf(true_positions)):
-        raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
+    refuse_infinite(true_positions, name="true_positions", call=call)
     from neurospatial._intervals import (
         gap_endpoints,
         interval_gates,

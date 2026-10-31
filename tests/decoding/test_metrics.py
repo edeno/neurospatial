@@ -359,7 +359,10 @@ class TestErrorAlongTheEnvironment:
         positions = small_2d_env.bin_centers[:3].copy()
         bad = positions.copy()
         bad[1, 0] = np.inf
-        with pytest.raises(ValueError, match=r"decoded_positions.*Inf.*1 of 3"):
+        with pytest.raises(
+            ValueError,
+            match=r"1 infinite value\(s\) in decoded_positions, first at row 1",
+        ):
             decoding_error(small_2d_env, bad, positions, metric=metric)
 
     def test_geodesic_matches_all_pairs_shortest_paths(self, small_2d_env):

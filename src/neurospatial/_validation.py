@@ -175,6 +175,62 @@ def validate_lengths(name_to_array: dict[str, NDArray]) -> None:
         )
 
 
+def refuse_infinite(values: NDArray[np.float64], *, name: str, call: str) -> None:
+    """Refuse infinite entries; NaN is the only marker of a missing sample.
+
+    Parameters
+    ----------
+    values : ndarray of float64, shape (n_samples,) or (n_samples, n_columns)
+        Per-sample values such as positions, headings or signals.
+    name : str
+        Argument name, used in the message.
+    call : str
+        Public function name, used in the message.
+
+    Raises
+    ------
+    ValueError
+        If any entry is infinite, naming how many and the first one.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> refuse_infinite(np.array([[0.0, np.nan]]), name="positions", call="f")
+    >>> refuse_infinite(np.array([[0.0, np.inf]]), name="positions", call="f")
+    Traceback (most recent call last):
+    ...
+    ValueError: f() got 1 infinite value(s) in positions, first at row 0, column 1 (inf).
+    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
+    Fix: correct the step that produced it, or mark those samples missing with positions[np.isinf(positions)] = np.nan.
+    >>> refuse_infinite(np.array([0.0, -np.inf]), name="headings", call="f")
+    Traceback (most recent call last):
+    ...
+    ValueError: f() got 1 infinite value(s) in headings, first at index 1 (-inf).
+    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
+    Fix: correct the step that produced it, or mark those samples missing with headings[np.isinf(headings)] = np.nan.
+    """
+    infinite = np.isinf(values)
+    if not infinite.any():
+        return
+    first = tuple(int(i) for i in np.argwhere(infinite)[0])
+    where = (
+        f"row {first[0]}, column {first[1]}"
+        if len(first) == 2
+        else f"index {', '.join(map(str, first))}"
+    )
+    raise ValueError(
+        _format_error(
+            f"{call}() got {int(infinite.sum())} infinite value(s) in {name}, "
+            f"first at {where} ({float(values[first])}).",
+            why="NaN marks a missing sample, but an infinite value is not a "
+            "measurement; it usually comes from a division by zero in a "
+            "calibration or unit conversion, so it is not treated as missing.",
+            fix="correct the step that produced it, or mark those samples "
+            f"missing with {name}[np.isinf({name})] = np.nan.",
+        )
+    )
+
+
 def times_positions_problems(
     t: NDArray[np.float64] | None, p: NDArray[np.float64] | None
 ) -> tuple[list[str], bool]:
@@ -264,7 +320,8 @@ def validate_times_positions(
     ------
     ValueError
         Listing every problem, with a ``Fix:`` line that names the swap when the
-        arguments look swapped.
+        arguments look swapped; or when ``positions`` hold an infinite value
+        (:func:`refuse_infinite`), since NaN is the only missing-sample marker.
     """
     conversion_problems = []
     arrays: list[NDArray[np.float64] | None] = []
@@ -284,6 +341,7 @@ def validate_times_positions(
             format_times_positions_error(problems, looks_swapped, call=call)
         )
     assert t is not None and p is not None
+    refuse_infinite(p, name="positions", call=call)
     return t, p
 
 

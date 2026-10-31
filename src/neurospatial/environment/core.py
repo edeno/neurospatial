@@ -3292,8 +3292,8 @@ class Environment(Generic[_C]):
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
-            A row with a NaN or infinite coordinate is a missing sample and is
-            left out.
+            A row with a NaN coordinate is a missing sample and is left out;
+            an infinite coordinate is refused.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
             For RegularGrid: length of each square bin side (or per-dimension if sequence).
@@ -3530,8 +3530,8 @@ class Environment(Generic[_C]):
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
-            A row with a NaN or infinite coordinate is a missing sample and is
-            left out.
+            A row with a NaN coordinate is a missing sample and is left out;
+            an infinite coordinate is refused.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
         name : str, default ""

@@ -1600,18 +1600,19 @@ assert sequence.dtype == np.intp
 compact = sequence.astype(np.int32)
 ```
 
-## Infinite positions are missing samples
+## Infinite positions are refused
 
-`from_samples`, `open_field` and `environment_from_position` treat a row with
-an infinite coordinate like a row with NaN: as a missing sample that does not
-shape the bins. Such a row used to raise an overflow error, so a recording
-with one bad sample can now be used without cleaning it first:
+`from_samples`, `open_field` and `environment_from_position` refuse a row with
+an infinite coordinate, as every analysis does: NaN is the only marker of a
+missing sample. An infinite coordinate usually comes from a division by zero
+in a calibration or unit conversion, so mark such rows missing explicitly:
 
 <!-- docs-test: run -->
 ```python
 glitched = positions.copy()
 glitched[10] = [np.inf, 50.0]  # a tracking glitch
 # Before: Environment.from_samples(glitched, bin_size=4.0) raised "Requested binning overflows"
+glitched[np.isinf(glitched)] = np.nan
 arena = Environment.from_samples(glitched, bin_size=4.0, units="cm")
 ```
 

@@ -40,6 +40,7 @@ from neurospatial._intervals import (
 from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
+    refuse_infinite,
     times_positions_problems,
     validate_strictly_increasing,
     validate_times_positions,
@@ -267,8 +268,8 @@ def resolve_observation_support(
         Seconds; already validated and strictly increasing.
     positions : ndarray, shape (n_samples, n_dims)
         Float coordinates; NaN entries mark a missing sample. Infinite
-        entries are refused by the public entry points
-        (:func:`refuse_infinite`).
+        entries are refused by the shared validation
+        (:func:`~neurospatial._validation.refuse_infinite`).
     max_gap, epochs
         The shared interval gates (``observed_interval_mask``).
     break_before : ndarray of bool, shape (n_samples,) or None
@@ -607,7 +608,6 @@ def validated_observations(
         _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
         p = p[:, None]
-    refuse_infinite(p, name="positions", call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
     support = resolve_observation_support(
@@ -671,51 +671,6 @@ def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
                 "pass at least one sample; if the arrays came from an epoch or "
                 "trial selection, check that the selection kept any samples."
             ),
-        )
-    )
-
-
-def refuse_infinite(values: NDArray[np.float64], *, name: str, call: str) -> None:
-    """Refuse infinite entries; NaN is the only marker of a missing sample.
-
-    Parameters
-    ----------
-    values : ndarray of float64, shape (n_samples, n_columns)
-        Per-sample values such as positions or signals.
-    name : str
-        Argument name, used in the message.
-    call : str
-        Public function name, used in the message.
-
-    Raises
-    ------
-    ValueError
-        If any entry is infinite, naming how many and the first one.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> refuse_infinite(np.array([[0.0, np.nan]]), name="positions", call="f")
-    >>> refuse_infinite(np.array([[0.0, np.inf]]), name="positions", call="f")
-    Traceback (most recent call last):
-    ...
-    ValueError: f() got 1 infinite value(s) in positions, first at row 0, column 1 (inf).
-    Why: NaN marks a missing sample, but an infinite value is not a measurement; it usually comes from a division by zero in a calibration or unit conversion, so it is not treated as missing.
-    Fix: correct the step that produced it, or mark those samples missing with positions[np.isinf(positions)] = np.nan.
-    """
-    infinite = np.isinf(values)
-    if not infinite.any():
-        return
-    row, column = (int(i) for i in np.argwhere(infinite)[0])
-    raise ValueError(
-        _format_error(
-            f"{call}() got {int(infinite.sum())} infinite value(s) in {name}, "
-            f"first at row {row}, column {column} ({float(values[row, column])}).",
-            why="NaN marks a missing sample, but an infinite value is not a "
-            "measurement; it usually comes from a division by zero in a "
-            "calibration or unit conversion, so it is not treated as missing.",
-            fix="correct the step that produced it, or mark those samples "
-            f"missing with {name}[np.isinf({name})] = np.nan.",
         )
     )
 

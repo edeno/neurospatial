@@ -2643,6 +2643,7 @@ def headings_to_direction_labels(
     >>> sorted(set(labels.tolist()))
     ['90°']
     """
+    from neurospatial._validation import refuse_infinite
     from neurospatial.behavior._kinematics import validated_min_speed
     from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
 
@@ -2670,15 +2671,7 @@ def headings_to_direction_labels(
                 fix="pass headings and speeds for the same samples",
             )
         )
-    if np.isinf(headings_arr).any():
-        raise ValueError(
-            _format_error(
-                f"{call}() got an infinite heading at sample "
-                f"{int(np.flatnonzero(np.isinf(headings_arr))[0])}.",
-                why="A heading is an angle in radians.",
-                fix="mark an unknown heading with NaN",
-            )
-        )
+    refuse_infinite(headings_arr, name="headings", call=call)
     with np.errstate(invalid="ignore"):
         bad_speed = np.isinf(speeds_arr) | (speeds_arr < 0)
     if bad_speed.any():
