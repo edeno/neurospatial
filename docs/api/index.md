@@ -562,8 +562,9 @@ pynwb.
 
 **pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
 
-- `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids)`, `Tsd` / `TsdFrame` →
-  `(times, positions)`, `IntervalSet` → `(start, end)`.
+- `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids, epochs)`, `Ts` →
+  `(spike_times, epochs)`, `Tsd` / `TsdFrame` → `(times, values, epochs)`,
+  `IntervalSet` → `(n, 2)` epochs; `epochs` is the object's time support.
 - `to_pynapple(times, values=...)`: Decoded track / arrays → `Tsd` / `TsdFrame`.
 
 **NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:

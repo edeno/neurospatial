@@ -381,50 +381,69 @@ environment's connectivity graph.
 ## pynapple interop
 
 pynapple objects convert to and from plain arrays **at the boundary** with
-`from_pynapple` / `to_pynapple`, so the scientific code never touches pynapple.
+`from_pynapple` / `to_pynapple`.
 
 !!! note "Requires the `pynapple` extra"
     `pip install neurospatial[pynapple]`. Only these two adapter functions
     import pynapple, and they import it lazily.
 
-```python
-from neurospatial.io import from_pynapple, to_pynapple
-
-# Ingress: pynapple -> plain arrays.
-trains, unit_ids = from_pynapple(tsgroup)      # TsGroup   -> (trains, unit_ids)
-times, positions = from_pynapple(tsdframe)     # Tsd/TsdFrame -> (times, positions)
-start, end = from_pynapple(intervalset)        # IntervalSet -> (start, end)
-
-# Egress: a decoded MAP track -> a pynapple Tsd / TsdFrame.
-tsd = to_pynapple(result)                       # from a DecodingResult
-```
-
-A raw `TsGroup` can supply spikes and unit labels directly. Pass tracking as
-two explicit arrays, `tsdframe.t` and `tsdframe.values`, with timestamps first:
+A pynapple object is defined only on its `time_support`: the recording epochs,
+with gaps between them for artifacts, sleep boxes or lost tracking.
+`from_pynapple` returns that support as `epochs`, a `(n_epochs, 2)` array of
+`[start, stop]` rows in seconds, so you can pass it to the analysis and keep
+the gaps out of occupancy and rates:
 
 ```python
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.decoding import decode_session
+from neurospatial.io import from_pynapple, to_pynapple
 
-rates = compute_spatial_rates(env, tsgroup, tsdframe.t, tsdframe.values)
-result = decode_session(env, tsgroup, tsdframe.t, tsdframe.values, dt=0.1)
-```
+# Ingress: pynapple -> plain arrays plus their time support.
+times, positions, epochs = from_pynapple(tsdframe)   # TsdFrame / Tsd
+trains, unit_ids, recorded = from_pynapple(tsgroup)  # TsGroup
+spike_times, unit_epochs = from_pynapple(ts)         # one unit's Ts
+run_epochs = from_pynapple(intervalset)              # IntervalSet -> (n, 2)
 
-neurospatial reads only the spike times and labels from a `TsGroup`; it
-ignores the group's `time_support`. Without `spike_window=`, spikes are assumed
-to have been recorded wherever position was tracked. When the electrophysiology
-covers a different stretch, pass that coverage explicitly. An `IntervalSet` is
-accepted directly:
-
-```python
 rates = compute_spatial_rates(
-    env, tsgroup, tsdframe.t, tsdframe.values, spike_window=recording_intervals
+    env, trains, times, positions,
+    epochs=epochs, spike_window=recorded, unit_ids=unit_ids,
 )
 ```
 
-Use `tsgroup.time_support` here only if you set it to the true acquisition
-intervals: a `TsGroup` built from spike times alone gets a default support that
-runs from its first spike to its last, which is not recording coverage.
+Without `epochs=`, a gap shorter than `max_gap` (1 s by default) is counted as
+time spent at the last position before it, which inflates occupancy in that bin.
+
+Positions come back in the frame's column order. A `TsdFrame` whose columns are
+the axis names in another order, such as `["y", "x"]`, is refused rather than
+silently swapping the axes; reorder it with `tsdframe.loc[["x", "y"]]` first.
+
+pynapple intervals include their end, while neurospatial windows are half-open
+`[start, stop)`. The bounds are passed through unchanged, so a sample or spike
+exactly at an epoch end falls outside the epochs in neurospatial.
+
+A raw `TsGroup` can also supply spikes and unit labels directly, and an
+`IntervalSet` is accepted directly as `epochs=` or `spike_window=`:
+
+```python
+from neurospatial.decoding import decode_session
+
+result = decode_session(
+    env, tsgroup, times, positions, dt=0.1, spike_window=recording_intervals
+)
+```
+
+Passed directly, a `TsGroup` contributes only its spike times and labels; its
+`time_support` is ignored. Without `spike_window=`, spikes are assumed to have
+been recorded wherever position was tracked. Use the group's time support as
+`spike_window=` only if you set it to the true acquisition intervals: a
+`TsGroup` built from spike times alone gets a default support that runs from
+its first spike to its last, which is not recording coverage.
+
+Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`:
+
+```python
+tsdframe = to_pynapple(result)                  # DecodingResult
+tsd = to_pynapple(times, linear_position)       # plain arrays
+```
 
 ## NWB interop
 

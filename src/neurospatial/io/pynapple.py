@@ -1,17 +1,20 @@
-"""pynapple ingress / egress shim (optional dependency).
+"""pynapple ingress / egress adapters (optional dependency).
 
-This is the **only** place in neurospatial that touches pynapple, and it does
-so lazily: ``import pynapple`` happens *inside* the functions, so the package
-imports and the array path keep working when pynapple is not installed. The
-scientific modules never import pynapple; they consume the plain NumPy arrays
-that :func:`from_pynapple` returns.
+These two functions are the only code in neurospatial that imports pynapple,
+and they import it lazily: ``import pynapple`` runs *inside* the functions, so
+the package and the array path keep working when pynapple is not installed.
+Analysis functions also accept a pynapple ``TsGroup`` / ``Ts`` as spike input
+and an ``IntervalSet`` as ``epochs=`` / ``spike_window=``, by duck typing and
+without importing pynapple; they read only timestamps, unit labels and
+interval bounds. :func:`from_pynapple` additionally returns each object's
+``time_support`` as epochs, so gaps between recording epochs are not lost.
 
 Functions
 ---------
 from_pynapple
-    Convert a pynapple ``TsGroup`` / ``Tsd`` / ``TsdFrame`` / ``IntervalSet`` to
-    plain arrays: ``TsGroup`` -> ``(trains, unit_ids)``; ``Tsd`` / ``TsdFrame``
-    -> ``(times, positions)``; ``IntervalSet`` -> ``(start, end)``.
+    Convert a pynapple ``Ts`` / ``Tsd`` / ``TsdFrame`` / ``TsGroup`` /
+    ``IntervalSet`` to plain arrays plus its time support as ``(n_epochs, 2)``
+    epochs.
 to_pynapple
     Convert a decoded MAP track (or explicit ``times`` + ``values``) to a
     pynapple ``Tsd`` (1-D) / ``TsdFrame`` (2-D).
@@ -19,7 +22,7 @@ to_pynapple
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,6 +33,8 @@ _IMPORT_ERROR_MSG = (
     "This function requires the optional 'pynapple' extra; install it with "
     "`pip install neurospatial[pynapple]` (or `uv add neurospatial[pynapple]`)."
 )
+
+_SPATIAL_AXES = ("x", "y", "z")
 
 
 def _require_pynapple() -> Any:
@@ -46,83 +51,127 @@ def _require_pynapple() -> Any:
     return pynapple
 
 
-def from_pynapple(
-    obj: Any,
-) -> (
-    tuple[list[NDArray[np.float64]], NDArray[Any]]
-    | tuple[NDArray[np.float64], NDArray[np.float64]]
-):
-    """Convert a pynapple object to plain NumPy arrays.
+def _epochs_of(support: Any) -> NDArray[np.float64]:
+    """Return a pynapple ``IntervalSet`` as an owned ``(n, 2)`` float array."""
+    return np.column_stack(
+        [
+            np.array(support.start, dtype=np.float64),
+            np.array(support.end, dtype=np.float64),
+        ]
+    )
 
-    Dispatches by duck-typed attributes (never ``isinstance`` on a pynapple
-    type, so the conversion is decoupled from pynapple's exact class hierarchy):
 
-    - ``Tsd`` / ``TsdFrame`` (has ``.t`` and ``.values`` / ``.d``)
-      -> ``(times, positions)``.
-    - ``IntervalSet`` (has ``.start`` and ``.end``, no ``.t``) -> ``(start, end)``.
-    - ``TsGroup`` (dict-like of unit id -> ``Ts``, has ``.index``)
-      -> ``(trains, unit_ids)`` where ``trains`` is a list of per-unit 1-D
-      timestamp arrays and ``unit_ids`` are the group's keys.
+def _refuse_permuted_spatial_columns(columns: Any) -> None:
+    """Refuse a TsdFrame whose columns are x/y(/z) in another order."""
+    labels = [str(c) for c in columns]
+    lowered = [label.lower() for label in labels]
+    spatial = set(lowered) <= set(_SPATIAL_AXES) and len(set(lowered)) == len(lowered)
+    if not spatial or lowered == sorted(lowered):
+        return
+    canonical = sorted(lowered)
+    ordered = sorted(labels, key=str.lower)
+    raise ValueError(
+        f"TsdFrame columns {labels} are spatial axes not in x, y, z order.\n"
+        "Why: neurospatial reads positions by column position, so these values "
+        f"would be used as ({', '.join(lowered)}) where every analysis expects "
+        f"({', '.join(canonical)}), silently swapping the axes.\n"
+        f"Fix: reorder the columns first, from_pynapple(tsdframe.loc[{ordered}])."
+    )
+
+
+def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
+    """Convert a pynapple object to plain NumPy arrays and its epochs.
+
+    Each time series comes back with its pynapple ``time_support`` as
+    ``epochs``, a ``(n_epochs, 2)`` array of ``[start, stop]`` rows in
+    seconds. Pass it as ``epochs=`` (or, for spikes, ``spike_window=``) so the
+    gaps between recording epochs stay out of occupancy and rates.
 
     Parameters
     ----------
-    obj : pynapple Tsd, TsdFrame, IntervalSet, or TsGroup
+    obj : pynapple Ts, Tsd, TsdFrame, TsGroup, or IntervalSet
         The pynapple object to convert.
 
     Returns
     -------
-    tuple of ndarray
-        ``(times, positions)`` for a ``Tsd`` / ``TsdFrame``, ``(start, end)``
-        for an ``IntervalSet``, or ``(trains, unit_ids)`` for a ``TsGroup``.
+    spike_times, epochs : ndarray, shapes (n_spikes,) and (n_epochs, 2)
+        For a ``Ts``: its timestamps and time support.
+    times, values, epochs : ndarray, shapes (n_samples,), (n_samples,) or \
+(n_samples, n_columns), and (n_epochs, 2)
+        For a ``Tsd`` (1-D values) or ``TsdFrame`` (2-D values, columns in
+        ``tsdframe.columns`` order).
+    trains, unit_ids, epochs : list of ndarray, ndarray of shape (n_units,), \
+ndarray of shape (n_epochs, 2)
+        For a ``TsGroup``: one spike-time array per unit in group order, the
+        group's unit labels, and the group's time support.
+    epochs : ndarray, shape (n_epochs, 2)
+        For an ``IntervalSet``: one ``[start, end]`` row per interval.
+
+    All arrays are float64 copies (``unit_ids`` keeps its label type), so
+    editing them never changes the pynapple object.
 
     Raises
     ------
     ImportError
         If pynapple is not installed.
     TypeError
-        If ``obj`` is not a recognized pynapple type.
+        If ``obj`` is not a pynapple ``Ts``, ``Tsd``, ``TsdFrame``, ``TsGroup``
+        or ``IntervalSet`` (a ``TsdTensor`` has no spatial reading).
+    ValueError
+        If a ``TsdFrame``'s columns are spatial axis names (``x``, ``y``,
+        ``z``) in another order, such as ``["y", "x"]``.
+
+    Notes
+    -----
+    pynapple intervals include their end, while neurospatial windows are
+    half-open ``[start, stop)``. The bounds are returned unchanged, so a
+    sample or spike exactly at an epoch end (for example the last spike of
+    a support built from first to last spike) falls outside the epochs in
+    neurospatial analyses.
+
+    A ``TsGroup`` built from spike times alone gets a default time support
+    from its first to its last spike, which is not recording coverage. Use
+    its epochs as ``spike_window=`` only when the group's time support was
+    set to the acquisition intervals.
 
     Examples
     --------
     >>> from neurospatial.io import from_pynapple  # doctest: +SKIP
-    >>> times, positions = from_pynapple(tsdframe)  # doctest: +SKIP
-    >>> trains, unit_ids = from_pynapple(tsgroup)  # doctest: +SKIP
+    >>> times, positions, epochs = from_pynapple(tsdframe)  # doctest: +SKIP
+    >>> trains, unit_ids, recorded = from_pynapple(tsgroup)  # doctest: +SKIP
+    >>> rates = compute_spatial_rates(  # doctest: +SKIP
+    ...     env, trains, times, positions, epochs=epochs, spike_window=recorded,
+    ...     unit_ids=unit_ids,
+    ... )
     """
-    # Ensure pynapple is installed even though dispatch is duck-typed: a caller
-    # cannot hold a genuine pynapple object without it, but this keeps the error
-    # actionable and consistent with ``to_pynapple``.
-    _require_pynapple()
+    nap = _require_pynapple()
 
-    # Tsd / TsdFrame: prefer .values, with the pynapple .d alias fallback.
-    if hasattr(obj, "t") and (hasattr(obj, "values") or hasattr(obj, "d")):
-        values = getattr(obj, "values", None)
-        if values is None:
-            values = obj.d
-        return np.asarray(obj.t, dtype=np.float64), np.asarray(values, dtype=np.float64)
-
-    # IntervalSet: epochs -> (start, end). No public adapter equivalent, so this
-    # branch keeps its own coercion.
-    if hasattr(obj, "start") and hasattr(obj, "end"):
-        start = np.asarray(obj.start, dtype=np.float64)
-        end = np.asarray(obj.end, dtype=np.float64)
-        return start, end
-
-    # TsGroup: dict-like of unit id -> Ts -> (trains, unit_ids). Delegate to the
-    # shared spike boundary adapter, which extracts trains by unit-id index (a
-    # TsGroup is a UserDict; iterating it would yield KEYS, not trains) and
-    # surfaces the group's ids. For a genuine group the ids are never ``None``,
-    # so the cast to the non-optional group return arm is safe.
-    if hasattr(obj, "index"):
+    if isinstance(obj, nap.IntervalSet):
+        return _epochs_of(obj)
+    if isinstance(obj, nap.Ts):
+        return np.array(obj.t, dtype=np.float64), _epochs_of(obj.time_support)
+    if isinstance(obj, (nap.Tsd, nap.TsdFrame)):
+        if isinstance(obj, nap.TsdFrame):
+            _refuse_permuted_spatial_columns(obj.columns)
+        return (
+            np.array(obj.t, dtype=np.float64),
+            np.array(obj.values, dtype=np.float64),
+            _epochs_of(obj.time_support),
+        )
+    if isinstance(obj, nap.TsGroup):
         from neurospatial._spikes import _as_spike_trains_with_ids
 
-        return cast(
-            "tuple[list[NDArray[np.float64]], NDArray[Any]]",
-            _as_spike_trains_with_ids(obj),
+        trains, unit_ids = _as_spike_trains_with_ids(obj)
+        return (
+            [np.array(train) for train in trains],
+            unit_ids,
+            _epochs_of(obj.time_support),
         )
 
     raise TypeError(
-        f"from_pynapple does not recognize {type(obj).__name__!r}. Expected a "
-        "pynapple Tsd, TsdFrame, IntervalSet, or TsGroup."
+        f"from_pynapple does not recognize {type(obj).__name__!r}.\n"
+        "Why: it converts the pynapple types with a spatial-analysis reading.\n"
+        "Fix: pass a pynapple Ts, Tsd, TsdFrame, TsGroup or IntervalSet."
     )
 
 
