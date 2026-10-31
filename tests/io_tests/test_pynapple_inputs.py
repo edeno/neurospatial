@@ -176,3 +176,23 @@ def test_tsgroup_with_only_rate_metadata_gives_no_unit_table(nap, session):
 
     assert result.unit_table is None
     assert result.unit_ids.tolist() == [5, 6]
+
+
+# ---------------------------------------------------------------------------
+# restrict_spike_trains keeps unit identity
+# ---------------------------------------------------------------------------
+
+
+def test_restrict_spike_trains_keeps_tsgroup_labels_and_metadata(group, session):
+    from neurospatial.behavior import restrict_spike_trains
+
+    _, _, _, trains = session
+    window = (10.0, 20.0)
+
+    kept = restrict_spike_trains(group, window)
+
+    assert kept.unit_ids.tolist() == [5, 6, 7]
+    assert kept.unit_table["region"].tolist() == ["CA1", "CA3", "CA1"]
+    for uid, train in zip([5, 6, 7], trains, strict=True):
+        expected = train[(train >= 10.0) & (train < 20.0)]
+        np.testing.assert_array_equal(kept.sel(unit_id=uid), expected)

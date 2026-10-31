@@ -281,7 +281,9 @@ distances in your coordinate units.
 `restrict(times, *arrays, epochs=...)` slices `times` and any number of arrays
 **aligned to it** by the same in-epoch mask; `in_epochs(t, epochs)` returns the
 boolean mask; and `restrict_spike_trains(spike_times, epochs)` masks *ragged* trains
-(each unit by its own timestamps).
+(each unit by its own timestamps). It returns a `SpikeTrains` that keeps each
+unit's label and metadata row, so a restricted `TsGroup` with units 5, 6 and 7
+still names them 5, 6 and 7 in every result computed from it.
 
 ```python
 from neurospatial.behavior import restrict, in_epochs, restrict_spike_trains

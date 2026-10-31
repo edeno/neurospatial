@@ -23,8 +23,9 @@ in_epochs
     :func:`labels_to_epochs` use, so adjacent windows never share a point.
 restrict_spike_trains
     Ragged per-unit spike times are **not** aligned to a common ``times``; each
-    train is restricted by its **own** timestamps. Accepts a plain sequence of
-    trains or a :class:`~neurospatial.encoding.SpikeTrains` container.
+    train is restricted by its **own** timestamps. Accepts any spike input and
+    returns a :class:`~neurospatial.encoding.SpikeTrains` that keeps the unit
+    labels and metadata.
 labels_to_epochs
     Turn one label per sample (task phase, running direction, trial type) into
     half-open ``[start, stop)`` epochs per label, ready to pass as ``epochs=``
@@ -43,7 +44,7 @@ masked against itself.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Iterator, Mapping, Sequence
+from collections.abc import Hashable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -76,6 +77,8 @@ from neurospatial._results import (
 
 if TYPE_CHECKING:
     import pandas as pd
+
+    from neurospatial.encoding.spike_trains import SpikeTrains
 
 __all__ = [
     "LabelEpochsResult",
@@ -348,23 +351,23 @@ def restrict(
 
 
 def restrict_spike_trains(
-    spike_times: Sequence[NDArray[np.float64]],
+    spike_times: Any,
     epochs: Any,
     *,
     closed: _Closed = "left",
-) -> list[NDArray[np.float64]]:
+) -> SpikeTrains:
     """Restrict each ragged per-unit spike train by its **own** timestamps.
 
     Ragged per-unit spike times are not aligned to a common ``times`` axis, so
-    each train is masked against itself: ``[t[in_epochs(t, epochs)] for t in
-    spike_times]``.
+    each train is masked against itself: ``t[in_epochs(t, epochs)]`` for every
+    train ``t``. Unit labels and per-unit metadata are kept.
 
     Parameters
     ----------
-    spike_times : sequence of ndarray, or SpikeTrains
-        Per-unit 1-D spike-time arrays. A
-        :class:`~neurospatial.encoding.SpikeTrains` container is accepted --
-        iterating it yields the per-unit train arrays.
+    spike_times : array, sequence of arrays, or spike group
+        Per-unit spike times in seconds, in any form an analysis accepts: a
+        list of 1-D arrays, a :class:`~neurospatial.encoding.SpikeTrains`, a
+        pynapple ``TsGroup`` or a ``dict`` from unit id to train.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Windows in seconds, on the same clock as the input timestamps. Rows
         are sorted and overlapping or touching rows merge. ``None`` leaves
@@ -381,30 +384,47 @@ def restrict_spike_trains(
 
     Returns
     -------
-    list of ndarray
-        One masked train per input train, in the same order. Always a plain
-        ``list`` (type-stable), even when given a
-        :class:`~neurospatial.encoding.SpikeTrains` -- ``SpikeTrains`` identity
-        can be preserved with explicit array selection and retained unit labels.
+    SpikeTrains
+        One restricted train per input unit, in the same order. A labelled
+        input keeps its unit labels (a ``TsGroup``'s index, a ``dict``'s keys,
+        a ``SpikeTrains``' ``unit_ids``) and its per-unit metadata (a
+        ``SpikeTrains``' ``unit_table``, a ``TsGroup``'s metadata without
+        pynapple's ``rate`` column); a plain list is numbered from 0. Pass it
+        straight to an analysis, so each result row keeps its unit's label.
+
+    Raises
+    ------
+    ValueError
+        If ``epochs`` is invalid, or a spike time is NaN or infinite.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import restrict_spike_trains
-    >>> spike_times = [np.array([0.1, 1.5, 2.9]), np.array([0.5, 3.0, 6.0])]
-    >>> restrict_spike_trains(spike_times, (1.0, 3.5))
-    [array([1.5, 2.9]), array([3.])]
+    >>> spike_times = {5: np.array([0.1, 1.5, 2.9]), 7: np.array([0.5, 3.0, 6.0])}
+    >>> kept = restrict_spike_trains(spike_times, (1.0, 3.5))
+    >>> kept.unit_ids
+    array([5, 7])
+    >>> kept.sel(unit_id=7)
+    array([3.])
     """
+    from neurospatial._spikes import as_labelled_spike_trains, spike_unit_table
+    from neurospatial.encoding.spike_trains import SpikeTrains
+
     # Normalize the intervals ONCE (not per train): a malformed epochs raises up
     # front, and each train is then masked against the same pre-normalized
     # ``(n, 2)`` array via ``_mask_in_intervals`` -- avoiding the per-unit
     # re-normalization that ``in_epochs`` would repeat on every call.
     intervals = as_intervals(epochs, name="epochs")
-    out: list[NDArray[np.float64]] = []
-    for train in spike_times:
-        t = np.asarray(train, dtype=np.float64)
-        out.append(t[_mask_in_intervals(t, intervals, closed=closed)])
-    return out
+    trains, unit_ids, labelled = as_labelled_spike_trains(
+        spike_times, None, context="restrict_spike_trains"
+    )
+    kept = [t[_mask_in_intervals(t, intervals, closed=closed)] for t in trains]
+    return SpikeTrains(
+        kept,
+        unit_ids=unit_ids if labelled else None,
+        unit_table=spike_unit_table(spike_times),
+    )
 
 
 @dataclass(frozen=True, eq=False, repr=False)
