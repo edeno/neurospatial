@@ -468,9 +468,12 @@ class TestResampleFieldMathematicalProperties:
         assert defined[observed]
         np.testing.assert_allclose(result[defined], 5.0, rtol=1e-3)
         assert not defined.all()
-        np.testing.assert_array_equal(
+        # The same bins, and values to roundoff: smoothing by 5 / sqrt(2)
+        # twice is smoothing by 5.
+        np.testing.assert_allclose(
             result,
             env.smooth(field, bandwidth=5.0, mode="average"),
+            rtol=1e-10,
         )
 
 
@@ -538,3 +541,37 @@ class TestResampleFieldOutsideSource:
 
         with pytest.raises(NotImplementedError, match="without track_width"):
             resample_field(np.ones(src.n_bins), src, dst)
+
+
+def _line(spacing: float) -> Environment:
+    centers = np.arange(0.0, 200.0, spacing) + spacing / 2
+    return Environment.from_samples(
+        centers[:, None], bin_size=spacing, infer_active_bins=False, units="cm"
+    )
+
+
+@pytest.mark.parametrize("center", np.arange(100.5, 108.5, 1.0))
+def test_diffuse_coarsening_keeps_a_narrow_field_wherever_it_lies(center):
+    """A field narrower than the new bins is not lost between their centers.
+
+    Reading the field at the destination centers before smoothing kept all
+    of a 1 cm field at one shift and nothing of it 3 cm away.
+    """
+    src, dst = _line(1.0), _line(8.0)
+    x = src.bin_centers[:, 0]
+    field = np.exp(-0.5 * ((x - center) / 1.0) ** 2)
+    resampled = resample_field(field, src, dst, method="diffuse", bandwidth=8.0)
+    # The rate integrated over the track is kept at every shift.
+    assert resampled.sum() * 8.0 == pytest.approx(field.sum() * 1.0, rel=0.01)
+
+
+def test_diffuse_onto_the_same_environment_is_smoothing_by_the_bandwidth():
+    """Smoothing by b / sqrt(2) twice is smoothing by b once."""
+    env = _line(2.0)
+    field = np.random.default_rng(0).uniform(0, 10, env.n_bins)
+    np.testing.assert_allclose(
+        resample_field(field, env, env, method="diffuse", bandwidth=6.0),
+        env.smooth(field, bandwidth=6.0, mode="average"),
+        rtol=1e-5,
+        atol=1e-8,
+    )

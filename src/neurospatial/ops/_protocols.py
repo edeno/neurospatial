@@ -245,7 +245,12 @@ class ResampleSourceConsumer(CartesianBinsConsumer, BinLookupConsumer, Protocol)
     ``resample_field`` reads the field with ``interpolate(mode="nearest")``,
     which gives each point the nearest source bin center's value, NaN outside
     the source, and ``bin_at`` to keep the diffused field NaN outside it.
+    ``method="diffuse"`` first smooths it with ``diffuse``.
     """
+
+    def diffuse(
+        self, fields: Any, *, bandwidth: float, mode: KernelMode
+    ) -> NDArray[np.float64]: ...
 
     def interpolate(
         self,
@@ -256,11 +261,14 @@ class ResampleSourceConsumer(CartesianBinsConsumer, BinLookupConsumer, Protocol)
     ) -> NDArray[np.float64]: ...
 
 
-class ResampleTargetConsumer(CartesianConsumer, BinCentersConsumer, Protocol):
+class ResampleTargetConsumer(
+    CartesianConsumer, BinCentersConsumer, DiffusionGeometryConsumer, Protocol
+):
     """Cartesian bins that receive a resampled field and may diffuse it.
 
     ``diffuse`` is read once at the public boundary of ``resample_field``: the
-    destination environment caches the eigenbasis it smooths with.
+    destination environment caches the eigenbasis it smooths with. Its
+    diffusion components tell which bins the smoothed field reaches.
     """
 
     def diffuse(

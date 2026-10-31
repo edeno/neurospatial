@@ -163,6 +163,16 @@
   hole the brightest place, so the field reached 1.14 there for
   `reward_value=1`. It is now scaled to its maximum over the arena; convex
   regions are unchanged.
+- `resample_field(method="diffuse")` no longer loses fields narrower than the
+  destination bins. It read the field at the destination centers before
+  smoothing, so coarsening 1 cm bins to 8 cm kept all of a narrow field at
+  one position and none of it 3 cm away. It now smooths on the source and on
+  the destination, by `bandwidth / sqrt(2)` each (`bandwidth` in all), and
+  divides the smoothed values by the smoothed weight of observed bins once;
+  the field's integral is kept wherever it lies. Resampling onto the same
+  environment equals `env.smooth(field, bandwidth=bandwidth, mode="average")`.
+  Use a `bandwidth` of at least the larger bin spacing. Infinite field values
+  are refused, as with `method="nearest"`.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

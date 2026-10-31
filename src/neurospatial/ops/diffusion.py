@@ -220,6 +220,16 @@ _DIFFUSE_DENOM_EPS = 1e-12
 # an error of at most about 1/1000 = 0.1% of its value.
 _RESOLUTION_MARGIN = 1e3
 
+# Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed
+# support -- the share of its smoothing weight on observed bins -- is at most
+# this fraction of the largest support in its connected part. The truncated
+# operator reproduces the heat kernel to _HEAT_KERNEL_RANK_TOL (1e-6) of its
+# largest output, so above a support 1e3 times that the averaged value is
+# accurate to about 0.1% of the field's largest magnitude in the component
+# (not of each value: a 1000:1 field can be off by ~1% at its low end); below
+# it the ratio is truncation noise.
+_MISSING_SUPPORT_FLOOR = _RESOLUTION_MARGIN * _HEAT_KERNEL_RANK_TOL
+
 
 # ---------------------------------------------------------------------------
 # Core operator (W -> H) for the DENSE path (compute_kernel). The matrix-free

@@ -46,8 +46,7 @@ from neurospatial.geometry import (
 )
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
-    _HEAT_KERNEL_RANK_TOL,
-    _RESOLUTION_MARGIN,
+    _MISSING_SUPPORT_FLOOR,
     _diffusion_apply,
     _DiffusionEigenbasis,
     _ensure_global_modes,
@@ -68,16 +67,6 @@ from neurospatial.ops.diffusion import MRFBasis, heat_kernel_from_W
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena
     from neurospatial.ops._types import ResolvedBackend
-
-# Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed
-# support -- the share of its smoothing weight on observed bins -- is at most
-# this fraction of the largest support in its connected part. The truncated
-# operator reproduces the heat kernel to _HEAT_KERNEL_RANK_TOL (1e-6) of its
-# largest output, so above a support 1e3 times that the averaged value is
-# accurate to about 0.1% of the field's largest magnitude in the component
-# (not of each value: a 1000:1 field can be off by ~1% at its low end); below
-# it the ratio is truncation noise.
-MISSING_SUPPORT_FLOOR = _RESOLUTION_MARGIN * _HEAT_KERNEL_RANK_TOL
 
 
 def _interpolate(
@@ -659,7 +648,7 @@ def _diffuse(
             ~missing[:, holed],
             labels,
             n_components,
-            floor=MISSING_SUPPORT_FLOOR,
+            floor=_MISSING_SUPPORT_FLOOR,
         )
     # numpy backend -> ndarray; jax backend -> jax.Array (documented above).
     # The NDArray annotation is the numpy-path type; cast covers both.
