@@ -108,7 +108,8 @@ def read_units(
         handles), aligned table ``unit_ids``, per-unit ``obs_intervals`` and
         their shared intersection ``spike_window``, ``unit_table`` and the
         table's spike-time ``resolution`` in seconds (None when the file does
-        not state it). Coverage fields are None when the observation-interval
+        not state it or stores a value that is not finite and positive, such
+        as NaN, 0 or -1). Coverage fields are None when the observation-interval
         column is absent.
 
         ``unit_table`` is a DataFrame indexed by ``unit_id`` in ``unit_ids``
@@ -227,15 +228,25 @@ def read_units(
         if "obs_intervals" in units.colnames
         else None
     )
-    resolution = getattr(units, "resolution", None)
     return NWBUnits(
         spike_trains,
         ids[rows],
         obs_intervals,
         unit_table=_unit_table(units, rows, ids[rows]),
-        # -1 is NWB's "unknown" resolution sentinel.
-        resolution=None if resolution is None or resolution == -1 else resolution,
+        resolution=_known_resolution(getattr(units, "resolution", None)),
     )
+
+
+def _known_resolution(resolution: Any) -> float | None:
+    """The stored spike-time resolution, or None when it states no precision.
+
+    The schema has no "unknown" value; files write NaN, 0 or -1 instead, so
+    any value that is not finite and positive reads as unknown.
+    """
+    if resolution is None:
+        return None
+    value = float(resolution)
+    return value if np.isfinite(value) and value > 0 else None
 
 
 # Columns read into other NWBUnits fields or summarized from the electrodes.

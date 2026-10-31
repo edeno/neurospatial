@@ -414,3 +414,27 @@ class TestUnitTable:
         table = read_units(nwbfile).unit_table
         assert table["electrode_location"].tolist() == ["PFC", "CA1"]
         assert table["electrode_group"].tolist() == ["tetrode2", "tetrode1"]
+
+
+class TestUnitTableReview:
+    """Unknown resolutions, colliding column names and lazy multi-dim columns."""
+
+    @pytest.mark.parametrize("resolution", [np.nan, 0.0, -1.0, np.inf])
+    def test_unknown_resolution_reads_as_none(self, resolution):
+        """Older files store NaN or 0 for an unknown resolution; spikes still read."""
+        from pynwb import NWBFile
+        from pynwb.misc import Units
+
+        from neurospatial.io.nwb import read_units
+
+        nwbfile = NWBFile(
+            session_description="Units with an unknown resolution",
+            identifier=str(uuid4()),
+            session_start_time=datetime.now().astimezone(),
+        )
+        nwbfile.units = Units(name="units", resolution=resolution)
+        nwbfile.add_unit(spike_times=[0.1, 0.4], id=3)
+
+        units = read_units(nwbfile)
+        assert units.resolution is None
+        np.testing.assert_array_equal(units.spike_times[0], [0.1, 0.4])
