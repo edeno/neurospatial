@@ -438,3 +438,63 @@ class TestUnitTableReview:
         units = read_units(nwbfile)
         assert units.resolution is None
         np.testing.assert_array_equal(units.spike_times[0], [0.1, 0.4])
+
+    def test_file_unit_id_column_is_renamed(self):
+        """A Units ``unit_id`` column is kept as ``file_unit_id``."""
+        from pynwb import NWBFile
+
+        from neurospatial.io.nwb import read_units
+
+        nwbfile = NWBFile(
+            session_description="Units with a unit_id column",
+            identifier=str(uuid4()),
+            session_start_time=datetime.now().astimezone(),
+        )
+        nwbfile.add_unit_column("unit_id", "Sorter's cluster id")
+        nwbfile.add_unit(spike_times=[0.1], id=1, unit_id=104)
+        nwbfile.add_unit(spike_times=[0.2], id=2, unit_id=230)
+
+        table = read_units(nwbfile).unit_table
+        assert table.index.tolist() == [1, 2]
+        assert table["file_unit_id"].tolist() == [104, 230]
+        assert "unit_id" not in table.columns
+
+    def test_file_electrode_location_column_is_not_overwritten(self):
+        """A file's own ``electrode_location`` column wins over the derived one."""
+        from neurospatial.io.nwb import read_units
+
+        nwbfile = _file_with_tetrodes()
+        nwbfile.add_unit_column("electrode_location", "Histology-verified region")
+        nwbfile.add_unit(
+            spike_times=[0.1], id=1, electrodes=[0, 1], electrode_location="CA1 so"
+        )
+        nwbfile.add_unit(
+            spike_times=[0.2], id=2, electrodes=[4, 5], electrode_location="PL"
+        )
+
+        table = read_units(nwbfile).unit_table
+        assert table["electrode_location"].tolist() == ["CA1 so", "PL"]
+        assert table["electrode_group"].tolist() == ["tetrode1", "tetrode2"]
+
+    def test_units_electrode_group_column_gives_names(self):
+        """The standard ``electrode_group`` column is given by group name."""
+        from neurospatial.io.nwb import read_units
+
+        nwbfile = _file_with_tetrodes()
+        groups = nwbfile.electrode_groups
+        nwbfile.add_unit(
+            spike_times=[0.1],
+            id=1,
+            electrodes=[0, 1],
+            electrode_group=groups["tetrode1"],
+        )
+        nwbfile.add_unit(
+            spike_times=[0.2],
+            id=2,
+            electrodes=[4, 5],
+            electrode_group=groups["tetrode2"],
+        )
+
+        table = read_units(nwbfile).unit_table
+        assert table["electrode_group"].tolist() == ["tetrode1", "tetrode2"]
+        assert table["electrode_location"].tolist() == ["CA1", "PFC"]

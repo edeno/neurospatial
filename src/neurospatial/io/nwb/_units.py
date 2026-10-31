@@ -114,12 +114,15 @@ def read_units(
 
         ``unit_table`` is a DataFrame indexed by ``unit_id`` in ``unit_ids``
         order. It holds every Units column with one scalar per unit, such
-        as ``location``, ``cell_type`` or ``quality``, verbatim. When units
-        link electrodes it adds ``electrode_location``, the brain region from
-        the electrodes table ``location`` column, and ``electrode_group``, the
-        electrode group name; a unit on electrodes in several regions lists
-        each once, joined by ``", "``. Ragged and multi-dimensional columns
-        (for example ``waveform_mean``) are not included.
+        as ``location``, ``cell_type`` or ``quality``, verbatim; a column
+        named ``unit_id`` is renamed ``file_unit_id`` because the index holds
+        the table ids. When units link electrodes it adds
+        ``electrode_location``, the brain region from the electrodes table
+        ``location`` column, and ``electrode_group``, the electrode group
+        name; a unit on electrodes in several regions lists each once, joined
+        by ``", "``. A file column with either name is kept instead. Ragged
+        and multi-dimensional columns (for example ``waveform_mean``) are
+        not included.
 
     Raises
     ------
@@ -260,9 +263,11 @@ def _unit_table(units: Any, rows: list[int], unit_ids: NDArray[Any]) -> pd.DataF
 
     Keeps every Units column holding one scalar per unit (ragged columns,
     references to other tables and multi-dimensional columns such as
-    ``waveform_mean`` are skipped) and adds
-    ``electrode_location`` and ``electrode_group`` from the unit's electrodes.
-    Only these small columns are read; spike times are not touched.
+    ``waveform_mean`` are skipped) and adds ``electrode_location`` and
+    ``electrode_group`` from the unit's electrodes unless the file has
+    columns of those names. A file
+    column named ``unit_id`` becomes ``file_unit_id``, since the index holds
+    the table ids. Spike times are not touched.
 
     Parameters
     ----------
@@ -290,8 +295,11 @@ def _unit_table(units: Any, rows: list[int], unit_ids: NDArray[Any]) -> pd.DataF
         values = column.data[:]
         if not all(np.ndim(value) == 0 for value in values):
             continue
-        columns[name] = [values[row] for row in rows]
-    columns.update(_electrode_columns(units, rows))
+        columns["file_unit_id" if name == "unit_id" else name] = [
+            values[row] for row in rows
+        ]
+    for name, derived in _electrode_columns(units, rows).items():
+        columns.setdefault(name, derived)
     return pd.DataFrame(columns, index=pd.Index(unit_ids, name="unit_id"))
 
 
@@ -300,8 +308,9 @@ def _electrode_columns(units: Any, rows: list[int]) -> dict[str, list[str | None
 
     Regions come from the electrodes table ``location`` column, groups from
     its ``group`` column, for the electrodes the unit's ``electrodes`` row
-    lists. Without an ``electrodes`` column, the Units ``electrode_group``
-    column gives both (the group name and its ``location``). A unit on
+    lists. The Units ``electrode_group`` column, when present, gives the
+    group name, and without an ``electrodes`` column also the region (the
+    group's ``location``). A unit on
     electrodes in several regions or groups lists each once, in electrode
     order, joined by ``", "``; a unit that lists no electrodes gets None.
 
@@ -314,6 +323,11 @@ def _electrode_columns(units: Any, rows: list[int]) -> dict[str, list[str | None
     """
     from hdmf.common.table import VectorIndex
 
+    derived: dict[str, list[str | None]] = {}
+    if "electrode_group" in units.colnames:
+        unit_groups = units["electrode_group"].data[:]
+        derived["electrode_location"] = [str(unit_groups[row].location) for row in rows]
+        derived["electrode_group"] = [str(unit_groups[row].name) for row in rows]
     if "electrodes" in units.colnames:
         column = units["electrodes"]
         if isinstance(column, VectorIndex):
@@ -337,21 +351,15 @@ def _electrode_columns(units: Any, rows: list[int]) -> dict[str, list[str | None
             if "location" in electrodes.colnames
             else [group.location for group in groups]
         )
-        return {
-            "electrode_location": [
-                _join_unique(locations[i] for i in channels) for channels in per_unit
-            ],
-            "electrode_group": [
-                _join_unique(groups[i].name for i in channels) for channels in per_unit
-            ],
-        }
-    if "electrode_group" in units.colnames:
-        groups = units["electrode_group"].data[:]
-        return {
-            "electrode_location": [str(groups[row].location) for row in rows],
-            "electrode_group": [str(groups[row].name) for row in rows],
-        }
-    return {}
+        derived["electrode_location"] = [
+            _join_unique(locations[i] for i in channels) for channels in per_unit
+        ]
+        # The unit's own electrode_group column, when present, names its group.
+        derived.setdefault(
+            "electrode_group",
+            [_join_unique(groups[i].name for i in channels) for channels in per_unit],
+        )
+    return derived
 
 
 def _join_unique(values: Any) -> str | None:
