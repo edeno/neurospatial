@@ -153,7 +153,9 @@ class TestShuffleTest:
         dispersion = nulls["dispersion"]
         assert result.tested_p_values["dispersion"] == pytest.approx(
             compute_shuffle_pvalue(
-                dispersion.observed_score, dispersion.null_scores, tail="two-sided"
+                dispersion.observed_score,
+                dispersion.null_scores,
+                alternative="two-sided",
             )
         )
         assert result.p_value == pytest.approx(1.0) and not result.is_replay

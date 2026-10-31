@@ -57,6 +57,42 @@
   mode: pynwb cannot remove a written trials table, and an export would
   silently keep the old trials.
 
+### Statistics: simpler shared helpers, faster spike-train nulls
+
+**Changed**
+
+- `circular_basis_metrics` returns a NaN p-value, not `None`, when no
+  `cov_matrix` is given. `plot_circular_basis_tuning(show_ci=True)` checks
+  `cov_matrix` like the Wald test does (2x2, finite, symmetric positive
+  semi-definite) instead of clamping negative variances.
+- The test direction is `alternative` everywhere, as in replay and scipy:
+  `compute_shuffle_pvalue(..., alternative=)`,
+  `ShuffleTestResult.from_null(..., alternative=)` and
+  `ShuffleTestResult.alternative` (and its `summary()` key) replace `tail`.
+- `ShuffleTestResult` takes `observed_score`, `null_scores`, `p_value`,
+  `shuffle_type` and `alternative`; `z_score` and `n_shuffles` are derived
+  from the null scores.
+- `ShuffleTestResult.from_null` no longer takes `decimals`. Rank-order replay
+  scores the event with the same Spearman formula as its shuffles, so a
+  shuffle with the event's correlation ties with it exactly.
+- The replay null generators (`shuffle_cell_identity`,
+  `shuffle_place_fields_circular`, `shuffle_posterior_circular`,
+  `shuffle_spike_counts_circular`, ...) refuse `n_shuffles` below 1 or not an
+  integer, as the stats generators do, instead of yielding nothing.
+- NaN-dropped warnings from the circular statistics point at the calling
+  line, and weight errors name the `weights` argument.
+- `DirectionalRatesResult.preferred_directions()` returns NaN for a unit
+  without a mean direction (for example flat tuning), as
+  `preferred_direction()` already did, instead of an arbitrary angle. One-unit
+  and many-unit directional metrics now share one computation and agree
+  exactly (they differed in the last bit).
+
+**Performance**
+
+- `shuffle_spike_times_circular` and `generate_jittered_spikes` sort each
+  draw in linear time (about 3x faster for 9000 spikes); outputs are
+  identical.
+
 ### File and NWB I/O: review fixes
 
 **Fixed**

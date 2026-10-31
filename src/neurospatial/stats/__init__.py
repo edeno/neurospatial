@@ -21,7 +21,7 @@ Imports
 >>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 """
 
-from neurospatial.stats._utils import _ensure_rng as _ensure_rng
+from neurospatial.stats._utils import _binomial_rate as _binomial_rate
 from neurospatial.stats.circular import (
     CircularBasisResult,
     circular_basis,
@@ -37,8 +37,8 @@ from neurospatial.stats.circular import (
     rayleigh_test,
     wrap_angle,
 )
-from neurospatial.stats.circular import _to_radians as _to_radians
 from neurospatial.stats.circular import _validate_paired_input as _validate_paired_input
+from neurospatial.stats.shuffle import _ALTERNATIVES as _ALTERNATIVES
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,

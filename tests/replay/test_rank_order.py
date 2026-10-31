@@ -624,8 +624,8 @@ class TestMultiFieldCells:
 def test_permutation_p_value_counts_tied_correlations():
     """Six cells take few distinct correlations; ties must count as extreme.
 
-    The event's rho comes from scipy and the shuffles' from a matrix
-    formula, so equal correlations can differ by one ulp.
+    The event and its shuffles share one formula, so a shuffle with the
+    event's correlation equals it exactly.
     """
     env = Environment.linear_track(
         endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=10.0, units="cm"
@@ -640,8 +640,8 @@ def test_permutation_p_value_counts_tied_correlations():
         env, spikes, (1.0, 1.1), rates, alternative="less", n_shuffles=999, rng=0
     )
     null = result.shuffle.null_scores
-    expected = (np.sum(null <= result.observed.score + 1e-9) + 1) / 1000
-    assert result.p_value == pytest.approx(expected)
+    assert np.any(null == result.observed.score)
+    assert result.p_value == (np.sum(null <= result.observed.score) + 1) / 1000
 
 
 def test_field_positions_ignore_bins_outside_spatial_support():

@@ -43,7 +43,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
 from neurospatial._spikes import as_spike_trains
 from neurospatial.reactivation.assemblies import _validated_counts
-from neurospatial.stats._utils import _binomial_rate, _ensure_rng
+from neurospatial.stats import _binomial_rate
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -126,7 +126,7 @@ def null_reactivation_data(
         raise ValueError(
             f"null_reactivation_data(): kind must be one of {_KINDS}, got {kind!r}."
         )
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     trains = as_spike_trains(spike_times)
     epochs = as_intervals(match_epochs, name="match_epochs")
     assert epochs is not None
@@ -313,7 +313,7 @@ def simulated_reactivation_session(
     ):
         if not (np.isfinite(value) and value >= 0):
             raise ValueError(f"{call}: {name} must be finite and >= 0, got {value!r}.")
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     control = np.array([[0.0, duration]])
     template = np.array([[duration, 2 * duration]])
     match = np.array([[2 * duration, 3 * duration]])
@@ -509,7 +509,7 @@ def equalize_firing_rates(
             )
     if control.shape[0] == 0 or match.shape[0] == 0:
         raise ValueError(f"{call}: each period needs at least one time bin.")
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     rate = np.minimum(control.mean(axis=0), match.mean(axis=0))
     return (
         _thinned(control, np.round(rate * len(control)).astype(np.int64), generator),

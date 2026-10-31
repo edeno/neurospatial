@@ -945,9 +945,7 @@ def fit_linear_trajectory(
 
     _check_sampling(n_samples, n_resamples, allocation, spikes, len(posterior))
 
-    from neurospatial.stats import _ensure_rng
-
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     samples_per_bin = _samples_per_time_bin(
         int(n_samples), int(n_resamples), len(posterior), spikes, allocation, generator
     )

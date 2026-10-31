@@ -152,7 +152,6 @@ from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_integer_at_least
-from neurospatial.stats._utils import _ensure_rng
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -1389,7 +1388,7 @@ def _eigenvalue_threshold(
     if component_threshold == "tracy_widom":
         return mp_threshold + n_retained ** (-2.0 / 3.0), np.zeros(0)
     surrogate_max = _surrogate_max_eigenvalues(
-        spike_counts_z, component_threshold, n_shuffles, _ensure_rng(rng)
+        spike_counts_z, component_threshold, n_shuffles, np.random.default_rng(rng)
     )
     assert percentile is not None  # checked by _check_component_threshold
     return float(np.percentile(surrogate_max, percentile)), surrogate_max

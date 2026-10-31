@@ -58,9 +58,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import to_radians
 from neurospatial._results import ResultMixin
 from neurospatial.stats import (
-    _to_radians,
     _validate_paired_input,
     circular_linear_correlation,
     mean_resultant_length,
@@ -834,14 +834,9 @@ def _phase_precession(
 
     from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
 
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(
-            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
-            "Fix: pass the unit your phases are in."
-        )
     # Convert to arrays and radians if needed
     positions = np.asarray(positions, dtype=np.float64)
-    phases = np.asarray(phases, dtype=np.float64)
+    phases = to_radians(phases, angle_unit)
     if angle_unit == "rad":
         warn_if_angles_look_like_degrees(
             phases,
@@ -849,7 +844,6 @@ def _phase_precession(
             context="compute_phase_precession",
             angle_unit_keyword=True,
         )
-    phases = _to_radians(phases, angle_unit)
     n_shuffles_eff = int(n_shuffles)
     if n_shuffles_eff < 0:
         raise ValueError(
