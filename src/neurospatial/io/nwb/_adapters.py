@@ -87,44 +87,66 @@ def select_one(
     return candidates[0][1]
 
 
-def merge_overlay_coordinate_metadata(
-    units: str | None,
-    frame: str | None,
-    kwargs: dict[str, Any],
+def supply_coordinate_metadata(
+    declared: dict[str, str | None],
+    requested: dict[str, str | None],
     *,
-    context: str,
+    call: str,
     source: str,
+    fix: str,
 ) -> dict[str, str | None]:
-    """Consume overlay declarations, allowing only absent metadata to be supplied.
+    """Fill absent ``units`` / ``frame`` declarations from the caller's values.
 
-    Known declarations cannot be erased or relabeled: equivalent unit aliases
-    are accepted, while frame descriptions must agree verbatim. Coordinates
-    are never transformed or rescaled by a metadata override.
+    A requested value may restate a declaration (unit aliases are the same
+    unit) or supply a missing one; it never erases or relabels a known
+    declaration, because metadata does not convert coordinates.
+
+    Parameters
+    ----------
+    declared : dict
+        The source's ``"units"`` and ``"frame"``; None when undeclared.
+    requested : dict
+        The caller's values for some of those keys. A key that is present is
+        checked, even with value None.
+    call : str
+        The public call, named in the error.
+    source : str
+        The declaring object, e.g. ``"the Position series"``.
+    fix : str
+        How to convert the coordinates instead, completing "omit ``key=``
+        to use the declaration, or ...".
+
+    Returns
+    -------
+    dict
+        ``declared`` with absent entries filled from ``requested``.
+
+    Raises
+    ------
+    ValueError
+        If a requested value conflicts with a known declaration.
     """
     from neurospatial._exceptions import _format_error
     from neurospatial._units import same_coordinate_declaration
 
-    declarations: dict[str, str | None] = {"units": units, "frame": frame}
-    for name, known in declarations.items():
-        if name not in kwargs:
-            continue
-        requested = kwargs.pop(name)
-        # A known declaration can be restated, never erased or relabeled.
-        if known is not None and not same_coordinate_declaration(
-            name, requested, known, undeclared_matches=False
+    resolved = dict(declared)
+    for key, value in requested.items():
+        known = declared[key]
+        if known is None:
+            resolved[key] = value
+        elif not same_coordinate_declaration(
+            key, value, known, undeclared_matches=False
         ):
             raise ValueError(
                 _format_error(
-                    f"{context} {name} {requested!r} conflicts with NWB {source} "
-                    f"{name} {known!r}.",
-                    fix="explicitly convert the source coordinates before "
-                    "constructing the overlay; metadata cannot relabel or "
-                    "rescale coordinates.",
+                    f"{call}({key}={value!r}) conflicts with {source}, which "
+                    f"declares {key} {known!r}.",
+                    why=f"Why: a {key} label does not convert coordinates, so "
+                    "a different one would mislabel them.",
+                    fix=f"omit {key}= to use {known!r}, or {fix}",
                 )
             )
-        if known is None:
-            declarations[name] = requested
-    return declarations
+    return resolved
 
 
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:

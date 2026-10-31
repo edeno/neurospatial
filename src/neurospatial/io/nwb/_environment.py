@@ -616,7 +616,9 @@ def environment_from_position(
     """
     _require_pynwb()
 
+    from neurospatial._exceptions import _format_error
     from neurospatial.environment import Environment, _from_samples
+    from neurospatial.io.nwb._adapters import supply_coordinate_metadata
     from neurospatial.io.nwb._behavior import read_position
 
     position_data = read_position(
@@ -631,8 +633,6 @@ def environment_from_position(
         else f"Position series {position_name!r}"
     )
     if columns is not None and units is None and position_data.units is None:
-        from neurospatial._exceptions import _format_error
-
         raise ValueError(
             _format_error(
                 f"{series} states no single unit for columns={list(columns)}.",
@@ -648,99 +648,18 @@ def environment_from_position(
                 ),
             )
         )
-    units, frame = _series_coordinates(
-        series,
+    declared = supply_coordinate_metadata(
         {"units": position_data.units, "frame": position_data.frame},
-        {"units": units, "frame": frame},
+        {
+            key: value
+            for key, value in (("units", units), ("frame", frame))
+            if value is not None
+        },
+        call="environment_from_position",
+        source=f"{series[0].lower()}{series[1:]}",
+        fix="convert the positions and bin them with Environment.from_samples",
     )
-
-    # Bin the samples exactly as Environment.from_samples does, naming this
-    # function in any error about the options.
-    return _from_samples(
-        Environment,
-        position_data.positions,
-        bin_size=bin_size,
-        name=name,
-        units=units,
-        frame=frame,
-        regions=regions,
-        arena=arena,
-        wall_fit=wall_fit,
-        layout=layout,
-        dimension_ranges=dimension_ranges,
-        infer_active_bins=infer_active_bins,
-        bin_count_threshold=bin_count_threshold,
-        dilate=dilate,
-        fill_holes=fill_holes,
-        close_gaps=close_gaps,
-        add_boundary_bins=add_boundary_bins,
-        connect_diagonal_neighbors=connect_diagonal_neighbors,
-        factory="environment_from_position",
-    )
-
-
-def _series_coordinates(
-    series: str,
-    declared: dict[str, str | None],
-    requested: dict[str, str | None],
-) -> tuple[str, str | None]:
-    """Return the environment's units and frame from the series declarations.
-
-    An explicit value may restate a declaration (unit aliases are the same
-    unit) or supply a missing one; it never relabels the coordinates.
-
-    Parameters
-    ----------
-    series : str
-        How to name the Position series in messages.
-    declared : dict
-        The series ``"units"`` and ``"frame"``; None when undeclared.
-    requested : dict
-        The caller's ``"units"`` and ``"frame"``; None when not given.
-
-    Returns
-    -------
-    units : str
-        The positions' unit.
-    frame : str or None
-        The positions' coordinate frame, None when neither side gives one.
-
-    Raises
-    ------
-    ValueError
-        If an explicit value conflicts with the declaration, or no unit is
-        declared or given.
-    """
-    from neurospatial._exceptions import _format_error
-    from neurospatial._units import same_coordinate_declaration
-
-    resolved = dict(declared)
-    for key, value in requested.items():
-        known = declared[key]
-        if value is None:
-            continue
-        if known is None:
-            resolved[key] = value
-        elif not same_coordinate_declaration(
-            key, value, known, undeclared_matches=False
-        ):
-            raise ValueError(
-                _format_error(
-                    f"environment_from_position({key}={value!r}) conflicts with "
-                    f"{series[0].lower()}{series[1:]}, which declares {key} {known!r}.",
-                    why=(
-                        "Why: the positions are in the series' coordinates; a "
-                        f"different {key} label would not convert them, so every "
-                        "distance, bin size and speed would be mislabeled."
-                    ),
-                    fix=(
-                        f"omit {key}= to use {known!r}, or convert the positions "
-                        "and bin them with Environment.from_samples"
-                    ),
-                )
-            )
-    units = resolved["units"]
-    if units is None:
+    if declared["units"] is None:
         raise ValueError(
             _format_error(
                 f"{series} declares no unit, so the physical scale of its "
@@ -756,4 +675,27 @@ def _series_coordinates(
                 ),
             )
         )
-    return units, resolved["frame"]
+
+    # Bin the samples exactly as Environment.from_samples does, naming this
+    # function in any error about the options.
+    return _from_samples(
+        Environment,
+        position_data.positions,
+        bin_size=bin_size,
+        name=name,
+        units=declared["units"],
+        frame=declared["frame"],
+        regions=regions,
+        arena=arena,
+        wall_fit=wall_fit,
+        layout=layout,
+        dimension_ranges=dimension_ranges,
+        infer_active_bins=infer_active_bins,
+        bin_count_threshold=bin_count_threshold,
+        dilate=dilate,
+        fill_holes=fill_holes,
+        close_gaps=close_gaps,
+        add_boundary_bins=add_boundary_bins,
+        connect_diagonal_neighbors=connect_diagonal_neighbors,
+        factory="environment_from_position",
+    )

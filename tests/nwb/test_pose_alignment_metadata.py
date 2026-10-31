@@ -175,7 +175,10 @@ def test_adapter_metadata_checked_against_environment(empty_nwb, env_metadata):
 )
 def test_keyword_metadata_cannot_relabel_known_coordinates(empty_nwb, overrides):
     _add_pose(empty_nwb)
-    with pytest.raises(ValueError, match="conflicts with NWB pose"):
+    with pytest.raises(
+        ValueError,
+        match=r"bodypart_overlay_from_nwb\(\w+=.*\) conflicts with the NWB pose data",
+    ):
         bodypart_overlay_from_nwb(empty_nwb, **overrides)
 
 

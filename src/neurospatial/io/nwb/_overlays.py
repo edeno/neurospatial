@@ -85,7 +85,7 @@ def position_overlay_from_nwb(
     ... )  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import PositionOverlay
-    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
+    from neurospatial.io.nwb._adapters import supply_coordinate_metadata
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -97,12 +97,12 @@ def position_overlay_from_nwb(
     )
     positions = position_data.positions
     timestamps = position_data.times
-    declarations = merge_overlay_coordinate_metadata(
-        position_data.units,
-        position_data.frame,
-        kwargs,
-        context="PositionOverlay",
-        source="position",
+    declarations = supply_coordinate_metadata(
+        {"units": position_data.units, "frame": position_data.frame},
+        {key: kwargs.pop(key) for key in ("units", "frame") if key in kwargs},
+        call="position_overlay_from_nwb",
+        source="the NWB Position series",
+        fix="convert the positions and build PositionOverlay yourself.",
     )
 
     # Create and return PositionOverlay
@@ -182,13 +182,17 @@ def bodypart_overlay_from_nwb(
     ... )
     """
     from neurospatial.animation.overlays import BodypartOverlay
-    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
+    from neurospatial.io.nwb._adapters import supply_coordinate_metadata
     from neurospatial.io.nwb._pose import read_pose
 
     pose = read_pose(nwbfile, pose_estimation_name=pose_estimation_name)
     _require_skeleton_names_bodyparts(pose)
-    declarations = merge_overlay_coordinate_metadata(
-        pose.units, pose.frame, kwargs, context="BodypartOverlay", source="pose"
+    declarations = supply_coordinate_metadata(
+        {"units": pose.units, "frame": pose.frame},
+        {key: kwargs.pop(key) for key in ("units", "frame") if key in kwargs},
+        call="bodypart_overlay_from_nwb",
+        source="the NWB pose data",
+        fix="convert the bodypart coordinates and build BodypartOverlay yourself.",
     )
     return BodypartOverlay(
         data=dict(pose.bodyparts),
