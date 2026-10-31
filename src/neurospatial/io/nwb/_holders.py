@@ -19,11 +19,15 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import (
     ReadOnlyArraysMixin,
+    _copy_unit_table,
+    align_unit_table,
     read_only_copy,
     reduce_through_constructor,
 )
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from neurospatial.animation.skeleton import Skeleton
 
 
@@ -180,6 +184,7 @@ class NWBHeadDirection(ReadOnlyArraysMixin):
         self._own_arrays()
 
 
+@_copy_unit_table
 @dataclass(frozen=True)
 class NWBUnits(ReadOnlyArraysMixin):
     """Unit spikes, identities and acquisition coverage from an NWB file.
@@ -199,13 +204,24 @@ class NWBUnits(ReadOnlyArraysMixin):
         (n_intervals, 2), or None when ``obs_intervals`` is None. An empty
         intersection has shape (0, 2). Derived from ``obs_intervals``, not
         passed to the constructor.
+    unit_table : pandas.DataFrame or None, default None
+        Per-unit metadata, one row per unit in ``unit_ids`` order, for
+        example brain region and putative cell type. A ``unit_id`` column or
+        a named or non-default index aligns rows by identity; a plain
+        ``RangeIndex`` uses spike-train order. Reading returns a copy.
+    resolution : float or None, default None
+        Smallest possible difference between two spike times, in seconds
+        (usually one over the acquisition sampling rate), or None when
+        unknown.
 
     Raises
     ------
     ValueError
         If the per-unit fields do not match one-to-one, ``unit_ids`` repeats
-        an id, or an ``obs_intervals`` entry is not (n_intervals, 2) with
-        finite rows whose stop follows their start.
+        an id, an ``obs_intervals`` entry is not (n_intervals, 2) with
+        finite rows whose stop follows their start, ``unit_table`` rows do
+        not match ``unit_ids``, or ``resolution`` is not a finite positive
+        number.
 
     Notes
     -----
@@ -228,6 +244,8 @@ class NWBUnits(ReadOnlyArraysMixin):
     unit_ids: NDArray[np.int64]
     obs_intervals: Sequence[NDArray[np.float64]] | None
     spike_window: NDArray[np.float64] | None = field(init=False)
+    unit_table: pd.DataFrame | None = field(default=None, kw_only=True, compare=False)
+    resolution: float | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         unit_ids = np.asarray(self.unit_ids)
@@ -259,6 +277,23 @@ class NWBUnits(ReadOnlyArraysMixin):
             object.__setattr__(self, "obs_intervals", obs)
             window = _shared_window(obs, unit_ids)
         object.__setattr__(self, "spike_window", window)
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(self.unit_table, unit_ids, context="NWBUnits"),
+        )
+        if self.resolution is not None:
+            resolution = float(self.resolution)
+            if not (np.isfinite(resolution) and resolution > 0):
+                raise ValueError(
+                    _format_error(
+                        f"NWBUnits resolution must be a finite positive number "
+                        f"of seconds, got {self.resolution!r}.",
+                        fix="pass the spike-time precision, usually one over the "
+                        "sampling rate (e.g. 1 / 30000), or None when unknown.",
+                    )
+                )
+            object.__setattr__(self, "resolution", resolution)
         self._own_arrays()
 
 

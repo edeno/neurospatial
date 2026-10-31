@@ -2,8 +2,8 @@
 Spike-time reading from an NWB ``units`` table.
 
 This module provides :func:`read_units`, which extracts per-neuron spike-time
-arrays, unit ids and observation intervals from the ragged ``units``
-:class:`~hdmf.common.table.DynamicTable` of an NWB file.
+arrays, unit ids, observation intervals and per-unit metadata from the ragged
+``units`` :class:`~hdmf.common.table.DynamicTable` of an NWB file.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
@@ -105,8 +106,23 @@ def read_units(
     NWBUnits
         Frozen, non-iterable holder with ``spike_times`` (sorted arrays or lazy
         handles), aligned table ``unit_ids``, per-unit ``obs_intervals`` and
-        their shared intersection ``spike_window``. Coverage fields are None
-        when the observation-interval column is absent.
+        their shared intersection ``spike_window``, ``unit_table`` and the
+        table's spike-time ``resolution`` in seconds (None when the file does
+        not state it or stores a value that is not finite and positive, such
+        as NaN, 0 or -1). Coverage fields are None when the observation-interval
+        column is absent.
+
+        ``unit_table`` is a DataFrame indexed by ``unit_id`` in ``unit_ids``
+        order. It holds every Units column with one scalar per unit, such
+        as ``location``, ``cell_type`` or ``quality``, verbatim; a column
+        named ``unit_id`` is renamed ``file_unit_id`` because the index holds
+        the table ids. When units link electrodes it adds
+        ``electrode_location``, the brain region from the electrodes table
+        ``location`` column, and ``electrode_group``, the electrode group
+        name; a unit on electrodes in several regions lists each once, joined
+        by ``", "``. A file column with either name is kept instead. Ragged
+        and multi-dimensional columns (for example ``waveform_mean``) are
+        not included.
 
     Raises
     ------
@@ -131,6 +147,13 @@ def read_units(
     an analysis raises its "no rows" window error. Observation intervals are
     read eagerly even when spike arrays are lazy.
 
+    To analyze units from one brain region, build
+    ``SpikeTrains(units.spike_times, unit_ids=units.unit_ids,
+    unit_table=units.unit_table)`` and select with
+    ``.filter("electrode_location == 'CA1'")`` (or the file's own region
+    column); encoding results carry the table. The metadata table is read
+    eagerly; with ``lazy=True`` only the spike times stay on disk.
+
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Materialize them (``np.asarray`` or indexing) inside the
     ``with NWBHDF5IO(...)`` block; ``lazy=False`` returns arrays that remain
@@ -146,13 +169,16 @@ def read_units(
     ...     identifier="demo",
     ...     session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ... )
-    >>> nwbfile.add_unit(spike_times=[0.1, 0.5, 1.2], id=7)
-    >>> nwbfile.add_unit(spike_times=[0.3, 0.9], id=11)
+    >>> nwbfile.add_unit_column("location", "Brain region of the unit")
+    >>> nwbfile.add_unit(spike_times=[0.1, 0.5, 1.2], id=7, location="CA1")
+    >>> nwbfile.add_unit(spike_times=[0.3, 0.9], id=11, location="CA3")
     >>> units = read_units(nwbfile)
     >>> units.unit_ids
     array([ 7, 11])
     >>> units.spike_times[0]
     array([0.1, 0.5, 1.2])
+    >>> units.unit_table["location"].tolist()
+    ['CA1', 'CA3']
     """
     _require_pynwb()
 
@@ -205,4 +231,142 @@ def read_units(
         if "obs_intervals" in units.colnames
         else None
     )
-    return NWBUnits(spike_trains, ids[rows], obs_intervals)
+    return NWBUnits(
+        spike_trains,
+        ids[rows],
+        obs_intervals,
+        unit_table=_unit_table(units, rows, ids[rows]),
+        resolution=_known_resolution(getattr(units, "resolution", None)),
+    )
+
+
+def _known_resolution(resolution: Any) -> float | None:
+    """The stored spike-time resolution, or None when it states no precision.
+
+    The schema has no "unknown" value; files write NaN, 0 or -1 instead, so
+    any value that is not finite and positive reads as unknown.
+    """
+    if resolution is None:
+        return None
+    value = float(resolution)
+    return value if np.isfinite(value) and value > 0 else None
+
+
+# Columns read into other NWBUnits fields or summarized from the electrodes.
+_NOT_METADATA = frozenset(
+    {"spike_times", "obs_intervals", "electrodes", "electrode_group"}
+)
+
+
+def _unit_table(units: Any, rows: list[int], unit_ids: NDArray[Any]) -> pd.DataFrame:
+    """Per-unit metadata of the selected ``rows``, indexed by ``unit_id``.
+
+    Keeps every Units column holding one scalar per unit (ragged columns,
+    references to other tables and multi-dimensional columns such as
+    ``waveform_mean`` are skipped, the last from their shape without
+    reading values) and adds ``electrode_location`` and
+    ``electrode_group`` from the unit's electrodes unless the file has
+    columns of those names. A file
+    column named ``unit_id`` becomes ``file_unit_id``, since the index holds
+    the table ids. Spike times are not touched.
+
+    Parameters
+    ----------
+    units : pynwb.misc.Units
+        The open units table.
+    rows : list of int
+        Selected table rows, in output order.
+    unit_ids : NDArray, shape (n_selected,)
+        Table ids of ``rows``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per selected unit, index named ``unit_id``.
+    """
+    from hdmf.common.table import DynamicTableRegion, VectorIndex
+
+    columns: dict[str, Any] = {}
+    for name in units.colnames:
+        column = units[name]
+        if name in _NOT_METADATA or isinstance(
+            column, (VectorIndex, DynamicTableRegion)
+        ):
+            continue
+        # A file-backed dataset tells its shape without reading values.
+        shape = getattr(column.data, "shape", None)
+        if shape is not None and len(shape) != 1:
+            continue
+        values = column.data[:]
+        if not all(np.ndim(value) == 0 for value in values):
+            continue
+        columns["file_unit_id" if name == "unit_id" else name] = [
+            values[row] for row in rows
+        ]
+    for name, derived in _electrode_columns(units, rows).items():
+        columns.setdefault(name, derived)
+    return pd.DataFrame(columns, index=pd.Index(unit_ids, name="unit_id"))
+
+
+def _electrode_columns(units: Any, rows: list[int]) -> dict[str, list[str | None]]:
+    """Brain region and electrode group of each selected unit.
+
+    Regions come from the electrodes table ``location`` column, groups from
+    its ``group`` column, for the electrodes the unit's ``electrodes`` row
+    lists. The Units ``electrode_group`` column, when present, gives the
+    group name, and without an ``electrodes`` column also the region (the
+    group's ``location``). A unit on
+    electrodes in several regions or groups lists each once, in electrode
+    order, joined by ``", "``; a unit that lists no electrodes gets None.
+
+    Returns
+    -------
+    dict
+        ``{"electrode_location": [...], "electrode_group": [...]}`` with one
+        entry per selected unit, or ``{}`` when the table links no
+        electrodes.
+    """
+    from hdmf.common.table import VectorIndex
+
+    derived: dict[str, list[str | None]] = {}
+    if "electrode_group" in units.colnames:
+        unit_groups = units["electrode_group"].data[:]
+        derived["electrode_location"] = [str(unit_groups[row].location) for row in rows]
+        derived["electrode_group"] = [str(unit_groups[row].name) for row in rows]
+    if "electrodes" in units.colnames:
+        column = units["electrodes"]
+        if isinstance(column, VectorIndex):
+            # Ragged: each unit lists several electrodes.
+            region = column.target
+            ends = np.asarray(column.data[:])
+            electrode_rows = np.asarray(region.data[:])
+            per_unit = [
+                electrode_rows[(ends[row - 1] if row else 0) : ends[row]]
+                for row in rows
+            ]
+        else:
+            # Older files store one electrode per unit without an index.
+            region = column
+            electrode_rows = np.asarray(region.data[:])
+            per_unit = [electrode_rows[row : row + 1] for row in rows]
+        electrodes = region.table
+        groups = electrodes["group"].data[:]
+        locations = (
+            electrodes["location"].data[:]
+            if "location" in electrodes.colnames
+            else [group.location for group in groups]
+        )
+        derived["electrode_location"] = [
+            _join_unique(locations[i] for i in channels) for channels in per_unit
+        ]
+        # The unit's own electrode_group column, when present, names its group.
+        derived.setdefault(
+            "electrode_group",
+            [_join_unique(groups[i].name for i in channels) for channels in per_unit],
+        )
+    return derived
+
+
+def _join_unique(values: Any) -> str | None:
+    """Distinct values in first-seen order joined by ``", "``; None if empty."""
+    return ", ".join(dict.fromkeys(str(value) for value in values)) or None

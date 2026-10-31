@@ -464,6 +464,35 @@ A decode result does not record the `epochs=` it was decoded over; if you
 restricted decoding that way, pass the same windows as `to_pynapple(result,
 epochs=...)`.
 
+### Checking results against pynapple
+
+Some results match pynapple exactly; others differ by design:
+
+- **Spike counts.** `bin_spikes_in_time(tsgroup, dt=..., epochs=...)` equals
+  `tsgroup.count(dt, ep=...)`, bin for bin.
+- **1-D Bayesian decoding.** With equal-size bins, the posterior of
+  `decode_position` matches `nap.decode_bayes` with its default uniform prior
+  to floating-point precision. neurospatial's default prior is uniform over
+  space (each bin's prior mass is proportional to its size), pynapple's is
+  uniform over bins, so they differ when bin sizes differ. pynapple skips
+  NaN rates when it sums the log-likelihood, so a bin with unknown rates
+  counts as likelihood 1 and can collect posterior mass; neurospatial gives
+  such bins zero posterior mass.
+- **Rate maps** differ from `nap.compute_tuning_curves` by design.
+  With the default `time_allocation="start"`, neurospatial assigns each
+  spike to the position sample at or before it, pynapple to the nearest
+  sample. Occupancy is the elapsed time to the next sample, while pynapple
+  counts samples and converts with the mean sampling rate, so the two differ
+  for irregular tracking. `method="binned"` also
+  smooths by default; pass `bandwidth=0` to compare unsmoothed maps.
+- **Recording window.** Use `read_units(...).spike_window`, the intersection
+  of the units' observation intervals, as `spike_window=`. A `TsGroup` loaded
+  from NWB by `nap.load_file` gets a time support from its first spike to its
+  last and ignores `obs_intervals`.
+- **What pynapple loads.** `nap.load_file` does not load region crossings or
+  other ndx-events tables, such as rewards; read them with
+  `read_events(nwbfile, table_name=...)`.
+
 ## NWB interop
 
 The NWB adapters read population spikes, position, and pose out of an NWB file,
@@ -480,12 +509,27 @@ Read components explicitly. These readers return frozen, non-iterable holders:
 | `read_position` | `NWBPosition.times`, `.positions`, `.units`, `.frame` |
 | `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians), `.frame` |
 | `read_pose` | `NWBPose.bodyparts`, `.times`, `.skeleton`, `.units`, `.frame`, `.confidence` |
-| `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window` |
+| `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window`, `.unit_table`, `.resolution` |
 
 When a file holds more than one matching series or container, for example raw
 pixel and calibrated position, the reader raises and lists their paths instead
 of picking one. Pass the name or full path to `position_name=`,
 `compass_name=` or `pose_estimation_name=`.
+
+Some files keep non-spatial values in the position series. DANDI 000447, for
+example, stores x, y and speed in one series with unit
+`"centimeters; centimeters/second"`. Binning all three columns would treat speed
+as a third spatial axis, so `read_position`, `environment_from_position` and
+`position_overlay_from_nwb` refuse a series whose unit lists several units, or that has three or more
+columns under a unit that is not one length or pixel unit. The error quotes the
+series description, which often names the columns. Choose the spatial columns
+with `columns=`; when the series unit does not apply to them, state it:
+
+```python
+pos = read_position(nwbfile, columns=[0, 1])        # x and y; pos.units is None
+env = environment_from_position(nwbfile, bin_size=2.0, columns=[0, 1], units="cm")
+overlay = position_overlay_from_nwb(nwbfile, columns=[0, 1], units="cm")
+```
 
 Position values already include the stored conversion and offset. Recognized
 unit aliases become `m`, `cm`, `mm`, `um` or `px` without scaling those values again.
@@ -557,7 +601,7 @@ position_units = pos.units
 if position_units is None:
     raise ValueError("Choose position_units explicitly from the experiment's physical units.")
 env = Environment.from_samples(pos.positions, bin_size=5.0, units=position_units)
-cells = SpikeTrains(units.spike_times, unit_ids=units.unit_ids)
+cells = SpikeTrains(units.spike_times, unit_ids=units.unit_ids, unit_table=units.unit_table)
 rates = compute_spatial_rates(
     env, cells, pos.times, pos.positions,
     epochs=epochs, spike_window=units.spike_window,
@@ -603,6 +647,75 @@ with NWBHDF5IO("session.nwb", "r") as io:
     units = read_units(io.read(), lazy=True)
     first_unit = np.asarray(units.spike_times[0])
 ```
+
+### Selecting units by brain region
+
+`units.unit_table` is a DataFrame with one row per unit, indexed by `unit_id` in
+the order of `units.unit_ids`. It holds every units-table column with one value
+per unit, such as `location`, `cell_type` or a curation `quality`, exactly as
+the file stores them. When units link electrodes, it adds `electrode_location`,
+the brain region from the electrodes table, and `electrode_group`, for example
+the tetrode. Pass the table to `SpikeTrains` and select cells with `filter`;
+encoding results carry it into their summary tables:
+
+```python
+units = read_units(nwbfile)
+cells = SpikeTrains(units.spike_times, unit_ids=units.unit_ids, unit_table=units.unit_table)
+ca1 = cells.filter("electrode_location == 'CA1'")   # or the file's own "location"
+rates = compute_spatial_rates(env, ca1, times, positions)
+```
+
+Region names are free text chosen by each lab (`"CA1"`, `"lCA1"`, `"rCA1"`), so
+check `units.unit_table[column].unique()` before filtering. A unit recorded on
+electrodes in several regions lists each region once, joined by `", "`.
+`units.resolution` is the spike-time precision in seconds (usually one over
+the sampling rate), or `None` when the file does not state it. The table is
+read eagerly; with `lazy=True` only the spike times stay on disk.
+
+### Streaming from DANDI
+
+You can analyze a [DANDI](https://dandiarchive.org) file without downloading
+it. `fsspec` reads the remote file in blocks over HTTP, `h5py` opens it, and
+`NWBHDF5IO` reads the NWB structure with the file's own extension definitions
+(`load_namespaces=True`). Only the arrays you read are transferred, so read
+spike times lazily and position eagerly. Streaming needs the `nwb` extra plus
+`fsspec` and `aiohttp`: `pip install "neurospatial[nwb]" fsspec aiohttp`.
+
+This example reads one linear-maze session of DANDI 000044 (Grosmark and
+Buzsáki, 2016). Find the asset id of your file in the "Files" view of the
+dandiset on the DANDI website.
+
+<!-- docs-test: skip needs network access to DANDI -->
+```python
+import fsspec
+import h5py
+from pynwb import NWBHDF5IO
+
+from neurospatial.io.nwb import environment_from_position, read_position, read_units
+
+asset_id = "185b8a36-d671-4688-ba05-9e89a902c486"  # sub-Buddy, 2013-06-27
+url = f"https://api.dandiarchive.org/api/assets/{asset_id}/download/"
+
+remote = fsspec.filesystem("http").open(url, "rb", cache_type="blockcache")
+with h5py.File(remote, "r") as h5, NWBHDF5IO(file=h5, mode="r", load_namespaces=True) as io:
+    nwbfile = io.read()
+    table = read_units(nwbfile, lazy=True).unit_table   # metadata, no spike times
+    print(table["location"].value_counts())             # lCA1 61, rCA1 7
+    left_ca1 = table.index[table["location"] == "lCA1"].tolist()
+    units = read_units(nwbfile, unit_ids=left_ca1)      # these units' spikes
+
+    # The file has an x-y series and a linearized series; name the one you want.
+    xy = "1.6mLinearMazeSpatialSeries"
+    pos = read_position(nwbfile, position_name=xy)
+    env = environment_from_position(nwbfile, position_name=xy, bin_size=0.02)  # meters
+```
+
+`read_position` without `position_name=` raises here and lists both series
+paths. Everything read eagerly stays valid after the `with` block closes; lazy
+spike times must be read inside it. This file has no
+`obs_intervals` column, so `units.spike_window` is `None`; pass the recording
+epochs from `read_intervals` as `spike_window=` if you know them. Import
+`ndx_events` and `ndx_pose` before opening the file if you read events or pose.
 
 ### Round-tripping rate maps
 
