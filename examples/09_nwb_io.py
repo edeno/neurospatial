@@ -122,7 +122,7 @@ tracking.add_spatial_series(
         data=positions / 10.0,
         conversion=10.0,
         timestamps=times,
-        unit="cm",
+        unit="centimeters",
         reference_frame="Arena corner (0, 0)",
         description="Stored values times conversion give positions in centimeters",
     )
@@ -239,8 +239,10 @@ plt.show()
 #
 # Copy the input file to `analysis_path`, add the results, and save the copy.
 # `write_spatial_rates` keeps the maps, occupancy, unit IDs, valid spatial bins,
-# arena geometry, and analysis settings together. Calling `io.write` writes
-# those changes to disk.
+# arena geometry, and analysis settings together in the file's `/analysis`
+# group, where any NWB reader can find them. Because the unit IDs are IDs of
+# the file's units table, each map is also linked to its unit's row. Calling
+# `io.write` writes those changes to disk.
 #
 # Reopen the saved file and load the maps with `read_spatial_rates`.
 
