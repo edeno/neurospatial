@@ -1359,3 +1359,94 @@ class TestWriteEventsDiskRoundTrip:
             events,
             check_dtype=False,
         )
+
+
+def _write_rewards(nwbfile, times, *, overwrite=False):
+    from neurospatial.io.nwb import write_events
+
+    write_events(
+        nwbfile,
+        pd.DataFrame({"timestamp": times}),
+        name="rewards",
+        overwrite=overwrite,
+    )
+
+
+def _write_crossings(nwbfile, times, *, overwrite=False):
+    from neurospatial.io.nwb import write_region_crossings
+
+    n = len(times)
+    write_region_crossings(
+        nwbfile,
+        times,
+        np.array(["goal"] * n),
+        np.array(["entry"] * n),
+        name="rewards",
+        overwrite=overwrite,
+    )
+
+
+_EVENT_WRITERS = [
+    pytest.param(_write_rewards, id="write_events"),
+    pytest.param(_write_crossings, id="write_region_crossings"),
+]
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestEventsOverwrite:
+    """overwrite=True never loses the existing table to a failed write."""
+
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_invalid_replacement_keeps_the_original(self, empty_nwb, write):
+        from neurospatial.io.nwb import read_events
+
+        write(empty_nwb, np.array([1.0, 2.0]))
+
+        with pytest.raises(ValueError, match="non-finite"):
+            write(empty_nwb, np.array([3.0, np.nan]), overwrite=True)
+
+        kept = read_events(empty_nwb, table_name="rewards")
+        np.testing.assert_array_equal(kept["timestamp"].to_numpy(), [1.0, 2.0])
+
+    @pytest.mark.parametrize("mode", ["r+", "a"])
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_in_place_overwrite_is_refused(self, tmp_path, write, mode):
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events
+
+        path = tmp_path / "session.nwb"
+        nwbfile = create_roundtrip_nwb()
+        write(nwbfile, np.array([1.0, 2.0]))
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(path), mode) as io:
+            opened = io.read()
+            with pytest.raises(NotImplementedError, match=f"mode='{mode}'"):
+                write(opened, np.array([5.0, 6.0, 7.0]), overwrite=True)
+            kept = read_events(opened, table_name="rewards")
+            np.testing.assert_array_equal(kept["timestamp"].to_numpy(), [1.0, 2.0])
+
+    @pytest.mark.parametrize("write", _EVENT_WRITERS)
+    def test_overwrite_then_export_round_trips(self, tmp_path, write):
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events
+
+        source = tmp_path / "session.nwb"
+        copy = tmp_path / "session_new.nwb"
+        nwbfile = create_roundtrip_nwb()
+        write(nwbfile, np.array([1.0, 2.0]))
+        with NWBHDF5IO(str(source), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(source), "r") as io:
+            opened = io.read()
+            write(opened, np.array([5.0, 6.0, 7.0]), overwrite=True)
+            with NWBHDF5IO(str(copy), "w") as export_io:
+                export_io.export(src_io=io, nwbfile=opened)
+
+        with NWBHDF5IO(str(copy), "r") as io:
+            replaced = read_events(io.read(), table_name="rewards")
+        np.testing.assert_array_equal(replaced["timestamp"].to_numpy(), [5.0, 6.0, 7.0])

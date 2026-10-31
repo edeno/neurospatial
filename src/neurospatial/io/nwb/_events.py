@@ -39,6 +39,41 @@ PREDEFINED_EPOCHS: str = "epochs"
 PREDEFINED_INVALID_TIMES: str = "invalid_times"
 
 
+def _add_events_table(
+    nwbfile: NWBFile,
+    events_table: ndx_events.EventsTable,
+    *,
+    processing_module: str,
+    module_description: str,
+    overwrite: bool,
+) -> None:
+    """Add a built events table to a processing module, replacing on request.
+
+    The table is built and validated by the caller first, so a failed write
+    never removes the table it was meant to replace.
+    """
+    from neurospatial.io.nwb._core import (
+        _get_or_create_processing_module,
+        _refuse_in_place_replacement,
+        logger,
+    )
+
+    name = events_table.name
+    module = _get_or_create_processing_module(
+        nwbfile, processing_module, module_description
+    )
+    if name in module.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"EventsTable '{name}' already exists in processing/"
+                f"{processing_module}. Use overwrite=True to replace it."
+            )
+        _refuse_in_place_replacement(nwbfile, f"events table '{name}'")
+        del module.data_interfaces[name]
+        logger.info("Overwriting existing EventsTable '%s'", name)
+    module.add(events_table)
+
+
 @keyword_hint("table_name", "processing_module")
 def read_events(
     nwbfile: NWBFile,
@@ -483,11 +518,7 @@ def write_region_crossings(
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
     ...     io.write(nwbfile)
     """
-    from neurospatial.io.nwb._core import (
-        _get_or_create_processing_module,
-        _require_ndx_events,
-        logger,
-    )
+    from neurospatial.io.nwb._core import _require_ndx_events, logger
 
     # Verify ndx-events is installed BEFORE importing EventsTable
     # This ensures users see the friendly error message
@@ -524,23 +555,6 @@ def write_region_crossings(
             f"crossing_times length ({len(crossing_times)})."
         )
 
-    # Get or create behavior processing module
-    behavior = _get_or_create_processing_module(
-        nwbfile,
-        DEFAULT_PROCESSING_MODULE,
-        "Behavioral data including region crossings and events",
-    )
-
-    # Check for existing table with same name
-    if name in behavior.data_interfaces:
-        if not overwrite:
-            raise ValueError(
-                f"EventsTable '{name}' already exists. Use overwrite=True to replace."
-            )
-        # Remove existing table for replacement (in-memory only)
-        del behavior.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
-
     # Create EventsTable
     events_table = ndx_events_module.EventsTable(name=name, description=description)
 
@@ -556,8 +570,13 @@ def write_region_crossings(
             event_type=str(event_types[i]),
         )
 
-    # Add to behavior module
-    behavior.add(events_table)
+    _add_events_table(
+        nwbfile,
+        events_table,
+        processing_module=DEFAULT_PROCESSING_MODULE,
+        module_description="Behavioral data including region crossings and events",
+        overwrite=overwrite,
+    )
     logger.debug(
         "Wrote EventsTable '%s' with %d region crossing events",
         name,
@@ -1112,36 +1131,16 @@ def write_events(
     write_laps : Write lap events (specialized format).
     write_region_crossings : Write region crossing events (specialized format).
     """
-    from neurospatial.io.nwb._core import (
-        _get_or_create_processing_module,
-        _require_ndx_events,
-        logger,
-    )
+    from neurospatial.io.nwb._core import logger
 
-    # Verify ndx-events is installed
-    _require_ndx_events()
-
-    # Get or create processing module
-    module = _get_or_create_processing_module(
-        nwbfile, processing_module, f"{processing_module.capitalize()} data"
-    )
-
-    # Check for existing table with same name
-    if name in module.data_interfaces:
-        if not overwrite:
-            raise ValueError(
-                f"EventsTable '{name}' already exists in processing/{processing_module}. "
-                "Use overwrite=True to replace."
-            )
-        # Remove existing table for replacement (in-memory only)
-        del module.data_interfaces[name]
-        logger.info("Overwriting existing EventsTable '%s'", name)
-
-    # Convert DataFrame to EventsTable
     events_table = dataframe_to_events_table(events, name=name, description=description)
-
-    # Add to processing module
-    module.add(events_table)
+    _add_events_table(
+        nwbfile,
+        events_table,
+        processing_module=processing_module,
+        module_description=f"{processing_module.capitalize()} data",
+        overwrite=overwrite,
+    )
     logger.debug(
         "Wrote EventsTable '%s' with %d events to processing/%s",
         name,
