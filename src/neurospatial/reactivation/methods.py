@@ -2220,19 +2220,61 @@ def _z_scored(
         control_z, control_constant = _z_scores(control.values)
         match_z, match_constant = _z_scores(match.values)
         return control_z, match_z, ~(control_constant | match_constant)
-    pooled = [control.values, match.values]
+    pooled = [control, match]
     if method.zscore_over == "all_periods":
         assert template is not None
-        pooled.append(template.values)
-    stacked = np.vstack(pooled)
-    constant = np.ptp(stacked, axis=0) == 0
-    mean = stacked.mean(axis=0)
-    std = np.where(constant, 1.0, stacked.std(axis=0))
+        pooled.append(template)
+    # Each period's moments, combined (Chan et al. 1979), so the periods are
+    # never stacked.
+    n, mean, squares, low, high = _moments(pooled[0].values)
+    for period in pooled[1:]:
+        n_more, mean_more, squares_more, low_more, high_more = _moments(period.values)
+        total = n + n_more
+        delta = mean_more - mean
+        mean = mean + delta * (n_more / total)
+        squares = squares + squares_more + delta**2 * (n * n_more / total)
+        low = np.minimum(low, low_more)
+        high = np.maximum(high, high_more)
+        n = total
+    constant = high == low
+    std = np.where(constant, 1.0, np.sqrt(squares / n))
     control_z = (control.values - mean) / std
     match_z = (match.values - mean) / std
     control_z[:, constant] = 0.0
     match_z[:, constant] = 0.0
     return control_z, match_z, ~constant
+
+
+def _moments(
+    values: NDArray[np.float64],
+) -> tuple[
+    int,
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
+    """Samples, then each unit's mean, sum of squared deviations, min and max.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n_samples, n_units)
+
+    Returns
+    -------
+    n_samples : int
+    mean, squares, low, high : ndarray, shape (n_units,)
+    """
+    mean = values.mean(axis=0)
+    deviations = values - mean
+    np.square(deviations, out=deviations)
+    return (
+        len(values),
+        mean,
+        deviations.sum(axis=0),
+        values.min(axis=0),
+        values.max(axis=0),
+    )
 
 
 def _member_cofiring_rows(
