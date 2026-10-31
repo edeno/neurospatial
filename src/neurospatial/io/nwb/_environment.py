@@ -9,11 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial.io.nwb._core import (
-    _refuse_in_place_replacement,
-    _require_pynwb,
-    logger,
-)
+from neurospatial.io.nwb._core import _clear_for_write, _require_pynwb
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -112,39 +108,48 @@ def write_environment(
     [2.0, 2.0, 2.0]
     """
     _require_pynwb()
-    _check_environment_name(nwbfile, name)
-    if name in nwbfile.analysis and not overwrite:
-        raise ValueError(
-            f"Environment '{name}' already exists in /analysis. Use "
-            "overwrite=True to replace it."
+    metadata, arrays, fingerprint = _environment_content(env)
+    slot = _environment_slot(
+        nwbfile, name, fingerprint, overwrite=overwrite, argument="name"
+    )
+    record = _environment_record(name, metadata, arrays)
+    if slot != "add":
+        _clear_for_write(
+            nwbfile,
+            nwbfile.analysis,
+            name,
+            overwrite=overwrite,
+            what=f"environment record {name!r}",
         )
-    record, fingerprint = _environment_record(env, name)
-    # Construct the replacement before removing a valid existing record.
-    if name in nwbfile.analysis:
-        _refuse_replacing_a_used_environment(nwbfile, name, fingerprint)
-        _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
-        del nwbfile.analysis[name]
-        logger.info("Overwriting existing environment '%s'", name)
     nwbfile.add_analysis(record)
 
 
-def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]:
-    """Build the one-row table that stores ``env``; see ``write_environment``.
+def _environment_content(
+    env: Environment,
+) -> tuple[dict[str, Any], dict[str, np.ndarray], str]:
+    """The metadata and arrays of ``env``'s record, and their fingerprint."""
+    from neurospatial.io.files import _environment_payload
 
-    Returns
-    -------
-    record : DynamicTable
-        The record to add to ``nwbfile.analysis``.
-    fingerprint : str
-        The record's content fingerprint; see ``_record_fingerprint``.
+    metadata, arrays = _environment_payload(env)
+    return metadata, arrays, _payload_fingerprint(metadata, arrays)
+
+
+def _environment_record(
+    name: str, metadata: dict[str, Any], arrays: Mapping[str, np.ndarray]
+) -> DynamicTable:
+    """Build the one-row table storing an environment; see ``write_environment``.
+
+    Parameters
+    ----------
+    name : str
+        Record name in ``nwbfile.analysis``.
+    metadata, arrays
+        The environment's payload from ``_environment_content``. ``metadata``
+        gains the record format and each array's column name.
     """
     from hdmf.backends.hdf5 import H5DataIO
     from hdmf.common import DynamicTable, VectorData, VectorIndex
 
-    from neurospatial.io.files import _environment_payload
-
-    metadata, arrays = _environment_payload(env)
-    fingerprint = _payload_fingerprint(metadata, arrays)
     metadata["format"] = ENVIRONMENT_FORMAT
     columns: list[Any] = []
     for key, array in sorted(arrays.items()):
@@ -166,13 +171,12 @@ def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]
             ]
         )
         metadata["array_specs"][key]["column"] = column_name
-    record = DynamicTable(
+    return DynamicTable(
         name=name,
         description=json.dumps(metadata),
         columns=columns,
         id=[0],
     )
-    return record, fingerprint
 
 
 def _payload_fingerprint(
@@ -234,14 +238,6 @@ def _record_fingerprint(record: Any) -> str | None:
         return _payload_fingerprint(metadata, _record_arrays(record, metadata))
     except (KeyError, TypeError, ValueError, IndexError, AttributeError):
         return None
-
-
-def _environment_fingerprint(env: Environment) -> str:
-    """Fingerprint of the record ``write_environment`` would store for ``env``."""
-    from neurospatial.io.files import _environment_payload
-
-    metadata, arrays = _environment_payload(env)
-    return _payload_fingerprint(metadata, arrays)
 
 
 def _record_metadata(record: object) -> dict[str, Any] | None:
@@ -336,43 +332,96 @@ def _earlier_location_error(what: str, where: str, *, fix: str) -> ValueError:
     )
 
 
-def _refuse_replacing_a_used_environment(
-    nwbfile: NWBFile, name: str, fingerprint: str
-) -> None:
-    """Refuse to replace a record spatial rates use with a different environment."""
+def _environment_slot(
+    nwbfile: NWBFile,
+    name: str,
+    fingerprint: str,
+    *,
+    overwrite: bool,
+    argument: str,
+    replacing: str | None = None,
+) -> Literal["add", "reuse", "replace"]:
+    """Decide how a write stores the environment ``fingerprint`` as ``name``.
+
+    An environment record that spatial rates use is replaced only by the
+    identical environment, so the rates are never read with other bins.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        File receiving the record.
+    name : str
+        Record name in ``nwbfile.analysis``.
+    fingerprint : str
+        Fingerprint of the environment to store; see ``_payload_fingerprint``.
+    overwrite : bool
+        Whether the caller may replace an existing record.
+    argument : str
+        The caller's argument that names the record, for messages.
+    replacing : str, optional
+        Spatial rates the caller is rewriting. Only a record they use is
+        replaced, never one saved on its own or for other rates.
+
+    Returns
+    -------
+    {"add", "reuse", "replace"}
+        ``"add"`` when the name is free, ``"reuse"`` when the record stores
+        this environment, ``"replace"`` when it stores another environment
+        that the caller may replace.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` holds an ``/analysis`` object that is not an environment
+        record, spatial rates other than ``replacing`` use a record storing
+        another environment, or the caller may not replace that record.
+    """
     from neurospatial._exceptions import _format_error
 
-    users = _spatial_rates_using(nwbfile, name)
-    if users and _record_fingerprint(nwbfile.analysis[name]) != fingerprint:
-        raise ValueError(
-            _format_error(
-                f"Cannot replace environment {name!r}: spatial rates use it "
-                f"({users}), and this environment differs from it.",
-                why="Why: the rates would be read with bins they were not "
-                "estimated on, so every map would be placed at the wrong "
-                "positions or in the wrong units.",
-                fix="save this environment under another name, or recompute "
-                f"the rates {users} on it and rewrite them with "
-                "write_spatial_rates(..., overwrite=True)",
-            )
-        )
-
-
-def _check_environment_name(nwbfile: NWBFile, name: str) -> None:
-    """Refuse a name that another kind of ``/analysis`` object already uses."""
-    from neurospatial._exceptions import _format_error
-
-    if name in nwbfile.analysis and not _is_environment_record(nwbfile.analysis[name]):
+    analysis = nwbfile.analysis
+    if name not in analysis:
+        return "add"
+    if not _is_environment_record(analysis[name]):
         raise ValueError(
             _format_error(
                 f"/analysis/{name} already holds a "
-                f"{type(nwbfile.analysis[name]).__name__} that is not an "
-                "environment record.",
+                f"{type(analysis[name]).__name__} that is not an environment "
+                "record.",
                 why="Why: the environment would replace another analysis "
                 "result of that name.",
-                fix="store the environment under another name",
+                fix=f"pass {argument}= another name",
             )
         )
+    if _record_fingerprint(analysis[name]) == fingerprint:
+        return "reuse"
+    users = _spatial_rates_using(nwbfile, name)
+    others = [user for user in users if user != replacing]
+    separately = f"pass {argument}= another name to store this environment separately"
+    if others:
+        raise ValueError(
+            _format_error(
+                f"Cannot replace environment {name!r}: spatial rates use it "
+                f"({others}), and this environment differs from it.",
+                why="Why: the rates would be read with bins they were not "
+                "estimated on, so every map would be placed at the wrong "
+                "positions or in the wrong units.",
+                fix=f"{separately}, or recompute the rates {others} on it and "
+                "rewrite them with write_spatial_rates(..., overwrite=True)",
+            )
+        )
+    replaceable = replacing is None or replacing in users
+    if not (overwrite and replaceable):
+        raise ValueError(
+            _format_error(
+                f"/analysis/{name} stores a different environment.",
+                why="Why: a record is replaced only when asked, so whatever "
+                "reads it keeps the environment it was saved with.",
+                fix=f"{separately}, or overwrite=True to replace it"
+                if replaceable
+                else separately,
+            )
+        )
+    return "replace"
 
 
 class _MissingEnvironmentError(KeyError):

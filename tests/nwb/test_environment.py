@@ -2340,7 +2340,7 @@ def test_writer_never_replaces_another_analysis_object(
         write_environment(
             empty_nwb, sample_environment, name="quality", overwrite=overwrite
         )
-    assert "Fix: store the environment under another name" in str(error.value)
+    assert "Fix: pass name= another name" in str(error.value)
     assert empty_nwb.analysis["quality"] is other
 
 

@@ -125,12 +125,12 @@ def test_a_different_environment_under_a_shared_name_is_refused(
     write_spatial_rates(empty_nwb, _rates(env), name="ca1", environment_name="arena")
     before = dict(empty_nwb.analysis)
 
-    with pytest.raises(ValueError, match="stores a different environment") as error:
+    with pytest.raises(ValueError, match="spatial rates use it") as error:
         write_spatial_rates(
             empty_nwb, _rates(other), name="ca3", environment_name="arena"
         )
-    assert "used by spatial rates ['ca1']" in str(error.value)
-    assert "Fix: pass environment_name= a new name" in str(error.value)
+    assert "(['ca1'])" in str(error.value)
+    assert "Fix: pass environment_name= another name" in str(error.value)
     assert dict(empty_nwb.analysis) == before
 
 
@@ -159,7 +159,8 @@ def test_overwrite_never_replaces_an_environment_other_rates_use(
     write_spatial_rates(empty_nwb, _rates(env), name="ca1", environment_name="arena")
     write_spatial_rates(empty_nwb, _rates(env), name="ca3", environment_name="arena")
 
-    with pytest.raises(ValueError, match=r"used by spatial rates \['ca1', 'ca3'\]"):
+    # ca1 is being rewritten; ca3 keeps using the record.
+    with pytest.raises(ValueError, match=r"spatial rates use it \(\['ca3'\]\)"):
         write_spatial_rates(
             empty_nwb,
             _rates(env.rebin(2)),
@@ -403,6 +404,35 @@ def test_environment_writers_never_replace_a_record_rates_use(
     )
 
 
+@pytest.mark.parametrize("route", ["write_environment", "write_spatial_rates"])
+def test_a_record_no_rates_use_is_replaced_only_when_the_caller_may(
+    empty_nwb, sample_environment, route
+):
+    """overwrite=True replaces it in write_environment; rates never replace it."""
+    from neurospatial.io.nwb import write_environment, write_spatial_rates
+
+    write_environment(empty_nwb, sample_environment, name="arena")
+    record = empty_nwb.analysis["arena"]
+    other = _shifted(sample_environment)
+    with pytest.raises(ValueError, match="/analysis/arena stores a different") as error:
+        if route == "write_environment":
+            write_environment(empty_nwb, other, name="arena")
+        else:
+            write_spatial_rates(
+                empty_nwb, _rates(other), environment_name="arena", overwrite=True
+            )
+    message = str(error.value)
+    argument = "name" if route == "write_environment" else "environment_name"
+    assert f"Fix: pass {argument}= another name" in message
+    assert ("overwrite=True" in message) == (route == "write_environment")
+    assert empty_nwb.analysis["arena"] is record
+    assert "spatial_rates" not in empty_nwb.analysis
+
+    if route == "write_environment":
+        write_environment(empty_nwb, other, name="arena", overwrite=True)
+        assert empty_nwb.analysis["arena"] is not record
+
+
 def test_rewriting_the_same_environment_a_record_rates_use_is_allowed(
     empty_nwb, sample_environment
 ):
@@ -424,12 +454,16 @@ def test_reader_refuses_rates_whose_environment_record_was_swapped(
 ):
     """Any route that swaps the record (here, direct pynwb edits) is caught on read."""
     from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
-    from neurospatial.io.nwb._environment import _environment_record
+    from neurospatial.io.nwb._environment import (
+        _environment_content,
+        _environment_record,
+    )
 
     env = sample_environment
     write_spatial_rates(empty_nwb, _rates(env), environment_name="arena")
     del empty_nwb.analysis["arena"]
-    empty_nwb.add_analysis(_environment_record(_shifted(env), "arena")[0])
+    metadata, arrays, _ = _environment_content(_shifted(env))
+    empty_nwb.add_analysis(_environment_record("arena", metadata, arrays))
 
     with pytest.raises(ValueError, match="changed since these rates were written"):
         read_spatial_rates(empty_nwb, env=env if with_env else None)

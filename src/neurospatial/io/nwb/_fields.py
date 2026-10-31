@@ -16,28 +16,26 @@ rates; it never fills in a metadata key the writer always stores.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial.io.files import _check_schema
-from neurospatial.io.nwb._core import (
-    _refuse_in_place_replacement,
-    _require_pynwb,
-    logger,
-)
+from neurospatial.io.nwb._core import _clear_for_write, _require_pynwb, logger
 from neurospatial.io.nwb._environment import (
     SPATIAL_RATES_FORMAT,
     _analysis_records,
     _earlier_location_error,
+    _environment_content,
+    _environment_record,
     _record_metadata,
     _require_record,
 )
 
 if TYPE_CHECKING:
-    from hdmf.common import DynamicTable, DynamicTableRegion
+    from hdmf.common import DynamicTableRegion
     from pynwb import NWBFile
 
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -278,16 +276,14 @@ def write_spatial_rates(
                 f"table's own columns. Rename these unit_table columns."
             )
 
-    # Resolve every name collision -- the table, its companion occupancy and
-    # the environment record -- before the first add, so a duplicate without
-    # overwrite raises before any mutation. For overwrite=True the existing
-    # objects are captured here but deleted only in the try-block below, after
-    # the replacements are built, so a failed write can restore them.
-    old_objects, env_record, env_fingerprint = _plan_spatial_rates_write(
-        nwbfile, env, name, occupancy_name, env_name, overwrite=overwrite
+    # Check every name -- the table, its companion occupancy and the
+    # environment record -- before the first mutation. The objects to replace
+    # are removed only after the replacements are built, so a failed write
+    # can restore them.
+    env_metadata, env_arrays, env_fingerprint = _environment_content(env)
+    old_names, env_slot = _plan_spatial_rates_write(
+        nwbfile, name, occupancy_name, env_name, env_fingerprint, overwrite=overwrite
     )
-    if old_objects:
-        logger.info("Overwriting existing spatial rates '%s' and its companions", name)
 
     # Optional per-unit metadata columns.
     unit_table_columns: list[str] = []
@@ -463,19 +459,31 @@ def write_spatial_rates(
         ],
     )
 
-    # Remove any originals (overwrite=True), then add the table, its companion
-    # occupancy and, unless an identical record is reused, the environment. If
-    # any step fails, the newly added objects are rolled back and the originals
-    # restored.
+    # Remove the originals, then add the table, its companion occupancy and,
+    # unless an identical record is reused, the environment. Each removal makes
+    # the same overwrite and file-mode checks, so a refusal comes from the
+    # first one, before anything is removed. If an add fails, the added objects
+    # are removed and the originals restored.
     new_objects = [table, occupancy_table]
-    if env_record is not None:
-        new_objects.append(env_record)
-    added: list[str] = []
+    if env_slot != "reuse":
+        new_objects.append(_environment_record(env_name, env_metadata, env_arrays))
+    what = {
+        name: f"spatial rates {name!r}",
+        occupancy_name: f"occupancy {occupancy_name!r}",
+    }
     removed: list[tuple[str, object]] = []
+    for old_name in old_names:
+        old = nwbfile.analysis[old_name]
+        _clear_for_write(
+            nwbfile,
+            nwbfile.analysis,
+            old_name,
+            overwrite=overwrite,
+            what=what.get(old_name, f"environment record {old_name!r}"),
+        )
+        removed.append((old_name, old))
+    added: list[str] = []
     try:
-        for obj_name, obj in old_objects:
-            del nwbfile.analysis[obj_name]
-            removed.append((obj_name, obj))
         for obj in new_objects:
             nwbfile.add_analysis(obj)
             added.append(obj.name)
@@ -534,32 +542,28 @@ def _units_link(
 
 def _plan_spatial_rates_write(
     nwbfile: NWBFile,
-    env: Environment,
     name: str,
     occupancy_name: str,
     env_name: str,
+    env_fingerprint: str,
     *,
     overwrite: bool,
-) -> tuple[list[tuple[str, object]], DynamicTable | None, str]:
+) -> tuple[list[str], Literal["add", "reuse", "replace"]]:
     """Check every name a spatial-rates write uses, before any mutation.
 
     Returns
     -------
-    old_objects : list of (str, object)
-        ``/analysis`` objects to remove, by name: the replaced table and
-        occupancy, and an environment record only the replaced rates used
-        when it is replaced or, if it was their default
-        ``f"{name}_environment"``, no longer used.
-    env_record : DynamicTable or None
-        The environment record to add; None when an identical record named
-        ``env_name`` is reused.
-    env_fingerprint : str
-        Content fingerprint of ``env``'s record, stored with the rates.
+    old_names : list of str
+        ``/analysis`` objects to remove: the replaced table and occupancy,
+        and an environment record only the replaced rates used when it is
+        replaced or, if it was their default ``f"{name}_environment"``, no
+        longer used.
+    env_slot : {"add", "reuse", "replace"}
+        How ``env_name`` stores the environment; see ``_environment_slot``.
     """
     from neurospatial.io.nwb._environment import (
-        _environment_record,
+        _environment_slot,
         _is_environment_record,
-        _record_fingerprint,
         _spatial_rates_using,
     )
 
@@ -577,17 +581,11 @@ def _plan_spatial_rates_write(
                 "which other spatial rates may use. Choose another name= for the "
                 "rates."
             )
-    existing = [n for n in (name, occupancy_name) if n in analysis]
-    if existing and not overwrite:
-        raise ValueError(
-            f"Spatial rates '{name}' already exists (found: {existing}). "
-            f"Use overwrite=True to replace it and its companions."
-        )
-    old_objects = [(n, analysis[n]) for n in existing]
+    old_names = [n for n in (name, occupancy_name) if n in analysis]
 
     # The replaced rates' own default environment record goes with them when
     # nothing else uses it; a record saved standalone or shared is kept.
-    old_meta = _record_metadata(analysis[name]) if name in existing else None
+    old_meta = _record_metadata(analysis[name]) if name in analysis else None
     old_env = None if old_meta is None else old_meta.get("environment_name")
     if (
         old_env == f"{name}_environment"
@@ -596,43 +594,19 @@ def _plan_spatial_rates_write(
         and _is_environment_record(analysis[old_env])
         and _spatial_rates_using(nwbfile, old_env) == [name]
     ):
-        old_objects.append((old_env, analysis[old_env]))
+        old_names.append(old_env)
 
-    env_record, fingerprint = _environment_record(env, env_name)
-    if env_name in analysis:
-        if not _is_environment_record(analysis[env_name]):
-            raise ValueError(
-                _format_error(
-                    f"write_spatial_rates: /analysis/{env_name} is a "
-                    f"{type(analysis[env_name]).__name__}, not an environment "
-                    "record.",
-                    why="Why: the rates' environment would replace another "
-                    "analysis result of that name.",
-                    fix="pass environment_name= another name",
-                )
-            )
-        if _record_fingerprint(analysis[env_name]) == fingerprint:
-            env_record = None
-        else:
-            users = _spatial_rates_using(nwbfile, env_name)
-            if not (overwrite and users == [name]):
-                raise ValueError(
-                    _format_error(
-                        f"write_spatial_rates: /analysis/{env_name} stores a "
-                        "different environment from the one these rates were "
-                        "estimated on"
-                        + (f" (used by spatial rates {users})." if users else "."),
-                        why="Why: rates are read with the environment record "
-                        "they name, so replacing it would relabel the bins of "
-                        "the rates that use it.",
-                        fix="pass environment_name= a new name to store this "
-                        "environment separately",
-                    )
-                )
-            old_objects.append((env_name, analysis[env_name]))
-    if old_objects:
-        _refuse_in_place_replacement(nwbfile, f"spatial rates '{name}'")
-    return old_objects, env_record, fingerprint
+    env_slot = _environment_slot(
+        nwbfile,
+        env_name,
+        env_fingerprint,
+        overwrite=overwrite,
+        argument="environment_name",
+        replacing=name,
+    )
+    if env_slot == "replace":
+        old_names.append(env_name)
+    return old_names, env_slot
 
 
 def _abort_message(
