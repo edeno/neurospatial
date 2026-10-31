@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Reactivation: less repeated work, shared cores
+
+**Changed**
+
+- Reactivation analyses share one implementation of each calculation:
+  pairwise correlations, the one-control explained variance, partial and
+  semipartial correlations, assembly activation comparisons and peri-event
+  responses. Verdicts are unchanged on a fixed-seed battery of the
+  reactivation guide and every public function; floating-point values move by
+  at most 1.3e-11 relative to their scale.
+  - `pairwise_correlations` and the explained-variance correlation matrices
+    use the same z-score product as `compare_reactivation_methods`, so the
+    two now agree exactly (they differed in the last bits).
+  - `assembly_member_cofiring` no longer silences unrelated `UserWarning`s
+    raised while it computes correlations.
+- `compare_reactivation_methods` is faster on fragmented epochs: a period of
+  1,000 epoch pieces is binned in one pass (`HARVEY_2023_ASSEMBLY`: 5.5 s to
+  0.44 s per period). Pooling z-scores over all periods
+  (`zscore_over="all_periods"`) no longer stacks the periods, halving peak
+  memory (1.6 GB to 0.8 GB for 60 units, 1,200 s periods at 2 ms). The
+  `ev_minus_rev` pair bootstrap peaks at 62 MB instead of 270 MB with 10,000
+  resamples.
+- `null_reactivation_data` rotates spikes in one vectorized pass: all three
+  kinds on 1,000 epochs take 0.12 s instead of 0.39 s, with identical output.
+- `compare_reactivation_methods` refuses NaN or `None` entries in a
+  `unit_groups` array used by a pairs rule, as `explained_variance_reactivation`
+  already did. Before, NaN groups were silently treated as different groups.
+- A non-numeric `alpha` for `ReactivationMethod` raises `ValueError` with the
+  usual message instead of a bare `TypeError`. `EventResponse` refuses `None`
+  for `window` and `response_window`; only `baseline_window` may be `None`.
+- Warnings from `detect_assemblies` (including the Marchenko-Pastur warning)
+  point at the caller's line.
+
 ### Replay: faster shuffle tests, one method interface
 
 **Changed**
