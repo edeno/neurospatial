@@ -1004,27 +1004,17 @@ to_reward = env.distance_to(region="reward")
 assert np.array_equal(to_reward, env.distance_to(points=[[82.0, 77.0]]))
 ```
 
-An old call raises a `TypeError` that says which keyword applies to the
-value you passed and shows the corrected call. It makes the same guess the old
-call made, integers as bins and real numbers as points, so check that the
-suggestion means what you intended:
+A target passed by position raises a `TypeError` that lists the keyword-only
+options, without guessing whether a number was meant as a bin or a point:
 
 <!-- docs-test: run -->
 ```python
-from neurospatial import Regions
-
 positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))  # cm
-regions = Regions()
-regions.add("reward", point=(82.0, 77.0))
-env = Environment.from_samples(positions, bin_size=4.0, units="cm", regions=regions)
+env = Environment.from_samples(positions, bin_size=4.0, units="cm")
 try:
     env.neighbors(12)
 except TypeError as error:
-    assert "env.neighbors(bins=12)" in str(error)
-try:
-    env.distance_to("reward")
-except TypeError as error:
-    assert "env.distance_to(region='reward')" in str(error)
+    assert "pass them by name: bins=, points=" in str(error)
 ```
 
 What the old guesses did, and what happens now:
@@ -1062,8 +1052,8 @@ or one point; `path_between` and `distance_between` take two, the start and the
 end.
 
 `subset` selects bins with a boolean mask, so its keyword is `mask=`; `bins=`
-always means integer bin indices. `env.subset(bins=west)` raises a `TypeError`
-that says to pass `mask=`:
+always means integer bin indices, and `env.subset(bins=west)` raises a
+`TypeError`:
 
 <!-- docs-test: run -->
 ```python

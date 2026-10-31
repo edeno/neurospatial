@@ -113,9 +113,6 @@ from neurospatial.environment._summary import (
     _repr_html,
 )
 from neurospatial.environment._targets import (
-    REGION_TARGET_WHY,
-    TARGET_WHY,
-    former_targets,
     resolve_targets,
 )
 from neurospatial.environment._track_width import _with_track_width
@@ -1681,11 +1678,7 @@ class Environment(Generic[_C]):
         indices = self._locate(positions, "Environment.contains")
         return np.asarray(indices != -1, dtype=np.bool_)
 
-    @keyword_hint(
-        former=("point1", "point2", "edge_weight"),
-        translate=former_targets(2),
-        why=TARGET_WHY,
-    )
+    @keyword_hint()
     def distance_between(
         self,
         *,
@@ -2618,14 +2611,7 @@ class Environment(Generic[_C]):
         fix="keep the full polar environment and select bins with a boolean mask",
         example="near = env.bin_centers[:, 0] < 20.0; field[near]",
     )
-    @keyword_hint(
-        former=("bins",),
-        translate=lambda values: (
-            "pass the boolean array of bins to keep as mask=",
-            {"mask": values["bins"]},
-        ),
-        why="Why: the boolean array of bins to keep is passed by keyword as mask=.",
-    )
+    @keyword_hint()
     def subset(
         self: Environment[CartesianSystem],
         *,
@@ -4647,7 +4633,7 @@ class Environment(Generic[_C]):
         """
         return _bin_center_of(self.bin_centers, bin_indices, self._geometry.coordinates)
 
-    @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def neighbors(
         self,
         *,
@@ -4748,11 +4734,7 @@ class Environment(Generic[_C]):
         sizes.setflags(write=False)
         return sizes
 
-    @keyword_hint(
-        former=("source_active_bin_idx", "target_active_bin_idx"),
-        translate=former_targets(2),
-        why=TARGET_WHY,
-    )
+    @keyword_hint()
     def path_between(
         self,
         *,
@@ -4808,11 +4790,7 @@ class Environment(Generic[_C]):
         start, end = self._target_bins("path_between()", bins, points, count=2)
         return _path_between(self.connectivity, int(start), int(end))
 
-    @keyword_hint(
-        former=("targets",),
-        translate=former_targets(1, region=True),
-        why=REGION_TARGET_WHY,
-    )
+    @keyword_hint()
     def distance_to(
         self,
         *,
@@ -4913,7 +4891,7 @@ class Environment(Generic[_C]):
             coordinates=self._geometry.coordinates,
         )
 
-    @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def reachable_from(
         self,
         *,
@@ -5068,7 +5046,7 @@ class Environment(Generic[_C]):
         """
         return _components(self.connectivity, largest_only=largest_only)
 
-    @keyword_hint(former=("center_bin",), translate=former_targets(1), why=TARGET_WHY)
+    @keyword_hint()
     def rings(
         self,
         *,

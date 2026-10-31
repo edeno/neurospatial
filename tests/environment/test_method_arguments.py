@@ -1,11 +1,10 @@
-"""Method calls in an earlier form name the keyword to use, and its code runs.
+"""Options passed by position name the keyword to use, and the shown call runs.
 
-Earlier versions took a query's target and the options of the field and plot
-methods by position. Today the target is ``bins=``, ``points=`` or
-``region=`` and the options are keyword-only, so an old call fails. Each case
-makes an old call, checks that the error names the keyword, then runs the
-call its ``Fix:`` line shows with the names the caller had and compares the
-result with the call written by hand.
+The options of the field and plot methods are keyword-only. Each case passes
+one by position, checks that the error names the keyword, then runs the call
+its ``Fix:`` line shows with the names the caller had and compares the result
+with the call written by hand. A query target (``bins=``, ``points=`` or
+``region=``) passed by position gets the list of keyword-only options.
 """
 
 from __future__ import annotations
@@ -57,72 +56,6 @@ class Case:
 
 
 CASES: dict[str, Case] = {
-    "distance_to(bins)": Case(
-        lambda n: n["env"].distance_to([3]),
-        "bins=[3]",
-        lambda n: n["env"].distance_to(bins=[3]),
-    ),
-    "distance_to(region name)": Case(
-        lambda n: n["env"].distance_to("reward", metric="euclidean"),
-        "region='reward'",
-        lambda n: n["env"].distance_to(region="reward", metric="euclidean"),
-    ),
-    "distance_to(targets=bins)": Case(
-        lambda n: n["env"].distance_to(targets=[3, 4]),
-        "bins=[3, 4]",
-        lambda n: n["env"].distance_to(bins=[3, 4]),
-    ),
-    "neighbors(bin)": Case(
-        lambda n: n["env"].neighbors(5),
-        "bins=5",
-        lambda n: n["env"].neighbors(bins=5),
-    ),
-    "neighbors(point)": Case(
-        lambda n: n["env"].neighbors([10.0, 10.0]),
-        "points=[[10.0, 10.0]]",
-        lambda n: n["env"].neighbors(points=[[10.0, 10.0]]),
-    ),
-    "path_between(bin, bin)": Case(
-        lambda n: n["env"].path_between(0, 7),
-        "bins=[0, 7]",
-        lambda n: n["env"].path_between(bins=[0, 7]),
-    ),
-    "path_between(source_active_bin_idx=)": Case(
-        lambda n: n["env"].path_between(
-            source_active_bin_idx=0, target_active_bin_idx=7
-        ),
-        "bins=[0, 7]",
-        lambda n: n["env"].path_between(bins=[0, 7]),
-    ),
-    "distance_between(point, point, edge_weight)": Case(
-        lambda n: n["env"].distance_between(
-            np.array([5.0, 5.0]), np.array([30.0, 30.0]), None
-        ),
-        "points=[[5.0, 5.0], [30.0, 30.0]], edge_weight=None",
-        lambda n: n["env"].distance_between(
-            points=[[5.0, 5.0], [30.0, 30.0]], edge_weight=None
-        ),
-    ),
-    "reachable_from(bin)": Case(
-        lambda n: n["env"].reachable_from(0, radius=2),
-        "bins=0, radius=2",
-        lambda n: n["env"].reachable_from(bins=0, radius=2),
-    ),
-    "rings(center_bin=)": Case(
-        lambda n: n["env"].rings(center_bin=0, hops=2),
-        "bins=0, hops=2",
-        lambda n: n["env"].rings(bins=0, hops=2),
-    ),
-    "subset(bins=mask)": Case(
-        lambda n: n["env"].subset(bins=n["mask"]),
-        "mask=",
-        lambda n: n["env"].subset(mask=n["mask"]),
-    ),
-    "subset(mask)": Case(
-        lambda n: n["env"].subset(n["mask"]),
-        "mask=",
-        lambda n: n["env"].subset(mask=n["mask"]),
-    ),
     "smooth(field, bandwidth)": Case(
         lambda n: n["env"].smooth(n["field"], 5.0, mode="average"),
         "bandwidth=5.0",
@@ -205,6 +138,26 @@ def test_guarded_methods_publish_their_own_signature(method):
     signature = inspect.signature(member)
     assert signature == inspect.signature(inspect.unwrap(member))
     assert next(iter(signature.parameters)) == "self"
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda env: env.neighbors(5),
+        lambda env: env.path_between(0, 7),
+        lambda env: env.distance_between([5.0, 5.0], [30.0, 30.0]),
+        lambda env: env.distance_to("reward"),
+        lambda env: env.reachable_from(0, radius=2),
+        lambda env: env.rings(0, hops=2),
+        lambda env: env.subset(env.bin_centers[:, 0] < 20.0),
+    ],
+)
+def test_positional_target_lists_the_keyword_options(call, names):
+    with pytest.raises(TypeError) as caught:
+        call(names["env"])
+    fix = str(caught.value).splitlines()[-1]
+    assert fix.startswith("Fix: options are keyword-only; pass them by name:")
+    assert "as in" not in fix
 
 
 def test_mixed_targets_name_the_keywords_without_a_call(names):
