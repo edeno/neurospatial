@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.events._core import (
     PeriEventResult,
     _finite_times,
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
+@reads_pynapple_samples
 def plot_peri_event_response(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],

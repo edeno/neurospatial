@@ -35,7 +35,7 @@ container in neurospatial, so ``st[i]`` and ``rates[i]`` name the same unit.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -49,7 +49,11 @@ from neurospatial._results import (
     read_only_copy,
     resolve_unit_ids,
 )
-from neurospatial._spikes import require_finite_spike_times
+from neurospatial._spikes import (
+    _coerce_spike_input,
+    require_finite_spike_times,
+    spike_unit_table,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -73,27 +77,34 @@ class SpikeTrains(UnitSelectionMixin):
 
     Parameters
     ----------
-    trains : sequence of ndarray
+    trains : sequence of ndarray, pynapple TsGroup, or dict
         Ragged per-unit spike times, one 1-D array per unit (a ``list`` is the
         ergonomic input). Each element is copied to a read-only 1-D ``float64``
         array at construction, so later edits to the arrays you passed in do
         not reach the container; a non-1-D element raises
-        :class:`ValueError`.
+        :class:`ValueError`. A spike group -- a pynapple ``TsGroup`` or a
+        ``dict`` from unit id to train -- also gives the unit labels (its
+        index or keys), and a ``TsGroup`` gives its metadata as
+        ``unit_table``, without pynapple's ``rate`` column: pynapple computes
+        that rate over the group's time support, which is not the time an
+        analysis observed.
     unit_ids : ndarray or sequence, optional
-        Identity label for each unit, one per train. Defaults to
-        ``np.arange(len(trains))``; such generated labels do not count as
+        Identity label for each unit, one per train. Defaults to the labels
+        of a spike group, else ``np.arange(len(trains))``; generated labels do not count as
         labels when the container is passed to an encoder or decoder (an
         explicit ``unit_ids=`` there may name the units, and decoding pairs
         trains by position). Must be 1-D, length ``len(trains)``, and
         **unique** (:meth:`sel` and downstream selection require uniqueness);
-        a length mismatch or duplicate labels raise :class:`ValueError`.
+        a length mismatch, duplicate labels, or labels that differ from a
+        spike group's own raise :class:`ValueError`.
     unit_table : pandas.DataFrame or None, optional
         Per-unit metadata aligned to :attr:`unit_ids` (e.g. region, quality,
         depth, inclusion), one row per unit. A ``unit_id`` column or a named
         or non-default index aligns rows by identity; missing, extra or
         duplicate labels raise :class:`ValueError`. A plain unnamed
         ``RangeIndex`` without a ``unit_id`` column uses train order. The
-        table is copied at construction. Enables :meth:`filter`.
+        table is copied at construction. Enables :meth:`filter`. Given with a
+        ``TsGroup``, it replaces the group's metadata.
 
     Attributes
     ----------
@@ -126,9 +137,14 @@ class SpikeTrains(UnitSelectionMixin):
     array([0.2, 0.3, 0.8])
     >>> st[1]  # by position: the same unit
     array([0.2, 0.3, 0.8])
+
+    A spike group names its own units:
+
+    >>> SpikeTrains({"a": [0.1, 0.4], "b": [0.2]}).unit_ids
+    array(['a', 'b'], dtype='<U1')
     """
 
-    trains: Sequence[NDArray[np.float64]]
+    trains: Sequence[NDArray[np.float64]] | Mapping[Any, Any]
     unit_ids: NDArray[Any] | None = None
     unit_table: pd.DataFrame | None = None
     # True only when ``unit_ids`` was omitted and ``arange`` labels were
@@ -137,8 +153,16 @@ class SpikeTrains(UnitSelectionMixin):
 
     def __post_init__(self) -> None:
         """Coerce trains, resolve/validate unit ids, and validate the table."""
+        group_ids = None
+        if isinstance(self.trains, Mapping):
+            # Iterating a spike group yields its unit ids, not its trains.
+            if self.unit_table is None:
+                object.__setattr__(self, "unit_table", spike_unit_table(self.trains))
+            trains, group_ids = _coerce_spike_input(self.trains)
+        else:
+            trains = list(self.trains)
         coerced: list[NDArray[np.float64]] = []
-        for i, train in enumerate(self.trains):
+        for i, train in enumerate(trains):
             arr = read_only_copy(train, np.float64)
             if arr.ndim != 1:
                 raise ValueError(
@@ -153,9 +177,11 @@ class SpikeTrains(UnitSelectionMixin):
         object.__setattr__(self, "trains", tuple(coerced))
 
         n_units = len(coerced)
-        if self.unit_ids is None:
+        if self.unit_ids is None and group_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
-        resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
+        resolved = resolve_unit_ids(
+            self.unit_ids, n_units, context="SpikeTrains", input_ids=group_ids
+        )
         require_finite_spike_times(coerced, resolved)
         object.__setattr__(self, "unit_ids", resolved)
 

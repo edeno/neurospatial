@@ -16,6 +16,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._keyword_hint import keyword_hint
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
@@ -297,6 +298,12 @@ def read_intervals(
     this function reads interval data with start/stop times from the built-in
     NWB TimeIntervals type. No extension dependencies required.
 
+    Pass the rows as ``epochs=`` (``df[["start_time", "stop_time"]].to_numpy()``)
+    to read each as the half-open window ``[start_time, stop_time)``, the
+    meaning :func:`write_trials` and :func:`write_laps` give them. pynapple's
+    ``load_file`` reads the same table with inclusive ends; see
+    :func:`write_trials` for how to get identical selections on both routes.
+
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
@@ -492,6 +499,7 @@ def _build_time_intervals(
 
 
 @keyword_hint("description")
+@reads_pynapple_samples
 def write_laps(
     nwbfile: NWBFile,
     laps: Sequence[Lap] | None = None,
@@ -572,6 +580,20 @@ def write_laps(
     detect_laps : Detect laps on a circular track.
     read_intervals : Read the laps back as a DataFrame.
     write_trials : Write trials to the predefined NWB trials table.
+
+    Notes
+    -----
+    ``stop_time`` is exclusive: neurospatial reads each lap as the half-open
+    window ``[start_time, stop_time)``, so a sample or spike exactly at
+    ``stop_time`` is outside it. NWB does not say whether ``stop_time`` is
+    inclusive, and pynapple's ``load_file`` reads the table as an
+    ``IntervalSet`` whose ``end`` is inclusive, so pynapple keeps one more
+    sample per lap whenever a sample falls exactly on ``stop_time``; the
+    ``IntervalSet`` passed to a neurospatial ``epochs=`` keeps it too. For the
+    same selection on both routes, pick one meaning: the half-open one with
+    ``epochs=np.column_stack([iset.start, iset.end])`` (a plain array is
+    half-open), or the inclusive one with ``in_epochs(t, rows,
+    closed="both")`` on the rows from ``read_intervals(nwbfile, interval_name="laps")``.
 
     Examples
     --------
@@ -667,6 +689,7 @@ def write_laps(
 
 
 @keyword_hint("description")
+@reads_pynapple_samples
 def write_region_crossings(
     nwbfile: NWBFile,
     crossings: Sequence[Crossing] | None = None,
@@ -855,6 +878,7 @@ _OUTCOME_DESCRIPTION = (
 )
 
 
+@reads_pynapple_samples
 def write_trials(
     nwbfile: NWBFile,
     trials: Sequence[Trial] | None = None,
@@ -933,6 +957,18 @@ def write_trials(
     -----
     The trials table is stored in NWB's built-in trials location
     (``nwbfile.trials`` / ``/intervals/trials/``).
+
+    ``stop_time`` is exclusive: neurospatial reads each trial as the half-open
+    window ``[start_time, stop_time)``, so a sample or spike exactly at
+    ``stop_time`` is outside it. NWB does not say whether ``stop_time`` is
+    inclusive, and pynapple's ``load_file`` reads the table as an
+    ``IntervalSet`` whose ``end`` is inclusive, so pynapple keeps one more
+    sample per trial whenever a sample falls exactly on ``stop_time``; the
+    ``IntervalSet`` passed to a neurospatial ``epochs=`` keeps it too. For the
+    same selection on both routes, pick one meaning: the half-open one with
+    ``epochs=np.column_stack([iset.start, iset.end])`` (a plain array is
+    half-open), or the inclusive one with ``in_epochs(t, rows,
+    closed="both")`` on the rows from read_trials.
 
     Custom columns are added for:
     - ``start_region``: Region where trial started
@@ -1094,6 +1130,13 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     ------
     KeyError
         If no trials table exists in NWB file.
+
+    Notes
+    -----
+    Each row is the half-open window ``[start_time, stop_time)``: a sample
+    exactly at ``stop_time`` is outside the trial. pynapple's ``load_file``
+    reads the same table with inclusive ends; see :func:`write_trials` for
+    how to get identical selections on both routes.
 
     Examples
     --------

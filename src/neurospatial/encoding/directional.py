@@ -57,6 +57,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -75,6 +76,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
     BandwidthRule,
@@ -2394,6 +2396,7 @@ def _count_directional(
     )
 
 
+@reads_pynapple_samples
 def compute_directional_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2464,6 +2467,7 @@ def compute_directional_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2589,6 +2593,7 @@ def compute_directional_rate(
     )
 
 
+@reads_pynapple_samples
 def compute_directional_rates(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -2669,6 +2674,7 @@ def compute_directional_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2907,7 +2913,7 @@ def _directional_rates(
         bandwidth=counts.bandwidth,
         spike_counts=counts.spike_counts,
         unit_ids=resolved_unit_ids if labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,
         dispersion_dof=counts.dispersion_dof,
@@ -2921,6 +2927,7 @@ def _directional_rates(
 # ==============================================================================
 
 
+@reads_pynapple_samples
 def is_head_direction_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2990,6 +2997,7 @@ def is_head_direction_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3331,6 +3339,7 @@ def _shifted_mean_vector_lengths(
     return _mean_vector_lengths(rates_from_counts(spike_counts), bin_centers)
 
 
+@reads_pynapple_samples
 def head_direction_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -3412,6 +3421,7 @@ def head_direction_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

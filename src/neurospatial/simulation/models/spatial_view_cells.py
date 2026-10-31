@@ -91,6 +91,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._units import default_length
 from neurospatial.geometry import CallIndexes, require_cartesian, valid_observers
 from neurospatial.ops.egocentric import compute_egocentric_bearing
@@ -334,6 +335,7 @@ class SpatialViewCellModel:
         """True: the gaze is along the heading."""
         return True
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

@@ -22,8 +22,10 @@ from neurospatial._intervals import (
     ragged_arange,
     resolve_time_windows,
 )
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import resolve_unit_ids
-from neurospatial._spikes import _as_spike_trains_with_ids
+from neurospatial._spikes import _as_spike_trains_with_ids, spike_unit_table
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
     from neurospatial._typing import SpikeTrainsLike
 
 
+@reads_pynapple_samples
 def align_spikes_to_events(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -219,7 +222,7 @@ def _peri_event_histograms(
         warnings.warn(
             "Computing PSTH with single event - SEM is undefined (will be NaN).",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
     # Count on the absolute clock, not on relative times: subtraction can move
@@ -247,6 +250,7 @@ def _peri_event_histograms(
     return histograms, sem, mean_sem, event_indices, n_input_events - n_events
 
 
+@reads_pynapple_samples
 def peri_event_histogram(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -370,6 +374,7 @@ def peri_event_histogram(
     )
 
 
+@reads_pynapple_samples
 def population_peri_event_histogram(
     spike_times: SpikeTrainsLike,
     event_times: NDArray[np.float64],
@@ -435,6 +440,8 @@ def population_peri_event_histogram(
         - event_indices: Positions of retained events in the original input;
           use ``event_times[result.event_indices]`` for a matching raster cohort
         - n_units: Number of units
+        - unit_table: Per-unit metadata of a ``SpikeTrains`` or a pynapple
+          ``TsGroup`` input (its ``rate`` column dropped), else None
         - window: The input window
         - bin_size: The input bin_size
 
@@ -512,6 +519,7 @@ def population_peri_event_histogram(
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
+        unit_table=spike_unit_table(spike_times),
         n_events_dropped=n_dropped,
         event_indices=event_indices,
     )

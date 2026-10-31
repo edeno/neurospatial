@@ -32,7 +32,13 @@ class _FakeTsGroup:
 
 
 class _FakeTs:
-    """Minimal pynapple ``Ts`` stand-in: exposes ``.t`` (spike timestamps)."""
+    """Minimal pynapple ``Ts`` stand-in: exposes ``.t`` (spike timestamps).
+
+    neurospatial reads ``.t`` only from pynapple objects, which it recognizes
+    by module, so the double reports pynapple's module.
+    """
+
+    __module__ = "pynapple.core.time_series"
 
     def __init__(self, t: np.ndarray) -> None:
         self.t = t

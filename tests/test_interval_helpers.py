@@ -1,5 +1,6 @@
 """Time-window normalization, containment, intersections and valid runs."""
 
+import re
 import sys
 from dataclasses import dataclass
 
@@ -328,3 +329,46 @@ def test_touching_interval_sets_do_not_intersect():
 
     actual = intersect_intervals(np.array([[0.0, 10.0]]), np.array([[10.0, 20.0]]))
     assert actual.shape == (0, 2)
+
+
+@pytest.mark.parametrize("container", [tuple, list])
+def test_pair_of_one_dimensional_arrays_is_ambiguous(container) -> None:
+    """Two Series (or arrays) could be two rows or starts and stops; with two
+    windows both readings have shape (2, 2), so either guess could be wrong."""
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    value = container([pd.Series([0.0, 10.0]), pd.Series([5.0, 15.0])])
+    with pytest.raises(ValueError, match=re.escape("could be two [start, stop) rows")):
+        as_intervals(value, name="epochs")
+
+
+def test_pair_of_plain_lists_is_two_rows() -> None:
+    from neurospatial._intervals import as_intervals
+
+    rows = as_intervals(([0.0, 5.0], [10.0, 15.0]), name="epochs")
+    np.testing.assert_array_equal(rows, [[0.0, 5.0], [10.0, 15.0]])
+
+
+def test_starts_and_stops_as_rows_get_a_column_stack_hint() -> None:
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(
+        ValueError, match=re.escape("pass np.column_stack([starts, stops])")
+    ):
+        as_intervals(np.array([[0.0, 10.0, 20.0], [5.0, 15.0, 25.0]]), name="epochs")
+
+
+def test_context_warnings_survive_an_error_in_the_block() -> None:
+    """A warning raised before an error often explains it, so it is kept."""
+    import warnings
+
+    from neurospatial._stacklevel import _warnings_with_context
+
+    with (
+        pytest.warns(UserWarning, match="ctx: all intervals excluded"),
+        pytest.raises(ValueError, match="nothing left"),
+        _warnings_with_context("ctx"),
+    ):
+        warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
+        raise ValueError("nothing left")

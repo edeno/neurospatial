@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### pynapple inputs keep their metadata and time support
+
+**Changed**
+
+- A pynapple `TsdFrame` or `Tsd` passed directly as `positions` or `headings`
+  keeps its `time_support`: with `epochs=None`, every public function taking
+  `epochs` and `positions` or `headings` uses it as the epochs; results with
+  `analysis_settings` record the windows in `analysis_settings["epochs"]`. A tracking gap shorter than `max_gap` was
+  counted as occupancy before (39.99 s instead of 39.49 s for a 0.5 s gap in
+  40 s). An explicit `epochs=` wins; positions and headings with different
+  supports are refused until you pass `epochs=`.
+- `restrict_spike_trains` returns a `SpikeTrains` that keeps the input's unit
+  labels and metadata. It returned a plain list, so a restricted `TsGroup`
+  with units 5, 6, 7 was renumbered 0, 1, 2 by every later analysis.
+- `SpikeTrains` accepts a `TsGroup` or a dict of unit id to train, taking
+  labels (and a `TsGroup`'s metadata) from it.
+
+**Fixed**
+
+- A list of pynapple `Tsd` spike trains was read as their data values, not
+  their spike times; every route (one train, a list, a spike group) now reads
+  a pynapple train by its timestamps, and only pynapple objects are read by
+  `.t`.
+- A pair of pandas `Series` (or other 1-D arrays) as `epochs=` with two
+  windows was read as two rows, merging `[[0, 5], [10, 15]]` into `[0, 15]`.
+  Any pair of non-list 1-D arrays is now refused as ambiguous; pass
+  `np.column_stack([starts, stops])` or an `(n, 2)` array. A `(2, n)` array
+  gets the same hint.
+- Warnings that replay and reactivation comparisons re-emit with context are
+  no longer lost when the comparison then raises.
+- Warnings point at the caller's line when neurospatial is imported through
+  a symlinked path, instead of inside the library.
+- A `TsGroup` passed to a population encoder or
+  `population_peri_event_histogram` keeps its metadata as `unit_table`
+  (pynapple's computed `rate` column is dropped). `SpikeTrains` metadata now
+  also reaches `population_peri_event_histogram`.
+- A `TsdFrame` with columns `["y", "x"]` passed directly as `positions`
+  (or `true_positions`, `actual_positions`, `decoded_positions`) to a public
+  function, including `Environment.from_samples` and `env.bin_at`, is
+  refused, as `from_pynapple` already did, instead of silently swapping axes.
+- A pynapple object passed as `times`, `frame_times`, `true_times`,
+  `position_times`, `start_times` or `stop_times`, or one unit's `Ts`/`Tsd`
+  passed as `spike_times`, is read as its timestamps (`.t`).
+  `np.asarray(tsd)` gave its values, so a `Tsd` passed as `times` had its
+  data read as seconds, and `compute_spatial_rate(env, nap.Tsd(t=spikes,
+  d=3.0), ...)` put every spike at 3.0 s.
+- Warnings from functions that read pynapple inputs point at the caller's
+  line, not at the input wrapper.
+- `epochs=tsd` (or a `Ts` / `TsdFrame`) says to pass `tsd.time_support`
+  instead of failing with "shapes () and ()".
+- `filter_by_intervals`, `intervals_to_events`, `mean_pairwise_bias` and the
+  `interval=` of one-event replay functions accept a pynapple `IntervalSet`,
+  keeping a point at its inclusive `end` inside. `pairwise_bias_matrix`
+  labels its rows with a spike group's own unit ids.
+
+**Documentation**
+
+- `write_trials`, `write_laps`, `read_intervals`, `read_trials` and the
+  interoperability guide state that `stop_time` is exclusive in neurospatial
+  but inclusive when pynapple loads the table, and how to get identical
+  selections on both routes.
+
 ### Shareable NWB layout for environments and spatial rates
 
 **Changed**

@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 from neurospatial.layout.helpers.utils import get_n_bins
@@ -153,7 +154,7 @@ def _infer_active_bins_from_regular_grid(
             "infer_active_bins is True, but positions has no row without NaN. "
             "Returning all bins inactive (no data to infer from).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.zeros(grid_shape, dtype=bool)
 

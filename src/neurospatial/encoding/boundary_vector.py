@@ -59,7 +59,9 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     PopulationRateMixin,
     SingleUnitRateMixin,
@@ -670,6 +672,7 @@ def _count_boundary_events(
     return spike_counts, occupancy, time_beyond, support
 
 
+@reads_pynapple_samples
 def compute_boundary_vector_rates(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -749,6 +752,8 @@ def compute_boundary_vector_rates(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open windows (seconds).
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -867,6 +872,7 @@ def compute_boundary_vector_rates(
     )
 
 
+@reads_pynapple_samples
 def compute_boundary_vector_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -1108,7 +1114,7 @@ def _boundary_vector_rates(
         method=method,
         bandwidth=resolved_bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,
         analysis_settings=settings,

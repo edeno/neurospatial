@@ -30,6 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_float_dtype
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
@@ -342,6 +343,7 @@ def normalize_to_posterior(
     return cast("NDArray[np.float64]", out)
 
 
+@reads_pynapple_samples
 def decode_position(
     env: Environment,
     spike_counts: NDArray[np.int64],
@@ -898,6 +900,7 @@ def _decode_summary(
     )
 
 
+@reads_pynapple_samples
 def decode_position_summary(
     env: Environment,
     spike_counts: NDArray[np.int64],

@@ -252,6 +252,15 @@ def _parse_intervals(
     Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
     are unusable; ``problems`` is empty when ``rows`` is valid.
     """
+    kind = type(value).__name__
+    if _is_pynapple_object(value) and kind != "IntervalSet":
+        # A Ts/Tsd/TsdFrame has scalar .start/.end (its first and last
+        # timestamps), which would read as one window over everything.
+        return None, [
+            f"{name} is a pynapple {kind}, a time series rather than a set of "
+            f"intervals; pass the windows it was recorded in, "
+            f"{name}={kind.lower()}.time_support"
+        ]
     if hasattr(value, "start") and hasattr(value, "end"):
         try:
             starts = np.asarray(value.start, dtype=np.float64)
@@ -273,15 +282,17 @@ def _parse_intervals(
     elif (
         isinstance(value, (tuple, list))
         and len(value) == 2
-        and all(isinstance(v, np.ndarray) and v.ndim == 1 for v in value)
+        and all(not isinstance(v, (list, tuple)) and np.ndim(v) == 1 for v in value)
     ):
-        # The retired parallel (starts, stops) form. With two length-2 arrays
-        # it also has shape (2, 2), so reading it as rows would be silent.
+        # A pair of 1-D arrays (or Series, ...) is ambiguous: two
+        # [start, stop) rows, or parallel starts and stops. With two windows
+        # both readings have shape (2, 2), so either guess could be silently
+        # wrong. Plain lists stay rows, the documented form.
         return None, [
-            f"{name} is a pair of 1-D arrays, the retired parallel "
-            f"(starts, stops) form; pass np.column_stack([starts, stops]) for "
-            f"those windows, or np.asarray(rows) if each array is one "
-            f"[start, stop) row"
+            f"{name} is a pair of 1-D arrays, which could be two [start, stop) "
+            f"rows or parallel starts and stops; pass np.column_stack([starts, "
+            f"stops]) for starts and stops, or np.asarray(rows) if each array "
+            f"is one row"
         ]
     else:
         try:
@@ -294,7 +305,15 @@ def _parse_intervals(
         if rows.shape == (2,):
             rows = rows.reshape(1, 2)
         if rows.ndim != 2 or rows.shape[1] != 2:
-            return None, [f"{name} has shape {rows.shape}; expected (2,) or (n, 2)"]
+            hint = (
+                "; if its rows are starts and stops, pass "
+                "np.column_stack([starts, stops])"
+                if rows.ndim == 2 and rows.shape[0] == 2
+                else ""
+            )
+            return None, [
+                f"{name} has shape {rows.shape}; expected (2,) or (n, 2){hint}"
+            ]
     if rows.shape[0] == 0:
         return None, [f"{name} has no rows, so it would exclude all data"]
 
@@ -374,7 +393,9 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     ValueError
         On a wrong shape, zero rows, non-finite values or ``stop <= start``.
         Non-finite and inverted rows are all listed in one message; a value
-        that is unreadable or wrongly shaped is reported on its own.
+        that is unreadable or wrongly shaped is reported on its own. A
+        pynapple time series (``Ts``, ``Tsd``, ``TsdFrame``) is refused with
+        a pointer to its ``time_support``.
     """
     rows, problems = _resolve_intervals(value, name)
     if problems:

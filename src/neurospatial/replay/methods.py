@@ -38,6 +38,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
@@ -1634,6 +1635,7 @@ def _check_decoded_environment(
         )
 
 
+@reads_pynapple_samples
 def detect_replay(
     env: Environment | Mapping[str, Environment],
     posterior: NDArray[np.float64]
@@ -3164,6 +3166,7 @@ def _quantity_test(
     return _QuantityTest(values, p_values, min(used) if used else None)
 
 
+@reads_pynapple_samples
 def detect_rank_order_replay(
     env: Environment | Mapping[str, Environment],
     spike_times: Any,
@@ -3184,7 +3187,7 @@ def detect_rank_order_replay(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds.
     encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping
         Each cell's rate map on ``env``, in Hz; or a mapping of such rate
@@ -3603,6 +3606,7 @@ def _spike_window(times: NDArray[np.float64], dt: float) -> tuple[float, float]:
     return float(times[0]) - dt / 2, float(times[-1]) + dt / 2
 
 
+@reads_pynapple_samples
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[

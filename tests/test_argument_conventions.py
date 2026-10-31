@@ -6,6 +6,8 @@ import inspect
 import pytest
 from test_public_api_snapshot import NAMESPACES
 
+from neurospatial._pynapple import SAMPLE_ARGUMENTS
+
 
 def public_functions():
     """Iterate distinct public functions across the snapshot namespaces."""
@@ -374,3 +376,86 @@ def test_environment_coordinate_arguments_are_named_positions():
             if parameter in off_contract
         ]
     assert not offenders, offenders
+
+
+def _public_callables():
+    """Public functions and the public methods of public classes.
+
+    Class and static methods are included through their underlying function.
+    """
+    seen = set()
+    for namespace in NAMESPACES:
+        module = importlib.import_module(namespace)
+        for name in module.__all__:
+            obj = getattr(module, name)
+            members = [obj]
+            if inspect.isclass(obj):
+                members = []
+                for attr in dir(obj):
+                    static = inspect.getattr_static(obj, attr)
+                    if isinstance(static, (classmethod, staticmethod)):
+                        static = static.__func__
+                    if not attr.startswith("_") and inspect.isfunction(static):
+                        members.append(static)
+            for member in members:
+                if inspect.isfunction(member) and member not in seen:
+                    seen.add(member)
+                    yield member
+
+
+def test_sample_arguments_read_pynapple_objects():
+    """Every public callable taking samples reads pynapple objects correctly.
+
+    ``np.asarray(tsd)`` gives a pynapple series' values, not its timestamps,
+    and a ``TsdFrame``'s columns may be y, x. Every callable taking a
+    timestamp or sample argument is wrapped by ``reads_pynapple_samples``.
+    Those that also take ``epochs`` adopt the time support of pynapple
+    positions or headings and say so in their ``epochs`` documentation.
+    """
+    undecorated, undocumented = [], []
+    for function in _public_callables():
+        parameters = inspect.signature(function).parameters
+        if not set(SAMPLE_ARGUMENTS) & set(parameters):
+            continue
+        name = f"{function.__module__}.{function.__qualname__}"
+        if not getattr(function, "__reads_pynapple_samples__", False):
+            undecorated.append(name)
+        if "epochs" not in parameters or not (
+            {"positions", "headings"} & set(parameters)
+        ):
+            continue
+        lines = (inspect.getdoc(function) or "").splitlines()
+        starts = [i for i, line in enumerate(lines) if line.startswith("epochs : ")]
+        if starts:
+            entry = []
+            for line in lines[starts[0] + 1 :]:
+                if not line.startswith("    "):
+                    break
+                entry.append(line)
+            if "time_support" not in " ".join(entry):
+                undocumented.append(name)
+    assert not undecorated, sorted(undecorated)
+    assert not undocumented, sorted(undocumented)
+
+
+def test_warnings_from_sample_functions_point_at_the_caller():
+    """The pynapple-reading wrapper adds a frame; warnings must skip it."""
+    import warnings
+
+    import numpy as np
+
+    from neurospatial.behavior import heading_from_velocity, restrict
+    from neurospatial.events import peri_event_histogram
+
+    times = np.arange(10.0)
+    positions = np.zeros((10, 2))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        # Sliced samples from two windows lose the gap between them.
+        restrict(times, positions, epochs=[(0.0, 3.0), (5.0, 9.0)])
+        # A stationary animal has no heading.
+        heading_from_velocity(times, positions, allow_all_nan=True)
+        # One event has no SEM (warned from a helper of the wrapped function).
+        peri_event_histogram(times, np.array([5.0]), (-1.0, 1.0), bin_size=0.5)
+    assert len(caught) == 3, [str(w.message) for w in caught]
+    assert {w.filename for w in caught} == {__file__}

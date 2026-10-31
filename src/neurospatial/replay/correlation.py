@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ResultMixin
 from neurospatial._validation import validate_choice
 from neurospatial.replay._inputs import _CORRELATION_WHY, _posterior_times
@@ -56,6 +57,7 @@ class WeightedCorrelationResult(ResultMixin):
         return {"score": self.score, "row_normalization": self.row_normalization}
 
 
+@reads_pynapple_samples
 def weighted_correlation(
     env: Environment,
     posterior: NDArray[np.float64],

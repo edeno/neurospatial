@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import get_centers as get_centers
 from neurospatial.layout.validation import (
@@ -21,6 +22,7 @@ from neurospatial.layout.validation import (
 )
 
 
+@reads_pynapple_samples
 def get_n_bins(
     positions: NDArray[np.float64],
     *,
@@ -182,7 +184,7 @@ def _infer_dimension_ranges_from_samples(
                 f"Dimension {dim_idx} has zero extent and no buffer specified. "
                 "Extending it by 0.5 on each side of the point.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
             buffer = 0.5
         d_min -= buffer

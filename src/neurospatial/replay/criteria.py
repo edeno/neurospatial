@@ -20,6 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_choice
 from neurospatial.environment._cache import CacheKey
@@ -303,6 +304,7 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
         return values
 
 
+@reads_pynapple_samples
 def trajectory_metrics(
     env: Environment,
     posterior: NDArray[np.float64],

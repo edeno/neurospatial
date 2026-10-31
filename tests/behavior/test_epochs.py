@@ -305,22 +305,44 @@ def test_restrict_spike_trains_list() -> None:
     ]
     epochs = (1.0, 3.5)
     out = restrict_spike_trains(trains, epochs)
-    assert isinstance(out, list)
+    assert isinstance(out, SpikeTrains)
+    assert out.unit_ids.tolist() == [0, 1]
     assert len(out) == 2
     np.testing.assert_array_equal(out[0], np.array([1.5, 2.9]))
     np.testing.assert_array_equal(out[1], np.array([3.0]))  # 3.5 is the stop
 
 
-def test_restrict_spike_trains_accepts_spiketrains_container() -> None:
-    """A SpikeTrains container iterates to its per-unit train arrays."""
+def test_restrict_spike_trains_keeps_spiketrains_labels_and_table() -> None:
+    """Restricting keeps each unit's label and metadata row."""
+    import pandas as pd
+
     st = SpikeTrains(
         [np.array([0.1, 1.5, 2.9]), np.array([0.5, 3.0, 6.0])],
         unit_ids=np.array([7, 9]),
+        unit_table=pd.DataFrame({"region": ["CA3", "CA1"]}, index=[7, 9]),
     )
     out = restrict_spike_trains(st, (1.0, 3.5))
-    assert len(out) == 2
-    np.testing.assert_array_equal(out[0], np.array([1.5, 2.9]))
-    np.testing.assert_array_equal(out[1], np.array([3.0]))
+    assert out.unit_ids.tolist() == [7, 9]
+    assert out.unit_table["region"].tolist() == ["CA3", "CA1"]
+    np.testing.assert_array_equal(out.sel(unit_id=7), np.array([1.5, 2.9]))
+    np.testing.assert_array_equal(out.sel(unit_id=9), np.array([3.0]))
+
+
+def test_restrict_spike_trains_dict_labels_reach_the_analysis() -> None:
+    """A dict's keys survive restriction and name the result's rows."""
+    rng = np.random.default_rng(1)
+    times = np.linspace(0.0, 20.0, 400)
+    positions = np.column_stack([np.linspace(0.0, 50.0, 400), np.zeros(400)])
+    env = Environment.from_samples(positions, bin_size=10.0)
+    spikes = {
+        5: np.sort(rng.uniform(0.0, 20.0, 40)),
+        6: np.sort(rng.uniform(0.0, 20.0, 30)),
+    }
+    kept = restrict_spike_trains(spikes, (5.0, 15.0))
+    rates = compute_spatial_rates(
+        env, kept, *restrict(times, positions, epochs=(5.0, 15.0)), method="binned"
+    )
+    assert rates.unit_ids.tolist() == [5, 6]
 
 
 def test_restrict_spike_trains_empty_epochs_all_empty() -> None:

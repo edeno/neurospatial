@@ -50,6 +50,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_draw_count, validate_integer_at_least
 from neurospatial.stats.shuffle import _spike_train
 
@@ -265,6 +266,7 @@ def generate_inhomogeneous_poisson_surrogates(
     return _poisson_draws(lam, n_surrogates, np.random.default_rng(rng))
 
 
+@reads_pynapple_samples
 def generate_jittered_spikes(
     spike_times: NDArray[np.float64],
     *,

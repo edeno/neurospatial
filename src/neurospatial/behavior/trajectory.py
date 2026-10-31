@@ -43,7 +43,9 @@ from neurospatial._observation import (
     validate_break_before,
     validated_observations,
 )
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     validate_strictly_increasing,
     validate_times_positions,
@@ -283,6 +285,7 @@ class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def compute_speed(
     times: ArrayLike,
     positions: ArrayLike,
@@ -338,6 +341,8 @@ def compute_speed(
         Restrict the analysis to these half-open [start, stop) windows
         (seconds, same clock as ``times``). ``None`` (default) means
         unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -402,6 +407,7 @@ def compute_speed(
     )
 
 
+@reads_pynapple_samples
 def heading_from_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -440,6 +446,8 @@ def heading_from_velocity(
         means unrestricted. Windows that
         touch merge into one, so to keep recordings joined on one clock apart
         use ``break_before``.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_time,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -619,7 +627,7 @@ def heading_from_velocity(
             f"min_speed={min_speed} or zero; returning an all-NaN heading "
             "array because allow_all_nan=True.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
     return heading
 
@@ -661,6 +669,7 @@ def _interpolate_heading_circular(
     return result
 
 
+@reads_pynapple_samples
 def heading_from_body_orientation(
     times: ArrayLike,
     nose: ArrayLike,
@@ -919,6 +928,7 @@ def _planar_turns(
     return a, b, span, t, support
 
 
+@reads_pynapple_samples
 def compute_planar_turn_angles(
     times: ArrayLike,
     positions: ArrayLike,
@@ -963,6 +973,8 @@ def compute_planar_turn_angles(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1138,6 +1150,7 @@ def _smooth_in_time(
     return smoothed
 
 
+@reads_pynapple_samples
 def compute_planar_curvature(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1175,6 +1188,8 @@ def compute_planar_curvature(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1271,6 +1286,7 @@ def compute_planar_curvature(
     return curvature
 
 
+@reads_pynapple_samples
 def compute_movement_angular_velocity(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1312,6 +1328,8 @@ def compute_movement_angular_velocity(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1392,6 +1410,7 @@ def compute_movement_angular_velocity(
     return omega
 
 
+@reads_pynapple_samples
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
@@ -1561,6 +1580,7 @@ def _observed_cumulative(
     return steps, cumulative
 
 
+@reads_pynapple_samples
 def compute_cumulative_distance(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1596,6 +1616,8 @@ def compute_cumulative_distance(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1704,6 +1726,7 @@ def _sample_dwell_times(
     return weights
 
 
+@reads_pynapple_samples
 def compute_home_range(
     position_bins: NDArray[np.int_],
     *,
@@ -1957,6 +1980,7 @@ def compute_home_range(
     return home_range
 
 
+@reads_pynapple_samples
 def mean_square_displacement(
     times: ArrayLike,
     positions: ArrayLike,
@@ -2003,6 +2027,8 @@ def mean_square_displacement(
         ``(start, stop)`` windows in seconds. A displacement pair is used only
         when both samples lie in the same window; touching windows merge.
         ``None`` uses the whole recording.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : array of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``. No pair spans a break. Use it when the

@@ -84,6 +84,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
@@ -596,6 +597,7 @@ class ViewshedResult(ReadOnlyArraysMixin):
         return env.bin_centers[self.visible_bins]
 
 
+@reads_pynapple_samples
 def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1340,6 +1342,7 @@ def visible_cues(
     )
 
 
+@reads_pynapple_samples
 def compute_viewshed_trajectory(
     env: BinningConsumer,
     positions: NDArray[np.float64],
@@ -1418,6 +1421,7 @@ def compute_viewshed_trajectory(
     ]
 
 
+@reads_pynapple_samples
 def visibility_occupancy(
     env: BinningConsumer,
     times: NDArray[np.float64],
@@ -1471,6 +1475,8 @@ def visibility_occupancy(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_time,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

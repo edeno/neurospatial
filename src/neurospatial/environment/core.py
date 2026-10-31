@@ -23,6 +23,7 @@ from typing_extensions import Self
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._keyword_hint import keyword_hint
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
 from neurospatial.environment._cache import (
@@ -1422,6 +1423,7 @@ class Environment(Generic[_C]):
         """
         return _blocked_edges(self._binning, self.arena)
 
+    @reads_pynapple_samples
     def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
@@ -1493,6 +1495,7 @@ class Environment(Generic[_C]):
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
         return self._locate(positions, "Environment.bin_at")
 
+    @reads_pynapple_samples
     def nearest_bin(
         self,
         positions: NDArray[np.float64],
@@ -1626,6 +1629,7 @@ class Environment(Generic[_C]):
         """
         return copy.deepcopy(center_tree(self._cache, self._binning))
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
 
@@ -1744,6 +1748,7 @@ class Environment(Generic[_C]):
             self.connectivity, int(start), int(end), weight=edge_weight
         )
 
+    @reads_pynapple_samples
     def to_linear(
         self: Environment[CartesianSystem],
         positions: NDArray[np.float64],
@@ -1867,6 +1872,7 @@ class Environment(Generic[_C]):
         """
         return _linear_to_nd(self._binning, linear_position)
 
+    @reads_pynapple_samples
     def occupancy(
         self,
         times: NDArray[np.float64],
@@ -1921,6 +1927,8 @@ class Environment(Generic[_C]):
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_samples,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2078,6 +2086,7 @@ class Environment(Generic[_C]):
             return_seconds=return_seconds,
         )
 
+    @reads_pynapple_samples
     def bin_sequence(
         self,
         times: NDArray[np.float64],
@@ -2124,6 +2133,8 @@ class Environment(Generic[_C]):
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_samples,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2199,6 +2210,7 @@ class Environment(Generic[_C]):
         )
         return result.bins
 
+    @reads_pynapple_samples
     def bin_sequence_with_runs(
         self,
         times: NDArray[np.float64],
@@ -2242,6 +2254,8 @@ class Environment(Generic[_C]):
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_samples,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2311,6 +2325,7 @@ class Environment(Generic[_C]):
         example="bins = env.bin_at(positions); "
         "np.where(bins >= 0, field[bins], np.nan)",
     )
+    @reads_pynapple_samples
     def interpolate(
         self: Environment[CartesianSystem],
         field: NDArray[np.float64],
@@ -3248,6 +3263,7 @@ class Environment(Generic[_C]):
 
     @classmethod
     @keyword_hint("bin_size")
+    @reads_pynapple_samples
     def from_samples(
         cls,
         positions: NDArray[np.float64],
@@ -3494,6 +3510,7 @@ class Environment(Generic[_C]):
 
     @classmethod
     @keyword_hint("bin_size")
+    @reads_pynapple_samples
     def open_field(
         cls,
         positions: NDArray[np.float64],
@@ -6144,6 +6161,7 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
+    @reads_pynapple_samples
     def animate_fields(
         self,
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
@@ -7114,6 +7132,7 @@ class Environment(Generic[_C]):
         """
         return _mrf_basis(self._cache, self._binning, occupancy, rank=rank)
 
+    @reads_pynapple_samples
     def transitions(
         self,
         bins: NDArray[np.intp] | None = None,
@@ -7190,6 +7209,8 @@ class Environment(Generic[_C]):
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_samples,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed

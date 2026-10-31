@@ -20,6 +20,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import as_intervals, intervals_contain
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     _finite_times,
@@ -52,6 +53,7 @@ def _share_coincident_edges(
     return shared[: starts.size], shared[starts.size :]
 
 
+@reads_pynapple_samples
 def time_to_nearest_event(
     times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -247,6 +249,7 @@ def event_count_in_window(
 ) -> NDArray[np.float64]: ...
 
 
+@reads_pynapple_samples
 def event_count_in_window(
     times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -384,6 +387,7 @@ def event_indicator(
 ) -> NDArray[np.float64]: ...
 
 
+@reads_pynapple_samples
 def event_indicator(
     times: NDArray[np.float64],
     event_times: NDArray[np.float64],

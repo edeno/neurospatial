@@ -23,6 +23,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -641,6 +643,7 @@ warn_on_drop
             )
         return self.encoding_models
 
+    @reads_pynapple_samples
     def fit(
         self,
         spike_times: SpikeTrainsLike,
@@ -691,6 +694,8 @@ warn_on_drop
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -859,6 +864,7 @@ warn_on_drop
             )
         return [trains[row[u]] for u in fitted]
 
+    @reads_pynapple_samples
     def predict(
         self,
         spike_times: SpikeTrainsLike,
@@ -950,6 +956,7 @@ warn_on_drop
             ),
         )
 
+    @reads_pynapple_samples
     def predict_summary(
         self,
         spike_times: SpikeTrainsLike,
@@ -1079,6 +1086,7 @@ warn_on_drop
             **options,
         )
 
+    @reads_pynapple_samples
     def score(
         self,
         spike_times: SpikeTrainsLike,
@@ -1138,6 +1146,8 @@ warn_on_drop
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1258,7 +1268,7 @@ warn_on_drop
                 f"ground truth and were excluded "
                 f"from the score.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
 
         if metric == "median_error":

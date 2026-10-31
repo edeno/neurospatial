@@ -541,7 +541,7 @@ pynwb.
   to a set of epochs.
 - `in_epochs(t, epochs)`: Boolean mask, `True` where `t` falls in any epoch.
 - `restrict_spike_trains(spike_times, epochs)`: Mask ragged per-unit trains, each by
-  its own timestamps.
+  its own timestamps; returns a `SpikeTrains` that keeps unit labels and metadata.
 
 **Bayesian decoder object** ([neurospatial.decoding.estimator](neurospatial/decoding/estimator.md)):
 

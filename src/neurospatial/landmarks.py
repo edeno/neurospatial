@@ -21,6 +21,7 @@ from numpy.typing import ArrayLike, NDArray
 from shapely.geometry import LineString, Polygon, mapping, shape
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.regions import _thaw_metadata
 from neurospatial.regions.core import (
     _check_planar_geometry,
@@ -131,6 +132,7 @@ class Landmark:
             return np.array(self.data.interpolate(0.5, normalized=True).coords[0])
         return np.array(self.data.centroid.coords[0])
 
+    @reads_pynapple_samples
     def nearest_points(self, positions: ArrayLike) -> NDArray[np.float64]:
         """The landmark's nearest point to each position.
 
@@ -277,6 +279,7 @@ class Landmarks(Mapping[str, Landmark]):
             return np.empty((0, 0))
         return np.array([landmark.position for landmark in selected])
 
+    @reads_pynapple_samples
     def nearest_points(
         self, positions: ArrayLike, names: str | Sequence[str] | None = None
     ) -> NDArray[np.float64]:

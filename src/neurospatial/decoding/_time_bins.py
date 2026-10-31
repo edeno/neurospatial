@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_trains
 from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
 from neurospatial._validation import validate_finite_scalar
@@ -45,6 +46,7 @@ def validate_dt(dt: float) -> float:
     return float(dt)
 
 
+@reads_pynapple_samples
 def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],
     *,

@@ -76,6 +76,7 @@ from numpy.typing import NDArray
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
@@ -89,6 +90,7 @@ __all__ = [
 ]
 
 
+@reads_pynapple_samples
 def allocentric_to_egocentric(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -210,6 +212,7 @@ def allocentric_to_egocentric(
     return result
 
 
+@reads_pynapple_samples
 def egocentric_to_allocentric(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -326,6 +329,7 @@ def _rotations(angles: NDArray[np.float64]) -> NDArray[np.float64]:
     )
 
 
+@reads_pynapple_samples
 def compute_egocentric_bearing(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -390,6 +394,7 @@ def compute_egocentric_bearing(
     return bearing
 
 
+@reads_pynapple_samples
 def compute_egocentric_distance(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,

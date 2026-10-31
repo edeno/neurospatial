@@ -25,6 +25,7 @@ from neurospatial._observation import (
     resolve_sample_support,
     validate_break_before,
 )
+from neurospatial._pynapple import reads_pynapple_samples
 
 if TYPE_CHECKING:
     from neurospatial.animation._view import AnimationView
@@ -402,6 +403,7 @@ class Animation:
         )
         _freeze_overlay_arrays(self._overlay_data)
 
+    @reads_pynapple_samples
     def overlay_data(self, frame_times: Any = None) -> Any:
         """The overlays sampled on a physical clock, by default the scene's.
 

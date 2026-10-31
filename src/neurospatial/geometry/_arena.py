@@ -26,6 +26,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
@@ -105,6 +106,7 @@ class Arena(Protocol):
         """The kind of each segment of ``walls``."""
         ...
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test ``(n_positions, n_dims)`` native coordinates, including boundaries."""
         ...
@@ -454,6 +456,7 @@ class UnknownArena:
             )
         object.__setattr__(self, "n_dims", int(self.n_dims))
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Refuse to assert containment without continuous geometry."""
         _query(positions, self.n_dims)
@@ -630,6 +633,7 @@ class OpenArena(_CappedContainment, ReadOnlyState):
         # Pickling keeps the polygon but not its index.
         shapely.prepare(self.polygon)
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test closed polygon support, excluding hole interiors."""
         query, finite = _query(positions, 2)
@@ -710,6 +714,7 @@ class MaskArena(_CappedContainment, ReadOnlyState):
         """Number of Cartesian coordinate axes."""
         return len(self.edges)
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test the closed union, including a boundary beside any active cell."""
         query, finite = _query(positions, self.n_dims)
@@ -925,6 +930,7 @@ class TrackArena(_CappedContainment, ReadOnlyState):
         """Whether a width was supplied or the track is one-dimensional."""
         return self.width is not None or self.n_dims == 1
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Use point-to-segment distance rather than nearest bin centers.
 
@@ -1091,6 +1097,7 @@ class EgocentricSurround:
             )
         object.__setattr__(self, "circular", circular)
 
+    @reads_pynapple_samples
     def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
         """Express each angle in ``[low, low + 2π)`` of the angle range.
 
@@ -1116,6 +1123,7 @@ class EgocentricSurround:
             query[:, 1] = low + np.remainder(query[:, 1] - low, 2 * np.pi)
         return query
 
+    @reads_pynapple_samples
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test native ``(distance, angle)`` positions against the closed window.
 

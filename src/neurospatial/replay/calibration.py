@@ -45,6 +45,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_choice, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
@@ -1488,6 +1489,7 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def null_events(
     spike_times: Any,
     intervals: NDArray[np.float64],
@@ -1887,6 +1889,7 @@ def simulated_null_events(
     )
 
 
+@reads_pynapple_samples
 def decode_intervals(
     env: Environment,
     spike_times: Any,

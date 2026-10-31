@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -328,6 +329,7 @@ class PairwiseOrderMethod:
             )
 
 
+@reads_pynapple_samples
 def pairwise_order_score(
     env: Environment,
     spike_times: Any,
@@ -359,7 +361,7 @@ def pairwise_order_score(
         Spike times in seconds, one train per cell, in the same order as the
         rows of ``encoding_models``. Any input
         :func:`~neurospatial.decoding.bin_spikes_in_time` accepts.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds. Spikes at ``start <= t < stop``
         count.
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
@@ -505,6 +507,7 @@ def pairwise_order_score(
     return _observed(event, fields, direction, max_time_lag, operation)
 
 
+@reads_pynapple_samples
 def pairwise_order_significance(
     env: Environment,
     spike_times: Any,
@@ -646,6 +649,7 @@ def pairwise_order_significance(
     )
 
 
+@reads_pynapple_samples
 def detect_pairwise_order_replay(
     env: Environment | Mapping[str, Environment],
     spike_times: Any,
@@ -676,7 +680,7 @@ def detect_pairwise_order_replay(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    interval : (start, stop)
+    interval : (start, stop) or one-row IntervalSet
         The candidate event, in seconds.
     encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping
         Each cell's rate map on ``env``, in Hz; or a mapping of such rate

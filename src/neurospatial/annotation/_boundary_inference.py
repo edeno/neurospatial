@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._stacklevel import _external_stacklevel
+
 # Module logger for debug output
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,7 @@ class BoundaryConfig:
     alpha: float = 0.05
 
 
+@reads_pynapple_samples
 def boundary_from_positions(
     positions: NDArray[np.float64],
     *,
@@ -138,7 +142,7 @@ def boundary_from_positions(
             f"Filtered {n_invalid} positions with NaN/Inf values "
             f"({n_invalid / (len(positions) + n_invalid) * 100:.1f}% of data).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     if len(positions) < 3:
@@ -183,7 +187,7 @@ def boundary_from_positions(
                 "alphashape package not installed. Falling back to convex_hull. "
                 "Install with: pip install alphashape",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
             boundary = _convex_hull_boundary(positions)
     else:
@@ -307,7 +311,7 @@ def _alpha_shape_boundary(
             f"  2. Use method='convex_hull' for guaranteed single polygon\n"
             f"  3. Fill gaps in your position data before boundary inference",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
         return largest
 

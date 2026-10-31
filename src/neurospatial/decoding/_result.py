@@ -16,6 +16,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -613,6 +614,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
         return _read_only(posterior_entropy(self.posterior))
 
+    @reads_pynapple_samples
     def plot(
         self,
         ax: Axes | None = None,
@@ -1088,6 +1090,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             data_vars=data_vars, coords=coords, attrs=self._xarray_attrs()
         ).copy(deep=True)
 
+    @reads_pynapple_samples
     def error_against(
         self,
         true_times: NDArray[np.float64],

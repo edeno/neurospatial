@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.environment import Environment
@@ -348,6 +349,7 @@ class PlaceCellModel:
         """False: a place cell's rate depends on position only."""
         return False
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],
