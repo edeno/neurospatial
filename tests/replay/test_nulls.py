@@ -917,3 +917,17 @@ def test_shuffle_cell_identity_matched_ok():
     for shuffled, models in results:
         assert shuffled.shape == spike_counts.shape
         assert models is encoding_models
+
+
+@pytest.mark.parametrize("n_shuffles", [0, -3, 2.0, True])
+def test_spike_count_nulls_refuse_a_draw_count_that_yields_nothing(n_shuffles):
+    """A non-positive or non-integer count is refused, not an empty null."""
+    from neurospatial.replay import (
+        shuffle_spike_counts_circular,
+        shuffle_spike_counts_uniform,
+    )
+
+    counts = np.ones((3, 2), dtype=np.int64)
+    for shuffle in (shuffle_spike_counts_circular, shuffle_spike_counts_uniform):
+        with pytest.raises(ValueError, match="n_shuffles must be a positive integer"):
+            list(shuffle(counts, n_shuffles=n_shuffles, rng=0))

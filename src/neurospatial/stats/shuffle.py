@@ -61,10 +61,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import _resolve_intervals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.stats._utils import _ensure_rng
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_choice,
+    validate_draw_count,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -75,31 +79,34 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def _is_positive_count(value: object) -> bool:
-    """Whether ``value`` is an integer of at least 1 (bools are not counts)."""
-    return bool(
-        isinstance(value, (int, np.integer))
-        and not isinstance(value, (bool, np.bool_))
-        and value >= 1
-    )
-
-
-def _validate_draw_count(value: int, name: str) -> None:
-    """Reject a shuffle or surrogate count that would yield nothing."""
-    if not _is_positive_count(value):
+def _spike_train(
+    spike_times: NDArray[np.float64], *, call: str, require_sorted: bool = False
+) -> NDArray[np.float64]:
+    """One neuron's spike times as float64, refusing what is not a train."""
+    train = np.asarray(spike_times, dtype=np.float64)
+    if (
+        train.ndim != 1
+        or not np.all(np.isfinite(train))
+        or (require_sorted and np.any(np.diff(train) < 0))
+    ):
+        order = "sorted, " if require_sorted else ""
         raise ValueError(
             _format_error(
-                f"{name}={value!r} must be a positive integer.",
-                why="Why: a null distribution needs at least one draw",
-                fix=f"pass {name}=1000",
+                f"{call}: spike_times must be a {order}finite 1-D array, got "
+                f"shape {train.shape}.",
+                why="Why: it is one neuron's spike train, in seconds",
+                fix=f"pass {'np.sort(' if require_sorted else ''}"
+                f"spike_times[np.isfinite(spike_times)]"
+                f"{')' if require_sorted else ''} for one neuron",
             )
         )
+    return train
 
 
 def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
     """Reject invalid counts and offsets before allocating shuffle output."""
     problems = []
-    if not _is_positive_count(n_shuffles):
+    if not is_integer_at_least(n_shuffles, 1):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
     if (
         not isinstance(min_shift, (int, float, np.integer, np.floating))
@@ -174,34 +181,19 @@ def shuffle_spike_times_circular(
     [3, 3, 3]
     """
     _validate_circular_shift_settings(n_shuffles, min_shift)
-    try:
-        normalized = as_intervals(windows, name="windows")
-    except ValueError as exc:
-        problems = str(exc).split("\nWhy:", 1)[0]
+    normalized, problems = _resolve_intervals(windows, "windows")
+    if normalized is None:
+        problem = (
+            "; ".join(problems) or "windows must contain analyzed recording intervals"
+        )
         raise ValueError(
             _format_error(
-                f"shuffle_spike_times_circular: {problems}",
+                f"shuffle_spike_times_circular: {problem}.",
                 why="Why: circular shifting requires finite half-open analyzed-time windows with start < stop",
                 fix="pass windows=np.array([[0.0, 100.0], [200.0, 300.0]]) in seconds",
             )
-        ) from None
-    if normalized is None:
-        raise ValueError(
-            _format_error(
-                "windows must contain analyzed recording intervals.",
-                why="Why: spikes need explicit valid time bounds for circular shifting",
-                fix="pass windows=np.array([[start, stop]]) in seconds",
-            )
         )
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
-        raise ValueError(
-            _format_error(
-                f"spike_times must be a finite 1-D array, got shape {spike_times.shape}.",
-                why="Why: circular shifting operates on one spike train in seconds",
-                fix="pass a finite 1-D spike_times array",
-            )
-        )
+    spike_times = _spike_train(spike_times, call="shuffle_spike_times_circular()")
     offsets = np.concatenate([[0.0], np.cumsum(normalized[:, 1] - normalized[:, 0])])
     total = float(offsets[-1])
     if total <= 2.0 * min_shift:
@@ -224,7 +216,8 @@ def shuffle_spike_times_circular(
             stacklevel=_external_stacklevel(),
         )
     idx = idx[inside]
-    compressed = offsets[idx] + (spike_times[inside] - normalized[idx, 0])
+    # Sorted, each shifted train is two sorted runs (see the draws).
+    compressed = np.sort(offsets[idx] + (spike_times[inside] - normalized[idx, 0]))
     # Validation above runs at call time; only the draws are lazy.
     return _circular_shift_draws(
         compressed,
@@ -233,7 +226,7 @@ def shuffle_spike_times_circular(
         total,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
-        generator=_ensure_rng(rng),
+        generator=np.random.default_rng(rng),
     )
 
 
@@ -248,6 +241,8 @@ def _circular_shift_draws(
     generator: np.random.Generator,
 ) -> Generator[NDArray[np.float64], None, None]:
     """Yield shifted spike trains from validated, compressed-clock inputs."""
+    # A sum on a large absolute clock may round up to an excluded stop.
+    last = np.nextafter(windows[:, 1], windows[:, 0])
     for _ in range(n_shuffles):
         wrapped = np.mod(
             compressed + generator.uniform(min_shift, total - min_shift), total
@@ -255,10 +250,10 @@ def _circular_shift_draws(
         j = np.minimum(
             np.searchsorted(offsets, wrapped, side="right") - 1, len(windows) - 1
         )
-        shifted = windows[j, 0] + (wrapped - offsets[j])
-        # A sum on a large absolute clock may round up to an excluded stop.
-        shifted = np.minimum(shifted, np.nextafter(windows[j, 1], windows[j, 0]))
-        yield np.sort(shifted)
+        shifted = np.minimum(windows[j, 0] + (wrapped - offsets[j]), last[j])
+        # A shifted sorted train is two sorted runs, which a stable sort merges
+        # in linear time.
+        yield np.sort(shifted, kind="stable")
 
 
 def shuffle_time_bins(
@@ -325,8 +320,10 @@ def shuffle_time_bins(
     shuffle_time_bins_coherent : The same shuffle under a name that stresses
         that all neurons share one permutation.
     """
-    _validate_draw_count(n_shuffles, "n_shuffles")
-    return _row_permutations(np.asarray(spike_counts), n_shuffles, _ensure_rng(rng))
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_time_bins()")
+    return _row_permutations(
+        np.asarray(spike_counts), n_shuffles, np.random.default_rng(rng)
+    )
 
 
 def _row_permutations(
@@ -411,7 +408,7 @@ def shuffle_time_bins_coherent(
 # =============================================================================
 
 
-_TAILS = ("greater", "less", "two-sided")
+_ALTERNATIVES = ("greater", "less", "two-sided")
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -432,30 +429,31 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     p_value : float
         Monte Carlo p-value (k + 1) / (n + 1) in (0, 1], where k counts the
         defined null scores at least as extreme as observed in the direction
-        of ``tail`` and n is ``n_shuffles_used``. NaN when the test is
+        of ``alternative`` and n is ``n_shuffles_used``. NaN when the test is
         undefined: a non-finite observed score or no defined null score.
-    z_score : float
-        Standard score: (observed - mean(null)) / std(null), over the finite
-        null scores. NaN if they have zero variance, fewer than two are
-        finite, or a null score is infinite.
     shuffle_type : str
         Name of the shuffle method used (e.g., "time_bins", "cell_identity").
-    n_shuffles : int
-        Number of shuffles performed, ``len(null_scores)``, including any
-        with an undefined score.
-    tail : {"greater", "less", "two-sided"}, default="greater"
+    alternative : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test the p-value belongs to.
 
     Attributes
     ----------
+    z_score : float
+        Standard score of the observed score against the null scores, from
+        :func:`compute_shuffle_zscore`: (observed - mean(null)) / std(null)
+        over the defined null scores. NaN if they have zero variance, fewer
+        than two are defined, or a null score is infinite.
+    n_shuffles : int
+        Number of shuffles performed, ``len(null_scores)``, including any
+        with an undefined score.
     n_shuffles_used : int
         Shuffles with a defined (non-NaN) score, the n of the p-value.
 
     Raises
     ------
     ValueError
-        If ``null_scores`` is not 1-D, ``n_shuffles`` is not its length,
-        ``p_value`` is neither in (0, 1] nor NaN, or ``tail`` is unknown.
+        If ``null_scores`` is not 1-D, ``p_value`` is neither in (0, 1] nor
+        NaN, or ``alternative`` is unknown.
 
     Examples
     --------
@@ -481,10 +479,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     observed_score: float
     null_scores: NDArray[np.float64]
     p_value: float
-    z_score: float
     shuffle_type: str
-    n_shuffles: int
-    tail: Literal["greater", "less", "two-sided"] = "greater"
+    alternative: Literal["greater", "less", "two-sided"] = "greater"
 
     def __post_init__(self) -> None:
         """Check the fields agree, then own the null as a read-only copy."""
@@ -492,21 +488,17 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         problems = []
         if null.ndim != 1:
             problems.append(f"null_scores must be 1-D, got shape {null.shape}")
-        elif self.n_shuffles != null.size:
-            problems.append(
-                f"n_shuffles={self.n_shuffles!r} must equal len(null_scores)="
-                f"{null.size}"
-            )
         if not (np.isnan(self.p_value) or 0.0 < self.p_value <= 1.0):
             problems.append(f"p_value={self.p_value!r} must be in (0, 1] or NaN")
-        if self.tail not in _TAILS:
-            problems.append(f"tail={self.tail!r} must be one of {_TAILS}")
+        if self.alternative not in _ALTERNATIVES:
+            problems.append(
+                f"alternative={self.alternative!r} must be one of {_ALTERNATIVES}"
+            )
         if problems:
             raise ValueError(
                 _format_error(
                     "ShuffleTestResult: " + "; ".join(problems) + ".",
-                    why="a result's p-value, z-score and counts must describe its "
-                    "null scores",
+                    why="a result's p-value must describe its null scores",
                     fix="build it with ShuffleTestResult.from_null(observed, "
                     "null_scores, shuffle_type=...)",
                 )
@@ -521,8 +513,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         null_scores: NDArray[np.float64],
         *,
         shuffle_type: str,
-        tail: Literal["greater", "less", "two-sided"] = "greater",
-        decimals: int | None = None,
+        alternative: Literal["greater", "less", "two-sided"] = "greater",
     ) -> ShuffleTestResult:
         """Test an observed score against the scores of its shuffles.
 
@@ -536,12 +527,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             warning; ``n_shuffles_used`` counts the rest.
         shuffle_type : str
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
-        tail : {"greater", "less", "two-sided"}, default="greater"
+        alternative : {"greater", "less", "two-sided"}, default="greater"
             Direction of the test, as for :func:`compute_shuffle_pvalue`.
-        decimals : int or None, default=None
-            Compare the observed and shuffled scores rounded to this many
-            decimals for the p-value, so that scores equal up to
-            floating-point error tie. None compares them as they are.
 
         Returns
         -------
@@ -553,7 +540,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         ------
         ValueError
             If ``observed_score`` is not finite, no null score is defined,
-            ``tail`` is unknown, or ``null_scores`` is not 1-D.
+            ``alternative`` is unknown, or ``null_scores`` is not 1-D.
 
         Examples
         --------
@@ -576,21 +563,26 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        if decimals is None:
-            p_value = compute_shuffle_pvalue(observed_score, defined, tail=tail)
-        else:
-            p_value = compute_shuffle_pvalue(
-                round(observed_score, decimals), np.round(defined, decimals), tail=tail
-            )
+        p_value = compute_shuffle_pvalue(
+            observed_score, defined, alternative=alternative
+        )
         return cls(
             observed_score=observed_score,
             null_scores=null,
             p_value=p_value,
-            z_score=compute_shuffle_zscore(observed_score, defined),
             shuffle_type=shuffle_type,
-            n_shuffles=null.size,
-            tail=tail,
+            alternative=alternative,
         )
+
+    @property
+    def z_score(self) -> float:
+        """Standard score of the observed score against the null scores."""
+        return compute_shuffle_zscore(self.observed_score, self.null_scores)
+
+    @property
+    def n_shuffles(self) -> int:
+        """Shuffles performed, ``len(null_scores)``, including undefined ones."""
+        return len(self.null_scores)
 
     @property
     def n_shuffles_used(self) -> int:
@@ -619,7 +611,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             "observed_score": float(self.observed_score),
             "p_value": float(self.p_value),
             "z_score": float(self.z_score),
-            "tail": self.tail,
+            "alternative": self.alternative,
             "shuffle_type": self.shuffle_type,
             "n_shuffles": self.n_shuffles,
             "n_shuffles_used": self.n_shuffles_used,
@@ -629,7 +621,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         """Plot the null distribution with observed score.
 
         Creates a histogram of the finite null scores with a vertical line
-        showing the observed score and annotations for the p-value, its tail
+        showing the observed score and annotations for the p-value, its alternative
         and the z-score. Undefined (NaN) and infinite null scores cannot be
         drawn; the title gives how many are left out.
 
@@ -688,7 +680,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         n_hidden = self.n_shuffles - finite.size
         hidden = f", {n_hidden} non-finite not drawn" if n_hidden else ""
         ax.set_title(
-            f"Shuffle Test ({self.shuffle_type}, {self.tail})\n"
+            f"Shuffle Test ({self.shuffle_type}, {self.alternative})\n"
             f"p = {self.p_value:.4f}{sig_marker}, z = {self.z_score:.2f}{hidden}"
         )
         ax.set_xlabel("Score")
@@ -702,7 +694,7 @@ def compute_shuffle_pvalue(
     observed: float,
     null_scores: NDArray[np.float64],
     *,
-    tail: Literal["greater", "less", "two-sided"] = "greater",
+    alternative: Literal["greater", "less", "two-sided"] = "greater",
 ) -> float:
     """Compute Monte Carlo p-value with Phipson-Smyth correction.
 
@@ -718,7 +710,7 @@ def compute_shuffle_pvalue(
         finite.
     null_scores : NDArray[np.float64]
         Array of scores from shuffled data, forming the null distribution.
-    tail : {"greater", "less", "two-sided"}, default="greater"
+    alternative : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test:
 
         - "greater": Tests if observed is significantly greater than null
@@ -737,7 +729,7 @@ def compute_shuffle_pvalue(
     Raises
     ------
     ValueError
-        If ``observed`` is not finite, ``tail`` is unknown, or no null score
+        If ``observed`` is not finite, ``alternative`` is unknown, or no null score
         is defined (all NaN or empty).
 
     Notes
@@ -771,11 +763,11 @@ def compute_shuffle_pvalue(
     >>> # Observed score higher than all null values
     >>> observed = 10.0
     >>> null = np.array([1.0, 2.0, 3.0, 4.0])
-    >>> compute_shuffle_pvalue(observed, null, tail="greater")
+    >>> compute_shuffle_pvalue(observed, null, alternative="greater")
     0.2
 
     >>> # Two-sided test
-    >>> compute_shuffle_pvalue(observed, null, tail="two-sided")
+    >>> compute_shuffle_pvalue(observed, null, alternative="two-sided")
     0.4
 
     See Also
@@ -789,10 +781,9 @@ def compute_shuffle_pvalue(
             "observed score makes all comparisons against the null False, which "
             "would silently return the floor p-value 1/(n+1)."
         )
-    if tail not in _TAILS:
-        raise ValueError(
-            f"tail must be 'greater', 'less', or 'two-sided', got '{tail}'"
-        )
+    validate_choice(
+        alternative, _ALTERNATIVES, name="alternative", owner="compute_shuffle_pvalue()"
+    )
 
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     undefined = np.isnan(null_scores)
@@ -809,10 +800,10 @@ def compute_shuffle_pvalue(
             category=UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return float(_shuffle_p_values(observed, null_scores, tail))
+    return float(_shuffle_p_values(observed, null_scores, alternative))
 
 
-def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
+def _shuffle_p_values(observed: Any, null: Any, alternative: str) -> Any:
     """Monte Carlo p-values over the defined null scores, elementwise.
 
     Parameters
@@ -822,7 +813,7 @@ def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
     null : NDArray[np.float64], shape (n_shuffles, ...)
         Null scores along the first axis. NaN scores are left out of ``n``;
         infinite scores are counted like any other.
-    tail : {"greater", "less", "two-sided"}
+    alternative : {"greater", "less", "two-sided"}
         Direction of the test.
 
     Returns
@@ -835,7 +826,10 @@ def _shuffle_p_values(observed: Any, null: Any, tail: str) -> Any:
     null = np.asarray(null, dtype=np.float64)
     n = np.sum(~np.isnan(null), axis=0)
     p = _tail_p_values(
-        np.sum(null >= observed, axis=0), np.sum(null <= observed, axis=0), n, tail
+        np.sum(null >= observed, axis=0),
+        np.sum(null <= observed, axis=0),
+        n,
+        alternative,
     )
     return np.where(np.isfinite(observed) & (n > 0), p, np.nan)
 
@@ -1022,11 +1016,11 @@ def shuffle_trials(
                 fix="pass one label per sample, in time order",
             )
         )
-    _validate_draw_count(n_shuffles, "n_shuffles")
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_trials()")
     # Trial index of each sample: a new trial starts where the label changes.
     trial = np.concatenate([[0], np.cumsum(trial_labels[1:] != trial_labels[:-1])])
     run_labels = trial_labels[np.flatnonzero(np.diff(trial, prepend=-1))]
-    return _relabeled_trials(run_labels, trial, n_shuffles, _ensure_rng(rng))
+    return _relabeled_trials(run_labels, trial, n_shuffles, np.random.default_rng(rng))
 
 
 def _relabeled_trials(
@@ -1114,22 +1108,10 @@ def shuffle_spikes_isi(
     shuffle_time_bins : Shuffle temporal order of binned spike counts.
     generate_poisson_surrogates : Generate Poisson surrogate spike trains.
     """
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if (
-        spike_times.ndim != 1
-        or not np.all(np.isfinite(spike_times))
-        or np.any(np.diff(spike_times) < 0)
-    ):
-        raise ValueError(
-            _format_error(
-                f"spike_times must be a sorted, finite 1-D array, got shape "
-                f"{spike_times.shape}.",
-                why="Why: inter-spike intervals are differences of consecutive "
-                "spike times",
-                fix="pass np.sort(spike_times[np.isfinite(spike_times)])",
-            )
-        )
-    _validate_draw_count(n_shuffles, "n_shuffles")
+    spike_times = _spike_train(
+        spike_times, call="shuffle_spikes_isi()", require_sorted=True
+    )
+    validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_spikes_isi()")
     if spike_times.size < 3:
         warnings.warn(
             f"shuffle_spikes_isi: {spike_times.size} spike(s) give at most one "
@@ -1137,7 +1119,7 @@ def shuffle_spikes_isi(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return _isi_permutations(spike_times, n_shuffles, _ensure_rng(rng))
+    return _isi_permutations(spike_times, n_shuffles, np.random.default_rng(rng))
 
 
 def _isi_permutations(

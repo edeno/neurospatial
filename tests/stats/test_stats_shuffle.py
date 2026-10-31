@@ -120,7 +120,7 @@ def test_compute_shuffle_pvalue_drops_nan_nulls():
     """Undefined (NaN) null scores are dropped (with a warning) and excluded from n."""
     null = np.array([1.0, 2.0, np.nan, 4.0])
     with pytest.warns(UserWarning, match="undefined \\(NaN\\)"):
-        p = compute_shuffle_pvalue(10.0, null, tail="greater")
+        p = compute_shuffle_pvalue(10.0, null, alternative="greater")
     # n reduced to 3 defined values, none >= 10 -> (0 + 1) / (3 + 1) = 0.25.
     assert_allclose(p, 0.25)
 
@@ -139,7 +139,7 @@ def test_compute_shuffle_pvalue_ranks_infinite_nulls(tail, expected):
     null = np.r_[np.full(500, np.inf), np.ones(500)]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        p = compute_shuffle_pvalue(10.0, null, tail=tail)
+        p = compute_shuffle_pvalue(10.0, null, alternative=tail)
     assert p == pytest.approx(expected)
 
 
@@ -153,15 +153,15 @@ def test_compute_shuffle_pvalue_nan_observed_raises():
     """A non-finite ``observed`` raises rather than silently returning 1/(n+1)."""
     null = np.array([1.0, 2.0, 3.0, 4.0])
     with pytest.raises(ValueError, match="observed must be a finite value"):
-        compute_shuffle_pvalue(np.nan, null, tail="greater")
+        compute_shuffle_pvalue(np.nan, null, alternative="greater")
     with pytest.raises(ValueError, match="observed must be a finite value"):
-        compute_shuffle_pvalue(np.inf, null, tail="greater")
+        compute_shuffle_pvalue(np.inf, null, alternative="greater")
 
 
 def test_compute_shuffle_pvalue_finite_unchanged():
     """All-finite null reproduces the documented value (finite path untouched)."""
     null = np.array([1.0, 2.0, 3.0, 4.0])
-    p = compute_shuffle_pvalue(10.0, null, tail="greater")
+    p = compute_shuffle_pvalue(10.0, null, alternative="greater")
     assert_allclose(p, 0.2)
 
 
@@ -186,32 +186,16 @@ def test_from_null_leaves_out_undefined_scores_with_a_warning():
     assert result.z_score == compute_shuffle_zscore(2.5, defined)
     assert result.n_shuffles == 4
     assert result.n_shuffles_used == 3
-    assert result.tail == "greater"
+    assert result.alternative == "greater"
 
 
-def test_from_null_decimals_ties_scores_equal_up_to_rounding():
-    null = np.array([0.30000000000000004, 0.1, 0.2])
-    exact = ShuffleTestResult.from_null(0.3, null, shuffle_type="x")
-    rounded = ShuffleTestResult.from_null(0.3, null, shuffle_type="x", decimals=6)
-    assert exact.p_value == pytest.approx(2 / 4)  # 0.30000000000000004 >= 0.3
-    assert rounded.p_value == pytest.approx(2 / 4)
-    below = ShuffleTestResult.from_null(
-        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x"
-    )
-    assert below.p_value == pytest.approx(1 / 4)
-    tied = ShuffleTestResult.from_null(
-        0.30000000000000004, np.array([0.3, 0.1, 0.2]), shuffle_type="x", decimals=6
-    )
-    assert tied.p_value == pytest.approx(2 / 4)
-
-
-def test_from_null_records_tail():
+def test_from_null_records_alternative():
     result = ShuffleTestResult.from_null(
-        -5.0, np.arange(9.0), shuffle_type="x", tail="less"
+        -5.0, np.arange(9.0), shuffle_type="x", alternative="less"
     )
-    assert result.tail == "less"
+    assert result.alternative == "less"
     assert result.p_value == pytest.approx(1 / 10)
-    assert result.summary()["tail"] == "less"
+    assert result.summary()["alternative"] == "less"
 
 
 @pytest.mark.parametrize(
@@ -219,9 +203,8 @@ def test_from_null_records_tail():
     [
         ({"p_value": 0.0}, "p_value"),
         ({"p_value": 1.5}, "p_value"),
-        ({"n_shuffles": 5}, "n_shuffles"),
-        ({"null_scores": np.ones((2, 2)), "n_shuffles": 4}, "1-D"),
-        ({"tail": "up"}, "tail"),
+        ({"null_scores": np.ones((2, 2))}, "1-D"),
+        ({"alternative": "up"}, "alternative"),
     ],
 )
 def test_shuffle_test_result_rejects_inconsistent_fields(changes, match):
@@ -238,9 +221,7 @@ def test_shuffle_test_result_allows_nan_p_value_and_has_short_repr():
         observed_score=np.nan,
         null_scores=np.full(1000, 1.0),
         p_value=np.nan,
-        z_score=np.nan,
         shuffle_type="x",
-        n_shuffles=1000,
     )
     assert not result.is_significant()
     assert len(repr(result)) < 300

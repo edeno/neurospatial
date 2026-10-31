@@ -55,7 +55,7 @@ def test_circular_basis_metrics_basic():
     amplitude, phase, pvalue = circular_basis_metrics(1.0, 0.0)
     assert_allclose(amplitude, 1.0)
     assert_allclose(phase, np.pi / 2)
-    assert pvalue is None  # No cov_matrix provided
+    assert np.isnan(pvalue)  # No cov_matrix provided
 
 
 def test_circular_basis_metrics_with_cov():

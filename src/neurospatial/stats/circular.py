@@ -118,8 +118,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._angles import wrap_angle
+from neurospatial._angles import to_radians, wrap_angle
 from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -148,41 +149,6 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 # Internal Helper Functions
 # =============================================================================
-
-
-def _to_radians(
-    angles: NDArray[np.float64],
-    angle_unit: Literal["rad", "deg"],
-) -> NDArray[np.float64]:
-    """
-    Convert angles to radians if needed.
-
-    Parameters
-    ----------
-    angles : ndarray of shape (n,)
-        Input angles.
-    angle_unit : {'rad', 'deg'}
-        Unit of input angles.
-
-    Returns
-    -------
-    ndarray of shape (n,)
-        Angles in radians.
-
-    Raises
-    ------
-    ValueError
-        If ``angle_unit`` is not ``'rad'`` or ``'deg'``.
-    """
-    if angle_unit == "deg":
-        return np.radians(angles)
-    if angle_unit != "rad":
-        raise ValueError(
-            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
-            f"Fix: pass angle_unit='deg' for degrees or 'rad' (default) for "
-            f"radians."
-        )
-    return angles
 
 
 def _validate_weights(
@@ -263,13 +229,35 @@ def _mean_vector(
         if len(angles) == 0:
             return np.nan, np.nan
         return float(np.mean(np.cos(angles))), float(np.mean(np.sin(angles)))
-    total = np.sum(weights)
-    if total == 0:
-        return np.nan, np.nan
-    normalized = weights / total
+    mean_cos, mean_sin = _weighted_mean_vectors(angles, weights)
+    return float(mean_cos), float(mean_sin)
+
+
+def _weighted_mean_vectors(
+    angles: NDArray[np.float64], weights: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Weighted means of (cos, sin) of ``angles``, one per row of ``weights``.
+
+    Parameters
+    ----------
+    angles : ndarray of shape (n,)
+        Angles in radians, without NaN.
+    weights : ndarray of shape (..., n)
+        Non-negative weights; each row is reduced on its own, with the same
+        arithmetic for one row or many.
+
+    Returns
+    -------
+    mean_cos, mean_sin : ndarray of shape (...)
+        NaN where a row's weights sum to zero.
+    """
+    total = np.sum(weights, axis=-1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        normalized = np.where(total > 0, weights / total, np.nan)
     return (
-        float(np.sum(normalized * np.cos(angles))),
-        float(np.sum(normalized * np.sin(angles))),
+        np.sum(normalized * np.cos(angles), axis=-1),
+        np.sum(normalized * np.sin(angles), axis=-1),
     )
 
 
@@ -307,110 +295,88 @@ def _mean_resultant_length(
 def _valid_angles(
     angles: NDArray[np.float64],
     angle_unit: Literal["rad", "deg"],
-    weights: NDArray[np.float64] | None,
+    weights: NDArray[np.float64] | None = None,
+    *,
+    min_samples: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """
     Angles in radians with NaN angles, and their weights, dropped.
 
-    NaN angles are dropped with a ``UserWarning``. Empty or all-NaN input
-    returns no angles, so descriptive statistics come out NaN.
-    """
-    angles = _to_radians(np.asarray(angles, dtype=np.float64).ravel(), angle_unit)
-    if np.isnan(angles).all():
-        if weights is not None:
-            _validate_weights(angles, weights)
-        return angles[:0], None
-    return _validate_circular_input(angles, "angles", min_samples=1, weights=weights)
-
-
-def _validate_circular_input(
-    angles: NDArray[np.float64],
-    name: str = "angles",
-    *,
-    min_samples: int = 3,
-    weights: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
-    """
-    Validate circular input array.
-
     Parameters
     ----------
     angles : ndarray of shape (n,)
-        Input angles to validate.
-    name : str, default='angles'
-        Name for error messages.
-    min_samples : int, default=3
-        Minimum required samples.
+        Input angles in ``angle_unit``; raveled to 1-D.
+    angle_unit : {'rad', 'deg'}
+        Unit of ``angles``.
     weights : ndarray of shape (n,), optional
-        Optional per-angle weights to keep aligned with ``angles``. If
-        supplied they are validated (equal length, non-negative) up front
-        and co-filtered by the same NaN mask used to drop invalid angles.
+        Per-angle weights, validated (equal length, finite, non-negative)
+        and co-filtered by the NaN mask of ``angles``.
+    min_samples : int
+        Fewest angles that must remain. With 0, empty or all-NaN input
+        returns no angles, so descriptive statistics come out NaN.
 
     Returns
     -------
     angles : ndarray of shape (m,)
-        Validated angles with NaN values removed, where m <= n.
+        Angles in radians without NaN, where m <= n.
     weights : ndarray of shape (m,) or None
-        Weights co-filtered by the same NaN mask, or ``None`` if no
-        weights were passed.
+        The weights of the remaining angles, or None if none were passed.
 
     Raises
     ------
     ValueError
-        If validation fails with actionable error message.
+        If ``angle_unit`` is unknown, an angle is infinite, every angle is
+        NaN while ``min_samples > 0``, or fewer than ``min_samples`` remain.
     """
-    angles = np.asarray(angles, dtype=np.float64).ravel()
+    angles = to_radians(angles, angle_unit).ravel()
     if weights is not None:
-        weights = _validate_weights(angles, weights, name=f"{name}_weights")
+        weights = _validate_weights(angles, weights)
 
-    # Check for NaN
     nan_mask = np.isnan(angles)
-    n_nan = np.sum(nan_mask)
-    if n_nan > 0:
-        if n_nan == len(angles):
-            raise ValueError(
-                f"All {name} values are NaN ({len(angles)} samples). "
-                f"Cannot compute circular statistics.\n"
-                f"\n"
-                f"Diagnostic steps:\n"
-                f"1. Check your data: print({name}[:10]) to see actual values\n"
-                f"2. If all zeros: spike detection may have failed\n"
-                f"3. If all identical: phase extraction may be broken\n"
-                f"4. Check data types: {name}.dtype should be float, not object\n"
-                f"\n"
-                f"Common causes:\n"
-                f"  - Wrong variable passed (e.g., spike times instead of phases)\n"
-                f"  - Array indexing error (e.g., phases[spike_indices] where "
-                f"indices are all -1)\n"
-                f"  - Phase computation failed (check LFP signal quality)\n"
-                f"\n"
-                f"Quick fix: Verify extraction with: np.isnan({name}).sum()"
-            )
-        # Remove NaN and warn
+    n_nan = int(np.sum(nan_mask))
+    if n_nan and n_nan == len(angles) and min_samples > 0:
+        raise ValueError(
+            f"All angles are NaN ({len(angles)} samples). "
+            f"Cannot compute circular statistics.\n"
+            f"\n"
+            f"Diagnostic steps:\n"
+            f"1. Check your data: print(angles[:10]) to see actual values\n"
+            f"2. If all zeros: spike detection may have failed\n"
+            f"3. If all identical: phase extraction may be broken\n"
+            f"4. Check data types: angles.dtype should be float, not object\n"
+            f"\n"
+            f"Common causes:\n"
+            f"  - Wrong variable passed (e.g., spike times instead of phases)\n"
+            f"  - Array indexing error (e.g., phases[spike_indices] where "
+            f"indices are all -1)\n"
+            f"  - Phase computation failed (check LFP signal quality)\n"
+            f"\n"
+            f"Quick fix: Verify extraction with: np.isnan(angles).sum()"
+        )
+    if n_nan:
         angles = angles[~nan_mask]
         if weights is not None:
             weights = weights[~nan_mask]
-        warnings.warn(
-            f"Removed {n_nan} NaN values from {name}. "
-            f"Proceeding with {len(angles)} valid samples.",
-            category=UserWarning,
-            stacklevel=2,
-        )
+        if len(angles):
+            warnings.warn(
+                f"Removed {n_nan} NaN values from angles. "
+                f"Proceeding with {len(angles)} valid samples.",
+                category=UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
 
-    # Check for Inf
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
         raise ValueError(
-            f"{name} contains {n_inf} infinite values. "
+            f"angles contains {n_inf} infinite values. "
             f"Cannot compute circular statistics.\n"
             f"Fix: Remove or replace infinite values before calling this function."
         )
 
-    # Check minimum samples
     if len(angles) < min_samples:
         raise ValueError(
             f"Need at least {min_samples} samples for circular statistics. "
-            f"Got {len(angles)} valid samples in {name}.\n"
+            f"Got {len(angles)} valid samples in angles.\n"
             f"Fix: Provide more data points or use a different analysis method."
         )
 
@@ -472,7 +438,7 @@ def _validate_paired_input(
             f"Removed {n_removed} pairs containing NaN values. "
             f"Proceeding with {len(arr1) - n_removed} valid pairs.",
             category=UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         arr1 = arr1[~nan_mask]
         arr2 = arr2[~nan_mask]
@@ -580,31 +546,12 @@ def rayleigh_test(
     >>> p > 0.5
     True
     """
-    # Convert to radians if needed
-    angles = np.asarray(angles, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
-
-    # Validate input (handles NaN drop + Inf + min samples) and co-filter
-    # weights so angle/weight alignment survives NaN removal. Weight
-    # non-negativity and equal-length are enforced inside the validator.
-    #
-    # The validator's ``min_samples`` gate counts the number of *angles*
-    # (distinct samples). That is correct for UNWEIGHTED input but wrong for
-    # WEIGHTED (count) input: a genuinely well-tuned cell can put 100 spikes
-    # into just 1-2 angular bins, so the effective sample size is the total
-    # weight (sum of counts), not the number of occupied bins. For the
-    # weighted path we therefore only require >= 1 angle here and enforce the
-    # real minimum-sample-size check on ``sum(weights)`` below (via n_eff).
-    validator_min_samples = 1 if weights is not None else 3
-    angles, weights = _validate_circular_input(
-        angles,
-        "angles",
-        min_samples=validator_min_samples,
-        weights=weights,
+    # The weighted test's sample size is the total count, not the number of
+    # angles: a tuned cell can put 100 spikes into one or two phase bins. So
+    # the 3-sample minimum applies to n_eff below.
+    angles, weights = _valid_angles(
+        angles, angle_unit, weights, min_samples=1 if weights is not None else 3
     )
-
-    n = len(angles)
-
     if weights is not None and np.any(weights != np.round(weights)):
         raise ValueError(
             "rayleigh_test weights must be whole-number counts (e.g., spike "
@@ -614,39 +561,15 @@ def rayleigh_test(
             "Fix: pass integer counts, or use mean_resultant_length(angles, "
             "weights=...) for a descriptive weighted concentration."
         )
-
-    # Weighted mean resultant length (weights already validated above).
-    r_mean = _mean_resultant_length(angles, weights=weights)
-
-    # Count for the z-statistic and p-value: for the grouped-data test,
-    # n_eff = sum(weights); for unit weights, n_eff = n.
-    if weights is not None:
-        n_eff: float = float(np.sum(weights))
-    else:
-        n_eff = float(n)
-
-    # Guard: all-zero (or empty) weights give n_eff == 0. The weighted R
-    # is already NaN in that case; surface an actionable error instead of a
-    # bare ZeroDivisionError in the finite-sample correction below.
-    if n_eff <= 0:
-        raise ValueError(
-            "Total weight (sum of weights) is zero; cannot run the weighted "
-            "Rayleigh test. At least one angle must carry positive weight.\n"
-            "Fix: check that your per-angle counts/occupancy are not all zero."
-        )
-
-    # Minimum effective sample size. For weighted (count) data the effective
-    # sample size is the total weight, so we enforce the same minimum (3) on
-    # ``n_eff`` that the validator enforces on the angle count for unweighted
-    # data. This rejects genuinely-insufficient data (e.g. 2 total spikes)
-    # while accepting a strongly-tuned cell whose many spikes land in only
-    # 1-2 angular bins.
-    if weights is not None and n_eff < 3:
+    n_eff = float(np.sum(weights)) if weights is not None else float(len(angles))
+    if n_eff < 3:
         raise ValueError(
             f"Need at least 3 total weight (sum of counts) for the weighted "
             f"Rayleigh test. Got sum(weights) = {n_eff:g}.\n"
-            f"Fix: provide more spikes/counts or use a different analysis method."
+            f"Fix: provide more spikes/counts (all-zero counts carry no "
+            f"data), or use a different analysis method."
         )
+    r_mean = _mean_resultant_length(angles, weights=weights)
 
     # Rayleigh z-statistic: z = n_eff * R^2.
     z = n_eff * r_mean**2
@@ -736,10 +659,7 @@ def circular_linear_correlation(
     # scipy.stats is imported on use; it adds ~0.2 s to importing the package.
     from scipy.stats import chi2
 
-    # Convert to arrays and radians if needed
-    angles = np.asarray(angles, dtype=np.float64)
-    linear_values = np.asarray(linear_values, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
+    angles = to_radians(angles, angle_unit)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
     angles, linear_values = _validate_paired_input(
@@ -753,7 +673,7 @@ def circular_linear_correlation(
             "linear_values are constant, so the circular-linear correlation is "
             "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -770,7 +690,7 @@ def circular_linear_correlation(
             "angles are constant, so the circular-linear correlation is "
             "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -903,11 +823,8 @@ def circular_circular_correlation(
     """
     from scipy import stats
 
-    # Convert to radians if needed
-    angles1 = np.asarray(angles1, dtype=np.float64)
-    angles2 = np.asarray(angles2, dtype=np.float64)
-    angles1 = _to_radians(angles1, angle_unit)
-    angles2 = _to_radians(angles2, angle_unit)
+    angles1 = to_radians(angles1, angle_unit)
+    angles2 = to_radians(angles2, angle_unit)
 
     # Validate paired inputs (handles NaN removal and length check)
     angles1, angles2 = _validate_paired_input(
@@ -924,13 +841,15 @@ def circular_circular_correlation(
     sin_dev1 = np.sin(angles1 - alpha_bar)
     sin_dev2 = np.sin(angles2 - beta_bar)
 
+    l20 = np.mean(sin_dev1**2)
+    l02 = np.mean(sin_dev2**2)
     # A spread below 1e-10 rad RMS is rounding error around a constant angle.
-    if min(np.mean(sin_dev1**2), np.mean(sin_dev2**2)) <= 1e-20:
+    if min(l20, l02) <= 1e-20:
         warnings.warn(
             "One or both circular variables are constant, so the "
             "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -944,8 +863,6 @@ def circular_circular_correlation(
 
     # Significance test (normal approximation)
     # From Jammalamadaka & SenGupta (2001), p. 177
-    l20 = np.mean(sin_dev1**2)
-    l02 = np.mean(sin_dev2**2)
     l22 = np.mean(sin_dev1**2 * sin_dev2**2)
 
     if l22 == 0:
@@ -953,18 +870,13 @@ def circular_circular_correlation(
             "Cannot compute the p-value: no pair varies in both variables at "
             "once, so the statistic's variance is zero. Returning p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return rho, np.nan
 
     # Test statistic follows standard normal under null hypothesis
     ts = np.sqrt((n * l20 * l02) / l22) * rho
-    pval = float(2 * stats.norm.sf(np.abs(ts)))
-
-    # Ensure p-value is in valid range
-    pval = float(np.clip(pval, 0.0, 1.0))
-
-    return rho, pval
+    return rho, float(2 * stats.norm.sf(np.abs(ts)))
 
 
 # =============================================================================
@@ -1009,7 +921,9 @@ def circular_mean(
     >>> bool(np.abs(mean - np.pi / 4) < 0.1)
     True
     """
-    mean_cos, mean_sin = _mean_vector(*_valid_angles(angles, angle_unit, weights))
+    mean_cos, mean_sin = _mean_vector(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
     # A resultant below rounding error has no direction (NaN fails the test).
     if not np.hypot(mean_cos, mean_sin) > 1e-12:
         return np.nan
@@ -1056,7 +970,9 @@ def circular_variance(
     >>> var < 0.1
     True
     """
-    return 1.0 - _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
+    return 1.0 - _mean_resultant_length(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
 
 
 def mean_resultant_length(
@@ -1103,7 +1019,9 @@ def mean_resultant_length(
     >>> bool(np.abs(r - 1.0) < 0.01)
     True
     """
-    return _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
+    return _mean_resultant_length(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
 
 
 # =============================================================================
@@ -1178,6 +1096,43 @@ class CircularBasisResult(ReadOnlyArraysMixin):
 # =============================================================================
 
 
+def _validated_cov(cov_matrix: NDArray[np.float64]) -> NDArray[np.float64]:
+    """
+    The [beta_sin, beta_cos] covariance as a checked float64 2x2 array.
+
+    Raises
+    ------
+    ValueError
+        If ``cov_matrix`` is not a finite, symmetric positive semi-definite
+        2x2 matrix.
+    """
+    cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
+    fix = (
+        "Fix: pass model.cov_params()[1:3, 1:3], the rows and columns for "
+        "[sin, cos] of the fitted GLM's covariance."
+    )
+    if cov_matrix.shape != (2, 2):
+        raise ValueError(
+            f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos], got "
+            f"shape {cov_matrix.shape}.\n{fix}"
+        )
+    if not np.all(np.isfinite(cov_matrix)):
+        raise ValueError(
+            f"cov_matrix must be finite, got {cov_matrix.tolist()}.\n"
+            f"Fix: check that the GLM fit converged before testing its "
+            f"coefficients."
+        )
+    scale = float(np.max(np.abs(cov_matrix)))
+    if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
+        np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
+    ):
+        raise ValueError(
+            f"cov_matrix must be a symmetric positive semi-definite covariance "
+            f"matrix, got {cov_matrix.tolist()}.\n{fix}"
+        )
+    return cov_matrix
+
+
 def _wald_test_magnitude(
     beta_sin: float,
     beta_cos: float,
@@ -1195,7 +1150,8 @@ def _wald_test_magnitude(
     beta_cos : float
         Coefficient for cos component from GLM.
     cov_matrix : ndarray, shape (2, 2)
-        Covariance matrix for [beta_sin, beta_cos].
+        Covariance matrix for [beta_sin, beta_cos], checked by
+        ``_validated_cov``.
 
     Returns
     -------
@@ -1206,8 +1162,7 @@ def _wald_test_magnitude(
     Raises
     ------
     ValueError
-        If the coefficients or ``cov_matrix`` are not finite, or
-        ``cov_matrix`` is not symmetric positive semi-definite.
+        If the coefficients are not finite.
 
     Notes
     -----
@@ -1217,22 +1172,12 @@ def _wald_test_magnitude(
     from scipy.stats import chi2
 
     beta = np.array([beta_sin, beta_cos], dtype=np.float64)
-    if not (np.all(np.isfinite(beta)) and np.all(np.isfinite(cov_matrix))):
+    if not np.all(np.isfinite(beta)):
         raise ValueError(
-            f"beta_sin, beta_cos and cov_matrix must be finite, got "
-            f"beta=({beta_sin!r}, {beta_cos!r}) and cov_matrix={cov_matrix.tolist()}.\n"
+            f"beta_sin and beta_cos must be finite, got ({beta_sin!r}, "
+            f"{beta_cos!r}).\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
-        )
-    scale = float(np.max(np.abs(cov_matrix)))
-    if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
-        np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
-    ):
-        raise ValueError(
-            f"cov_matrix must be a symmetric positive semi-definite covariance "
-            f"matrix, got {cov_matrix.tolist()}.\n"
-            f"Fix: pass model.cov_params()[1:3, 1:3], the rows and columns "
-            f"for [sin, cos] of the fitted GLM's covariance."
         )
 
     # Wald statistic: beta.T @ inv(cov) @ beta
@@ -1242,7 +1187,7 @@ def _wald_test_magnitude(
     except np.linalg.LinAlgError:
         warnings.warn(
             "Covariance matrix is singular. Cannot compute p-value; returning NaN.",
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
             category=UserWarning,
         )
         return np.nan
@@ -1351,14 +1296,14 @@ def circular_basis(
             f"Fix: pass one angle per GLM sample, and drop the samples (with "
             f"their spike counts) where the angle is missing."
         )
-    return CircularBasisResult(angles=_to_radians(angles, angle_unit))
+    return CircularBasisResult(angles=to_radians(angles, angle_unit))
 
 
 def circular_basis_metrics(
     beta_sin: float,
     beta_cos: float,
     cov_matrix: NDArray[np.float64] | None = None,
-) -> tuple[float, float, float | None]:
+) -> tuple[float, float, float]:
     """
     Compute amplitude, phase, and p-value from GLM coefficients.
 
@@ -1385,9 +1330,9 @@ def circular_basis_metrics(
     phase : float
         Preferred phase angle in radians, range [-π, π].
         Computed as atan2(beta_sin, beta_cos).
-    pvalue : float or None
-        Wald-test p-value for H0: amplitude = 0 (no modulation). None if
-        ``cov_matrix`` is not provided; NaN, with a warning, if it is
+    pvalue : float
+        Wald-test p-value for H0: amplitude = 0 (no modulation). NaN if
+        ``cov_matrix`` is not provided, and NaN with a warning if it is
         singular.
 
     Raises
@@ -1420,20 +1365,13 @@ def circular_basis_metrics(
     >>> print(f"Amplitude: {amplitude:.2f}, Phase: {np.degrees(phase):.1f}°")
     Amplitude: 0.58, Phase: 59.0°
     """
-    # Compute amplitude: sqrt(beta_sin^2 + beta_cos^2)
     amplitude = float(np.sqrt(beta_sin**2 + beta_cos**2))
-
-    # Compute phase: atan2(beta_sin, beta_cos)
     phase = float(np.arctan2(beta_sin, beta_cos))
-
-    # Compute p-value if covariance provided
-    pvalue: float | None = None
-    if cov_matrix is not None:
-        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
-        if cov_matrix.shape != (2, 2):
-            raise ValueError(f"cov_matrix must be shape (2, 2), got {cov_matrix.shape}")
-        pvalue = _wald_test_magnitude(beta_sin, beta_cos, cov_matrix)
-
+    pvalue = (
+        np.nan
+        if cov_matrix is None
+        else _wald_test_magnitude(beta_sin, beta_cos, _validated_cov(cov_matrix))
+    )
     return amplitude, phase, pvalue
 
 
@@ -1511,11 +1449,8 @@ def is_modulated(
     >>> is_modulated(0.1, 0.1, np.array([[1.0, 0], [0, 1.0]]))
     False
     """
-    amplitude, _, pvalue = circular_basis_metrics(
-        beta_sin, beta_cos, np.asarray(cov_matrix, dtype=np.float64)
-    )
-    # A covariance was given, so there is a p-value (NaN when singular).
-    return bool(cast("float", pvalue) < alpha and amplitude >= min_magnitude)
+    amplitude, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix)
+    return bool(pvalue < alpha and amplitude >= min_magnitude)
 
 
 def plot_circular_basis_tuning(
@@ -1657,17 +1592,6 @@ def plot_circular_basis_tuning(
             "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
         )
 
-    # Validate cov_matrix shape if provided
-    if cov_matrix is not None:
-        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
-        if cov_matrix.shape != (2, 2):
-            raise ValueError(
-                f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos].\n"
-                f"Got shape: {cov_matrix.shape}\n\n"
-                f"Extract from GLM fit:\n"
-                f"  cov = model.cov_params()[1:3, 1:3]  # Rows/cols for sin, cos"
-            )
-
     # Create figure if needed
     if ax is None:
         if projection == "polar":
@@ -1675,115 +1599,51 @@ def plot_circular_basis_tuning(
         else:
             _, ax = plt.subplots()
 
-    # Default kwargs
-    line_defaults: dict = {"color": color, "linewidth": 2, "zorder": 2}
-    scatter_defaults: dict = {
+    line_kw = {"color": color, "linewidth": 2, "zorder": 2, **(line_kwargs or {})}
+    scatter_kw = {
         "color": data_color,
         "alpha": data_alpha,
         "s": 30,
         "zorder": 1,
+        **(scatter_kwargs or {}),
     }
 
-    # Merge with user kwargs
-    line_kw = {**line_defaults, **(line_kwargs or {})}
-    scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}
-
-    # Generate smooth curve for fit
-    theta_smooth = np.linspace(0, 2 * np.pi, n_points, endpoint=False)
-
-    # GLM prediction: lambda(theta) = exp(intercept + beta_cos*cos + beta_sin*sin)
-    linear_pred = (
-        intercept + beta_cos * np.cos(theta_smooth) + beta_sin * np.sin(theta_smooth)
-    )
-    # Transform to response scale (Poisson GLM uses exp link)
-    fitted_response = np.exp(linear_pred)
-
-    # Compute confidence bands if requested
-    ci_lower: NDArray[np.float64] | None = None
-    ci_upper: NDArray[np.float64] | None = None
-
-    if show_ci and cov_matrix is not None:
-        # Design matrix for each angle: [sin(θ), cos(θ)]
-        design = np.column_stack([np.sin(theta_smooth), np.cos(theta_smooth)])
-
-        # Variance of linear predictor at each angle
-        var_linear = np.sum((design @ cov_matrix) * design, axis=1)
-        se_linear = np.sqrt(np.maximum(var_linear, 0))
-
-        # Z-score for confidence level
-        z = stats.norm.ppf((1 + ci) / 2)
-
-        # CI on linear scale, then transform
-        linear_lower = linear_pred - z * se_linear
-        linear_upper = linear_pred + z * se_linear
-
-        # Transform to response scale
-        ci_lower = np.exp(linear_lower)
-        ci_upper = np.exp(linear_upper)
-
-    # Close the curve (append first point)
-    theta_closed = np.concatenate([theta_smooth, [theta_smooth[0] + 2 * np.pi]])
-    fitted_closed = np.concatenate([fitted_response, [fitted_response[0]]])
-
-    # Close CI bands if computed
-    if ci_lower is not None and ci_upper is not None:
-        ci_lower_closed = np.concatenate([ci_lower, [ci_lower[0]]])
-        ci_upper_closed = np.concatenate([ci_upper, [ci_upper[0]]])
-    else:
-        ci_lower_closed = None
-        ci_upper_closed = None
+    # A closed curve: the last point repeats the first, one turn later.
+    theta = np.linspace(0, 2 * np.pi, n_points + 1)
+    theta[-1] = theta[0] + 2 * np.pi
+    design = np.column_stack([np.sin(theta), np.cos(theta)])
+    # GLM prediction on the log-link scale: intercept + beta_sin sin + beta_cos cos
+    linear_pred = intercept + design @ np.array([beta_sin, beta_cos])
 
     if projection == "polar":
-        polar_ax = cast("PolarAxes", ax)
-
         # Draw angles as in the arena: 0 = East (right), counter-clockwise.
+        polar_ax = cast("PolarAxes", ax)
         polar_ax.set_theta_zero_location("E")
         polar_ax.set_theta_direction(1)
 
-        # Plot confidence band (behind curve)
-        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
-            polar_ax.fill_between(
-                theta_closed,
-                ci_lower_closed,
-                ci_upper_closed,
-                color=color,
-                alpha=ci_alpha,
-                zorder=0,
-            )
+    if show_ci:
+        # Pointwise band on the linear predictor, then mapped through exp.
+        cov = _validated_cov(cast("NDArray[np.float64]", cov_matrix))
+        se_linear = np.sqrt(np.maximum(np.sum((design @ cov) * design, axis=1), 0))
+        z = stats.norm.ppf((1 + ci) / 2)
+        ax.fill_between(
+            theta,
+            np.exp(linear_pred - z * se_linear),
+            np.exp(linear_pred + z * se_linear),
+            color=color,
+            alpha=ci_alpha,
+            zorder=0,
+        )
+    if show_fit:
+        ax.plot(theta, np.exp(linear_pred), **line_kw)
+    if show_data:
+        ax.scatter(
+            np.asarray(angles, dtype=np.float64).ravel(),
+            np.asarray(rates, dtype=np.float64).ravel(),
+            **scatter_kw,
+        )
 
-        # Plot fitted curve
-        if show_fit:
-            polar_ax.plot(theta_closed, fitted_closed, **line_kw)
-
-        # Plot data points
-        if show_data and angles is not None and rates is not None:
-            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
-            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
-            polar_ax.scatter(angles_arr, rates_arr, **scatter_kw)
-
-    else:
-        # Linear projection
-        # Plot confidence band (behind curve)
-        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
-            ax.fill_between(
-                theta_closed,
-                ci_lower_closed,
-                ci_upper_closed,
-                color=color,
-                alpha=ci_alpha,
-                zorder=0,
-            )
-
-        # Plot fitted curve
-        if show_fit:
-            ax.plot(theta_closed, fitted_closed, **line_kw)
-
-        # Plot data points
-        if show_data and angles is not None and rates is not None:
-            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
-            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
-            ax.scatter(angles_arr, rates_arr, **scatter_kw)
-
+    if projection != "polar":
         ax.set_xlabel("Angle (rad)")
         ax.set_ylabel("Response")
         ax.set_xlim(0, 2 * np.pi)

@@ -306,9 +306,7 @@ CASES = [
             "observed_score": 1.0,
             "null_scores": np.array([0.1, 0.5, 2.0]),
             "p_value": 0.5,
-            "z_score": 0.2,
             "shuffle_type": "time_bins",
-            "n_shuffles": 3,
         },
     ),
     (

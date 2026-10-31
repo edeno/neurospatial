@@ -21,6 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -37,7 +38,6 @@ from neurospatial.replay.sequence_match import (
     _onsets,
     _sorted_trains,
 )
-from neurospatial.stats._utils import _entropy, _name_key, _stream
 from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
 if TYPE_CHECKING:
@@ -805,7 +805,7 @@ def recurring_sequences_significance(
         )
         counts[kind] = kind_counts
         p_values[kind] = compute_shuffle_pvalue(
-            observed.n_recurring, kind_counts.astype(np.float64), tail="greater"
+            observed.n_recurring, kind_counts.astype(np.float64), alternative="greater"
         )
     p_value = max(p_values.values())
     return RecurringSequencesSignificanceResult(

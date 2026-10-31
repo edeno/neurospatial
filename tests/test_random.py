@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from neurospatial.stats._utils import _entropy, _name_key, _stream
+from neurospatial._random import _entropy, _name_key, _stream
 
 
 def test_seed_gives_its_own_entropy_and_reproducible_streams():
@@ -24,7 +24,7 @@ def test_name_keys_are_stable_and_distinct():
     assert _name_key("place") != _name_key("grid")
 
 
-def test_encoding_shares_the_stats_entropy():
+def test_encoding_shares_the_package_entropy():
     """Encoding's shuffle seeds derive through the same helper."""
     from neurospatial.encoding import _significance
 

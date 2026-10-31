@@ -500,7 +500,7 @@ class TestResultEquality:
 
 
 @pytest.mark.parametrize(
-    "name", ["_DECODING_NULLS", "_ROW_MOVING_NULLS", "_ALTERNATIVES", "_SCORE_DECIMALS"]
+    "name", ["_DECODING_NULLS", "_ROW_MOVING_NULLS", "_SCORE_DECIMALS"]
 )
 def test_shared_replay_constants_are_defined_once(name):
     """Copies of a constant in several modules could drift apart."""
@@ -517,6 +517,14 @@ def test_shared_replay_constants_are_defined_once(name):
         and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
     ]
     assert len(defining) == 1, defining
+
+
+def test_replay_alternatives_are_the_stats_alternatives():
+    """Replay's test directions are the ones the stats p-value accepts."""
+    from neurospatial import stats
+    from neurospatial.replay import significance
+
+    assert significance._ALTERNATIVES is stats._ALTERNATIVES
 
 
 class TestArmMethodValidation:
