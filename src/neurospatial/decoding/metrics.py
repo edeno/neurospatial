@@ -25,6 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_choice
 from neurospatial.decoding.estimates import _egocentric_plane
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import DistanceMetric
 
 
+@reads_pynapple_samples
 def decoding_error(
     env: Environment,
     decoded_positions: NDArray[np.float64],
@@ -255,6 +257,7 @@ def _bins_or_nearest(
     return bins
 
 
+@reads_pynapple_samples
 def median_decoding_error(
     env: Environment,
     decoded_positions: NDArray[np.float64],
@@ -461,6 +464,7 @@ def confusion_matrix(
     return np.asarray(rows_of_bin @ posterior, dtype=np.float64)
 
 
+@reads_pynapple_samples
 def decoding_correlation(
     env: Environment,
     decoded_positions: NDArray[np.float64],
@@ -633,7 +637,7 @@ def decoding_correlation(
                 else ", and the result is NaN."
             ),
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         if not np.any(varies):
             return float(np.nan)

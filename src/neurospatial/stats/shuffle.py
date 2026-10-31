@@ -62,6 +62,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _resolve_intervals
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
@@ -124,6 +125,7 @@ def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None
         )
 
 
+@reads_pynapple_samples
 def shuffle_spike_times_circular(
     spike_times: NDArray[np.float64],
     windows: NDArray[np.float64],
@@ -1034,6 +1036,7 @@ def _relabeled_trials(
         yield shuffled[trial]
 
 
+@reads_pynapple_samples
 def shuffle_spikes_isi(
     spike_times: NDArray[np.float64],
     *,

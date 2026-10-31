@@ -528,3 +528,50 @@ def test_pynapple_times_are_read_as_timestamps_not_values(nap, session):
     np.testing.assert_array_equal(
         compute_speed(speed, positions), compute_speed(times, positions)
     )
+
+
+# ---------------------------------------------------------------------------
+# One unit's pynapple train as spike_times, and other time/position arguments
+# ---------------------------------------------------------------------------
+
+
+def test_one_units_tsd_spike_times_are_read_as_timestamps(nap, session):
+    """A ``Tsd`` of spike amplitudes must not put every spike at its value."""
+    from neurospatial import compute_spatial_rate
+    from neurospatial.encoding import compute_directional_rate
+    from neurospatial.events import peri_event_histogram
+
+    env, times, positions, trains = session
+    spikes = trains[0]
+    headings = np.arctan2(np.gradient(positions[:, 1]), np.gradient(positions[:, 0]))
+    for train in (nap.Tsd(t=spikes, d=np.full(spikes.size, 3.0)), nap.Ts(spikes)):
+        np.testing.assert_array_equal(
+            compute_spatial_rate(env, train, times, positions).firing_rate,
+            compute_spatial_rate(env, spikes, times, positions).firing_rate,
+        )
+        np.testing.assert_array_equal(
+            compute_directional_rate(train, times, headings).firing_rate,
+            compute_directional_rate(spikes, times, headings).firing_rate,
+        )
+        events = np.array([10.0, 20.0, 30.0])
+        np.testing.assert_array_equal(
+            peri_event_histogram(train, events, (-1.0, 1.0), bin_size=0.1).histogram,
+            peri_event_histogram(spikes, events, (-1.0, 1.0), bin_size=0.1).histogram,
+        )
+
+
+def test_decoding_metrics_refuse_permuted_position_frames(nap, session):
+    from neurospatial.decoding import decoding_error
+
+    env, times, positions, _ = session
+    actual = positions[:100]
+    decoded = positions[1:101]
+    ordered = nap.TsdFrame(t=times[:100], d=decoded, columns=["x", "y"])
+    swapped = nap.TsdFrame(t=times[:100], d=decoded[:, ::-1], columns=["y", "x"])
+
+    np.testing.assert_array_equal(
+        decoding_error(env, ordered, actual, metric="euclidean"),
+        decoding_error(env, decoded, actual, metric="euclidean"),
+    )
+    with pytest.raises(ValueError, match=r"decoded_positions=tsdframe"):
+        decoding_error(env, swapped, actual, metric="euclidean")

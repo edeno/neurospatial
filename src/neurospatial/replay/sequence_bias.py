@@ -29,7 +29,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._pynapple import interval_rows, is_pynapple_type
+from neurospatial._pynapple import (
+    interval_rows,
+    is_pynapple_type,
+    reads_pynapple_samples,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._validation import (
@@ -268,6 +272,7 @@ class BiasSequenceMethod:
         )
 
 
+@reads_pynapple_samples
 def pairwise_bias_matrix(
     spike_times: Any,
     interval: tuple[float, float] | NDArray[np.float64],
@@ -354,6 +359,7 @@ def pairwise_bias_matrix(
     return PairwiseBiasResult(bias=bias, n_spikes=counts, unit_ids=ids)
 
 
+@reads_pynapple_samples
 def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
     """Mean skew-bias matrix over many events, such as a task's theta cycles.
 
@@ -514,6 +520,7 @@ def bias_similarity(
     return float(_cosines(template, event[np.newaxis])[0])
 
 
+@reads_pynapple_samples
 def bias_similarity_significance(
     spike_times: Any,
     interval: tuple[float, float] | NDArray[np.float64],
@@ -620,6 +627,7 @@ def bias_similarity_significance(
     )
 
 
+@reads_pynapple_samples
 def detect_bias_sequence_replay(
     spike_times: Any,
     interval: tuple[float, float] | NDArray[np.float64],

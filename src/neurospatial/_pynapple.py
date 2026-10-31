@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 import numpy as np
@@ -116,16 +116,37 @@ def tsgroup_unit_table(group: Any) -> pd.DataFrame | None:
     return table
 
 
-#: Sample-clock timestamps: a pynapple object here is read as its ``.t``.
-_TIME_ARGUMENTS = ("times", "frame_times", "true_times")
+#: Timestamps: a pynapple object here is read as its ``.t``.
+_TIME_ARGUMENTS = (
+    "times",
+    "frame_times",
+    "true_times",
+    "position_times",
+    "start_times",
+    "stop_times",
+)
+#: Spike input: one unit's pynapple ``Ts``/``Tsd`` is read as its ``.t``; a
+#: ``TsGroup`` is left to the spike-input coercion, which keeps its labels.
+_SPIKE_ARGUMENTS = ("spike_times",)
 #: Sampled values: a pynapple object here is read as its ``.values``.
-_VALUE_ARGUMENTS = ("positions", "true_positions", "headings")
+_VALUE_ARGUMENTS = (
+    "positions",
+    "true_positions",
+    "actual_positions",
+    "decoded_positions",
+    "headings",
+)
 #: Samples whose ``time_support`` becomes ``epochs`` when none are given.
 _SUPPORT_ARGUMENTS = ("positions", "headings")
+#: Every argument the decorator reads.
+SAMPLE_ARGUMENTS = _TIME_ARGUMENTS + _SPIKE_ARGUMENTS + _VALUE_ARGUMENTS
 
 
 def _plain_sample(name: str, value: Any) -> Any:
     """Return a pynapple sample argument as the plain array it stands for."""
+    if name in _SPIKE_ARGUMENTS:
+        # A group holds one train per unit; the spike coercion reads it.
+        return value if isinstance(value, Mapping) else timestamps_of(value, name=name)
     if name in _TIME_ARGUMENTS:
         # np.asarray(tsd) gives the VALUES, not the timestamps.
         return timestamps_of(value, name=name)
@@ -138,13 +159,16 @@ def _plain_sample(name: str, value: Any) -> Any:
 def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """Read pynapple timestamps and samples as the arrays they stand for.
 
-    Decorates a public function or method taking a sample-clock argument
-    (``times``, ``frame_times``, ``true_times``) or sampled values
-    (``positions``, ``true_positions``, ``headings``). When one of those is a
-    pynapple object:
+    Decorates a public function or method taking one of
+    :data:`SAMPLE_ARGUMENTS`: timestamps (``times``, ``frame_times``,
+    ``start_times``, ...), ``spike_times``, or sampled values (``positions``,
+    ``decoded_positions``, ``headings``, ...). When one of those is a pynapple
+    object:
 
-    - a time argument becomes the object's timestamps, ``.t``. ``np.asarray``
-      of a ``Tsd`` gives its values, which would silently be read as times;
+    - a time argument, or one unit's ``Ts``/``Tsd`` as ``spike_times``,
+      becomes the object's timestamps, ``.t``. ``np.asarray`` of a ``Tsd``
+      gives its values, which would silently be read as times. A ``TsGroup``
+      as ``spike_times`` is passed on unchanged;
     - a values argument becomes ``.values``; a ``TsdFrame`` of positions
       whose columns are x/y/z in another order is refused, as by
       :func:`neurospatial.io.from_pynapple`;
@@ -159,15 +183,11 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """
     signature = inspect.signature(func)
     names = list(signature.parameters)
-    samples = [
-        (name, names.index(name))
-        for name in _TIME_ARGUMENTS + _VALUE_ARGUMENTS
-        if name in names
-    ]
+    samples = [(name, names.index(name)) for name in SAMPLE_ARGUMENTS if name in names]
     if not samples:
         raise TypeError(
-            f"reads_pynapple_samples needs a times, positions or headings "
-            f"parameter; {func.__qualname__} has {names}."
+            f"reads_pynapple_samples needs one of {SAMPLE_ARGUMENTS}; "
+            f"{func.__qualname__} has {names}."
         )
     takes_epochs = "epochs" in names
 

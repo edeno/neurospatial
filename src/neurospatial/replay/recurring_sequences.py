@@ -21,6 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import (
     ReadOnlyArraysMixin,
@@ -59,6 +60,7 @@ __all__ = [
 _SURROGATES = ("isi_shuffle", "spike_jitter", "across_trains", "theta_phase")
 
 
+@reads_pynapple_samples
 def surrogate_spike_trains(
     spike_times: Any,
     *,
@@ -332,6 +334,7 @@ class RecurringSequencesResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def recurring_spike_sequences(
     spike_times: Any,
     *,
@@ -675,6 +678,7 @@ class RecurringSequencesSignificanceResult(ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def recurring_sequences_significance(
     spike_times: Any,
     *,

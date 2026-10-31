@@ -41,6 +41,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, times_in_intervals
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_trains
 from neurospatial.reactivation.assemblies import _validated_counts
 from neurospatial.stats import _binomial_rate
@@ -59,6 +60,7 @@ __all__ = [
 _KINDS = ("cell_identity", "circular_shift", "rate_poisson")
 
 
+@reads_pynapple_samples
 def null_reactivation_data(
     spike_times: Any,
     match_epochs: Any,

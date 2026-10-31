@@ -6,6 +6,8 @@ import inspect
 import pytest
 from test_public_api_snapshot import NAMESPACES
 
+from neurospatial._pynapple import SAMPLE_ARGUMENTS
+
 
 def public_functions():
     """Iterate distinct public functions across the snapshot namespaces."""
@@ -401,16 +403,6 @@ def _public_callables():
                     yield member
 
 
-SAMPLE_ARGUMENTS = {
-    "times",
-    "frame_times",
-    "true_times",
-    "positions",
-    "true_positions",
-    "headings",
-}
-
-
 def test_sample_arguments_read_pynapple_objects():
     """Every public callable taking samples reads pynapple objects correctly.
 
@@ -423,7 +415,7 @@ def test_sample_arguments_read_pynapple_objects():
     undecorated, undocumented = [], []
     for function in _public_callables():
         parameters = inspect.signature(function).parameters
-        if not SAMPLE_ARGUMENTS & set(parameters):
+        if not set(SAMPLE_ARGUMENTS) & set(parameters):
             continue
         name = f"{function.__module__}.{function.__qualname__}"
         if not getattr(function, "__reads_pynapple_samples__", False):
@@ -453,6 +445,7 @@ def test_warnings_from_sample_functions_point_at_the_caller():
     import numpy as np
 
     from neurospatial.behavior import heading_from_velocity, restrict
+    from neurospatial.events import peri_event_histogram
 
     times = np.arange(10.0)
     positions = np.zeros((10, 2))
@@ -462,5 +455,7 @@ def test_warnings_from_sample_functions_point_at_the_caller():
         restrict(times, positions, epochs=[(0.0, 3.0), (5.0, 9.0)])
         # A stationary animal has no heading.
         heading_from_velocity(times, positions, allow_all_nan=True)
-    assert len(caught) == 2, [str(w.message) for w in caught]
+        # One event has no SEM (warned from a helper of the wrapped function).
+        peri_event_histogram(times, np.array([5.0]), (-1.0, 1.0), bin_size=0.5)
+    assert len(caught) == 3, [str(w.message) for w in caught]
     assert {w.filename for w in caught} == {__file__}

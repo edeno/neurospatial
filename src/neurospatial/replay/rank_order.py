@@ -18,7 +18,11 @@ from numpy.typing import NDArray
 from scipy import stats
 
 from neurospatial._exceptions import _format_error
-from neurospatial._pynapple import interval_rows, is_pynapple_type
+from neurospatial._pynapple import (
+    interval_rows,
+    is_pynapple_type,
+    reads_pynapple_samples,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_integer_at_least
 from neurospatial.stats import _ALTERNATIVES
@@ -154,6 +158,7 @@ class RankOrderSignificanceResult(ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def rank_order_correlation(
     env: Environment,
     spike_times: Any,
@@ -347,6 +352,7 @@ def rank_order_correlation(
     return _result(pairs, spike_statistic, field_order)
 
 
+@reads_pynapple_samples
 def rank_order_significance(
     env: Environment,
     spike_times: Any,

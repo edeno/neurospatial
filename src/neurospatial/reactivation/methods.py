@@ -55,6 +55,7 @@ from neurospatial._intervals import (
     pynapple_end_to_stop,
     times_in_intervals,
 )
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
@@ -953,6 +954,7 @@ _TEXT_COLUMNS = (
 )
 
 
+@reads_pynapple_samples
 def compare_reactivation_methods(
     spike_times: Any,
     template_epochs: Any,

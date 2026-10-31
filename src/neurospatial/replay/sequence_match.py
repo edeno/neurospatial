@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
@@ -62,6 +63,7 @@ _PEAK_GRID = 0.001
 # --------------------------------------------------------------------------
 
 
+@reads_pynapple_samples
 def burst_onset_times(spike_times: Any, *, max_isi: float) -> list[NDArray[np.float64]]:
     """The first spike of each burst, one train per cell.
 
@@ -189,6 +191,7 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def spike_words(
     spike_times: Any,
     *,
@@ -404,6 +407,7 @@ class SequenceMatchResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def best_sequence_match(
     env: Environment,
     spike_times: Any,
@@ -646,6 +650,7 @@ class MatchingIndexResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def sequence_matching_index(
     env: Environment,
     spike_times: Any,

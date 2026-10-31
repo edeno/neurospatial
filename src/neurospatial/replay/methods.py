@@ -3166,6 +3166,7 @@ def _quantity_test(
     return _QuantityTest(values, p_values, min(used) if used else None)
 
 
+@reads_pynapple_samples
 def detect_rank_order_replay(
     env: Environment | Mapping[str, Environment],
     spike_times: Any,
@@ -3605,6 +3606,7 @@ def _spike_window(times: NDArray[np.float64], dt: float) -> tuple[float, float]:
     return float(times[0]) - dt / 2, float(times[-1]) + dt / 2
 
 
+@reads_pynapple_samples
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],
     events: Sequence[

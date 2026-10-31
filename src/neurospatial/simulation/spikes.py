@@ -646,6 +646,7 @@ def _held_movement_heading(
     return held
 
 
+@reads_pynapple_samples
 def add_modulation(
     spike_times: NDArray[np.float64],
     *,

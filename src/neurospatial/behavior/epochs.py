@@ -353,6 +353,7 @@ def restrict(
     return (times_kept, *(arr[mask] for arr in coerced))
 
 
+@reads_pynapple_samples
 def restrict_spike_trains(
     spike_times: Any,
     epochs: Any,

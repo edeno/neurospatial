@@ -499,6 +499,7 @@ def _build_time_intervals(
 
 
 @keyword_hint("description")
+@reads_pynapple_samples
 def write_laps(
     nwbfile: NWBFile,
     laps: Sequence[Lap] | None = None,
@@ -877,6 +878,7 @@ _OUTCOME_DESCRIPTION = (
 )
 
 
+@reads_pynapple_samples
 def write_trials(
     nwbfile: NWBFile,
     trials: Sequence[Trial] | None = None,
