@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### Shared helpers: one rule each, faster
+
+**Changed**
+
+- Repeated timestamps are refused everywhere: `env.occupancy`,
+  `bin_sequence`/`transitions`, encoding, decoding, visibility, simulation
+  and region visits now require strictly increasing times, as behavior
+  functions already did. The error shows how to drop duplicate rows
+  (`np.unique(times, return_index=True)`).
+- Infinite positions, headings and signals are refused everywhere
+  (`Environment.from_samples`, `open_field`, `environment_from_position`,
+  `env.occupancy`, encoding, decoding, visibility, simulation); NaN still
+  marks a missing sample. `from_samples` no longer turns inf into NaN.
+- Samples outside the environment are excluded in behavior as in
+  `env.occupancy`: `detect_region_visits`, `compute_home_range`,
+  `detect_goal_directed_runs`, `detect_region_crossings`,
+  `detect_runs_between_regions`, `detect_laps`, `running_direction_labels`
+  and `segment_trials` no longer bridge a sample at bin -1; a run it
+  interrupts is reported as censored, and an interval touching it is not observed. `compute_home_range`'s
+  time-weighted dwell is now exactly `env.occupancy`'s start-allocated
+  occupancy (a run's last sample no longer gets the run's median interval).
+  To bridge missing samples, delete their rows before binning.
+- Spike times may be in any order and of any sign everywhere; each train is
+  sorted once when read. Spatial rate functions and `add_modulation` no
+  longer refuse unsorted or negative spike times. A 2-D padded spike matrix
+  with a decreasing row is still refused (zero padding).
+- `env.occupancy(speed=...)` without `min_speed` raises, as the rate maps
+  do; every speed/`min_speed` pairing error shares one message.
+- Environment query methods no longer translate calls written for earlier
+  signatures; a value passed by position lists the keyword-only options.
+- `Landmarks.near(tolerance=None)` and `tolerance=True` raise `ValueError`.
+- Errors for an invalid choice (`angle_unit`, `op`, `method`, `cell_type`,
+  `trajectory_method`, `coverage`, `closed`) name the call and list the
+  options in a stable order.
+- Shuffle significance tests name a unit with a non-finite spike by its
+  label.
+
+**Fixed**
+
+- Warnings for occupancy and spatial, directional, view, egocentric and
+  boundary-vector rates emptied by gaps across missing samples name those
+  gaps instead of blaming coordinates; the warning now reads the same gates
+  that built the mask.
+
+**Performance**
+
+- Video overlays read frames through one open capture: about 30x faster in
+  order, and prefetching no longer decodes frames twice. Frames are
+  unchanged.
+- Indexing a unit of a population result copies its analysis settings once
+  instead of four times (about 3x faster with long epoch lists).
+- Observation support, interval masks, time validation, spike counting per
+  time bin (about 2x) and warning attribution do less work; outputs are
+  bit-identical.
+
 ### I/O: simpler, faster readers and writers
 
 **Changed**
