@@ -430,18 +430,102 @@ holds: a sample or spike at an epoch end, such as the last spike of a `TsGroup`'
 default support, stays inside. An `IntervalSet` passed directly as `epochs=` or
 `spike_window=` is converted the same way, and `to_pynapple` converts back.
 
-Egress turns a decoded MAP track back into a pynapple `Tsd` / `TsdFrame`. Its
-time support is the decode's `spike_window`, so decoding over several windows
-stays several intervals instead of one interval spanning the gaps:
+### Exporting results to pynapple
+
+`to_pynapple` turns a decode result, behavior records, or plain arrays into the
+matching pynapple object, so you can continue in pynapple with `restrict`,
+`compute_perievent` or its plotting.
+
+**Decoded position.** A decode result records the windows its time bins cover
+as `result.time_support`. These are the epochs you decoded, less tracking gaps
+longer than `max_gap`, time outside `spike_window`, and any remainder shorter
+than one time bin. The export uses them as its time support, so a decode over
+two epochs stays two intervals and the time between them is not read as
+decoded time:
 
 ```python
-tsdframe = to_pynapple(result)                              # DecodingResult
-tsd = to_pynapple(times, linear_position, epochs=epochs)    # plain arrays
+from neurospatial.decoding import decode_session
+from neurospatial.io import to_pynapple
+
+result = decode_session(
+    env, spike_times, times, positions, dt=0.025, epochs=[[0, 600], [900, 1500]]
+)
+track = to_pynapple(result)            # TsdFrame of the MAP position, columns x, y
+mean = to_pynapple(result, quantity="mean_position")
+posterior = to_pynapple(result, quantity="posterior")
 ```
 
-A decode result does not record the `epochs=` it was decoded over; if you
-restricted decoding that way, pass the same windows as `to_pynapple(result,
-epochs=...)`.
+`quantity="posterior"` returns a `TsdFrame` with one column per environment
+bin. Column `j` is bin `j`, and each value is the probability mass in that bin,
+so each row sums to 1 (or is all NaN for a time bin that could not be decoded).
+Each column carries its bin center as metadata (`bin_center_x`,
+`bin_center_y`), so you can select bins by place, for example the posterior
+mass in the reward arm with `posterior[:, posterior.bin_center_x > 80].sum(axis=1)`.
+A column per bin, rather than a `TsdTensor` shaped like the grid, works for
+tracks, graphs and masked arenas alike and never pads bins outside the
+environment with values. On unequal bins (a linearized track with short
+junction bins, for example), the bin with the largest mass is not the MAP bin:
+the MAP ranks density, mass divided by `env.bin_sizes`. Use the exported MAP
+track for the decoded position. A `DecodingSummary` keeps no posterior, so only
+its MAP and mean tracks can be exported.
+
+Decoding the same data with pynapple's own `nap.decode_bayes` gives different
+posteriors near unvisited bins. pynapple sums each bin's log-likelihood with
+`np.nansum`, so a cell whose rate is NaN in a bin drops out of that bin's
+likelihood instead of excluding the bin, and its uniform prior is flat over
+bins rather than over space. neurospatial gives a bin where any rate is missing
+zero probability, and its default prior is proportional to bin size.
+
+**Laps, trials, runs and region visits.** A list of `Lap`, `Trial`, `Run`,
+`RegionVisit` or `RegionTransition` records becomes an `IntervalSet` with one
+interval per record. Every field becomes a metadata column (`direction` for
+laps; `outcome` and the region names for trials and runs; `region_name`,
+`entry_observed` and `exit_observed` for visits), so you can select records the
+way you would in pynapple:
+
+```python
+from neurospatial.behavior import detect_laps, labels_to_epochs
+
+laps = to_pynapple(detect_laps(position_bins, times, env))
+clockwise = laps[laps.direction == "clockwise"]
+spikes_on_clockwise_laps = tsgroup.restrict(clockwise)
+
+conditions = to_pynapple(labels_to_epochs(times, task_phase))  # label column
+```
+
+A record covers `[start_time, end_time)`. The exported interval ends one float
+below `end_time`, so `restrict` selects exactly the samples that
+`in_epochs(t, (start_time, end_time))` selects: a sample at a lap's end belongs
+to the next lap, not to both. Two cases are refused instead of exported. A
+record without duration, such as a region visit observed in a single sample at
+the end of the recording, holds no time; keep the others with
+`[r for r in records if r.end_time > r.start_time]`. Overlapping records, such
+as visits to overlapping regions, must be exported separately, because
+pynapple merges overlapping intervals and drops all their metadata. An empty
+list is also refused, because it does not say what kind of record it would
+hold; skip the export when nothing was detected.
+
+**Region crossings.** pynapple time series carry no per-event labels, so
+crossings become a `TsGroup` with one `Tsd` per region and direction. Its
+values are the bin index at each crossing, and the group has `region` and
+`direction` metadata. Pass the epochs the crossings were detected in, or the
+recording span, as its time support:
+
+```python
+from neurospatial.behavior import detect_region_crossings
+
+crossings = to_pynapple(
+    detect_region_crossings(position_bins, times, env, region_name="reward"),
+    epochs=(times[0], times[-1] + 1 / 30),  # through the last 30 Hz frame
+)
+reward_entries = crossings[crossings.direction == "entry"]
+```
+
+Plain arrays work too. Pass the windows they were observed in as `epochs=`:
+
+```python
+tsd = to_pynapple(times, linear_position, epochs=epochs)
+```
 
 ### Passing pynapple objects directly
 
