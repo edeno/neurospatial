@@ -3921,6 +3921,7 @@ dependencies = [
     { name = "shapely" },
     { name = "tqdm" },
     { name = "track-linearization" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -4057,6 +4058,7 @@ requires-dist = [
     { name = "statsmodels", marker = "extra == 'dev'", specifier = ">=0.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "track-linearization", specifier = ">=2.4.0" },
+    { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "xarray", marker = "extra == 'xarray'" },
 ]
 provides-extras = ["dev", "docs", "notebooks", "video", "animation", "fastplotlib", "nwb", "jax", "xarray", "pynapple"]

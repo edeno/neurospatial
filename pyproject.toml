@@ -17,6 +17,7 @@ dependencies = [
     "shapely>=2.1.0",
     "track-linearization>=2.4.0",
     "tqdm>=4.67.1",
+    "typing_extensions>=4.0.0",  # Self on Python 3.10 (typing.Self is 3.11+)
 ]
 authors = [{ name = "Eric Denovellis", email = "eric.denovellis@ucsf.edu" }]
 keywords = [

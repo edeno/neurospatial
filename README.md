@@ -114,6 +114,7 @@ neurospatial v0.8.0 has been tested with the following dependency versions:
 | alphashape | 1.3.1 |
 | track-linearization | 2.4.0 |
 | tqdm | 4.67.1 |
+| typing_extensions | 4.15.0 |
 
 These versions match the current locked development environment. The supported
 dependency ranges are defined in `pyproject.toml`, and CI exercises all supported
@@ -650,6 +651,7 @@ docs/                  # User guides, API reference, examples, and contributor d
 - scikit-learn >= 1.2.0
 - shapely >= 2.0.0
 - track-linearization >= 2.4.0
+- typing_extensions >= 4.0.0
 
 ## Contributing
 
