@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Correctness fixes
+
+**Fixed**
+
+- An environment with a wall covering part of a shared cell face can be saved
+  and loaded, subset, rebuilt with `from_bins`, transformed and combined.
+  Before, all of these raised `grid faces.A does not match shared cell-face
+  measures`. The binning now keeps the whole shared face and records the
+  share no wall covers in `binning.connections.open_fraction`;
+  `binning.build_faces()` multiplies the two, as smoothing and the other
+  finite-volume operations always did. Saved environments store
+  `open_fraction`, so files written by earlier versions must be rebuilt
+  from their source geometry.
+- `spatial_information_bias()` of an unpenalized GLM (`penalty=0`) whose
+  basis has more modes than the animal visited bins no longer raises
+  `LinAlgError` or returns a value set by roundoff. The modes no visited bin
+  sees do not change the rate at a visited bin, so the bias counts only the
+  visited modes: `(visited bins - 1)` instead of `rank - 1`, and 0 when the
+  animal stayed in one bin.
+- `compute_goal_directed_metrics(...).mean_approach_rate` averages over
+  observed time, as its documentation says, instead of over samples: it is
+  the change of goal distance over the usable intervals divided by their
+  duration. A quick 10 cm step toward the goal followed by a slow step back
+  now averages to 0 cm/s instead of -495 cm/s, and the value no longer
+  depends on the sampling rate.
+- `object_vector_score` is NaN for a map with one direction bin (for
+  example `direction_bin_size=2 * np.pi`). One bin spanning the circle has a
+  mean resultant length of 1 whatever the cell does, so the score reported
+  full direction selectivity.
+- `normalize_field` and decoding priors accept a field smoothed with
+  `env.smooth` from non-negative values. Smoothing keeps heat-kernel modes
+  down to a weight of 1e-6, so it can ring slightly below zero (about -7e-9
+  for an impulse on a 100-bin track at bandwidth 8), and both used to refuse
+  the field as negative. Negative entries no larger than 1e-5 of the field's
+  largest value now count as 0; larger negative values are still refused.
+  `env.smooth` itself is unchanged and stays exactly linear for signed
+  fields.
+- `TriangularMesh` layouts triangulate a triangular lattice of points instead
+  of a square one, so interior triangles are equilateral. On the right
+  triangles of the square lattice, the line between neighboring centers
+  crossed the shared side about 27 degrees off the perpendicular, and
+  `divergence(gradient(x))` inside a box was 1.1, 2.2 and 4.4 at spacings 1,
+  0.5 and 0.25 instead of 0; it is now 0 to roundoff, and the smoothing
+  kernel is isotropic. Lattice points closer than half a spacing to the
+  outline are left out, so the boundary triangles stay well shaped. Meshes
+  built with the same `point_spacing` have different bins than before.
+- `divergence` and `env.get_divergence_operator()` give the skewed-mesh
+  warning that smoothing gives, once per environment.
+
 ### Exporting decoding and behavior results to pynapple
 
 **Added**

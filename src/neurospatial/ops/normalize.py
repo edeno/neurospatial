@@ -22,6 +22,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.ops.diffusion import _HEAT_KERNEL_RANK_TOL
+
+#: Negative entries no larger than this fraction of a field's largest value
+#: are numerical noise, not negative weight. ``env.smooth`` keeps heat-kernel
+#: modes down to a weight of ``_HEAT_KERNEL_RANK_TOL`` (1e-6), so smoothing a
+#: non-negative field rings below zero by up to about that fraction of the
+#: field's maximum (6.7e-7 measured on lines, boxes, discs and meshes over
+#: every mode and bandwidth 2-30 bins); ten times it leaves a margin.
+_SMOOTHING_NOISE_RTOL = 10 * _HEAT_KERNEL_RANK_TOL
 
 __all__ = [
     "clamp",
@@ -38,6 +47,9 @@ def normalize_field(field: NDArray[np.float64]) -> NDArray[np.float64]:
     ----------
     field : NDArray[np.float64], shape (n_bins,)
         One field to normalize. Must be 1-D, finite and non-negative.
+        Negative entries no larger than 1e-5 of the largest value, the
+        numerical noise of :meth:`Environment.smooth` on a non-negative
+        field, count as 0.
 
     Returns
     -------
@@ -95,6 +107,7 @@ def normalize_field(field: NDArray[np.float64]) -> NDArray[np.float64]:
                 "Replace Inf values before normalizing."
             )
 
+    field = _zero_smoothing_noise(field)
     if (field < 0).any():
         n_negative = (field < 0).sum()
         raise ValueError(
@@ -111,6 +124,32 @@ def normalize_field(field: NDArray[np.float64]) -> NDArray[np.float64]:
 
     normalized: NDArray[np.float64] = field / total
     return normalized
+
+
+def _zero_smoothing_noise(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """``values`` with negative smoothing noise set to 0, along the last axis.
+
+    A negative entry no larger than ``_SMOOTHING_NOISE_RTOL`` times the largest
+    value of its row is the numerical noise of smoothing a non-negative field
+    (:meth:`Environment.smooth`), and becomes 0. Larger negative entries are
+    kept, for the caller to refuse.
+
+    Parameters
+    ----------
+    values : NDArray[np.float64], shape (..., n_bins)
+        Finite weights.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (..., n_bins)
+        ``values`` itself when nothing changes, otherwise a copy.
+    """
+    negative = values < 0
+    if not negative.any():
+        return values
+    floor = -_SMOOTHING_NOISE_RTOL * values.max(axis=-1, keepdims=True)
+    noise = negative & (values >= floor)
+    return np.where(noise, 0.0, values)
 
 
 def clamp(

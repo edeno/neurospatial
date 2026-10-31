@@ -190,7 +190,7 @@ def test_compute_kernel_unchanged(geom, cases_by_key):
     if geom == "mesh" and bin_center_fingerprint(env) != MESH_BASELINE_FINGERPRINT:
         pytest.skip(
             "this platform's Delaunay tie-break builds a different (equally valid) "
-            "mesh from the square lattice than the one the baseline was captured on"
+            "mesh than the one the baseline was captured on"
         )
     for sigma_label in ("small", "large"):
         for mode in MODES:

@@ -332,10 +332,16 @@ def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:
 
     A derivation that carries faces into its child then reads the parent's
     cached faces instead of building them again from the layout's recipe.
+    The child keeps whole shared faces, so a face a wall partly covers is
+    built anew rather than copied narrowed.
     """
     if not binning.faces.available or isinstance(binning.faces, KnownFaces):
         return binning
-    return replace(binning, faces=KnownFaces(face_geometry(cache, binning)))
+    if np.all(binning.connections.pair_open_fraction == 1.0):
+        faces = face_geometry(cache, binning)
+    else:
+        faces = binning.shared_faces()
+    return replace(binning, faces=KnownFaces(faces))
 
 
 def require_face_geometry(
@@ -382,6 +388,15 @@ def _warn_mesh_skew(binning: Binning) -> str | None:
     return "\n".join(messages) or None
 
 
+def warn_mesh_skew_once(cache: AnalysisCache, binning: Binning) -> None:
+    """Warn once per cached geometry when the bins are a skewed triangle mesh.
+
+    Called at the scientist's call to an operation whose result the skew
+    makes approximate: smoothing, and the divergence of a field.
+    """
+    cache.get(MESH_SKEW_WARNING, lambda: _warn_mesh_skew(binning))
+
+
 def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeometry:
     """Diffusion geometry for an operation that smooths a field.
 
@@ -390,7 +405,7 @@ def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
     cannot smooth raises without warning.
     """
     geometry = diffusion_geometry(cache, binning)
-    cache.get(MESH_SKEW_WARNING, lambda: _warn_mesh_skew(binning))
+    warn_mesh_skew_once(cache, binning)
     return geometry
 
 

@@ -231,7 +231,11 @@ def _declared_closed_distance():
     declared = replace(
         binning,
         connections=BinConnections(
-            links.all_pairs, distances, links.is_open, links.closed_by
+            links.all_pairs,
+            distances,
+            links.is_open,
+            links.closed_by,
+            links.open_fraction,
         ),
         faces=KnownFaces(binning.build_faces()),
     )

@@ -238,18 +238,29 @@ class BinConnections(ReadOnlyState):
         wall the corner touches, else the first wall the link crosses. -1 for
         open pairs and for closed pairs no wall of the arena closes.
         Publication records it when it applies walls.
+    open_fraction : ndarray of float64, shape (n_all_pairs,)
+        Share of each pair's shared cell face that no wall covers: 1 for a
+        face no wall touches, between 0 and 1 for a face a wall partly
+        covers, 0 for a closed pair. The shared face itself stays in the
+        binning's faces, so republishing the bins cannot narrow it twice;
+        :meth:`Binning.build_faces` multiplies the two. Publication records
+        it when it applies walls.
     pairs : ndarray of intp, shape (n_pairs, 2)
         The open pairs, in the order of ``all_pairs``.
     pair_distances : ndarray of float64, shape (n_pairs,)
         Navigation distances of the open pairs.
+    pair_open_fraction : ndarray of float64, shape (n_pairs,)
+        ``open_fraction`` of the open pairs.
     """
 
     all_pairs: NDArray[np.intp]
     all_distances: NDArray[np.float64]
     is_open: NDArray[np.bool_]
     closed_by: NDArray[np.intp]
+    open_fraction: NDArray[np.float64]
     pairs: NDArray[np.intp] = field(init=False, repr=False)
     pair_distances: NDArray[np.float64] = field(init=False, repr=False)
+    pair_open_fraction: NDArray[np.float64] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         raw_pairs = np.asarray(self.all_pairs)
@@ -317,13 +328,26 @@ class BinConnections(ReadOnlyState):
                 f"({len(pairs)},), and -1 for every open pair."
             )
         closed_by = np.array(closed_by, dtype=np.intp, copy=True)
+        open_fraction = np.array(self.open_fraction, dtype=np.float64, copy=True)
+        if (
+            open_fraction.shape != (len(pairs),)
+            or np.any(~(open_fraction[is_open] > 0) | (open_fraction[is_open] > 1))
+            or np.any(open_fraction[~is_open] != 0)
+        ):
+            raise ValueError(
+                f"open_fraction must hold one value per pair, shape "
+                f"({len(pairs)},): in (0, 1] for every open pair and 0 for "
+                "every closed pair."
+            )
         values = {
             "all_pairs": pairs,
             "all_distances": distances,
             "is_open": is_open,
             "closed_by": closed_by,
+            "open_fraction": open_fraction,
             "pairs": pairs if is_open.all() else pairs[is_open],
             "pair_distances": distances if is_open.all() else distances[is_open],
+            "pair_open_fraction": open_fraction[is_open],
         }
         for name, array in values.items():
             array.setflags(write=False)
@@ -336,6 +360,7 @@ class BinConnections(ReadOnlyState):
         pair_distances: ArrayLike,
         is_open: ArrayLike | None = None,
         closed_by: ArrayLike | None = None,
+        open_fraction: ArrayLike | None = None,
     ) -> BinConnections:
         """Validate and own neighbor pairs, their distances and openness.
 
@@ -350,6 +375,10 @@ class BinConnections(ReadOnlyState):
         closed_by : array-like of int, shape (n_pairs,), optional
             Index of the arena wall closing each pair, -1 for none (the
             default). Publication recomputes it from the arena's walls.
+        open_fraction : array-like of float, shape (n_pairs,), optional
+            Share of each pair's shared face no wall covers. The default is
+            1 for open pairs and 0 for closed ones. Publication recomputes it
+            from the arena's walls.
 
         Returns
         -------
@@ -365,15 +394,22 @@ class BinConnections(ReadOnlyState):
         all_pairs = np.asarray(pairs)
         if all_pairs.size == 0:
             all_pairs = all_pairs.reshape(-1, 2)
+        open_pairs = (
+            np.ones(len(all_pairs), dtype=bool)
+            if is_open is None
+            else np.asarray(is_open)
+        )
         return cls(
             all_pairs,
             np.asarray(pair_distances),
-            np.ones(len(all_pairs), dtype=bool)
-            if is_open is None
-            else np.asarray(is_open),
+            open_pairs,
             np.full(len(all_pairs), -1, dtype=np.intp)
             if closed_by is None
             else np.asarray(closed_by),
+            # A malformed is_open is reported by the constructor.
+            np.where(np.asarray(open_pairs, dtype=bool), 1.0, 0.0)
+            if open_fraction is None
+            else np.asarray(open_fraction),
         )
 
     def closed(self, keep_open: NDArray[np.bool_]) -> BinConnections:
@@ -389,12 +425,39 @@ class BinConnections(ReadOnlyState):
         BinConnections
             The same pairs, with the given open pairs closed. Closed pairs
             stay closed; newly closed pairs have no closing wall (-1) until
-            one is recorded.
+            one is recorded, and an open fraction of 0.
         """
         is_open = self.is_open.copy()
         is_open[np.flatnonzero(self.is_open)[~keep_open]] = False
         return BinConnections(
-            self.all_pairs, self.all_distances, is_open, self.closed_by
+            self.all_pairs,
+            self.all_distances,
+            is_open,
+            self.closed_by,
+            np.where(is_open, self.open_fraction, 0.0),
+        )
+
+    def with_open_fraction(self, pair_open_fraction: ArrayLike) -> BinConnections:
+        """The same pairs with ``pair_open_fraction`` for the open pairs.
+
+        Parameters
+        ----------
+        pair_open_fraction : array-like of float, shape (n_pairs,)
+            Share in (0, 1] of each open pair's shared face no wall covers.
+
+        Returns
+        -------
+        BinConnections
+            The same pairs, openness and closing walls.
+        """
+        open_fraction = np.zeros(len(self.all_pairs))
+        open_fraction[self.is_open] = pair_open_fraction
+        return BinConnections(
+            self.all_pairs,
+            self.all_distances,
+            self.is_open,
+            self.closed_by,
+            open_fraction,
         )
 
     def select(
@@ -423,6 +486,7 @@ class BinConnections(ReadOnlyState):
             self.all_distances[kept],
             self.is_open[kept],
             self.closed_by[kept],
+            self.open_fraction[kept],
         )
         return connections, kept[self.is_open]
 
@@ -811,6 +875,32 @@ class Binning:
 
     def build_faces(self) -> FaceGeometry:
         """Build the finite-volume faces of these bins, in open-pair order.
+
+        Each face measure is the open part of the shared cell face: the
+        shared face (:meth:`shared_faces`) times the share no wall covers,
+        ``connections.pair_open_fraction``.
+
+        Returns
+        -------
+        FaceGeometry
+            Faces aligned with ``connections.pairs``, built on each call.
+
+        Raises
+        ------
+        MissingCellGeometryError
+            If the bins have no faces (``MissingFaces``).
+        """
+        faces = self.shared_faces()
+        share = self.connections.pair_open_fraction
+        if np.all(share == 1.0):
+            return faces
+        return FaceGeometry(faces.edges, faces.A * share, faces.distance, faces.volumes)
+
+    def shared_faces(self) -> FaceGeometry:
+        """Build the whole shared cell faces, ignoring walls that partly cover them.
+
+        Copies of a binning's geometry keep these, so that walls narrow a face
+        once, in :meth:`build_faces`.
 
         Returns
         -------

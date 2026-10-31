@@ -23,6 +23,7 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.triangular_mesh import (
     _conforming_triangulation,
+    _drop_points_near_outline,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _MeshTriangulation,
@@ -78,9 +79,11 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             The polygon defining the boundary. Triangles with centroids
             outside this polygon are discarded.
         point_spacing : float
-            Spacing of the square lattice of interior sample points, in the
-            units of the polygon coordinates. Every ring of the polygon is
-            also sampled at most this far apart.
+            Spacing of the triangular lattice of interior sample points, in
+            the units of the polygon coordinates, so interior triangles are
+            equilateral with this side. Every ring of the polygon is also
+            sampled at most this far apart, and lattice points closer than
+            half a spacing to a ring are left out.
 
         Raises
         ------
@@ -117,9 +120,10 @@ class TriangularMeshLayout(_NeighborPairsMixin):
                 "to form any triangle. Try decreasing point_spacing or ensuring "
                 "the polygon is large enough relative to the spacing.",
             )
-        # 2. Triangulate the lattice with every ring of the polygon as sides
+        # 2. Triangulate the lattice with every ring of the polygon as sides;
+        # lattice points crowding the outline's samples would make slivers.
         self._full_delaunay_tri = _conforming_triangulation(
-            sample_points,
+            _drop_points_near_outline(sample_points, boundary_polygon, point_spacing),
             boundary_polygon,
             point_spacing,
             triangulate=_triangulate_points,

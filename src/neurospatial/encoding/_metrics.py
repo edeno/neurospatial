@@ -437,6 +437,12 @@ def _glm_untuned_rate_variance(
     weighted projection onto the basis and ``V * sum(t) = rank - 1``. The
     penalty is held at its fitted value.
 
+    Without a penalty, a basis with more modes than visited bins leaves ``H``
+    singular. The modes no visited bin sees are not identified, but they do
+    not change the rate at a visited bin: each visited row of ``B`` lies in
+    the range of ``H``. The pseudo-inverse therefore gives the identified
+    ``V``, with ``V * sum(t) = (visited bins) - 1``.
+
     Returns
     -------
     ndarray, shape (n_units,)
@@ -465,7 +471,7 @@ def _glm_untuned_rate_variance(
         if not lam > 0:
             continue
         hessian = lam * gram + np.diag(penalty_diag[k])
-        inverse = np.linalg.solve(hessian, np.eye(basis_matrix.shape[1]))
+        inverse = np.linalg.pinv(hessian, hermitian=True)
         sandwich = lam**2 * (inverse @ gram @ inverse)
         variance[k] = float(
             np.sum(sandwich * weighted) - mean_basis @ sandwich @ mean_basis
