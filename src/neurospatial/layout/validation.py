@@ -283,8 +283,8 @@ def validate_edge_spacing(
             why="Why: edge_spacing is the linear distance inserted between "
             "consecutive track edges: one finite, non-negative number for "
             "every gap, or one per gap.",
-            fix=f"pass one number, such as edge_spacing=0.0, or {n_gaps} "
-            "non-negative values",
+            fix=f"omit edge_spacing for automatic gaps, or pass one number, such "
+            f"as edge_spacing=15.0, or {n_gaps} non-negative values",
         )
     )
 
