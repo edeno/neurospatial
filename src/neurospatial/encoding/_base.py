@@ -854,16 +854,10 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
     _unit_ids_generated: bool
 
     def _resolve_units(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
+        from neurospatial._results import align_unit_table, resolve_record_unit_ids
 
         kind = type(self).__name__
-        # Generated labels keep positional pairing (e.g. with a decoder's
-        # spike input); dataclasses.replace carries the mark forward.
-        if self.unit_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
-        object.__setattr__(
-            self, "unit_ids", resolve_unit_ids(self.unit_ids, len(self), context=kind)
-        )
+        resolve_record_unit_ids(self, len(self), context=kind)
         object.__setattr__(
             self,
             "unit_table",

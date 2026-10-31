@@ -512,6 +512,46 @@ def resolve_unit_ids(
     return resolved
 
 
+def resolve_record_unit_ids(
+    record: Any,
+    n_units: int,
+    *,
+    context: str,
+    input_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> None:
+    """Resolve a frozen record's ``unit_ids`` field in place.
+
+    The one rule for generated labels: when neither the caller nor the input
+    (``input_ids``) supplies labels, the record is numbered ``0..n_units-1`` and its ``_unit_ids_generated``
+    flag is set. Generated labels are row positions, not identities the
+    caller supplied, so they pair units by position (for example with a
+    decoder's spike input) and the spike-input adapter does not carry them
+    into a later call as labels. ``dataclasses.replace`` passes the flag on.
+
+    Parameters
+    ----------
+    record : dataclass instance
+        A frozen record with ``unit_ids`` and ``_unit_ids_generated`` fields.
+    n_units : int
+        Number of units the labels must describe.
+    context : str
+        Class name for error messages.
+    input_ids : array-like, optional
+        Labels the input itself carries, such as a ``TsGroup``'s index; see
+        :func:`resolve_unit_ids`.
+
+    Raises
+    ------
+    ValueError
+        As :func:`resolve_unit_ids`.
+    """
+    given = record.unit_ids
+    if given is None and input_ids is None:
+        object.__setattr__(record, "_unit_ids_generated", True)
+    labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
+    object.__setattr__(record, "unit_ids", labels)
+
+
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
     """Align labelled metadata by identity; accept a plain RangeIndex by position.
 
