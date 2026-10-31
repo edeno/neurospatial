@@ -14,8 +14,9 @@
   `theta_peak_times=`, `EventOverlay(event_times=)`) now read the timestamps
   of a `Ts`, `Tsd` or `TsdFrame`, and refuse a `TsGroup` with a message that
   points to `tsgroup[unit_id]`.
-- `typing_extensions` is a declared dependency (`>=4.0.0`); it was imported
-  at runtime but only installed through other packages.
+- `typing_extensions` (`>=4.0.0`) and `joblib` (`>=1.1.1`) are declared
+  dependencies; both were imported at runtime but only installed through other
+  packages.
 
 **Changed**
 
