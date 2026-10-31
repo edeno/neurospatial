@@ -619,8 +619,10 @@ def write_region_crossings(
         Name of the region for each crossing (e.g., "start", "goal").
         Must have same length as crossing_times.
     event_types : NDArray[np.str_], shape (n_crossings,)
-        Type of crossing event. Common values are 'enter' and 'exit', but
-        arbitrary strings are allowed (e.g., 'approach', 'dwell', 'near').
+        Type of crossing event, such as ``Crossing.direction`` from
+        :func:`~neurospatial.behavior.segmentation.detect_region_crossings`
+        (``'entry'`` or ``'exit'``). Other strings are allowed (e.g.,
+        'approach', 'dwell').
         Must have same length as crossing_times.
     description : str, default "Region crossing events"
         Description for the EventsTable.
@@ -644,7 +646,7 @@ def write_region_crossings(
     -----
     The EventsTable is stored in the processing/behavior/ module, following
     NWB conventions for behavioral data. Each row represents a single crossing
-    event with timestamp, region name, and event type (enter/exit).
+    event with timestamp, region name, and event type (entry/exit).
 
     Examples
     --------
@@ -652,7 +654,7 @@ def write_region_crossings(
     >>> import numpy as np  # doctest: +SKIP
     >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])  # doctest: +SKIP
     >>> region_names = np.array(["start", "goal", "start", "goal"])  # doctest: +SKIP
-    >>> event_types = np.array(["enter", "enter", "exit", "exit"])  # doctest: +SKIP
+    >>> event_types = np.array(["entry", "entry", "exit", "exit"])  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
