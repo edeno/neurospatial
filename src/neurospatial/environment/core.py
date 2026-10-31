@@ -4524,10 +4524,10 @@ class Environment(Generic[_C]):
         *,
         name: str = "spatial_environment",
     ) -> Environment[Any]:
-        """Load an Environment saved in an NWB file's scratch space.
+        """Load an Environment saved in an NWB file's ``/analysis`` group.
 
         Reads a record written by :meth:`to_nwb` (or
-        :func:`neurospatial.io.nwb.write_environment`). Schema 3.0 restores the
+        :func:`neurospatial.io.nwb.write_environment`). Schema 4.0 restores the
         complete binning, arena and regions without a layout builder. To
         build a new environment from the file's Position data, use
         :func:`neurospatial.io.nwb.environment_from_position`.
@@ -4537,7 +4537,7 @@ class Environment(Generic[_C]):
         nwbfile : NWBFile
             The NWB file to read from. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
-            Name of the stored record in scratch/, as passed to
+            Name of the stored record in ``/analysis``, as passed to
             :meth:`to_nwb`. The restored environment keeps its own saved
             ``env.name``.
 
@@ -4553,7 +4553,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         KeyError
-            If no record called `name` is in the NWB scratch space. The
+            If no record called `name` is in the NWB ``/analysis`` group. The
             message lists the saved environments and points to
             :func:`neurospatial.io.nwb.environment_from_position`.
         TypeError
@@ -5143,7 +5143,7 @@ class Environment(Generic[_C]):
         return _rings(self.connectivity, int(center), hops=hops)
 
     def to_file(self, path: str | Path, *, overwrite: bool = False) -> None:
-        """Save Environment-v3 binning and Arena data to JSON and NPZ files.
+        """Save Environment-v4 binning and Arena data to JSON and NPZ files.
 
         Loading restores Arena, bins, lookup, faces, drawing components and clip
         mapping without rebuilding a layout. Creates two files:
@@ -5232,8 +5232,8 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Environment-v3 restores Arena, bins, lookup, faces, drawing components
-        and clip mapping without rebuilding a layout. Only Environment-v3 is
+        Environment-v4 restores Arena, bins, lookup, faces, drawing components
+        and clip mapping without rebuilding a layout. Only Environment-v4 is
         read; recreate older environments with a factory and save them again.
 
         """
@@ -5244,9 +5244,9 @@ class Environment(Generic[_C]):
     def to_dict(self) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
-        Stores Environment-v3 binning and Arena data with numerical arrays as
+        Stores Environment-v4 binning and Arena data with numerical arrays as
         lists and explicit shapes/dtypes. Loading decodes this data without
-        rebuilding a layout. Only version 3 is read; recreate older
+        rebuilding a layout. Only version 4 is read; recreate older
         environments with a factory and save them again.
 
         Returns
@@ -5283,9 +5283,9 @@ class Environment(Generic[_C]):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
-        """Decode Environment-v3 binning and Arena without rebuilding a layout.
+        """Decode Environment-v4 binning and Arena without rebuilding a layout.
 
-        Only version 3 is read; recreate older environments with a factory
+        Only version 4 is read; recreate older environments with a factory
         and save them again.
 
         Parameters
@@ -5336,16 +5336,16 @@ class Environment(Generic[_C]):
         name: str = "spatial_environment",
         overwrite: bool = False,
     ) -> None:
-        """Write Environment to NWB file scratch space.
+        """Write Environment to the NWB file's ``/analysis`` group.
 
-        Serializes the Environment to the NWB file's scratch space, allowing
+        Serializes the Environment to the NWB file's ``/analysis`` group, allowing
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
-        Environment schema 3.0 stores Arena, explicit walls, bins, exact lookup,
-        cell faces, drawing components, clip mapping, track linearization, graph
-        attributes, regions and coordinate metadata. Loading does not rebuild a
-        layout. Only schema 3.0 is read; recreate older environments with a
+        Environment schema 4.0 stores Arena, explicit walls, bins, exact lookup,
+        cell faces, drawing components, clip mapping, track linearization,
+        regions and coordinate metadata. Loading does not rebuild a
+        layout. Only schema 4.0 is read; recreate older environments with a
         factory and save them again.
 
         Parameters
@@ -5353,16 +5353,18 @@ class Environment(Generic[_C]):
         nwbfile : NWBFile
             The NWB file to write to. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
-            Name for the environment in scratch/. Use this name when loading
+            Name for the environment in ``/analysis``. Use this name when loading
             with ``Environment.from_nwb(nwbfile, name=name)``.
         overwrite : bool, default False
-            If True, replace existing environment with the same name.
-            If False, raise ValueError on duplicate name.
+            If True, replace existing environment with the same name; a record
+            that spatial rates use is replaced only by the identical
+            environment. If False, raise ValueError on duplicate name.
 
         Raises
         ------
         ValueError
-            If environment with same name exists and overwrite=False.
+            If environment with same name exists and overwrite=False, or
+            spatial rates use it and this environment differs.
         NotImplementedError
             If ``overwrite=True`` would replace a record in a file opened with
             ``mode="r+"`` or ``"a"``; see

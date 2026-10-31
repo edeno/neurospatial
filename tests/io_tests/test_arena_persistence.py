@@ -15,7 +15,7 @@ def test_environment_payload_uses_arena_schema():
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
     payload = to_dict(env)
-    assert payload["schema_version"] == "Environment-v3"
+    assert payload["schema_version"] == "Environment-v4"
     assert isinstance(payload["arena"], dict)
     assert payload["arena"]["codec_version"] == 3
 
@@ -97,7 +97,7 @@ def test_nested_transformed_mask_arena_round_trip(round_trip_environment, n_dims
 
 def _make_version_2(metadata, arrays):
     metadata["schema_version"] = (
-        "2.0" if metadata["schema_version"] == "3.0" else "Environment-v2"
+        "2.0" if metadata["schema_version"] == "4.0" else "Environment-v2"
     )
     metadata.pop("arena")
     for name in list(metadata["array_specs"]):
@@ -146,7 +146,7 @@ def test_malformed_arena_names_source(corrupted_environment_round_trip, corrupti
 
     with pytest.raises(
         ValueError,
-        match=r"environment dictionary|corrupt_environment\.json|NWB scratch/spatial_environment",
+        match=r"environment dictionary|corrupt_environment\.json|NWB analysis/spatial_environment",
     ) as error:
         corrupted_environment_round_trip(corrupt)
     assert "arena" in str(error.value).lower()
@@ -171,7 +171,25 @@ def test_malformed_arena_wkb_names_source(corrupted_environment_round_trip):
 
     with pytest.raises(
         ValueError,
-        match=r"environment dictionary|corrupt_environment\.json|NWB scratch/spatial_environment",
+        match=r"environment dictionary|corrupt_environment\.json|NWB analysis/spatial_environment",
     ) as error:
         corrupted_environment_round_trip(corrupt)
     assert "arena" in str(error.value).lower()
+
+
+def _make_version_3(metadata, arrays):
+    metadata["schema_version"] = (
+        "3.0" if metadata["schema_version"] == "4.0" else "Environment-v3"
+    )
+
+
+@pytest.mark.parametrize("built_environment", ["grid8"], indirect=True)
+def test_version_3_records_are_refused_with_recreation_instructions(
+    built_environment, corrupted_environment_round_trip
+):
+    """Version 3 stored a connectivity graph; it is refused, never converted."""
+    with pytest.raises(ValueError, match=r"is no longer readable") as error:
+        corrupted_environment_round_trip(_make_version_3)
+    message = str(error.value)
+    assert "'3.0'" in message or "'Environment-v3'" in message
+    assert "Fix: recreate the environment with an Environment factory" in message

@@ -2,13 +2,17 @@
 
 An environment saved with prefix ``path`` is a pair of files:
 
-- ``{path}.json``: schema version (``Environment-v3``), library version,
+- ``{path}.json``: schema version (``Environment-v4``), library version,
   creation time, name, coordinate metadata, build choices and derivation
-  history, the binning and Arena records, the connectivity graph in
-  node-link form, regions and landmarks, and the shape and dtype of every
-  array.
+  history, the binning and Arena records, regions and landmarks, and the
+  shape and dtype of every array.
 - ``{path}.npz``: the numerical arrays (bin centers, binning and Arena
   arrays, grid edges and active mask), compressed.
+
+The bin connectivity graph is not stored: loading rebuilds it from the
+binning. Other tools read bin adjacency from the arrays
+``binning/connections/all_pairs`` (bin index pairs), ``all_distances``,
+``is_open`` (False where a wall closes the pair) and ``closed_by``.
 
 :func:`to_dict` and :func:`from_dict` carry the same record in memory with
 the arrays as nested lists.
@@ -37,12 +41,12 @@ if TYPE_CHECKING:
 PathLike = str | Path
 
 # Schema version for serialization format
-_SCHEMA_VERSION = "Environment-v3"
+_SCHEMA_VERSION = "Environment-v4"
 
 # Entries every saved environment contains and the readers decode. ``units``
 # and ``frame`` are written only when declared. Descriptions the binning
-# determines (``dimension_ranges``, ``grid_shape``, ``graph``, grid arrays) are
-# checked against it when present.
+# determines (``dimension_ranges``, ``grid_shape``, grid arrays) are checked
+# against it when present.
 _DECODED_KEYS = (
     "array_specs",
     "name",
@@ -155,10 +159,10 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
     """Save Environment to a versioned JSON + npz file pair.
 
     Creates two files:
-    - `path.json`: Metadata, graph structure, and small arrays
-    - `path.npz`: Large numerical arrays (bin_centers, etc.)
+    - `path.json`: Metadata and the binning and Arena records
+    - `path.npz`: Numerical arrays (bin_centers, etc.)
 
-    The ``Environment-v3`` format stores bins, lookup, cell faces, drawing
+    The ``Environment-v4`` format stores bins, lookup, cell faces, drawing
     components and Arena. Loading decodes these data without rebuilding a
     layout.
 
@@ -251,7 +255,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 def from_file(path: PathLike) -> Environment[Any]:
     """Load binning and Arena data without running a layout builder.
 
-    Only ``Environment-v3`` files are read. Files saved by earlier versions are
+    Only ``Environment-v4`` files are read. Files saved by earlier versions are
     refused; recreate the environment with a factory and save it again.
 
     Parameters
@@ -274,7 +278,7 @@ def from_file(path: PathLike) -> Environment[Any]:
     FileNotFoundError
         If required files are not found.
     ValueError
-        If the files are not an ``Environment-v3`` record, are malformed or
+        If the files are not an ``Environment-v4`` record, are malformed or
         inconsistent with their binning, or the path contains a ``..``
         component.
 
@@ -356,7 +360,7 @@ def _environment_payload(
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
     from neurospatial.environment import _build_record
-    from neurospatial.geometry import encode, encode_arena, graph_to_node_link
+    from neurospatial.geometry import encode, encode_arena
 
     binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
@@ -376,7 +380,6 @@ def _environment_payload(
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
         "grid_shape": env.grid_shape,
-        "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
         "landmarks": env.landmarks.to_list(),
         "coordinate_kind": env.coordinate_kind,
@@ -417,7 +420,7 @@ def _check_schema(metadata: dict[str, Any], source: str) -> None:
             _format_error(
                 f"Environment schema {version!r} in {source} is no longer readable; "
                 f"this version reads only {_SCHEMA_VERSION!r}.",
-                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
+                why="Why: each format version stores a different record, and older records are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )
@@ -532,8 +535,6 @@ def _restore_environment(
             raise ValueError("stored dimension_ranges differ from the binning")
         if metadata["is_linearized_track"] != (binning.linearization is not None):
             raise ValueError("stored is_linearized_track differs from the binning")
-        # The stored graph is written for other tools; the environment
-        # rebuilds its graph from the binning.
         context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
@@ -662,7 +663,7 @@ def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
 
 
 def to_dict(env: Environment) -> dict[str, Any]:
-    """Convert v3 binning and Arena data to a dictionary for in-memory handoff.
+    """Convert v4 binning and Arena data to a dictionary for in-memory handoff.
 
     This is useful for passing environments between processes or for
     temporary storage without writing to disk.
@@ -708,7 +709,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
 def from_dict(data: dict[str, Any]) -> Environment[Any]:
     """Decode bins and Arena from a dictionary made by :func:`to_dict`.
 
-    No layout builder runs. Only ``Environment-v3`` dictionaries are read;
+    No layout builder runs. Only ``Environment-v4`` dictionaries are read;
     recreate older ones with an Environment factory.
 
     Parameters
@@ -727,7 +728,7 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
     Raises
     ------
     ValueError
-        If the dictionary is not an ``Environment-v3`` record, an array does
+        If the dictionary is not an ``Environment-v4`` record, an array does
         not match its stored shape and dtype, an entry the writers always
         save is missing, or the saved data is inconsistent with its binning.
         The message names what failed.

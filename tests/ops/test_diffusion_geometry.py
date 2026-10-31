@@ -381,8 +381,6 @@ def test_center_check_rejects_a_bin_shift_at_any_origin(origin, float32_resolves
     centers = (stored + np.array([1.0, 0.0])).tolist()
     shifted["arrays"]["binning/bins/centers"] = centers
     shifted["arrays"]["bin_centers"] = centers
-    for node in shifted["graph"]["nodes"]:
-        node["pos"] = centers[node["id"]]
     with pytest.raises(ValueError, match=r"centers.*does not match"):
         from_dict(shifted)
 
@@ -433,19 +431,6 @@ def test_non_finite_saved_centers_are_rejected():
     with pytest.raises(ValueError, match=r"centers.*finite") as exc:
         from_dict(data)
     assert "\nFix:" in str(exc.value)
-
-
-def test_saved_graph_is_rebuilt_from_the_binning():
-    """The stored graph is for other tools; reading rebuilds it from the bins."""
-    original = _four_connected_grid()
-    data = to_dict(original)
-    for link in data["graph"]["links"]:
-        link.pop("edge_id")
-        link["distance"] = -1.0
-    restored = from_dict(data)
-    assert list(restored.connectivity.edges(data=True)) == list(
-        original.connectivity.edges(data=True)
-    )
 
 
 def test_native_faces_remain_independent_of_later_builder_graph_changes():

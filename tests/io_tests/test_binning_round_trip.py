@@ -219,7 +219,7 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
             assert "binning/connections/all_pairs" in arrays
             assert "binning/connections/is_open" in arrays
             assert "binning/faces/volumes" in arrays
-    assert payload["schema_version"] == "Environment-v3"
+    assert payload["schema_version"] == "Environment-v4"
     assert payload["layout_type"] == simple_saved_grid.layout_type
     assert payload["derivations"] == list(simple_saved_grid.derivations)
     assert payload["binning"]["codec_version"] == 6
@@ -384,3 +384,30 @@ def test_saved_grid_refuses_corrupt_physical_measures(corrupted_environment_roun
 
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
         corrupted_environment_round_trip(corrupt)
+
+
+def _graph_snapshot(graph: nx.Graph) -> tuple:
+    """Nodes, edges and graph attributes, with arrays as lists for comparison."""
+
+    def plain(attributes):
+        return {
+            key: np.asarray(value).tolist() if isinstance(value, np.ndarray) else value
+            for key, value in attributes.items()
+        }
+
+    return (
+        [(node, plain(data)) for node, data in graph.nodes(data=True)],
+        [(u, v, plain(data)) for u, v, data in graph.edges(data=True)],
+        plain(dict(graph.graph)),
+    )
+
+
+def test_saved_record_rebuilds_the_identical_connectivity_graph(
+    built_environment, round_trip_environment
+):
+    """No graph is stored; every node, edge and attribute comes from the binning."""
+    assert "graph" not in to_dict(built_environment)
+    restored = round_trip_environment(built_environment)
+    assert _graph_snapshot(restored.connectivity) == _graph_snapshot(
+        built_environment.connectivity
+    )

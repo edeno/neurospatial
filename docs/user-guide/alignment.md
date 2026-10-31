@@ -272,7 +272,7 @@ does not supply a unit label: use `with_metadata(units=..., frame=...)` when the
 coordinate conversion changes those labels. Dict/file/NWB round trips retain
 source frames and normals. New files use nested binning codec version 3; current
 readers accept versions 1 and 2, while older readers reject the new nested
-version. The outer Environment-v3 and NWB 3.0 envelopes are unchanged.
+version. The outer Environment-v4 and NWB 4.0 envelopes are unchanged.
 
 ## Probability Alignment
 

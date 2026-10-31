@@ -84,7 +84,7 @@ class TestSerialization:
             data = json.load(f)
 
         assert "schema_version" in data
-        assert data["schema_version"] == "Environment-v3"
+        assert data["schema_version"] == "Environment-v4"
         assert "library_version" in data
         assert "created_at" in data
         assert data["name"] == "test_env"
@@ -92,7 +92,7 @@ class TestSerialization:
         assert data["n_bins"] > 0
         assert data["units"] == "cm"
         assert data["frame"] == "world"
-        assert "graph" in data
+        assert "graph" not in data
         assert "layout_type" in data
 
     def test_from_file_reconstructs_environment(self, simple_env, tmp_path):
@@ -320,10 +320,6 @@ class TestAtomicWriteAndDtypes:
 
     def test_from_file_rejects_array_dtype_disagreement(self, simple_env, tmp_path):
         """Stored dtype metadata catches an independently rewritten array."""
-        import json
-
-        import networkx as nx
-
         output_path = tmp_path / "f32_env"
         to_file(simple_env, output_path)
 
@@ -337,12 +333,6 @@ class TestAtomicWriteAndDtypes:
         # Sanity: the stored array really is float32 now.
         with np.load(npz_path) as arrays:
             assert arrays["bin_centers"].dtype == np.float32
-
-        # Keep json/graph valid (untouched) and load.
-        with (tmp_path / "f32_env.json").open() as f:
-            meta = json.load(f)
-        assert "graph" in meta
-        nx.node_link_graph(meta["graph"], edges="links")  # validates structure
 
         with pytest.raises(ValueError, match=r"bin_centers.*dtype"):
             from_file(output_path)

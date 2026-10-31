@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Shareable NWB layout for environments and spatial rates
+
+**Changed**
+
+- Saved environments no longer store the bin connectivity graph. Reading
+  always rebuilt it from the binning, so the copy only made records larger
+  (about 60% of each record). Other tools read bin adjacency from the
+  `binning/connections/all_pairs`, `all_distances`, `is_open` and `closed_by`
+  arrays. Dictionaries and files are now `Environment-v4`, NWB environment
+  records schema `4.0`; earlier records are refused with recreation
+  instructions.
+- `write_environment` / `Environment.to_nwb` store the environment in the
+  file's top-level `/analysis` group instead of `scratch`, which NWB reserves
+  for data "not intended for sharing". Each array column is named by its key
+  (`binning.connections.all_pairs` instead of `array_7`) and gzip-compressed:
+  a 40,396-bin grid record shrinks from 15.7 MB to 1.3 MB, and a 2,601-bin
+  record from 2.5 MB to 0.06 MB. Records declare
+  `"format": "neurospatial.Environment"` in their description; the writer
+  never replaces, and the reader never decodes, an `/analysis` object that
+  is not one. `write_environment(..., overwrite=True)` and
+  `Environment.to_nwb(..., overwrite=True)` refuse to replace a record that
+  spatial rates use with a different environment, naming the rates.
+- `write_spatial_rates` writes the rates, their occupancy and their
+  environment to `/analysis` instead of the processing module `analysis`
+  (processing modules are for intermediate data). Spatial-rates schema `3.0`;
+  rates in the old module are refused with recreation instructions.
+
+**Added**
+
+- `write_spatial_rates(..., environment_name=...)` names the environment
+  record the rates use (default `f"{name}_environment"`). Rates estimated on
+  one environment share one record, and rates can link to an environment
+  saved with `write_environment`. A record that holds exactly this
+  environment is reused; a different environment under that name raises, and
+  `overwrite=True` replaces an environment record only when no other rates
+  use it. When replacement rates name another environment, the replaced
+  rates' default `f"{name}_environment"` record is removed if nothing else
+  uses it. `read_spatial_rates` follows the recorded name and refuses the
+  rates if the record changed since they were written (the rates store a
+  content fingerprint, `environment_sha256`).
+- When the file has a units table and every `unit_id` is one of its ids,
+  `write_spatial_rates` adds a `units` column linking each rate map to its
+  unit's row, so NWB tools can join maps to spike times, electrodes and
+  quality metrics. `units` is now a reserved `unit_table` column name.
+
 ### Richer NWB readers and DANDI streaming
 
 **Added**

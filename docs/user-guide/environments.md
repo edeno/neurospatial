@@ -1083,7 +1083,9 @@ ax = divided.plot()
 `neurospatial.io.nwb.write_environment` stores the same record in an NWB file.
 They preserve the arena, named walls, regions, landmarks, exact cells,
 coordinate metadata and supported numerical geometry without running a layout
-builder on load.
+builder on load. The NWB record is a table in the file's `/analysis` group that
+other NWB tools can read too; see
+[what other NWB tools see](interoperability.md#what-other-nwb-tools-see).
 
 Environments saved by earlier versions of neurospatial do not load: recreate
 them from their source inputs and save them again.

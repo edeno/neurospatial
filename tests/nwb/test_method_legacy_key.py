@@ -16,7 +16,6 @@ import pytest
 pytest.importorskip("pynwb")
 
 from neurospatial.io.nwb._fields import (
-    DEFAULT_ANALYSIS_MODULE,
     DEFAULT_SPATIAL_RATES_NAME,
 )
 
@@ -50,7 +49,7 @@ def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
     # to "smoothing_method", drop schema_version). fields[...] override bypasses
     # hdmf's read-only description.
     write_spatial_rates(empty_nwb, result)
-    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     meta["smoothing_method"] = meta.pop("method")
     meta["schema_version"] = "1.0"
@@ -68,10 +67,10 @@ def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
     result = _make_rates_result(env)
 
     write_spatial_rates(empty_nwb, result)
-    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     assert "method" in meta and "smoothing_method" not in meta
-    assert meta["schema_version"] == "2.6"
+    assert meta["schema_version"] == "3.0"
 
     back = read_spatial_rates(empty_nwb, env=env)
     assert back.method == "diffusion_kde"

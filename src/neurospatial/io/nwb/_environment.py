@@ -1,7 +1,8 @@
-"""Lossless environment binning records in standard NWB scratch containers."""
+"""Lossless environment records in the NWB file's top-level ``/analysis`` group."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -17,6 +18,7 @@ from neurospatial.io.nwb._core import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from hdmf.common import DynamicTable
     from pynwb import NWBFile
 
     from neurospatial.environment import Environment
@@ -24,10 +26,15 @@ if TYPE_CHECKING:
     from neurospatial.layout import LayoutType
     from neurospatial.regions import Region
 
-ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
+ENVIRONMENT_SCHEMA_VERSION: str = "4.0"
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
-# Older records keep the version in this column; it is read only to refuse them.
-COL_METADATA = "metadata"
+# The "format" each /analysis record this package writes declares in its
+# description JSON; records are identified by it, never by column names.
+ENVIRONMENT_FORMAT: str = "neurospatial.Environment"
+SPATIAL_RATES_FORMAT: str = "neurospatial.SpatialRates"
+# Metadata that says what kind of record it is and when and by which release
+# it was written, not the environment it describes.
+_RECORD_DETAILS = ("format", "schema_version", "library_version", "created_at")
 
 
 @keyword_hint("name")
@@ -38,23 +45,27 @@ def write_environment(
     name: str = DEFAULT_ENVIRONMENT_NAME,
     overwrite: bool = False,
 ) -> None:
-    """Store complete bins and Arena using NWB environment schema 3.0.
+    """Store complete bins and Arena using NWB environment schema 4.0.
 
-    Bins, lookup, cell faces, drawing components, graph attributes, regions,
-    landmarks, coordinate metadata and Arena are saved losslessly. Reading decodes these
-    data without rebuilding a layout. :func:`read_environment` reads only
-    schema 3.0 and refuses records from earlier schemas.
+    Bins, lookup, cell faces, drawing components, regions, landmarks,
+    coordinate metadata and Arena are saved losslessly in the file's
+    top-level ``/analysis`` group. Reading decodes these data without
+    rebuilding a layout, and rebuilds the connectivity graph from the
+    binning. :func:`read_environment` reads only schema 4.0 and refuses
+    records from earlier schemas.
 
     Parameters
     ----------
     nwbfile : NWBFile
-        NWB file receiving the scratch record.
+        NWB file receiving the record.
     env : Environment
         Environment to store.
     name : str, default "spatial_environment"
-        Scratch record name.
+        Record name in ``nwbfile.analysis``.
     overwrite : bool, default False
-        Replace an existing record with the same name. pynwb cannot delete a
+        Replace an existing environment record with the same name. A record
+        that spatial rates use is replaced only by the identical environment,
+        so the rates are never read with other bins. pynwb cannot delete a
         record already written to disk, so replace one in a file opened with
         ``mode="r"`` and save a copy with
         ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``.
@@ -62,7 +73,10 @@ def write_environment(
     Raises
     ------
     ValueError
-        If the name exists and overwrite is false, or a component has no codec.
+        If the name exists and overwrite is false, the name belongs to an
+        ``/analysis`` object that is not an environment record, spatial
+        rates use the record and ``env`` differs from it (the message names
+        them), or a component has no codec.
     NotImplementedError
         If ``overwrite=True`` would replace a record in a file opened with
         ``mode="r+"`` or ``"a"``.
@@ -71,9 +85,16 @@ def write_environment(
 
     Notes
     -----
-    Standard one-row ragged columns retain each numerical array without padding.
-    The record description is one JSON metadata attribute, including shapes,
-    dtypes and the mapping from canonical array keys to NWB column names.
+    The record is a one-row ``DynamicTable``. Each numerical array is one
+    ragged column named by its key with ``/`` replaced by ``.`` (for
+    example ``binning.bins.centers``), stored flat, gzip-compressed and
+    without padding. The table description is one JSON attribute holding
+    ``"format": "neurospatial.Environment"``, which identifies the record,
+    the remaining metadata and, under ``array_specs``, each array's column,
+    shape and dtype. Other tools read bin adjacency from the
+    ``binning.connections.all_pairs`` (bin index pairs), ``all_distances``,
+    ``is_open`` (False where a wall closes the pair) and ``closed_by``
+    columns.
 
     Examples
     --------
@@ -85,25 +106,59 @@ def write_environment(
     ... )
     >>> nwb = NWBFile("example", "example", datetime(2025, 1, 1, tzinfo=timezone.utc))
     >>> write_environment(nwb, env)
+    >>> "spatial_environment" in nwb.analysis
+    True
     >>> read_environment(nwb).bin_sizes.tolist()
     [2.0, 2.0, 2.0]
     """
     _require_pynwb()
+    _check_environment_name(nwbfile, name)
+    if name in nwbfile.analysis and not overwrite:
+        raise ValueError(
+            f"Environment '{name}' already exists in /analysis. Use "
+            "overwrite=True to replace it."
+        )
+    record, fingerprint = _environment_record(env, name)
+    # Construct the replacement before removing a valid existing record.
+    if name in nwbfile.analysis:
+        _refuse_replacing_a_used_environment(nwbfile, name, fingerprint)
+        _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
+        del nwbfile.analysis[name]
+        logger.info("Overwriting existing environment '%s'", name)
+    nwbfile.add_analysis(record)
+
+
+def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]:
+    """Build the one-row table that stores ``env``; see ``write_environment``.
+
+    Returns
+    -------
+    record : DynamicTable
+        The record to add to ``nwbfile.analysis``.
+    fingerprint : str
+        The record's content fingerprint; see ``_record_fingerprint``.
+    """
+    from hdmf.backends.hdf5 import H5DataIO
     from hdmf.common import DynamicTable, VectorData, VectorIndex
 
     from neurospatial.io.files import _environment_payload
 
-    if name in nwbfile.scratch and not overwrite:
-        raise ValueError(
-            f"Environment '{name}' already exists in scratch. Use overwrite=True to replace."
-        )
     metadata, arrays = _environment_payload(env)
+    metadata = json.loads(json.dumps(metadata))
+    fingerprint = _payload_fingerprint(metadata, arrays)
+    metadata["format"] = ENVIRONMENT_FORMAT
     metadata["schema_version"] = ENVIRONMENT_SCHEMA_VERSION
     columns: list[Any] = []
-    for index, (key, array) in enumerate(sorted(arrays.items())):
-        column_name = f"array_{index}"
+    for key, array in sorted(arrays.items()):
+        # NWB names cannot contain "/"; the canonical keys contain no ".".
+        column_name = key.replace("/", ".")
         values = np.asarray(array).reshape(-1).copy()
-        column = VectorData(name=column_name, description=key, data=values)
+        column = VectorData(
+            name=column_name,
+            description=f"Environment array {key!r}, flattened; its shape and "
+            "dtype are in the table description under array_specs.",
+            data=H5DataIO(values, compression="gzip"),
+        )
         columns.extend(
             [
                 VectorIndex(
@@ -119,12 +174,137 @@ def write_environment(
         columns=columns,
         id=[0],
     )
-    # Construct the replacement before removing a valid existing record.
-    if name in nwbfile.scratch:
-        _refuse_in_place_replacement(nwbfile, f"environment {name!r}")
-        del nwbfile.scratch[name]
-        logger.info("Overwriting existing environment '%s'", name)
-    nwbfile.add_scratch(record)
+    return record, fingerprint
+
+
+def _payload_fingerprint(
+    metadata: dict[str, Any], arrays: Mapping[str, np.ndarray]
+) -> str:
+    """SHA-256 of what a record says about its environment.
+
+    Covers every array (key, dtype, shape and values) and every metadata
+    entry except ``_RECORD_DETAILS`` and the NWB column names, so two records
+    of the same environment written at different times, or one read back
+    from disk, have the same fingerprint.
+
+    Parameters
+    ----------
+    metadata : dict
+        JSON-normalized record metadata, with ``array_specs``.
+    arrays : Mapping[str, ndarray]
+        The arrays ``array_specs`` describes, in any shape with C-order
+        values (flattened NWB columns are accepted).
+    """
+    described = {k: v for k, v in metadata.items() if k not in _RECORD_DETAILS}
+    described["array_specs"] = {
+        key: {"shape": list(spec["shape"]), "dtype": spec["dtype"]}
+        for key, spec in metadata["array_specs"].items()
+    }
+    digest = hashlib.sha256(json.dumps(described, sort_keys=True).encode())
+    for key in sorted(arrays):
+        digest.update(key.encode())
+        digest.update(np.ascontiguousarray(arrays[key]).reshape(-1).tobytes())
+    return digest.hexdigest()
+
+
+def _record_fingerprint(record: Any) -> str | None:
+    """Content fingerprint of a stored environment record; None if unreadable."""
+    metadata = _record_metadata(record)
+    if metadata is None:
+        return None
+    try:
+        arrays = {
+            key: np.asarray(record[spec["column"]][0])
+            for key, spec in metadata["array_specs"].items()
+        }
+        return _payload_fingerprint(metadata, arrays)
+    except (KeyError, TypeError, ValueError, IndexError, AttributeError):
+        return None
+
+
+def _environment_fingerprint(env: Environment) -> str:
+    """Fingerprint of the record ``write_environment`` would store for ``env``."""
+    from neurospatial.io.files import _environment_payload
+
+    metadata, arrays = _environment_payload(env)
+    return _payload_fingerprint(json.loads(json.dumps(metadata)), arrays)
+
+
+def _record_metadata(record: object) -> dict[str, Any] | None:
+    """The JSON description of an ``/analysis`` object, or None."""
+    try:
+        metadata = json.loads(record.description)  # type: ignore[attr-defined]
+    except (AttributeError, TypeError, ValueError, RecursionError):
+        return None
+    return metadata if isinstance(metadata, dict) else None
+
+
+def _is_environment_record(record: object) -> bool:
+    """Whether an ``/analysis`` object is a record ``write_environment`` made."""
+    metadata = _record_metadata(record)
+    return metadata is not None and metadata.get("format") == ENVIRONMENT_FORMAT
+
+
+def _spatial_rates_using(nwbfile: NWBFile, env_name: str) -> list[str]:
+    """Names of the spatial-rates records in ``/analysis`` that use ``env_name``."""
+    users = []
+    for table_name, table in nwbfile.analysis.items():
+        metadata = _record_metadata(table)
+        if (
+            metadata is not None
+            and metadata.get("format") == SPATIAL_RATES_FORMAT
+            and metadata.get("environment_name") == env_name
+        ):
+            users.append(table_name)
+    return sorted(users)
+
+
+def _refuse_replacing_a_used_environment(
+    nwbfile: NWBFile, name: str, fingerprint: str
+) -> None:
+    """Refuse to replace a record spatial rates use with a different environment."""
+    from neurospatial._exceptions import _format_error
+
+    users = _spatial_rates_using(nwbfile, name)
+    if users and _record_fingerprint(nwbfile.analysis[name]) != fingerprint:
+        raise ValueError(
+            _format_error(
+                f"Cannot replace environment {name!r}: spatial rates use it "
+                f"({users}), and this environment differs from it.",
+                why="Why: the rates would be read with bins they were not "
+                "estimated on, so every map would be placed at the wrong "
+                "positions or in the wrong units.",
+                fix="save this environment under another name, or recompute "
+                f"the rates {users} on it and rewrite them with "
+                "write_spatial_rates(..., overwrite=True)",
+            )
+        )
+
+
+def _check_environment_name(nwbfile: NWBFile, name: str) -> None:
+    """Refuse a name that another kind of ``/analysis`` object already uses."""
+    from neurospatial._exceptions import _format_error
+
+    if name in nwbfile.analysis and not _is_environment_record(nwbfile.analysis[name]):
+        raise ValueError(
+            _format_error(
+                f"/analysis/{name} already holds a "
+                f"{type(nwbfile.analysis[name]).__name__} that is not an "
+                "environment record.",
+                why="Why: the environment would replace another analysis "
+                "result of that name.",
+                fix="store the environment under another name",
+            )
+        )
+
+
+def _environment_record_names(nwbfile: NWBFile) -> list[str]:
+    """Names of the environment records in ``nwbfile.analysis``, sorted."""
+    return sorted(
+        name
+        for name, record in nwbfile.analysis.items()
+        if _is_environment_record(record)
+    )
 
 
 class _MissingEnvironmentError(KeyError):
@@ -141,7 +321,7 @@ def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
     from neurospatial._exceptions import _format_error
     from neurospatial.io.nwb._core import _find_containers_by_type
 
-    stored = sorted(nwbfile.scratch) if nwbfile.scratch else []
+    stored = _environment_record_names(nwbfile)
     positions = [path for path, _ in _find_containers_by_type(nwbfile, Position)]
     build = "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)"
     if positions:
@@ -173,16 +353,16 @@ def read_environment(
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
-    smoothing, boundary bins, plotting and track linearization. Only schema 3.0
+    smoothing, boundary bins, plotting and track linearization. Only schema 4.0
     records are read; records from earlier schemas must be recreated with a
     factory and saved again.
 
     Parameters
     ----------
     nwbfile : NWBFile
-        File holding the environment in scratch space.
+        File holding the environment in its ``/analysis`` group.
     name : str, default "spatial_environment"
-        Scratch record name.
+        Record name in ``nwbfile.analysis``.
 
     Returns
     -------
@@ -199,7 +379,9 @@ def read_environment(
         lists the saved environments and, for building one from position
         data, :func:`environment_from_position`.
     ValueError
-        If the schema is unsupported or the saved data is inconsistent.
+        If the schema is unsupported (including a record that an earlier
+        version saved in NWB scratch space) or the saved data is
+        inconsistent.
     ImportError
         If pynwb is unavailable.
 
@@ -222,15 +404,27 @@ def read_environment(
     from neurospatial._exceptions import _format_error
     from neurospatial.io.files import _restore_environment
 
-    if name not in nwbfile.scratch:
+    if name not in nwbfile.analysis:
+        if name in nwbfile.scratch:
+            raise ValueError(
+                _format_error(
+                    f"Environment {name!r} is in NWB scratch space, where "
+                    "neurospatial before NWB environment schema "
+                    f"{ENVIRONMENT_SCHEMA_VERSION} saved it; this version reads "
+                    "only records in /analysis.",
+                    why="Why: earlier records store a different layout and are "
+                    "not converted.",
+                    fix="recreate the environment with an Environment factory "
+                    "and save it again with this version",
+                )
+            )
         raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
-    record = nwbfile.scratch[name]
-    source = f"NWB scratch/{name}"
+    record = nwbfile.analysis[name]
+    source = f"NWB analysis/{name}"
+    stored = _environment_record_names(nwbfile)
+    choose = f"pass name= one of {stored}, or " if stored else ""
     try:
-        if COL_METADATA in getattr(record, "colnames", ()):
-            metadata = json.loads(record[COL_METADATA][0])
-        else:
-            metadata = json.loads(record.description)
+        metadata = json.loads(record.description)
         if not isinstance(metadata, dict):
             raise ValueError("environment metadata must be a dictionary")
     except (
@@ -244,17 +438,32 @@ def read_environment(
         raise ValueError(
             _format_error(
                 f"Invalid environment metadata in {source}: {error}",
-                why="Why: the record must contain complete JSON metadata without excessive nesting.",
-                fix="restore the original environment record, or re-save the original environment",
+                why="Why: an environment record's description is its complete "
+                "JSON metadata, without excessive nesting.",
+                fix=f"{choose}restore the original environment record, or "
+                "re-save the original environment",
             )
         ) from error
+    if metadata.get("format") != ENVIRONMENT_FORMAT:
+        raise ValueError(
+            _format_error(
+                f"/analysis/{name} is not an environment record "
+                f"(saved environments: {stored or 'none'}).",
+                why=f"Why: its description does not declare format "
+                f"{ENVIRONMENT_FORMAT!r}, as every record written by "
+                "write_environment does.",
+                fix=f"pass name= one of {stored}"
+                if stored
+                else "save the environment with write_environment first",
+            )
+        )
     version = metadata.get("schema_version")
     if version != ENVIRONMENT_SCHEMA_VERSION:
         raise ValueError(
             _format_error(
                 f"NWB environment schema {version!r} in {source} is no longer readable; "
                 f"this version reads only {ENVIRONMENT_SCHEMA_VERSION!r}.",
-                why="Why: older records lack the Arena and complete binning this version restores, and they are not converted.",
+                why="Why: each schema version stores a different record, and older records are not converted.",
                 fix="recreate the environment with an Environment factory and save it again with this version",
             )
         )

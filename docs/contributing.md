@@ -422,7 +422,7 @@ Binning codec version 4 stores the bins and their connections as separate
 records, with frames and normals; readers accept only the version they write
 and refuse older records with recreation guidance. New stored geometry
 components require a codec version increment so older readers cannot silently
-ignore a capability they do not understand. Environment-v3/NWB 3.0 envelopes are
+ignore a capability they do not understand. Environment-v4/NWB 4.0 envelopes are
 unchanged.
 
 Combined environments retain child binnings instead of inventing physical faces
@@ -510,18 +510,21 @@ closed pairs. Interior-cut or partially covered walls refuse.
 Numerical geometry is published only after convexity, interface and
 orthogonality checks; containment and plotting do not depend on certification.
 
-Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
-They include a required Arena record. Earlier versions (`Environment-v1`/`-v2`,
-NWB `1.x`/`2.0`) are refused with recreation guidance; they are never converted
+Files and dictionaries use `Environment-v4`; NWB environment records use `4.0`.
+They include a required Arena record and no connectivity graph: loading
+rebuilds the graph from the binning, and other tools read adjacency from the
+`binning/connections/*` arrays. Earlier versions (`Environment-v1` to `-v3`,
+NWB `1.x` to `3.0`) are refused with recreation guidance; they are never converted
 and no Arena is inferred from their parameters, outlines or masks. Pure codecs
 in `geometry/_codecs.py`, including the arena codec, store typed arrays and
 JSON metadata; polygon WKB bytes and offsets preserve ordered cells and holes. Shared snapshot references
 retain locator ownership without duplicating each record. Locator search
-structures are not stored; they are rebuilt from saved data. Standard NWB
-containers reject slash-containing names, so a one-row ragged DynamicTable
-stores arrays under safe column names. Its description holds the JSON
-metadata and canonical-key/shape/dtype mapping, without padding or a custom
-extension.
+structures are not stored; they are rebuilt from saved data. In NWB the
+record is a one-row ragged DynamicTable in the top-level `/analysis` group.
+Standard NWB containers reject slash-containing names, so each array's column
+is its canonical key with `/` replaced by `.` (`binning.bins.centers`). The
+table description holds the JSON metadata and canonical-key/shape/dtype
+mapping, without padding or a custom extension.
 
 ## Code Standards
 

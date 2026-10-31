@@ -743,9 +743,6 @@ def test_saved_composition_rejects_inconsistent_geometry(corruption):
     elif corruption == "bridge_distance":
         data["arrays"]["binning/locator/bridge_distances"] = [100.0]
         data["arrays"]["binning/connections/all_distances"][-1] = 100.0
-        for edge in data["graph"]["links"]:
-            if {edge["source"], edge["target"]} == {1, 2}:
-                edge["distance"] = 100.0
     else:
         for key in list(data["arrays"]):
             if key.startswith("arena/children/0/edges_0"):
@@ -798,9 +795,6 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
     data = env.to_dict()
     if with_bridge:
         data["arrays"]["binning/connections/all_distances"][-1] = 100.0
-        for edge in data["graph"]["links"]:
-            if {edge["source"], edge["target"]} == {1, 2}:
-                edge["distance"] = 100.0
     else:
         data["arrays"]["binning/faces/A"] = (
             2 * np.asarray(data["arrays"]["binning/faces/A"])
