@@ -804,32 +804,17 @@ def _bin_center_coords(
     Raises
     ------
     ValueError
-        If ``env`` is given but its ``bin_centers`` is not 2-D or its length
+        If ``env`` is given but its ``bin_centers`` length
         (``bin_centers.shape[0]``) does not equal ``n_bins``. The genuine
         no-env case (``env is None``) is a no-op and returns an empty mapping.
     """
-    # Genuine no-env case (e.g. directional results pass bin_centers directly
-    # and have no env): no bin-center coords to build. This is NOT a mismatch.
+    # Directional results have no env: no bin-center coords to build.
     if env is None:
         return {}
 
     # A copy: the coordinates are the caller's to edit, the environment's
     # bin centers are read-only.
     bin_centers = np.array(env.bin_centers, dtype=np.float64)
-    # bin-center data IS present (env was given); a shape disagreement here is
-    # a real inconsistency between the result and its environment, not an
-    # optional-coord situation. Raise loudly rather than silently dropping it.
-    if bin_centers.ndim != 2:
-        raise ValueError(
-            _format_error(
-                "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
-                "xarray bin-center coords, but env produced an array with "
-                f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).",
-                why="each bin needs an (x, y, ...) center for the 'bin' coordinate.",
-                fix="pass an Environment, whose bin_centers have shape "
-                "(n_bins, n_dims).",
-            )
-        )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(
             _format_error(
@@ -871,8 +856,8 @@ def build_population_dataset(
     firing_rates : ndarray, shape (n_units, n_bins)
         Population firing-rate matrix (Hz).
     unit_ids : ndarray, shape (n_units,)
-        Per-unit identity labels. **Must be unique** (label-based
-        ``.sel(unit_id=...)`` requires uniqueness).
+        Per-unit identity labels, unique as result constructors guarantee
+        (label-based ``.sel(unit_id=...)`` requires uniqueness).
     env : Any, optional
         Environment supplying ``bin_center_*`` coords (Cartesian or polar).
         Pass either ``env`` or ``bin_centers``, not both. ``None`` adds no
@@ -895,8 +880,7 @@ def build_population_dataset(
     Raises
     ------
     ValueError
-        If both ``env`` and ``bin_centers`` are given, if ``unit_ids``
-        contains duplicate labels, if ``occupancy`` is
+        If ``occupancy`` is
         provided but its length does not equal ``n_bins``, or if
         ``bin_centers`` is provided but is not 1-D of length ``n_bins``.
         (Absent ``occupancy``/``bin_centers`` are simply omitted; only a
@@ -906,36 +890,11 @@ def build_population_dataset(
     """
     xr = import_xarray()
 
-    if env is not None and bin_centers is not None:
-        raise ValueError(
-            _format_error(
-                "build_population_dataset got both env and bin_centers.",
-                why="both would set the bin-center coordinates.",
-                fix="pass env for spatial results or bin_centers for "
-                "directional results.",
-            )
-        )
     # Copy the rates: the Dataset is the caller's to edit, and results are
     # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.array(unit_ids)  # the result's labels are read-only
-
-    # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
-    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
-    # object array.
-    dups = [label for label, count in Counter(ids.tolist()).items() if count > 1]
-    if dups:
-        raise ValueError(
-            _format_error(
-                "unit_ids must be unique to build an xarray.Dataset, but these "
-                f"label(s) are duplicated: {dups}.",
-                why="Why: label-based selection .sel(unit_id=...) requires a "
-                "unique index coordinate.",
-                fix="deduplicate unit_ids (e.g. when concatenating populations) "
-                "before calling to_xarray().",
-            )
-        )
 
     coords: dict[str, Any] = {"unit_id": ids, "bin": np.arange(n_bins)}
     coords.update(_bin_center_coords(env, n_bins))
