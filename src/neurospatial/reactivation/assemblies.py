@@ -834,7 +834,7 @@ def marchenko_pastur_threshold(
             "Marchenko-Pastur threshold may be unreliable. "
             "Consider using more time bins or fewer neurons.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Upper bound of Marchenko-Pastur distribution
