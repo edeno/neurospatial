@@ -764,7 +764,7 @@ class TestDistanceToRewardSupport:
     def test_break_before_needs_sorted_times(self, simple_grid_env):
         times = np.array([0.0, 0.1, 0.3, 0.2])
         positions = np.full((4, 2), 5.0)
-        with pytest.raises(ValueError, match=r"non-decreasing"):
+        with pytest.raises(ValueError, match=r"decreases"):
             self._distance(
                 simple_grid_env,
                 times,

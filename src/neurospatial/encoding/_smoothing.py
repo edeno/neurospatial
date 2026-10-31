@@ -63,6 +63,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 from neurospatial.encoding._core_numpy import compute_firing_rates_batch
 from neurospatial.ops import (
     _RESOLUTION_MARGIN,
@@ -669,9 +670,12 @@ def _validate_spatial_method_params(
 
 def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
     """Validate smoothing method and bandwidth without requiring count arrays."""
-    valid_methods = ["diffusion_kde", "gaussian_kde", "binned"]
-    if method not in valid_methods:
-        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+    validate_choice(
+        method,
+        ("diffusion_kde", "gaussian_kde", "binned"),
+        name="method",
+        owner="Rate estimation",
+    )
 
     # Validate bandwidth (binned allows 0). Bandwidth is in environment units
     # (e.g. cm); the tuning curves and rate maps inherit those units.

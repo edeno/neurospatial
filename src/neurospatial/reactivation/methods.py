@@ -1156,8 +1156,10 @@ def compare_reactivation_methods(
                 "dataclasses.replace(method, name='...')",
             )
         )
-    trains, labels, _ = as_labelled_spike_trains(spike_times, unit_ids, context=_CALL)
+    trains, labels = as_labelled_spike_trains(spike_times, unit_ids, context=_CALL)
     n_units = len(trains)
+    if labels is None:
+        labels = np.arange(n_units)
     template = as_intervals(template_epochs, name="template_epochs")
     match = as_intervals(match_epochs, name="match_epochs")
     control = as_intervals(control_epochs, name="control_epochs")

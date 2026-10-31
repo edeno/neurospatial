@@ -58,6 +58,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2830,33 +2831,27 @@ def _directional_rates(
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._backend import (
         _to_backend,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
     # "auto" resolves to "numpy" or "jax".
     resolved_backend = validate_and_resolve_backend(backend)
 
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+    validate_choice(angle_unit, ("rad", "deg"), name="angle_unit", owner=f"{context}()")
 
     if single_unit:
-        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
-        resolved_unit_ids, labels_supplied = None, False
+        spike_times_list = [as_spike_train(spike_times)]
+        resolved_unit_ids = None
     else:
         # Normalize spike times to canonical list-of-arrays format and resolve
         # the per-unit identity labels (defaults to arange). A labelled input
         # keeps its own labels; a differing unit_ids= raises.
-        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+        spike_times_list, resolved_unit_ids = as_labelled_spike_trains(
             spike_times, unit_ids, context=context
         )
 
@@ -2867,10 +2862,6 @@ def _directional_rates(
     validate_trajectory(
         times, headings=headings, context=context, heading_unit=angle_unit
     )
-    if single_unit:
-        validate_spike_times(spike_times_list[0], context=context)
-    else:
-        validate_spike_trains(spike_times_list, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
 
     if not single_unit:
@@ -2912,7 +2903,7 @@ def _directional_rates(
         bin_size=counts.bin_size,
         bandwidth=counts.bandwidth,
         spike_counts=counts.spike_counts,
-        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,
@@ -3497,10 +3488,7 @@ def head_direction_cell_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_trains,
-        validate_trajectory,
-    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     inputs = shuffle_inputs(
         spike_times,
@@ -3528,7 +3516,6 @@ def head_direction_cell_significance(
         context="head_direction_cell_significance",
         heading_unit=angle_unit,
     )
-    validate_spike_trains(trains, context="head_direction_cell_significance")
     breaks = validate_break_before(
         break_before, len(times), call="head_direction_cell_significance"
     )

@@ -18,14 +18,17 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
-    drop_missing_samples,
-    interval_valid_mask,
+    start_allocation,
     times_in_intervals,
     validate_max_gap,
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import (
+    format_times_positions_error,
+    times_positions_problems,
+)
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -235,9 +238,12 @@ def detect_region_visits(
     ----------
     position_bins : ndarray of integers, shape (n_samples,)
         Sample-aligned bins from ``env.bin_at(positions)``. Bin ``-1`` (a
-        position outside the environment) is an unknown observation, skipped
-        as if its row were deleted: the gap around it is bridged when it is
-        no longer than ``max_gap``. A valid bin outside every
+        position outside the environment, or a missing sample) is not
+        located: as in ``env.occupancy``, an interval with either sample at
+        ``-1`` is not observed, so it ends the run and censors the visits
+        around it. To bridge missing samples instead, delete their rows
+        before binning; a deleted row is bridged when the samples around it
+        are no more than ``max_gap`` apart. A valid bin outside every
         selected region is observed travel, not an observation break.
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
@@ -293,8 +299,8 @@ def detect_region_visits(
     that region. An exit is observed at the first following outside sample.
     These are sampled crossing times, without sub-frame interpolation. A visit
     starting inside a region after a gap or a declared break is left-censored,
-    not a new entry. Invalid observations are skipped, so they never
-    fabricate exits; a gap longer than ``max_gap`` censors both adjacent runs.
+    not a new entry. An unlocated sample (bin ``-1``), like a gap longer than
+    ``max_gap``, censors both adjacent runs, so it never fabricates an exit.
 
     Use :func:`region_transitions` before filtering visits to obtain consecutive
     entry-to-entry pairs. Use ``detect_runs_between_regions`` instead when the
@@ -304,8 +310,13 @@ def detect_region_visits(
         position_bins, env, call="detect_region_visits", times=times
     )
     clock = np.asarray(times, dtype=np.float64)
-    if not np.isfinite(clock).all() or np.any(np.diff(clock) <= 0):
-        raise ValueError("times must be finite and strictly increasing, in seconds.")
+    problems = times_positions_problems(clock, None)[0]
+    if problems:
+        raise ValueError(
+            format_times_positions_error(
+                problems, False, call="detect_region_visits", positions=False
+            )
+        )
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(region_names, str):
@@ -343,11 +354,9 @@ def detect_region_visits(
             )
         labels[mask] = label
 
-    # An invalid bin is a missing observation, skipped as if its row were
-    # deleted; indices are mapped back to the caller's rows below.
-    rows, breaks = drop_missing_samples(bins >= 0, breaks)
-    bins, clock = bins[rows], clock[rows]
-    valid = np.ones(bins.shape, dtype=bool)
+    # A sample at bin -1 is not located; as in env.occupancy, an interval
+    # with either sample there is not observed (the complete-case rule).
+    valid = bins >= 0
     selected = valid.copy()
     if windows is not None:
         selected &= times_in_intervals(windows, clock)
@@ -355,18 +364,11 @@ def detect_region_visits(
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    gates = interval_valid_mask(
-        clock, max_gap=max_gap, epochs=windows, break_before=breaks
-    )
-    warn_excluded_intervals(
-        clock,
-        gates,
-        max_gap=max_gap,
-        epochs=windows,
-        break_before=breaks,
-        result="every visit ends at its first sample",
-    )
-    continuous = valid[:-1] & valid[1:] & gates
+    gates = start_allocation(
+        clock, bins, None, max_gap=max_gap, epochs=windows, break_before=breaks
+    ).gates
+    warn_excluded_intervals(gates, result="every visit ends at its first sample")
+    continuous = gates.mask
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
     stops = np.flatnonzero(selected & np.r_[~connected, True]) + 1
@@ -391,8 +393,8 @@ def detect_region_visits(
                     visit_id=len(visits),
                     run_id=run_id,
                     region_name=names[label],
-                    start_index=int(rows[start_index]),
-                    stop_index=int(rows[stop_index - 1]) + 1,
+                    start_index=start_index,
+                    stop_index=stop_index,
                     start_time=float(clock[start_index]),
                     end_time=float(
                         clock[stop_index] if exit_observed else run_end_time

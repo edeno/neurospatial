@@ -39,12 +39,8 @@ Filter to only neurospatial logs::
 
 import logging
 
-# Create package logger
+# The package ``__init__`` attaches the NullHandler to this logger.
 logger = logging.getLogger("neurospatial")
-
-# Add NullHandler to prevent "No handler found" warnings
-# Users must explicitly enable logging
-logger.addHandler(logging.NullHandler())
 
 
 def log_environment_created(

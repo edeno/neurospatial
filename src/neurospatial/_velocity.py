@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_finite_real
 
 #: Gaussian standard deviation (seconds) of the default velocity smoothing.
 DEFAULT_SPEED_SMOOTHING = 0.1
@@ -43,8 +44,7 @@ def smoothed_velocity(
         (``ObservationSupport.interval_mask``). Within each run, samples with a
         non-finite coordinate are skipped as if deleted, so velocity across a
         bridged gap uses the elapsed time between the valid samples on either
-        side. Zero-duration intervals end a run, so it never spans a
-        duplicate timestamp.
+        side.
     smooth_window : float
         Standard deviation, in seconds, of the Gaussian that averages each
         velocity component over time within the run
@@ -59,14 +59,9 @@ def smoothed_velocity(
         Velocity in position units per second; NaN at missing samples and at
         samples in no run of at least two valid samples.
     """
-    from neurospatial._intervals import run_sample_bounds
+    from neurospatial._intervals import valid_run_samples
 
-    if (
-        isinstance(smooth_window, (bool, np.bool_))
-        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
-        or not np.isfinite(smooth_window)
-        or smooth_window < 0
-    ):
+    if not is_finite_real(smooth_window, positive=False):
         raise ValueError(
             _format_error(
                 "smooth_window must be a finite number of seconds >= 0; got "
@@ -83,12 +78,10 @@ def smoothed_velocity(
     if positions.ndim == 1:
         positions = positions[:, np.newaxis]
     finite = np.all(np.isfinite(positions), axis=1)
-    # A zero-length interval (duplicate timestamps) has no defined velocity.
-    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
+    mask = np.asarray(interval_mask, dtype=bool)
     velocity = np.full(positions.shape, np.nan, dtype=np.float64)
-    for first, last in run_sample_bounds(mask):
-        # Missing samples inside a run are skipped, exactly like deleted rows.
-        run = first + np.flatnonzero(finite[first : last + 1])
+    # Missing samples inside a run are skipped, exactly like deleted rows.
+    for run in valid_run_samples(mask, finite):
         if run.size < 2:
             continue
         run_times = times[run]
@@ -126,58 +119,31 @@ def gaussian_pair_weights(
     weight : NDArray[np.float64], shape (n_samples - lag,)
         ``exp(-dt**2 / (2 * sigma**2))`` of the pair ``(i, i + lag)``, where
         ``dt = times[i + lag] - times[i]``; 0 for pairs more than
-        ``4 * sigma`` apart.
+        ``4 * sigma`` apart. It is a view of a buffer the next lag
+        overwrites, so it is valid only until the next iteration.
     """
-    # Each difference is exact to a few ulp of the timestamps' magnitude.
-    rounding = 8.0 * np.spacing(max(abs(times[0]), abs(times[-1])))
-    reach = 4.0 * sigma + rounding
+    from neurospatial._intervals import _timestamp_rounding
+
+    reach = 4.0 * sigma + _timestamp_rounding(times[0], times[-1])
     # The widest reach of any sample, forward or backward, bounds the lags.
     index = np.arange(times.size)
     lo = np.searchsorted(times, times - reach, side="left")
     hi = np.searchsorted(times, times + reach, side="right")
     widest = int(max(np.max(index - lo), np.max(hi - 1 - index)))
+    weights = np.empty(max(times.size - 1, 0))
+    beyond = np.empty(weights.size, dtype=bool)
     for lag in range(1, widest + 1):
-        weight = times[lag:] - times[:-lag]
-        far = weight > reach
+        weight = weights[: times.size - lag]
+        far = beyond[: weight.size]
+        np.subtract(times[lag:], times[:-lag], out=weight)
+        np.greater(weight, reach, out=far)
         # In place: exp(-0.5 * (dt / sigma) ** 2), the costly step of smoothing.
         weight /= sigma
         np.square(weight, out=weight)
         weight *= -0.5
         np.exp(weight, out=weight)
-        weight[far] = 0.0
+        np.putmask(weight, far, 0.0)
         yield lag, weight
-
-
-def smooth_in_time(
-    values: NDArray[np.float64],
-    times: NDArray[np.float64],
-    run_bounds: NDArray[np.intp],
-    sigma: float,
-) -> NDArray[np.float64]:
-    """Gaussian-weighted mean in time of the finite rows of each run.
-
-    Runs are smoothed independently (:func:`smooth_run_in_time`).
-
-    Parameters
-    ----------
-    values : NDArray[np.float64], shape (n_samples,) or (n_samples, n_dims)
-    times : NDArray[np.float64], shape (n_samples,)
-        Strictly increasing within each run, in seconds.
-    run_bounds : NDArray[np.intp], shape (n_runs, 2)
-        Inclusive first and last sample of each run.
-    sigma : float
-        Positive standard deviation in seconds.
-
-    Returns
-    -------
-    NDArray[np.float64], same shape as ``values``
-        NaN at non-finite rows and outside every run.
-    """
-    smoothed = np.full(values.shape, np.nan)
-    for first, last in run_bounds:
-        run = slice(first, last + 1)
-        smoothed[run] = smooth_run_in_time(values[run], times[run], sigma)
-    return smoothed
 
 
 def smooth_run_in_time(
@@ -214,14 +180,21 @@ def smooth_run_in_time(
         weighted = np.vstack([np.where(defined[:, None], table, 0.0).T, defined])
         sums = weighted.copy()
         product = np.empty(table.shape[0])
+        # With every row defined the weight row is all ones, so w adds to
+        # its sums unscaled.
+        ones = bool(defined.all())
+        scaled = weighted[:-1] if ones else weighted
         # Each pair (i, i + k) within reach adds to both samples.
         for k, w in gaussian_pair_weights(times, sigma):
             buffer = product[: w.size]
-            for row, total in zip(weighted, sums, strict=True):
+            for row, total in zip(scaled, sums[: len(scaled)], strict=True):
                 np.multiply(w, row[k:], out=buffer)
                 total[:-k] += buffer
                 np.multiply(w, row[:-k], out=buffer)
                 total[k:] += buffer
+            if ones:
+                sums[-1, :-k] += w
+                sums[-1, k:] += w
         smoothed[defined] = (sums[:-1, defined] / sums[-1, defined]).T
     result: NDArray[np.float64] = smoothed.reshape(values.shape)
     return result

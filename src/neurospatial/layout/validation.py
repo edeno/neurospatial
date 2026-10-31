@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_finite_real
 
 
 def validate_cell_size(
@@ -122,13 +123,7 @@ def validate_count_threshold(value: int) -> int:
     >>> validate_count_threshold(3)
     3
     """
-    if (
-        isinstance(value, (bool, np.bool_))
-        or not isinstance(value, (int, float, np.integer, np.floating))
-        or not np.isfinite(value)
-        or value < 0
-        or value != int(value)
-    ):
+    if not is_finite_real(value, positive=False) or value != int(value):
         raise ValueError(
             _format_error(
                 f"bin_count_threshold must be a non-negative whole number of "

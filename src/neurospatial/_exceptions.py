@@ -117,27 +117,29 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         argument: str | None = "region_name",
         in_list: bool = False,
     ) -> None:
-        if available:
-            what = (
-                f"Region '{name}' not found. Available regions: {sorted(available)!r}."
-            )
-        elif available is not None:
-            what = f"Region '{name}' not found. This environment has no regions."
-        else:
-            what = f"Region '{name}' not found."
-        matches = (
-            get_close_matches(name, available or [], n=1)
-            if isinstance(name, str)
-            else []
-        )
-
         def use(region: str) -> str:
             if argument is None:
                 return f"use {region!r}"
             value = f"[{region!r}]" if in_list else repr(region)
             return f"pass {argument}={value}"
 
-        if not isinstance(name, str):
+        if isinstance(name, str):
+            what = f"Region '{name}' not found."
+            if available:
+                what += f" Available regions: {sorted(available)!r}."
+            elif available is not None:
+                what += " This environment has no regions."
+            matches = get_close_matches(name, available or [], n=1)
+            if matches:
+                fix = use(matches[0])
+            else:
+                then = "" if argument is None else f", then {use(name)}"
+                fix = (
+                    "create regions = Regions(env.regions.values()); "
+                    f"regions.add({name!r}, point=(x, y)) (or polygon=...); "
+                    f"env = env.with_regions(regions){then}."
+                )
+        else:
             what = (
                 f"Region name {name!r} was not found; region names must be strings."
                 if argument is None
@@ -160,15 +162,6 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
                     "regions.add('home', point=(x, y)) (or polygon=...); "
                     f"env = env.with_regions(regions){then}."
                 )
-        elif matches:
-            fix = use(matches[0])
-        else:
-            then = "" if argument is None else f", then {use(name)}"
-            fix = (
-                "create regions = Regions(env.regions.values()); "
-                f"regions.add({name!r}, point=(x, y)) (or polygon=...); "
-                f"env = env.with_regions(regions){then}."
-            )
         super().__init__(_format_error(what, fix=fix))
         self.region_name = name
         self.available = available

@@ -399,18 +399,6 @@ def test_broken_xarray_install_is_not_reported_as_missing(
     assert excinfo.value is error
 
 
-def test_build_population_dataset_rejects_duplicate_unit_ids():
-    """The shared Dataset builder keeps its own guard for callers that bypass
-    the result constructors."""
-    pytest.importorskip("xarray")
-    from neurospatial._results import build_population_dataset
-
-    with pytest.raises(ValueError, match=r"duplicated.*1"):
-        build_population_dataset(
-            np.zeros((3, 4)), np.asarray([1, "a", 1], dtype=object)
-        )
-
-
 @pytest.mark.parametrize(
     "family", ("spatial", "view", "allocentric", "egocentric", "directional")
 )
@@ -420,18 +408,4 @@ def test_singular_to_xarray_matches_batch_row(rate_family_results, family):
     for i in range(3):
         xr.testing.assert_identical(
             result[i].to_xarray(), result.to_xarray().isel(unit_id=[i])
-        )
-
-
-def test_population_dataset_refuses_env_and_bin_centers_together():
-    from neurospatial import Environment
-    from neurospatial._results import build_population_dataset
-
-    env = Environment.from_samples(np.arange(0.0, 20.0, 1.0)[:, None], bin_size=5.0)
-    with pytest.raises(ValueError, match="both env and bin_centers"):
-        build_population_dataset(
-            np.ones((1, env.n_bins)),
-            np.array([0]),
-            env=env,
-            bin_centers=np.zeros(env.n_bins),
         )

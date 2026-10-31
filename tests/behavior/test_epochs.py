@@ -204,6 +204,16 @@ def test_in_epochs_bad_closed_raises_even_on_empty_epochs() -> None:
         in_epochs(np.array([1.0]), np.empty((0, 2)), closed="garbage")
 
 
+def test_restrict_spike_trains_bad_closed_raises_without_trains() -> None:
+    """``closed`` is checked before any train is masked."""
+    from neurospatial.behavior import restrict_spike_trains
+
+    with pytest.raises(
+        ValueError, match=r"restrict_spike_trains\(\) got closed='inner'"
+    ):
+        restrict_spike_trains([], (0.0, 5.0), closed="inner")
+
+
 # ---------------------------------------------------------------------------
 # restrict: aligned multi-array slicing
 # ---------------------------------------------------------------------------

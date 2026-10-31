@@ -360,7 +360,7 @@ class TestErrorAgainst:
     def test_result_rejects_nan_self_times(self, small_2d_env):
         """A NaN decode time is refused when the result is built."""
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
-        with pytest.raises(ValueError, match="times must be finite"):
+        with pytest.raises(ValueError, match="times has 1 non-finite value"):
             DecodingResult(
                 posterior=posterior,
                 env=small_2d_env,

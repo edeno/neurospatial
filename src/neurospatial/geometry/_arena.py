@@ -27,6 +27,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import is_finite_real
 from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
@@ -906,12 +907,8 @@ class TrackArena(_CappedContainment, ReadOnlyState):
             )
         width = self.width
         if width is not None:
-            if (
-                isinstance(width, (bool, np.bool_))
-                or not isinstance(width, (int, float, np.integer, np.floating))
-                or not np.isfinite(width)
-                or width / 2 <= 0
-            ):
+            # Half the width must also be representable.
+            if not is_finite_real(width, positive=False) or width / 2 <= 0:
                 raise _error(
                     "width must be a finite positive full track width or None.",
                     "supply a measured full width, or None for unknown geometry",

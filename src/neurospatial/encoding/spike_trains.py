@@ -46,7 +46,6 @@ from neurospatial._results import (
     UnitSelectionMixin,
     _copy_unit_table,
     align_unit_table,
-    read_only_copy,
     resolve_record_unit_ids,
 )
 from neurospatial._spikes import (
@@ -109,7 +108,8 @@ class SpikeTrains(UnitSelectionMixin):
     Attributes
     ----------
     trains : tuple of ndarray
-        The per-unit ``float64`` spike-time arrays. Both the ``tuple`` and its
+        The per-unit ``float64`` spike-time arrays, each in time order (a
+        train given out of order is sorted). Both the ``tuple`` and its
         arrays are read-only, so in-place mutation raises. Build a new
         :class:`SpikeTrains` to change the trains.
     unit_ids : ndarray
@@ -163,7 +163,7 @@ class SpikeTrains(UnitSelectionMixin):
             trains = list(self.trains)
         coerced: list[NDArray[np.float64]] = []
         for i, train in enumerate(trains):
-            arr = read_only_copy(train, np.float64)
+            arr = np.array(train, dtype=np.float64)
             if arr.ndim != 1:
                 raise ValueError(
                     f"Each spike train must be 1-D, but train {i} has shape "
@@ -172,14 +172,17 @@ class SpikeTrains(UnitSelectionMixin):
                     "  Fix: pass a 1-D array of spike times for each unit."
                 )
             coerced.append(arr)
-        # Store as a tuple so in-place mutation (e.g. ``st.trains.append(...)``)
-        # raises, keeping the ``len(unit_ids) == len(trains)`` invariant intact.
-        object.__setattr__(self, "trains", tuple(coerced))
-
         resolve_record_unit_ids(
             self, len(coerced), context="SpikeTrains", input_ids=group_ids
         )
         require_finite_spike_times(coerced, self.unit_ids)
+        for arr in coerced:
+            if np.any(arr[1:] < arr[:-1]):
+                arr.sort()  # an owned copy, so sorting in place is safe
+            arr.setflags(write=False)
+        # Store as a tuple so in-place mutation (e.g. ``st.trains.append(...)``)
+        # raises, keeping the ``len(unit_ids) == len(trains)`` invariant intact.
+        object.__setattr__(self, "trains", tuple(coerced))
 
         object.__setattr__(
             self,

@@ -16,9 +16,11 @@ The main function is `as_spike_trains()`, which accepts:
 - a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains, pandas
   ``Series`` of per-unit arrays) → one train per unit
 
-Every spike time must be finite. This coercion happens at the entry point of
-encoding, decoding and peri-event functions, ensuring consistent internal
-handling regardless of how the user provides spike data.
+Every spike time must be finite; times may be negative (before the recording's
+time origin) and in any order, and each 1-D train is returned in time order.
+This coercion happens at the entry point of encoding, decoding and peri-event
+functions, ensuring consistent internal handling regardless of how the user
+provides spike data.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import _is_pynapple_object
 from neurospatial._pynapple import is_pynapple_type, tsgroup_unit_table
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
 from neurospatial._validation import timestamps_of
@@ -71,7 +72,8 @@ def as_spike_trains(
     -------
     list[NDArray[np.float64]]
         List of 1D spike time arrays, one per neuron. Each array contains
-        the spike times for that neuron in float64 dtype.
+        the spike times for that neuron in float64 dtype, in time order: a
+        train given out of order is sorted, and negative times are kept.
 
     Raises
     ------
@@ -137,7 +139,7 @@ _SPIKE_FORMS = (
 )
 
 
-def _refuse_spike_raster(arr: NDArray[np.float64], unit: int | None) -> None:
+def _refuse_spike_raster(arr: NDArray[np.float64], which: str) -> None:
     """Refuse a spike raster passed where spike times are expected.
 
     A raster marks spikes per time sample (boolean, or 0/1 integers or
@@ -147,13 +149,15 @@ def _refuse_spike_raster(arr: NDArray[np.float64], unit: int | None) -> None:
     repeats a value is a raster, because one unit cannot fire twice at the
     same instant. Distinct times such as ``[0, 1]`` or ``[0, 1, 2]`` are kept.
     """
+    # The min/max bound rejects real spike times cheaply; NaN fails it too.
     if not (
-        arr.ndim >= 1
+        arr.size
+        and arr.min() >= 0.0
+        and arr.max() <= 1.0
         and np.isin(arr, (0.0, 1.0)).all()
         and np.any(np.diff(np.sort(arr, axis=-1), axis=-1) == 0)
     ):
         return
-    which = "spike_times" if unit is None else f"spike_times for unit {unit}"
     raise ValueError(
         _format_error(
             f"{which} holds only 0s and 1s with repeats: a spike raster "
@@ -184,8 +188,25 @@ def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
                 fix="pass one 1-D array of spike times per unit.",
             )
         )
-    _refuse_spike_raster(arr, unit)
+    _refuse_spike_raster(arr, which)
     return arr
+
+
+def _refuse_non_finite(train: NDArray[np.float64], which: str) -> None:
+    """Refuse a train holding NaN or infinite spike times."""
+    bad = np.flatnonzero(~np.isfinite(train))
+    if bad.size:
+        raise ValueError(
+            _format_error(
+                f"{which} has {bad.size} NaN or infinite value(s), first at "
+                f"index {int(bad[0])}.",
+                why="Why: a spike time is an observed event; a missing one "
+                "cannot be counted in any time bin, so dropping it "
+                "silently would bias counts low.",
+                fix="remove missing spikes before the call, e.g. "
+                "train[np.isfinite(train)].",
+            )
+        )
 
 
 def require_finite_spike_times(
@@ -201,20 +222,50 @@ def require_finite_spike_times(
         Labels used in the message; positions when None.
     """
     for i, train in enumerate(trains):
-        bad = np.flatnonzero(~np.isfinite(train))
-        if bad.size:
+        if not np.isfinite(train).all():
             label = i if unit_ids is None else plain_value(unit_ids[i])
-            raise ValueError(
-                _format_error(
-                    f"spike_times for unit {label!r} has {bad.size} NaN or "
-                    f"infinite value(s), first at index {int(bad[0])}.",
-                    why="Why: a spike time is an observed event; a missing one "
-                    "cannot be counted in any time bin, so dropping it "
-                    "silently would bias counts low.",
-                    fix="remove missing spikes before the call, e.g. "
-                    "train[np.isfinite(train)].",
-                )
-            )
+            _refuse_non_finite(train, f"spike_times for unit {label!r}")
+
+
+def in_time_order(train: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return a finite 1-D train sorted in time, or itself when already sorted.
+
+    Spike trains merged from several sources, or exported per channel, need
+    not be in time order; every analysis reads them sorted.
+    """
+    if np.any(train[1:] < train[:-1]):
+        return np.sort(train)
+    return train
+
+
+def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
+    """Coerce one unit's spike times to a finite 1-D float64 array in time order.
+
+    Parameters
+    ----------
+    spike_times : array-like or one-unit train
+        A 1-D array, a list of scalars, a pynapple ``Ts``/``Tsd`` or a pandas
+        ``Series`` of spike times in seconds.
+
+    Returns
+    -------
+    ndarray, shape (n_spikes,)
+
+    Raises
+    ------
+    ValueError
+        If the input is not 1-D, is a spike raster, or holds a NaN or
+        infinite value.
+
+    Examples
+    --------
+    >>> from neurospatial._spikes import as_spike_train
+    >>> as_spike_train([0.5, -0.2, 0.1])
+    array([-0.2,  0.1,  0.5])
+    """
+    train = _one_d_train(spike_times, None)
+    _refuse_non_finite(train, "spike_times")
+    return in_time_order(train)
 
 
 def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
@@ -253,7 +304,7 @@ def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
 
 def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
     """Split a 2-D ``(n_units, max_spikes)`` array, removing trailing NaN."""
-    _refuse_spike_raster(arr, None)
+    _refuse_spike_raster(arr, "spike_times")
     n_rows, n_cols = arr.shape
     if n_cols == 1 and n_rows > 1:
         raise ValueError(
@@ -269,8 +320,9 @@ def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
                 "1-D arrays.",
             )
         )
-    rows_decrease = bool(np.any(np.diff(arr, axis=1) < 0))
-    if rows_decrease and n_rows > 1 and not np.any(np.diff(arr, axis=0) < 0):
+    steps_down = np.diff(arr, axis=1) < 0
+    decreasing = np.flatnonzero(steps_down.any(axis=1))
+    if decreasing.size and n_rows > 1 and not np.any(np.diff(arr, axis=0) < 0):
         raise ValueError(
             _format_error(
                 f"spike_times of shape {arr.shape} looks transposed: its "
@@ -280,10 +332,9 @@ def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
                 fix="if each column is one unit, pass spike_times.T.",
             )
         )
-    decreasing = np.flatnonzero((np.diff(arr, axis=1) < 0).any(axis=1))
     if decreasing.size:
         row = int(decreasing[0])
-        col = int(np.flatnonzero(np.diff(arr[row]) < 0)[0])
+        col = int(np.flatnonzero(steps_down[row])[0])
         raise ValueError(
             _format_error(
                 f"spike_times row(s) {decreasing[:5].tolist()} decrease, first "
@@ -327,10 +378,9 @@ def _single_train(obj: Any) -> Any | None:
     """
     if isinstance(obj, Mapping):
         return None
-    if _is_pynapple_object(obj):
-        t = getattr(obj, "t", None)
-        if t is not None and np.ndim(t) == 1:
-            return t
+    times = timestamps_of(obj, name="spike_times")
+    if times is not obj:
+        return times
     if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
         values = obj.to_numpy()
         if values.dtype == object and any(np.ndim(v) > 0 for v in values):
@@ -458,7 +508,7 @@ def _as_spike_trains_with_ids(
     """
     trains, unit_ids = _coerce_spike_input(spike_times)
     require_finite_spike_times(trains, unit_ids)
-    return trains, unit_ids
+    return [in_time_order(train) for train in trains], unit_ids
 
 
 def as_labelled_spike_trains(
@@ -466,8 +516,8 @@ def as_labelled_spike_trains(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     *,
     context: str,
-) -> tuple[list[NDArray[np.float64]], NDArray[Any], bool]:
-    """Coerce population spike input and resolve one label per train.
+) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
+    """Coerce population spike input and resolve any labels it is given.
 
     Parameters
     ----------
@@ -482,11 +532,10 @@ def as_labelled_spike_trains(
     Returns
     -------
     trains : list of ndarray, each shape (n_spikes,)
-    unit_ids : ndarray, shape (n_units,)
-        ``unit_ids``, else the labels a spike group carries, else ``arange``.
-    labels_supplied : bool
-        Whether the labels came from the caller (``unit_ids`` or a spike
-        group's own labels) rather than the ``arange`` default.
+    unit_ids : ndarray, shape (n_units,), or None
+        ``unit_ids``, else the labels a spike group carries, validated. None
+        when neither supplies labels: a result record given None numbers
+        the units ``0..n_units-1`` and marks the labels generated.
 
     Raises
     ------
@@ -500,16 +549,20 @@ def as_labelled_spike_trains(
     >>> import numpy as np
     >>> from neurospatial._spikes import as_labelled_spike_trains
     >>> trains = [np.array([0.1, 0.5]), np.array([0.2])]
-    >>> _, ids, supplied = as_labelled_spike_trains(trains, None, context="demo")
-    >>> ids.tolist(), supplied
-    ([0, 1], False)
-    >>> _, ids, supplied = as_labelled_spike_trains(trains, ["a", "b"], context="demo")
-    >>> ids.tolist(), supplied
-    (['a', 'b'], True)
+    >>> _, ids = as_labelled_spike_trains(trains, None, context="demo")
+    >>> ids is None
+    True
+    >>> _, ids = as_labelled_spike_trains(trains, ["a", "b"], context="demo")
+    >>> ids.tolist()
+    ['a', 'b']
     """
     trains, input_ids = _coerce_spike_input(spike_times)
-    resolved = resolve_unit_ids(
-        unit_ids, len(trains), context=context, input_ids=input_ids
+    labels = (
+        None
+        if unit_ids is None and input_ids is None
+        else resolve_unit_ids(
+            unit_ids, len(trains), context=context, input_ids=input_ids
+        )
     )
-    require_finite_spike_times(trains, resolved)
-    return trains, resolved, unit_ids is not None or input_ids is not None
+    require_finite_spike_times(trains, labels)
+    return [in_time_order(train) for train in trains], labels

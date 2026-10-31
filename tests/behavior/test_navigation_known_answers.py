@@ -436,7 +436,11 @@ class TestHeadingDirectionLabels:
             (np.zeros((3, 1)), np.ones(3), r"1-D headings.*\(3, 1\)"),
             (np.zeros(3), np.ones((1, 3)), r"1-D speeds.*\(1, 3\)"),
             (np.zeros(()), np.ones(()), r"1-D headings"),
-            (np.array([0.0, np.inf, 0.0]), np.ones(3), r"infinite heading at sample 1"),
+            (
+                np.array([0.0, np.inf, 0.0]),
+                np.ones(3),
+                r"infinite value\(s\) in headings, first at index 1",
+            ),
             (np.zeros(3), np.array([1.0, -0.5, 1.0]), r"speeds\[1\] = -0.5"),
             (np.zeros(3), np.array([1.0, 1.0, np.inf]), r"speeds\[2\] = inf"),
         ],
@@ -514,7 +518,7 @@ class TestTrialHelpersOnAnotherClock:
     @pytest.mark.parametrize(
         ("times", "match"),
         [
-            (np.array([0.0, 2.0, 1.0, 3.0]), "non-decreasing"),
+            (np.array([0.0, 2.0, 1.0, 3.0]), "decreases"),
             (np.array([0.0, 1.0, 1.0, 3.0]), "strictly increasing"),
             (np.array([0.0, np.nan, 2.0, 3.0]), "non-finite"),
         ],

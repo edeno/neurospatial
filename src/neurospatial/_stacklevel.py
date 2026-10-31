@@ -6,16 +6,20 @@ This module has no internal dependencies, so every package tier can use it.
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import warnings
 from collections.abc import Iterator
 from functools import cached_property
-from pathlib import Path
 
 # Not resolved: frame filenames come from the same sys.path entry as
 # __file__, so resolving only this side would never match when the package
-# is imported through a symlink.
-_PACKAGE_DIR = Path(__file__).parent
+# is imported through a symlink. A string, not a Path, keeps the separators
+# as they appear in frame filenames.
+_PACKAGE_DIR = os.path.dirname(__file__)  # noqa: PTH120
+# A file of the package starts with its directory and a separator; compared
+# as strings because frames are walked for every warning.
+_PACKAGE_PREFIXES = tuple({_PACKAGE_DIR + "/", _PACKAGE_DIR + os.sep})
 
 
 def _external_stacklevel(skip: int = 0) -> int:
@@ -28,7 +32,7 @@ def _external_stacklevel(skip: int = 0) -> int:
     frame = sys._getframe(1 + skip)
     level = 1 + skip
     while frame.f_back is not None and (
-        Path(frame.f_code.co_filename).is_relative_to(_PACKAGE_DIR)
+        frame.f_code.co_filename.startswith(_PACKAGE_PREFIXES)
         or frame.f_code is cached_property.__get__.__code__
     ):
         frame = frame.f_back

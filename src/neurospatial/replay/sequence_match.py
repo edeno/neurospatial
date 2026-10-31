@@ -108,10 +108,7 @@ def burst_onset_times(spike_times: Any, *, max_isi: float) -> list[NDArray[np.fl
     from neurospatial._spikes import as_spike_trains
 
     _check_seconds(max_isi, "max_isi", "burst_onset_times()", allow_zero=True)
-    return [
-        _onsets(train, max_isi)
-        for train in _sorted_trains(as_spike_trains(spike_times))
-    ]
+    return [_onsets(train, max_isi) for train in as_spike_trains(spike_times)]
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -276,7 +273,7 @@ def spike_words(
                 fix="use max_isi <= word_gap, e.g. max_isi=0.05, word_gap=0.1",
             )
         )
-    trains = _sorted_trains(as_spike_trains(spike_times))
+    trains = as_spike_trains(spike_times)
     selected = np.ones(len(trains), dtype=bool)
     if cells is not None:
         selected = np.asarray(cells)
@@ -856,13 +853,6 @@ def _check_index_options(
     )
 
 
-def _sorted_trains(trains: list[NDArray[np.float64]]) -> list[NDArray[np.float64]]:
-    return [
-        train if train.size < 2 or np.all(np.diff(train) >= 0) else np.sort(train)
-        for train in trains
-    ]
-
-
 def _onsets(train: NDArray[np.float64], max_isi: float) -> NDArray[np.float64]:
     """Burst onsets of one sorted train: spikes at least max_isi after the last."""
     keep = np.ones(train.size, dtype=bool)
@@ -942,7 +932,7 @@ def _matched_trains(
     from neurospatial.replay.rank_order import _require_same_cells
 
     _require_same_cells(len(trains), ranks.size, operation)
-    return _sorted_trains(trains)
+    return trains
 
 
 def _event_letters(

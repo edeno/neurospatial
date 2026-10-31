@@ -113,19 +113,15 @@ def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording
 
 
 def test_home_range_dwell_excludes_pause(two_epoch_recording):
-    from neurospatial.behavior.trajectory import _sample_dwell_times
-
+    """Dwell is env.occupancy's: the pause between the epochs adds nothing."""
     r = two_epoch_recording
-    mask = observed_interval_mask(r.times, max_gap=0.5, epochs=None)
-    weights = _sample_dwell_times(r.times, mask, np.ones(r.times.size, dtype=bool))
-    assert weights.sum() == pytest.approx(200.0, rel=0, abs=1e-9)
-    assert weights[4999] == pytest.approx(0.02, rel=0, abs=1e-12)
-    assert weights[-1] == pytest.approx(0.02, rel=0, abs=1e-12)
+    totals = r.env.occupancy(r.times, r.positions, max_gap=0.5)
+    dt = np.diff(r.times)
+    assert totals.sum() == pytest.approx(dt[dt <= 0.5].sum(), rel=0, abs=1e-9)
     bins = r.env.bin_at(r.positions)
-    totals = np.bincount(bins, weights=weights, minlength=r.env.n_bins)
-    visited = np.unique(bins)
+    visited = np.flatnonzero(totals)
     ordered = visited[np.argsort(totals[visited])[::-1]]
-    count = np.searchsorted(np.cumsum(totals[ordered]) / weights.sum() * 100, 95) + 1
+    count = np.searchsorted(np.cumsum(totals[ordered]) / totals.sum() * 100, 95) + 1
     # The home range is the occupancy level set at the 95 % cutoff: every bin
     # with as much dwell as the cutoff bin (equal sample counts at 50 Hz give
     # dwell equal up to roundoff).
@@ -238,10 +234,15 @@ def test_home_range_without_observations_is_empty(two_epoch_recording):
 
 
 def test_full_home_range_excludes_zero_dwell_bins():
+    """Bins whose samples start no observed interval hold no dwell.
+
+    As in ``env.occupancy``, sample 214 starts only the excluded 996 s gap and
+    the isolated last sample starts no interval.
+    """
     times = np.r_[np.arange(215) * 0.02, 1000.0]
     bins = np.arange(len(times))
     observed = compute_home_range(bins, times=times, percentile=100)
-    np.testing.assert_array_equal(np.sort(observed), bins[:-1])
+    np.testing.assert_array_equal(np.sort(observed), bins[:-2])
     # The isolated sample is still a visit when timestamps are absent.
     untimed = compute_home_range(bins, percentile=100)
     np.testing.assert_array_equal(np.sort(untimed), bins)
@@ -376,23 +377,16 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     assert result.trial_results[0].head_sweep_magnitude == expected_sweep
 
 
-def test_duplicate_timestamps_give_undefined_not_infinite_speed():
-    """A zero-length interval has no velocity; it must not become inf."""
-    import warnings
-
-    from neurospatial.behavior._kinematics import interval_velocity
+def test_repeated_timestamps_are_refused_before_any_velocity():
+    """A zero-length interval has no velocity, so a repeated timestamp is refused."""
+    from neurospatial.behavior import compute_speed
     from neurospatial.behavior.decisions import pre_decision_speed_stats
 
     times = np.array([0.0, 0.1, 0.1, 0.2, 0.3])
     positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.5, 0.0], [2.5, 0.0], [3.5, 0.0]])
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        velocity = interval_velocity(times, positions, np.ones(4, dtype=bool))
-    assert np.all(np.isnan(velocity[1]))
-    np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
-    # The public speed statistics refuse a repeated timestamp outright.
-    with pytest.raises(ValueError, match="strictly increasing"):
-        pre_decision_speed_stats(times, positions)
+    for call in (pre_decision_speed_stats, compute_speed):
+        with pytest.raises(ValueError, match="repeat the one before"):
+            call(times, positions)
 
 
 def test_one_dimensional_positions_give_track_speed():

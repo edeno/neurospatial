@@ -29,7 +29,11 @@ from neurospatial._results import (
     resolve_unit_ids,
 )
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._time_bins import _time_bin_rounding, _time_bins_in_windows
+from neurospatial._time_bins import (
+    _edge_rounding,
+    _time_bin_rounding,
+    _time_bins_in_windows,
+)
 from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
@@ -117,7 +121,7 @@ def _inner_bounds(
     that ends exactly at an epoch's stop (``0.1 + 0.2`` against ``0.3``)
     would read as leaving it. Test containment with these bounds instead.
     """
-    slack = 4.0 * np.spacing(np.maximum(np.abs(starts), np.abs(stops)))
+    slack = _edge_rounding(starts, stops)
     return starts + slack, stops - slack
 
 

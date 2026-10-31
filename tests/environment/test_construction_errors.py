@@ -152,14 +152,9 @@ def test_mistake_says_what_why_and_fix(mistake):
     ids=["from_samples", "open_field"],
 )
 @pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])
-def test_infinite_positions_are_missing_samples_like_nan(build, layout):
-    """An infinite coordinate is not a place in the arena: it is left out."""
+def test_infinite_positions_are_refused(build, layout):
+    """NaN marks a missing sample; an infinite coordinate is not a measurement."""
     with_inf = _POSITIONS.copy()
     with_inf[5, 0], with_inf[6, 1] = np.inf, -np.inf
-    with_nan = _POSITIONS.copy()
-    with_nan[5, 0] = with_nan[6, 1] = np.nan
-    from_inf = build(with_inf, bin_size=4.0, layout=layout)
-    from_nan = build(with_nan, bin_size=4.0, layout=layout)
-    np.testing.assert_array_equal(from_inf.bin_centers, from_nan.bin_centers)
-    np.testing.assert_array_equal(from_inf.edge_pairs, from_nan.edge_pairs)
-    assert np.isinf(with_inf[5, 0])  # the caller's array is not changed
+    with pytest.raises(ValueError, match=r"2 infinite value\(s\) in positions"):
+        build(with_inf, bin_size=4.0, layout=layout)

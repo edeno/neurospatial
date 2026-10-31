@@ -306,7 +306,7 @@ for call in (
     try:
         call()
     except ValueError as err:
-        print(err)
+        print(str(err).splitlines()[0])
 """
 
 
@@ -333,6 +333,6 @@ def test_invalid_method_message_lists_options_in_declared_order():
         "got 'invalid'"
     )
     assert view == (
-        "method must be one of ['diffusion_kde', 'gaussian_kde', 'binned'], "
-        "got 'invalid'"
+        "Rate estimation got method='invalid'; method must be one of "
+        "'diffusion_kde', 'gaussian_kde', 'binned'."
     )

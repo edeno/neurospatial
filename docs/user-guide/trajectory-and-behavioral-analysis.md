@@ -683,11 +683,15 @@ before filtering visits, since omitted visit identifiers are not bridged.
 Entry-to-entry `duration` includes source dwell time. Use
 `detect_runs_between_regions` below for source-exit to target-entry intervals.
 
-A sample outside the environment (bin `-1`) is missing: it is skipped as if
-its row were deleted, and the gap around it is bridged when the valid samples on
-either side are no more than `max_gap` apart. Only a longer gap, a declared break
-(`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch edge
-breaks observation continuity; none of them fabricates an exit or an entry. Valid bins outside all selected regions are observed travel. Singleton
+A sample at bin `-1` (outside the environment, or a missing sample) is not
+located. As in `env.occupancy`, an interval with either sample at `-1` is not
+observed, so it breaks observation continuity like a gap longer than `max_gap`,
+a declared break (`break_before`, see [Joined Recordings](#joined-recordings))
+or an epoch edge; none of them fabricates an exit or an entry. The same rule
+holds for crossings, runs, laps, trials and the home range. To bridge short
+tracking dropouts instead, delete the missing rows before binning: a deleted
+row is bridged when the samples on either side are no more than `max_gap`
+apart. Valid bins outside all selected regions are observed travel. Singleton
 observations are retained as zero-duration, doubly censored visits. Empty event
 lists remain empty; check for an empty list before grouping a DataFrame made
 from it.

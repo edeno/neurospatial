@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_finite_real
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import Arena, Binning, TrackArena
 
@@ -53,12 +52,7 @@ def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivati
                 "environments as they are",
             )
         )
-    if (
-        isinstance(width, (bool, np.bool_))
-        or not isinstance(width, (int, float, np.integer, np.floating))
-        or not np.isfinite(width)
-        or width <= 0
-    ):
+    if not is_finite_real(width, positive=True):
         raise ValueError(
             _format_error(
                 f"with_track_width() takes a finite positive width, got {width!r}.",

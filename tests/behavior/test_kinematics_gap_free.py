@@ -29,6 +29,12 @@ window is renormalized there instead of repeating the end sample, and the
 angular path efficiencies changed by less than 3e-8 because pairs exactly
 four widths apart are now always counted. The ``heading_from_velocity_smoothed``
 golden now leaves samples slower than ``min_speed`` without a heading.
+The ``compute_home_range`` entry was captured again when time-weighted dwell
+became the start-allocated occupancy of ``env.occupancy``: the last sample
+of the recording starts no interval, so it no longer receives the run's
+median interval. Bin 19 (29 samples, the last) now holds 28 intervals, as
+bin 18 does, and the tie is listed in ascending bin order: ``[18, 19, ...]``
+instead of ``[19, 18, ...]``.
 """
 
 import json

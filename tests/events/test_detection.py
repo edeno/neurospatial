@@ -373,7 +373,10 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([0.0, 1.0, 2.0, 2.0, 3.0])
         positions = np.array([[0.0], [1.0], [2.0], [50.0], [3.0]])
 
-        with pytest.raises(ValueError, match=r"strictly increasing.*== 2 at index 2"):
+        with pytest.raises(
+            ValueError,
+            match=r"strictly increasing; 1 timestamp\(s\) repeat the one before, first 2.0 at indices 2 and 3",
+        ):
             add_positions(events, times=times, positions=positions)
 
     @pytest.mark.parametrize(

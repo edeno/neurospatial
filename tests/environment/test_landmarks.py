@@ -81,6 +81,12 @@ def test_near_reports_gaze_on_a_landmark(landmarks):
     )
 
 
+@pytest.mark.parametrize("tolerance", [None, True, -1.0, np.nan, np.inf, "2"])
+def test_near_refuses_a_tolerance_that_is_not_a_distance(landmarks, tolerance):
+    with pytest.raises(ValueError, match="tolerance must be finite and nonnegative"):
+        landmarks.near(np.zeros((1, 2)), "monitor", tolerance=tolerance)
+
+
 @pytest.mark.parametrize(
     ("arguments", "match"),
     [

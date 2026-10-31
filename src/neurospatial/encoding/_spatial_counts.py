@@ -31,13 +31,18 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
+    IntervalGates,
     TimeSupport,
     fill_missing_positions,
     hold_last_valid,
+    interval_gates,
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
     start_allocated_occupancy,
+    start_allocation,
+    times_in_intervals,
+    validate_speed_gate,
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
@@ -65,11 +70,17 @@ _DROP_WARN_THRESHOLD = 0.5  # warn when fraction dropped exceeds this
 
 @dataclass(frozen=True)
 class LinearSpatialIntervals:
-    """Owned fractional support prepared once for a spatial encoding call."""
+    """Owned fractional support prepared once for a spatial encoding call.
+
+    ``gates`` is the observation mask with the gates that built it, for the
+    excluded-interval warning; None when it was prepared from a supplied
+    ``interval_mask``, which its resolver already reported.
+    """
 
     support: TimeSupport
     pieces: tuple[_RetainedLinearInterval, ...]
     occupancy: NDArray[np.float64]
+    gates: IntervalGates | None
 
 
 def _validate_time_allocation(time_allocation: str) -> None:
@@ -144,8 +155,9 @@ def prepare_linear_spatial_intervals(
     # This checks known nonmaterializable Arena support before any cell work.
     _uses_polygon_allocation(binning, arena)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    gates: IntervalGates | None = None
     if interval_mask is None:
-        mask = interval_valid_mask(
+        gates = interval_gates(
             times,
             speed=speed,
             min_speed=min_speed,
@@ -155,16 +167,20 @@ def prepare_linear_spatial_intervals(
             break_before=break_before,
             sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         )
+        observed = gates.mask
     else:
-        mask = np.array(interval_mask, dtype=bool, copy=True)
-        if mask.shape != (max(len(times) - 1, 0),):
+        observed = np.asarray(interval_mask, dtype=bool)
+        if observed.shape != (max(len(times) - 1, 0),):
             raise ValueError(
                 "interval_mask must contain one value per observation interval."
             )
     # A bridged gap is one straight segment between its valid samples.
     positions = fill_missing_positions(times, positions, time_allocation="linear")
     finite = np.all(np.isfinite(positions), axis=1)
-    mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
+    keep = finite[:-1] & finite[1:]
+    mask = observed & keep
+    if gates is not None:
+        gates = gates.narrowed(keep)
     pieces, occupancy = _polygon_linear_occupancy(
         binning, arena, times, positions, mask, return_seconds=True
     )
@@ -204,7 +220,7 @@ def prepare_linear_spatial_intervals(
         break_before=break_before,
         runs=np.asarray(runs, dtype=np.float64).reshape(-1, 2),
     )
-    return LinearSpatialIntervals(support, pieces, occupancy)
+    return LinearSpatialIntervals(support, pieces, occupancy, gates)
 
 
 def resolve_speed(
@@ -280,33 +296,14 @@ def resolve_speed(
     pass the gate. Pass ``speed=`` to use another definition, for example
     speed along a linearized track.
     """
-    if min_speed is None:
-        if speed is not None:
-            # Asymmetric footgun: a caller passing `speed` without `min_speed`
-            # would otherwise have it silently ignored (no filtering applied).
-            # env.occupancy raises the mirror case (min_speed without speed),
-            # so raise here too rather than swallow `speed`.
-            raise ValueError(
-                "speed was provided without min_speed; pass "
-                "min_speed=<threshold> to enable speed filtering, or omit "
-                "speed."
-            )
-        # No filtering requested: callers pass no speed gate.
-        return None
-
     times = np.asarray(times, dtype=np.float64)
+    if speed is not None or min_speed is None:
+        # The shared check of the speed gate: speed without min_speed would
+        # be silently ignored.
+        return validate_speed_gate(speed, min_speed, len(times))
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
-
-    if speed is not None:
-        speed_arr = np.asarray(speed, dtype=np.float64)
-        if len(speed_arr) != len(times):
-            raise ValueError(
-                f"speed length ({len(speed_arr)}) must match times length "
-                f"({len(times)})."
-            )
-        return speed_arr
 
     from neurospatial._intervals import interval_valid_mask
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
@@ -392,10 +389,12 @@ def _start_frame_bins(
 ) -> NDArray[np.intp]:
     """Bin of each frame under ``"start"`` allocation, shape (n_samples,).
 
-    A missing frame holds the last valid position, so a bridged gap's dwell
-    time and spikes go to the bin where it started.
+    A missing frame holds the last valid frame's bin
+    (:func:`~neurospatial._intervals.hold_last_valid`), so a bridged gap's
+    dwell time and spikes go to the bin where it started.
     """
-    return env.bin_at(fill_missing_positions(times, positions, time_allocation="start"))
+    finite = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    return hold_last_valid(env.bin_at(positions), finite, fill=-1)
 
 
 def _spike_track(
@@ -529,12 +528,9 @@ def _bin_spike_train_with_stats(
         spike_bins = track.frame_bins[spike_interval]
     else:
         runs = linear_intervals.support.runs
-        if len(runs) == 0:
-            spike_times_valid = spike_times_valid[:0]
-        elif len(spike_times_valid) > 0:
-            run = np.searchsorted(runs[:, 0], spike_times_valid, side="right") - 1
-            keep = (run >= 0) & (spike_times_valid < runs[np.maximum(run, 0), 1])
-            spike_times_valid = spike_times_valid[keep]
+        spike_times_valid = spike_times_valid[
+            times_in_intervals(runs, spike_times_valid)
+        ]
         n_after_time = len(spike_times_valid)
         if n_after_time == 0:
             return spike_counts, n_time_dropped, 0, n_total, 0
@@ -606,7 +602,8 @@ class FrameBinning:
     """Prepared frame geometry and time support shared by counts and occupancy.
 
     ``frame_bins`` holds each missing sample at the bin of the last valid
-    one; ``sample_valid`` (None when every sample is valid) records which
+    one; ``gates`` is the interval mask with the gates that built it, and
+    its ``sample_valid`` (None when every sample is valid) records which
     samples were observed.
     """
 
@@ -614,9 +611,8 @@ class FrameBinning:
     frame_bins: NDArray[np.intp]
     n_bins: int
     support: TimeSupport
-    break_before: NDArray[np.bool_] | None = None
+    gates: IntervalGates
     samples: Literal["positions", "headings"] = "positions"
-    sample_valid: NDArray[np.bool_] | None = None
 
     def count(
         self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
@@ -626,54 +622,34 @@ class FrameBinning:
 
 
 def prepare_frame_binning(
-    times: NDArray[np.float64],
+    gates: IntervalGates,
     frame_bins: NDArray[np.intp],
     n_bins: int,
     *,
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
-    spike_window: NDArray[np.float64] | None,
-    interval_mask: NDArray[np.bool_] | None = None,
-    break_before: NDArray[np.bool_] | None = None,
     samples: Literal["positions", "headings"] = "positions",
-    sample_valid: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
-    A supplied ``interval_mask`` already includes temporal and bin validity
-    (including ``break_before`` and ``sample_valid``); geometry consumers can
-    share that gate without evaluating windows again. ``break_before`` is
-    already validated. ``samples`` names what ``frame_bins`` bins, for the
-    empty-support warning. ``sample_valid`` (False at missing samples, such
-    as NaN coordinates or headings) bridges missing samples like deleted
-    rows: each missing frame holds the bin of the last valid frame, so a
-    bridged gap's time and spikes go to the bin where it started.
+    ``gates`` holds the final interval mask, with temporal and bin validity
+    (including declared breaks and missing samples), and the gates that
+    built it (:func:`~neurospatial._intervals.interval_gates`), so geometry
+    consumers can share one gate. ``samples`` names what ``frame_bins``
+    bins, for the empty-support warning. Missing samples
+    (``gates.sample_valid`` False, such as NaN coordinates or headings) are
+    bridged like deleted rows: each missing frame holds the bin of the last
+    valid frame, so a bridged gap's time and spikes go to the bin where it
+    started.
     """
-    if interval_mask is None:
-        mask = interval_valid_mask(
-            times,
-            start_bin=frame_bins,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-            break_before=break_before,
-            sample_valid=sample_valid,
-        )
-    else:
-        # Geometry consumers may already have resolved the shared gate.
-        mask = interval_mask
     support = TimeSupport.from_mask(
-        times,
-        mask,
-        epochs=epochs,
-        spike_window=spike_window,
-        max_gap=max_gap,
-        break_before=break_before,
+        gates.times,
+        gates.mask,
+        epochs=gates.epochs,
+        spike_window=gates.spike_window,
+        max_gap=gates.max_gap,
+        break_before=gates.break_before,
     )
-    held = hold_last_valid(frame_bins, sample_valid, fill=-1)
-    return FrameBinning(
-        times, held, n_bins, support, break_before, samples, sample_valid
-    )
+    held = hold_last_valid(frame_bins, gates.sample_valid, fill=-1)
+    return FrameBinning(gates.times, held, n_bins, support, gates, samples)
 
 
 def count_frames_and_occupancy(
@@ -687,15 +663,7 @@ def count_frames_and_occupancy(
     support = prepared.support
     mask = support.mask
     warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=support.max_gap,
-        epochs=support.epochs,
-        spike_window=support.spike_window,
-        start_bin_gate=True,
-        samples=prepared.samples,
-        break_before=prepared.break_before,
-        result="the rate map is empty",
+        prepared.gates, samples=prepared.samples, result="the rate map is empty"
     )
     if len(times):
         all_spikes = (
@@ -731,7 +699,7 @@ def count_frames_and_occupancy(
     return spike_counts, occupancy
 
 
-def _spatial_interval_mask(
+def _spatial_interval_gates(
     env: Environment,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -742,7 +710,7 @@ def _spatial_interval_mask(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.bool_]:
+) -> IntervalGates:
     """Compute the per-interval validity mask once for a whole trajectory.
 
     The interval-valid mask depends only on ``(times, positions, env, speed,
@@ -784,27 +752,21 @@ def _spatial_interval_mask(
 
     Returns
     -------
-    ndarray of bool, shape (n_samples - 1,)
-        Shared validity; empty when fewer than two samples form an interval.
+    IntervalGates
+        Shared validity, shape (n_samples - 1,) (empty when fewer than two
+        samples form an interval), with the gates that built it.
     """
-    from neurospatial._intervals import interval_valid_mask
-
-    sample_bins = env.bin_at(positions)
-    valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
-    return interval_valid_mask(
+    return start_allocation(
         times,
+        env.bin_at(positions),
+        np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        start_bin=sample_bins,
-        # Complete-case rule, shared with env.occupancy: a gap counts only
-        # when both of its samples are inside the environment.
-        require_end_bin=True,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
-        sample_valid=valid,
-    )
+    ).gates
 
 
 def _resolve_spatial_time_support(
@@ -852,22 +814,16 @@ def _resolve_spatial_time_support(
                     UserWarning,
                     stacklevel=_external_stacklevel(),
                 )
-            else:
+            elif linear_intervals.gates is not None:
+                # Prepared from a supplied mask, already reported by its resolver.
                 warn_excluded_intervals(
-                    times,
-                    support.mask,
-                    max_gap=max_gap,
-                    epochs=support.epochs,
-                    spike_window=support.spike_window,
-                    min_speed=min_speed,
-                    start_bin_gate=True,
-                    break_before=break_before,
+                    linear_intervals.gates,
                     result="the rate map is empty",
                     suppress_hint=_WARN_ON_DROP_HINT,
                 )
         return support
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    interval_mask = _spatial_interval_mask(
+    gates = _spatial_interval_gates(
         env,
         times,
         positions.reshape(-1, 1) if positions.ndim == 1 else positions,
@@ -880,20 +836,11 @@ def _resolve_spatial_time_support(
     )
     if warn_on_drop:
         warn_excluded_intervals(
-            times,
-            interval_mask,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-            min_speed=min_speed,
-            start_bin_gate=True,
-            break_before=break_before,
-            result="the rate map is empty",
-            suppress_hint=_WARN_ON_DROP_HINT,
+            gates, result="the rate map is empty", suppress_hint=_WARN_ON_DROP_HINT
         )
     return TimeSupport.from_mask(
         times,
-        interval_mask,
+        gates.mask,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         max_gap=max_gap,
@@ -1162,7 +1109,7 @@ def _resolve_spatial_mask(
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
-        interval_mask = _spatial_interval_mask(
+        interval_mask = _spatial_interval_gates(
             env,
             times,
             positions,
@@ -1171,7 +1118,7 @@ def _resolve_spatial_mask(
             max_gap=max_gap,
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
-        )
+        ).mask
     return interval_mask, None
 
 

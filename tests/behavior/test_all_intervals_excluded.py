@@ -164,7 +164,12 @@ def test_coarse_sampling_warns_at_call_site(coarse_track, name):
     assert messages[0].filename == __file__
 
 
-@pytest.mark.parametrize("name", sorted(CALLS))
+# Bin-based detectors take bins, where a NaN row is bin -1: not located, so
+# it is never bridged (see test_unlocated_rows_are_not_bridged_by_bin_detectors).
+_POSITION_CALLS = sorted(set(CALLS) - {"detect_region_crossings"})
+
+
+@pytest.mark.parametrize("name", _POSITION_CALLS)
 def test_gaps_across_missing_samples_warn_at_call_site(nan_bridged_track, name):
     # The shared warning judges the intervals left after missing samples are
     # bridged, not each sampling interval on its own.
@@ -180,12 +185,22 @@ def test_gaps_across_missing_samples_warn_at_call_site(nan_bridged_track, name):
 
 
 # The session helper asserts the coarse track's per-trial warnings.
-@pytest.mark.parametrize("name", sorted(set(CALLS) - {"compute_vte_session"}))
+@pytest.mark.parametrize("name", sorted(set(_POSITION_CALLS) - {"compute_vte_session"}))
 def test_bridging_the_missing_samples_is_silent(nan_bridged_track, name):
     env, times, positions = nan_bridged_track
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=0.25)
+
+
+def test_unlocated_rows_are_not_bridged_by_bin_detectors(nan_bridged_track):
+    """Every interval touches a bin -1 row, so none is observed at any max_gap."""
+    env, times, positions = nan_bridged_track
+    with pytest.warns(
+        UserWarning, match=r"excluded ALL.*samples out of bounds or at NaN positions"
+    ) as record:
+        CALLS["detect_region_crossings"](env, times, positions, max_gap=None)
+    assert record[0].filename == __file__
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
