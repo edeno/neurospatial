@@ -601,13 +601,6 @@ def replay_significance(
     >>> print(f"r = {result.observed.score:.2f}, p = {result.p_value:.3f}")
     r = 1.00, p = 0.005
     """
-    from neurospatial.replay.nulls import (
-        shuffle_cell_identity,
-        shuffle_posterior_circular,
-        shuffle_posterior_weighted_circular,
-        shuffle_spike_counts_circular,
-        shuffle_spike_counts_uniform,
-    )
     from neurospatial.stats import _ensure_rng
 
     if isinstance(posterior, Mapping):
@@ -631,6 +624,76 @@ def replay_significance(
             n_shuffles=n_shuffles,
             rng=rng,
         )
+    _check_test_options(n_shuffles, alternative, empty_time_bins)
+    decoded_posterior = np.asarray(posterior, dtype=np.float64)
+    if empty_time_bins == "zero":
+        posterior = _zeroed_event_rows(decoded_posterior, spike_counts)
+    score, options = _unwrap_partial(score, dict(score_options or {}))
+    spec = _score_specs().get(score)
+    if use_absolute is None:
+        use_absolute = spec is not None and spec.signed
+    generator = _ensure_rng(rng)
+    if _takes_rng(score) and "rng" not in options:
+        options["rng"] = int(generator.integers(2**63 - 1))
+    track_env = _track_env(env, encoding_models, template)
+    # One template's share of a joint decode keeps its joint weights only for
+    # a score built for them; any other score sees the conditional posterior.
+    conditional = template is not None and not _uses_joint_weights(score, options)
+    if conditional:
+        posterior = _conditional_rows(posterior)
+    scorer = _scorer_for(score, track_env, posterior, times, options)
+    run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
+    options_of = _checked_null_options(null_options, run, _OPERATION)
+    _check_nulls_fit_event(run, times, dt, options, empty_time_bins)
+    pool = (
+        _validated_pool(pseudo_event_pool, track_env)
+        if any(name in run for name in _POOL_NULLS)
+        else None
+    )
+
+    observed_result = scorer.observe()
+    observed = _observed_statistic(observed_result, score, spec, use_absolute)
+    decoder = None
+    if any(name in run for name in _DECODING_NULLS):
+        # _nulls_to_run runs these nulls only when all three inputs are given.
+        assert encoding_models is not None and dt is not None
+        decoder = _EventDecoder(env, encoding_models, dt, prior, template)
+    event = _EventShuffles(
+        track_env=track_env,
+        posterior=scorer.posterior,
+        generator=generator,
+        n_shuffles=n_shuffles,
+        options=options_of,
+        pool=pool,
+        decoder=decoder,
+        counts=None if decoder is None else np.asarray(spike_counts),
+        conditional=conditional,
+        zero_empty=empty_time_bins == "zero",
+    )
+    null_scores = _null_scores(run, scorer, event, decoded_posterior)
+    shuffles = _shuffle_tests(
+        observed,
+        {
+            name: _statistic(scores, use_absolute)
+            for name, scores in null_scores.items()
+        },
+        score=float(observed_result.score),
+        alternative=alternative,
+        n_shuffles=n_shuffles,
+        stacklevel=3,
+    )
+    return ReplaySignificanceResult(
+        observed=observed_result,
+        shuffles=shuffles,
+        alternative=alternative,
+        use_absolute=use_absolute,
+    )
+
+
+def _check_test_options(
+    n_shuffles: Any, alternative: Any, empty_time_bins: Any
+) -> None:
+    """Refuse a shuffle count, alternative or empty-bin rule that is not offered."""
     if not is_integer_at_least(n_shuffles, 1):
         raise ValueError(
             f"{_OPERATION} needs n_shuffles to be a positive integer, got "
@@ -647,25 +710,34 @@ def replay_significance(
             f"{_OPERATION}: empty_time_bins must be 'keep' or 'zero', got "
             f"{empty_time_bins!r}."
         )
-    decoded_posterior = np.asarray(posterior, dtype=np.float64)
-    if empty_time_bins == "zero":
-        if spike_counts is None:
-            raise ValueError(
-                _format_error(
-                    f"{_OPERATION}: empty_time_bins='zero' needs spike_counts.",
-                    why="the time bins whose posterior is set to zero are those "
-                    "without spikes",
-                    fix="pass the event's spike_counts, one row per posterior row",
-                )
+
+
+def _zeroed_event_rows(
+    posterior: NDArray[np.float64], spike_counts: NDArray[Any] | None
+) -> NDArray[np.float64]:
+    """The event's posterior with ``empty_time_bins="zero"`` applied."""
+    if spike_counts is None:
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: empty_time_bins='zero' needs spike_counts.",
+                why="the time bins whose posterior is set to zero are those "
+                "without spikes",
+                fix="pass the event's spike_counts, one row per posterior row",
             )
-        posterior = _zero_empty_rows(decoded_posterior, np.asarray(spike_counts))
-    score, options = _unwrap_partial(score, dict(score_options or {}))
-    spec = _score_specs().get(score)
-    if use_absolute is None:
-        use_absolute = spec is not None and spec.signed
-    generator = _ensure_rng(rng)
-    if _takes_rng(score) and "rng" not in options:
-        options["rng"] = int(generator.integers(2**63 - 1))
+        )
+    return _zero_empty_rows(posterior, np.asarray(spike_counts))
+
+
+def _track_env(
+    env: Environment | Mapping[str, Environment],
+    encoding_models: Any,
+    template: str | None,
+) -> Environment:
+    """The environment the scored posterior is on.
+
+    Refuses a ``template`` without a mapping of ``encoding_models`` (or the
+    reverse), and a mapping of environments without a joint decode.
+    """
     joint = isinstance(encoding_models, Mapping)
     if joint != (template is not None):
         raise ValueError(
@@ -677,29 +749,35 @@ def replay_significance(
                 "or one set of rate maps without template",
             )
         )
-    if isinstance(env, Mapping):
-        # template is given exactly when the decode is joint (checked above).
-        if template is None:
-            raise ValueError(
-                _format_error(
-                    f"{_OPERATION}: a mapping of environments needs a joint decode.",
-                    why="one environment per template describes a joint decode over "
-                    "separate tracks",
-                    fix="pass every template's rate maps as encoding_models and "
-                    "template=name, or the one environment the posterior is on",
-                )
+    if not isinstance(env, Mapping):
+        return env
+    # template is given exactly when the decode is joint (checked above).
+    if template is None:
+        raise ValueError(
+            _format_error(
+                f"{_OPERATION}: a mapping of environments needs a joint decode.",
+                why="one environment per template describes a joint decode over "
+                "separate tracks",
+                fix="pass every template's rate maps as encoding_models and "
+                "template=name, or the one environment the posterior is on",
             )
-        track_env = env[template]
-    else:
-        track_env = env
-    # One template's share of a joint decode keeps its joint weights only for
-    # a score built for them; any other score sees the conditional posterior.
-    conditional = template is not None and not _uses_joint_weights(score, options)
-    if conditional:
-        posterior = _conditional_rows(posterior)
-    scorer = _scorer_for(score, track_env, posterior, times, options)
-    run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
-    options_of = _checked_null_options(null_options, run, _OPERATION)
+        )
+    return env[template]
+
+
+def _check_nulls_fit_event(
+    run: Sequence[str],
+    times: NDArray[np.float64],
+    dt: float | None,
+    score_options: Mapping[str, Any],
+    empty_time_bins: str,
+) -> None:
+    """Refuse nulls that cannot shuffle this event as it is given.
+
+    The nulls that spread spikes need contiguous time bins; spike counts in
+    ``score_options`` would not follow the nulls that move rows; and the
+    pseudo-event null has no spike counts to zero its empty time bins with.
+    """
     spreading = [name for name in run if name in _COUNT_CHANGING_NULLS]
     if spreading:
         assert dt is not None  # _nulls_to_run needs the decoding inputs.
@@ -707,7 +785,7 @@ def replay_significance(
             times, dt, spreading, overlap="spike_time_uniform" in run
         )
     moving = [name for name in run if name in _ROW_MOVING_NULLS]
-    if "spike_counts" in options and moving:
+    if "spike_counts" in score_options and moving:
         raise ValueError(
             _format_error(
                 f"{_OPERATION}: score_options holds spike_counts, but the "
@@ -733,140 +811,248 @@ def replay_significance(
                 fix="leave pseudo_event out of nulls, or use empty_time_bins='keep'",
             )
         )
-    if any(name in run for name in _POOL_NULLS):
-        pool = _validated_pool(pseudo_event_pool, track_env)
 
-    observed_result = scorer.observe()
+
+def _observed_statistic(
+    observed_result: Any,
+    score: Callable[..., Any],
+    spec: _ScoreSpec | None,
+    use_absolute: bool,
+) -> float:
+    """The event's tested statistic, refusing an undefined (NaN) score."""
     observed = float(_statistic(np.asarray([observed_result.score]), use_absolute)[0])
-    if not np.isfinite(observed):
-        example = (
-            spec.undefined
-            if spec is not None and spec.undefined
-            else f"{getattr(score, '__name__', 'the score')} is undefined for "
-            "this event, for example when the decoded position does not change"
+    if np.isfinite(observed):
+        return observed
+    example = (
+        spec.undefined
+        if spec is not None and spec.undefined
+        else f"{getattr(score, '__name__', 'the score')} is undefined for "
+        "this event, for example when the decoded position does not change"
+    )
+    raise _UndefinedScoreError(
+        _format_error(
+            f"{_OPERATION}: the event's score is {observed_result.score}.",
+            why="a score that is not a number cannot be compared with the "
+            f"shuffles; {example}",
+            fix="check the event's posterior, or choose a score defined for it",
         )
-        raise _UndefinedScoreError(
-            _format_error(
-                f"{_OPERATION}: the event's score is {observed_result.score}.",
-                why="a score that is not a number cannot be compared with the "
-                f"shuffles; {example}",
-                fix="check the event's posterior, or choose a score defined for it",
-            )
-        )
-    posterior = scorer.posterior
-    null_scores: dict[str, NDArray[np.float64]] = {}
+    )
 
-    if "column_cycle" in run:
-        shifted = shuffle_posterior_circular(
-            track_env,
-            posterior,
-            n_shuffles=n_shuffles,
-            rng=generator,
-            **options_of["column_cycle"],
-        )
-        null_scores["column_cycle"] = scorer.scores(shifted, n_shuffles)
 
-    if any(name in run for name in _DECODING_NULLS):
-        # _nulls_to_run runs these nulls only when all three inputs are given.
-        assert encoding_models is not None and dt is not None
-        counts = np.asarray(spike_counts)
-        decoder = _EventDecoder(env, encoding_models, dt, prior, template)
+@dataclass(frozen=True)
+class _EventShuffles:
+    """What the nulls of :func:`replay_significance` shuffle for one event.
+
+    Attributes
+    ----------
+    track_env : Environment
+        The environment the scored posterior is on.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        The event's posterior as it is scored: conditioned on the template
+        and with empty time bins zeroed, if the event's is.
+    generator : np.random.Generator
+        The stream every null draws from, one null after the other.
+    n_shuffles : int
+        Shuffles per null.
+    options : Mapping[str, Mapping[str, Any]]
+        Each null's options, from :func:`_checked_null_options`.
+    pool : NDArray[np.float64] or None, shape (n_pool, n_bins)
+        The checked pseudo-event pool; None when no null run uses it.
+    decoder : _EventDecoder or None
+        Decodes shuffled counts and rate maps; None when no null run decodes
+        again.
+    counts : NDArray[np.int64] or None, shape (n_time_bins, n_neurons)
+        The event's spike counts, for the nulls that decode again.
+    conditional : bool
+        Whether a shuffle's decoded posterior is conditioned on the template.
+    zero_empty : bool
+        Whether a shuffle's decoded time bins without spikes are zeroed.
+    """
+
+    track_env: Environment
+    posterior: NDArray[np.float64]
+    generator: np.random.Generator
+    n_shuffles: int
+    options: Mapping[str, Mapping[str, Any]]
+    pool: NDArray[np.float64] | None
+    decoder: _EventDecoder | None
+    counts: NDArray[np.int64] | None
+    conditional: bool
+    zero_empty: bool
+
+    def decoding(self) -> tuple[_EventDecoder, NDArray[np.int64]]:
+        """The decoder and the event's counts, for a null that decodes again."""
+        assert self.decoder is not None and self.counts is not None
+        return self.decoder, self.counts
+
+    def finish(self, decoded: Any, event_counts: Any) -> Any:
+        """A shuffle's decoded posterior, conditioned and zeroed as the event's."""
+        if self.conditional:
+            decoded = _conditional_rows(decoded)
+        if self.zero_empty:
+            return _zero_empty_rows(decoded, np.asarray(event_counts))
+        return decoded
+
+    def decode_each(self, shuffled_counts: Iterable[Any]) -> Iterator[Any]:
+        """Decode shuffled counts as the posterior was decoded."""
+        decoder, _ = self.decoding()
+        for decoded, event_counts in decoder.decode_each(shuffled_counts):
+            yield self.finish(decoded, event_counts)
+
+
+def _null_scores(
+    run: Sequence[str],
+    scorer: _Scorer,
+    event: _EventShuffles,
+    decoded_posterior: NDArray[np.float64],
+) -> dict[str, NDArray[np.float64]]:
+    """The score of every shuffle of each null in ``run``, in its order.
+
+    The nulls draw from ``event.generator`` one after the other, in the
+    order of ``run``. The column cycle needs only the posterior and is
+    drawn first; the decoding inputs are checked against
+    ``decoded_posterior``, the posterior as decoded, after it and before
+    any other null.
+    """
+    first = [name for name in run[:1] if name == "column_cycle"]
+    null_scores = {
+        name: scorer.scores(_SHUFFLED_POSTERIORS[name](event), event.n_shuffles)
+        for name in first
+    }
+    if event.decoder is not None:
+        decoder, counts = event.decoding()
         _require_reproducible_decode(decoder.decode(counts), decoded_posterior)
-
-        def finish(decoded: Any, event_counts: Any) -> Any:
-            """A shuffle's decoded posterior, conditioned and zeroed as the event's."""
-            if conditional:
-                decoded = _conditional_rows(decoded)
-            if empty_time_bins == "zero":
-                return _zero_empty_rows(decoded, np.asarray(event_counts))
-            return decoded
-
-        def decode_each(shuffled_counts: Iterable[Any]) -> Iterator[Any]:
-            """Decode shuffled counts as the posterior was decoded."""
-            for decoded, event_counts in decoder.decode_each(shuffled_counts):
-                yield finish(decoded, event_counts)
-
-    if "unit_identity" in run:
-        permuted = (
-            shuffled
-            for shuffled, _ in shuffle_cell_identity(
-                counts,
-                decoder.first_rates,
-                **options_of.get("unit_identity", {}),
-                n_shuffles=n_shuffles,
-                rng=generator,
-            )
+    for name in run[len(first) :]:
+        null_scores[name] = scorer.scores(
+            _SHUFFLED_POSTERIORS[name](event), event.n_shuffles
         )
-        null_scores["unit_identity"] = scorer.scores(decode_each(permuted), n_shuffles)
+    return null_scores
 
-    if "pseudo_event" in run:
-        draws = generator.integers(len(pool), size=(n_shuffles, len(posterior)))
-        null_scores["pseudo_event"] = scorer.scores(
-            (pool[rows] for rows in draws), n_shuffles
-        )
 
-    if "spike_train_circular" in run:
-        shifted_counts = shuffle_spike_counts_circular(
-            counts, n_shuffles=n_shuffles, rng=generator
-        )
-        null_scores["spike_train_circular"] = scorer.scores(
-            decode_each(shifted_counts), n_shuffles
-        )
+def _column_cycle_shuffles(event: _EventShuffles) -> Iterable[NDArray[np.float64]]:
+    """Each row shifted circularly along the track by a random distance."""
+    from neurospatial.replay.nulls import shuffle_posterior_circular
 
-    if "place_field_circular" in run:
-        null_scores["place_field_circular"] = scorer.scores(
-            (
-                finish(decoder.decode(counts, models), counts)
-                for models in decoder.shifted_models(n_shuffles, generator)
-            ),
-            n_shuffles,
-        )
-
-    if "time_bin_permutation" in run:
-        null_scores["time_bin_permutation"] = scorer.scores(
-            (
-                posterior[generator.permutation(len(posterior))]
-                for _ in range(n_shuffles)
-            ),
-            n_shuffles,
-        )
-
-    if "spike_time_uniform" in run:
-        spread_counts = shuffle_spike_counts_uniform(
-            counts, n_shuffles=n_shuffles, rng=generator
-        )
-        null_scores["spike_time_uniform"] = scorer.scores(
-            decode_each(spread_counts), n_shuffles
-        )
-
-    if "column_cycle_weighted" in run:
-        weighted = shuffle_posterior_weighted_circular(
-            track_env,
-            posterior,
-            _pool_mean(pool),
-            **options_of["column_cycle_weighted"],
-            n_shuffles=n_shuffles,
-            rng=generator,
-        )
-        null_scores["column_cycle_weighted"] = scorer.scores(weighted, n_shuffles)
-
-    shuffles = _shuffle_tests(
-        observed,
-        {
-            name: _statistic(scores, use_absolute)
-            for name, scores in null_scores.items()
-        },
-        score=float(observed_result.score),
-        alternative=alternative,
-        n_shuffles=n_shuffles,
-        stacklevel=3,
+    return shuffle_posterior_circular(
+        event.track_env,
+        event.posterior,
+        n_shuffles=event.n_shuffles,
+        rng=event.generator,
+        **event.options["column_cycle"],
     )
-    return ReplaySignificanceResult(
-        observed=observed_result,
-        shuffles=shuffles,
-        alternative=alternative,
-        use_absolute=use_absolute,
+
+
+def _unit_identity_shuffles(event: _EventShuffles) -> Iterable[NDArray[np.float64]]:
+    """The event's counts decoded with the units' rate maps permuted."""
+    from neurospatial.replay.nulls import shuffle_cell_identity
+
+    decoder, counts = event.decoding()
+    permuted = (
+        shuffled
+        for shuffled, _ in shuffle_cell_identity(
+            counts,
+            decoder.first_rates,
+            **event.options.get("unit_identity", {}),
+            n_shuffles=event.n_shuffles,
+            rng=event.generator,
+        )
     )
+    return event.decode_each(permuted)
+
+
+def _pseudo_event_shuffles(event: _EventShuffles) -> Iterable[NDArray[np.float64]]:
+    """Each time bin's row drawn, with replacement, from the pool."""
+    pool = event.pool
+    assert pool is not None  # _validated_pool runs for every pool null.
+    draws = event.generator.integers(
+        len(pool), size=(event.n_shuffles, len(event.posterior))
+    )
+    return (pool[rows] for rows in draws)
+
+
+def _spike_train_circular_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """The event decoded with each cell's counts shifted circularly in time."""
+    from neurospatial.replay.nulls import shuffle_spike_counts_circular
+
+    _, counts = event.decoding()
+    return event.decode_each(
+        shuffle_spike_counts_circular(
+            counts, n_shuffles=event.n_shuffles, rng=event.generator
+        )
+    )
+
+
+def _place_field_circular_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """The event decoded with each cell's rate map shifted along the track."""
+    decoder, counts = event.decoding()
+    return (
+        event.finish(decoder.decode(counts, models), counts)
+        for models in decoder.shifted_models(event.n_shuffles, event.generator)
+    )
+
+
+def _time_bin_permutation_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """The event's rows in random order."""
+    posterior, generator = event.posterior, event.generator
+    return (
+        posterior[generator.permutation(len(posterior))]
+        for _ in range(event.n_shuffles)
+    )
+
+
+def _spike_time_uniform_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """The event decoded with each cell's spikes spread uniformly over it."""
+    from neurospatial.replay.nulls import shuffle_spike_counts_uniform
+
+    _, counts = event.decoding()
+    return event.decode_each(
+        shuffle_spike_counts_uniform(
+            counts, n_shuffles=event.n_shuffles, rng=event.generator
+        )
+    )
+
+
+def _column_cycle_weighted_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """Each row's peak moved to a position drawn from the pool's mean row."""
+    from neurospatial.replay.nulls import shuffle_posterior_weighted_circular
+
+    pool = event.pool
+    assert pool is not None  # _validated_pool runs for every pool null.
+    return shuffle_posterior_weighted_circular(
+        event.track_env,
+        event.posterior,
+        _pool_mean(pool),
+        **event.options["column_cycle_weighted"],
+        n_shuffles=event.n_shuffles,
+        rng=event.generator,
+    )
+
+
+# Each null's shuffled posteriors, keyed like _NULL_SPECS.
+_SHUFFLED_POSTERIORS: Mapping[
+    str, Callable[[_EventShuffles], Iterable[NDArray[np.float64]]]
+] = MappingProxyType(
+    {
+        "column_cycle": _column_cycle_shuffles,
+        "unit_identity": _unit_identity_shuffles,
+        "pseudo_event": _pseudo_event_shuffles,
+        "spike_train_circular": _spike_train_circular_shuffles,
+        "place_field_circular": _place_field_circular_shuffles,
+        "time_bin_permutation": _time_bin_permutation_shuffles,
+        "spike_time_uniform": _spike_time_uniform_shuffles,
+        "column_cycle_weighted": _column_cycle_weighted_shuffles,
+    }
+)
 
 
 def _shuffle_tests(
