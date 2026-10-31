@@ -161,12 +161,24 @@ class TestVideoReaderCaching:
         _ = reader[3]
         assert reader.cache_info().currsize == 3
 
-        # Access frame 0 again (cache miss, re-read from disk)
+        # Frame 3 evicted frame 0, so reading it again is a miss too.
         _ = reader[0]
-        # Frame 1 should have been evicted
         info = reader.cache_info()
-        assert info.hits >= 0  # At least some hits from previous accesses
-        assert info.misses >= 5  # All initial accesses + evicted frame
+        assert info.hits == 0
+        assert info.misses == 5
+        _ = reader[0]
+        assert reader.cache_info().hits == 1
+
+    def test_cached_frame_is_read_only(self, tiny_video_path: Path):
+        """Editing a returned frame cannot change what the next read returns."""
+        reader = _VideoReader(tiny_video_path)
+        frame = reader[0]
+        expected = frame.copy()
+
+        with pytest.raises(ValueError, match="read-only"):
+            frame[:] = 255
+        np.testing.assert_array_equal(reader[0], expected)
+        assert reader.cache_info().hits == 1
 
     def test_reader_cache_size_parameter(self, tiny_video_path: Path):
         """Test that cache_size parameter is respected."""

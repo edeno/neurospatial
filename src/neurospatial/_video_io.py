@@ -305,6 +305,8 @@ class _VideoReader:
 
             # Cast for mypy (cv2 already returns uint8)
             result: NDArray[np.uint8] = frame.astype(np.uint8, copy=False)
+            # The cache hands this array to every later reader of the frame.
+            result.setflags(write=False)
             return result
         finally:
             cap.release()
@@ -320,7 +322,8 @@ class _VideoReader:
         Returns
         -------
         NDArray[np.uint8]
-            RGB frame array of shape (height, width, 3).
+            Read-only RGB frame array of shape (height, width, 3), shared
+            with the cache; copy it before editing.
 
         Raises
         ------
