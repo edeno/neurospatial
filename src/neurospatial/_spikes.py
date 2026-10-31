@@ -33,6 +33,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _is_pynapple_object
 from neurospatial._pynapple import is_pynapple_type, tsgroup_unit_table
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
+from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -132,10 +133,14 @@ _SPIKE_FORMS = (
 
 
 def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
-    """Return one train as a 1-D float64 array."""
-    arr = np.asarray(train, dtype=np.float64)
+    """Return one train as a 1-D float64 array.
+
+    A pynapple ``Ts``/``Tsd`` contributes its timestamps, not its data, by
+    every route: one train, a list of trains or a spike group.
+    """
+    which = "spike_times" if unit is None else f"spike_times for unit {unit}"
+    arr = np.asarray(timestamps_of(train, name=which), dtype=np.float64)
     if arr.ndim != 1:
-        which = "spike_times" if unit is None else f"spike_times for unit {unit}"
         raise ValueError(
             _format_error(
                 f"{which} must be 1-D, got shape {arr.shape}.",
@@ -316,10 +321,7 @@ def _coerce_spike_input(
     if isinstance(spike_times, Mapping):
         keys = index if index is not None and not callable(index) else spike_times
         unit_ids = as_label_array(list(keys))
-        trains = [
-            _one_d_train(getattr(spike_times[uid], "t", spike_times[uid]), i)
-            for i, uid in enumerate(unit_ids)
-        ]
+        trains = [_one_d_train(spike_times[uid], i) for i, uid in enumerate(unit_ids)]
     else:
         unit_ids = as_label_array(list(spike_times.index))
         trains = [_one_d_train(t, i) for i, t in enumerate(spike_times)]

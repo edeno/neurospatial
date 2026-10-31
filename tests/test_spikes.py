@@ -530,6 +530,27 @@ class TestSpikeInputBoundaries:
         assert not supplied
         np.testing.assert_array_equal(as_spike_trains(ts)[0], [0.1, 0.5, 1.2])
 
+    def test_pynapple_trains_read_by_timestamps_on_every_route(self) -> None:
+        """A Tsd carries data in its values; every route reads its timestamps."""
+        nap = pytest.importorskip("pynapple")
+        from neurospatial._spikes import as_spike_trains
+
+        a = nap.Tsd(t=np.array([1.0, 2.0, 3.0]), d=np.array([55.0, 60.0, 70.0]))
+        b = nap.Tsd(t=np.array([1.5, 2.5]), d=np.array([80.0, 90.0]))
+        for spikes in ([a, b], (a, b), {0: a, 1: b}):
+            trains = as_spike_trains(spikes)
+            np.testing.assert_array_equal(trains[0], [1.0, 2.0, 3.0])
+            np.testing.assert_array_equal(trains[1], [1.5, 2.5])
+
+    def test_t_attribute_of_other_objects_is_not_read(self) -> None:
+        """Only pynapple objects are read by ``.t``: an xarray DataArray with
+        a ``t`` dimension exposes its index there, not the spike times."""
+        xr = pytest.importorskip("xarray")
+        from neurospatial._spikes import as_spike_trains
+
+        train = xr.DataArray([0.5, 0.7], dims="t")
+        np.testing.assert_array_equal(as_spike_trains({0: train})[0], [0.5, 0.7])
+
     def test_dict_of_trains_keeps_unit_labels(self) -> None:
         from neurospatial._spikes import as_labelled_spike_trains
 
