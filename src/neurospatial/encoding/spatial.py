@@ -55,6 +55,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -3734,6 +3735,7 @@ def _spatial_rates_result(
     )
 
 
+@adopts_time_support
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -3912,6 +3914,8 @@ default="diffusion_kde"
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4117,6 +4121,7 @@ default="diffusion_kde"
     )
 
 
+@adopts_time_support
 def compute_spatial_rates(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -4268,6 +4273,8 @@ default="diffusion_kde"
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4952,6 +4959,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return ax
 
 
+@adopts_time_support
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -5017,6 +5025,8 @@ def compute_directional_place_fields(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_timepoints,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -5549,6 +5559,7 @@ def _keep_place_fields(
     return results
 
 
+@adopts_time_support
 def has_place_field(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -5616,6 +5627,8 @@ def has_place_field(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -5806,6 +5819,7 @@ def has_place_field(
     )
 
 
+@adopts_time_support
 def is_place_cell(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -5994,6 +6008,8 @@ def is_place_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -6242,6 +6258,7 @@ def _smoothed_bin_measures(
     return smallest
 
 
+@adopts_time_support
 def place_cell_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -6359,6 +6376,8 @@ def place_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -7106,6 +7125,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         return {"n_units": len(self), "n_shuffles": self.n_shuffles, **counts}
 
 
+@adopts_time_support
 def spatial_cell_type_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -7181,6 +7201,8 @@ def spatial_cell_type_significance(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Analyze only these half-open windows, in seconds.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a recording break before it.
     spike_window : same forms as ``epochs``, or None

@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial._validation import validate_float_dtype
@@ -153,6 +154,7 @@ def _warn_if_bins_drop_observed_time(
     )
 
 
+@adopts_time_support
 def decode_session(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -255,6 +257,8 @@ def decode_session(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_frames,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -803,6 +807,7 @@ def _decode_with_models(
     )
 
 
+@adopts_time_support
 def decode_session_summary(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -857,6 +862,8 @@ warn_on_drop, dtype
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_frames,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

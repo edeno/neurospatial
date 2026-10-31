@@ -124,6 +124,7 @@ from neurospatial._intervals import (
     recording_index,
     times_in_intervals,
 )
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._position_bins import validated_position_bins
@@ -1045,6 +1046,7 @@ def distance_to_region(
     )
 
 
+@adopts_time_support
 def distance_to_reward(
     env: Environment,
     times: NDArray[np.float64],
@@ -1113,6 +1115,8 @@ def distance_to_reward(
         reward a sample uses or where an inferred reward is: rewards are often
         delivered while the animal is still, outside running epochs, and their
         locations are still read from the tracked positions.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2336,6 +2340,7 @@ def goal_pair_direction_labels(
     return _interval_labels(times, intervals)
 
 
+@adopts_time_support
 def heading_direction_labels(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -2385,6 +2390,8 @@ def heading_direction_labels(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2815,6 +2822,7 @@ def _observed_path_length(
     return float(steps[counted].sum()), complete
 
 
+@adopts_time_support
 def traveled_path_length(
     times: ArrayLike,
     positions: ArrayLike,
@@ -2866,6 +2874,8 @@ def traveled_path_length(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3120,6 +3130,7 @@ def time_efficiency(
     return float(optimal_time / actual_time)
 
 
+@adopts_time_support
 def angular_efficiency(
     times: ArrayLike,
     positions: ArrayLike,
@@ -3172,6 +3183,8 @@ def angular_efficiency(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. A step must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3436,6 +3449,7 @@ def _angular_efficiency(
     return float(1.0 - np.sum(weight * angle) / (np.pi * np.sum(weight)))
 
 
+@adopts_time_support
 def subgoal_efficiency(
     env: Environment,
     times: ArrayLike,
@@ -3484,6 +3498,8 @@ def subgoal_efficiency(
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. Only samples inside a window are searched for the closest
         approach, and a step must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3649,6 +3665,7 @@ def subgoal_efficiency(
     )
 
 
+@adopts_time_support
 def compute_path_efficiency(
     env: Environment,
     times: ArrayLike,
@@ -3702,6 +3719,8 @@ def compute_path_efficiency(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3994,6 +4013,7 @@ def goal_direction(
     return np.arctan2(vec[:, 1], vec[:, 0])
 
 
+@adopts_time_support
 def instantaneous_goal_alignment(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4031,6 +4051,8 @@ def instantaneous_goal_alignment(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4161,6 +4183,7 @@ def _goal_alignment(
     return alignment
 
 
+@adopts_time_support
 def goal_bias(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4198,6 +4221,8 @@ def goal_bias(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4271,6 +4296,7 @@ def _mean_alignment(alignment: NDArray[np.float64]) -> float:
     return float(np.mean(moving)) if moving.size else np.nan
 
 
+@adopts_time_support
 def approach_rate(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4325,6 +4351,8 @@ def approach_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4457,6 +4485,7 @@ def _goal_distances(
     return paths.to_point(positions, goal_arr)
 
 
+@adopts_time_support
 def compute_goal_directed_metrics(
     env: Environment,
     times: NDArray[np.float64],
@@ -4513,6 +4542,8 @@ def compute_goal_directed_metrics(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

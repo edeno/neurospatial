@@ -374,3 +374,57 @@ def test_environment_coordinate_arguments_are_named_positions():
             if parameter in off_contract
         ]
     assert not offenders, offenders
+
+
+def _public_callables():
+    """Public functions and the public methods of public classes."""
+    seen = set()
+    for namespace in NAMESPACES:
+        module = importlib.import_module(namespace)
+        for name in module.__all__:
+            obj = getattr(module, name)
+            members = (
+                [
+                    getattr(obj, attr)
+                    for attr in dir(obj)
+                    if not attr.startswith("_")
+                    and inspect.isfunction(inspect.getattr_static(obj, attr))
+                ]
+                if inspect.isclass(obj)
+                else [obj]
+            )
+            for member in members:
+                if inspect.isfunction(member) and member not in seen:
+                    seen.add(member)
+                    yield member
+
+
+def test_sample_analyses_read_pynapple_time_support():
+    """Every analysis taking epochs and positions/headings adopts the support.
+
+    A pynapple ``positions`` or ``headings`` carries its recording epochs as
+    ``time_support``; with ``epochs=None`` the analysis must use them (and
+    say so in its ``epochs`` documentation) rather than bridge their gaps.
+    """
+    undecorated, undocumented = [], []
+    for function in _public_callables():
+        parameters = inspect.signature(function).parameters
+        if "epochs" not in parameters or not (
+            {"positions", "headings"} & set(parameters)
+        ):
+            continue
+        name = f"{function.__module__}.{function.__qualname__}"
+        if not getattr(function, "__adopts_time_support__", False):
+            undecorated.append(name)
+        lines = (inspect.getdoc(function) or "").splitlines()
+        starts = [i for i, line in enumerate(lines) if line.startswith("epochs : ")]
+        if starts:
+            entry = []
+            for line in lines[starts[0] + 1 :]:
+                if not line.startswith("    "):
+                    break
+                entry.append(line)
+            if "time_support" not in " ".join(entry):
+                undocumented.append(name)
+    assert not undecorated, sorted(undecorated)
+    assert not undocumented, sorted(undocumented)

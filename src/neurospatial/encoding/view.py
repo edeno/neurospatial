@@ -95,6 +95,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
@@ -1636,6 +1637,7 @@ def _view_information(
     return batch_spatial_information(_to_numpy(rates), occupancy)
 
 
+@adopts_time_support
 def compute_view_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -1717,6 +1719,8 @@ def compute_view_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1887,6 +1891,7 @@ def compute_view_rate(
     )
 
 
+@adopts_time_support
 def compute_view_rates(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -1980,6 +1985,8 @@ def compute_view_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2205,6 +2212,7 @@ def compute_view_rates(
 # ==============================================================================
 
 
+@adopts_time_support
 def is_spatial_view_cell(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -2288,6 +2296,8 @@ def is_spatial_view_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2481,6 +2491,7 @@ def is_spatial_view_cell(
     return rate_map().is_spatial_view_cell(min_info=min_info)
 
 
+@adopts_time_support
 def spatial_view_cell_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -2585,6 +2596,8 @@ def spatial_view_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

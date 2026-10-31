@@ -70,6 +70,7 @@ from neurospatial._intervals import (
     start_allocated_occupancy,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
@@ -1428,6 +1429,7 @@ class ObjectVectorRatesResult(
         return _object_vector_summary_frame(self, index=index_ids)
 
 
+@adopts_time_support
 def compute_egocentric_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -1527,6 +1529,8 @@ def compute_egocentric_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1693,6 +1697,7 @@ def compute_egocentric_rate(
     )
 
 
+@adopts_time_support
 def compute_object_vector_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -1785,6 +1790,8 @@ def compute_object_vector_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2416,6 +2423,7 @@ def _object_vector_rate(
     )
 
 
+@adopts_time_support
 def compute_egocentric_rates(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -2527,6 +2535,8 @@ def compute_egocentric_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2758,6 +2768,7 @@ def compute_egocentric_rates(
     )
 
 
+@adopts_time_support
 def compute_object_vector_rates(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -2862,6 +2873,8 @@ def compute_object_vector_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3449,6 +3462,7 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     return float(np.clip(distance_selectivity * direction_selectivity, 0.0, 1.0))
 
 
+@adopts_time_support
 def is_object_vector_cell(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -3543,6 +3557,8 @@ def is_object_vector_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3701,6 +3717,7 @@ def is_object_vector_cell(
     )
 
 
+@adopts_time_support
 def is_egocentric_object_vector_cell(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -3802,6 +3819,8 @@ def is_egocentric_object_vector_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4538,6 +4557,7 @@ def _object_vector_significance(
     return to_shuffle_results(observed, null, ids)
 
 
+@adopts_time_support
 def object_vector_cell_significance(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -4652,6 +4672,8 @@ def object_vector_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4772,6 +4794,7 @@ def object_vector_cell_significance(
     )
 
 
+@adopts_time_support
 def egocentric_object_vector_cell_significance(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -4893,6 +4916,8 @@ def egocentric_object_vector_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

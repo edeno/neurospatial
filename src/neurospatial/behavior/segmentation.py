@@ -90,6 +90,7 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
@@ -1049,6 +1050,7 @@ def _detect_runs_between_regions_contiguous(
     return runs
 
 
+@adopts_time_support
 def segment_by_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -1103,6 +1105,8 @@ def segment_by_velocity(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

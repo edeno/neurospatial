@@ -17,6 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_observations
+from neurospatial._pynapple import adopts_time_support
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.trajectory import (
     _invalid_result,
@@ -279,6 +280,7 @@ class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@adopts_time_support
 def resample_by_distance(
     times: ArrayLike,
     positions: ArrayLike,
@@ -329,6 +331,8 @@ def resample_by_distance(
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

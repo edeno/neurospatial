@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import adopts_time_support
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -641,6 +642,7 @@ warn_on_drop
             )
         return self.encoding_models
 
+    @adopts_time_support
     def fit(
         self,
         spike_times: SpikeTrainsLike,
@@ -691,6 +693,8 @@ warn_on_drop
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1079,6 +1083,7 @@ warn_on_drop
             **options,
         )
 
+    @adopts_time_support
     def score(
         self,
         spike_times: SpikeTrainsLike,
@@ -1138,6 +1143,8 @@ warn_on_drop
             same clock as ``times``). The interval between two consecutive samples
             counts only if it lies entirely inside one window. ``None`` (default)
             means unrestricted.
+            When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+            ``time_support``.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed

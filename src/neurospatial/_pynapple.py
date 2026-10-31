@@ -9,7 +9,10 @@ same rules to explicit conversions.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import functools
+import inspect
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -20,6 +23,8 @@ if TYPE_CHECKING:
     import pandas as pd
 
 _SPATIAL_AXES = ("x", "y", "z")
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 def is_pynapple_type(value: Any, *names: str) -> bool:
@@ -108,3 +113,85 @@ def tsgroup_unit_table(group: Any) -> pd.DataFrame | None:
     table = table.copy()
     table.index = table.index.rename("unit_id")
     return table
+
+
+_SAMPLE_ARGUMENTS = ("positions", "headings")
+
+
+def _support_rows(name: str, value: Any) -> NDArray[np.float64] | None:
+    """Check one pynapple sample argument and return its time support rows."""
+    if name == "positions" and hasattr(value, "columns"):
+        refuse_permuted_spatial_columns(value.columns, fix="positions={frame}")
+    support = getattr(value, "time_support", None)
+    return None if support is None else interval_rows(support)
+
+
+def adopts_time_support(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Read pynapple ``positions`` / ``headings`` with their time support.
+
+    Decorates a public function that takes ``epochs`` and ``positions`` or
+    ``headings``. When one of those samples is a pynapple ``Tsd`` or
+    ``TsdFrame``:
+
+    - a ``TsdFrame`` of positions whose columns are x/y/z in another order is
+      refused, as by :func:`neurospatial.io.from_pynapple`;
+    - with ``epochs=None``, its ``time_support`` (converted to half-open rows)
+      becomes ``epochs``, so a recording gap shorter than ``max_gap`` is not
+      counted as observed time. An explicit ``epochs=`` wins. Two samples
+      with different supports and no ``epochs`` are refused;
+    - the function receives the sample's values as a plain array.
+
+    Every other call runs the function unchanged. The signature, docstring
+    and ``__wrapped__`` are the function's own.
+    """
+    signature = inspect.signature(func)
+    names = list(signature.parameters)
+    samples = [(name, names.index(name)) for name in _SAMPLE_ARGUMENTS if name in names]
+    if not samples or "epochs" not in names:
+        raise TypeError(
+            f"adopts_time_support needs epochs and positions or headings "
+            f"parameters; {func.__qualname__} has {names}."
+        )
+
+    def given(name: str, position: int, args: Any, kwargs: Any) -> Any:
+        return args[position] if position < len(args) else kwargs.get(name)
+
+    @functools.wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        if not any(
+            _is_pynapple_object(given(name, position, args, kwargs))
+            for name, position in samples
+        ):
+            return func(*args, **kwargs)
+        bound = signature.bind(*args, **kwargs)
+        supports: dict[str, NDArray[np.float64]] = {}
+        for name, _ in samples:
+            value: Any = bound.arguments.get(name)
+            if not _is_pynapple_object(value):
+                continue
+            rows = _support_rows(name, value)
+            if rows is not None:
+                supports[name] = rows
+            bound.arguments[name] = np.asarray(value.values)
+        if bound.arguments.get("epochs") is None and supports:
+            bound.arguments["epochs"] = _shared_support(supports)
+        return func(*bound.args, **bound.kwargs)
+
+    wrapper.__adopts_time_support__ = True  # type: ignore[attr-defined]
+    return wrapper
+
+
+def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
+    """The one time support all pynapple samples share, else a refusal."""
+    (first, rows), *others = supports.items()
+    for name, other in others:
+        if not np.array_equal(rows, other):
+            raise ValueError(
+                f"{first} and {name} have different pynapple time supports, so "
+                "the epochs to analyze are ambiguous.\n"
+                "Why: with epochs=None each pynapple sample's time_support is "
+                "used as the epochs, and these disagree.\n"
+                f"Fix: pass epochs= explicitly, e.g. "
+                f"epochs={first}.time_support.intersect({name}.time_support)."
+            )
+    return rows

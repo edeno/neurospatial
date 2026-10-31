@@ -57,6 +57,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import adopts_time_support
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2395,6 +2396,7 @@ def _count_directional(
     )
 
 
+@adopts_time_support
 def compute_directional_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2465,6 +2467,7 @@ def compute_directional_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2590,6 +2593,7 @@ def compute_directional_rate(
     )
 
 
+@adopts_time_support
 def compute_directional_rates(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -2670,6 +2674,7 @@ def compute_directional_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2922,6 +2927,7 @@ def _directional_rates(
 # ==============================================================================
 
 
+@adopts_time_support
 def is_head_direction_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2991,6 +2997,7 @@ def is_head_direction_cell(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -3332,6 +3339,7 @@ def _shifted_mean_vector_lengths(
     return _mean_vector_lengths(rates_from_counts(spike_counts), bin_centers)
 
 
+@adopts_time_support
 def head_direction_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -3413,6 +3421,7 @@ def head_direction_cell_significance(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

@@ -196,3 +196,147 @@ def test_restrict_spike_trains_keeps_tsgroup_labels_and_metadata(group, session)
     for uid, train in zip([5, 6, 7], trains, strict=True):
         expected = train[(train >= 10.0) & (train < 20.0)]
         np.testing.assert_array_equal(kept.sel(unit_id=uid), expected)
+
+
+# ---------------------------------------------------------------------------
+# A pynapple TsdFrame / Tsd passed as positions or headings
+# ---------------------------------------------------------------------------
+
+# A 0.5 s tracking gap, shorter than the default max_gap, between two epochs.
+GAPPED = np.array([[0.0, 20.0], [20.5, 39.99]])
+
+
+@pytest.fixture
+def gapped(nap, session):
+    """The session's positions as a TsdFrame recorded in two epochs."""
+    _, times, positions, _ = session
+    support = nap.IntervalSet(start=GAPPED[:, 0], end=GAPPED[:, 1])
+    return nap.TsdFrame(t=times, d=positions, columns=["x", "y"], time_support=support)
+
+
+def _half_open(rows):
+    rows = np.array(rows, dtype=np.float64)
+    rows[:, 1] = np.nextafter(rows[:, 1], np.inf)
+    return rows
+
+
+def test_tsdframe_positions_keep_their_time_support_in_occupancy(gapped, session):
+    env = session[0]
+    times, positions = gapped.t, gapped.values
+
+    direct = env.occupancy(times, gapped)
+    with_epochs = env.occupancy(times, positions, epochs=gapped.time_support)
+    arrays_only = env.occupancy(times, positions)
+
+    # The 0.5 s gap is shorter than max_gap, so arrays alone count it.
+    assert arrays_only.sum() == pytest.approx(39.99)
+    assert with_epochs.sum() == pytest.approx(39.49)
+    np.testing.assert_array_equal(direct, with_epochs)
+
+
+def test_tsdframe_positions_record_the_adopted_epochs(gapped, session):
+    from neurospatial import compute_spatial_rates
+
+    env, _, _, trains = session
+    direct = compute_spatial_rates(env, trains, gapped.t, gapped, method="binned")
+    explicit = compute_spatial_rates(
+        env,
+        trains,
+        gapped.t,
+        gapped.values,
+        method="binned",
+        epochs=gapped.time_support,
+    )
+
+    np.testing.assert_array_equal(direct.occupancy, explicit.occupancy)
+    np.testing.assert_array_equal(direct.firing_rates, explicit.firing_rates)
+    assert np.nansum(direct.occupancy) == pytest.approx(39.49)
+    np.testing.assert_array_equal(
+        direct.analysis_settings["epochs"], _half_open(GAPPED)
+    )
+
+
+def test_explicit_epochs_win_over_the_time_support(gapped, session):
+    env = session[0]
+
+    narrowed = env.occupancy(gapped.t, gapped, epochs=(0.0, 10.0))
+
+    assert narrowed.sum() == pytest.approx(10.0)
+
+
+def test_decode_session_uses_the_positions_time_support(gapped, session):
+    from neurospatial.decoding import decode_session
+
+    env, _, _, trains = session
+    direct = decode_session(env, trains, gapped.t, gapped, dt=0.5)
+    explicit = decode_session(
+        env, trains, gapped.t, gapped.values, dt=0.5, epochs=gapped.time_support
+    )
+
+    np.testing.assert_array_equal(direct.times, explicit.times)
+    np.testing.assert_array_equal(direct.posterior, explicit.posterior)
+
+
+def test_compute_speed_uses_the_positions_time_support(gapped):
+    from neurospatial.behavior import compute_speed
+
+    direct = compute_speed(gapped.t, gapped)
+    explicit = compute_speed(gapped.t, gapped.values, epochs=gapped.time_support)
+
+    np.testing.assert_array_equal(direct, explicit)
+
+
+def test_tsd_headings_use_their_time_support(nap, gapped, session):
+    from neurospatial.encoding import compute_directional_rates
+
+    _, _, _, trains = session
+    values = gapped.values
+    angles = np.arctan2(np.gradient(values[:, 1]), np.gradient(values[:, 0]))
+    headings = nap.Tsd(t=gapped.t, d=angles, time_support=gapped.time_support)
+
+    direct = compute_directional_rates(trains, headings.t, headings)
+    explicit = compute_directional_rates(
+        trains, headings.t, angles, epochs=headings.time_support
+    )
+
+    np.testing.assert_array_equal(direct.occupancy, explicit.occupancy)
+    assert np.nansum(direct.occupancy) == pytest.approx(39.49)
+
+
+def test_positions_and_headings_with_different_supports_are_refused(
+    nap, gapped, session
+):
+    from neurospatial.encoding import compute_view_rate
+
+    other = nap.Tsd(
+        t=gapped.t,
+        d=np.zeros(len(gapped)),
+        time_support=nap.IntervalSet(start=0.0, end=39.99),
+    )
+    with pytest.raises(ValueError, match=r"different pynapple time supports"):
+        compute_view_rate(session[0], session[3][0], gapped.t, gapped, other)
+
+
+@pytest.mark.parametrize("columns", [["y", "x"], ["Y", "X"]])
+def test_permuted_tsdframe_positions_are_refused(nap, session, columns):
+    from neurospatial import compute_spatial_rates
+
+    env, times, positions, trains = session
+    frame = nap.TsdFrame(t=times, d=positions[:, ::-1], columns=columns)
+
+    with pytest.raises(ValueError, match=r"not in x, y, z order") as excinfo:
+        compute_spatial_rates(env, trains, times, frame)
+    assert f"positions=tsdframe.loc[{sorted(columns, key=str.lower)}]" in str(
+        excinfo.value
+    )
+    with pytest.raises(ValueError, match=r"not in x, y, z order"):
+        env.occupancy(times, frame)
+
+
+def test_ordered_tsdframe_positions_match_plain_arrays(nap, session):
+    env, times, positions, _ = session
+    frame = nap.TsdFrame(t=times, d=positions, columns=["x", "y"])
+
+    np.testing.assert_array_equal(
+        env.occupancy(times, frame), env.occupancy(times, positions)
+    )

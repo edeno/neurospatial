@@ -13,12 +13,14 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import sample_feature, validated_observations
+from neurospatial._pynapple import adopts_time_support
 from neurospatial.events._core import _event_times
 
 if TYPE_CHECKING:
     import pandas as pd
 
 
+@adopts_time_support
 def add_positions(
     events: pd.DataFrame,
     *,
@@ -62,6 +64,8 @@ def add_positions(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
