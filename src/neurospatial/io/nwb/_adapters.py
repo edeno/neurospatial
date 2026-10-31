@@ -310,12 +310,9 @@ def timestamps_handle_from_series(series: Any) -> Any:
 def validate_handle_lengths(name_to_length: dict[str, int]) -> None:
     """Raise ``ValueError`` if named lazy handles do not share a length.
 
-    The lazy counterpart to :func:`neurospatial._validation.validate_lengths`.
-    It takes **precomputed integer lengths** (read from a handle's ``.shape[0]``,
-    which an ``h5py.Dataset`` exposes WITHOUT materializing its values) instead
-    of arrays, so the length check on a lazy read stays lazy. The raised message
-    is byte-for-byte identical to the eager ``validate_lengths`` message, so a
-    lazy read raises exactly as the eager path does on a mismatch.
+    It takes precomputed integer lengths (``len(handle)`` or
+    ``handle.shape[0]``, which an ``h5py.Dataset`` exposes without reading
+    its values), so the check on a lazy read stays lazy.
 
     Parameters
     ----------

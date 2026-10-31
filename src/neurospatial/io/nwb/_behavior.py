@@ -66,8 +66,8 @@ def read_position(
         Frozen, non-iterable holder with ``times`` in seconds, ``positions``
         in the declared physical ``units`` after conversion and offset, and
         ``units=None`` when no unit is declared. Recognized unit aliases are
-        normalized to m/cm/mm/um/px without rescaling values. Arrays are eager
-        float64 by default; lazy handles remain inside the holder. ``frame``
+        normalized to m/cm/mm/um/px without rescaling values. Arrays are eager,
+        read-only float64 by default; lazy handles remain inside the holder. ``frame``
         preserves a nonempty SpatialSeries ``reference_frame`` verbatim,
         or is None when undeclared. No coordinate transform is inferred.
 
