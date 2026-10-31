@@ -21,6 +21,17 @@
 
 **Fixed**
 
+- A list of pynapple `Tsd` spike trains was read as their data values, not
+  their spike times; every route (one train, a list, a spike group) now reads
+  a pynapple train by its timestamps, and only pynapple objects are read by
+  `.t`.
+- A pair of pandas `Series` (or other 1-D arrays) as `epochs=` with two
+  windows was read as two rows, merging `[[0, 5], [10, 15]]` into `[0, 15]`.
+  Any pair of non-list 1-D arrays is now refused as ambiguous; pass
+  `np.column_stack([starts, stops])` or an `(n, 2)` array. A `(2, n)` array
+  gets the same hint.
+- Warnings that replay and reactivation comparisons re-emit with context are
+  no longer lost when the comparison then raises.
 - A `TsGroup` passed to a population encoder or
   `population_peri_event_histogram` keeps its metadata as `unit_table`
   (pynapple's computed `rate` column is dropped). `SpikeTrains` metadata now
