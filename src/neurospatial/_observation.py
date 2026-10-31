@@ -44,7 +44,6 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     refuse_infinite,
     times_positions_problems,
-    validate_strictly_increasing,
     validate_times_positions,
 )
 
@@ -618,7 +617,6 @@ def validated_observations(
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
         raise empty_samples_error(call, ("times", "positions"))
-    validate_strictly_increasing(t, call=call)
     if columns is not None:
         _require_xy_columns(p.shape, exact=columns == "xy_only", call=call)
     if p.ndim == 1:
@@ -705,14 +703,14 @@ def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float6
             _format_error(
                 f"Invalid times passed to {call}():\n- " + "\n- ".join(problems),
                 why="each interval [times[k], times[k+1]) is judged by its duration, "
-                "so mis-shaped or unsorted timestamps give wrong numbers.",
-                fix="pass times as a sorted 1-D array of finite timestamps in seconds.",
+                "so mis-shaped, unsorted or repeated timestamps give wrong numbers.",
+                fix="pass times as a sorted 1-D array of finite timestamps in "
+                "seconds, without repeats.",
             )
         )
     assert t is not None
     if t.size == 0:
         raise empty_samples_error(call, ("times",))
-    validate_strictly_increasing(t, call=call)
     return t
 
 

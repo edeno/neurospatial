@@ -175,7 +175,7 @@ def prepare_linear_spatial_intervals(
     # A bridged gap is one straight segment between its valid samples.
     positions = fill_missing_positions(times, positions, time_allocation="linear")
     finite = np.all(np.isfinite(positions), axis=1)
-    keep = finite[:-1] & finite[1:] & (np.diff(times) > 0)
+    keep = finite[:-1] & finite[1:]
     mask = observed & keep
     if gates is not None:
         gates = gates.narrowed(keep)

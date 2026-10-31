@@ -1050,9 +1050,7 @@ def fill_missing_positions(
     straight path between the bounding valid rows at its time, so the path
     is split exactly as the gap's single straight segment would be. Either
     way the result equals that of the recording with the missing rows
-    deleted. Rows before the first or after the last valid row stay NaN,
-    and so, under ``"linear"``, does a row whose bounding valid rows share
-    one timestamp.
+    deleted. Rows before the first or after the last valid row stay NaN.
 
     Parameters
     ----------
@@ -1076,11 +1074,7 @@ def fill_missing_positions(
     if time_allocation == "start":
         positions[missing] = positions[a]
     else:
-        # A missing row between two samples at one instant (repeated
-        # timestamps) has weight 0/0 and stays NaN: its gap lasts no time,
-        # so it holds no time or spikes, and its NaN intervals are excluded.
-        with np.errstate(invalid="ignore"):
-            weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
+        weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
         positions[missing] = (1 - weight) * positions[a] + weight * positions[b]
     return positions
 

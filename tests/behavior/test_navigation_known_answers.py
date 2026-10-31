@@ -518,7 +518,7 @@ class TestTrialHelpersOnAnotherClock:
     @pytest.mark.parametrize(
         ("times", "match"),
         [
-            (np.array([0.0, 2.0, 1.0, 3.0]), "non-decreasing"),
+            (np.array([0.0, 2.0, 1.0, 3.0]), "decreases"),
             (np.array([0.0, 1.0, 1.0, 3.0]), "strictly increasing"),
             (np.array([0.0, np.nan, 2.0, 3.0]), "non-finite"),
         ],

@@ -1448,7 +1448,8 @@ def visibility_occupancy(
     env : Environment
         The environment.
     times : NDArray[np.float64], shape (n_time,)
-        Timestamps in seconds for each position; finite and non-decreasing.
+        Timestamps in seconds for each position; finite and strictly
+        increasing.
     positions : NDArray[np.float64], shape (n_time, 2)
         Positions along trajectory. A row with a NaN coordinate is a missing
         sample (a lost tracking frame); intervals that start or end at it add
@@ -1495,7 +1496,7 @@ def visibility_occupancy(
     ------
     ValueError
         If ``times`` and ``positions`` are misaligned, ``times`` is not finite
-        and non-decreasing, ``positions`` is not ``(n_time, 2)``, ``headings``
+        and strictly increasing, ``positions`` is not ``(n_time, 2)``, ``headings``
         is not ``(n_time,)``, ``max_gap`` is not positive, or ``epochs`` or
         ``break_before`` is malformed.
 

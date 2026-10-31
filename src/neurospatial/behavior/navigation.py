@@ -1250,7 +1250,6 @@ def distance_to_reward(
     from neurospatial._validation import (
         timestamps_of,
         validate_finite,
-        validate_strictly_increasing,
         validate_times_positions,
     )
 
@@ -1273,10 +1272,7 @@ def distance_to_reward(
     times, positions = validate_times_positions(times, positions, call=call)
     if times.size == 0:
         raise empty_samples_error(call, ("times", "positions"))
-    validate_strictly_increasing(times, call=call)
-    positions = validate_finite(
-        positions.reshape(times.size, -1), name="positions", allow_nan=True
-    )
+    positions = positions.reshape(times.size, -1)
     reward_times = validate_finite(
         timestamps_of(reward_times, name="reward_times"), name="reward_times"
     )
@@ -3326,8 +3322,7 @@ def _time_smoothed_positions(
 
     finite = np.all(np.isfinite(positions), axis=1)
     smoothed = positions.astype(np.float64, copy=True)
-    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
-    for run in valid_run_samples(mask, finite):
+    for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
         if run.size < 2:
             continue
         t, p = times[run], positions[run]

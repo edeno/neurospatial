@@ -683,9 +683,7 @@ def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
 
 
 @pytest.mark.parametrize("population", [False, True])
-@pytest.mark.parametrize(
-    "excluded", ["final", "epoch", "spike_window", "gap", "zero_duration"]
-)
+@pytest.mark.parametrize("excluded", ["final", "epoch", "spike_window", "gap"])
 def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     population, excluded
 ):
@@ -704,13 +702,9 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
         options["epochs"] = np.array([[0.0, 1.0]])
     elif excluded == "spike_window":
         options["spike_window"] = np.array([[0.0, 1.0]])
-    elif excluded == "gap":
+    else:
         times[-1] = 10.0
         options["max_gap"] = 2.0
-    else:
-        times = np.array([0.0, 1.0, 1.0, 2.0])
-        headings = np.array([np.pi, 0.0, np.pi, 0.0])
-        expected_occupancy = 2.0
     positions = np.tile([2.5, 4.5], (len(times), 1))
     spikes = np.array([0.25])
     encode = compute_view_rates if population else compute_view_rate

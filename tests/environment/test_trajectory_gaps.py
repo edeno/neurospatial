@@ -506,27 +506,16 @@ class TestTemporalBinningEdgeCases:
     boundary conditions.
     """
 
-    def test_temporal_binning_zero_duration_intervals(self, small_2d_env):
-        """Test handling of zero-duration time intervals.
-
-        Tests occupancy when consecutive time samples are identical
-        (zero time elapsed).
-        """
-        # Use a single valid bin center (guaranteed to be inside environment)
-        valid_bin_idx = 0
-        bin_center = small_2d_env.bin_centers[valid_bin_idx]
-
+    def test_temporal_binning_zero_duration_intervals_refused(self, small_2d_env):
+        """Consecutive identical timestamps (zero time elapsed) are refused."""
+        bin_center = small_2d_env.bin_centers[0]
         times = np.array([0.0, 0.0, 1.0, 1.0, 2.0])
-        # All positions at same bin center
         positions = np.tile(bin_center.reshape(1, -1), (5, 1))
 
-        occ = small_2d_env.occupancy(times, positions, max_gap=None)
-
-        # Only non-zero intervals contribute
-        # 0.0->0.0 (0s), 0.0->1.0 (1s), 1.0->1.0 (0s), 1.0->2.0 (1s)
-        # Total: 2.0 seconds at bin_center
-        assert np.sum(occ) == pytest.approx(2.0)
-        assert occ[valid_bin_idx] == pytest.approx(2.0)
+        with pytest.raises(
+            ValueError, match="2 timestamp\\(s\\) repeat the one before"
+        ):
+            small_2d_env.occupancy(times, positions, max_gap=None)
 
     def test_temporal_binning_decreasing_times_error(self, small_2d_env):
         """Test that decreasing times raise detailed error.
@@ -538,7 +527,7 @@ class TestTemporalBinningEdgeCases:
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
         with pytest.raises(
-            ValueError, match="monotonically non-decreasing"
+            ValueError, match="strictly increasing; it decreases"
         ) as exc_info:
             small_2d_env.occupancy(times, positions)
 

@@ -76,7 +76,7 @@ def _view_observation_mask(
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
     if gaze_offsets is not None:
         observed &= np.isfinite(gaze_offsets)
-    gates = interval_gates(
+    return interval_gates(
         times,
         max_gap=max_gap,
         epochs=epochs,
@@ -84,7 +84,6 @@ def _view_observation_mask(
         break_before=break_before,
         sample_valid=observed,
     )
-    return gates.narrowed(np.diff(times) > 0)
 
 
 def require_allocentric_view(env: Environment, operation: str) -> None:

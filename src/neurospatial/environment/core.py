@@ -1888,7 +1888,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Must be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
@@ -2101,7 +2101,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: ``(distance, angle)`` rows on an egocentric
@@ -2145,7 +2145,7 @@ class Environment(Generic[_C]):
         ValueError
             If times and positions have different lengths, if positions
             have wrong number of dimensions, or if timestamps are not
-            monotonically increasing (non-decreasing).
+            strictly increasing.
         ValueError
             If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -2165,8 +2165,8 @@ class Environment(Generic[_C]):
         inputs. Deduplication never merges samples across an invalid interval.
         With dedup=False, one bin is returned per retained sample.
 
-        Timestamps must be monotonically increasing (non-decreasing).
-        Sort your data by time before calling this method if needed.
+        Timestamps must be strictly increasing. Sort your data by time and
+        drop repeated timestamps before calling this method if needed.
 
         Examples
         --------
@@ -2225,7 +2225,7 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         times : NDArray[np.float64], shape (n_samples,)
-            Timestamps in seconds. Should be monotonically increasing.
+            Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions.
         outside_value : int or None, default=-1

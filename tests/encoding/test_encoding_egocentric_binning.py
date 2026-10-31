@@ -286,7 +286,7 @@ class TestEgocentricInputValidation:
         positions = np.random.rand(4, 2)
         headings = np.random.rand(4)
 
-        with pytest.raises(ValueError, match="monotonically non-decreasing"):
+        with pytest.raises(ValueError, match="strictly increasing; it decreases"):
             prepare_egocentric_binning(
                 times, positions, headings, object_positions, **GRID
             )

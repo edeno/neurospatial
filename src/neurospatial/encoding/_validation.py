@@ -2,8 +2,8 @@
 
 The public ``compute_*_rate(s)`` entry points and cell predicates share:
 
-- ``_validate_times`` — finite, non-decreasing timestamps with at least two
-  samples.
+- ``_validate_times`` — finite, strictly increasing timestamps with at least
+  two samples.
 - ``validate_trajectory`` — joint length and dimensionality checks on
   ``(times, positions?, headings?)``, plus a warning for headings that look
   like degrees.
@@ -137,7 +137,7 @@ def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None
 
 
 def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
-    """Check finite, non-decreasing timestamps with at least two samples.
+    """Check finite, strictly increasing timestamps with at least two samples.
 
     The same check, and the same messages, as :func:`validate_trajectory`
     without positions or headings.
@@ -145,7 +145,7 @@ def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Timestamps in seconds; adjacent equal timestamps are allowed.
+        Timestamps in seconds; a repeated timestamp is refused.
     context : str
         Name of the calling function, used in the error message.
 
@@ -244,7 +244,8 @@ def validate_trajectory(
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Finite non-decreasing timestamps in seconds, with at least two samples.
+        Finite, strictly increasing timestamps in seconds, with at least two
+        samples.
     positions : ndarray, shape (n_samples,) or (n_samples, n_dims), optional
         Coordinates aligned with times. One-dimensional positions are accepted
         for a one-dimensional environment.

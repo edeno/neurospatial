@@ -748,38 +748,31 @@ class TestViewBinningInputValidation:
         positions = np.tile([50, 50], (4, 1))
         headings = np.zeros(4)
 
-        with pytest.raises(ValueError, match="monotonically non-decreasing"):
+        with pytest.raises(ValueError, match="strictly increasing; it decreases"):
             prepare_view_binning(
                 simple_env, times, positions, headings, boundary_source="analysis"
             )
 
-    def test_duplicate_times_allowed(
+    def test_duplicate_times_refused(
         self,
         simple_env: Environment,
     ) -> None:
-        """Duplicate times (monotonically non-decreasing) should be allowed.
-
-        Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
-        increasing). The duplicate contributes 0 seconds.
-        """
+        """A repeated timestamp gives one instant two gazes, so it is refused."""
         times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
         positions = np.tile([50, 50], (4, 1))
         headings = np.zeros(4)
 
-        occupancy = _occupancy(
-            simple_env,
-            times,
-            positions,
-            headings,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            max_gap=None,
-            boundary_source="analysis",  # Coarse sampling is incidental to this test.
-        )
-
-        # 3 intervals: 1s, 0s, 1s = 2s total
-        total_occupancy = np.sum(occupancy)
-        assert abs(total_occupancy - 2.0) < 0.01
+        with pytest.raises(ValueError, match="repeat the one before"):
+            _occupancy(
+                simple_env,
+                times,
+                positions,
+                headings,
+                gaze_model="fixed_distance",
+                view_distance=10.0,
+                max_gap=None,
+                boundary_source="analysis",
+            )
 
 
 # ==============================================================================

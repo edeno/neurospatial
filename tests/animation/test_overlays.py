@@ -876,8 +876,8 @@ class TestValidateMonotonicTime:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
-        # WHAT: Non-monotonic times detected
-        assert "non-monotonic" in error_msg.lower() or "monotonic" in error_msg.lower()
+        # What: times decrease
+        assert "strictly increasing" in error_msg.lower()
         # WHY: Interpolation requires increasing timestamps
         assert "interpolation" in error_msg.lower()
         # HOW: Sort or call fix_monotonic_timestamps()
@@ -890,7 +890,7 @@ class TestValidateMonotonicTime:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
-        assert "monotonic" in error_msg.lower()
+        assert "repeat the one before" in error_msg.lower()
 
     def test_all_identical_times(self):
         """Test that all identical times raise ValueError."""
@@ -899,7 +899,7 @@ class TestValidateMonotonicTime:
             _validate_monotonic_time(times, name="test_overlay")
 
         error_msg = str(exc_info.value)
-        assert "monotonic" in error_msg.lower()
+        assert "repeat the one before" in error_msg.lower()
 
     def test_empty_times_array(self):
         """Test validation with empty times array."""
@@ -1581,7 +1581,7 @@ class TestConvertOverlaysToData:
             )
 
         error_msg = str(exc_info.value)
-        assert "monotonic" in error_msg.lower()
+        assert "decreases" in error_msg.lower()
 
     def test_validation_finite_values_during_conversion(self, mock_env):
         """Missing observations survive conversion without becoming positions."""

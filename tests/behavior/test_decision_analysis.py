@@ -242,7 +242,7 @@ class TestDecisionRegionEntryTime:
             ValueError, match="position_bins and times as 1-D arrays of the same length"
         ):
             decision_region_entry_time(bins, times[:4], env, region="center")
-        with pytest.raises(ValueError, match="non-decreasing"):
+        with pytest.raises(ValueError, match="decreases"):
             decision_region_entry_time(bins, times[::-1], env, region="center")
         with pytest.raises(ValueError, match="strictly increasing"):
             decision_region_entry_time(

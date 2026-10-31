@@ -48,7 +48,6 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     is_finite_real,
-    validate_strictly_increasing,
     validate_times_positions,
 )
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smooth_run_in_time
@@ -815,7 +814,6 @@ def heading_from_body_orientation(
                 ),
             )
         )
-    validate_strictly_increasing(t, call=call)
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
 

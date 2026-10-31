@@ -74,13 +74,26 @@ def test_single_nonfinite_timestamp_rejected(times):
         validate_times_positions(times, [[0.0]], call="f")
 
 
-def test_times_positions_preserves_duplicates_and_missing_positions():
+def test_times_positions_preserves_missing_positions():
     from neurospatial._validation import validate_times_positions
 
-    t, p = validate_times_positions([0, 0, 1], [[0], [np.nan], [2]], call="f")
-    np.testing.assert_array_equal(t, [0, 0, 1])
+    t, p = validate_times_positions([0, 1, 2], [[0], [np.nan], [2]], call="f")
+    np.testing.assert_array_equal(t, [0, 1, 2])
     np.testing.assert_array_equal(p, [[0], [np.nan], [2]])
     assert t.dtype == p.dtype == np.float64
+
+
+def test_repeated_timestamps_are_refused_with_a_fix():
+    """A repeated timestamp gives one instant two samples: refuse it, say how to drop it."""
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions([0, 1, 1, 2, 2], [[0], [1], [1], [2], [2]], call="f")
+    message = str(caught.value)
+    assert (
+        "2 timestamp(s) repeat the one before, first 1.0 at indices 1 and 2" in message
+    )
+    assert "keep = np.unique(times, return_index=True)[1]" in message
 
 
 def _refusing_calls():
@@ -133,7 +146,7 @@ def test_numeric_conversion_errors_are_named_together():
 @pytest.mark.parametrize(
     "times, positions, other_problem",
     [
-        ([1, 0], [["bad"], ["bad"]], "monotonically non-decreasing"),
+        ([1, 0], [["bad"], ["bad"]], "strictly increasing; it decreases"),
         (["bad"], np.zeros((1, 2, 1)), "got shape (1, 2, 1)"),
     ],
 )

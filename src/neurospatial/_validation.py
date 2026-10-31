@@ -260,10 +260,24 @@ def times_positions_problems(
                 if down.size:
                     k = int(down[0])
                     problems.append(
-                        f"times must be monotonically non-decreasing; it decreases at "
+                        f"times must be strictly increasing; it decreases at "
                         f"{down.size} place(s), first {float(t[k])!r} -> {float(t[k + 1])!r} "
                         f"at index {k}. To sort, index times and every per-sample "
                         'array with order = np.argsort(times, kind="stable").'
+                    )
+                repeated = np.flatnonzero(t[1:] == t[:-1])
+                if repeated.size:
+                    k = int(repeated[0])
+                    problems.append(
+                        f"times must be strictly increasing; {repeated.size} "
+                        f"timestamp(s) repeat the one before, first {float(t[k])!r} "
+                        f"at indices {k} and {k + 1}. A repeated timestamp gives one "
+                        "instant two samples and the interval between them no "
+                        "duration. To keep the first row of each timestamp, index "
+                        "times and every per-sample array with "
+                        "keep = np.unique(times, return_index=True)[1]; if the "
+                        "recordings restart their clocks, analyze each recording "
+                        "in its own call or map them to one clock."
                     )
     if p is not None and (p.ndim not in (1, 2) or (p.ndim == 2 and p.shape[1] == 0)):
         problems.append(
@@ -307,7 +321,8 @@ def validate_times_positions(
     Parameters
     ----------
     times : array-like, shape (n_samples,)
-        Sample timestamps in seconds; must be 1-D, finite and non-decreasing.
+        Sample timestamps in seconds; must be 1-D, finite and strictly
+        increasing.
     positions : array-like, shape (n_samples, n_dims) or (n_samples,)
         One position row per timestamp.
     call : str
@@ -347,60 +362,23 @@ def validate_times_positions(
     return t, p
 
 
-def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> None:
-    """Raise ValueError when ``times`` repeat a timestamp.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Timestamps in seconds, already validated as finite and non-decreasing
-        (``validate_times_positions`` rejects decreasing clocks).
-    call : str
-        Public function name, used in the message.
-
-    Raises
-    ------
-    ValueError
-        Naming the first repeated timestamp and how to resolve it.
-    """
-    repeated = np.flatnonzero(times[1:] <= times[:-1])
-    if repeated.size == 0:
-        return
-    k = int(repeated[0])
-    raise ValueError(
-        _format_error(
-            f"{call}() needs strictly increasing times; times[k] == times[k+1] "
-            f"== {times[k]:g} at index {k} ({repeated.size} repeated timestamps).",
-            why=(
-                "interpolation and derivatives need positive elapsed time "
-                "between samples."
-            ),
-            fix=(
-                "drop repeated rows (keep = np.r_[True, np.diff(times) > 0]); "
-                "if the recordings restart their clocks, analyze each recording "
-                "in its own call or map them to one clock."
-            ),
-        )
-    )
-
-
 def format_times_positions_error(
     problems: list[str], looks_swapped: bool, *, call: str, positions: bool = True
 ) -> str:
     """Format timestamp problems; ``positions=False`` for a call without positions."""
-    rows = " with one numeric positions row per timestamp" if positions else ""
+    rows = ", with one numeric positions row per timestamp" if positions else ""
     fix = (
         "Fix: did you pass positions before times? "
         f"Call {call}(..., times, positions, ...)."
         if looks_swapped
-        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds"
-        f"{rows}."
+        else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds, "
+        f"without repeats{rows}."
     )
     return (
         f"Invalid times/positions passed to {call}():\n- "
         + "\n- ".join(problems)
         + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
-        "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
+        "so mis-shaped, unsorted or repeated timestamps give wrong numbers.\n" + fix
     )
 
 

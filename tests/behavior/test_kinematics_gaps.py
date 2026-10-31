@@ -376,23 +376,16 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     assert result.trial_results[0].head_sweep_magnitude == expected_sweep
 
 
-def test_duplicate_timestamps_give_undefined_not_infinite_speed():
-    """A zero-length interval has no velocity; it must not become inf."""
-    import warnings
-
-    from neurospatial.behavior._kinematics import interval_velocity
+def test_repeated_timestamps_are_refused_before_any_velocity():
+    """A zero-length interval has no velocity, so a repeated timestamp is refused."""
+    from neurospatial.behavior import compute_speed
     from neurospatial.behavior.decisions import pre_decision_speed_stats
 
     times = np.array([0.0, 0.1, 0.1, 0.2, 0.3])
     positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.5, 0.0], [2.5, 0.0], [3.5, 0.0]])
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        velocity = interval_velocity(times, positions, np.ones(4, dtype=bool))
-    assert np.all(np.isnan(velocity[1]))
-    np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
-    # The public speed statistics refuse a repeated timestamp outright.
-    with pytest.raises(ValueError, match="strictly increasing"):
-        pre_decision_speed_stats(times, positions)
+    for call in (pre_decision_speed_stats, compute_speed):
+        with pytest.raises(ValueError, match="repeat the one before"):
+            call(times, positions)
 
 
 def test_one_dimensional_positions_give_track_speed():

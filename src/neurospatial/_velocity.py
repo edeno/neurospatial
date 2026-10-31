@@ -44,8 +44,7 @@ def smoothed_velocity(
         (``ObservationSupport.interval_mask``). Within each run, samples with a
         non-finite coordinate are skipped as if deleted, so velocity across a
         bridged gap uses the elapsed time between the valid samples on either
-        side. Zero-duration intervals end a run, so it never spans a
-        duplicate timestamp.
+        side.
     smooth_window : float
         Standard deviation, in seconds, of the Gaussian that averages each
         velocity component over time within the run
@@ -79,8 +78,7 @@ def smoothed_velocity(
     if positions.ndim == 1:
         positions = positions[:, np.newaxis]
     finite = np.all(np.isfinite(positions), axis=1)
-    # A zero-length interval (duplicate timestamps) has no defined velocity.
-    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
+    mask = np.asarray(interval_mask, dtype=bool)
     velocity = np.full(positions.shape, np.nan, dtype=np.float64)
     # Missing samples inside a run are skipped, exactly like deleted rows.
     for run in valid_run_samples(mask, finite):

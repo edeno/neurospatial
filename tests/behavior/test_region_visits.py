@@ -263,10 +263,18 @@ def test_no_observed_region_returns_empty_list(region_env, bins, times):
 
 
 @pytest.mark.parametrize(
-    "times", [[0.0, 0.0], [1.0, 0.0], [0.0, np.nan], [0.0, np.inf]]
+    ("times", "problem"),
+    [
+        ([0.0, 0.0], "repeat the one before"),
+        ([1.0, 0.0], "decreases"),
+        ([0.0, np.nan], "non-finite"),
+        ([0.0, np.inf], "non-finite"),
+    ],
 )
-def test_invalid_clock_rejected(region_env, times):
-    with pytest.raises(ValueError, match=r"times.*finite.*strictly increasing"):
+def test_invalid_clock_rejected(region_env, times, problem):
+    with pytest.raises(
+        ValueError, match=rf"detect_region_visits\(\):\n- times.*{problem}"
+    ):
         detect_region_visits(
             np.array([0, 0]), np.asarray(times), region_env, region_names=["A"]
         )

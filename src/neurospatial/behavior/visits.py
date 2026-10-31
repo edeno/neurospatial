@@ -26,6 +26,10 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import (
+    format_times_positions_error,
+    times_positions_problems,
+)
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -304,8 +308,13 @@ def detect_region_visits(
         position_bins, env, call="detect_region_visits", times=times
     )
     clock = np.asarray(times, dtype=np.float64)
-    if not np.isfinite(clock).all() or np.any(np.diff(clock) <= 0):
-        raise ValueError("times must be finite and strictly increasing, in seconds.")
+    problems = times_positions_problems(clock, None)[0]
+    if problems:
+        raise ValueError(
+            format_times_positions_error(
+                problems, False, call="detect_region_visits", positions=False
+            )
+        )
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(region_names, str):

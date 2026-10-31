@@ -17,7 +17,6 @@ from neurospatial._observation import (
     validated_observations,
     validated_signals,
 )
-from neurospatial._validation import validate_strictly_increasing
 
 
 def _support(
@@ -190,16 +189,12 @@ def test_repeated_timestamp_raises_with_recovery_advice():
     with pytest.raises(ValueError, match="strictly increasing") as exc:
         _support([0, 1, 1, 2])
     assert "analyze each recording" in str(exc.value)
-    assert "index 1" in str(exc.value)
+    assert "indices 1 and 2" in str(exc.value)
 
 
 def test_decreasing_time_raises():
     with pytest.raises(ValueError, match="times"):
         _support([0, 2, 1])
-
-
-def test_validate_strictly_increasing_accepts_increasing():
-    validate_strictly_increasing(np.array([0.0, 1.0, 2.0]), call="f")
 
 
 @pytest.mark.parametrize(

@@ -167,7 +167,7 @@ def test_errors_name_the_called_function(name):
     with pytest.raises(ValueError) as error:
         calls[name]()
     message = str(error.value)
-    assert message.startswith(name)
+    assert f"{name}()" in message.splitlines()[0]
     assert "heading_from_velocity" not in message
 
 

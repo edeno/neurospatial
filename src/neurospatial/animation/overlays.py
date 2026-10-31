@@ -56,7 +56,11 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._units import same_coordinate_declaration
-from neurospatial._validation import timestamps_of, validate_finite
+from neurospatial._validation import (
+    times_positions_problems,
+    timestamps_of,
+    validate_finite,
+)
 from neurospatial._video_io import _validate_frame_processing
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
@@ -3953,7 +3957,7 @@ def _validate_position_metadata(
 
 
 def _validate_monotonic_time(times: NDArray[np.float64], *, name: str) -> None:
-    """Validate that timestamps are monotonically increasing.
+    """Validate that timestamps are finite and strictly increasing.
 
     Parameters
     ----------
@@ -3965,38 +3969,24 @@ def _validate_monotonic_time(times: NDArray[np.float64], *, name: str) -> None:
     Raises
     ------
     ValueError
-        If times are not strictly monotonically increasing, with actionable
-        WHAT/WHY/HOW guidance.
+        If times are not a finite, strictly increasing 1-D array, naming
+        every problem with why and how to fix it.
 
     Notes
     -----
     Empty arrays or single-element arrays pass validation trivially.
     """
-    times = np.asarray(times, dtype=np.float64)
-    if times.ndim != 1 or not np.isfinite(times).all():
-        raise ValueError(f"{name} must be a finite 1-D array of timestamps in seconds.")
-    if times.size <= 1:
-        return  # Empty or single element is trivially monotonic
-
-    # Check if strictly increasing
-    if not np.all(np.diff(times) > 0):
-        # Find first non-monotonic index
-        diffs = np.diff(times)
-        first_bad_idx = np.where(diffs <= 0)[0][0] + 1
-
-        # WHAT/WHY/HOW format
+    problems = times_positions_problems(np.asarray(times, dtype=np.float64), None)[0]
+    if problems:
         raise ValueError(
-            f"WHAT: Non-monotonic timestamps detected in '{name}'.\n"
-            f"  First violation at index {first_bad_idx}: "
-            f"times[{first_bad_idx - 1}]={times[first_bad_idx - 1]:.6f}, "
-            f"times[{first_bad_idx}]={times[first_bad_idx]:.6f}\n\n"
-            f"WHY: Interpolation requires strictly increasing timestamps to align "
-            f"overlay data with animation frames.\n\n"
-            f"Fix: Sort the times array using np.argsort(), or if duplicates exist, "
-            f"apply jitter or remove duplicates. Example:\n"
-            f"  sorted_indices = np.argsort(times)\n"
-            f"  times = times[sorted_indices]\n"
-            f"  data = data[sorted_indices]"
+            _format_error(
+                f"{name} must be finite, strictly increasing timestamps in "
+                "seconds:\n- " + "\n- ".join(problems),
+                why="interpolation aligns overlay data with animation frames by "
+                "time, so every sample needs its own instant.",
+                fix="sort the samples by time and drop repeated timestamps, "
+                "indexing times and data together.",
+            )
         )
 
 
