@@ -154,14 +154,19 @@ def _rotated(
     epochs: NDArray[np.float64],
     generator: np.random.Generator,
 ) -> NDArray[np.float64]:
-    """Rotate the spikes of each epoch by a uniform offset within it."""
-    pieces = []
-    for start, stop in epochs:
-        spikes = train[(train >= start) & (train < stop)]
-        length = stop - start
-        offset = generator.uniform(0.0, length)
-        pieces.append(start + np.mod(spikes - start + offset, length))
-    return np.concatenate(pieces) if pieces else train
+    """Rotate the spikes of each epoch by a uniform offset within it.
+
+    ``train`` holds only spikes inside the epochs; one offset is drawn per
+    epoch, in epoch order.
+    """
+    lengths = epochs[:, 1] - epochs[:, 0]
+    offsets = generator.uniform(0.0, lengths)
+    epoch = np.searchsorted(epochs[:, 0], train, side="right") - 1
+    start = epochs[epoch, 0]
+    rotated: NDArray[np.float64] = start + np.mod(
+        train - start + offsets[epoch], lengths[epoch]
+    )
+    return rotated
 
 
 def _poisson(
