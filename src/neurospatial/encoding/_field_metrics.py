@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -1134,7 +1135,7 @@ def compute_field_emd(
     firing_rate_1: NDArray[np.float64],
     firing_rate_2: NDArray[np.float64],
     *,
-    metric: DistanceMetric = "euclidean",
+    metric: DistanceMetric = "geodesic",
     normalize: bool = True,
 ) -> float:
     """Compute Earth Mover's Distance (EMD) between two firing rate distributions.
@@ -1159,10 +1160,12 @@ def compute_field_emd(
     firing_rate_2 : NDArray[np.float64], shape (n_bins,)
         Second firing rate distribution across spatial bins. NaN marks an
         unsampled bin.
-    metric : str, default="euclidean"
-        Distance metric to use. Options:
-        - "euclidean": Straight-line distance between bin centers
-        - "geodesic": Shortest path distance through connectivity graph
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        Distance the firing moves over. Options:
+        - "geodesic": Shortest path through the connectivity graph, so mass
+          goes around walls; fast at any resolution.
+        - "euclidean": Straight line between bin centers, through walls;
+          slow on finely binned maps (see Notes).
     normalize : bool, default=True
         If True, normalize each map's mass (rate x bin measure) to sum to 1.0
         over the bins finite in both maps before computing EMD. If False,
@@ -1223,13 +1226,14 @@ def compute_field_emd(
 
     **Metric choice:**
 
-    - **Euclidean**: Fast, works for any environment, but ignores barriers and walls.
-      Use for simple open fields or when computational speed is critical.
+    - **Geodesic** (default): respects the environment's structure (walls,
+      barriers, connectivity), and is fast at any resolution. Mass moves only
+      along paths in the connectivity graph, never between disconnected parts
+      of the environment.
 
-    - **Geodesic**: Slower, respects environment structure (barriers, walls, connectivity).
-      Use for complex environments like mazes, multi-room layouts, or non-convex arenas.
-      Mass moves only along paths in the connectivity graph, never between
-      disconnected parts of the environment.
+    - **Euclidean**: the straight line between bin centers, through walls.
+      Use it to ask how far a field moved in the room rather than for the
+      animal; it is slow on finely binned maps.
 
     **Interpretation:**
 
@@ -1237,13 +1241,19 @@ def compute_field_emd(
     - Small EMD: Distributions are similar and nearby in space
     - Large EMD: Distributions are different or far apart in space
 
-    **Computational complexity:**
+    **Computation:**
 
-    - Euclidean: O(n^2) for distance matrix + O(n^3) for optimization
-    - Geodesic: shortest paths from each bin with mass + O(n^3) for optimization
-
-    For large environments (n_bins > 1000), consider subsampling or using
-    approximate methods.
+    - Geodesic: a minimum-cost flow along the connectivity graph's edges,
+      which gives exactly the transport cost under shortest-path distances
+      (Kantorovich-Rubinstein duality on a graph) with two variables per
+      edge instead of one per pair of bins. Mass may travel through any bin,
+      sampled or not. About 0.5 s at 3,600 bins and 3 s at 10,000.
+      On an open grid the graph path can exceed the straight line by up
+      to about 8% (8-connected neighbors).
+    - Euclidean: a transport plan over every pair of bins with mass, which
+      grows with the square of their number; over about a thousand bins it
+      can take minutes, or fail. Use ``metric="geodesic"`` for finely binned
+      maps.
 
     References
     ----------
@@ -1267,8 +1277,8 @@ def compute_field_emd(
     >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [5, 0], axis=1) ** 2)
     >>>
     >>> # Compute EMD with Euclidean distance (skipped in the doctest run: the
-    >>> # optimal-transport solve is O(n^3) in the bin count and can take minutes
-    >>> # / exhaust memory on a full environment -- see "Computational complexity")
+    >>> # transport plan over every pair of bins can take minutes on a full
+    >>> # environment -- see "Computation")
     >>> emd_euclidean = compute_field_emd(  # doctest: +SKIP
     ...     env, field1, field2, metric="euclidean"
     ... )
@@ -1366,80 +1376,111 @@ def compute_field_emd(
     p = firing_rate_1[nonzero_mask]
     q = firing_rate_2[nonzero_mask]
 
-    # Compute distance matrix between active bins
-    if metric == "euclidean":
-        # Euclidean distance between bin centers using scipy (vectorized)
-        positions = env.bin_centers[active_bins]
-        # pdist computes condensed distance matrix, squareform converts to full
-        dist_matrix = squareform(pdist(positions, metric="euclidean"))
+    if metric == "geodesic":
+        return _graph_transport_cost(env, active_bins, p - q)
 
-    else:  # metric == "geodesic"
-        from neurospatial.ops.distance import pairwise_distances
-
-        dist_matrix = pairwise_distances(env.connectivity, active_bins)
-
-    # Mass cannot travel between parts of the environment with no path
-    # between them. Label each active bin by the first active bin it can
-    # reach (reachability is an equivalence relation); if any part holds
-    # different mass in the two maps, no transport plan exists.
-    reachable = np.isfinite(dist_matrix)
-    component = np.argmax(reachable, axis=1)
-    mass_1 = np.bincount(component, weights=p, minlength=len(p))
-    mass_2 = np.bincount(component, weights=q, minlength=len(q))
-    if not np.allclose(mass_1, mass_2, rtol=1e-9, atol=1e-12 * np.sum(p)):
-        return np.inf
-
-    # Solve the optimal transport problem using linear programming
-    # Variables: T[i,j] = mass transported from bin i (source) to bin j (target)
+    # Euclidean: a transport plan over every pair of bins with mass.
+    # Variables: T[i,j] = mass moved from bin i (first map) to bin j (second)
     # Objective: minimize sum(T[i,j] * dist[i,j])
-    # Constraints:
-    #   - sum_j T[i,j] = p[i]  (all mass from source i is transported)
-    #   - sum_i T[i,j] = q[j]  (all mass to target j is received)
-    #   - T[i,j] >= 0, and T[i,j] = 0 where no path joins i and j
-
+    # Constraints: sum_j T[i,j] = p[i], sum_i T[i,j] = q[j], T >= 0.
+    dist_matrix = squareform(pdist(env.bin_centers[active_bins], metric="euclidean"))
     n = len(p)
-
-    # Flatten distance matrix for objective function (unreachable pairs carry
-    # no mass, so their cost is irrelevant)
-    c = np.where(reachable, dist_matrix, 0.0).flatten()
-    upper = np.where(reachable.flatten(), np.inf, 0.0)
-
-    # Equality constraints: Ax = b
-    # Row constraints: sum over j of T[i,j] = p[i]
-    # Column constraints: sum over i of T[i,j] = q[j]
-    #
-    # Sparse construction using Kronecker products (2n² nonzeros of a
-    # (2n, n²) matrix, which dense would hold 432 MB at n = 300):
-    # - Row constraints: each row i has 1s in columns [i*n, i*n+1, ..., i*n+n-1]
-    #   This is kron(I_n, ones(1,n)) = block diagonal of row vectors
-    # - Column constraints: each column j has 1s in columns [j, n+j, 2n+j, ...]
-    #   This is kron(ones(1,n), I_n) = tiled identity matrices
+    # Sparse construction using Kronecker products (2n^2 nonzeros of a
+    # (2n, n^2) matrix): row i of the first block sums T[i, :], column j of
+    # the second sums T[:, j].
     ones_row = np.ones((1, n))
     identity = sparse.eye(n)
     a_eq = sparse.vstack(
         [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
-        format="csc",
-    )  # Shape: (2n, n*n)
-
+        format="csr",
+    )
     b_eq = np.concatenate([p, q])
-
-    # Solve linear program
+    # The row sums and column sums both total the mass, so one constraint is
+    # implied by the others. Keeping it makes the problem infeasible whenever
+    # the two totals differ by roundoff, as normalized maps do; drop it.
     result = linprog(
-        c,
-        A_eq=a_eq,
-        b_eq=b_eq,
-        bounds=np.column_stack([np.zeros_like(upper), upper]),
+        dist_matrix.ravel(),
+        A_eq=a_eq[:-1],
+        b_eq=b_eq[:-1],
+        bounds=(0, None),
         method="highs",
     )
-
     if not result.success:
         warnings.warn(
             f"Optimal transport optimization failed: {result.message}. Returning NaN.",
             category=UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan
+    return float(result.fun)
 
-    # EMD is the optimal cost
-    emd = float(result.fun)
-    return emd
+
+def _graph_transport_cost(
+    env: Environment, bins: NDArray[np.intp], surplus: NDArray[np.float64]
+) -> float:
+    """Least cost of moving ``surplus`` to zero along the connectivity graph.
+
+    Minimizes ``sum_e length_e * |flow_e|`` subject to each bin's net
+    outflow equalling its surplus (mass in the first map minus the second),
+    with one non-negative flow per edge direction. On a graph this equals the
+    transport cost under shortest-path distances. ``inf`` when a part of the
+    environment not connected to the rest holds unequal mass, as then no
+    transport plan exists.
+
+    Parameters
+    ----------
+    env : Environment
+    bins : NDArray[np.intp], shape (n_active,)
+        Bins holding mass in either map.
+    surplus : NDArray[np.float64], shape (n_active,)
+        First map's mass minus the second's in each of ``bins``.
+
+    Returns
+    -------
+    float
+    """
+    from scipy import sparse
+    from scipy.optimize import linprog
+    from scipy.sparse.csgraph import connected_components
+
+    from neurospatial.ops.distance import _bin_adjacency
+
+    adjacency = _bin_adjacency(
+        env.connectivity, weight="distance", operation="compute_field_emd()"
+    )
+    n_bins = adjacency.shape[0]
+    supply = np.zeros(n_bins)
+    supply[bins] = surplus
+    n_parts, part = connected_components(adjacency, directed=False)
+    imbalance = np.bincount(part, weights=supply, minlength=n_parts)
+    if np.any(np.abs(imbalance) > 1e-9 * np.abs(surplus).sum()):
+        return float(np.inf)
+    edges = sparse.triu(adjacency, k=1).tocoo()
+    u, v, length = edges.row, edges.col, edges.data
+    n_edges = length.size
+    k = np.arange(n_edges)
+    # Column k carries flow u -> v, column n_edges + k carries v -> u; each
+    # leaves one bin (+1) and enters the other (-1).
+    ones = np.ones(n_edges)
+    balance = sparse.csr_matrix(
+        (
+            np.r_[ones, -ones, ones, -ones],
+            (np.r_[u, v, v, u], np.r_[k, k, n_edges + k, n_edges + k]),
+        ),
+        shape=(n_bins, 2 * n_edges),
+    )
+    solved = linprog(
+        np.r_[length, length],
+        A_eq=balance,
+        b_eq=supply,
+        bounds=(0, None),
+        method="highs",
+    )
+    if not solved.success:
+        warnings.warn(
+            f"Optimal transport optimization failed: {solved.message}. Returning NaN.",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        return float(np.nan)
+    return float(solved.fun)

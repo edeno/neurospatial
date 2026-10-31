@@ -169,7 +169,9 @@ def _polar_regions_env(env: Environment) -> Environment:
             "rate_map_centroid(method='euclidean')",
         ),
         (
-            lambda env: compute_field_emd(env, _rates(env), _rates(env)[::-1]),
+            lambda env: compute_field_emd(
+                env, _rates(env), _rates(env)[::-1], metric="euclidean"
+            ),
             "compute_field_emd(metric='euclidean')",
         ),
         (
