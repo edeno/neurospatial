@@ -15,10 +15,12 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.io.nwb._adapters import events_table_to_dataframe
+from neurospatial._validation import validate_finite
+from neurospatial.io.nwb._adapters import events_table_to_dataframe, missing_error
 from neurospatial.io.nwb._core import (
     _clear_for_write,
     _get_or_create_processing_module,
@@ -119,11 +121,13 @@ def _warn_nothing_written(
     """
     removed_text = f" The existing table '{name}' was removed." if removed else ""
     warnings.warn(
-        f"{call} wrote nothing: there are no {records}.{removed_text}\n"
-        "Why: NWB files should not hold empty tables (nwbinspector "
-        "check_empty_table).\n"
-        f"Reading it back: {reader} raises KeyError for '{name}'; treat a "
-        f"missing table as zero {records}.",
+        _format_error(
+            f"{call} wrote nothing: there are no {records}.{removed_text}",
+            why="NWB files should not hold empty tables (nwbinspector "
+            "check_empty_table).",
+            fix=f"when reading it back, treat the KeyError {reader} raises for "
+            f"'{name}' as zero {records}.",
+        ),
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
@@ -222,19 +226,21 @@ def read_events(
 
     # Check if processing module exists
     if processing_module not in nwbfile.processing:
-        raise KeyError(
+        raise missing_error(
             f"Processing module '{processing_module}' not found in NWB file. "
-            f"Available modules: {list(nwbfile.processing.keys())}"
+            f"Available modules: {list(nwbfile.processing.keys())}.",
+            fix="pass processing_module= with a module from this list.",
         )
 
     module = nwbfile.processing[processing_module]
 
     # Check if table exists in module
     if table_name not in module.data_interfaces:
-        available = list(module.data_interfaces.keys())
-        raise KeyError(
-            f"EventsTable '{table_name}' not found in processing/{processing_module}. "
-            f"Available tables: {available}"
+        raise missing_error(
+            f"EventsTable '{table_name}' not found in processing/"
+            f"{processing_module}. Available tables: "
+            f"{list(module.data_interfaces.keys())}.",
+            fix="pass table_name= with a table from this list.",
         )
 
     events_table = module.data_interfaces[table_name]
@@ -326,9 +332,10 @@ def read_intervals(
         tables.setdefault(name, table)
 
     if interval_name not in tables:
-        raise KeyError(
+        raise missing_error(
             f"TimeIntervals '{interval_name}' not found in NWB file. "
-            f"Available intervals: {list(tables)}"
+            f"Available intervals: {list(tables)}.",
+            fix="pass interval_name= with a name from this list.",
         )
     logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
     return tables[interval_name].to_dataframe()
@@ -364,11 +371,32 @@ def _refuse_records_with_arrays(
     passed = [name for name, value in arrays.items() if value is not None]
     if passed:
         raise ValueError(
-            f"Cannot combine '{argument}' with {', '.join(passed)}.\n"
-            f"Why: the {argument} objects already carry every column, so the "
-            "arrays would be ignored.\n"
-            f"Fix: pass either '{argument}' or the arrays, not both."
+            _format_error(
+                f"Cannot combine '{argument}' with {', '.join(passed)}.",
+                why=f"the {argument} objects already carry every column, so the "
+                "arrays would be ignored.",
+                fix=f"pass either '{argument}' or the arrays, not both.",
+            )
         )
+
+
+def _checked_event_times(values: object, argument: str) -> NDArray[np.float64]:
+    """Return ``values`` as a float64 copy after checking they are NWB times.
+
+    NWB times are finite seconds from the session start, so none is negative.
+    """
+    times = validate_finite(np.array(values, dtype=np.float64), name=argument)
+    negative = np.flatnonzero(times < 0)
+    if negative.size:
+        raise ValueError(
+            _format_error(
+                f"{argument} contains {negative.size} negative timestamp(s) "
+                f"(first at index {negative[0]}: {times[negative[0]]}).",
+                why="NWB times are seconds from the session start.",
+                fix="subtract the session start time from every time.",
+            )
+        )
+    return times
 
 
 def _checked_intervals(
@@ -389,10 +417,7 @@ def _checked_intervals(
             f"({len(start)})."
         )
     for argument, values in (("start_times", start), ("stop_times", stop)):
-        if not np.all(np.isfinite(values)):
-            raise ValueError(f"{argument} contains non-finite values (NaN or Inf)")
-        if np.any(values < 0):
-            raise ValueError(f"{argument} contains negative timestamps")
+        _checked_event_times(values, argument)
     backwards = np.flatnonzero(stop < start)
     if backwards.size:
         i = backwards[0]
@@ -435,9 +460,11 @@ def _refuse_unknown(
     bad = [value for value in values if value not in allowed]
     if bad:
         raise ValueError(
-            f"{argument} contains {bad[0]!r}, which is not a {what}.\n"
-            f"Why: {why}\n"
-            f"Fix: use one of {allowed}."
+            _format_error(
+                f"{argument} contains {bad[0]!r}, which is not a {what}.",
+                why=why,
+                fix=f"use one of {allowed}.",
+            )
         )
 
 
@@ -823,10 +850,7 @@ def write_region_crossings(
             f"Crossing {missing[0]} has region {regions_list[missing[0]]!r}; every "
             "crossing needs the region name as a string."
         )
-    if not np.all(np.isfinite(crossing_times)):
-        raise ValueError("times contains non-finite values (NaN or Inf)")
-    if np.any(crossing_times < 0):
-        raise ValueError("times contains negative timestamps")
+    _checked_event_times(crossing_times, "times")
 
     events_table = _build_events_table(
         name,
@@ -1194,36 +1218,27 @@ def dataframe_to_events_table(
     # Validate input
     if not isinstance(df, pd.DataFrame):
         raise TypeError(
-            f"Expected pd.DataFrame, got {type(df).__name__}.\n"
-            "  WHY: Events must be a pandas DataFrame.\n"
-            "  Fix: Convert using pd.DataFrame({'timestamp': times})"
+            _format_error(
+                f"Expected pd.DataFrame, got {type(df).__name__}.",
+                why="events must be a pandas DataFrame.",
+                fix="convert using pd.DataFrame({'timestamp': times}).",
+            )
         )
 
     if "timestamp" not in df.columns:
         raise ValueError(
-            "DataFrame is missing required 'timestamp' column.\n"
-            "  WHY: EventsTable requires timestamp for each event.\n"
-            f"  Fix: Add timestamp column. Available columns: {list(df.columns)}"
-        )
-
-    timestamps = np.array(df["timestamp"], dtype=np.float64)
-    if not np.all(np.isfinite(timestamps)):
-        raise ValueError(
-            "timestamp column contains non-finite values (NaN or Inf).\n"
-            "  WHY: EventsTable requires valid numeric timestamps.\n"
-            "  Fix: Remove or replace NaN/Inf values in timestamp column."
-        )
-    if np.any(timestamps < 0):
-        raise ValueError(
-            "timestamp column contains negative values.\n"
-            "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
-            "  Fix: Adjust timestamps to be relative to session start."
+            _format_error(
+                "DataFrame is missing required 'timestamp' column. Available "
+                f"columns: {list(df.columns)}.",
+                why="an EventsTable needs the time of each event.",
+                fix="add a 'timestamp' column of event times in seconds.",
+            )
         )
 
     return _build_events_table(
         name,
         description,
-        timestamps,
+        _checked_event_times(df["timestamp"], "timestamp column"),
         {
             str(col): (f"Column: {col}", df[col].to_numpy(copy=True))
             for col in df.columns

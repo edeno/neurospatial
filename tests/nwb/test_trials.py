@@ -324,10 +324,10 @@ class TestWriteTrialsValidation:
     @pytest.mark.parametrize(
         ("start", "stop", "message"),
         [
-            ([0.0, np.nan], [5.0, 15.0], "start_times contains non-finite"),
-            ([0.0, 10.0], [5.0, np.nan], "stop_times contains non-finite"),
-            ([0.0, 10.0], [np.inf, 15.0], "stop_times contains non-finite"),
-            ([-1.0, 10.0], [5.0, 15.0], "start_times contains negative"),
+            ([0.0, np.nan], [5.0, 15.0], "start_times contains 1 non-finite"),
+            ([0.0, 10.0], [5.0, np.nan], "stop_times contains 1 non-finite"),
+            ([0.0, 10.0], [np.inf, 15.0], "stop_times contains 1 non-finite"),
+            ([-1.0, 10.0], [5.0, 15.0], "start_times contains 1 negative timestamp"),
         ],
     )
     def test_invalid_times_name_the_argument(self, empty_nwb, start, stop, message):
@@ -341,7 +341,9 @@ class TestWriteTrialsValidation:
         """A negative stop time is reported for stop_times, not start_times."""
         from neurospatial.io.nwb import write_trials
 
-        with pytest.raises(ValueError, match="stop_times contains negative"):
+        with pytest.raises(
+            ValueError, match="stop_times contains 1 negative timestamp"
+        ):
             write_trials(empty_nwb, start_times=[0.0, 10.0], stop_times=[5.0, -1.0])
 
     def test_arrays_store_missing_end_region_as_empty_string(self, empty_nwb):
@@ -435,7 +437,9 @@ class TestWriteTrialsOverwrite:
         from neurospatial.io.nwb import read_trials, write_trials
 
         write_trials(empty_nwb, self._trials(0.0))
-        with pytest.raises(ValueError, match="stop_times contains negative"):
+        with pytest.raises(
+            ValueError, match="stop_times contains 1 negative timestamp"
+        ):
             write_trials(
                 empty_nwb,
                 start_times=np.array([1.0]),
