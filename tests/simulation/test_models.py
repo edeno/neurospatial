@@ -1222,7 +1222,8 @@ class TestPolarPlaceCellModel:
         with pytest.raises(CartesianOnlyError) as refused:
             PlaceCellModel(surround, center=center, width=width)
         example = refused.value.example
-        assert example is not None and example in str(refused.value)
+        assert example is not None
+        assert example in str(refused.value)
         model = eval(
             example,
             {

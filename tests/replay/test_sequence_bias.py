@@ -66,7 +66,8 @@ class TestPairwiseBiasMatrix:
         np.testing.assert_allclose(
             result.bias, _brute_force_bias(trains, 0.1, 0.9), atol=1e-12
         )
-        assert np.isnan(result.bias[2]).all() and np.isnan(result.bias[:, 2]).all()
+        assert np.isnan(result.bias[2]).all()
+        assert np.isnan(result.bias[:, 2]).all()
         assert list(result.unit_ids) == list("abcdefg")
         assert result.summary()["n_active_cells"] == int(np.sum(result.n_spikes > 0))
 
@@ -77,7 +78,8 @@ class TestPairwiseBiasMatrix:
             _random_trains(np.random.default_rng(10 + seed), n_units=12), (0.0, 1.0)
         ).bias
         finite = bias[np.isfinite(bias)]
-        assert finite.min() >= -1.0 and finite.max() <= 1.0
+        assert finite.min() >= -1.0
+        assert finite.max() <= 1.0
         np.testing.assert_allclose(bias, -bias.T, atol=1e-12)
 
     def test_extremes_and_chance(self):
@@ -160,7 +162,8 @@ class TestSignificance:
         assert isinstance(result, BiasSimilarityResult)
         assert result.similarity == 1.0
         assert result.p_value == pytest.approx(1 / 51)
-        assert result.n_pairs == 45 and result.n_active_cells == 10
+        assert result.n_pairs == 45
+        assert result.n_active_cells == 10
         assert result.null_similarities.shape == (50,)
         assert np.all(np.abs(result.null_similarities) <= 1.0)
 

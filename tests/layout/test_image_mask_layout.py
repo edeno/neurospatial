@@ -50,7 +50,8 @@ def test_point_lookup_returns_the_pixel_that_holds_it():
     rows = np.floor(points[:, 1] / py).astype(int)
     cols = np.floor(points[:, 0] / px).astype(int)
     active = image_mask[rows, cols]
-    assert active.any() and not active.all()
+    assert active.any()
+    assert not active.all()
 
     result = layout.binning().locator.locate(points)
     np.testing.assert_array_equal(result[~active], -1)

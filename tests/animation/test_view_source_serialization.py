@@ -188,7 +188,8 @@ def test_napari_below_video_statistics_share_lock_with_existing_reader(env):
             handle._build_fields()
         assert not rows.overlaps
         assert len(rows.reads) == 103  # 100 scale rows and three consumers.
-        assert initial and np.all(initial[0] == 1)
+        assert initial
+        assert np.all(initial[0] == 1)
     finally:
         scene.close()
 

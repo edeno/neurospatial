@@ -48,7 +48,8 @@ def test_clip_mapping_owns_strided_indices_and_preserves_protection():
     mapping = ClipMapping(view, 2)
     caller[:] = 0
     np.testing.assert_array_equal(mapping.parent_bin_indices, [0, 0, 1])
-    assert caller.flags.writeable and view.flags.writeable
+    assert caller.flags.writeable
+    assert view.flags.writeable
     for restored in (
         mapping,
         copy.deepcopy(mapping),

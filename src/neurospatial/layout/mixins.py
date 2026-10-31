@@ -202,11 +202,9 @@ class _GridMixin(_NeighborPairsMixin):
             Whether cells that share only a corner are neighbors. Recorded in
             the grid's binning specification even when no such pair is active.
         """
-        assert (
-            self.active_mask is not None
-            and self.grid_shape is not None
-            and self.grid_edges is not None
-        )
+        assert self.active_mask is not None
+        assert self.grid_shape is not None
+        assert self.grid_edges is not None
         if not self.active_mask.any():
             raise ValueError(
                 _no_active_bins_message(

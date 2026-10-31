@@ -298,7 +298,8 @@ class TestPairSelection:
                 corr, corr, pair_mask=np.arange(120) < 2
             )
         assert result.n_pairs == 2
-        assert np.isnan(result.explained_variance) and np.isnan(result.p_value)
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.p_value)
 
 
 # =============================================================================
@@ -370,7 +371,8 @@ class TestSeveralControls:
             result = explained_variance_reactivation(
                 v["novel"], v["post"], control_correlations=[v["pre"], 2 * v["pre"]]
             )
-        assert np.isnan(result.explained_variance) and np.isnan(result.p_value)
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.p_value)
 
     def test_several_controls_need_one_label_array_each(self) -> None:
         rng = np.random.default_rng(4)

@@ -92,5 +92,6 @@ def test_object_vectors_without_env_need_planar_positions(trajectory, function):
             **kwargs,
         )
     message = str(error.value)
-    assert "(n_positions, 2)" in message and "Fix:" in message
+    assert "(n_positions, 2)" in message
+    assert "Fix:" in message
     assert "environment's bins" not in message

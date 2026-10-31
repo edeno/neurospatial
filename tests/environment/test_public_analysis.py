@@ -123,7 +123,8 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
     expected = first.copy()
     second = env.compute_gaussian_kernel(bandwidth=1.0)
     assert len(calls) == 1
-    assert first is not second and np.shares_memory(first, second)
+    assert first is not second
+    assert np.shares_memory(first, second)
     with pytest.raises(ValueError):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)

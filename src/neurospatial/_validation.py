@@ -359,7 +359,8 @@ def validate_times_positions(
         raise ValueError(
             format_times_positions_error(problems, looks_swapped, call=call)
         )
-    assert t is not None and p is not None
+    assert t is not None
+    assert p is not None
     refuse_infinite(p, name="positions", call=call)
     return t, p
 

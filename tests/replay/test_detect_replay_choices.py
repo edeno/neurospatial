@@ -84,7 +84,8 @@ class TestChooseAny:
             criteria=(ReplayCriterion("segment_time_bin_count", "<", 30),),
         )
         result = detect_replay(track, posterior, times, replay_method=method)
-        assert result.segment == 0 and result.is_replay
+        assert result.segment == 0
+        assert result.is_replay
 
     def test_without_a_passing_segment_the_longest_is_reported(
         self, track, two_segments

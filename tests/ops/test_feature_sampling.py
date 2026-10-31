@@ -472,7 +472,8 @@ def test_outside_point_is_missing_and_zero_field_is_supported(box_env):
         np.array([0.0]),
         np.array([[2.0, 0.0], [20.0, 0.0]]),  # inside, beyond the east wall
     )
-    assert result.support[0, 0, 0] and result.values[0, 0, 0] == 0.0
+    assert result.support[0, 0, 0]
+    assert result.values[0, 0, 0] == 0.0
     assert not result.support[0, 1, 0]
     assert result.bins[0, 1] == -1
     assert np.isnan(result.values[0, 1, 0])

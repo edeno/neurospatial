@@ -92,7 +92,8 @@ class TestCriterion:
 
     def test_relative_to_track_length_and_absolute(self):
         jump = ReplayCriterion("max_map_jump", "<", 0.4, relative_to="track_length")
-        assert jump.evaluate(79.0, 200.0) and not jump.evaluate(81.0, 200.0)
+        assert jump.evaluate(79.0, 200.0)
+        assert not jump.evaluate(81.0, 200.0)
         correlation = ReplayCriterion("score", ">", 0.6, absolute=True)
         assert correlation.evaluate(-0.7, np.nan)
         assert correlation.label == "|score| > 0.6"
@@ -110,7 +111,8 @@ class TestPublishedMethods:
         names = [method.name for method in PUBLISHED_METHODS]
         assert len(set(names)) == len(names)
         for method in PUBLISHED_METHODS:
-            assert method.reference and method.notes
+            assert method.reference
+            assert method.notes
 
     def test_davidson_detects_a_planted_sweep(self, place_code):
         env, rates = place_code
@@ -559,7 +561,8 @@ class TestCompareStreamsAndPool:
             env, [decoded[0], short], replay_methods=[SILVA_2015]
         )
         row = table[table["event"] == 1].iloc[0]
-        assert not row["is_replay"] and np.isnan(row["score"])
+        assert not row["is_replay"]
+        assert np.isnan(row["score"])
         assert row["error"] == "fewer than two time bins to score"
         assert table[table["event"] == 0].iloc[0]["error"] == ""
 
@@ -626,7 +629,8 @@ class TestSegmentationRecipes:
             replay_method=PFEIFFER_FOSTER_2015,
         )
         assert passes.is_replay
-        assert fails.segment == 0 and not fails.is_replay
+        assert fails.segment == 0
+        assert not fails.is_replay
         assert fails.values["segment_start_to_end_distance >= 80"] == pytest.approx(
             40.0
         )
@@ -730,7 +734,8 @@ class TestSegmentationRecipes:
         broken = detect_replay(
             env, posterior, _steps(24), replay_method=CAREY_2019, spike_counts=counts
         )
-        assert not broken.is_replay and broken.segment is None
+        assert not broken.is_replay
+        assert broken.segment is None
 
     def test_igata_p_is_the_share_of_surrogates_with_a_trajectory(self, monkeypatch):
         """On a 10 m track, few shifted-field surrogates hold a trajectory.
@@ -771,7 +776,8 @@ class TestSegmentationRecipes:
         assert set(np.unique(null)) <= {0.0, 1.0}
         assert result.p_value == pytest.approx((null.sum() + 1) / (len(null) + 1))
         assert result.criteria["segment_path_length > 20"]
-        assert result.is_replay and result.p_value < 0.05
+        assert result.is_replay
+        assert result.p_value < 0.05
 
     def test_an_undetected_event_has_p_one_without_shuffles(
         self, place_code, monkeypatch
@@ -794,7 +800,8 @@ class TestSegmentationRecipes:
             encoding_models=rates,
             dt=DT,
         )
-        assert result.p_value == 1.0 and not result.is_replay
+        assert result.p_value == 1.0
+        assert not result.is_replay
 
     def test_score_and_criteria_apply_to_the_tested_segment(self, place_code):
         env, _ = place_code
@@ -927,7 +934,8 @@ class TestSegmentationRecipes:
         )
         assert any_segment.segments.rows(any_segment.segment) == slice(12, 20)
         assert any_segment.p_value < 1.0
-        assert longest.p_value == 1.0 and not longest.is_replay
+        assert longest.p_value == 1.0
+        assert not longest.is_replay
 
     def test_detection_test_takes_the_null_options(self, place_code):
         """Only two cells fire, 12 cm apart: swapping them keeps the segment.
@@ -987,7 +995,8 @@ class TestSegmentationRecipes:
             {"a": env, "b": env}, share, times, replay_method=method, template="a"
         )
         alone = detect_replay(env, share, times, replay_method=method)
-        assert joint.is_replay and not alone.is_replay
+        assert joint.is_replay
+        assert not alone.is_replay
         both = detect_replay(
             env,
             share,
@@ -1270,7 +1279,8 @@ class TestMallory:
             replay_method=MALLORY_2025,
             spike_counts=np.ones((60, 12), dtype=int),
         )
-        assert result.is_replay and result.template == "inbound"
+        assert result.is_replay
+        assert result.template == "inbound"
         assert result.values["template_fraction > 0.665"] == pytest.approx(0.9)
         assert result.values["segment_template_fraction >= 0.5"] == pytest.approx(0.9)
         assert result.summary()["template"] == "inbound"
@@ -1287,7 +1297,8 @@ class TestMallory:
             replay_method=MALLORY_2025,
             spike_counts=np.ones((60, 12), dtype=int),
         )
-        assert result.template == "outbound" and not result.is_replay
+        assert result.template == "outbound"
+        assert not result.is_replay
         assert not result.criteria["template_fraction > 0.665"]
         assert result.criteria["|score| > 0.6"]
 
@@ -1329,7 +1340,8 @@ class TestMallory:
         named = detect_replay(
             env, event, _steps(60), replay_method=SILVA_2015, template="outbound"
         )
-        assert named.is_replay and named.template == "outbound"
+        assert named.is_replay
+        assert named.template == "outbound"
 
     def test_template_criteria_need_a_joint_decode(self, direction_track):
         env = direction_track
@@ -1592,7 +1604,8 @@ class TestRankOrderMethods:
             rank_order_method=DIBA_BUZSAKI_2007,
             rng=0,
         )
-        assert abs(result.score) < 0.4 and not result.is_replay
+        assert abs(result.score) < 0.4
+        assert not result.is_replay
 
     def test_diba_needs_30_percent_of_the_cells(self, place_code):
         env, rates = place_code
@@ -1675,8 +1688,10 @@ class TestRankOrderMethods:
             rates,
             rank_order_method=DIBA_BUZSAKI_2007,
         )
-        assert np.isnan(result.score) and np.isnan(result.p_value)
-        assert not result.is_replay and not any(result.criteria.values())
+        assert np.isnan(result.score)
+        assert np.isnan(result.p_value)
+        assert not result.is_replay
+        assert not any(result.criteria.values())
         assert result.error.startswith("rank-order correlation undefined")
 
     def test_compare_scores_spikes_over_each_events_windows(self, place_code):
@@ -1789,7 +1804,8 @@ class TestRankOrderTemplates:
             rank_order_method=DIBA_BUZSAKI_2007,
             rng=0,
         )
-        assert result.template == "outbound" and result.is_replay
+        assert result.template == "outbound"
+        assert result.is_replay
 
     def test_diba_breaks_a_tie_by_active_cells(self, place_code):
         """The event is reverse replay on both; inbound has fewer cells."""
@@ -1818,7 +1834,8 @@ class TestRankOrderTemplates:
             template="inbound",
             rng=0,
         )
-        assert result.template == "inbound" and not result.is_replay
+        assert result.template == "inbound"
+        assert not result.is_replay
         with pytest.raises(ValueError, match="'sideways' is not one of"):
             detect_rank_order_replay(
                 env,
@@ -2009,7 +2026,8 @@ class TestChenani:
             flat[cell][np.isclose(flat[cell] // 1, 10.0)] = 10.05
         table = self._table((env, templates, flat, events))
         row = table.iloc[0]
-        assert np.isnan(row["score"]) and not row["is_replay"]
+        assert np.isnan(row["score"])
+        assert not row["is_replay"]
         assert "no variation" in row["error"]
         assert row["template"] is None or np.isnan(row["template"])
 
@@ -2099,7 +2117,8 @@ class TestWeightedCorrelationRecipes:
         p_outbound = np.r_[np.full(30, 0.9), np.full(30, 0.1)]
         event = _joint_event(env, outbound, inbound, p_outbound)
         summed = detect_replay(env, event, _steps(60), replay_method=BERNERS_LEE_2022)
-        assert summed.is_replay and summed.template is None
+        assert summed.is_replay
+        assert summed.template is None
         assert summed.values["max_map_jump < 0.4 x track_length"] == pytest.approx(2.0)
         for name in ("outbound", "inbound"):
             alone = detect_replay(
@@ -2125,7 +2144,8 @@ class TestWeightedCorrelationRecipes:
                 PFEIFFER_FOSTER_2013, name="pf_sum", template_choice="sum"
             ),
         )
-        assert segmented.is_replay and segmented.template is None
+        assert segmented.is_replay
+        assert segmented.template is None
         shuffled = detect_replay(
             env,
             event,
@@ -2135,7 +2155,8 @@ class TestWeightedCorrelationRecipes:
             ),
             rng=0,
         )
-        assert shuffled.is_replay and shuffled.p_value == pytest.approx(0.01)
+        assert shuffled.is_replay
+        assert shuffled.p_value == pytest.approx(0.01)
 
     def test_compare_sums_each_joint_event(self, direction_track):
         env = direction_track
@@ -2194,7 +2215,8 @@ class TestWeightedCorrelationRecipes:
         replayed = detect_replay(
             env, sweep.posterior, sweep.times, replay_method=AMBROSE_2016
         )
-        assert replayed.is_replay and np.isnan(replayed.p_value)
+        assert replayed.is_replay
+        assert np.isnan(replayed.p_value)
         assert not detect_replay(
             env, noise.posterior, noise.times, replay_method=AMBROSE_2016
         ).is_replay
@@ -2223,7 +2245,8 @@ class TestWeightedCorrelationRecipes:
                 )
             )
         sweep, random_event = verdicts
-        assert sweep.is_replay and sweep.p_value == pytest.approx(1 / 200)
+        assert sweep.is_replay
+        assert sweep.p_value == pytest.approx(1 / 200)
         assert not random_event.is_replay
 
     def test_grosmark_tests_the_absolute_correlation(self, place_code):
@@ -2241,7 +2264,8 @@ class TestWeightedCorrelationRecipes:
             rng=0,
         )
         assert reverse.score < -0.6
-        assert reverse.is_replay and reverse.p_value == pytest.approx(1 / 200)
+        assert reverse.is_replay
+        assert reverse.p_value == pytest.approx(1 / 200)
 
     @pytest.mark.parametrize(
         ("n_active", "n_cells", "expected"),
@@ -2326,7 +2350,8 @@ class TestOlafsdottir:
                 )
             )
         sweep, random_event = verdicts
-        assert sweep.is_replay and sweep.p_value == pytest.approx(1 / 101)
+        assert sweep.is_replay
+        assert sweep.p_value == pytest.approx(1 / 101)
         assert not random_event.is_replay
 
     @pytest.mark.parametrize(

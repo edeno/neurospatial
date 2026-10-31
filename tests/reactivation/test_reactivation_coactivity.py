@@ -255,7 +255,8 @@ def test_event_response_matches_a_hand_alignment(trace) -> None:
     np.testing.assert_allclose(result.lags, lags, atol=1e-12)
     hand = _hand_peri_event(times, activation, 0.01, events, lags)
     # The event at 19.8 s runs into the gap and the one at 29.9 s starts in it.
-    assert np.isnan(hand[2, -10:]).all() and np.isnan(hand[3, :10]).all()
+    assert np.isnan(hand[2, -10:]).all()
+    assert np.isnan(hand[3, :10]).all()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         np.testing.assert_allclose(result.peri_event_mean, np.nanmean(hand, axis=0))
@@ -263,8 +264,10 @@ def test_event_response_matches_a_hand_alignment(trace) -> None:
         expected = np.nanmean(hand[:, in_response], axis=1)
     np.testing.assert_allclose(result.event_responses, expected)
     assert result.response == pytest.approx(np.nanmean(expected))
-    assert result.n_events == 4 and np.isnan(result.event_responses[3])
-    assert np.isnan(result.p_value) and np.isnan(result.baseline_responses).all()
+    assert result.n_events == 4
+    assert np.isnan(result.event_responses[3])
+    assert np.isnan(result.p_value)
+    assert np.isnan(result.baseline_responses).all()
 
 
 def test_event_response_peak_and_baseline_test(trace) -> None:

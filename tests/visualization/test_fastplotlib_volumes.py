@@ -181,7 +181,8 @@ def test_native_volume_uses_public_api_and_lazy_single_frame_updates(grid_env, m
     assert np.all(plot.graphic.data[..., 0] == 0)
     assert np.count_nonzero(plot.graphic.data[..., 1]) == grid_env.n_bins
     assert np.all(plot.graphic.data[..., 1][plot.graphic.data[..., 1] > 0] == 1)
-    assert scale.vmin == -10 and scale.vmax == 0
+    assert scale.vmin == -10
+    assert scale.vmax == 0
     hover = field.graphic.tooltip_format
     assert "bin 58" in hover({"index": (2, 3, 4)})
     assert "value: 0" in hover({"index": (2, 3, 4)})

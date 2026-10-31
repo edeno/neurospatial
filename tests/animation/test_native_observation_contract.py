@@ -241,7 +241,8 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
     with animation.capture_session():
         animation.close()
     assert not animation.widget.ui_sliders._playing["time"]
-    assert animation._frames.pause and other.pause
+    assert animation._frames.pause
+    assert other.pause
     animation._prepare.assert_not_called()
     camera.set_state.assert_not_called()
 

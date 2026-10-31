@@ -1172,7 +1172,8 @@ class TestStatusBar:
         assert hasattr(widget, "status_label")
         # Status shows "Mode: Add Node" - check for "add" and "node" in lowercase
         status_text = widget.status_label.text().lower()
-        assert "add" in status_text and "node" in status_text
+        assert "add" in status_text
+        assert "node" in status_text
         viewer.close()
 
 

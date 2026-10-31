@@ -83,7 +83,8 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
             (result.times >= 20) & (result.times < 29)
         )
         assert np.all(inside)
-        assert np.any(result.times < 10) and np.any(result.times >= 20)
+        assert np.any(result.times < 10)
+        assert np.any(result.times >= 20)
         np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0)
         ax = namespace["ax"]
         actual_line = next(

@@ -79,7 +79,8 @@ def test_selector_returns_boundary_triple(open_field_env, simulate_place_fields)
     lam, obj, at_boundary = select_penalty_by_reml(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
-    assert np.isfinite(lam) and np.isfinite(obj)
+    assert np.isfinite(lam)
+    assert np.isfinite(obj)
     assert at_boundary is False
     # A well-identified place field sits inside the search interval.
     log_lam = np.log(lam)
@@ -270,8 +271,10 @@ def test_pooled_false_multiple_zero_spike_share_fallback(
     pooled_lam = _pooled_lambda(counts[:, informative], occ, basis)
     # Both silent units share the identical pooled fallback lambda.
     assert penalty[2] == penalty[3] == pytest.approx(pooled_lam, rel=1e-6)
-    assert not selected[2] and not selected[3]
-    assert np.isnan(reml_obj[2]) and np.isnan(reml_obj[3])
+    assert not selected[2]
+    assert not selected[3]
+    assert np.isnan(reml_obj[2])
+    assert np.isnan(reml_obj[3])
     fr = _firing_rate(fit)
     assert np.max(fr[:, 2]) == pytest.approx(_RATE_FLOOR, abs=1e-6)
     assert np.max(fr[:, 3]) == pytest.approx(_RATE_FLOOR, abs=1e-6)
@@ -399,7 +402,8 @@ def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_sign
             unit_ids=["cell-A", "cell-B"],
         )
     msg = "\n".join(str(w.message) for w in rec)
-    assert "cell-A" in msg and "cell-B" in msg
+    assert "cell-A" in msg
+    assert "cell-B" in msg
     assert "unit index" not in msg  # labels replace the positional fallback
 
     # No labels -> positional "unit indices".

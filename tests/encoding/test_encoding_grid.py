@@ -312,7 +312,8 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         assert autocorr.shape == (19, 19)
         # Shifts past the strip's three rows have no overlap at all.
-        assert np.isnan(autocorr[:7]).all() and np.isnan(autocorr[12:]).all()
+        assert np.isnan(autocorr[:7]).all()
+        assert np.isnan(autocorr[12:]).all()
         np.testing.assert_allclose(autocorr[7:12], expected, atol=1e-12)
 
 
@@ -749,7 +750,8 @@ class TestGridOrientationInEnvironmentFrame:
             for grid in self.GRIDS
         }
 
-        assert shapes["square-even"][0] % 2 == 0 and shapes["square-odd"][0] % 2 == 1
+        assert shapes["square-even"][0] % 2 == 0
+        assert shapes["square-odd"][0] % 2 == 1
         assert len({n % 2 for n in shapes["anisotropic-mixed"]}) == 2
         assert abs(widths["anisotropic"][1] / widths["anisotropic"][0] - 1) > 0.2
 

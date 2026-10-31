@@ -503,7 +503,8 @@ class TestInterpolateLinearHoledGrid:
         reference = env.interpolate(plane, query, mode="linear")
 
         needs_missing = weight > 0
-        assert needs_missing.any() and (~needs_missing).any()
+        assert needs_missing.any()
+        assert (~needs_missing).any()
         assert np.isnan(values[needs_missing]).all()
         np.testing.assert_allclose(
             values[~needs_missing], reference[~needs_missing], rtol=1e-12

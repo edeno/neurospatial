@@ -387,7 +387,8 @@ def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
         cell_types, report.unit_status, report.skip_reasons, strict=True
     ):
         if cell_type == "place":
-            assert status in {"passed", "failed"} and reason is None
+            assert status in {"passed", "failed"}
+            assert reason is None
         else:
             assert (status, reason) == ("excluded", "not_a_place_field")
     assert report.n_evaluated == cell_types.count("place") == 3

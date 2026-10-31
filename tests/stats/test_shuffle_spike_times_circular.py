@@ -54,7 +54,8 @@ def test_rejects_too_short():
     with pytest.raises(ValueError) as caught:
         list(stats.shuffle_spike_times_circular([10], [[0, 30]], min_shift=20))
     assert "min_shift" in str(caught.value)
-    assert "Why:" in str(caught.value) and "Fix:" in str(caught.value)
+    assert "Why:" in str(caught.value)
+    assert "Fix:" in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -103,12 +104,16 @@ def test_invalid_windows_fix_names_primitive_argument(windows):
     with pytest.raises(ValueError) as exc:
         list(stats.shuffle_spike_times_circular([10], windows))
     message = str(exc.value)
-    assert "windows" in message and "Why:" in message
+    assert "windows" in message
+    assert "Why:" in message
     fix = message.split("Fix:", 1)[1]
     assert "windows=" in fix
-    assert "epochs" not in fix and "spike_window" not in fix and "None" not in fix
+    assert "epochs" not in fix
+    assert "spike_window" not in fix
+    assert "None" not in fix
     if len(windows) == 2:
-        assert "stop <= start" in message and "NaN" in message
+        assert "stop <= start" in message
+        assert "NaN" in message
     else:
         assert "shape" in message
 

@@ -91,7 +91,8 @@ def test_all_excluded_without_named_gates_reads_cleanly():
     with pytest.warns(UserWarning) as record:
         warn_excluded_intervals(IntervalGates(np.arange(4.0), np.zeros(3, bool), None))
     message = str(record[0].message)
-    assert "gate(s) )" not in message and "Fix: ." not in message
+    assert "gate(s) )" not in message
+    assert "Fix: ." not in message
     assert "Fix: check that the samples are finite" in message
 
 

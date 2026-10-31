@@ -18,7 +18,8 @@ def test_swapped_times_positions_names_swap():
     assert "f(..., times, positions, ...)" in message
     assert "same length" in message
     assert "got shape (3, 2)" in message
-    assert "Why:" in message and "Fix:" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
@@ -137,9 +138,12 @@ def test_numeric_conversion_errors_are_named_together():
     with pytest.raises(ValueError) as caught:
         validate_times_positions(["bad-time"], [["bad-position"]], call="f")
     message = str(caught.value)
-    assert "times" in message and "positions" in message
-    assert "bad-time" in message and "bad-position" in message
-    assert "Why:" in message and "Fix:" in message
+    assert "times" in message
+    assert "positions" in message
+    assert "bad-time" in message
+    assert "bad-position" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 

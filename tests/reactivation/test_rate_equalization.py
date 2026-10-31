@@ -45,13 +45,15 @@ def test_equal_lengths_give_each_unit_the_smaller_count_in_both_periods() -> Non
     np.testing.assert_array_equal(new_after.sum(axis=0), smaller)
     # Spikes are only removed, bin by bin, and only from the period that
     # fired more; the other period is unchanged.
-    assert np.all(new_before <= before) and np.all(new_after <= after)
+    assert np.all(new_before <= before)
+    assert np.all(new_after <= after)
     before_higher = before.sum(axis=0) > after.sum(axis=0)
     np.testing.assert_array_equal(new_after[:, before_higher], after[:, before_higher])
     np.testing.assert_array_equal(
         new_before[:, ~before_higher], before[:, ~before_higher]
     )
-    assert before_higher.any() and (~before_higher).any()
+    assert before_higher.any()
+    assert (~before_higher).any()
 
 
 def test_different_lengths_equalize_the_rate_per_bin() -> None:

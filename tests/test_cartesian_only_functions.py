@@ -448,7 +448,8 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
     assert isinstance(info.value, TypeError)
     what, why, fix = str(info.value).split("\n")
     assert what == f"{operation} does not work on a polar environment."
-    assert why.startswith("Why: ") and "(distance, angle)" in why
+    assert why.startswith("Why: ")
+    assert "(distance, angle)" in why
     assert fix.startswith("Fix: ")
 
 

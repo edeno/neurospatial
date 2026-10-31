@@ -1406,7 +1406,8 @@ class _NullContext:
             missing = _missing_decoding_inputs(counts, encoding_models, dt)
             if missing:
                 _refuse_missing_decoding_inputs(operation, [null], missing)
-            assert dt is not None and counts is not None
+            assert dt is not None
+            assert counts is not None
             if spec.spreads_spikes:
                 for event in events:
                     _require_contiguous_time_bins(

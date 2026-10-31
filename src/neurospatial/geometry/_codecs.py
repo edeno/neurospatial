@@ -1025,9 +1025,8 @@ def _decode_binning(
             map_snapshot = referenced(
                 {"clip_mapping_ref": value["mapping_ref"]}, "clip_mapping_ref"
             )
-            assert isinstance(cell_snapshot, PolygonCells) and isinstance(
-                map_snapshot, ClipMapping
-            )
+            assert isinstance(cell_snapshot, PolygonCells)
+            assert isinstance(map_snapshot, ClipMapping)
             return ClippedLocator(base, cell_snapshot, map_snapshot)
         if kind == "SubsetLocator":
             return SubsetLocator(base, _array(arrays, path, "parent_to_child", np.intp))

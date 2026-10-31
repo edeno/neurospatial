@@ -4396,5 +4396,6 @@ def test_silent_unit_summary_has_no_peak_location():
     spikes = [np.array([]), np.sort(np.random.default_rng(8).uniform(0, 60, 40))]
     table = compute_spatial_rates(env, spikes, times, positions).summary_table()
     assert table["peak_firing_rate"].iloc[0] == 0.0
-    assert np.isnan(table["peak_x"].iloc[0]) and np.isnan(table["peak_y"].iloc[0])
+    assert np.isnan(table["peak_x"].iloc[0])
+    assert np.isnan(table["peak_y"].iloc[0])
     assert np.isfinite(table["peak_x"].iloc[1])

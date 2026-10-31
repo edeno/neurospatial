@@ -364,8 +364,10 @@ class TestNeighborsWithinEdgeCases:
         )
 
         # Both neighborhoods should include node 1 and 2
-        assert 1 in neighborhoods[0] and 2 in neighborhoods[0]
-        assert 1 in neighborhoods[1] and 2 in neighborhoods[1]
+        assert 1 in neighborhoods[0]
+        assert 2 in neighborhoods[0]
+        assert 1 in neighborhoods[1]
+        assert 2 in neighborhoods[1]
 
     def test_all_nodes_as_centers(self):
         """Test using all nodes as centers."""

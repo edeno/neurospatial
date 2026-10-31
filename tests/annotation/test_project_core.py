@@ -319,7 +319,8 @@ def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
         session = sessions[0]
         session.layer.data = [np.array([[1, 1], [11, 11], [1, 11], [11, 1]])[:, ::-1]]
         assert not session.viewer.window._qt_window.close()
-        assert errors and "invalid" in errors[-1]
+        assert errors
+        assert "invalid" in errors[-1]
         assert path.read_bytes() == original
         session.layer.data = [vertices[:, ::-1]]
         session.set_calibration(

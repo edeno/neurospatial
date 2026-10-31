@@ -23,7 +23,8 @@ def test_create_hex_grid_with_dimension_range():
         positions, dimension_range=[(0, 2), (0, 2)], hexagon_width=1.0
     )
     assert bin_centers.shape[1] == 2
-    assert centers_shape[0] > 0 and centers_shape[1] > 0
+    assert centers_shape[0] > 0
+    assert centers_shape[1] > 0
     assert min_x == 0.0
     assert min_y == 0.0
 
@@ -104,7 +105,8 @@ def test_get_hex_grid_neighbor_deltas():
     assert len(odd_neighbors) == 6
     # Check that neighbor deltas are tuples of ints
     for delta in even_neighbors + odd_neighbors:
-        assert isinstance(delta, tuple) and len(delta) == 2
+        assert isinstance(delta, tuple)
+        assert len(delta) == 2
 
 
 def test_hex_grid_pairs_join_hexagons_one_width_apart():
@@ -136,7 +138,8 @@ def test_points_to_hex_bin_ind_nan_handling():
     indices = geometry.points_to_hex_bin_ind(
         positions, min_x, min_y, hex_radius, centers_shape
     )
-    assert indices[1] == -1 and indices[2] == -1
+    assert indices[1] == -1
+    assert indices[2] == -1
 
 
 def test_points_to_hex_bin_ind_infinite_points_are_outside():

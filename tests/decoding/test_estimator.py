@@ -1158,8 +1158,10 @@ def test_spatial_unit_identity_provenance_all_methods(sim, method, options):
     labelled = compute_spatial_rates(
         env, spikes[:2], times, positions, method=method, unit_ids=[7, 9], **options
     )
-    assert unlabelled._unit_ids_generated and unlabelled[0]._unit_ids_generated
-    assert not labelled._unit_ids_generated and not labelled[0]._unit_ids_generated
+    assert unlabelled._unit_ids_generated
+    assert unlabelled[0]._unit_ids_generated
+    assert not labelled._unit_ids_generated
+    assert not labelled[0]._unit_ids_generated
 
 
 def test_from_rates_rejects_other_types():

@@ -102,7 +102,8 @@ class TestCalibrationErrorMessages:
 
         error_msg = str(exc_info.value)
         # Should explain it needs a tuple of two numeric values
-        assert "two" in error_msg.lower() and "numeric" in error_msg.lower()
+        assert "two" in error_msg.lower()
+        assert "numeric" in error_msg.lower()
 
 
 class TestRegularGridErrorMessages:
@@ -177,7 +178,8 @@ class TestHexagonalErrorMessages:
         # Should mention the actual length provided (3)
         assert "3" in error_msg
         # Should mention (min_x, max_x), (min_y, max_y) or show expected format
-        assert "min" in error_msg.lower() and "max" in error_msg.lower()
+        assert "min" in error_msg.lower()
+        assert "max" in error_msg.lower()
 
     def test_data_samples_wrong_shape_shows_actual_shape(self):
         """Test data_samples validation shows actual shape when not (n, 2)."""

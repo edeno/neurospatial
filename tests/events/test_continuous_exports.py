@@ -372,7 +372,8 @@ def test_plot_needs_feature_id_for_several_features(agg):
     result = _mixed_result()
     with pytest.raises(ValueError, match="feature_id") as excinfo:
         result.plot()
-    assert "'a'" in str(excinfo.value) and "'b'" in str(excinfo.value)
+    assert "'a'" in str(excinfo.value)
+    assert "'b'" in str(excinfo.value)
     with pytest.raises(ValueError, match="not a feature"):
         result.plot(feature_id="zzz")
 

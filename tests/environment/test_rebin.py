@@ -113,7 +113,8 @@ def _two_distant_samples():
 def test_sparse_observations_do_not_invent_unsupported_coarse_cells():
     env = _two_distant_samples()
     _, centers, active = _coarse_oracle(env, 3)
-    assert centers.size == 0 and not active.any()
+    assert centers.size == 0
+    assert not active.any()
     with (
         pytest.warns(UserWarning, match="truncated"),
         pytest.raises(ValueError, match="no coarse bin center"),

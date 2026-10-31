@@ -128,7 +128,8 @@ def test_infinite_position_is_refused_not_missing(bad):
         )
     message = str(caught.value)
     assert "row 2, column 1" in message
-    assert "\nWhy: " in message and "\nFix: " in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message
 
 
 def test_infinite_position_is_refused_by_a_public_analysis():
@@ -208,7 +209,8 @@ def test_invalid_break_before_raises(bad):
 def test_validate_break_before_none_and_valid():
     assert validate_break_before(None, 3, call="f") is None
     out = validate_break_before([True, False, True], 3, call="f")
-    assert out is not None and out.dtype == bool
+    assert out is not None
+    assert out.dtype == bool
 
 
 @pytest.mark.parametrize("n", [0, 1])

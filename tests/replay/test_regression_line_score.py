@@ -83,7 +83,8 @@ class TestScoreDefinition:
         # The last row's band reaches past the track's end, where wrapping
         # takes part of bin 0, so the wrapped score is higher.
         assert wrapped.score > opened.score
-        assert wrapped.wrap_band and not opened.wrap_band
+        assert wrapped.wrap_band
+        assert not opened.wrap_band
 
     def test_band_longer_than_the_track_holds_every_row_when_wrapped(self):
         env = _track()

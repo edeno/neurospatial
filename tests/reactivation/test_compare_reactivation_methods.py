@@ -229,7 +229,8 @@ def test_kudrimoti_rows_match_a_hand_calculation(reactivated) -> None:
             template_counts, match_counts, control_counts, keep
         )
         row = table.iloc[window]
-        assert row["window_start"] == start and row["window_stop"] == stop
+        assert row["window_start"] == start
+        assert row["window_stop"] == stop
         assert row["n_pairs"] == keep.sum() == 276 - 12
         assert row["explained_variance"] == pytest.approx(partial**2, rel=1e-9)
         assert row["value"] == row["explained_variance"]
@@ -272,7 +273,8 @@ def test_several_control_windows_average_single_control_evs(reactivated) -> None
     assert row["explained_variance"] == pytest.approx(np.mean(evs), rel=1e-9)
     assert row["reversed_explained_variance"] == pytest.approx(np.mean(revs), rel=1e-9)
     # With several controls there is no single partial correlation or p-value.
-    assert np.isnan(row["partial_correlation"]) and np.isnan(row["p_value"])
+    assert np.isnan(row["partial_correlation"])
+    assert np.isnan(row["p_value"])
     assert pd.isna(row["is_reactivated"])
 
 
@@ -659,4 +661,5 @@ def test_a_custom_recipe_runs(reactivated) -> None:
         bin_size=0.2,
     )
     row = _compare(reactivated, [gridchyn_like]).iloc[0]
-    assert row["n_pairs"] == 276 and row["value"] > 0.5
+    assert row["n_pairs"] == 276
+    assert row["value"] > 0.5

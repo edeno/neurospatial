@@ -256,7 +256,8 @@ def test_a_window_without_events_is_an_error_row(
     assert "no match_events start inside the match window" in failed["error"].iloc[0]
     assert failed["value"].isna().all()
     other = table[table["method"] == "other"]
-    assert (other["error"] == "").all() and other["value"].notna().all()
+    assert (other["error"] == "").all()
+    assert other["value"].notna().all()
 
 
 @pytest.mark.parametrize(
@@ -288,9 +289,11 @@ def test_a_failed_match_window_keeps_the_other_windows(
             [halves],
             match_events=first_half,
         )
-    assert table["window"].tolist()[0] == 0 and table["window"].tolist()[-1] == 1
+    assert table["window"].tolist()[0] == 0
+    assert table["window"].tolist()[-1] == 1
     kept = table[table["window"] == 0].reset_index(drop=True)
-    assert (kept["error"] == "").all() and kept["value"].notna().all()
+    assert (kept["error"] == "").all()
+    assert kept["value"].notna().all()
     # The error row's missing region turns the column's None into NaN.
     pd.testing.assert_frame_equal(kept, alone, check_dtype=False)
     failed = table[table["window"] == 1]
@@ -299,7 +302,8 @@ def test_a_failed_match_window_keeps_the_other_windows(
     assert "no match_events start inside the match window" in row["error"]
     assert (row["window_start"], row["window_stop"]) == (1500.0, 1800.0)
     assert row["window_duration"] == 300.0
-    assert np.isnan(row["value"]) and pd.isna(row["component"])
+    assert np.isnan(row["value"])
+    assert pd.isna(row["component"])
 
 
 def test_a_control_window_without_events_fails_the_whole_method(
@@ -588,7 +592,8 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         assert len(events) > 400
         assert np.all(events[1:, 0] > events[:-1, 1])  # merged: disjoint
         assert np.all(events[:, 1] - events[:, 0] >= 0.1 - 1e-12)
-        assert events[0, 0] >= epochs[0, 0] and events[-1, 1] <= epochs[0, 1]
+        assert events[0, 0] >= epochs[0, 0]
+        assert events[-1, 1] <= epochs[0, 1]
 
 
 # ---------------------------------------------------------------------------

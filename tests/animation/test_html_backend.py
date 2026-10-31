@@ -44,7 +44,8 @@ def test_player_plays_rows_at_their_rate_times_speed(env, fields, tmp_path):
         assert control in text
     assert 'type="range" id="slider"' in text
     assert 'id="speed"' in text
-    assert "ArrowLeft" in text and "ArrowRight" in text
+    assert "ArrowLeft" in text
+    assert "ArrowRight" in text
 
 
 def test_title_is_escaped(env, fields, tmp_path):

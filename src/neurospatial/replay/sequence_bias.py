@@ -262,7 +262,8 @@ class BiasSequenceMethod:
         self, event: _CompareEvent, rng: np.random.Generator
     ) -> ReplayDetectionResult:
         """This method's verdict on one event of ``compare_replay_methods``."""
-        assert event.window is not None and event.template_bias is not None
+        assert event.window is not None
+        assert event.template_bias is not None
         return detect_bias_sequence_replay(
             event.spike_times,
             event.window,

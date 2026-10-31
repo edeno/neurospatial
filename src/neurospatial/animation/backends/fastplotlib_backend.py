@@ -546,7 +546,8 @@ class _PositionTime:
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
-        assert prepared.track_extents is not None and prepared.track_rows is not None
+        assert prepared.track_extents is not None
+        assert prepared.track_rows is not None
         self.subplot, self.prepared, self.field = subplot, prepared, field
         self.scale, self.start = scale, start
         self.lower, self.upper = prepared.track_extents

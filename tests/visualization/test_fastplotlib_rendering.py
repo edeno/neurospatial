@@ -417,7 +417,8 @@ def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
     x = x[np.isfinite(x)]
     assert len(np.unique(x)) >= 1999
     low, high = subplot.y_range  # the series' whole range, with a margin
-    assert low < np.sin(series_times).min() and high > np.sin(series_times).max()
+    assert low < np.sin(series_times).min()
+    assert high > np.sin(series_times).max()
     # Its ends are labeled, and 0 between: a short panel shows its scale.
     lowest, highest = np.sin(series_times).min(), np.sin(series_times).max()
     ticks = subplot.axes.y.ticks
@@ -687,7 +688,8 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     assert unit_panel.title.text.startswith("unit 1:")
     # The chosen row is striped, not only recolored.
     alpha = layer.bands.colors[:][:, 3].reshape(3, 4)[:, 0]
-    assert alpha[0] > 100 * alpha[1] and alpha[1] == alpha[2] > 0
+    assert alpha[0] > 100 * alpha[1]
+    assert alpha[1] == alpha[2] > 0
     # Hovering anywhere in a row names its unit: the band is picked.
     raster_panel = animation.figure["raster 0"]
     x, y = raster_panel.map_world_to_screen((t[30] + 0.4, 2.0, 0))[:2]
@@ -808,7 +810,8 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
     animation.show()
     figure = animation.figure
     # The keys are named above the panels; N only where there is somewhere to go.
-    assert "Space play" in animation.key_hint and "N/Shift+N" not in animation.key_hint
+    assert "Space play" in animation.key_hint
+    assert "N/Shift+N" not in animation.key_hint
     animation.frame = 19
     _press(figure, "ArrowRight")  # across the 3 s gap: the next frame
     assert animation.frame == 20
@@ -1065,7 +1068,8 @@ def test_explicit_limits_mark_the_ends_that_clip_sampled_values(
     apparatus, walk, limits, bottom, top
 ):
     t, _, fields = walk
-    assert fields.min() < 0.2 and fields.max() > 0.5
+    assert fields.min() < 0.2
+    assert fields.max() > 0.5
     field = AnimationField(fields, t, vmin=limits[0], vmax=limits[1])
     with (
         Animation(apparatus, field) as scene,
@@ -1213,7 +1217,8 @@ def test_see_through_fields_keep_the_displayed_peak_opaque():
     np.testing.assert_allclose(alpha, 1.0)
     # Above the colors' top: the top color is still opaque, the floor clear.
     alpha = ColorScale("viridis", 0.0, 0.5, "lightgray", opaque_from=0.8).lut[1:, 3]
-    assert alpha[0] == 0.0 and alpha[-1] == pytest.approx(1.0)
+    assert alpha[0] == 0.0
+    assert alpha[-1] == pytest.approx(1.0)
 
 
 def test_side_by_side_posteriors_share_the_tracks_color_limits(track):

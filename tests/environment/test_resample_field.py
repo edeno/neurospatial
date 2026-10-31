@@ -504,7 +504,8 @@ class TestResampleFieldOutsideSource:
         # distance allowance gave x = 22..40 cm the edge value 20.
         x_edge = src.dimension_ranges[0][1]
         beyond = dst.bin_centers[:, 0] > x_edge
-        assert beyond.any() and (~beyond).any()
+        assert beyond.any()
+        assert (~beyond).any()
         assert np.isnan(result[beyond]).all()
         assert np.isfinite(result[~beyond]).all()
 

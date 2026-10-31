@@ -293,7 +293,8 @@ def test_empty_summaries_nan_columns_by_kind():
     assert s.counts.dtype == np.int64
     assert s.category_counts.shape == (4, 2)
     assert s.category_counts.dtype == np.int64
-    assert (s.counts == 0).all() and (s.category_counts == 0).all()
+    assert (s.counts == 0).all()
+    assert (s.category_counts == 0).all()
     np.testing.assert_array_equal(np.isnan(s.sums[0]), [False, True, True])
     np.testing.assert_array_equal(np.isnan(s.sin_sums[0]), [True, False, True])
     np.testing.assert_array_equal(np.isnan(s.cos_sums[0]), [True, False, True])

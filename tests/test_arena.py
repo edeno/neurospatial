@@ -52,7 +52,8 @@ def arenas():
 def test_arena_roundtrip_identity_and_owned_payload(arena):
     meta, arrays = encode_arena(arena)
     restored = decode_arena(meta, arrays)
-    assert restored is not arena and restored != arena
+    assert restored is not arena
+    assert restored != arena
     assert restored.n_dims == arena.n_dims
     assert restored.coordinate_kind == arena.coordinate_kind
     assert restored.domain_known == arena.domain_known
@@ -96,7 +97,8 @@ def test_open_arena_hole_boundary_multipolygon_and_walls():
 )
 def test_unknown_footprint_refuses_physical_containment(constructor):
     arena = constructor()
-    assert not arena.domain_known and arena.outline is None
+    assert not arena.domain_known
+    assert arena.outline is None
     assert arena.polygonal_domain() is None
     with pytest.raises(NotImplementedError, match="unknown"):
         arena.contains([[0.0, 0.0]])
@@ -110,7 +112,8 @@ def test_mask_domain_is_closed_cell_union_not_half_open_lookup():
         ),
         [True, True, False, True, True, False, False],
     )
-    assert arena.domain_known and arena.outline is None
+    assert arena.domain_known
+    assert arena.outline is None
     assert arena.walls == ()
     assert arena.polygonal_domain().area == 2.0
 
@@ -159,8 +162,10 @@ def test_egocentric_windows_periodicity_and_analysis_boundary():
         ),
         [True, True, True, False, False, False],
     )
-    assert arena.coordinate_kind == "polar" and arena.outline is None
-    assert arena.walls == () and arena.polygonal_domain() is None
+    assert arena.coordinate_kind == "polar"
+    assert arena.outline is None
+    assert arena.walls == ()
+    assert arena.polygonal_domain() is None
 
 
 @pytest.mark.parametrize("arena", [a for a in arenas() if a.domain_known])
@@ -189,7 +194,8 @@ def test_roundtrip_arrays_stay_owned_and_readonly(arena, operation):
     ]
     for array in arrays:
         if array is not None:
-            assert array.flags.owndata and not array.flags.writeable
+            assert array.flags.owndata
+            assert not array.flags.writeable
 
 
 def test_affine_maps_domain_walls_and_track_width():

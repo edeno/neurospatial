@@ -95,7 +95,8 @@ def test_mode_keywords_raise(significance_family, significance_recording):
     assert all(key in str(exc.value) for key in bad)
     with pytest.raises(ValueError, match="Fix:") as exc:
         predicate(*args, criterion="percentile")
-    assert criterion in str(exc.value) and "shuffle" in str(exc.value)
+    assert criterion in str(exc.value)
+    assert "shuffle" in str(exc.value)
 
 
 def test_free_predicates_raise_on_bad_input(
@@ -161,7 +162,8 @@ def test_shuffle_defaults_have_one_source():
 def test_methods_have_no_shuffle(significance_family, significance_recording):
     f, r = significance_family, significance_recording
     rates = f.compute(*f.args(r), **f.defaults)
-    assert not hasattr(rates, "shuffle_test") and not hasattr(rates[0], "shuffle_test")
+    assert not hasattr(rates, "shuffle_test")
+    assert not hasattr(rates[0], "shuffle_test")
     with pytest.raises(TypeError):
         rates.classify(criterion="shuffle")
     if f.name == "place":
@@ -215,7 +217,8 @@ def test_label_constants_and_removed_aliases(significance_recording):
     )
     for name in constant:
         param = inspect.signature(rates.label_cell_types).parameters[name]
-        assert param.kind is inspect.Parameter.KEYWORD_ONLY and param.default is None
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY
+        assert param.default is None
     for cls, alias in [
         (encoding.SpatialRatesResult, "detect_cell_types"),
         (encoding.DirectionalRatesResult, "detect_hd_cells"),
@@ -432,7 +435,8 @@ def test_results_do_not_retain_inputs(significance_family, significance_recordin
         for name, value in vars(result).items():
             if name == "env":
                 continue
-            assert not callable(value) and not isinstance(value, partial)
+            assert not callable(value)
+            assert not isinstance(value, partial)
             if isinstance(value, np.ndarray):
                 assert not any(
                     np.shares_memory(value, input_array) for input_array in inputs

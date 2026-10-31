@@ -80,7 +80,8 @@ class _PolarGridLayout(MaskedGridLayout):
         distances = _polar_pair_lengths(self.bin_centers, grid_pairs)
         n_distance, n_angle = active_mask.shape
         if circular_angle and n_angle > 1:
-            assert self.grid_edges is not None and self.active_mask is not None
+            assert self.grid_edges is not None
+            assert self.active_mask is not None
             distance_edges, angle_edges = self.grid_edges
             distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
             seams, seam_lengths = _circular_seam_pairs(

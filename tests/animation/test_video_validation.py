@@ -137,8 +137,10 @@ class TestNonGridEnvironmentSupport:
 
         # Check the dimension ranges match our expected bounds (0-100, 0-80)
         x_range, y_range = polygon_env.dimension_ranges
-        assert x_range[0] >= 0 and x_range[1] <= 100
-        assert y_range[0] >= 0 and y_range[1] <= 80
+        assert x_range[0] >= 0
+        assert x_range[1] <= 100
+        assert y_range[0] >= 0
+        assert y_range[1] <= 80
 
         # Validation should pass
         _validate_video_env(polygon_env)

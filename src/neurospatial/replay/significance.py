@@ -654,7 +654,8 @@ def replay_significance(
     decoder = None
     if any(name in run for name in _DECODING_NULLS):
         # _nulls_to_run runs these nulls only when all three inputs are given.
-        assert encoding_models is not None and dt is not None
+        assert encoding_models is not None
+        assert dt is not None
         decoder = _EventDecoder(env, encoding_models, dt, prior, template)
     event = _EventShuffles(
         track_env=track_env,
@@ -882,7 +883,8 @@ class _EventShuffles:
 
     def decoding(self) -> tuple[_EventDecoder, NDArray[np.int64]]:
         """The decoder and the event's counts, for a null that decodes again."""
-        assert self.decoder is not None and self.counts is not None
+        assert self.decoder is not None
+        assert self.counts is not None
         return self.decoder, self.counts
 
     def finish(self, decoded: Any, event_counts: Any) -> Any:

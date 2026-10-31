@@ -450,7 +450,8 @@ def test_circular_linear_undefined_is_nan(angles, linear):
 
     with pytest.warns(RuntimeWarning, match="undefined"):
         r, p = circular_linear_correlation(angles, linear)
-    assert np.isnan(r) and np.isnan(p)
+    assert np.isnan(r)
+    assert np.isnan(p)
 
 
 def test_circular_circular_exact_identities_and_pvalue():

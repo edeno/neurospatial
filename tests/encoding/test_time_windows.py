@@ -251,7 +251,8 @@ def test_predicates_report_invalid_windows(
         )
     assert len(calls) == 1
     message = str(caught.value)
-    assert "Why:" in message and "Fix:" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     if epochs is not None:
         assert "epochs" in message
     if spike_window is not None:

@@ -2300,7 +2300,8 @@ def _measure_event(
         n_shuffles_used, z_scores = tested.n_shuffles_used, dict(tested.z_scores)
         if tested.posterior is not None:
             # Criteria are evaluated on the template with the largest score.
-            assert tested.template is not None and event.template_envs is not None
+            assert tested.template is not None
+            assert event.template_envs is not None
             template, posterior = tested.template, tested.posterior
             track_env = event.template_envs[template]
             track_length = _criteria_track_length(replay_method, track_env)
@@ -2482,7 +2483,8 @@ def _event_quantities(names: Sequence[str], measured: _Measured) -> dict[str, fl
         elif name in measured.values:
             value = measured.values[name]
         elif name in _SEGMENT_QUANTITIES:
-            assert measured.segments is not None and measured.segment is not None
+            assert measured.segments is not None
+            assert measured.segment is not None
             value = float(
                 getattr(measured.segments, _SEGMENT_QUANTITIES[name])[measured.segment]
             )

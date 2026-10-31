@@ -356,7 +356,8 @@ def test_native_constructor_failure_drains_allocated_workers(env, monkeypatch):
     native = allocated[0]
     assert native._closed
     assert cleanup_order == ["workers", "canvas"]
-    assert not scene._closed and not scene._views
+    assert not scene._closed
+    assert not scene._views
     assert native.figure.canvas.get_closed()
     assert isinstance(native._frames._reader, ThreadPoolExecutor)
     with pytest.raises(RuntimeError, match="shutdown"):

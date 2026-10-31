@@ -316,13 +316,15 @@ def test_get_graph_bins_and_project_on_T_junction():
     # 7a) Scalar at bin_edges[0]:
     first_edge = float(bin_edges[0])
     idx0 = _find_bin_for_linear_position(first_edge, bin_edges, active_mask)
-    assert isinstance(idx0, int) and idx0 == 0
+    assert isinstance(idx0, int)
+    assert idx0 == 0
 
     # 7b) Scalar exactly at bin_edges[1] (shared boundary):
     mid_edge = float(bin_edges[1])
     idx_mid = _find_bin_for_linear_position(mid_edge, bin_edges, active_mask)
     # Bins 0 and 1 are both active; by np.searchsorted logic, it should assign to bin 1
-    assert isinstance(idx_mid, int) and idx_mid == 1
+    assert isinstance(idx_mid, int)
+    assert idx_mid == 1
 
     # 7c) Just beyond the final edge:
     last_edge = float(bin_edges[-1])

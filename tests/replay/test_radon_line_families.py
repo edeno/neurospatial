@@ -81,7 +81,8 @@ class TestClosedLoop:
         )
         assert np.all(np.isfinite(result.sinogram))
         starts = result.sinogram_start_positions
-        assert starts.min() > 0.0 and starts.max() < LOOP_LENGTH
+        assert starts.min() > 0.0
+        assert starts.max() < LOOP_LENGTH
         assert_allclose(np.diff(starts), BIN_SIZE)
 
     def test_uniform_posterior_scores_the_band_share(self, loop):

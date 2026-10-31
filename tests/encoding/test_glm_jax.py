@@ -305,7 +305,8 @@ def test_reml_parity(open_field_env, simulate_place_fields):
     lam_jax, _, boundary_jax = select_penalty_by_reml_jax(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
-    assert lam_np is not None and lam_jax is not None
+    assert lam_np is not None
+    assert lam_jax is not None
     # Both selectors agree on the interior/boundary verdict too (drop-in dispatch).
     assert boundary_np == boundary_jax
     # |d log lambda| ~ a few * _REML_XATOL (0.001); 0.02 is a robust bound on the

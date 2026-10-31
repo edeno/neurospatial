@@ -255,7 +255,8 @@ def test_method_in_projections(ovc_session):
     for result in cases:
         assert result.summary()["method"] == "binned"
         df = result.to_dataframe()
-        assert "method" in df.columns and (df["method"] == "binned").all()
+        assert "method" in df.columns
+        assert (df["method"] == "binned").all()
         table = result.summary_table()
         assert "method" not in table.columns
         assert table.attrs["method"] == "binned"
@@ -285,7 +286,8 @@ def test_method_in_singular_projections(ovc_session):
     ):
         assert result.summary()["method"] == "binned"
         df = result.to_dataframe()
-        assert "method" in df.columns and (df["method"] == "binned").all()
+        assert "method" in df.columns
+        assert (df["method"] == "binned").all()
 
 
 # --- Invalid-method error text is stable -------------------------------------

@@ -885,7 +885,8 @@ class TestRankOrderValues:
             )
             ours = null.loc[null["event"] == event, "score"].to_numpy()
             theirs = np.asarray(significance.shuffle.null_scores)
-            assert np.isfinite(ours).all() and np.isfinite(theirs).all()
+            assert np.isfinite(ours).all()
+            assert np.isfinite(theirs).all()
             assert stats.ks_2samp(ours, theirs).pvalue > 0.01, event
         real = dataset_values(
             track,

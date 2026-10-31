@@ -159,7 +159,8 @@ def test_pixel_regions_are_refused_by_a_centimeter_environment():
         _grid("cm").with_regions(_drawn("pixels"))
     message = str(raised.value)
     assert "environment is in 'cm'" in message
-    assert "calibration=" in message and "pixel_to_world=" in message
+    assert "calibration=" in message
+    assert "pixel_to_world=" in message
     edges = np.arange(0.0, 101.0, 10.0)
     with pytest.raises(ValueError, match="'reward' is in 'pixels'"):
         Environment.from_grid_mask(

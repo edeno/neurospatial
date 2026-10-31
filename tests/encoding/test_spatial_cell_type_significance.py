@@ -82,7 +82,8 @@ def test_result_layout_and_table(significance_recording):
         result.p_values, np.where(np.isfinite(result.observed_scores), expected, np.nan)
     )
     table = result.summary_table(alpha=0.1)
-    assert table.index.name == "unit_id" and table.index.tolist() == ["a", "b", "c"]
+    assert table.index.name == "unit_id"
+    assert table.index.tolist() == ["a", "b", "c"]
     assert list(table.columns) == [
         *STATISTICS,
         "spatial_information_bias",
@@ -114,7 +115,8 @@ def test_result_layout_and_table(significance_recording):
     assert np.isfinite(result[1]["spatial_information"].p_value)
     summary = result.summary()
     labels = result.label_cell_types()
-    assert summary["n_units"] == 3 and summary["n_shuffles"] == 20
+    assert summary["n_units"] == 3
+    assert summary["n_shuffles"] == 20
     assert summary["n_place"] == np.sum(labels == "place")
     assert summary["n_grid_and_border"] == np.sum(labels == "grid+border")
 
@@ -406,7 +408,8 @@ def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
         rng=0,
         boundary_source="analysis",
     )
-    assert np.isfinite(result.grid_spacing[0]) and np.isnan(result.grid_spacing[1])
+    assert np.isfinite(result.grid_spacing[0])
+    assert np.isnan(result.grid_spacing[1])
     assert abs(result.grid_spacing[0] - 45.0) < 5.0
     assert (result.p_values[:, 1] < 0.05).all()
     labels = result.label_cell_types()

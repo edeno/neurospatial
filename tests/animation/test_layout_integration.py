@@ -80,7 +80,8 @@ def test_1d_track_exports_an_html_player(tmp_path):
     frames = json.loads(re.search(r"const frames = (\[.*?\]);", text).group(1))
     assert len(frames) == N_ROWS
     image = Image.open(io.BytesIO(base64.b64decode(frames[0])))
-    assert image.size[0] > 0 and image.size[1] > 0
+    assert image.size[0] > 0
+    assert image.size[1] > 0
 
 
 def _grid_subset():

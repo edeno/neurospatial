@@ -165,7 +165,8 @@ def test_nearest_boundary_points_to_the_closest_side(box_env):
 
     np.testing.assert_allclose(distances[:2], [20.0, 10.0])
     np.testing.assert_allclose(directions[:2], [np.pi, np.pi / 2])
-    assert np.isnan(distances[2]) and np.isnan(directions[2])
+    assert np.isnan(distances[2])
+    assert np.isnan(directions[2])
 
 
 def test_polar_environments_are_refused():

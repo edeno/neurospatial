@@ -273,8 +273,10 @@ def test_farooq_tests_the_signed_correlation_in_both_tails(place_code):
         spike_counts=counts[::-1],
         rng=0,
     )
-    assert forward.score > 0.5 and reverse.score < -0.5
-    assert forward.is_replay and reverse.is_replay
+    assert forward.score > 0.5
+    assert reverse.score < -0.5
+    assert forward.is_replay
+    assert reverse.is_replay
     # Two-sided: the smallest p-value is 2 / (n + 1).
     assert forward.p_value == pytest.approx(2 / 200)
     verdicts = [
@@ -297,7 +299,8 @@ def test_harvey_detects_forward_and_reverse_sweeps(place_code):
         spike_counts=counts[::-1],
         rng=0,
     )
-    assert forward.is_replay and reverse.is_replay
+    assert forward.is_replay
+    assert reverse.is_replay
     assert reverse.score < 0
 
 

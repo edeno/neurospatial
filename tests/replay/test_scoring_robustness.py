@@ -101,7 +101,8 @@ class TestUndefinedEventScore:
             rng=0,
         )
         assert not result.is_replay
-        assert np.isnan(result.score) and np.isnan(result.p_value)
+        assert np.isnan(result.score)
+        assert np.isnan(result.p_value)
         assert not any(result.criteria.values())
         assert np.isnan(result.summary()["n_shuffles_used"])
         assert result.error.startswith("score undefined")
@@ -130,7 +131,8 @@ class TestUndefinedEventScore:
         criterion = "passes[n_active_cells >= 4]"
         assert still.loc["wu_2017", criterion] is False
         good = table[table["event"] == 0]
-        assert (good["error"] == "").all() and good["score"].notna().all()
+        assert (good["error"] == "").all()
+        assert good["score"].notna().all()
 
     def test_stationary_null_events_do_not_abort(self, track):
         # Stationary events: in many, the MAP bin never changes, so R² and the
@@ -188,8 +190,10 @@ class TestUndefinedEventScore:
             env, [event], replay_methods=[method], spike_counts=None, rng=0
         )
         row = table.iloc[0]
-        assert row["error"] == "" and row["n_segments"] == 0
-        assert not row["is_replay"] and np.isnan(row["score"])
+        assert row["error"] == ""
+        assert row["n_segments"] == 0
+        assert not row["is_replay"]
+        assert np.isnan(row["score"])
 
 
 class TestWeightedCorrelationDegeneracy:
@@ -245,7 +249,8 @@ class TestWeightedCorrelationDegeneracy:
             for weights in batch
         ]
         np.testing.assert_array_equal(batched, single)
-        assert np.isnan(batched[0]) and np.isfinite(batched[1:]).all()
+        assert np.isnan(batched[0])
+        assert np.isfinite(batched[1:]).all()
 
     def test_one_spiking_time_bin_with_zeroed_bins_is_an_error_row(self, track):
         env, rates = track
@@ -263,7 +268,8 @@ class TestWeightedCorrelationDegeneracy:
             rng=0,
         )
         assert table.loc[1, "error"] == "fewer than two time bins with spikes to score"
-        assert np.isnan(table.loc[1, "score"]) and not table.loc[1, "is_replay"]
+        assert np.isnan(table.loc[1, "score"])
+        assert not table.loc[1, "is_replay"]
         assert table.loc[0, "error"] == ""
 
 
@@ -437,7 +443,8 @@ class TestUndefinedShuffles:
         test = result.shuffles["column_cycle"]
         finite = np.isfinite(test.null_scores)
         used = result.n_shuffles_used["column_cycle"]
-        assert 0 < used < 200 and used == finite.sum()
+        assert 0 < used < 200
+        assert used == finite.sum()
         assert result.summary()["column_cycle_n_shuffles_used"] == used
         assert np.isfinite(test.z_score)
         observed = test.observed_score
@@ -560,7 +567,8 @@ class TestPooledThreshold:
         )
         row = table.iloc[0]
         assert "above 4, the end of the threshold grid" in row["error"]
-        assert np.isfinite(row["score"]) and np.isfinite(row["p_value"])
+        assert np.isfinite(row["score"])
+        assert np.isfinite(row["p_value"])
         assert row["n_shuffles_used"] == 200_000
         assert not row["is_replay"]
 
@@ -654,7 +662,8 @@ class TestUndefinedNull:
         result = detect_replay(
             env, event.posterior, event.times, replay_method=method, rng=0
         )
-        assert result.score == 0.5 and np.isnan(result.p_value)
+        assert result.score == 0.5
+        assert np.isnan(result.p_value)
         assert not result.is_replay
         assert result.error == "every shuffle of a null has an undefined score"
         with warnings.catch_warnings():

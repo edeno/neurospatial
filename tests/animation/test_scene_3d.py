@@ -54,7 +54,9 @@ def test_3d_frame_preserves_z_for_positions_skeletons_and_vectors(env3d):
         ],
     )
     image = scene.render_frame(10.2, dpi=35)
-    assert image.ndim == 3 and image.shape[-1] == 3 and image.dtype == np.uint8
+    assert image.ndim == 3
+    assert image.shape[-1] == 3
+    assert image.dtype == np.uint8
     ax = scene._renderer.figure.axes[0]
     assert ax.name == "3d"
     assert ax.get_zlabel() == "z (cm)"

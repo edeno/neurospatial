@@ -644,7 +644,8 @@ class TestEstimateColormapRangeFromSubset:
         vmin, vmax = estimate_colormap_range_from_subset(fields)
 
         # Nearly every frame's peak is below the top color, not above it.
-        assert vmin == 0.0 and vmax > np.percentile(peaks, 95)
+        assert vmin == 0.0
+        assert vmax > np.percentile(peaks, 95)
         assert (vmin, vmax) == robust_limits(*frame_extremes(fields))
 
     def test_custom_percentiles(self):

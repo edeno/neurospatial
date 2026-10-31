@@ -330,7 +330,8 @@ def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
     """Refuse Lee & Wilson's burst and word gaps or trial probability out of range."""
     _check_seconds(method.max_isi, "max_isi", prefix, allow_zero=True)
     _check_seconds(method.word_gap, "word_gap", prefix, allow_zero=False)
-    assert method.max_isi is not None and method.word_gap is not None
+    assert method.max_isi is not None
+    assert method.word_gap is not None
     if method.max_isi > method.word_gap:
         msg = (
             f"{prefix}: max_isi ({method.max_isi:g} s) must be at most "
@@ -507,7 +508,8 @@ def _verdict(
     from neurospatial.replay.methods import ReplayDetectionResult
 
     if method.statistic == "best_match":
-        assert method.max_isi is not None and method.trial_probability is not None
+        assert method.max_isi is not None
+        assert method.trial_probability is not None
         match = _sequence_match(
             ranks,
             trains,
@@ -1044,7 +1046,8 @@ def _word_groups_test(
     rng: np.random.Generator,
 ) -> TemplateMatchDatasetResult:
     """Lee & Wilson's binomial tests of pairs, triplets and low-probability words."""
-    assert method.max_isi is not None and method.trial_probability is not None
+    assert method.max_isi is not None
+    assert method.trial_probability is not None
     probability = method.trial_probability
     words = []
     for name, rows in events.items():

@@ -75,7 +75,8 @@ def test_rate_support_and_provenance_match_the_actual_analysis(rate_family):
     )
     expected &= np.isfinite(result.firing_rates).all(axis=0)
     np.testing.assert_array_equal(result.spatial_support, expected)
-    assert expected.any() and not expected.all()
+    assert expected.any()
+    assert not expected.all()
     if family == "directional":
         assert settings["angle_unit"] == "rad"
     elif family == "view":

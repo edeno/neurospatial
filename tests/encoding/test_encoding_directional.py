@@ -4048,7 +4048,8 @@ class TestTuningWidthNaN:
             if rate[idx] < half_max:
                 cross = off
                 break
-        assert cross is not None and cross >= 2
+        assert cross is not None
+        assert cross >= 2
         nan_rate = rate.copy()
         nan_rate[(peak_idx + 1) % n] = np.nan
         nan_result = DirectionalRateResult(

@@ -440,7 +440,8 @@ def test_input_group_labels_cannot_be_overridden(
         f.function(
             *f.args(r, group), unit_ids=[20, 10], n_shuffles=4, rng=0, **f.defaults
         )
-    assert "10" in str(caught.value) and "20" in str(caught.value)
+    assert "10" in str(caught.value)
+    assert "20" in str(caught.value)
     assert "Fix:" in str(caught.value)
 
 
@@ -535,10 +536,13 @@ def test_object_significance_metric_errors_teach(
     with pytest.raises(ValueError) as exc:
         f.function(*args, metric=metric, n_shuffles=1, rng=0)
     message = str(exc.value)
-    assert f.function.__name__ in message and "metric" in message
-    assert "Why:" in message and "Fix:" in message
+    assert f.function.__name__ in message
+    assert "metric" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     if metric == "typo":
-        assert "typo" in message and "euclidean" in message
+        assert "typo" in message
+        assert "euclidean" in message
     else:
         assert "env" in message
 

@@ -164,7 +164,8 @@ def test_mixed_targets_name_the_keywords_without_a_call(names):
     with pytest.raises(TypeError) as caught:
         names["env"].path_between(0, [10.0, 10.0])
     fix = str(caught.value).splitlines()[-1]
-    assert "bins=" in fix and "points=" in fix
+    assert "bins=" in fix
+    assert "points=" in fix
     assert "as in" not in fix
 
 

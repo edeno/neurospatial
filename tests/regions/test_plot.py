@@ -317,8 +317,10 @@ class TestAxisLimits:
         plot_regions(two_squares, ax=ax, add_legend=False)
 
         (x_low, x_high), (y_low, y_high) = ax.get_xlim(), ax.get_ylim()
-        assert x_low <= 0 and x_high >= 15
-        assert y_low <= 0 and y_high >= 15
+        assert x_low <= 0
+        assert x_high >= 15
+        assert y_low <= 0
+        assert y_high >= 15
 
     def test_limits_set_by_the_caller_are_kept(self, square):
         _, ax = plt.subplots()

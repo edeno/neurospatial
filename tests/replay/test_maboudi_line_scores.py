@@ -55,7 +55,8 @@ def _sinogram_entry(result, speed, start_position):
     """Score of the searched line of ``speed`` through ``start_position``."""
     i = np.flatnonzero(np.isclose(result.sinogram_speeds, speed))
     j = np.flatnonzero(np.isclose(result.sinogram_start_positions, start_position))
-    assert i.size == 1 and j.size == 1
+    assert i.size == 1
+    assert j.size == 1
     return result.sinogram[i[0], j[0]]
 
 

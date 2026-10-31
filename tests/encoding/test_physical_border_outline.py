@@ -39,7 +39,8 @@ def _center_field(env):
 def test_border_cell_in_a_circular_arena_is_scored(round_arena, metric):
     wall = border_score(round_arena, _wall_field(round_arena), metric=metric)
     center = border_score(round_arena, _center_field(round_arena), metric=metric)
-    assert np.isfinite(wall) and np.isfinite(center)
+    assert np.isfinite(wall)
+    assert np.isfinite(center)
     assert wall > 0.5
     assert center < 0.0
 

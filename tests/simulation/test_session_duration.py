@@ -104,7 +104,8 @@ def test_duration_too_short_for_pauses_and_traversals_raises():
             n_laps=2,
             seed=42,
         )
-    assert "Why:" in str(raised.value) and "Fix:" in str(raised.value)
+    assert "Why:" in str(raised.value)
+    assert "Fix:" in str(raised.value)
 
 
 @pytest.mark.parametrize("duration", [np.nan, np.inf])

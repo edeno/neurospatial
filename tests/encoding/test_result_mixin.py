@@ -129,7 +129,8 @@ def test_directional_summary_includes_correlation(linear_env: Environment) -> No
     assert s["n_directions"] == 2
     assert s["n_bins"] == n
     assert np.isclose(s["correlation"], -1.0)
-    assert "peak_fwd" in s and "peak_rev" in s
+    assert "peak_fwd" in s
+    assert "peak_rev" in s
 
 
 def test_result_to_dataframe_tidy(

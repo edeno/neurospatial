@@ -107,7 +107,8 @@ class TestShuffleTest:
             {"mean_spread": 1 / 101, "mean_mean_jump": 1 / 101}
         )
         assert result.p_value == pytest.approx(1 / 101)
-        assert result.is_replay and result.n_shuffles_used == 100
+        assert result.is_replay
+        assert result.n_shuffles_used == 100
         metrics = trajectory_metrics(place_code[0], sweep[0], sweep[1])
         assert result.tested_values["mean_spread"] == pytest.approx(metrics.mean_spread)
         summary = result.summary()
@@ -158,7 +159,8 @@ class TestShuffleTest:
                 alternative="two-sided",
             )
         )
-        assert result.p_value == pytest.approx(1.0) and not result.is_replay
+        assert result.p_value == pytest.approx(1.0)
+        assert not result.is_replay
 
     def test_the_score_and_every_quantity_see_the_same_shuffles(
         self, place_code, sweep, spy
@@ -176,7 +178,8 @@ class TestShuffleTest:
         method = _method(score=mean_spread, alternative="less")
         result = _detect(place_code, sweep, method)
         seeds = {kwargs["rng"] for _, kwargs, _ in spy}
-        assert len(spy) == 3 and len(seeds) == 1
+        assert len(spy) == 3
+        assert len(seeds) == 1
         score_test, *quantity_tests = (result_ for _, _, result_ in spy)
         spread_test = next(
             result_
@@ -203,7 +206,8 @@ class TestShuffleTest:
         one_bin = (posterior[:1], times[:1], counts[:1])
         result = _detect(place_code, one_bin, _method())
         assert np.isnan(result.tested_values["mean_mean_jump"])
-        assert np.isnan(result.p_value) and not result.is_replay
+        assert np.isnan(result.p_value)
+        assert not result.is_replay
 
     def test_compare_reports_each_quantity(self, place_code):
         from neurospatial.decoding import DecodingResult
@@ -225,7 +229,8 @@ class TestShuffleTest:
         assert row["mean_spread"] == pytest.approx(0.0, abs=1e-9)
         assert row["p_value[mean_spread]"] == 1.0
         assert row["p_value"] == 1.0
-        assert row["error"] == "" and not row["is_replay"]
+        assert row["error"] == ""
+        assert not row["is_replay"]
 
     def test_an_undefined_quantity_is_an_error_in_the_table(self):
         """The range along a branched track is undefined (NaN)."""
@@ -251,7 +256,8 @@ class TestShuffleTest:
             nulls=("time_bin_permutation",), tested_quantities={"mean_range": "greater"}
         )
         table = compare_replay_methods(t_maze, [event], replay_methods=[method])
-        assert np.isnan(table["p_value"].iloc[0]) and not table["is_replay"].iloc[0]
+        assert np.isnan(table["p_value"].iloc[0])
+        assert not table["is_replay"].iloc[0]
         assert "tested quantity is undefined" in table["error"].iloc[0]
 
     def test_methods_and_results_pickle(self, place_code, sweep):
@@ -313,14 +319,16 @@ class TestSegments:
         result = detect_replay(env, posterior, times, replay_method=method, rng=0)
         assert result.segments.n_segments == 2
         assert result.segments.rows(result.segment) == slice(30, 55)
-        assert result.is_replay and result.p_value == pytest.approx(1 / 100)
+        assert result.is_replay
+        assert result.p_value == pytest.approx(1 / 100)
 
         longest = dataclasses.replace(
             method, segmentation=ReplaySegmentation({"max_jump": 20.0})
         )
         stuck = detect_replay(env, posterior, times, replay_method=longest, rng=0)
         assert stuck.segments.rows(stuck.segment) == slice(0, 30)
-        assert stuck.p_value == 1.0 and not stuck.is_replay
+        assert stuck.p_value == 1.0
+        assert not stuck.is_replay
 
         # Without a significant segment, the longest is reported.
         still = np.eye(env.n_bins)[[5] * 30 + [20] * 25]
@@ -388,7 +396,8 @@ class TestSegments:
         assert result.template == "outbound"
         assert result.values["segment_template_fraction >= 0.5"] == pytest.approx(0.8)
         assert result.tested_values["mean_mean_jump"] == pytest.approx(4.0)
-        assert result.p_value == pytest.approx(1 / 100) and result.is_replay
+        assert result.p_value == pytest.approx(1 / 100)
+        assert result.is_replay
 
 
 class TestValidation:
@@ -519,5 +528,6 @@ class TestWidloskiFoster2025:
             valid_time_bins=np.zeros(len(times), dtype=bool),
             rng=0,
         )
-        assert result.segment is None and not result.is_replay
+        assert result.segment is None
+        assert not result.is_replay
         assert np.isnan(result.tested_p_values["mean_spread"])

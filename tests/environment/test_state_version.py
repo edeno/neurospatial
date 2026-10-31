@@ -61,7 +61,8 @@ class TestPublishedValueOwnership:
         restored = Environment.from_dict(expected.to_dict())
 
         assert env._geometry is geometry
-        assert env._cache is cache and len(cache) == n_cached
+        assert env._cache is cache
+        assert len(cache) == n_cached
         assert env._diffusion_geometry is old_geometry
         assert diffusion_eigenbasis(env._cache) is old_diffusion_cache
         assert _mrf_holder(env) is old_mrf_cache
@@ -238,7 +239,8 @@ class TestPublishedGeometryIsReadOnly:
         point = np.array([[0.5, 0.5]])
         before = env.bin_at(point)
 
-        assert base.flags.writeable and edges[0].flags.writeable
+        assert base.flags.writeable
+        assert edges[0].flags.writeable
         base[0, 0] = False  # through the base of the view the caller passed
         edges[0][:] += 100.0
 

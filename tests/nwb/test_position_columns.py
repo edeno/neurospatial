@@ -102,7 +102,8 @@ def test_environment_from_selected_columns_is_planar(xy_speed_file):
     xy = _xy_speed()[:, :2]
     np.testing.assert_array_equal(env.contains(xy), np.ones(_N, dtype=bool))
     lo, hi = env.bin_centers.min(axis=0), env.bin_centers.max(axis=0)
-    assert np.all(lo >= xy.min(axis=0) - 5.0) and np.all(hi <= xy.max(axis=0) + 5.0)
+    assert np.all(lo >= xy.min(axis=0) - 5.0)
+    assert np.all(hi <= xy.max(axis=0) + 5.0)
 
 
 def test_environment_from_selected_columns_needs_units(xy_speed_file):

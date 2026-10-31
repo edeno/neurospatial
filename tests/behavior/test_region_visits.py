@@ -76,8 +76,10 @@ def test_initial_visit_is_censored_without_invented_entry(region_env):
         region_names=["A", "B"],
     )
     first, second = visits
-    assert first.start_index == 0 and not first.entry_observed
-    assert first.exit_observed and first.end_time == 0.2
+    assert first.start_index == 0
+    assert not first.entry_observed
+    assert first.exit_observed
+    assert first.end_time == 0.2
     assert second.entry_observed
     assert region_transitions(visits) == []
 
@@ -110,7 +112,8 @@ def test_unlocated_bins_censor_like_a_long_gap(region_env):
     )
     assert visits == long_gap
     assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
-    assert not visits[0].exit_observed and not visits[1].entry_observed
+    assert not visits[0].exit_observed
+    assert not visits[1].entry_observed
 
 
 def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
@@ -124,8 +127,10 @@ def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
         max_gap=0.15,
     )
     assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
-    assert not visits[0].exit_observed and visits[0].end_time == 0.1
-    assert not visits[1].entry_observed and visits[1].start_index == 3
+    assert not visits[0].exit_observed
+    assert visits[0].end_time == 0.1
+    assert not visits[1].entry_observed
+    assert visits[1].start_index == 3
     assert visits[2].entry_observed
     assert region_transitions(visits) == []
 
@@ -194,7 +199,8 @@ def test_epoch_stop_closes_exposure_without_creating_entry_or_exit(region_env):
     )
     (visit,) = visits
     assert visit.region_name == "A"
-    assert visit.entry_observed and not visit.exit_observed
+    assert visit.entry_observed
+    assert not visit.exit_observed
     assert (visit.start_index, visit.stop_index) == (1, 2)
     assert (visit.start_time, visit.end_time, visit.duration) == (1.0, 2.0, 1.0)
     assert region_transitions(visits) == []
@@ -214,7 +220,8 @@ def test_disjoint_epochs_keep_original_indices_and_censor_each_restart(region_en
         ("B", 5, 1),
         ("A", 7, 1),
     ]
-    assert visits[0].end_time == 3.0 and not visits[0].exit_observed
+    assert visits[0].end_time == 3.0
+    assert not visits[0].exit_observed
     assert not visits[1].entry_observed
     assert region_transitions(visits) == []
 
@@ -229,7 +236,8 @@ def test_fractional_epoch_limits_do_not_interpolate_dwell(region_env):
         epochs=(0.5, 1.5),
     )
     assert (visit.start_index, visit.stop_index) == (1, 2)
-    assert not visit.entry_observed and not visit.exit_observed
+    assert not visit.entry_observed
+    assert not visit.exit_observed
     assert visit.duration == 0.0
 
 

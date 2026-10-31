@@ -158,7 +158,8 @@ def test_an_open_field_is_refused():
     message = str(caught.value)
     assert "not a linearized track" in message
     assert "Why: " in message
-    assert "Fix: " in message and "track_width=" in message
+    assert "Fix: " in message
+    assert "track_width=" in message
 
 
 @pytest.mark.parametrize("width", [0.0, -5.0, np.nan, np.inf, True, None, "10"])

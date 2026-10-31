@@ -882,7 +882,8 @@ def test_egocentric_model_requires_headings():
     with pytest.raises(ValueError) as caught:
         model.firing_rate(np.zeros(1), np.array([[30, 50]]))
     assert 'direction_frame="allocentric"' in str(caught.value)
-    assert "Why:" in str(caught.value) and "Fix:" in str(caught.value)
+    assert "Why:" in str(caught.value)
+    assert "Fix:" in str(caught.value)
     assert model.firing_rate(np.zeros(1), np.array([[30, 50]]), headings=np.array([0]))[
         0
     ] == pytest.approx(model.max_rate)

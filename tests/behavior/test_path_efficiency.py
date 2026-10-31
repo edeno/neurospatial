@@ -121,7 +121,8 @@ class TestTraveledPathLength:
         times = np.arange(6) * 0.1
 
         steps = compute_step_lengths(positions, metric="geodesic", env=env)
-        assert np.isnan(steps[1]) and np.isnan(steps[2])
+        assert np.isnan(steps[1])
+        assert np.isnan(steps[2])
         expected = steps[[0, 3, 4]].sum()
 
         length = traveled_path_length(times, positions, metric="geodesic", env=env)

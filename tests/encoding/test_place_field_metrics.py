@@ -279,7 +279,8 @@ class TestDetectPlaceFields:
                 env.bin_centers[f[np.argmax(pair_map[f])], 0] for f in fields
             )
             assert len(peaks) == 2
-            assert abs(peaks[0] - 60) <= 4 and abs(peaks[1] - 96) <= 4
+            assert abs(peaks[0] - 60) <= 4
+            assert abs(peaks[1] - 96) <= 4
             core = 0.8 * len(single) * bin_size
             assert all(len(f) * bin_size >= core - bin_size for f in fields)
             merged = detect_place_fields(
@@ -344,7 +345,8 @@ class TestDetectPlaceFields:
                 env.bin_centers[f[np.argmax(rate_map[f])], 0] for f in fields
             )
             assert len(peaks) == 2
-            assert abs(peaks[0] - 50) <= 4 and abs(peaks[1] - 150) <= 4
+            assert abs(peaks[0] - 50) <= 4
+            assert abs(peaks[1] - 150) <= 4
 
     def test_min_peak_rate_is_an_absolute_floor(self, track_arena):
         """A map whose maximum is below min_peak_rate has no field."""

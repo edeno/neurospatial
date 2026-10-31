@@ -1184,7 +1184,8 @@ def compare_reactivation_methods(
     template = as_intervals(template_epochs, name="template_epochs")
     match = as_intervals(match_epochs, name="match_epochs")
     control = as_intervals(control_epochs, name="control_epochs")
-    assert template is not None and match is not None
+    assert template is not None
+    assert match is not None
     if control is None and methods:
         raise ValueError(
             _format_error(

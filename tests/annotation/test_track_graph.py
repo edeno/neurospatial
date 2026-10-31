@@ -1419,7 +1419,8 @@ def test_track_incomplete_window_close_retains_draft(monkeypatch, invalid_draft)
         ),
         initial_edges=[] if invalid_draft == "one_node" else [(0, 1)],
     )
-    assert errors and "Need at least" in errors[0]
+    assert errors
+    assert "Need at least" in errors[0]
     assert result.edges == [(0, 1)]
 
 

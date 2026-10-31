@@ -429,7 +429,8 @@ def test_sam_embedding_cache_content_and_shape_invalidation():
     image[3, 9] = 255
     third = provider.predict(image, prompt)
     assert len(predictor.images) == 2
-    assert third.mask[3, 9] and not first.mask[3, 9]
+    assert third.mask[3, 9]
+    assert not first.mask[3, 9]
     resized = np.full((4, 10, 3), 255, dtype=np.uint8)
     assert provider.predict(resized, prompt).mask.shape == (4, 10)
     assert len(predictor.images) == 3

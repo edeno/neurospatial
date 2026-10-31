@@ -102,7 +102,8 @@ def test_event_in_a_tracking_gap_is_dropped_and_distance_stops_at_a_gap():
         bin_size=10.0,
         max_gap=1.0,
     )
-    assert result.n_events == 1 and result.n_events_dropped == 1
+    assert result.n_events == 1
+    assert result.n_events_dropped == 1
     np.testing.assert_array_equal(result.event_indices, [0])
     # The path of the first event ends 25 cm after it, at the gap; the run
     # after the gap is not part of its distance axis.

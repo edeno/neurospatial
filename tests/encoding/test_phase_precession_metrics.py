@@ -1094,9 +1094,8 @@ class TestPlotPhasePrecession:
             texts = ax.texts
             for text in texts:
                 text_str = text.get_text().lower()
-                assert "doubled" not in text_str and "twice" not in text_str, (
-                    "Found doubled note when disabled"
-                )
+                assert "doubled" not in text_str, "Found doubled note when disabled"
+                assert "twice" not in text_str, "Found doubled note when disabled"
         finally:
             plt.close("all")
 

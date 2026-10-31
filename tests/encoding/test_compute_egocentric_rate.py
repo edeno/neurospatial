@@ -1180,7 +1180,8 @@ class TestComputeEgocentricRateMinOccupancy:
         threshold = float(np.median(occupancy[occupancy > 0]))
         result = compute_egocentric_rate(*args, min_occupancy=threshold, **settings)
         unsupported = (occupancy == 0) | (occupancy < threshold)
-        assert unsupported.any() and not unsupported.all()
+        assert unsupported.any()
+        assert not unsupported.all()
         np.testing.assert_array_equal(
             np.isnan(np.asarray(result.firing_rate)), unsupported
         )

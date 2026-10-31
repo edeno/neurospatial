@@ -80,7 +80,8 @@ def test_time_bins_unix_epoch_timestamps(dt, n):
 def test_partial_bin_dropped():
     tile, count = helpers()
     left, right = tile(np.array([[0, 1.05]]), 0.25)
-    assert len(left) == 4 and right[-1] == 1.0
+    assert len(left) == 4
+    assert right[-1] == 1.0
     assert count([np.array([0.99, 1, 1.04])], left, right).sum() == 1
 
 

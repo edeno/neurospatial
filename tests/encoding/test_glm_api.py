@@ -297,7 +297,8 @@ def test_glm_result_fields(open_field_env: Environment) -> None:
 
     n_units = len(spike_times)
     rank = result.rank
-    assert isinstance(rank, int) and rank >= 1
+    assert isinstance(rank, int)
+    assert rank >= 1
     assert result.method == "glm"
     assert result.bandwidth is None
 
@@ -312,7 +313,8 @@ def test_glm_result_fields(open_field_env: Environment) -> None:
     assert result.reml_objective is None or np.isscalar(result.reml_objective)
     # REML ran on a well-sampled multi-unit population (r > 0, spikes present).
     assert result.reml_objective is not None
-    assert result.penalty is not None and float(result.penalty) >= 0.0
+    assert result.penalty is not None
+    assert float(result.penalty) >= 0.0
 
 
 def test_ratio_result_gam_fields_none(open_field_env: Environment) -> None:
@@ -400,7 +402,8 @@ def test_pooled_validation(open_field_env: Environment) -> None:
         compute_spatial_rate(env, st, times, positions, method="binned", pooled=False)
     # glm accepts pooled=False.
     r = compute_spatial_rate(env, st, times, positions, method="glm", pooled=False)
-    assert r.method == "glm" and r.pooled is False
+    assert r.method == "glm"
+    assert r.pooled is False
     # pooled=True with a ratio method is the default -> no raise.
     ratio = compute_spatial_rate(
         env, st, times, positions, method="binned", pooled=True
@@ -541,9 +544,13 @@ def test_pooled_false_zero_spike_end_to_end(open_field_env: Environment) -> None
     penalty = np.asarray(result.penalty)
     selected = np.asarray(result.penalty_selected_by_reml)
     reml_obj = np.asarray(result.reml_objective)
-    assert penalty.shape == (3,) and np.all(np.isfinite(penalty))
-    assert bool(selected[0]) and bool(selected[1]) and not bool(selected[2])
-    assert np.isfinite(reml_obj[0]) and np.isnan(reml_obj[2])
+    assert penalty.shape == (3,)
+    assert np.all(np.isfinite(penalty))
+    assert bool(selected[0])
+    assert bool(selected[1])
+    assert not bool(selected[2])
+    assert np.isfinite(reml_obj[0])
+    assert np.isnan(reml_obj[2])
 
     # Indexing the fallback unit -> a valid singular slice (mask False scalar,
     # reml_objective nan scalar) that survives SpatialRateResult.__post_init__.
@@ -956,7 +963,8 @@ def test_degenerate_no_neurons(open_field_env: Environment) -> None:
     assert np.asarray(rates).shape == (0, env.n_bins)
     assert fit.coefficients.shape == (fit.rank, 0)
     assert fit.deviance.shape == (0,)
-    assert fit.penalty is None and fit.reml_objective is None
+    assert fit.penalty is None
+    assert fit.reml_objective is None
     assert fit.converged is True
 
 
@@ -977,7 +985,8 @@ def test_degenerate_zero_occupancy(open_field_env: Environment) -> None:
     rates = np.asarray(rates)
     assert rates.shape == (2, env.n_bins)
     assert np.allclose(rates, _floor())
-    assert fit.penalty is None and fit.reml_objective is None
+    assert fit.penalty is None
+    assert fit.reml_objective is None
 
 
 def test_degenerate_all_zero_spike_population(open_field_env: Environment) -> None:
@@ -1080,10 +1089,12 @@ def test_glm_no_neurons_public(open_field_env: Environment) -> None:
     assert result.method == "glm"
     assert result.bandwidth is None
     rank = result.rank
-    assert isinstance(rank, int) and rank >= 1
+    assert isinstance(rank, int)
+    assert rank >= 1
     assert np.asarray(result.coefficients).shape == (rank, 0)
     assert np.asarray(result.deviance).shape == (0,)
-    assert result.penalty is None and result.reml_objective is None
+    assert result.penalty is None
+    assert result.reml_objective is None
     assert result.converged is True
     # Occupancy is still computed from the trajectory (independent of neural data).
     assert np.asarray(result.occupancy).shape == (env.n_bins,)

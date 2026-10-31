@@ -76,7 +76,8 @@ class TestThetaPhase:
         interior = (t > 1.0) & (t < 4.0)
         peaks = interior & (np.abs(lfp - 1) < 1e-3)
         troughs = interior & (np.abs(lfp + 1) < 1e-3)
-        assert peaks.any() and troughs.any()
+        assert peaks.any()
+        assert troughs.any()
         assert np.max(np.abs(np.angle(np.exp(1j * phase[peaks])))) < 0.05
         assert np.max(np.abs(np.angle(np.exp(1j * (phase[troughs] - np.pi))))) < 0.05
 

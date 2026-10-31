@@ -1173,7 +1173,8 @@ def test_indexing_returns_one_unit_and_sel_selects_by_label(make) -> None:
     second = result[1]
 
     assert isinstance(second, RateComparisonResult)
-    assert len(result) == 3 and len(second) == 1
+    assert len(result) == 3
+    assert len(second) == 1
     assert second.unit_ids.tolist() == [2]
     assert second.correlation[0] == result.correlation[1]
     assert second.firing_rates_a_on_bins.shape == (1, 5)

@@ -590,7 +590,8 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
 def test_custom_arena_decoder_receives_local_array_namespace(_registry):
     def read_domain(meta, arrays, prefix):
         assert prefix == ""
-        assert "bounds" in arrays and "arena/bounds" not in arrays
+        assert "bounds" in arrays
+        assert "arena/bounds" not in arrays
         result = OpenArena(box(*arrays["bounds"]))
         arrays["bounds"][:] = 999
         return result

@@ -804,7 +804,8 @@ def detect_pairwise_order_replay(
             candidate = (tested.p_value, sign * tested.observed.score, name, z_scores)
             if best is None or candidate[0] < best[0]:
                 best = candidate
-    assert best is not None and event is not None
+    assert best is not None
+    assert event is not None
     p_value, score, chosen, z_scores = best
     n_active = float(event.active_units.size)
     criterion = method.criteria[0]

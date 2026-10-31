@@ -275,7 +275,8 @@ def test_each_closed_pair_records_the_wall_that_closes_it(configurations):
     assert np.all(links.closed_by[~closed] == -1)
     names = np.array(door.arena.wall_names)[links.closed_by[closed]]
     rows = door.bin_centers[links.all_pairs[closed, 0], 1]
-    assert set(names[rows < 1]) == {"lower"} and set(names[rows > 2]) == {"upper"}
+    assert set(names[rows < 1]) == {"lower"}
+    assert set(names[rows > 2]) == {"upper"}
     restored = Environment.from_dict(door.to_dict()).binning.connections
     np.testing.assert_array_equal(restored.closed_by, links.closed_by)
 

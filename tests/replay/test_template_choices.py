@@ -114,8 +114,10 @@ class TestSmallestP:
         _, times = sweep
         method = _method(criteria=(ReplayCriterion("score", ">", 1.5),))
         result = detect_replay(env, joint, times, replay_method=method, rng=7)
-        assert result.template == "out" and result.p_value < method.alpha
-        assert not result.criteria["score > 1.5"] and not result.is_replay
+        assert result.template == "out"
+        assert result.p_value < method.alpha
+        assert not result.criteria["score > 1.5"]
+        assert not result.is_replay
 
     def test_decoding_nulls_test_each_share(self, track, sweep, joint):
         env, maps = track
@@ -232,12 +234,14 @@ class TestSmallestP:
             rng=0,
         )
         assert result.template == "out"
-        assert result.p_value < method.alpha and result.is_replay
+        assert result.p_value < method.alpha
+        assert result.is_replay
         neither = detect_replay(
             env, {"a": parked, "b": parked}, times, replay_method=method, rng=0
         )
         assert neither.template == "a"
-        assert np.isnan(neither.p_value) and not neither.is_replay
+        assert np.isnan(neither.p_value)
+        assert not neither.is_replay
 
     def test_compare_records_the_chosen_template(self, track, sweep, joint, separate):
         env, _ = track
@@ -306,7 +310,8 @@ class TestMaxScore:
         posteriors = {"out": separate["out"].posterior, "in": parked}
         method = _method(template_choice="max_score")
         result = detect_replay(env, posteriors, times, replay_method=method, rng=0)
-        assert not result.is_replay and np.isnan(result.score)
+        assert not result.is_replay
+        assert np.isnan(result.score)
 
 
 class TestRefusals:

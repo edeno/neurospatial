@@ -90,7 +90,8 @@ def test_target_within_tolerance_snaps_to_sample(x, spacing, at, source):
 
 def test_run_end_within_tolerance_of_grid_keeps_final_sample():
     # 4.3 / 0.1 floors to 42 although 0.1 * 43 == 4.3
-    assert 0.1 * 43 == 4.3 and np.floor(4.3 / 0.1) == 42
+    assert 0.1 * 43 == 4.3
+    assert np.floor(4.3 / 0.1) == 42
     times = np.array([0.0, 1.0])
     result = resample_by_distance(
         times, _xline([0, 4.3], times), spacing=0.1, max_gap=None
@@ -191,7 +192,8 @@ def test_nan_row_is_bridged_like_a_deleted_row():
     np.testing.assert_allclose(result.run_distance, deleted.run_distance)
     np.testing.assert_array_equal(result.source_left, kept[deleted.source_left])
     np.testing.assert_array_equal(result.source_right, kept[deleted.source_right])
-    assert 10 not in result.source_left and 10 not in result.source_right
+    assert 10 not in result.source_left
+    assert 10 not in result.source_right
     np.testing.assert_array_equal(result.run_sample_bounds, [[0, 19]])
 
 
@@ -201,7 +203,8 @@ def test_nan_row_gap_longer_than_max_gap_is_never_bridged():
     positions[10] = np.nan
     result = resample_by_distance(times, positions, spacing=0.3, max_gap=0.15)
     assert not ((result.times > times[9]) & (result.times < times[11])).any()
-    assert 10 not in result.source_left and 10 not in result.source_right
+    assert 10 not in result.source_left
+    assert 10 not in result.source_right
     np.testing.assert_array_equal(result.run_sample_bounds, [[0, 9], [11, 19]])
 
 
@@ -225,7 +228,8 @@ def test_samples_are_reconstructed_from_source_brackets(continuous_recording):
     result = resample_by_distance(times, positions, spacing=5.0)
     left, right, w = result.source_left, result.source_right, result.weights
     assert result.times.size > 100
-    assert (w >= 0).all() and (w < 1).all()
+    assert (w >= 0).all()
+    assert (w < 1).all()
     np.testing.assert_array_equal(w[left == right], 0.0)
     np.testing.assert_array_equal(right[left != right], left[left != right] + 1)
     np.testing.assert_allclose(
@@ -259,7 +263,8 @@ def test_isolated_sample_produces_no_output():
         [[0, 0], [np.nan, np.nan], [5, 5], [np.nan, np.nan], [1, 0], [2, 0]], float
     )
     result = resample_by_distance(times, positions, spacing=0.5, max_gap=0.15)
-    assert 2 not in result.source_left and 2 not in result.source_right
+    assert 2 not in result.source_left
+    assert 2 not in result.source_right
     np.testing.assert_array_equal(result.run_sample_bounds, [[4, 5]])
     np.testing.assert_allclose(result.positions[:, 0], [1, 1.5, 2])
 
@@ -293,7 +298,8 @@ def test_no_runs_give_empty_arrays(times, positions):
     assert result.off_grid_endpoint.dtype == np.bool_
     summary = result.summary()
     assert "n_samples" not in summary
-    assert summary["n_resampled_samples"] == 0 and summary["n_runs"] == 0
+    assert summary["n_resampled_samples"] == 0
+    assert summary["n_runs"] == 0
     assert summary["n_source_samples"] == times.size
     assert np.isnan(summary["total_distance"])
 

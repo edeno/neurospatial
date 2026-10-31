@@ -677,7 +677,8 @@ class TestComputeViewshed:
         np.testing.assert_array_equal(result.visible_bins, np.flatnonzero(expected))
         offsets = env.bin_centers[result.visible_bins] - observer
         assert result.n_visible_bins > 0
-        assert np.all(offsets[:, 0] >= 0) and np.all(offsets[:, 1] > 0)
+        assert np.all(offsets[:, 0] >= 0)
+        assert np.all(offsets[:, 1] > 0)
 
     def test_facing_north_sees_north(self):
         """Heading pi/2 is North; a forward field of view sees only bins north."""

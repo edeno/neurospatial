@@ -660,7 +660,9 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
     locator = geometry.leaf
     indices = geometry.grid_indices
     linear, linear_error = geometry.grid_linear, geometry.grid_linear_error
-    assert indices is not None and linear is not None and linear_error is not None
+    assert indices is not None
+    assert linear is not None
+    assert linear_error is not None
     pairs = binning.connections.pairs
     n_dims = len(locator.edges)
     widths = [np.diff(edge) for edge in locator.edges]
