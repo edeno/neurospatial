@@ -42,6 +42,89 @@
   onto the half-open stop, so `restrict` kept a sample exactly at a window's
   stop that neurospatial excludes.
 
+### Shared input checks and result objects: review fixes
+
+**Fixed**
+
+- Spike input that is really a raster or a zero-padded matrix is refused
+  instead of turning into spikes at 0 s (and 1 s). A train whose values are
+  all 0 or 1 and repeat is read as a raster (pass `times[raster]`); a row of
+  a 2-D spike matrix that decreases names zero padding (pad with NaN or pass
+  a list of arrays).
+- A `unit_table` whose unnamed index (no `unit_id` column) lists the units
+  in another order, as `sort_values` leaves it, raises instead of silently
+  reordering rows so that each unit got another unit's metadata. Pass
+  `unit_ids=df.index`, name the index `unit_id`, or `reset_index(drop=True)`.
+- Speed smoothing (`smooth_window`) is a Gaussian in seconds, weighted by
+  the actual time between samples. Measured in samples, it reached far
+  across bridged tracking gaps, so a still animal next to a gap could pass
+  the `min_speed` gate. At the ends of a run the window is renormalized
+  instead of repeating the end sample. This affects `compute_speed`,
+  `heading_from_velocity`, every `min_speed` gate, segmentation, VTE and
+  goal metrics; away from gaps and run ends speeds change by under
+  0.003 cm/s.
+- Positions with no coordinate column, shape `(n, 0)`, are refused
+  (`compute_speed` returned zeros).
+- `sel(unit_id=...)` matches the label's kind as well as its value, as unit
+  labels do everywhere else: `sel(unit_id=1.0)` and `sel(unit_id=True)` no
+  longer return unit `1`, and `x[True]` raises instead of returning
+  position 1.
+- A peri-event histogram with no spikes (or all NaN) reports
+  `peak_latency` NaN instead of the first bin's center.
+- `to_xarray()` exports hand out writable coordinates (`bin_center_*`,
+  `unit_id`, `bin`), and environments with more than three dimensions name
+  their axes `dim_0, dim_1, ...` in every export.
+- `PopulationPeriEventResult.unit_table` returns a copy, so editing it no
+  longer desynchronizes it from `unit_ids`.
+- `Environment.from_graph(graph, edge_order, 2.0)` suggests `bin_size=2.0`,
+  the required option, instead of a call that sets `edge_spacing` and does
+  not run.
+- `neurospatial.testing.assert_environment_contract` keeps its checks under
+  `python -O`, and malformed `points` or `expected_bins` raise with a
+  message.
+- A video frame that OpenCV cannot decode raises `OSError` naming the file
+  and frame instead of being reported as out of range. Cached frames are
+  read-only, and a malformed `crop` is refused with the `(x, y, width,
+  height)` form.
+- `Landmark` refuses a shapely shape of another kind (a line given as a
+  polygon was closed into a triangle) and explains too few vertices.
+  `Landmarks.positions([])` has shape `(0, n_dims)`.
+- "Did you pass positions before times?" is suggested only when the inputs
+  look swapped.
+- `env.occupancy(time_allocation="linear")` no longer emits a NumPy warning
+  for a missing row between repeated timestamps, and the "excluded ALL
+  intervals" warning names missing samples, not `max_gap`, when nothing is
+  observed.
+- "xarray is not installed" is raised only when xarray itself is missing.
+- `RegionNotFoundError` for an environment without regions leads with
+  creating one instead of a placeholder name.
+
+**Changed**
+
+- Infinite positions and signals are refused with an error naming the row;
+  they were silently treated as missing. NaN still marks a missing sample.
+- `smooth_window` must be a number of seconds: `True`, `None` and text
+  raise.
+- A pandas Series of per-unit spike arrays
+  (`units.to_dataframe()["spike_times"]`) is read as a spike group keyed by
+  its index, and tuple unit ids (`{(shank, cluster): train}`) work.
+- "μm" written with the Greek mu is recognized as micrometers.
+- `neurospatial.environment`, `.binning`, `.extensions` and `.testing` are
+  reachable as attributes of `neurospatial`.
+- Typing: `SpikeTrainsLike` includes a dict of unit id to spike times; the
+  unused `EnvironmentLike` protocol is removed.
+
+**Documentation**
+
+- The `max_gap` default's calibration is reproducible with
+  `scripts/calibrate_max_gap.py`; its Notes report what the sweep shows
+  (occupancy is near its best over 0.56–2.0 s; bout and traversal counts
+  prefer longer gaps).
+- Module docs for `arena`, `binning` and `extensions` explain them for
+  scientists, the package docstring lists every export and domain, and
+  several docstrings were corrected (`units_per_centimeter` factors, speed
+  noise figures, bridged-time allocation).
+
 ### pynapple inputs keep their metadata and time support
 
 **Changed**
