@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._units import _UNIT_SPELLINGS
+from neurospatial._units import _UNIT_SPELLINGS, declared_units
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     missing_error,
@@ -24,11 +24,7 @@ from neurospatial.io.nwb._adapters import (
     timestamps_handle_from_series,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
-from neurospatial.io.nwb._holders import (
-    NWBHeadDirection,
-    NWBPosition,
-    _declared_units,
-)
+from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -176,7 +172,7 @@ def read_position(
         _require_unambiguous_columns(spatial_series, shape)
     else:
         columns = _checked_columns(columns, spatial_series.name, shape)
-        if _declared_units(unit) not in _SPATIAL_UNITS:
+        if declared_units(unit) not in _SPATIAL_UNITS:
             # The declaration may describe the columns left out.
             unit = None
 
@@ -218,7 +214,7 @@ def _require_unambiguous_columns(series: SpatialSeries, shape: tuple[int, ...]) 
     unit = str(series.unit or "")
     compound = any(separator in unit for separator in ";,")
     if n_columns < 2 or not (
-        compound or (n_columns > 2 and _declared_units(unit) not in _SPATIAL_UNITS)
+        compound or (n_columns > 2 and declared_units(unit) not in _SPATIAL_UNITS)
     ):
         return
     notes = [

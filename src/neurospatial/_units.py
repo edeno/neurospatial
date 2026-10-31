@@ -62,13 +62,31 @@ def units_per_centimeter(units: str | None) -> float | None:
     return None if centimeters is None else 1.0 / centimeters
 
 
+def declared_units(units: str | None) -> str | None:
+    """A unit declaration in canonical spelling, or None when blank.
+
+    Recognized spellings become ``"m"``, ``"cm"``, ``"mm"``, ``"um"`` or
+    ``"px"`` (pynwb's default ``"meters"`` is ``"m"``); any other
+    declaration is kept, case included, without surrounding whitespace.
+    Values are never rescaled.
+    """
+    declaration = "" if units is None else str(units).strip()
+    if not declaration:
+        return None
+    return _UNIT_SPELLINGS.get(declaration.lower(), declaration)
+
+
+def declared_frame(frame: str | None) -> str | None:
+    """A reference-frame description verbatim, or None when blank."""
+    return str(frame) if frame is not None and str(frame).strip() else None
+
+
 def normalize_position_units(units: str) -> str:
     """Canonical spelling for matching spatial metadata, without conversion.
 
     Unknown units are returned lowercased and stripped.
     """
-    value = units.strip().lower()
-    return _UNIT_SPELLINGS.get(value, value)
+    return (declared_units(units) or "").lower()
 
 
 def same_coordinate_declaration(

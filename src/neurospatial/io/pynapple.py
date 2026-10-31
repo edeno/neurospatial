@@ -27,26 +27,24 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
+    interval_set,
     refuse_permuted_spatial_columns,
 )
 from neurospatial._stacklevel import _external_stacklevel
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
-_IMPORT_ERROR_MSG = (
-    "This function requires the optional 'pynapple' extra; install it with "
-    "`pip install neurospatial[pynapple]` (or `uv add neurospatial[pynapple]`)."
-)
-
 _DecodeQuantity = Literal["map_position", "mean_position", "posterior"]
-_DECODE_QUANTITIES = ("map_position", "mean_position", "posterior")
+_DECODE_QUANTITIES = get_args(_DecodeQuantity)
 
 # Record fields that become IntervalSet bounds, or that hold an array per
 # record and so cannot be an IntervalSet metadata column.
@@ -54,17 +52,8 @@ _NOT_METADATA = frozenset({"start_time", "end_time", "bins"})
 
 
 def _require_pynapple() -> Any:
-    """Import and return the ``pynapple`` module, or raise a clear ImportError.
-
-    The import is lazy so importing :mod:`neurospatial.io` never requires
-    pynapple. Raises a clear, actionable :class:`ImportError` naming the extra
-    when pynapple is absent.
-    """
-    try:
-        import pynapple
-    except ImportError as exc:  # pragma: no cover - exercised only when absent
-        raise ImportError(_IMPORT_ERROR_MSG) from exc
-    return pynapple
+    """Import pynapple on first use, so :mod:`neurospatial.io` never needs it."""
+    return require_optional("pynapple", extra="pynapple", purpose="pynapple conversion")
 
 
 def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
@@ -159,9 +148,11 @@ ndarray of shape (n_epochs, 2)
         )
 
     raise TypeError(
-        f"from_pynapple does not recognize {type(obj).__name__!r}.\n"
-        "Why: it converts the pynapple types with a spatial-analysis reading.\n"
-        "Fix: pass a pynapple Ts, Tsd, TsdFrame, TsGroup or IntervalSet."
+        _format_error(
+            f"from_pynapple does not recognize {type(obj).__name__!r}.",
+            why="it converts the pynapple types with a spatial-analysis reading.",
+            fix="pass a pynapple Ts, Tsd, TsdFrame, TsGroup or IntervalSet.",
+        )
     )
 
 
@@ -334,31 +325,34 @@ default="map_position"
 
     >>> tsd = to_pynapple(times, linear_positions, epochs=run_epochs)  # doctest: +SKIP
     """
-    records = _behavior_records(data)
-    # An empty list with values is an empty time series, not empty records.
-    if records is not None and not (records[0] == "empty" and values is not None):
-        return _records_to_pynapple(records, values, columns, epochs, quantity)
+    exported = _records_to_pynapple(data, values, columns, epochs, quantity)
+    if exported is not None:
+        return exported
 
     if values is None:
         if not (hasattr(data, "times") and hasattr(data, "map_position")):
             raise TypeError(
-                "to_pynapple(data) without values expects a decode result "
-                "(e.g. a neurospatial.decoding.DecodingResult), a list of "
-                "behavior records or a LabelEpochsResult; got "
-                f"{type(data).__name__!r}.\n"
-                "Why: only those inputs carry their own values; timestamps "
-                "need the values sampled at them.\n"
-                "Fix: to convert plain arrays, pass to_pynapple(times, values) "
-                "with an explicit `values` array."
+                _format_error(
+                    "to_pynapple(data) without values expects a decode result "
+                    "(e.g. a neurospatial.decoding.DecodingResult), a list of "
+                    "behavior records or a LabelEpochsResult; got "
+                    f"{type(data).__name__!r}.",
+                    why="only those inputs carry their own values; timestamps "
+                    "need the values sampled at them.",
+                    fix="to convert plain arrays, pass to_pynapple(times, values) "
+                    "with an explicit `values` array.",
+                )
             )
         return _decode_to_pynapple(data, columns, epochs, quantity)
 
     if quantity != "map_position":
         raise TypeError(
-            f"to_pynapple got quantity={quantity!r} with a values array.\n"
-            "Why: quantity selects which estimate of a decode result to "
-            "export; plain arrays are exported as given.\n"
-            "Fix: omit quantity=, or pass the decode result itself."
+            _format_error(
+                f"to_pynapple got quantity={quantity!r} with a values array.",
+                why="quantity selects which estimate of a decode result to "
+                "export; plain arrays are exported as given.",
+                fix="omit quantity=, or pass the decode result itself.",
+            )
         )
     times = np.asarray(data, dtype=np.float64)
     values = np.asarray(values, dtype=np.float64)
@@ -375,11 +369,12 @@ def _decode_to_pynapple(result: Any, columns: Any, epochs: Any, quantity: str) -
     )
     if result.times is None:
         raise ValueError(
-            "The decode result has no `times`.\n"
-            "Why: a pynapple Tsd/TsdFrame needs one timestamp per decoded "
-            "time bin.\n"
-            "Fix: decode with times=, or pass to_pynapple(bin_times, "
-            "result.map_position) with the time-bin centers in seconds."
+            _format_error(
+                "The decode result has no `times`.",
+                why="a pynapple Tsd/TsdFrame needs one timestamp per decoded time bin.",
+                fix="decode with times=, or pass to_pynapple(bin_times, "
+                "result.map_position) with the time-bin centers in seconds.",
+            )
         )
     times = np.array(result.times, dtype=np.float64)
     if epochs is None:
@@ -388,19 +383,23 @@ def _decode_to_pynapple(result: Any, columns: Any, epochs: Any, quantity: str) -
     if quantity == "posterior":
         if not hasattr(result, "posterior"):
             raise ValueError(
-                f"to_pynapple got quantity='posterior' for a "
-                f"{type(result).__name__}, which keeps no posterior.\n"
-                "Why: the summary decoders reduce each posterior block to "
-                "per-time estimates and discard it.\n"
-                "Fix: decode with decode_session (or decode_position) to keep "
-                "the posterior, or export quantity='map_position'."
+                _format_error(
+                    f"to_pynapple got quantity='posterior' for a "
+                    f"{type(result).__name__}, which keeps no posterior.",
+                    why="the summary decoders reduce each posterior block to "
+                    "per-time estimates and discard it.",
+                    fix="decode with decode_session (or decode_position) to "
+                    "keep the posterior, or export quantity='map_position'.",
+                )
             )
         if columns is not None:
             raise TypeError(
-                "to_pynapple got columns= with quantity='posterior'.\n"
-                "Why: posterior column j is environment bin j; its center is "
-                "in the bin_center_* column metadata.\n"
-                "Fix: omit columns=."
+                _format_error(
+                    "to_pynapple got columns= with quantity='posterior'.",
+                    why="posterior column j is environment bin j; its center "
+                    "is in the bin_center_* column metadata.",
+                    fix="omit columns=.",
+                )
             )
         values = np.array(result.posterior)
         columns = np.arange(values.shape[1])
@@ -430,22 +429,16 @@ def _checked_support(
     if outside.size:
         i = int(outside[0])
         raise ValueError(
-            f"{outside.size} of {len(times)} timestamp(s) lie outside "
-            f"`epochs` (first at index {i}, t={float(times[i])!r}).\n"
-            "Why: pynapple silently drops samples outside the time "
-            "support.\n"
-            "Fix: pass epochs that cover every timestamp, or select the "
-            "samples first, e.g. with neurospatial.behavior.restrict(times, "
-            "values, epochs=epochs)."
+            _format_error(
+                f"{outside.size} of {len(times)} timestamp(s) lie outside "
+                f"`epochs` (first at index {i}, t={float(times[i])!r}).",
+                why="pynapple silently drops samples outside the time support.",
+                fix="pass epochs that cover every timestamp, or select the "
+                "samples first, e.g. with neurospatial.behavior.restrict(times, "
+                "values, epochs=epochs).",
+            )
         )
     return support
-
-
-def _interval_set(nap: Any, support: NDArray[np.float64]) -> Any:
-    """A pynapple ``IntervalSet`` holding the same floats as half-open rows."""
-    from neurospatial._intervals import stop_to_pynapple_end
-
-    return nap.IntervalSet(start=support[:, 0], end=stop_to_pynapple_end(support[:, 1]))
 
 
 def _series_to_pynapple(
@@ -462,60 +455,71 @@ def _series_to_pynapple(
     # deep inside nap.Tsd / nap.TsdFrame.
     if times.ndim != 1:
         raise ValueError(
-            f"`times` must be 1-D, got shape {times.shape}.\n"
-            "  WHY: pynapple indexes a Tsd/TsdFrame by a 1-D time axis.\n"
-            "  Fix: pass a 1-D array of timestamps."
+            _format_error(
+                f"`times` must be 1-D, got shape {times.shape}.",
+                why="pynapple indexes a Tsd/TsdFrame by a 1-D time axis.",
+                fix="pass a 1-D array of timestamps.",
+            )
         )
     if values.ndim not in (1, 2):
         raise ValueError(
-            f"`values` must be 1-D or 2-D, got {values.ndim}-D (shape "
-            f"{values.shape}).\n"
-            "  WHY: a Tsd holds 1-D values, a TsdFrame holds 2-D "
-            "(n_samples, n_columns) values.\n"
-            "  Fix: pass values shaped (n,) or (n, n_columns)."
+            _format_error(
+                f"`values` must be 1-D or 2-D, got {values.ndim}-D (shape "
+                f"{values.shape}).",
+                why="a Tsd holds 1-D values, a TsdFrame holds 2-D "
+                "(n_samples, n_columns) values.",
+                fix="pass values shaped (n,) or (n, n_columns).",
+            )
         )
     if len(times) != len(values):
         raise ValueError(
-            f"`times` and `values` must have the same length, got "
-            f"{len(times)} timestamps and {len(values)} value rows.\n"
-            "  WHY: each value (row) is sampled at one timestamp.\n"
-            "  Fix: pass times and values with matching first-axis length."
+            _format_error(
+                f"`times` and `values` must have the same length, got "
+                f"{len(times)} timestamps and {len(values)} value rows.",
+                why="each value (row) is sampled at one timestamp.",
+                fix="pass times and values with matching first-axis length.",
+            )
         )
     non_finite = np.flatnonzero(~np.isfinite(times))
     if non_finite.size:
         raise ValueError(
-            f"`times` must be finite, but {non_finite.size} timestamp(s) are NaN "
-            f"or infinite (first at index {int(non_finite[0])}).\n"
-            "Why: a non-finite timestamp has no place on a pynapple time axis.\n"
-            "Fix: keep = np.isfinite(times); to_pynapple(times[keep], "
-            "values[keep])"
+            _format_error(
+                f"`times` must be finite, but {non_finite.size} timestamp(s) "
+                f"are NaN or infinite (first at index {int(non_finite[0])}).",
+                why="a non-finite timestamp has no place on a pynapple time axis.",
+                fix="keep = np.isfinite(times); to_pynapple(times[keep], values[keep])",
+            )
         )
     non_increasing = np.flatnonzero(times[1:] <= times[:-1])
     if non_increasing.size:
         i = int(non_increasing[0])
         raise ValueError(
-            f"`times` must be strictly increasing, but timestamps at indices {i} "
-            f"and {i + 1} are {times[i]!r} and {times[i + 1]!r}.\n"
-            "Why: pynapple sorts timestamps without reordering the values, "
-            "which would pair each value with another sample's time; repeated "
-            "timestamps have no defined order.\n"
-            'Fix: order = np.argsort(times, kind="stable"); '
-            "to_pynapple(times[order], values[order]), after resolving any "
-            "repeated timestamps."
+            _format_error(
+                f"`times` must be strictly increasing, but timestamps at "
+                f"indices {i} and {i + 1} are {times[i]!r} and {times[i + 1]!r}.",
+                why="pynapple sorts timestamps without reordering the values, "
+                "which would pair each value with another sample's time; "
+                "repeated timestamps have no defined order.",
+                fix='order = np.argsort(times, kind="stable"); '
+                "to_pynapple(times[order], values[order]), after resolving any "
+                "repeated timestamps.",
+            )
         )
     if values.ndim == 2 and columns is not None and len(columns) != values.shape[1]:
         raise ValueError(
-            f"`columns` has {len(columns)} labels but values has "
-            f"{values.shape[1]} value columns.\n"
-            "Why: pynapple replaces a mismatched label list with integer "
-            "column names.\n"
-            f"Fix: pass exactly {values.shape[1]} labels, or omit columns=."
+            _format_error(
+                f"`columns` has {len(columns)} labels but values has "
+                f"{values.shape[1]} value columns.",
+                why="pynapple replaces a mismatched label list with integer "
+                "column names.",
+                fix=f"pass exactly {values.shape[1]} labels, or omit columns=.",
+            )
         )
     support = _checked_support(times, epochs)
 
     # Import only after validation, so invalid input never reaches pynapple.
     nap = _require_pynapple()
-    time_support = None if support is None else _interval_set(nap, support)
+    time_support = None if support is None else interval_set(nap, support)
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values, time_support=time_support)
     return nap.TsdFrame(
@@ -527,12 +531,14 @@ def _series_to_pynapple(
     )
 
 
-def _behavior_records(data: Any) -> tuple[str, Any] | None:
-    """Classify ``data`` as behavior records, or return None if it is not.
+def _records_to_pynapple(
+    data: Any, values: Any, columns: Any, epochs: Any, quantity: str
+) -> Any:
+    """Export behavior records, or return None if ``data`` is not records.
 
-    Returns ``("intervals", (starts, stops, metadata, kind))`` for interval
-    records or a ``LabelEpochsResult``, ``("crossings", crossings)`` for
-    region crossings, and ``("empty", None)`` for an empty list or tuple.
+    Interval records and a ``LabelEpochsResult`` become an ``IntervalSet``,
+    region crossings a ``TsGroup``. An empty list or tuple is refused, unless
+    ``values`` are given: then it is an empty time series, not records.
     """
     from neurospatial.behavior import (
         Crossing,
@@ -545,15 +551,26 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     )
 
     if isinstance(data, LabelEpochsResult):
+        _refuse_record_arguments(values, columns, quantity, epochs)
         labels = np.empty(len(data.labels), dtype=object)
         labels[:] = data.labels  # element-wise, so tuple labels stay whole
         bounds = np.array(data.epoch_bounds)
         metadata = {"label": labels[data.epoch_labels]}
-        return "intervals", (bounds[:, 0], bounds[:, 1], metadata, "epoch")
-    if not isinstance(data, (list, tuple)):
+        return _intervals_to_pynapple(bounds[:, 0], bounds[:, 1], metadata, "epoch")
+    if not isinstance(data, (list, tuple)) or (not data and values is not None):
         return None
     if not data:
-        return "empty", None
+        _refuse_record_arguments(values, columns, quantity, epochs=None)
+        raise ValueError(
+            _format_error(
+                "to_pynapple got an empty list.",
+                why="an empty list carries no record type, so whether it should "
+                "become an IntervalSet (laps, trials, runs, visits) or a TsGroup "
+                "(crossings) is unknown.",
+                fix="skip the export when no records were detected, or build the "
+                "empty object directly, e.g. nap.IntervalSet(start=[], end=[]).",
+            )
+        )
     kinds = (Lap, Trial, Run, RegionVisit, RegionTransition, Crossing)
     first = type(data[0])
     if first not in kinds:
@@ -561,14 +578,18 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     mixed = sorted({type(r).__name__ for r in data} - {first.__name__})
     if mixed:
         raise TypeError(
-            f"to_pynapple got a list of {first.__name__} records mixed with "
-            f"{', '.join(mixed)}.\n"
-            "Why: one pynapple object holds one kind of record, with one set "
-            "of metadata columns.\n"
-            "Fix: export each kind of record separately."
+            _format_error(
+                f"to_pynapple got a list of {first.__name__} records mixed with "
+                f"{', '.join(mixed)}.",
+                why="one pynapple object holds one kind of record, with one set "
+                "of metadata columns.",
+                fix="export each kind of record separately.",
+            )
         )
     if first is Crossing:
-        return "crossings", data
+        _refuse_record_arguments(values, columns, quantity, epochs=None)
+        return _crossings_to_pynapple(data, epochs)
+    _refuse_record_arguments(values, columns, quantity, epochs)
     names = [
         f.name
         for f in dataclasses.fields(first)
@@ -577,48 +598,36 @@ def _behavior_records(data: Any) -> tuple[str, Any] | None:
     metadata = {name: np.array([getattr(r, name) for r in data]) for name in names}
     starts = np.array([r.start_time for r in data], dtype=np.float64)
     stops = np.array([r.end_time for r in data], dtype=np.float64)
-    return "intervals", (starts, stops, metadata, first.__name__)
+    return _intervals_to_pynapple(starts, stops, metadata, first.__name__)
 
 
-def _records_to_pynapple(
-    records: tuple[str, Any],
-    values: Any,
-    columns: Any,
-    epochs: Any,
-    quantity: str,
-) -> Any:
-    """Export behavior records after refusing arguments that do not apply."""
-    kind, payload = records
+def _refuse_record_arguments(
+    values: Any, columns: Any, quantity: str, epochs: Any
+) -> None:
+    """Refuse time-series arguments given with behavior records.
+
+    ``epochs`` is None for records that take a time support (crossings).
+    """
     misplaced = [
         name
         for name, given in (
             ("values", values is not None),
             ("columns", columns is not None),
             ("quantity", quantity != "map_position"),
-            ("epochs", epochs is not None and kind == "intervals"),
+            ("epochs", epochs is not None),
         )
         if given
     ]
     if misplaced:
         raise TypeError(
-            f"to_pynapple got {', '.join(misplaced)} with behavior records.\n"
-            "Why: records carry their own times and fields; values, columns "
-            "and quantity describe time series and decode results, and an "
-            "IntervalSet has no time support.\n"
-            f"Fix: call to_pynapple(records) without {', '.join(misplaced)}."
+            _format_error(
+                f"to_pynapple got {', '.join(misplaced)} with behavior records.",
+                why="records carry their own times and fields; values, columns "
+                "and quantity describe time series and decode results, and an "
+                "IntervalSet has no time support.",
+                fix=f"call to_pynapple(records) without {', '.join(misplaced)}.",
+            )
         )
-    if kind == "empty":
-        raise ValueError(
-            "to_pynapple got an empty list.\n"
-            "Why: an empty list carries no record type, so whether it should "
-            "become an IntervalSet (laps, trials, runs, visits) or a TsGroup "
-            "(crossings) is unknown.\n"
-            "Fix: skip the export when no records were detected, or build the "
-            "empty object directly, e.g. nap.IntervalSet(start=[], end=[])."
-        )
-    if kind == "crossings":
-        return _crossings_to_pynapple(payload, epochs)
-    return _intervals_to_pynapple(*payload)
 
 
 def _intervals_to_pynapple(
@@ -652,12 +661,14 @@ def _intervals_to_pynapple(
     if overlap.size:
         i = int(overlap[0]) + 1
         raise ValueError(
-            f"{overlap.size} {kind} record(s) overlap an earlier one (first "
-            f"[{starts[i]!r}, {stops[i]!r}) in time order).\n"
-            "Why: pynapple merges overlapping intervals and then drops every "
-            "interval's metadata.\n"
-            "Fix: export overlapping records in separate calls, e.g. one "
-            "region at a time."
+            _format_error(
+                f"{overlap.size} {kind} record(s) overlap an earlier one (first "
+                f"[{starts[i]!r}, {stops[i]!r}) in time order).",
+                why="pynapple merges overlapping intervals and then drops every "
+                "interval's metadata.",
+                fix="export overlapping records in separate calls, e.g. one "
+                "region at a time.",
+            )
         )
     nap = _require_pynapple()
     return nap.IntervalSet(start=starts, end=ends, metadata=metadata)
@@ -670,9 +681,11 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
     keys = [(c.region, c.direction) for c in crossings]
     support = _checked_support(times, epochs)
     groups = sorted(set(keys))
+    code = {key: index for index, key in enumerate(groups)}
+    codes = np.array([code[key] for key in keys], dtype=np.intp)
     nap = _require_pynapple()
     if support is not None:
-        time_support = _interval_set(nap, support)
+        time_support = interval_set(nap, support)
     elif times.max() > times.min():
         # pynapple's group default, first to last crossing, given to every
         # member too: a member with one crossing would otherwise get a
@@ -680,13 +693,20 @@ def _crossings_to_pynapple(crossings: Any, epochs: Any) -> Any:
         time_support = nap.IntervalSet(start=times.min(), end=times.max())
     else:
         time_support = None
-    members: dict[int, Any] = {}
-    for index, key in enumerate(groups):
-        rows = np.array([k == key for k in keys])
-        order = np.argsort(times[rows], kind="stable")
-        members[index] = nap.Tsd(
-            t=times[rows][order], d=bins[rows][order], time_support=time_support
+    # Sort by group, then time; lexsort is stable, so equal times keep
+    # their input order. Every group has at least one crossing.
+    order = np.lexsort((times, codes))
+    bounds = np.cumsum(np.bincount(codes))[:-1]
+    members = {
+        index: nap.Tsd(t=t, d=d, time_support=time_support)
+        for index, (t, d) in enumerate(
+            zip(
+                np.split(times[order], bounds),
+                np.split(bins[order], bounds),
+                strict=True,
+            )
         )
+    }
     return nap.TsGroup(
         members,
         time_support=time_support,

@@ -122,10 +122,10 @@ class TestReadUnits:
         np.testing.assert_array_equal(train, np.sort(unsorted))
 
     def test_read_units_no_table_raises(self, empty_nwb):
-        """An NWBFile without a units table raises a clear ValueError."""
+        """An NWBFile without a units table raises KeyError, like other readers."""
         from neurospatial.io.nwb import read_units
 
-        with pytest.raises(ValueError, match="no `units` table"):
+        with pytest.raises(KeyError, match=r"no `units` table\.\nFix: add sorted"):
             read_units(empty_nwb)
 
     def test_read_units_lazy_export(self):
@@ -334,6 +334,10 @@ class TestUnitTable:
             eager = read_units(nwbfile)
             lazy = read_units(nwbfile, lazy=True)
             assert all(isinstance(t, _LazyUnitSpikeTrain) for t in lazy.spike_times)
+            # len() counts spikes from the ragged index without reading them.
+            assert [len(t) for t in lazy.spike_times] == [
+                len(t) for t in eager.spike_times
+            ]
             assert all(t._cache is None for t in lazy.spike_times)
             np.testing.assert_array_equal(
                 np.asarray(lazy.spike_times[2]), [0.2, 0.9, 1.4]

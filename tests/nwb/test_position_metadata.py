@@ -75,7 +75,10 @@ def test_position_metadata_cannot_be_relabelled_or_erased(
     make_scaled_position_nwb, overrides
 ):
     file = make_scaled_position_nwb()
-    with pytest.raises(ValueError, match="conflicts with NWB position"):
+    with pytest.raises(
+        ValueError,
+        match=r"position_overlay_from_nwb\(\w+=.*\) conflicts with the NWB Position series",
+    ):
         position_overlay_from_nwb(file, **overrides)
 
 

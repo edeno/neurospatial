@@ -339,8 +339,9 @@ class TestReadIntervals:
         ):
             read_intervals(io.read(), interval_name="lap")
         assert str(caught.value) == (
-            "\"TimeIntervals 'lap' not found in NWB file. "
-            "Available intervals: ['trials', 'invalid_times', 'laps']\""
+            "TimeIntervals 'lap' not found in NWB file. "
+            "Available intervals: ['trials', 'invalid_times', 'laps'].\n"
+            "Fix: pass interval_name= with a name from this list."
         )
 
     def test_read_invalid_times(self, empty_nwb):
@@ -525,6 +526,20 @@ class TestWriteRegionCrossings:
                 directions=["enter"],
             )
 
+    def test_unknown_direction_in_string_array_is_refused(self, empty_nwb):
+        """String arrays are checked as arrays; the message shows the bad value."""
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(
+            ValueError, match=r"directions contains 'enter', which is not a crossing"
+        ):
+            write_region_crossings(
+                empty_nwb,
+                times=np.array([1.0, 2.0]),
+                regions=np.array(["goal", "goal"]),
+                directions=np.array(["entry", "enter"]),
+            )
+
     @pytest.mark.parametrize(
         ("argument", "values", "message"),
         [
@@ -554,9 +569,9 @@ class TestWriteRegionCrossings:
         ("times", "message"),
         [
             (np.array([[1.0, 2.0]]), "times must be a 1-D array"),
-            (np.array([1.0, np.nan]), "times contains non-finite"),
-            (np.array([1.0, np.inf]), "times contains non-finite"),
-            (np.array([-1.0, 1.0]), "times contains negative"),
+            (np.array([1.0, np.nan]), "times contains 1 non-finite"),
+            (np.array([1.0, np.inf]), "times contains 1 non-finite"),
+            (np.array([-1.0, 1.0]), "times contains 1 negative timestamp"),
         ],
     )
     def test_bad_times_are_refused(self, empty_nwb, times, message):
@@ -574,7 +589,7 @@ class TestWriteRegionCrossings:
         from neurospatial.io.nwb import write_region_crossings
 
         crossing = Crossing(time=-1.0, direction="entry", bin_index=0, region="goal")
-        with pytest.raises(ValueError, match="times contains negative timestamps"):
+        with pytest.raises(ValueError, match="times contains 1 negative timestamp"):
             write_region_crossings(empty_nwb, [crossing])
 
     def test_single_region_string_is_refused(self, empty_nwb):

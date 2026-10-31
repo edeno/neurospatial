@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from neurospatial._optional import require_optional
+
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
@@ -51,88 +53,71 @@ def _refuse_in_place_replacement(nwbfile: NWBFile, what: str) -> None:
     )
 
 
-def _require_pynwb() -> Any:
-    """
-    Lazily import pynwb, raising ImportError with helpful message if not installed.
+def _clear_for_write(
+    nwbfile: NWBFile, container: Any, name: str, *, overwrite: bool, what: str
+) -> bool:
+    """Make room for ``name`` in ``container``; return whether one was removed.
 
-    Returns
-    -------
-    module
-        The pynwb module.
+    Call it after the replacement is built and checked, so a bad replacement
+    never costs the original.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The file that holds ``container``.
+    container : mapping
+        Where the object lives, e.g. ``nwbfile.analysis``,
+        ``nwbfile.intervals`` or a processing module's ``data_interfaces``.
+    name : str
+        Name of the object about to be written.
+    overwrite : bool
+        Whether an existing object may be replaced.
+    what : str
+        Description of the object, e.g. ``"events table 'rewards'"``.
 
     Raises
     ------
-    ImportError
-        If pynwb is not installed. Any other import failure, such as a
-        missing or broken pynwb dependency, propagates unchanged.
+    ValueError
+        If ``name`` exists and ``overwrite=False``.
+    NotImplementedError
+        If ``name`` exists in a file opened for in-place writing.
     """
-    try:
-        import pynwb
+    if name not in container:
+        return False
+    if not overwrite:
+        raise ValueError(
+            f"The {what} already exists. Pass overwrite=True to replace it."
+        )
+    _refuse_in_place_replacement(nwbfile, what)
+    del container[name]
+    logger.info("Overwriting the existing %s", what)
+    return True
 
-        return pynwb
-    except ModuleNotFoundError as e:
-        if e.name != "pynwb":
-            raise
-        raise ImportError(
-            "pynwb is required for NWB integration. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+
+class _MissingObjectError(KeyError):
+    """A ``KeyError`` that prints its message as written.
+
+    ``str(KeyError)`` shows the message's repr, which quotes it and prints
+    line breaks as ``\\n``.
+    """
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
+def _require_pynwb() -> Any:
+    """Import pynwb, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("pynwb", extra="nwb", purpose="NWB integration")
 
 
 def _require_ndx_pose() -> Any:
-    """
-    Lazily import ndx_pose, raising ImportError with helpful message if not installed.
-
-    Returns
-    -------
-    module
-        The ndx_pose module.
-
-    Raises
-    ------
-    ImportError
-        If ndx-pose is not installed. Any other import failure, such as a
-        missing or broken ndx-pose dependency, propagates unchanged.
-    """
-    try:
-        import ndx_pose
-
-        return ndx_pose
-    except ModuleNotFoundError as e:
-        if e.name != "ndx_pose":
-            raise
-        raise ImportError(
-            "ndx-pose is required for pose data. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+    """Import ndx_pose, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("ndx_pose", extra="nwb", purpose="NWB pose data")
 
 
 def _require_ndx_events() -> Any:
-    """
-    Lazily import ndx_events, raising ImportError with helpful message if not installed.
-
-    Returns
-    -------
-    module
-        The ndx_events module.
-
-    Raises
-    ------
-    ImportError
-        If ndx-events is not installed. Any other import failure, such as a
-        missing or broken ndx-events dependency, propagates unchanged.
-    """
-    try:
-        import ndx_events
-
-        return ndx_events
-    except ModuleNotFoundError as e:
-        if e.name != "ndx_events":
-            raise
-        raise ImportError(
-            "ndx-events is required for event data. "
-            "Install with: pip install neurospatial[nwb]"
-        ) from e
+    """Import ndx_events, or raise an ImportError naming the ``nwb`` extra."""
+    return require_optional("ndx_events", extra="nwb", purpose="NWB event data")
 
 
 def _find_containers_by_type(
@@ -173,20 +158,18 @@ def _find_containers_by_type(
     found = []
 
     # Search processing modules
-    for mod_name in sorted(nwbfile.processing.keys()):
-        module = nwbfile.processing[mod_name]
-        for obj_name in sorted(module.data_interfaces.keys()):
-            obj = module.data_interfaces[obj_name]
+    for mod_name, module in nwbfile.processing.items():
+        for obj_name, obj in module.data_interfaces.items():
             if isinstance(obj, target_type):
                 found.append((f"processing/{mod_name}/{obj_name}", obj))
 
     # Search acquisition
-    for obj_name in sorted(nwbfile.acquisition.keys()):
-        obj = nwbfile.acquisition[obj_name]
+    for obj_name, obj in nwbfile.acquisition.items():
         if isinstance(obj, target_type):
             found.append((f"acquisition/{obj_name}", obj))
 
-    # Sort with priority: processing/behavior first, then alphabetically
+    # Paths are unique, so this one sort fixes the order: processing/behavior
+    # first, then other processing modules, then acquisition, each by path.
     def sort_key(item: tuple[str, Any]) -> tuple[int, str]:
         path = item[0]
         if path.startswith("processing/behavior/"):

@@ -15,6 +15,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.io.nwb._adapters import missing_error
 from neurospatial.io.nwb._core import _require_pynwb
 from neurospatial.io.nwb._holders import NWBUnits
 
@@ -35,8 +36,8 @@ class _LazyUnitSpikeTrain:
 
     The materialized array is **memoized** on first access: the ragged slice is
     read and sorted once, then cached read-only and reused on every subsequent
-    ``__getitem__`` / ``__len__`` / ``np.asarray``, so repeated access does not
-    re-read and re-sort the whole unit off disk. ``np.array(train)`` or
+    ``__getitem__`` / ``np.asarray``, so repeated access does not re-read and
+    re-sort the whole unit off disk. ``len`` reads only the ragged index. ``np.array(train)`` or
     ``np.asarray(train, copy=True)`` returns a writable copy.
     """
 
@@ -73,7 +74,13 @@ class _LazyUnitSpikeTrain:
         return self._materialize()[key]
 
     def __len__(self) -> int:
-        return len(self._materialize())
+        if self._cache is not None:
+            return len(self._cache)
+        # The ragged column's index stores each unit's end offset, so the
+        # count needs no spike times read.
+        ends = self._units["spike_times"].data
+        start = int(ends[self._row - 1]) if self._row else 0
+        return int(ends[self._row]) - start
 
 
 def read_units(
@@ -126,11 +133,12 @@ def read_units(
 
     Raises
     ------
+    KeyError
+        If the file has no ``units`` table.
     ValueError
-        If the file has no ``units`` table, the table repeats an id, any
-        requested ``unit_ids`` value is not present in ``units.id`` or is
-        requested twice, or a unit's ``obs_intervals`` are not valid
-        (n_intervals, 2) rows.
+        If the table repeats an id, any requested ``unit_ids`` value is not
+        present in ``units.id`` or is requested twice, or a unit's
+        ``obs_intervals`` are not valid (n_intervals, 2) rows.
     ImportError
         If pynwb is not installed.
 
@@ -184,9 +192,10 @@ def read_units(
 
     units = nwbfile.units
     if units is None:
-        raise ValueError(
-            "NWBFile has no `units` table. Add sorted spikes with "
-            "`nwbfile.add_unit(spike_times=...)` before reading."
+        raise missing_error(
+            "NWBFile has no `units` table.",
+            fix="add sorted spikes with `nwbfile.add_unit(spike_times=...)` "
+            "before reading.",
         )
 
     ids = np.asarray(units.id.data[:])

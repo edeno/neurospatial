@@ -106,7 +106,7 @@ def test_malformed_nwb_metadata_has_a_contextual_value_error(metadata):
     )
     write_environment(nwbfile, _environment())
     nwbfile.analysis["spatial_environment"].fields["description"] = metadata
-    with pytest.raises(ValueError, match="Invalid environment metadata") as error:
+    with pytest.raises(ValueError, match="is not an environment record") as error:
         read_environment(nwbfile)
     assert "Fix:" in str(error.value)
 

@@ -96,9 +96,7 @@ def test_nested_transformed_mask_arena_round_trip(round_trip_environment, n_dims
 
 
 def _make_version_2(metadata, arrays):
-    metadata["schema_version"] = (
-        "2.0" if metadata["schema_version"] == "4.0" else "Environment-v2"
-    )
+    metadata["schema_version"] = "Environment-v2"
     metadata.pop("arena")
     for name in list(metadata["array_specs"]):
         if name.startswith("arena/"):
@@ -114,7 +112,7 @@ def test_version_2_records_are_refused_with_recreation_instructions(
     with pytest.raises(ValueError, match=r"is no longer readable") as error:
         corrupted_environment_round_trip(_make_version_2)
     message = str(error.value)
-    assert "'2.0'" in message or "'Environment-v2'" in message
+    assert "'Environment-v2'" in message
     assert "Fix: recreate the environment with an Environment factory" in message
 
 
@@ -178,9 +176,7 @@ def test_malformed_arena_wkb_names_source(corrupted_environment_round_trip):
 
 
 def _make_version_3(metadata, arrays):
-    metadata["schema_version"] = (
-        "3.0" if metadata["schema_version"] == "4.0" else "Environment-v3"
-    )
+    metadata["schema_version"] = "Environment-v3"
 
 
 @pytest.mark.parametrize("built_environment", ["grid8"], indirect=True)
@@ -191,5 +187,5 @@ def test_version_3_records_are_refused_with_recreation_instructions(
     with pytest.raises(ValueError, match=r"is no longer readable") as error:
         corrupted_environment_round_trip(_make_version_3)
     message = str(error.value)
-    assert "'3.0'" in message or "'Environment-v3'" in message
+    assert "'Environment-v3'" in message
     assert "Fix: recreate the environment with an Environment factory" in message

@@ -15,6 +15,7 @@ Reading Functions:
     read_pose : Read pose estimation data from ndx-pose PoseEstimation
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
+    read_trials : Read the NWB trials table
     read_units : Read spike-time arrays from an NWB units table
     read_spatial_rates : Read a SpatialRatesResult saved by write_spatial_rates
     read_environment : Read an Environment saved in the NWB /analysis group
@@ -24,13 +25,21 @@ Writing Functions:
     write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write laps to an NWB TimeIntervals table
     write_region_crossings : Write region crossing events
+    write_trials : Write trials to the NWB trials table
     write_environment : Write an Environment to the NWB /analysis group
+    dataframe_to_events_table : Convert an events DataFrame to an EventsTable
 
 Factory Functions:
     environment_from_position : Create Environment from NWB Position data
     position_overlay_from_nwb : Create PositionOverlay from NWB Position
     bodypart_overlay_from_nwb : Create BodypartOverlay from ndx-pose
     head_direction_overlay_from_nwb : Create HeadDirectionOverlay from NWB
+
+Holders returned by the readers:
+    NWBPosition : Position samples with their units and frame
+    NWBHeadDirection : Head direction angles in radians
+    NWBPose : Bodypart trajectories, skeleton and confidence
+    NWBUnits : Spike trains, unit ids and observation intervals
 
 Examples
 --------

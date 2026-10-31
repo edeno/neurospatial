@@ -2,7 +2,7 @@
 Internal adapter utilities for NWB/ndx containers.
 
 These helpers centralize our assumptions about pynwb and ndx-* types so that
-the rest of the neurospatial.nwb package can work with simple, protocol-like
+the rest of the neurospatial.io.nwb package can work with simple, protocol-like
 interfaces instead of concrete classes. If upstream APIs change, the goal is
 that only this module needs to be updated.
 """
@@ -15,41 +15,13 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-# =============================================================================
-# Constants for NWB adapters
-# =============================================================================
-
-# Default starting time for time series when not specified
-DEFAULT_STARTING_TIME: float = 0.0
-
-
-def position_units_from_series(series: Any) -> str | None:
-    """Return declared coordinate units without assuming a fallback or rescaling.
-
-    Recognized spellings are canonical (pynwb's default ``"meters"`` is
-    ``"m"``); other declarations are kept without surrounding whitespace.
-    """
-    from neurospatial.io.nwb._holders import _declared_units
-
-    return _declared_units(getattr(series, "unit", None))
-
-
-def position_frame_from_series(series: Any) -> str | None:
-    """Preserve a nonempty reference-frame description without interpretation."""
-    from neurospatial.io.nwb._holders import _declared_frame
-
-    return _declared_frame(getattr(series, "reference_frame", None))
-
 
 def missing_error(what: str, *, fix: str) -> KeyError:
-    """A ``KeyError`` whose message and fix stay on one line.
-
-    ``str(KeyError)`` shows the message's repr, which would print line
-    breaks as ``\\n``.
-    """
+    """A ``KeyError`` for a missing named object, printed as written."""
     from neurospatial._exceptions import _format_error
+    from neurospatial.io.nwb._core import _MissingObjectError
 
-    return KeyError(_format_error(what, fix=fix).replace("\n", " "))
+    return _MissingObjectError(_format_error(what, fix=fix))
 
 
 def select_one(
@@ -108,56 +80,75 @@ def select_one(
     return candidates[0][1]
 
 
-def merge_overlay_coordinate_metadata(
-    units: str | None,
-    frame: str | None,
-    kwargs: dict[str, Any],
+def supply_coordinate_metadata(
+    declared: dict[str, str | None],
+    requested: dict[str, str | None],
     *,
-    context: str,
+    call: str,
     source: str,
+    fix: str,
 ) -> dict[str, str | None]:
-    """Consume overlay declarations, allowing only absent metadata to be supplied.
+    """Fill absent ``units`` / ``frame`` declarations from the caller's values.
 
-    Known declarations cannot be erased or relabeled: equivalent unit aliases
-    are accepted, while frame descriptions must agree verbatim. Coordinates
-    are never transformed or rescaled by a metadata override.
+    A requested value may restate a declaration (unit aliases are the same
+    unit) or supply a missing one; it never erases or relabels a known
+    declaration, because metadata does not convert coordinates.
+
+    Parameters
+    ----------
+    declared : dict
+        The source's ``"units"`` and ``"frame"``; None when undeclared.
+    requested : dict
+        The caller's values for some of those keys. A key that is present is
+        checked, even with value None.
+    call : str
+        The public call, named in the error.
+    source : str
+        The declaring object, e.g. ``"the Position series"``.
+    fix : str
+        How to convert the coordinates instead, completing "omit ``key=``
+        to use the declaration, or ...".
+
+    Returns
+    -------
+    dict
+        ``declared`` with absent entries filled from ``requested``.
+
+    Raises
+    ------
+    ValueError
+        If a requested value conflicts with a known declaration.
     """
     from neurospatial._exceptions import _format_error
     from neurospatial._units import same_coordinate_declaration
 
-    declarations: dict[str, str | None] = {"units": units, "frame": frame}
-    for name, known in declarations.items():
-        if name not in kwargs:
-            continue
-        requested = kwargs.pop(name)
-        # A known declaration can be restated, never erased or relabeled.
-        if known is not None and not same_coordinate_declaration(
-            name, requested, known, undeclared_matches=False
+    resolved = dict(declared)
+    for key, value in requested.items():
+        known = declared[key]
+        if known is None:
+            resolved[key] = value
+        elif not same_coordinate_declaration(
+            key, value, known, undeclared_matches=False
         ):
             raise ValueError(
                 _format_error(
-                    f"{context} {name} {requested!r} conflicts with NWB {source} "
-                    f"{name} {known!r}.",
-                    fix="explicitly convert the source coordinates before "
-                    "constructing the overlay; metadata cannot relabel or "
-                    "rescale coordinates.",
+                    f"{call}({key}={value!r}) conflicts with {source}, which "
+                    f"declares {key} {known!r}.",
+                    why=f"Why: a {key} label does not convert coordinates, so "
+                    "a different one would mislabel them.",
+                    fix=f"omit {key}= to use {known!r}, or {fix}",
                 )
             )
-        if known is None:
-            declarations[name] = requested
-    return declarations
+    return resolved
 
 
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     """
     Extract timestamps from a time series-like object.
 
-    This helper is used for both pynwb.behavior.SpatialSeries and
-    ndx_pose.PoseEstimationSeries. It follows the standard NWB pattern:
-
-    1. If an explicit ``timestamps`` array is present, use it.
-    2. Otherwise, if ``rate`` (and optionally ``starting_time``) are present,
-       compute timestamps from these values.
+    The materialized counterpart to :func:`timestamps_handle_from_series`,
+    used for both pynwb.behavior.SpatialSeries and
+    ndx_pose.PoseEstimationSeries.
 
     Parameters
     ----------
@@ -173,34 +164,10 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     Raises
     ------
     ValueError
-        If neither explicit timestamps nor a sampling rate are available, or
-        if ``rate`` is present but not a finite positive value (a non-positive
-        or non-finite rate would yield Inf/NaN timestamps).
+        If neither explicit timestamps nor a valid sampling ``rate`` are
+        available (see :func:`timestamps_handle_from_series`).
     """
-    timestamps_attr = getattr(series, "timestamps", None)
-    if timestamps_attr is not None:
-        return np.asarray(timestamps_attr[:], dtype=np.float64)
-
-    rate = getattr(series, "rate", None)
-    if rate is None:
-        raise ValueError(
-            "Series has neither 'timestamps' nor 'rate' attribute; cannot derive "
-            "time axis."
-        )
-
-    rate = float(rate)
-    if not np.isfinite(rate) or rate <= 0:
-        raise ValueError(
-            f"Series 'rate' must be a finite positive value to derive a time "
-            f"axis, got {rate!r}. Provide an explicit 'timestamps' array instead."
-        )
-
-    n_samples = len(series.data)
-    starting_time = float(
-        getattr(series, "starting_time", DEFAULT_STARTING_TIME) or DEFAULT_STARTING_TIME
-    )
-    timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
-    return np.asarray(timestamps, dtype=np.float64)
+    return np.asarray(timestamps_handle_from_series(series)[:], dtype=np.float64)
 
 
 def scaling_from_series(series: Any) -> tuple[float, float]:
@@ -274,13 +241,14 @@ def timestamps_handle_from_series(series: Any) -> Any:
     """
     Return a lazy timestamps handle for a time series-like object.
 
-    The lazy counterpart to :func:`timestamps_from_series`. When the series
-    carries an explicit ``timestamps`` array, that backing store is returned
-    **without** copying (an ``h5py.Dataset`` for a file-backed series), so it
-    materializes only when sliced or ``np.asarray``-ed. When the series is
-    rate-based (no stored ``timestamps``), the time axis must be computed, so a
-    fully-materialized array is returned instead -- there is no on-disk array to
-    reference lazily.
+    It follows the standard NWB pattern:
+
+    1. If an explicit ``timestamps`` array is present, that backing store is
+       returned **without** copying (an ``h5py.Dataset`` for a file-backed
+       series), so it materializes only when sliced or ``np.asarray``-ed.
+    2. Otherwise the time axis is computed from ``rate`` (and optionally
+       ``starting_time``) and returned as a materialized array; there is no
+       on-disk array to reference lazily.
 
     Parameters
     ----------
@@ -298,41 +266,30 @@ def timestamps_handle_from_series(series: Any) -> Any:
     Raises
     ------
     ValueError
-        If neither explicit timestamps nor a valid sampling ``rate`` are
-        available (same contract as :func:`timestamps_from_series`).
+        If neither explicit timestamps nor a sampling rate are available, or
+        if ``rate`` is present but not a finite positive value (a non-positive
+        or non-finite rate would yield Inf/NaN timestamps).
     """
-    timestamps_attr = getattr(series, "timestamps", None)
-    if timestamps_attr is not None:
-        return timestamps_attr
-    return timestamps_from_series(series)
+    timestamps = getattr(series, "timestamps", None)
+    if timestamps is not None:
+        return timestamps
 
+    rate = getattr(series, "rate", None)
+    if rate is None:
+        raise ValueError(
+            "Series has neither 'timestamps' nor 'rate' attribute; cannot derive "
+            "time axis."
+        )
 
-def validate_handle_lengths(name_to_length: dict[str, int]) -> None:
-    """Raise ``ValueError`` if named lazy handles do not share a length.
+    rate = float(rate)
+    if not np.isfinite(rate) or rate <= 0:
+        raise ValueError(
+            f"Series 'rate' must be a finite positive value to derive a time "
+            f"axis, got {rate!r}. Provide an explicit 'timestamps' array instead."
+        )
 
-    It takes precomputed integer lengths (``len(handle)`` or
-    ``handle.shape[0]``, which an ``h5py.Dataset`` exposes without reading
-    its values), so the check on a lazy read stays lazy.
-
-    Parameters
-    ----------
-    name_to_length : dict of str to int
-        Mapping from argument name to its length (``handle.shape[0]``).
-
-    Returns
-    -------
-    None
-        Returns nothing when all lengths agree.
-
-    Raises
-    ------
-    ValueError
-        If the lengths do not all agree. The message lists each name and its
-        length.
-    """
-    if len(set(name_to_length.values())) > 1:
-        pairs = ", ".join(f"{k}={n}" for k, n in name_to_length.items())
-        raise ValueError(f"Length mismatch: {pairs}. These must agree.")
+    starting_time = float(getattr(series, "starting_time", 0.0) or 0.0)
+    return np.arange(len(series.data), dtype=np.float64) / rate + starting_time
 
 
 def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataFrame:
@@ -360,9 +317,11 @@ def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataF
     df = events_table.to_dataframe()
 
     if "timestamp" not in df.columns:
-        raise KeyError(
-            f"EventsTable '{table_name}' does not have a 'timestamp' column. "
-            "This may not be a valid EventsTable."
+        raise missing_error(
+            f"EventsTable '{table_name}' does not have a 'timestamp' column, "
+            "so it may not be a valid EventsTable.",
+            fix="read an ndx-events EventsTable, which stores event times in "
+            "its 'timestamp' column.",
         )
 
     return df

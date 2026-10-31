@@ -16,21 +16,28 @@ rates; it never fills in a metadata key the writer always stores.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
-from neurospatial.io.nwb._core import (
-    _refuse_in_place_replacement,
-    _require_pynwb,
-    logger,
+from neurospatial.io.files import _check_schema
+from neurospatial.io.nwb._adapters import missing_error
+from neurospatial.io.nwb._core import _clear_for_write, _require_pynwb, logger
+from neurospatial.io.nwb._environment import (
+    SPATIAL_RATES_FORMAT,
+    _analysis_records,
+    _earlier_location_error,
+    _environment_content,
+    _environment_record,
+    _record_metadata,
+    _require_record,
+    read_environment,
 )
-from neurospatial.io.nwb._environment import SPATIAL_RATES_FORMAT, _record_metadata
 
 if TYPE_CHECKING:
-    from hdmf.common import DynamicTable, DynamicTableRegion
+    from hdmf.common import DynamicTableRegion
     from pynwb import NWBFile
 
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -194,10 +201,9 @@ def write_spatial_rates(
 
     Notes
     -----
-    This function mutates only ``nwbfile``. The ``result`` object and its
-    arrays are never modified -- ``firing_rates`` and ``occupancy`` are copied
-    before being handed to the NWB containers, so the written data never
-    aliases the result's memory.
+    This function mutates only ``nwbfile``. The NWB containers hold the
+    result's own ``firing_rates`` and ``occupancy``, which are read-only, so
+    neither the result nor the written data can change the other.
 
     Examples
     --------
@@ -216,129 +222,26 @@ def write_spatial_rates(
     _require_pynwb()
     from hdmf.common import DynamicTable, VectorData
 
-    is_glm = result.method == "glm"
-    # The per-unit-lambda columns exist only for a pooled=False per-unit result
-    # (keyed off the provenance mask, exactly as the writer decides below), so
-    # they are reserved only then -- a pooled=True/fixed-penalty glm write does
-    # not emit them and must not reject a unit_table column named e.g. "penalty".
-    is_per_unit = is_glm and result.penalty_selected_by_reml is not None
-
     env = result.env
-    # Copy the arrays (np.array, not a no-copy np.asarray) so the
-    # NWB containers never alias the live result's memory. Mutating
-    # result.firing_rates / result.occupancy after the write must not change what
-    # was written, and vice versa. dtype is preserved.
-    firing_rates = np.array(result.firing_rates)
-    occupancy = np.array(result.occupancy)
     unit_ids = np.asarray(result.unit_ids)
     n_units = int(unit_ids.shape[0])
-
     occupancy_name = f"{name}_occupancy"
     env_name = f"{name}_environment" if environment_name is None else environment_name
 
-    # --- Preflight (BEFORE any mutation): reserved-name validation ----------
-    # Shapes need no check here: SpatialRatesResult refuses firing_rates or
-    # occupancy that do not match its env's bins when it is constructed.
-
-    # `unit_id` / `firing_rate` / `units` are reserved for the table's own
-    # columns; a unit_table column with one of these names would collide inside
-    # the DynamicTable.
-    # A glm result always writes `deviance` / `coefficients`, so those are always
-    # reserved; the per-unit-lambda columns (`penalty` / `reml_objective` /
-    # `reml_at_boundary` / `penalty_selected_by_reml`) are written -- and thus
-    # reserved -- only for a pooled=False per-unit result. Raise a clear
-    # param-named error instead of a low-level hdmf error.
-    reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE, COL_UNITS)
-    if is_glm:
-        reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
-    if is_per_unit:
-        reserved_names = (
-            *reserved_names,
-            COL_PENALTY,
-            COL_REML_OBJECTIVE,
-            COL_REML_AT_BOUNDARY,
-            COL_PENALTY_SELECTED,
-        )
-    unit_table = result.unit_table
-    if unit_table is not None:
-        reserved_clash = [
-            str(c) for c in unit_table.columns if str(c) in reserved_names
-        ]
-        if reserved_clash:
-            raise ValueError(
-                f"unit_table has reserved column name(s) {reserved_clash}: "
-                f"{list(reserved_names)} are reserved for the spatial-rates "
-                f"table's own columns. Rename these unit_table columns."
-            )
-
-    # Resolve every name collision -- the table, its companion occupancy and
-    # the environment record -- before the first add, so a duplicate without
-    # overwrite raises before any mutation. For overwrite=True the existing
-    # objects are captured here but deleted only in the try-block below, after
-    # the replacements are built, so a failed write can restore them.
-    old_objects, env_record, env_fingerprint = _plan_spatial_rates_write(
-        nwbfile, env, name, occupancy_name, env_name, overwrite=overwrite
-    )
-    if old_objects:
-        logger.info("Overwriting existing spatial rates '%s' and its companions", name)
-
-    # Optional per-unit metadata columns.
-    unit_table_columns: list[str] = []
-    extra_columns: list[VectorData] = []
-    if unit_table is not None:
-        unit_table_columns = [str(c) for c in unit_table.columns]
-        extra_columns = [
-            VectorData(
-                name=str(col),
-                description=f"unit_table column '{col}'",
-                data=unit_table[col].to_numpy(),
-            )
-            for col in unit_table.columns
-        ]
-
-    meta_dict: dict[str, object] = {
-        "format": SPATIAL_RATES_FORMAT,
-        "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
-        "method": str(result.method),
-        # ``bandwidth`` is nullable: ``None`` for method="glm" (which has no
-        # bandwidth), a float for the ratio methods.
-        "bandwidth": (None if result.bandwidth is None else float(result.bandwidth)),
-        "n_bins": int(env.n_bins),
-        "n_units": n_units,
-        "unit_table_columns": unit_table_columns,
-        "occupancy_name": occupancy_name,
-        "environment_name": env_name,
-        "environment_sha256": env_fingerprint,
-        "unit_ids_generated": bool(result._unit_ids_generated),
-        "min_occupancy": float(result.min_occupancy),
-        "n_spikes_outside_intervals": (
-            None
-            if result.n_spikes_outside_intervals is None
-            else result.n_spikes_outside_intervals.tolist()
-        ),
-        "analysis_settings": result.analysis_settings,
-        "spike_window": (
-            None if result.spike_window is None else result.spike_window.tolist()
-        ),
-    }
-
     # GAM (method="glm") diagnostics: scalars + the (rank,) penalty_weights go
     # into the JSON blob; the per-unit deviance and coefficients become table
-    # columns. Under pooled=False (per-unit lambda) the penalty / reml_objective /
-    # reml_at_boundary vectors and the penalty_selected_by_reml mask also become
-    # per-unit columns; the blob's scalar slots then carry JSON null. ``pooled``
-    # (the only reliable source -- scalar cases are value-identical either way)
-    # and ``per_unit`` (whether the vector columns are present) always ride along.
+    # columns. Under pooled=False (per-unit lambda, marked by the provenance
+    # mask) the penalty / reml_objective / reml_at_boundary vectors and the
+    # penalty_selected_by_reml mask also become per-unit columns; the blob's
+    # scalar slots then carry JSON null. ``pooled`` (the only reliable source
+    # -- scalar cases are value-identical either way) and ``per_unit`` (whether
+    # the vector columns are present) always ride along.
+    gam_meta: dict[str, object] | None = None
     gam_columns: list[VectorData] = []
-    if is_glm:
+    if result.method == "glm":
         rank = int(result.rank)  # type: ignore[arg-type]
-        # The per-unit vector path is exactly when the provenance mask exists
-        # (same discriminant as the reserved-name gate above).
-        per_unit = is_per_unit
-        penalty = result.penalty
-        reml_objective = result.reml_objective
-        reml_at_boundary = result.reml_at_boundary
-        gam_meta: dict[str, object] = {
+        per_unit = result.penalty_selected_by_reml is not None
+        gam_meta = {
             "rank": rank,
             "n_iter": int(result.n_iter),  # type: ignore[arg-type]
             "converged": bool(result.converged),
@@ -347,25 +250,25 @@ def write_spatial_rates(
             ).tolist(),
             "pooled": bool(result.pooled),
             "per_unit": per_unit,
+            # Scalar slots: real values when scalar, JSON null when the value
+            # lives in a per-unit column instead.
+            "penalty": None
+            if per_unit or result.penalty is None
+            else float(result.penalty),
+            "reml_objective": None
+            if per_unit or result.reml_objective is None
+            else float(result.reml_objective),
+            "reml_at_boundary": None
+            if per_unit or result.reml_at_boundary is None
+            else bool(result.reml_at_boundary),
         }
-        # Scalar slots: real values when scalar, JSON null when the value lives in
-        # a per-unit column instead (per_unit=True).
-        gam_meta["penalty"] = None if per_unit or penalty is None else float(penalty)
-        gam_meta["reml_objective"] = (
-            None if per_unit or reml_objective is None else float(reml_objective)
-        )
-        gam_meta["reml_at_boundary"] = (
-            None if per_unit or reml_at_boundary is None else bool(reml_at_boundary)
-        )
-        meta_dict["gam"] = gam_meta
         # coefficients (rank, n_units) -> per-unit rows (n_units, rank), matching
         # the firing_rate per-unit-row layout; deviance (n_units,) as-is.
-        coefficients_rows = np.array(result.coefficients, dtype=np.float64).T
         gam_columns = [
             VectorData(
                 name=COL_DEVIANCE,
                 description="Per-unit unpenalized Poisson deviance (method='glm').",
-                data=np.array(result.deviance, dtype=np.float64),
+                data=np.asarray(result.deviance, dtype=np.float64),
             ),
             VectorData(
                 name=COL_COEFFICIENTS,
@@ -373,7 +276,7 @@ def write_spatial_rates(
                     f"Per-unit GAM coefficients (n_units, rank={rank}); "
                     f"transpose back to (rank, n_units) on read (method='glm')."
                 ),
-                data=coefficients_rows,
+                data=np.asarray(result.coefficients, dtype=np.float64).T,
             ),
         ]
         if per_unit:
@@ -412,8 +315,68 @@ def write_spatial_rates(
                 ),
             ]
 
+    # A unit_table column may not share a name with a column the table writes
+    # itself (``units`` is reserved even when no link is written). Refuse
+    # before any mutation, naming the argument, instead of a low-level hdmf
+    # error.
+    unit_table = result.unit_table
+    unit_table_columns = (
+        [] if unit_table is None else [str(c) for c in unit_table.columns]
+    )
+    reserved_names = [
+        COL_UNIT_ID,
+        COL_FIRING_RATE,
+        COL_UNITS,
+        *(column.name for column in gam_columns),
+    ]
+    reserved_clash = [c for c in unit_table_columns if c in reserved_names]
+    if reserved_clash:
+        raise ValueError(
+            f"unit_table has reserved column name(s) {reserved_clash}: "
+            f"{reserved_names} are reserved for the spatial-rates "
+            f"table's own columns. Rename these unit_table columns."
+        )
+
+    # Check every name -- the table, its companion occupancy and the
+    # environment record -- before the first mutation. The objects to replace
+    # are removed only after the replacements are built, so a failed write
+    # can restore them.
+    env_metadata, env_arrays, env_fingerprint = _environment_content(env)
+    old_names, env_slot = _plan_spatial_rates_write(
+        nwbfile, name, occupancy_name, env_name, env_fingerprint, overwrite=overwrite
+    )
+
+    meta_dict: dict[str, object] = {
+        "format": SPATIAL_RATES_FORMAT,
+        "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
+        "method": str(result.method),
+        # ``bandwidth`` is nullable: ``None`` for method="glm" (which has no
+        # bandwidth), a float for the ratio methods.
+        "bandwidth": (None if result.bandwidth is None else float(result.bandwidth)),
+        "n_bins": int(env.n_bins),
+        "n_units": n_units,
+        "unit_table_columns": unit_table_columns,
+        "occupancy_name": occupancy_name,
+        "environment_name": env_name,
+        "environment_sha256": env_fingerprint,
+        "unit_ids_generated": bool(result._unit_ids_generated),
+        "min_occupancy": float(result.min_occupancy),
+        "n_spikes_outside_intervals": (
+            None
+            if result.n_spikes_outside_intervals is None
+            else result.n_spikes_outside_intervals.tolist()
+        ),
+        "analysis_settings": result.analysis_settings,
+        "spike_window": (
+            None if result.spike_window is None else result.spike_window.tolist()
+        ),
+    }
+    if gam_meta is not None:
+        meta_dict["gam"] = gam_meta
     description = json.dumps(meta_dict)
 
+    # The result's arrays are read-only, so the containers can hold them
+    # without a copy.
     table = DynamicTable(
         name=name,
         description=description,
@@ -430,10 +393,17 @@ def write_spatial_rates(
                     f"n_bins={env.n_bins}; bin coordinates are in the environment "
                     f"saved as '{env_name}'."
                 ),
-                data=firing_rates,
+                data=result.firing_rates,
             ),
             *_units_link(nwbfile, unit_ids, generated=result._unit_ids_generated),
-            *extra_columns,
+            *(
+                VectorData(
+                    name=str(column),
+                    description=f"unit_table column '{column}'",
+                    data=values.to_numpy(),
+                )
+                for column, values in (() if unit_table is None else unit_table.items())
+            ),
             *gam_columns,
         ],
     )
@@ -451,24 +421,43 @@ def write_spatial_rates(
             VectorData(
                 name=COL_OCCUPANCY,
                 description="Time spent in each bin, in seconds",
-                data=occupancy,
+                data=result.occupancy,
             )
         ],
     )
 
-    # Remove any originals (overwrite=True), then add the table, its companion
-    # occupancy and, unless an identical record is reused, the environment. If
-    # any step fails, the newly added objects are rolled back and the originals
-    # restored.
+    # Remove the originals, then add the table, its companion occupancy and,
+    # unless an identical record is reused, the environment. Each removal makes
+    # the same overwrite and file-mode checks, so a refusal comes from the
+    # first one, before anything is removed. If an add fails, the added objects
+    # are removed and the originals restored.
     new_objects = [table, occupancy_table]
-    if env_record is not None:
-        new_objects.append(env_record)
-    added: list[str] = []
+    if env_slot != "reuse":
+        new_objects.append(_environment_record(env_name, env_metadata, env_arrays))
+    what = {
+        name: f"spatial rates {name!r}",
+        occupancy_name: f"occupancy {occupancy_name!r}",
+    }
     removed: list[tuple[str, object]] = []
     try:
-        for obj_name, obj in old_objects:
-            del nwbfile.analysis[obj_name]
-            removed.append((obj_name, obj))
+        for old_name in old_names:
+            old = nwbfile.analysis[old_name]
+            _clear_for_write(
+                nwbfile,
+                nwbfile.analysis,
+                old_name,
+                overwrite=overwrite,
+                what=what.get(old_name, f"environment record {old_name!r}"),
+            )
+            removed.append((old_name, old))
+    except Exception:
+        # A refusal comes from the first removal, before anything is removed;
+        # put back whatever a later failure would otherwise lose.
+        for _old_name, old in reversed(removed):
+            nwbfile.add_analysis(old)
+        raise
+    added: list[str] = []
+    try:
         for obj in new_objects:
             nwbfile.add_analysis(obj)
             added.append(obj.name)
@@ -527,33 +516,28 @@ def _units_link(
 
 def _plan_spatial_rates_write(
     nwbfile: NWBFile,
-    env: Environment,
     name: str,
     occupancy_name: str,
     env_name: str,
+    env_fingerprint: str,
     *,
     overwrite: bool,
-) -> tuple[list[tuple[str, object]], DynamicTable | None, str]:
+) -> tuple[list[str], Literal["add", "reuse", "replace"]]:
     """Check every name a spatial-rates write uses, before any mutation.
 
     Returns
     -------
-    old_objects : list of (str, object)
-        ``/analysis`` objects to remove, by name: the replaced table and
-        occupancy, and an environment record only the replaced rates used
-        when it is replaced or, if it was their default
-        ``f"{name}_environment"``, no longer used.
-    env_record : DynamicTable or None
-        The environment record to add; None when an identical record named
-        ``env_name`` is reused.
-    env_fingerprint : str
-        Content fingerprint of ``env``'s record, stored with the rates.
+    old_names : list of str
+        ``/analysis`` objects to remove: the replaced table and occupancy,
+        and an environment record only the replaced rates used when it is
+        replaced or, if it was their default ``f"{name}_environment"``, no
+        longer used.
+    env_slot : {"add", "reuse", "replace"}
+        How ``env_name`` stores the environment; see ``_environment_slot``.
     """
     from neurospatial.io.nwb._environment import (
-        _environment_record,
+        _environment_slot,
         _is_environment_record,
-        _record_fingerprint,
-        _record_metadata,
         _spatial_rates_using,
     )
 
@@ -571,17 +555,11 @@ def _plan_spatial_rates_write(
                 "which other spatial rates may use. Choose another name= for the "
                 "rates."
             )
-    existing = [n for n in (name, occupancy_name) if n in analysis]
-    if existing and not overwrite:
-        raise ValueError(
-            f"Spatial rates '{name}' already exists (found: {existing}). "
-            f"Use overwrite=True to replace it and its companions."
-        )
-    old_objects = [(n, analysis[n]) for n in existing]
+    old_names = [n for n in (name, occupancy_name) if n in analysis]
 
     # The replaced rates' own default environment record goes with them when
     # nothing else uses it; a record saved standalone or shared is kept.
-    old_meta = _record_metadata(analysis[name]) if name in existing else None
+    old_meta = _record_metadata(analysis[name]) if name in analysis else None
     old_env = None if old_meta is None else old_meta.get("environment_name")
     if (
         old_env == f"{name}_environment"
@@ -590,43 +568,19 @@ def _plan_spatial_rates_write(
         and _is_environment_record(analysis[old_env])
         and _spatial_rates_using(nwbfile, old_env) == [name]
     ):
-        old_objects.append((old_env, analysis[old_env]))
+        old_names.append(old_env)
 
-    env_record, fingerprint = _environment_record(env, env_name)
-    if env_name in analysis:
-        if not _is_environment_record(analysis[env_name]):
-            raise ValueError(
-                _format_error(
-                    f"write_spatial_rates: /analysis/{env_name} is a "
-                    f"{type(analysis[env_name]).__name__}, not an environment "
-                    "record.",
-                    why="Why: the rates' environment would replace another "
-                    "analysis result of that name.",
-                    fix="pass environment_name= another name",
-                )
-            )
-        if _record_fingerprint(analysis[env_name]) == fingerprint:
-            env_record = None
-        else:
-            users = _spatial_rates_using(nwbfile, env_name)
-            if not (overwrite and users == [name]):
-                raise ValueError(
-                    _format_error(
-                        f"write_spatial_rates: /analysis/{env_name} stores a "
-                        "different environment from the one these rates were "
-                        "estimated on"
-                        + (f" (used by spatial rates {users})." if users else "."),
-                        why="Why: rates are read with the environment record "
-                        "they name, so replacing it would relabel the bins of "
-                        "the rates that use it.",
-                        fix="pass environment_name= a new name to store this "
-                        "environment separately",
-                    )
-                )
-            old_objects.append((env_name, analysis[env_name]))
-    if old_objects:
-        _refuse_in_place_replacement(nwbfile, f"spatial rates '{name}'")
-    return old_objects, env_record, fingerprint
+    env_slot = _environment_slot(
+        nwbfile,
+        env_name,
+        env_fingerprint,
+        overwrite=overwrite,
+        argument="environment_name",
+        replacing=name,
+    )
+    if env_slot == "replace":
+        old_names.append(env_name)
+    return old_names, env_slot
 
 
 def _abort_message(
@@ -655,26 +609,34 @@ def _abort_message(
     )
 
 
-def _verify_saved_environment(
-    nwbfile: NWBFile, env: Environment, *, name: str, env_name: str
+def _require_saved_environment(
+    nwbfile: NWBFile,
+    env: Environment,
+    fingerprint: str,
+    n_bins: int,
+    *,
+    name: str,
+    env_name: str,
 ) -> None:
-    """Refuse an explicit ``env=`` that differs from the rates' saved environment."""
+    """Refuse an explicit ``env=`` that differs from the rates' saved environment.
+
+    ``env`` matches when its record would have the saved ``fingerprint``.
+    Otherwise the saved environment is restored to name the difference; one
+    that leaves bins, units, frame and topology unchanged, such as the
+    environment's name, is accepted.
+    """
     from neurospatial._exceptions import IncompatibleEnvironmentError
     from neurospatial.environment import _environment_differences
-    from neurospatial.io.nwb._environment import read_environment
 
-    if env_name not in nwbfile.analysis:
+    if env.n_bins != n_bins:
         raise ValueError(
-            _format_error(
-                f"read_spatial_rates: cannot verify env= against spatial rates "
-                f"'{name}': the file stores no environment for them "
-                f"('{env_name}' is missing).",
-                why="equal bin counts do not show that env= has the bins, units, "
-                "frame and connectivity the rates were estimated on",
-                fix="rewrite them with write_spatial_rates, which saves the "
-                "environment with the rates",
-            )
+            f"Environment n_bins ({env.n_bins}) does not match the stored "
+            f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
+            f"usually means a mismatched or stale env= was passed; pass the "
+            f"Environment used to compute these rates."
         )
+    if _environment_content(env)[2] == fingerprint:
+        return
     saved = read_environment(nwbfile, name=env_name)
     bins, topology = _environment_differences(saved, env)
     mismatch = bins or topology
@@ -737,20 +699,19 @@ def read_spatial_rates(
         If the named table or its companion occupancy is missing from
         ``nwbfile.analysis``.
     ValueError
-        If ``name`` points at a table not written by ``write_spatial_rates``; if
-        the record was written with a schema version other than
-        ``SPATIAL_RATES_SCHEMA_VERSION``, including rates an earlier version
-        wrote to the processing module ``analysis`` (recompute and rewrite the
-        rates); if
-        a metadata key the writer always stores is missing or the recorded unit
-        count does not match the table; if the companion occupancy length does not match the table's recorded
-        ``n_bins``; if no persisted environment is in the file (whether or not
-        ``env=`` is given, since an explicit ``env=`` cannot be verified
-        without it); if the environment record has changed since the rates
-        were written (its content no longer matches the stored
-        ``environment_sha256``); or if the obtained environment's ``n_bins``
-        does not match the stored ``firing_rates`` (a mismatched or stale
-        ``env=``).
+        If ``name`` points at an object whose description does not declare
+        the format ``write_spatial_rates`` writes; if the record was written
+        with a schema version other than ``SPATIAL_RATES_SCHEMA_VERSION``,
+        including rates an earlier version wrote to the processing module
+        ``analysis`` (recompute and rewrite the rates); if a metadata key the
+        writer always stores is missing or the recorded unit count does not
+        match the table; if the companion occupancy length does not match the
+        rates' bin count; if the environment record the rates name is not in
+        the file (whether or not ``env=`` is given, since an explicit ``env=``
+        cannot be verified without it); if that record has changed since the
+        rates were written (its content no longer matches the stored
+        ``environment_sha256``); or if ``env=`` has another ``n_bins`` than
+        the stored ``firing_rates`` (a mismatched or stale ``env=``).
     IncompatibleEnvironmentError
         If ``env=`` has the right bin count but differs from the persisted
         environment in bins, units, frame or topology.
@@ -772,42 +733,36 @@ def read_spatial_rates(
     if name not in analysis:
         earlier = nwbfile.processing.get(_EARLIER_MODULE)
         if earlier is not None and name in earlier.data_interfaces:
-            raise ValueError(
-                _format_error(
-                    f"Spatial rates '{name}' are in the processing module "
-                    f"'{_EARLIER_MODULE}', where neurospatial before spatial-rates "
-                    f"schema {SPATIAL_RATES_SCHEMA_VERSION} wrote them; this "
-                    "version reads only rates in /analysis.",
-                    why="Why: earlier records store a different layout and are "
-                    "not converted.",
-                    fix=_RECREATE_FIX,
-                )
+            raise _earlier_location_error(
+                f"Spatial rates {name!r}",
+                f"the processing module {_EARLIER_MODULE!r}",
+                fix=_RECREATE_FIX,
             )
-        available = _spatial_rates_names(nwbfile)
-        raise KeyError(
+        available = list(_analysis_records(nwbfile, SPATIAL_RATES_FORMAT))
+        raise missing_error(
             f"Spatial rates '{name}' not found in /analysis. Saved spatial "
-            f"rates: {available}"
+            f"rates: {available}",
+            fix=f"pass name= one of {available}"
+            if available
+            else "write the rates with write_spatial_rates first",
         )
 
     table = analysis[name]
-
-    # A table not written by write_spatial_rates has a plain-text description.
-    try:
-        meta = json.loads(table.description)
-    except (json.JSONDecodeError, TypeError) as exc:
-        raise ValueError(
-            f"'{name}' is not a spatial-rates table: its description is not the "
-            f"JSON metadata written by write_spatial_rates."
-        ) from exc
-    if not isinstance(meta, dict) or "method" not in meta or "n_bins" not in meta:
-        raise ValueError(
-            f"'{name}' is not a spatial-rates table: its description JSON is "
-            f"missing the expected spatial-rates metadata ('method', 'n_bins')."
-        )
-
-    _require_current_schema(meta, name)
-    method = meta["method"]
-    meta_n_bins = int(meta["n_bins"])
+    meta = _require_record(
+        nwbfile,
+        name,
+        SPATIAL_RATES_FORMAT,
+        what="a spatial-rates",
+        writer="write_spatial_rates",
+    )
+    _check_schema(
+        meta,
+        f"/analysis/{name}",
+        current=SPATIAL_RATES_SCHEMA_VERSION,
+        kind="Spatial-rates",
+        fix=_RECREATE_FIX,
+    )
+    method = _required_key(meta, "method", name)
     bandwidth = _required_key(meta, "bandwidth", name)
     n_units = int(_required_key(meta, "n_units", name))
     unit_table_columns = _required_key(meta, "unit_table_columns", name)
@@ -849,9 +804,10 @@ def read_spatial_rates(
         )
 
     if occupancy_name not in analysis:
-        raise KeyError(
+        raise missing_error(
             f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
-            "in /analysis."
+            "in /analysis.",
+            fix=_RECREATE_FIX,
         )
     occupancy_record = analysis[occupancy_name]
     if COL_OCCUPANCY not in getattr(occupancy_record, "colnames", ()):
@@ -862,50 +818,45 @@ def read_spatial_rates(
         )
     occupancy = np.asarray(occupancy_record[COL_OCCUPANCY][:], dtype=np.float64)
 
-    # Check the companion against the table's own recorded n_bins, so a
-    # wrong-length occupancy fails here rather than in a later analysis.
-    if occupancy.shape != (meta_n_bins,):
+    # Check the companion against the rates' bins, so a wrong-length
+    # occupancy fails here rather than in a later analysis.
+    n_bins = firing_rates.shape[1]
+    if occupancy.shape != (n_bins,):
         raise ValueError(
             f"Occupancy companion '{occupancy_name}' has length "
-            f"{occupancy.shape[0]} but spatial-rates table '{name}' records "
-            f"n_bins={meta_n_bins}. The stored occupancy does not match the rates; "
-            f"the file may be corrupt or the wrong companion was written."
+            f"{occupancy.shape[0]} but the rates in '{name}' have {n_bins} bins. "
+            "The stored occupancy does not match the rates; the file may be "
+            "corrupt or the wrong companion was written."
         )
 
-    # The rates' environment is the record they name (full connectivity +
-    # geometry). An explicit env= is
-    # attached only after it is verified against that saved environment, so a
-    # same-size env with other units, frame, bins or topology cannot relabel
-    # the maps. No connectivity-less fabrication from bin centers.
-    from neurospatial.io.nwb._environment import read_environment
-
+    # The rates' environment is the record they name, unchanged since they
+    # were written. An explicit env= is attached only when it matches that
+    # record, so a same-size env with other units, frame, bins or topology
+    # cannot relabel the maps.
     env_name = _required_key(meta, "environment_name", name)
     env_fingerprint = _required_key(meta, "environment_sha256", name)
-    if env_name in analysis:
-        _require_unchanged_environment(
-            analysis[env_name], env_fingerprint, name=name, env_name=env_name
-        )
-    verify_env = env is not None
-    if env is None:
-        if env_name not in analysis:
-            raise ValueError(
-                f"Spatial rates '{name}' has no attached environment: no "
-                f"persisted environment '{env_name}' is in the file. Rewrite the "
-                f"rates with write_spatial_rates, which saves their environment."
-            )
-        env = read_environment(nwbfile, name=env_name)
-
-    # The obtained env must match the stored rates' bin count.
-    n_bins = int(firing_rates.shape[1])
-    if env.n_bins != n_bins:
+    if env_name not in analysis:
         raise ValueError(
-            f"Environment n_bins ({env.n_bins}) does not match the stored "
-            f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
-            f"usually means a mismatched or stale env= was passed; pass the "
-            f"Environment used to compute these rates."
+            _format_error(
+                f"Spatial rates '{name}' have no saved environment: "
+                f"'{env_name}', the environment record they name, is not in "
+                "/analysis.",
+                why="Why: rates are read with the environment they were "
+                "estimated on; equal bin counts do not show equal bins, units "
+                "or connectivity.",
+                fix="restore the environment record, or recompute the rates and "
+                "write them again with write_spatial_rates, which saves it",
+            )
         )
-    if verify_env:
-        _verify_saved_environment(nwbfile, env, name=name, env_name=env_name)
+    _require_unchanged_environment(
+        nwbfile, env_fingerprint, name=name, env_name=env_name
+    )
+    if env is None:
+        env = read_environment(nwbfile, name=env_name)
+    else:
+        _require_saved_environment(
+            nwbfile, env, env_fingerprint, n_bins, name=name, env_name=env_name
+        )
 
     # GAM (method="glm") diagnostics: reconstruct from the JSON blob + the
     # per-unit columns, preserving shapes. Absent (ratio methods) -> all None,
@@ -914,19 +865,7 @@ def read_spatial_rates(
     # reconstructed fields must satisfy the SpatialRatesResult None-iff-glm
     # invariant (checked at construction below) -- a wrong shape or a missing field
     # raises there, so a corrupt glm record fails loudly.
-    gam_fields: dict[str, object | None] = {
-        "coefficients": None,
-        "penalty": None,
-        "penalty_weights": None,
-        "rank": None,
-        "deviance": None,
-        "converged": None,
-        "n_iter": None,
-        "reml_objective": None,
-        "reml_at_boundary": None,
-        "penalty_selected_by_reml": None,
-        "pooled": None,
-    }
+    gam_fields: dict[str, object] = {}
     if method == "glm":
         gam = _required_key(meta, "gam", name)
         if not isinstance(gam, dict):
@@ -993,7 +932,6 @@ def read_spatial_rates(
             gam_fields["reml_at_boundary"] = (
                 None if reml_at_boundary is None else bool(reml_at_boundary)
             )
-            gam_fields["penalty_selected_by_reml"] = None
 
     return SpatialRatesResult(
         firing_rates=firing_rates,
@@ -1023,16 +961,31 @@ _RECREATE_FIX = (
 
 
 def _require_unchanged_environment(
-    record: object, fingerprint: str, *, name: str, env_name: str
+    nwbfile: NWBFile, fingerprint: str, *, name: str, env_name: str
 ) -> None:
     """Refuse rates whose environment record is not the one they were written with.
 
-    Equal bin counts do not show equal bins: a record replaced or edited after
-    the rates were written could move every bin or relabel its units.
+    The record must be a current-schema environment record, read or not:
+    ``env=`` skips decoding it, but not this check. Equal bin counts do not
+    show equal bins: a record replaced or edited after the rates were written
+    could move every bin or relabel its units.
     """
-    from neurospatial.io.nwb._environment import _record_fingerprint
+    from neurospatial.io.files import _check_schema
+    from neurospatial.io.nwb._environment import (
+        ENVIRONMENT_FORMAT,
+        _record_fingerprint,
+        _require_record,
+    )
 
-    if _record_fingerprint(record) != fingerprint:
+    metadata = _require_record(
+        nwbfile,
+        env_name,
+        ENVIRONMENT_FORMAT,
+        what="an environment",
+        writer="write_environment",
+    )
+    _check_schema(metadata, f"NWB analysis/{env_name}")
+    if _record_fingerprint(nwbfile.analysis[env_name]) != fingerprint:
         raise ValueError(
             _format_error(
                 f"Spatial rates '{name}': the environment record '{env_name}' "
@@ -1043,35 +996,6 @@ def _require_unchanged_environment(
                 fix="restore the original environment record, or recompute the "
                 "rates on the environment now saved and write them again with "
                 "write_spatial_rates",
-            )
-        )
-
-
-def _spatial_rates_names(nwbfile: NWBFile) -> list[str]:
-    """Names of the spatial-rates tables in ``nwbfile.analysis``, sorted."""
-    return sorted(
-        name
-        for name, table in nwbfile.analysis.items()
-        if (_record_metadata(table) or {}).get("format") == SPATIAL_RATES_FORMAT
-    )
-
-
-def _require_current_schema(meta: dict[str, Any], name: str) -> None:
-    """Refuse a spatial-rates record written with another schema version."""
-    recorded = meta.get("schema_version")
-    if recorded != SPATIAL_RATES_SCHEMA_VERSION:
-        raise ValueError(
-            _format_error(
-                f"Spatial rates '{name}' has schema_version={recorded!r}; this "
-                f"version of neurospatial reads only schema "
-                f"{SPATIAL_RATES_SCHEMA_VERSION}.",
-                why="other versions store different data (records before 3.0 "
-                "are in a processing module and keep a private copy of their "
-                "environment, records before 2.6 store occupancy as a time "
-                "series, and records before 2.5 lack the occupancy threshold "
-                "that defines spatial_support), and reading them would mean "
-                "guessing",
-                fix=_RECREATE_FIX,
             )
         )
 

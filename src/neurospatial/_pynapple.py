@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import _is_pynapple_object, pynapple_end_to_stop
+from neurospatial._exceptions import _format_error
+from neurospatial._intervals import (
+    _is_pynapple_object,
+    pynapple_end_to_stop,
+    stop_to_pynapple_end,
+)
 from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
@@ -57,11 +62,14 @@ def refuse_permuted_spatial_columns(columns: Any, *, fix: str) -> None:
     canonical = sorted(lowered)
     frame = f"tsdframe.loc[{sorted(labels, key=str.lower)}]"
     raise ValueError(
-        f"TsdFrame columns {labels} are spatial axes not in x, y, z order.\n"
-        "Why: neurospatial reads positions by column position, so these values "
-        f"would be used as ({', '.join(lowered)}) where every analysis expects "
-        f"({', '.join(canonical)}), silently swapping the axes.\n"
-        "Fix: reorder the columns first, " + fix.format(frame=frame) + "."
+        _format_error(
+            f"TsdFrame columns {labels} are spatial axes not in x, y, z order.",
+            why="neurospatial reads positions by column position, so these "
+            f"values would be used as ({', '.join(lowered)}) where every "
+            f"analysis expects ({', '.join(canonical)}), silently swapping the "
+            "axes.",
+            fix=f"reorder the columns first, {fix.format(frame=frame)}.",
+        )
     )
 
 
@@ -86,6 +94,26 @@ def interval_rows(intervals: Any) -> NDArray[np.float64]:
             pynapple_end_to_stop(np.asarray(intervals.end, dtype=np.float64)),
         ]
     )
+
+
+def interval_set(nap: Any, rows: NDArray[np.float64]) -> Any:
+    """Return half-open ``(n, 2)`` rows as a pynapple ``IntervalSet``.
+
+    The inverse of :func:`interval_rows`: each ``stop`` becomes the float
+    just below it, so the interval holds the same timestamps.
+
+    Parameters
+    ----------
+    nap : module
+        The imported ``pynapple`` module.
+    rows : ndarray of float64, shape (n_intervals, 2)
+        ``[start, stop)`` rows in seconds.
+
+    Returns
+    -------
+    pynapple.IntervalSet
+    """
+    return nap.IntervalSet(start=rows[:, 0], end=stop_to_pynapple_end(rows[:, 1]))
 
 
 def tsgroup_unit_table(group: Any) -> pd.DataFrame | None:
@@ -225,11 +253,13 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
     for name, other in others:
         if not np.array_equal(rows, other):
             raise ValueError(
-                f"{first} and {name} have different pynapple time supports, so "
-                "the epochs to analyze are ambiguous.\n"
-                "Why: with epochs=None each pynapple sample's time_support is "
-                "used as the epochs, and these disagree.\n"
-                f"Fix: pass epochs= explicitly, e.g. "
-                f"epochs={first}.time_support.intersect({name}.time_support)."
+                _format_error(
+                    f"{first} and {name} have different pynapple time supports, "
+                    "so the epochs to analyze are ambiguous.",
+                    why="with epochs=None each pynapple sample's time_support is "
+                    "used as the epochs, and these disagree.",
+                    fix="pass epochs= explicitly, e.g. "
+                    f"epochs={first}.time_support.intersect({name}.time_support).",
+                )
             )
     return rows

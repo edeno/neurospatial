@@ -1,16 +1,14 @@
 """Every spelling of a length unit matches and converts identically."""
 
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
 from neurospatial._units import (
+    declared_units,
     normalize_position_units,
     same_coordinate_declaration,
     units_per_centimeter,
 )
-from neurospatial.io.nwb._adapters import position_units_from_series
 
 SPELLINGS = {
     "m": ["m", "meter", "Meters", "metre", "metres"],
@@ -36,8 +34,7 @@ def test_spellings_share_one_canonical_unit_and_conversion(canonical):
     assert len(factors) == 1
     for spelling in SPELLINGS[canonical]:
         assert normalize_position_units(spelling) == canonical
-        series = SimpleNamespace(unit=spelling)
-        assert position_units_from_series(series) == canonical
+        assert declared_units(spelling) == canonical
 
 
 @pytest.mark.parametrize(
@@ -50,7 +47,9 @@ def test_units_per_centimeter_converts(units, per_centimeter):
 
 def test_custom_units_are_kept_and_not_converted():
     assert normalize_position_units(" Arena ") == "arena"
-    assert position_units_from_series(SimpleNamespace(unit="Arena")) == "Arena"
+    assert declared_units(" Arena ") == "Arena"
+    assert declared_units("  ") is None
+    assert declared_units(None) is None
     assert units_per_centimeter("arena") is None
     assert units_per_centimeter("px") is None
 

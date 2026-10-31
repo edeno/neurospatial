@@ -746,7 +746,7 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         metadata = json.loads(empty_nwb.analysis["spatial_environment"].description)
         assert metadata["name"] == "test_arena"
-        assert metadata["schema_version"] == "4.0"
+        assert metadata["schema_version"] == "Environment-v4"
 
     def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
         """Writing preserves every center value exactly."""
@@ -942,7 +942,8 @@ class TestReadEnvironment:
         metadata["array_specs"]["bin_centers"]["dtype"] = "<f4"
         record.fields["description"] = json.dumps(metadata)
         with pytest.raises(
-            ValueError, match="array 'bin_centers' does not match its stored dtype"
+            ValueError,
+            match="array 'bin_centers' does not match its stored shape or dtype",
         ) as error:
             read_environment(empty_nwb)
         assert "Fix:" in str(error.value)
@@ -2339,7 +2340,7 @@ def test_writer_never_replaces_another_analysis_object(
         write_environment(
             empty_nwb, sample_environment, name="quality", overwrite=overwrite
         )
-    assert "Fix: store the environment under another name" in str(error.value)
+    assert "Fix: pass name= another name" in str(error.value)
     assert empty_nwb.analysis["quality"] is other
 
 
@@ -2365,7 +2366,9 @@ def test_reader_names_a_non_environment_record_and_lists_environments(
     with pytest.raises(ValueError, match="/analysis/tagged is not an environment"):
         read_environment(empty_nwb, name="tagged")
     # A description that is not JSON at all cannot say what it is.
-    with pytest.raises(ValueError, match="Invalid environment metadata") as error:
+    with pytest.raises(
+        ValueError, match="/analysis/quality is not an environment"
+    ) as error:
         read_environment(empty_nwb, name="quality")
     assert "Fix: pass name= one of ['open_field']" in str(error.value)
     with pytest.raises(KeyError) as missing:

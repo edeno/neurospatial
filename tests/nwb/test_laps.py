@@ -220,9 +220,14 @@ class TestWriteLapsFromArrays:
                 ["clockwise"],
                 r"directions length \(1\) must match start_times length \(2\)",
             ),
-            ([1.0, np.nan], [2.0, 3.0], None, r"start_times contains non-finite"),
-            ([1.0, 2.0], [2.0, np.inf], None, r"stop_times contains non-finite"),
-            ([-1.0, 2.0], [2.0, 3.0], None, "start_times contains negative"),
+            ([1.0, np.nan], [2.0, 3.0], None, r"start_times contains 1 non-finite"),
+            ([1.0, 2.0], [2.0, np.inf], None, r"stop_times contains 1 non-finite"),
+            (
+                [-1.0, 2.0],
+                [2.0, 3.0],
+                None,
+                "start_times contains 1 negative timestamp",
+            ),
             ([1.0, 5.0], [2.0, 3.0], None, "every lap. Lap 1: start_time=5.0"),
         ],
     )
