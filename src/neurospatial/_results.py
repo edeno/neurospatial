@@ -609,11 +609,15 @@ def import_xarray() -> Any:
     Raises
     ------
     ImportError
-        If ``xarray`` is not installed, naming how to install it.
+        If ``xarray`` is not installed, naming how to install it. An error
+        raised inside an installed xarray (a broken install or a missing
+        dependency of xarray) propagates unchanged.
     """
     try:
         import xarray as xr
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        if exc.name != "xarray":
+            raise
         raise ImportError(
             "to_xarray() requires the optional 'xarray' dependency, which "
             "is not installed. Install it with "
