@@ -1,6 +1,6 @@
 """NWB round-trip for ``method="glm"`` spatial-rate results.
 
-``write_spatial_rates`` / ``read_place_field`` must persist the GAM diagnostics
+``write_spatial_rates`` / ``read_spatial_rates`` must persist the GAM diagnostics
 that ``method="glm"`` carries -- ``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
 ``reml_objective`` -- and read them back field-for-field with shapes intact,
@@ -86,13 +86,13 @@ class TestGlmRoundTrip:
     def test_nwb_glm_roundtrip(self, empty_nwb, sample_environment):
         """A glm result writes and reads back equal -- field-by-field, shapes kept."""
         from neurospatial.encoding.spatial import SpatialRatesResult
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         result = _make_glm_rates_result(env)
 
         write_spatial_rates(empty_nwb, result)
-        back = read_place_field(empty_nwb, env=env)
+        back = read_spatial_rates(empty_nwb, env=env)
 
         assert isinstance(back, SpatialRatesResult)
         assert back.method == "glm"
@@ -129,13 +129,13 @@ class TestGlmRoundTrip:
 
     def test_nwb_glm_none_penalty_roundtrip(self, empty_nwb, sample_environment):
         """penalty=None / reml_objective=None (REML-skip) round-trip as None."""
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         result = _make_glm_rates_result(env, penalty=None, reml_objective=None)
 
         write_spatial_rates(empty_nwb, result)
-        back = read_place_field(empty_nwb, env=env)
+        back = read_spatial_rates(empty_nwb, env=env)
 
         assert back.penalty is None
         assert back.reml_objective is None
@@ -146,7 +146,7 @@ class TestGlmRoundTrip:
     def test_nwb_glm_real_fit_roundtrip(self, empty_nwb, sample_environment):
         """A REAL computed glm result (estimator output) round-trips equal."""
         from neurospatial.encoding.spatial import compute_spatial_rates
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         # Tile active-bin centers so occupancy is uniform + positive everywhere.
@@ -161,7 +161,7 @@ class TestGlmRoundTrip:
         assert result.method == "glm"
 
         write_spatial_rates(empty_nwb, result)
-        back = read_place_field(empty_nwb, env=env)
+        back = read_spatial_rates(empty_nwb, env=env)
 
         assert back.method == "glm"
         assert back.bandwidth is None
@@ -184,7 +184,7 @@ class TestGlmRoundTrip:
         """
         from pynwb import NWBHDF5IO
 
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         from ._nwb_helpers import create_roundtrip_nwb
 
@@ -199,7 +199,7 @@ class TestGlmRoundTrip:
             io.write(nwbfile)
         with NWBHDF5IO(str(nwb_path), "r") as io:
             reopened = io.read()
-            back = read_place_field(reopened, name="glm_rates", env=env)
+            back = read_spatial_rates(reopened, name="glm_rates", env=env)
 
             assert back.method == "glm"
             assert back.bandwidth is None
@@ -218,13 +218,13 @@ class TestGlmRoundTrip:
 
     def test_nwb_ratio_roundtrip_unchanged(self, empty_nwb, sample_environment):
         """A diffusion_kde result round-trips with GAM fields absent/None."""
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         result = _make_ratio_rates_result(env)
 
         write_spatial_rates(empty_nwb, result)
-        back = read_place_field(empty_nwb, env=env)
+        back = read_spatial_rates(empty_nwb, env=env)
 
         assert back.method == "diffusion_kde"
         assert back.bandwidth == 5.0
@@ -247,7 +247,7 @@ class TestOverwriteAtomicity:
         try-block and restored on failure, so an aborted overwrite leaves the
         pre-existing record intact and readable rather than deleted.
         """
-        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
         env = sample_environment
         original = _make_glm_rates_result(env, rank=5, seed=1)
@@ -269,7 +269,7 @@ class TestOverwriteAtomicity:
         # readable via the explicit env (table + occupancy restored) AND via the
         # persisted env (env restored), field-for-field equal to the original.
         monkeypatch.undo()
-        back = read_place_field(empty_nwb, name="rates", env=env)
+        back = read_spatial_rates(empty_nwb, name="rates", env=env)
         assert back.rank == original.rank  # the original rank, not the replacement's
         np.testing.assert_array_equal(
             np.asarray(back.firing_rates), np.asarray(original.firing_rates)
@@ -278,12 +278,12 @@ class TestOverwriteAtomicity:
             np.asarray(back.coefficients), np.asarray(original.coefficients)
         )
         # env restored too: read with env=None finds the persisted environment.
-        back_env_none = read_place_field(empty_nwb, name="rates")
+        back_env_none = read_spatial_rates(empty_nwb, name="rates")
         assert back_env_none.env.n_bins == env.n_bins
 
 
 class TestSchemaVersionGuard:
-    """read_place_field enforces the schema MAJOR version."""
+    """read_spatial_rates enforces the schema MAJOR version."""
 
     def _write_then_patch_schema(self, nwbfile, env, schema_value):
         import json
@@ -306,18 +306,18 @@ class TestSchemaVersionGuard:
     @pytest.mark.parametrize("bad", [_MISSING, "1.0", "3.0", "0.9"])
     def test_incompatible_major_rejected(self, empty_nwb, sample_environment, bad):
         """Missing / 1.x / a future-incompatible major all raise on read."""
-        from neurospatial.io.nwb import read_place_field
+        from neurospatial.io.nwb import read_spatial_rates
 
         env = sample_environment
         self._write_then_patch_schema(empty_nwb, env, bad)
         with pytest.raises(ValueError, match="schema"):
-            read_place_field(empty_nwb, env=env)
+            read_spatial_rates(empty_nwb, env=env)
 
     def test_same_major_minor_reads(self, empty_nwb, sample_environment):
         """A 2.0 table (same major, older minor) still reads under the 2.1 reader."""
-        from neurospatial.io.nwb import read_place_field
+        from neurospatial.io.nwb import read_spatial_rates
 
         env = sample_environment
         self._write_then_patch_schema(empty_nwb, env, "2.0")
-        back = read_place_field(empty_nwb, env=env)
+        back = read_spatial_rates(empty_nwb, env=env)
         assert back.method == "diffusion_kde"

@@ -55,8 +55,8 @@ from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.io.nwb import (
     environment_from_position,
-    read_place_field,
     read_position,
+    read_spatial_rates,
     read_units,
     write_spatial_rates,
 )
@@ -243,7 +243,7 @@ plt.show()
 # arena geometry, and analysis settings together. Calling `io.write` writes
 # those changes to disk.
 #
-# Reopen the saved file and load the maps with `read_place_field`. This reader
+# Reopen the saved file and load the maps with `read_spatial_rates`. This reader
 # can return maps for several neurons even though its name is singular.
 
 # %%
@@ -257,7 +257,7 @@ with NWBHDF5IO(str(analysis_path), "r") as io:
     restored = io.read()
     pos_back = read_position(restored, position_name="head_position")
     units_back = read_units(restored, unit_ids=[42, 7])
-    rates_back = read_place_field(restored, name="spatial_rates")
+    rates_back = read_spatial_rates(restored, name="spatial_rates")
 
 # %% [markdown]
 # ## 4. Check that the saved maps match the analysis

@@ -581,7 +581,7 @@ pynwb.
 - The [complete NWB recipe](../user-guide/interoperability.md#population-fields-decoding-and-a-truthful-overlay)
   carries physical units, labels, selected epochs and acquisition coverage
   through population fields, a fitted decoder, summary tables and overlays.
-- `write_spatial_rates(nwbfile, result)` / `read_place_field(nwbfile, env=None)`:
+- `write_spatial_rates(nwbfile, result)` / `read_spatial_rates(nwbfile, env=None)`:
   Round-trip a `SpatialRatesResult` (firing rates / occupancy / unit ids /
   `unit_table` + a persisted, connected environment).
 

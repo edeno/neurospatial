@@ -16,7 +16,7 @@ Reading Functions:
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_units : Read spike-time arrays from an NWB units table
-    read_place_field : Read a population SpatialRatesResult from NWB analysis/
+    read_spatial_rates : Read a population SpatialRatesResult from NWB analysis/
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
@@ -129,7 +129,7 @@ if TYPE_CHECKING:
         write_trials as write_trials,
     )
     from neurospatial.io.nwb._fields import (
-        read_place_field as read_place_field,
+        read_spatial_rates as read_spatial_rates,
     )
     from neurospatial.io.nwb._fields import (
         write_spatial_rates as write_spatial_rates,
@@ -176,7 +176,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_events": "neurospatial.io.nwb._events:read_events",
     "read_intervals": "neurospatial.io.nwb._events:read_intervals",
     "read_units": "neurospatial.io.nwb._units:read_units",
-    "read_place_field": "neurospatial.io.nwb._fields:read_place_field",
+    "read_spatial_rates": "neurospatial.io.nwb._fields:read_spatial_rates",
     "read_environment": "neurospatial.io.nwb._environment:read_environment",
     "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
@@ -222,9 +222,9 @@ __all__ = [
     "read_events",
     "read_head_direction",
     "read_intervals",
-    "read_place_field",
     "read_pose",
     "read_position",
+    "read_spatial_rates",
     "read_trials",
     "read_units",
     "write_environment",

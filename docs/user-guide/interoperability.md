@@ -552,14 +552,14 @@ with NWBHDF5IO("session.nwb", "r") as io:
 
 `write_spatial_rates` persists a population `SpatialRatesResult` — the per-unit
 firing-rate maps, shared occupancy, `unit_ids`, optional `unit_table`, and a
-connected copy of the `Environment` — and `read_place_field` reconstructs an
+connected copy of the `Environment` — and `read_spatial_rates` reconstructs an
 equal result. Because the environment round-trips with its connectivity intact,
 graph operations work on the restored env with no `env=` argument.
 
 ```python
 from pynwb import NWBHDF5IO
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.io.nwb import write_spatial_rates, read_place_field
+from neurospatial.io.nwb import write_spatial_rates, read_spatial_rates
 
 rates = compute_spatial_rates(env, spike_times, times, positions)
 
@@ -572,7 +572,7 @@ with NWBHDF5IO("session.nwb", "r+") as io:
 # Read back (env restored from the file; an env= you pass must equal it).
 with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
-    restored = read_place_field(nwbfile, name="ca1_place_fields")
+    restored = read_spatial_rates(nwbfile, name="ca1_place_fields")
     restored.firing_rates.shape   # (n_units, n_bins)
 ```
 

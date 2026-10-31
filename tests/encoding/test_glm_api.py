@@ -1246,7 +1246,7 @@ def test_glm_nwb_write_roundtrips(open_field_env: Environment) -> None:
 
     ``write_spatial_rates`` persists the GAM fields (coefficients, penalty,
     penalty_weights, rank, deviance, converged, n_iter, reml_objective) and
-    ``read_place_field`` reconstructs them field-for-field, so the estimator
+    ``read_spatial_rates`` reconstructs them field-for-field, so the estimator
     output survives a round-trip rather than being dropped.
     """
     pytest.importorskip("pynwb")
@@ -1254,7 +1254,7 @@ def test_glm_nwb_write_roundtrips(open_field_env: Environment) -> None:
 
     from pynwb import NWBFile
 
-    from neurospatial.io.nwb._fields import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb._fields import read_spatial_rates, write_spatial_rates
 
     env = open_field_env
     centers = [(4.0, 4.0), (12.0, 12.0)]
@@ -1267,7 +1267,7 @@ def test_glm_nwb_write_roundtrips(open_field_env: Environment) -> None:
         session_start_time=datetime.now(timezone.utc),
     )
     write_spatial_rates(nwb, glm, name="glm_rates")
-    back = read_place_field(nwb, name="glm_rates", env=env)
+    back = read_spatial_rates(nwb, name="glm_rates", env=env)
 
     assert back.method == "glm"
     assert back.bandwidth is None

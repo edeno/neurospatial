@@ -41,7 +41,7 @@ def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
     No silent fall-through: an old-schema table is rejected with a clear error
     rather than reconstructed.
     """
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_rates_result(env)
@@ -58,12 +58,12 @@ def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
     table.fields["description"] = json.dumps(meta)
 
     with pytest.raises(ValueError, match="method"):
-        read_place_field(empty_nwb, env=env)
+        read_spatial_rates(empty_nwb, env=env)
 
 
 def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
     """A freshly written table uses the ``"method"`` key and round-trips."""
-    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
     result = _make_rates_result(env)
@@ -74,5 +74,5 @@ def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
     assert "method" in meta and "smoothing_method" not in meta
     assert meta["schema_version"] == "2.5"
 
-    back = read_place_field(empty_nwb, env=env)
+    back = read_spatial_rates(empty_nwb, env=env)
     assert back.method == "diffusion_kde"

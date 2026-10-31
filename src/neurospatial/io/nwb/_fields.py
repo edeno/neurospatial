@@ -3,7 +3,7 @@ Spatial firing-rate maps in NWB files.
 
 ``write_spatial_rates`` stores a population ``SpatialRatesResult`` -- rate
 maps, occupancy and the environment they were estimated on -- and
-``read_place_field`` restores it.
+``read_spatial_rates`` restores it.
 
 Schema note
 -----------
@@ -27,7 +27,7 @@ Schema ``2.5`` adds ``min_occupancy``, the occupancy threshold in seconds that
 defines ``spatial_support`` (files without it are refused), and each unit's
 ``n_spikes_outside_intervals`` (``null`` when unknown).
 
-``read_place_field`` enforces the schema **major** version: it reads only tables
+``read_spatial_rates`` enforces the schema **major** version: it reads only tables
 whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
 ``2.1``, ``2.2``, and ``2.3`` are readable, since a minor bump only *adds*
 optional fields), and rejects any other (missing, ``1.x``, or an incompatible
@@ -133,7 +133,7 @@ def write_spatial_rates(
 
     Stores the whole population -- per-unit firing-rate maps, shared occupancy,
     unit identities, and optional per-unit metadata -- so that
-    :func:`read_place_field` reconstructs an equal ``SpatialRatesResult``.
+    :func:`read_spatial_rates` reconstructs an equal ``SpatialRatesResult``.
 
     The container is a :class:`~hdmf.common.DynamicTable` (one row per unit) in
     the ``analysis`` processing module, with a ``unit_id`` column, a 2-D
@@ -156,7 +156,7 @@ def write_spatial_rates(
     The full :class:`~neurospatial.Environment` is **persisted** alongside the
     rates (via :func:`~neurospatial.io.nwb.write_environment` under the derived
     name ``f"{name}_environment"``), so it round-trips with its connectivity
-    edges and geometry intact. :func:`read_place_field` restores that
+    edges and geometry intact. :func:`read_spatial_rates` restores that
     environment when called without ``env=``; the persisted env is a separate
     copy from any default-named environment, so multiple results and a standalone
     ``write_environment`` never collide.
@@ -553,7 +553,7 @@ def _verify_saved_environment(
     if env_name not in nwbfile.scratch:
         raise ValueError(
             _format_error(
-                f"read_place_field: cannot verify env= against spatial rates "
+                f"read_spatial_rates: cannot verify env= against spatial rates "
                 f"'{name}': the file stores no environment for them "
                 f"('{env_name}' is missing).",
                 why="equal bin counts do not show that env= has the bins, units, "
@@ -567,7 +567,7 @@ def _verify_saved_environment(
     mismatch = bins or topology
     if mismatch is not None:
         raise IncompatibleEnvironmentError(
-            f"read_place_field: env= differs from the environment saved with "
+            f"read_spatial_rates: env= differs from the environment saved with "
             f"spatial rates '{name}' in {mismatch}.",
             fix="omit env= to use the environment saved with these rates, or "
             "pass that same environment",
@@ -576,7 +576,7 @@ def _verify_saved_environment(
         )
 
 
-def read_place_field(
+def read_spatial_rates(
     nwbfile: NWBFile,
     *,
     name: str = DEFAULT_SPATIAL_RATES_NAME,
@@ -640,7 +640,7 @@ def read_place_field(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     rates = read_place_field(nwbfile, name="ca1_place_fields")
+    ...     rates = read_spatial_rates(nwbfile, name="ca1_place_fields")
     ...     rates.firing_rates.shape  # (n_units, n_bins)
     """
     _require_pynwb()
