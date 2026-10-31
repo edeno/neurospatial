@@ -205,8 +205,22 @@ def times_positions_problems(
             f"times and positions must have the same length; times has "
             f"{len(t)} samples, positions has {len(p)}."
         )
+    # Suggest a swap only on evidence: 2-D times are a trajectory, or times
+    # whose recorded values go backwards (as positions do) while positions
+    # would be valid times. Positions that never decrease alone are normal on
+    # a linear track, and a NaN in times says nothing about order.
+    times_go_back = (
+        t is not None and t.ndim == 1 and bool(np.any(np.diff(t[np.isfinite(t)]) < 0))
+    )
+    positions_are_times = (
+        p is not None
+        and p.ndim == 1
+        and p.size > 1
+        and bool(np.isfinite(p).all())
+        and bool(np.all(np.diff(p) >= 0))
+    )
     looks_swapped = (t is not None and t.ndim == 2) or (
-        p is not None and p.ndim == 1 and p.size > 1 and bool(np.all(np.diff(p) >= 0))
+        times_go_back and positions_are_times
     )
     return problems, looks_swapped
 

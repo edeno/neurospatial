@@ -22,6 +22,41 @@ def test_swapped_times_positions_names_swap():
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
+def test_swapped_one_dimensional_arguments_name_swap():
+    """Linear-track positions passed as times, and times passed as positions."""
+    from neurospatial._validation import validate_times_positions
+
+    track = [5.0, 7.0, 6.0, 9.0]
+    with pytest.raises(ValueError, match="did you pass positions before times"):
+        validate_times_positions(track, [0.0, 0.1, 0.2, 0.3], call="f")
+
+
+@pytest.mark.parametrize(
+    "times, positions",
+    [
+        ([0.0, np.nan, 0.2], [0.0, 1.0, 2.0]),
+        ([0.0, 0.1, 0.2], [0.0, 1.0, 2.0, 3.0]),
+        ([0.0, 0.2, 0.1], [[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]]),
+        ([0.0, 0.2, 0.1], [0.0, np.nan, 2.0]),
+    ],
+    ids=[
+        "nan time, track positions",
+        "length mismatch",
+        "unsorted, 2-D positions",
+        "unsorted, positions with nan",
+    ],
+)
+def test_swap_is_not_suggested_without_evidence(times, positions):
+    """Positions that never decrease are normal on a linear track."""
+    from neurospatial._validation import validate_times_positions
+
+    with pytest.raises(ValueError) as caught:
+        validate_times_positions(times, positions, call="f")
+    message = str(caught.value)
+    assert "positions before times" not in message
+    assert "Fix: pass times as a sorted 1-D array" in message
+
+
 def test_unsorted_times_reports_first_decrease():
     from neurospatial._validation import validate_times_positions
 
