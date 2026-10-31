@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import get_centers as get_centers
 from neurospatial.layout.validation import (
@@ -21,6 +22,7 @@ from neurospatial.layout.validation import (
 )
 
 
+@reads_pynapple_samples
 def get_n_bins(
     positions: NDArray[np.float64],
     *,

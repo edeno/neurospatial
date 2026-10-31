@@ -90,7 +90,7 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
@@ -497,6 +497,7 @@ class Trial:
         return self.outcome == "reached"
 
 
+@reads_pynapple_samples
 def detect_region_crossings(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -681,6 +682,7 @@ def _detect_region_crossings_contiguous(
     ]
 
 
+@reads_pynapple_samples
 def detect_runs_between_regions(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -1050,7 +1052,7 @@ def _detect_runs_between_regions_contiguous(
     return runs
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def segment_by_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -1320,6 +1322,7 @@ def _detect_lap_direction(
     return "unknown"
 
 
+@reads_pynapple_samples
 def detect_laps(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -2051,6 +2054,7 @@ def _detect_laps_search_contiguous(
 # =============================================================================
 
 
+@reads_pynapple_samples
 def laps_to_direction_labels(
     laps: list[Lap],
     times: NDArray[np.float64],
@@ -2118,6 +2122,7 @@ def laps_to_direction_labels(
     return _interval_labels(times, intervals)
 
 
+@reads_pynapple_samples
 def runs_to_direction_labels(
     runs: list[Run],
     times: NDArray[np.float64],
@@ -2213,6 +2218,7 @@ def runs_to_direction_labels(
     return _interval_labels(times, intervals)
 
 
+@reads_pynapple_samples
 def running_direction_labels(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -2447,6 +2453,7 @@ def running_direction_labels(
 # =============================================================================
 
 
+@reads_pynapple_samples
 def segment_trials(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -3089,6 +3096,7 @@ def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float
     return float(previous[n1])
 
 
+@reads_pynapple_samples
 def detect_goal_directed_runs(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],

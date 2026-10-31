@@ -28,6 +28,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy import stats
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._validation import timestamps_of
 from neurospatial.reactivation.assemblies import (
@@ -784,6 +785,7 @@ def _signed_rank_p(
     return float(stats.wilcoxon(differences).pvalue), median
 
 
+@reads_pynapple_samples
 def assembly_event_response(
     times: ArrayLike,
     activation: ArrayLike,

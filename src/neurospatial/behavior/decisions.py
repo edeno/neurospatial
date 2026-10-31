@@ -79,7 +79,7 @@ from neurospatial._observation import (
     validated_observations,
     validated_signals,
 )
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.behavior._decision_windows import (
@@ -441,6 +441,7 @@ class DecisionAnalysisResult(ResultMixin):
 # =============================================================================
 
 
+@reads_pynapple_samples
 def decision_region_entry_time(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -520,7 +521,7 @@ def _never_enters_message(region: str, *, epochs: Any) -> str:
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def extract_pre_decision_window(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -642,7 +643,7 @@ def extract_pre_decision_window(
     return times[window], positions[window]
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def pre_decision_heading_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -794,7 +795,7 @@ def _heading_stats(
     return circular_mean(valid_headings), 1.0 - mrl, mrl
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def pre_decision_speed_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -892,7 +893,7 @@ def pre_decision_speed_stats(
     return speed_stats(times, positions, support.interval_mask)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_pre_decision_metrics(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -1298,6 +1299,7 @@ def distance_to_decision_boundary(
     return boundary_distances
 
 
+@reads_pynapple_samples
 def detect_boundary_crossings(
     position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
@@ -1476,7 +1478,7 @@ def _detect_boundary_crossings_contiguous(
 # =============================================================================
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_decision_analysis(
     env: Environment,
     times: NDArray[np.float64],

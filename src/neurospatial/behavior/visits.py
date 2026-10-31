@@ -25,6 +25,7 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -217,6 +218,7 @@ class RegionTransition:
         object.__setattr__(self, "duration", self.end_time - self.start_time)
 
 
+@reads_pynapple_samples
 def detect_region_visits(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],

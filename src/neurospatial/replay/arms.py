@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import reduce_through_constructor
 from neurospatial._validation import validate_choice
 
@@ -231,6 +232,7 @@ def _check_arm_numbers(method: ArmReplayMethod, prefix: str) -> None:
             raise ValueError(f"{prefix}: {name} must be in [0, 1), got {value!r}.")
 
 
+@reads_pynapple_samples
 def detect_arm_replay(
     env: Environment,
     posterior: NDArray[np.float64],

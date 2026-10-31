@@ -9,6 +9,7 @@ compares the pynapple route with the plain-array route it must equal.
 from __future__ import annotations
 
 import importlib.util
+import re
 
 import numpy as np
 import pytest
@@ -476,3 +477,54 @@ def test_trial_stop_closedness_routes_and_how_to_match_them(nap, tmp_path):
         in_epochs(times, np.column_stack([iset.start, iset.end])), half_open
     )
     np.testing.assert_array_equal(in_epochs(times, rows, closed="both"), inclusive)
+
+
+# ---------------------------------------------------------------------------
+# Positions-only entry points and pynapple timestamps
+# ---------------------------------------------------------------------------
+
+
+def test_from_samples_refuses_permuted_columns_and_reads_ordered_frames(nap, session):
+    _, times, positions, _ = session
+    swapped = nap.TsdFrame(t=times, d=positions[:, ::-1], columns=["y", "x"])
+    ordered = nap.TsdFrame(t=times, d=positions, columns=["x", "y"])
+
+    with pytest.raises(ValueError, match=r"not in x, y, z order"):
+        Environment.from_samples(swapped, bin_size=10.0)
+    from_frame = Environment.from_samples(ordered, bin_size=10.0)
+    from_array = Environment.from_samples(positions, bin_size=10.0)
+    np.testing.assert_array_equal(from_frame.bin_centers, from_array.bin_centers)
+
+
+def test_bin_at_refuses_permuted_columns_and_reads_ordered_frames(nap, session):
+    env, times, positions, _ = session
+    swapped = nap.TsdFrame(t=times, d=positions[:, ::-1], columns=["y", "x"])
+    ordered = nap.TsdFrame(t=times, d=positions, columns=["x", "y"])
+
+    fix = re.escape("positions=tsdframe.loc[['x', 'y']]")
+    with pytest.raises(ValueError, match=fix):
+        env.bin_at(swapped)
+    np.testing.assert_array_equal(env.bin_at(ordered), env.bin_at(positions))
+
+
+def test_pynapple_times_are_read_as_timestamps_not_values(nap, session):
+    """``np.asarray(tsd)`` is the values; the timestamps must be used."""
+    from neurospatial import compute_spatial_rates
+    from neurospatial.behavior import compute_speed
+
+    env, times, positions, trains = session
+    frame = nap.TsdFrame(t=times, d=positions, columns=["x", "y"])
+    # A speed trace: its values are not timestamps.
+    speed = nap.Tsd(t=times, d=compute_speed(times, positions))
+
+    plain = compute_spatial_rates(env, trains, times, positions, method="binned")
+    for clock in (frame, speed, nap.Ts(t=times)):
+        rates = compute_spatial_rates(env, trains, clock, positions, method="binned")
+        np.testing.assert_array_equal(rates.occupancy, plain.occupancy)
+        np.testing.assert_array_equal(rates.firing_rates, plain.firing_rates)
+    np.testing.assert_array_equal(
+        env.occupancy(frame, frame), env.occupancy(times, positions)
+    )
+    np.testing.assert_array_equal(
+        compute_speed(speed, positions), compute_speed(times, positions)
+    )

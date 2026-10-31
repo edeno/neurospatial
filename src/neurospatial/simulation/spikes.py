@@ -9,6 +9,7 @@ from tqdm.auto import tqdm
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_finite, validate_finite_scalar
 from neurospatial.simulation._seeds import _stream_seeds
 from neurospatial.simulation.models.base import NeuralModel, _population_cache
@@ -16,6 +17,7 @@ from neurospatial.simulation.models.base import NeuralModel, _population_cache
 logger = logging.getLogger(__name__)
 
 
+@reads_pynapple_samples
 def generate_poisson_spikes(
     firing_rate: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -235,6 +237,7 @@ def generate_poisson_spikes(
     return np.array(accepted_spikes, dtype=np.float64)
 
 
+@reads_pynapple_samples
 def generate_population_spikes(
     models: list[NeuralModel],
     times: NDArray[np.float64],

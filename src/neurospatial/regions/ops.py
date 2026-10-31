@@ -73,6 +73,7 @@ import shapely
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.geometry._region_bins import disc_mask, polygon_point_mask
 
@@ -327,6 +328,7 @@ def _region_mask(
     return polygon_point_mask(region.data, positions, domain=domain)
 
 
+@reads_pynapple_samples
 def points_in_any_region(
     positions: ArrayLike,
     regions: Mapping[str, Region],
@@ -455,6 +457,7 @@ def regions_containing_points(
 ) -> pd.DataFrame | list[list[str]]: ...
 
 
+@reads_pynapple_samples
 def regions_containing_points(
     positions: ArrayLike,
     regions: Mapping[str, Region],

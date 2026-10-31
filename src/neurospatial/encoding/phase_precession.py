@@ -59,6 +59,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._angles import to_radians
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ResultMixin
 from neurospatial.stats import (
     _validate_paired_input,
@@ -596,6 +597,7 @@ def _warn_slope_at_bound(
     )
 
 
+@reads_pynapple_samples
 def compute_phase_precession(
     positions: NDArray[np.float64],
     phases: NDArray[np.float64],
@@ -949,6 +951,7 @@ def _phase_precession(
     )
 
 
+@reads_pynapple_samples
 def has_phase_precession(
     positions: NDArray[np.float64],
     phases: NDArray[np.float64],
@@ -1064,6 +1067,7 @@ def has_phase_precession(
     return significant and result.slope < 0
 
 
+@reads_pynapple_samples
 def plot_phase_precession(
     positions: NDArray[np.float64],
     phases: NDArray[np.float64],

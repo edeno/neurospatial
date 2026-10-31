@@ -55,7 +55,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -3735,7 +3735,7 @@ def _spatial_rates_result(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -4121,7 +4121,7 @@ default="diffusion_kde"
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_spatial_rates(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -4959,7 +4959,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return ax
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -5559,7 +5559,7 @@ def _keep_place_fields(
     return results
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def has_place_field(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -5819,7 +5819,7 @@ def has_place_field(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def is_place_cell(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -6258,7 +6258,7 @@ def _smoothed_bin_measures(
     return smallest
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def place_cell_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -7125,7 +7125,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         return {"n_units": len(self), "n_shuffles": self.n_shuffles, **counts}
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def spatial_cell_type_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,

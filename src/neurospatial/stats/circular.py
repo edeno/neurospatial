@@ -119,6 +119,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._angles import to_radians, wrap_angle
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
@@ -700,6 +701,7 @@ def circular_linear_correlation(
     return float(np.sqrt(r_squared)), pval
 
 
+@reads_pynapple_samples
 def phase_position_correlation(
     phases: NDArray[np.float64],
     positions: NDArray[np.float64],

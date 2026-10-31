@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._angles import wrap_angle
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
@@ -219,6 +220,7 @@ class HeadDirectionCellModel:
         """True: the rate depends on head direction only."""
         return True
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

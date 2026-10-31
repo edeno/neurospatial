@@ -23,7 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -642,7 +642,7 @@ warn_on_drop
             )
         return self.encoding_models
 
-    @adopts_time_support
+    @reads_pynapple_samples
     def fit(
         self,
         spike_times: SpikeTrainsLike,
@@ -863,6 +863,7 @@ warn_on_drop
             )
         return [trains[row[u]] for u in fitted]
 
+    @reads_pynapple_samples
     def predict(
         self,
         spike_times: SpikeTrainsLike,
@@ -954,6 +955,7 @@ warn_on_drop
             ),
         )
 
+    @reads_pynapple_samples
     def predict_summary(
         self,
         spike_times: SpikeTrainsLike,
@@ -1083,7 +1085,7 @@ warn_on_drop
             **options,
         )
 
-    @adopts_time_support
+    @reads_pynapple_samples
     def score(
         self,
         spike_times: SpikeTrainsLike,

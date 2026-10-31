@@ -82,7 +82,7 @@ if TYPE_CHECKING:
 
 from neurospatial._intervals import DEFAULT_MAX_GAP, run_sample_bounds
 from neurospatial._observation import ObservationSupport, validated_observations
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
@@ -506,6 +506,7 @@ def _std_or_nan(values: NDArray[np.float64]) -> float:
 # =============================================================================
 
 
+@reads_pynapple_samples
 def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
     """Compute integrated absolute head rotation (IdPhi).
 
@@ -575,7 +576,7 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
     return float(np.sum(np.abs(delta)))
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def head_sweep_from_positions(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -945,7 +946,7 @@ def classify_vte(
 # =============================================================================
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_vte_trial(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -1134,7 +1135,7 @@ def _window_metrics(
     return head_sweep, mean_speed, min_speed_value
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_vte_session(
     env: Environment,
     times: NDArray[np.float64],

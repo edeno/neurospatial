@@ -95,7 +95,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
@@ -1637,7 +1637,7 @@ def _view_information(
     return batch_spatial_information(_to_numpy(rates), occupancy)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_view_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -1891,7 +1891,7 @@ def compute_view_rate(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_view_rates(
     env: Environment,
     spike_times: SpikeTrainsLike,
@@ -2212,7 +2212,7 @@ def compute_view_rates(
 # ==============================================================================
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def is_spatial_view_cell(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -2491,7 +2491,7 @@ def is_spatial_view_cell(
     return rate_map().is_spatial_view_cell(min_info=min_info)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def spatial_view_cell_significance(
     env: Environment,
     spike_times: SpikeTrainsLike,

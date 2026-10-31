@@ -90,6 +90,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
@@ -440,6 +441,7 @@ class ObjectVectorCellModel:
             and self.preferred_direction is not None
         )
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 from scipy.special import logsumexp
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, read_only_copy
 from neurospatial.decoding._result import DecodingResult
 from neurospatial.decoding._time_bins import validate_dt
@@ -187,6 +188,7 @@ class JointDecodingResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def decode_jointly(
     env: Environment | Mapping[str, Environment],
     spike_counts: NDArray[np.int64],

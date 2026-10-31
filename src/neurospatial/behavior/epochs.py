@@ -68,6 +68,7 @@ from neurospatial._observation import (
     resolve_sample_support,
     validate_break_before,
 )
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -224,6 +225,7 @@ def in_epochs(
     return _mask_in_intervals(t, intervals, closed=closed)
 
 
+@reads_pynapple_samples
 def restrict(
     times: NDArray[np.float64],
     *arrays: NDArray[Any],
@@ -756,6 +758,7 @@ def _label_array(labels: Any) -> NDArray[Any]:
     return as_label_array(values)
 
 
+@reads_pynapple_samples
 def labels_to_epochs(
     times: Any,
     labels: Any,

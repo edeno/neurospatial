@@ -49,6 +49,7 @@ from numpy.typing import NDArray
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._units import default_length
 from neurospatial.geometry import (
     boundary_geometry,
@@ -225,6 +226,7 @@ class BorderCellModel:
         """False: the rate depends on position only."""
         return False
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],
@@ -514,6 +516,7 @@ class BoundaryVectorCellModel:
         """False: the drive is summed over allocentric directions."""
         return False
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

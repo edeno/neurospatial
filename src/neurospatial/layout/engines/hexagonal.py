@@ -5,6 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.geometry import (
     Binning,
     HexagonShapes,
@@ -64,6 +65,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.grid_offset_y_ = None
 
     @capture_build_params(data=("positions", "dimension_ranges"))
+    @reads_pynapple_samples
     def build(
         self,
         *,

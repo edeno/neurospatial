@@ -57,7 +57,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -2396,7 +2396,7 @@ def _count_directional(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_directional_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2593,7 +2593,7 @@ def compute_directional_rate(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_directional_rates(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -2927,7 +2927,7 @@ def _directional_rates(
 # ==============================================================================
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def is_head_direction_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -3339,7 +3339,7 @@ def _shifted_mean_vector_lengths(
     return _mean_vector_lengths(rates_from_counts(spike_counts), bin_centers)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def head_direction_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],

@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_observations
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.trajectory import (
     _invalid_result,
@@ -280,7 +280,7 @@ class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def resample_by_distance(
     times: ArrayLike,
     positions: ArrayLike,

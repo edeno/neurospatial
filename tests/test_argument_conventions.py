@@ -377,45 +377,61 @@ def test_environment_coordinate_arguments_are_named_positions():
 
 
 def _public_callables():
-    """Public functions and the public methods of public classes."""
+    """Public functions and the public methods of public classes.
+
+    Class and static methods are included through their underlying function.
+    """
     seen = set()
     for namespace in NAMESPACES:
         module = importlib.import_module(namespace)
         for name in module.__all__:
             obj = getattr(module, name)
-            members = (
-                [
-                    getattr(obj, attr)
-                    for attr in dir(obj)
-                    if not attr.startswith("_")
-                    and inspect.isfunction(inspect.getattr_static(obj, attr))
-                ]
-                if inspect.isclass(obj)
-                else [obj]
-            )
+            members = [obj]
+            if inspect.isclass(obj):
+                members = []
+                for attr in dir(obj):
+                    static = inspect.getattr_static(obj, attr)
+                    if isinstance(static, (classmethod, staticmethod)):
+                        static = static.__func__
+                    if not attr.startswith("_") and inspect.isfunction(static):
+                        members.append(static)
             for member in members:
                 if inspect.isfunction(member) and member not in seen:
                     seen.add(member)
                     yield member
 
 
-def test_sample_analyses_read_pynapple_time_support():
-    """Every analysis taking epochs and positions/headings adopts the support.
+SAMPLE_ARGUMENTS = {
+    "times",
+    "frame_times",
+    "true_times",
+    "positions",
+    "true_positions",
+    "headings",
+}
 
-    A pynapple ``positions`` or ``headings`` carries its recording epochs as
-    ``time_support``; with ``epochs=None`` the analysis must use them (and
-    say so in its ``epochs`` documentation) rather than bridge their gaps.
+
+def test_sample_arguments_read_pynapple_objects():
+    """Every public callable taking samples reads pynapple objects correctly.
+
+    ``np.asarray(tsd)`` gives a pynapple series' values, not its timestamps,
+    and a ``TsdFrame``'s columns may be y, x. Every callable taking a
+    timestamp or sample argument is wrapped by ``reads_pynapple_samples``.
+    Those that also take ``epochs`` adopt the time support of pynapple
+    positions or headings and say so in their ``epochs`` documentation.
     """
     undecorated, undocumented = [], []
     for function in _public_callables():
         parameters = inspect.signature(function).parameters
+        if not SAMPLE_ARGUMENTS & set(parameters):
+            continue
+        name = f"{function.__module__}.{function.__qualname__}"
+        if not getattr(function, "__reads_pynapple_samples__", False):
+            undecorated.append(name)
         if "epochs" not in parameters or not (
             {"positions", "headings"} & set(parameters)
         ):
             continue
-        name = f"{function.__module__}.{function.__qualname__}"
-        if not getattr(function, "__adopts_time_support__", False):
-            undecorated.append(name)
         lines = (inspect.getdoc(function) or "").splitlines()
         starts = [i for i, line in enumerate(lines) if line.startswith("epochs : ")]
         if starts:

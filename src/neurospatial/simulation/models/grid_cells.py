@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation.models.base import (
@@ -234,6 +235,7 @@ class GridCellModel:
         """False: a grid cell's rate depends on position only."""
         return False
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from neurospatial._pynapple import reads_pynapple_samples
+
 # Module logger for debug output
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ class BoundaryConfig:
     alpha: float = 0.05
 
 
+@reads_pynapple_samples
 def boundary_from_positions(
     positions: NDArray[np.float64],
     *,

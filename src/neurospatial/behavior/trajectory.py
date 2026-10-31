@@ -43,7 +43,7 @@ from neurospatial._observation import (
     validate_break_before,
     validated_observations,
 )
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
     validate_strictly_increasing,
@@ -284,7 +284,7 @@ class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_speed(
     times: ArrayLike,
     positions: ArrayLike,
@@ -406,7 +406,7 @@ def compute_speed(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def heading_from_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -668,6 +668,7 @@ def _interpolate_heading_circular(
     return result
 
 
+@reads_pynapple_samples
 def heading_from_body_orientation(
     times: ArrayLike,
     nose: ArrayLike,
@@ -926,7 +927,7 @@ def _planar_turns(
     return a, b, span, t, support
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_planar_turn_angles(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1148,7 +1149,7 @@ def _smooth_in_time(
     return smoothed
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_planar_curvature(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1284,7 +1285,7 @@ def compute_planar_curvature(
     return curvature
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_movement_angular_velocity(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1408,6 +1409,7 @@ def compute_movement_angular_velocity(
     return omega
 
 
+@reads_pynapple_samples
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
@@ -1577,7 +1579,7 @@ def _observed_cumulative(
     return steps, cumulative
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_cumulative_distance(
     times: ArrayLike,
     positions: ArrayLike,
@@ -1723,6 +1725,7 @@ def _sample_dwell_times(
     return weights
 
 
+@reads_pynapple_samples
 def compute_home_range(
     position_bins: NDArray[np.int_],
     *,
@@ -1976,7 +1979,7 @@ def compute_home_range(
     return home_range
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def mean_square_displacement(
     times: ArrayLike,
     positions: ArrayLike,

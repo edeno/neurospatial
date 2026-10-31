@@ -41,6 +41,7 @@ import shapely
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import is_integer_at_least
 from neurospatial.geometry import (
     CallIndexes,
@@ -86,6 +87,7 @@ def boundary_directions(*, n_directions: int) -> NDArray[np.float64]:
     return np.asarray(-np.pi + width * (np.arange(n_directions) + 0.5))
 
 
+@reads_pynapple_samples
 def compute_boundary_distances(
     env: BinningConsumer,
     positions: NDArray[np.float64],
@@ -206,6 +208,7 @@ def compute_boundary_distances(
     return distances, directions
 
 
+@reads_pynapple_samples
 def nearest_boundary(
     env: BinningConsumer,
     positions: NDArray[np.float64],

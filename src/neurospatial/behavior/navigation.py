@@ -124,7 +124,7 @@ from neurospatial._intervals import (
     recording_index,
     times_in_intervals,
 )
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._position_bins import validated_position_bins
@@ -607,6 +607,7 @@ def _warn_if_no_trial_overlaps(
     )
 
 
+@reads_pynapple_samples
 def trials_to_region_arrays(
     trials: list[Trial],
     times: NDArray[np.float64],
@@ -1046,7 +1047,7 @@ def distance_to_region(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def distance_to_reward(
     env: Environment,
     times: NDArray[np.float64],
@@ -1602,6 +1603,7 @@ def _infer_reward_positions(
     return located
 
 
+@reads_pynapple_samples
 def distance_to_boundary(
     env: Environment,
     positions: NDArray[np.float64],
@@ -2023,6 +2025,7 @@ def _validated_bin_values(
     return array
 
 
+@reads_pynapple_samples
 def time_to_goal(
     times: NDArray[np.float64],
     trials: list[Trial],
@@ -2273,6 +2276,7 @@ def _simplified_polyline(
     return np.flatnonzero(keep)
 
 
+@reads_pynapple_samples
 def goal_pair_direction_labels(
     times: NDArray[np.float64],
     trials: list[Trial],
@@ -2340,7 +2344,7 @@ def goal_pair_direction_labels(
     return _interval_labels(times, intervals)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def heading_direction_labels(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -2530,6 +2534,7 @@ def heading_direction_labels(
     )
 
 
+@reads_pynapple_samples
 def headings_to_direction_labels(
     headings: ArrayLike,
     speeds: ArrayLike,
@@ -2822,7 +2827,7 @@ def _observed_path_length(
     return float(steps[counted].sum()), complete
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def traveled_path_length(
     times: ArrayLike,
     positions: ArrayLike,
@@ -3065,6 +3070,7 @@ def _require_inside(
             )
 
 
+@reads_pynapple_samples
 def time_efficiency(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -3130,7 +3136,7 @@ def time_efficiency(
     return float(optimal_time / actual_time)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def angular_efficiency(
     times: ArrayLike,
     positions: ArrayLike,
@@ -3449,7 +3455,7 @@ def _angular_efficiency(
     return float(1.0 - np.sum(weight * angle) / (np.pi * np.sum(weight)))
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def subgoal_efficiency(
     env: Environment,
     times: ArrayLike,
@@ -3665,7 +3671,7 @@ def subgoal_efficiency(
     )
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_path_efficiency(
     env: Environment,
     times: ArrayLike,
@@ -3865,6 +3871,7 @@ def compute_path_efficiency(
 # =============================================================================
 
 
+@reads_pynapple_samples
 def goal_vector(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
@@ -3983,6 +3990,7 @@ def _validate_reference_speed(reference_speed: float, *, call: str) -> None:
         )
 
 
+@reads_pynapple_samples
 def goal_direction(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
@@ -4013,7 +4021,7 @@ def goal_direction(
     return np.arctan2(vec[:, 1], vec[:, 0])
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def instantaneous_goal_alignment(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4183,7 +4191,7 @@ def _goal_alignment(
     return alignment
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def goal_bias(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4296,7 +4304,7 @@ def _mean_alignment(alignment: NDArray[np.float64]) -> float:
     return float(np.mean(moving)) if moving.size else np.nan
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def approach_rate(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -4485,7 +4493,7 @@ def _goal_distances(
     return paths.to_point(positions, goal_arr)
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def compute_goal_directed_metrics(
     env: Environment,
     times: NDArray[np.float64],

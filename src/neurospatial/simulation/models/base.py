@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import read_only_copy
 from neurospatial.geometry import require_position_columns
 
@@ -165,6 +166,7 @@ class NeuralModel(Protocol):
         """Whether ``firing_rate`` needs ``headings``."""
         ...
 
+    @reads_pynapple_samples
     def firing_rate(
         self,
         times: NDArray[np.float64],

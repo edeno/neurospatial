@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -242,6 +243,7 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@reads_pynapple_samples
 def sample_spatial_features(
     env: FeatureLookupConsumer,
     fields: ArrayLike,
@@ -348,6 +350,7 @@ def sample_spatial_features(
     )
 
 
+@reads_pynapple_samples
 def sample_egocentric_features(
     env: FeatureLookupConsumer,
     fields: ArrayLike,

@@ -115,43 +115,61 @@ def tsgroup_unit_table(group: Any) -> pd.DataFrame | None:
     return table
 
 
-_SAMPLE_ARGUMENTS = ("positions", "headings")
+#: Sample-clock timestamps: a pynapple object here is read as its ``.t``.
+_TIME_ARGUMENTS = ("times", "frame_times", "true_times")
+#: Sampled values: a pynapple object here is read as its ``.values``.
+_VALUE_ARGUMENTS = ("positions", "true_positions", "headings")
+#: Samples whose ``time_support`` becomes ``epochs`` when none are given.
+_SUPPORT_ARGUMENTS = ("positions", "headings")
 
 
-def _support_rows(name: str, value: Any) -> NDArray[np.float64] | None:
-    """Check one pynapple sample argument and return its time support rows."""
-    if name == "positions" and hasattr(value, "columns"):
-        refuse_permuted_spatial_columns(value.columns, fix="positions={frame}")
-    support = getattr(value, "time_support", None)
-    return None if support is None else interval_rows(support)
+def _plain_sample(name: str, value: Any) -> Any:
+    """Return a pynapple sample argument as the plain array it stands for."""
+    if name in _TIME_ARGUMENTS:
+        # np.asarray(tsd) gives the VALUES, not the timestamps.
+        t = getattr(value, "t", None)
+        return value if t is None else np.asarray(t, dtype=np.float64)
+    if "positions" in name and hasattr(value, "columns"):
+        refuse_permuted_spatial_columns(value.columns, fix=f"{name}={{frame}}")
+    values = getattr(value, "values", None)
+    return value if values is None else np.asarray(values)
 
 
-def adopts_time_support(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    """Read pynapple ``positions`` / ``headings`` with their time support.
+def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Read pynapple timestamps and samples as the arrays they stand for.
 
-    Decorates a public function that takes ``epochs`` and ``positions`` or
-    ``headings``. When one of those samples is a pynapple ``Tsd`` or
-    ``TsdFrame``:
+    Decorates a public function or method taking a sample-clock argument
+    (``times``, ``frame_times``, ``true_times``) or sampled values
+    (``positions``, ``true_positions``, ``headings``). When one of those is a
+    pynapple object:
 
-    - a ``TsdFrame`` of positions whose columns are x/y/z in another order is
-      refused, as by :func:`neurospatial.io.from_pynapple`;
-    - with ``epochs=None``, its ``time_support`` (converted to half-open rows)
-      becomes ``epochs``, so a recording gap shorter than ``max_gap`` is not
-      counted as observed time. An explicit ``epochs=`` wins. Two samples
-      with different supports and no ``epochs`` are refused;
-    - the function receives the sample's values as a plain array.
+    - a time argument becomes the object's timestamps, ``.t``. ``np.asarray``
+      of a ``Tsd`` gives its values, which would silently be read as times;
+    - a values argument becomes ``.values``; a ``TsdFrame`` of positions
+      whose columns are x/y/z in another order is refused, as by
+      :func:`neurospatial.io.from_pynapple`;
+    - if the function takes ``epochs`` and it is ``None``, the
+      ``time_support`` of pynapple ``positions`` / ``headings`` (converted to
+      half-open rows) becomes ``epochs``, so a recording gap shorter than
+      ``max_gap`` is not counted as observed time. An explicit ``epochs=``
+      wins; two samples with different supports are refused.
 
     Every other call runs the function unchanged. The signature, docstring
     and ``__wrapped__`` are the function's own.
     """
     signature = inspect.signature(func)
     names = list(signature.parameters)
-    samples = [(name, names.index(name)) for name in _SAMPLE_ARGUMENTS if name in names]
-    if not samples or "epochs" not in names:
+    samples = [
+        (name, names.index(name))
+        for name in _TIME_ARGUMENTS + _VALUE_ARGUMENTS
+        if name in names
+    ]
+    if not samples:
         raise TypeError(
-            f"adopts_time_support needs epochs and positions or headings "
-            f"parameters; {func.__qualname__} has {names}."
+            f"reads_pynapple_samples needs a times, positions or headings "
+            f"parameter; {func.__qualname__} has {names}."
         )
+    takes_epochs = "epochs" in names
 
     def given(name: str, position: int, args: Any, kwargs: Any) -> Any:
         return args[position] if position < len(args) else kwargs.get(name)
@@ -169,15 +187,15 @@ def adopts_time_support(func: Callable[_P, _R]) -> Callable[_P, _R]:
             value: Any = bound.arguments.get(name)
             if not _is_pynapple_object(value):
                 continue
-            rows = _support_rows(name, value)
-            if rows is not None:
-                supports[name] = rows
-            bound.arguments[name] = np.asarray(value.values)
-        if bound.arguments.get("epochs") is None and supports:
+            support = getattr(value, "time_support", None)
+            if name in _SUPPORT_ARGUMENTS and support is not None:
+                supports[name] = interval_rows(support)
+            bound.arguments[name] = _plain_sample(name, value)
+        if takes_epochs and bound.arguments.get("epochs") is None and supports:
             bound.arguments["epochs"] = _shared_support(supports)
         return func(*bound.args, **bound.kwargs)
 
-    wrapper.__adopts_time_support__ = True  # type: ignore[attr-defined]
+    wrapper.__reads_pynapple_samples__ = True  # type: ignore[attr-defined]
     return wrapper
 
 

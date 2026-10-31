@@ -16,6 +16,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial._keyword_hint import keyword_hint
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
@@ -687,6 +688,7 @@ def write_laps(
 
 
 @keyword_hint("description")
+@reads_pynapple_samples
 def write_region_crossings(
     nwbfile: NWBFile,
     crossings: Sequence[Crossing] | None = None,

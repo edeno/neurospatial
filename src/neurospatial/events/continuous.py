@@ -21,6 +21,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_signals
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -734,6 +735,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         return ax
 
 
+@reads_pynapple_samples
 def align_continuous_to_events(
     times: ArrayLike,
     signals: ArrayLike,

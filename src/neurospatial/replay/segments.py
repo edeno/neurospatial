@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_choice
 from neurospatial.replay._compare import _compare
@@ -214,6 +215,7 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
         return values
 
 
+@reads_pynapple_samples
 def replay_segments(
     env: Environment,
     posterior: NDArray[np.float64],

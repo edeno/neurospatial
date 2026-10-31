@@ -38,6 +38,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
@@ -1634,6 +1635,7 @@ def _check_decoded_environment(
         )
 
 
+@reads_pynapple_samples
 def detect_replay(
     env: Environment | Mapping[str, Environment],
     posterior: NDArray[np.float64]

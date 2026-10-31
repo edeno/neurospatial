@@ -52,6 +52,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import timestamps_of, validate_finite
 from neurospatial.animation._resources import _OwnedReaders
@@ -339,6 +340,7 @@ class PositionOverlay(_Overlay):
     units: str | None = None
     frame: str | None = None
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -546,6 +548,7 @@ class BodypartOverlay(_Overlay):
     _owned_objects: ClassVar[tuple[str, ...]] = ("colors", "skeleton")
     _owned_mappings: ClassVar[tuple[str, ...]] = ("data",)
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -768,6 +771,7 @@ class HeadDirectionOverlay(_Overlay):
     max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -1298,6 +1302,7 @@ class EventOverlay(_Overlay):
         )
 
     @classmethod
+    @reads_pynapple_samples
     def from_trajectory(
         cls,
         event_times: NDArray[np.float64] | dict[str, NDArray[np.float64]],
@@ -1426,6 +1431,7 @@ class EventOverlay(_Overlay):
             border_width=border_width,
         )
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -1915,6 +1921,7 @@ class TimeSeriesOverlay(_Overlay):
                 "Fix: Replace Inf values with NaN or finite values."
             )
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -2092,6 +2099,7 @@ class SpikeRasterOverlay(_Overlay):
         self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -2239,6 +2247,7 @@ class EpochOverlay(_Overlay):
             raise ValueError(f"alpha must be between 0 and 1, got {self.alpha}.")
         self._intervals = intervals
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -2412,6 +2421,7 @@ class ObjectVectorOverlay(_Overlay):
     max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -2833,6 +2843,7 @@ class VideoOverlay(_Overlay):
                 f"Fix: Convert with arr.astype(np.uint8) if values are in 0-255 range."
             )
 
+    @reads_pynapple_samples
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],

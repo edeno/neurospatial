@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
@@ -47,6 +48,7 @@ class RegularGridLayout(_GridMixin):
         self.active_mask = None
 
     @capture_build_params(data=("positions", "dimension_ranges"))
+    @reads_pynapple_samples
     def build(
         self,
         *,

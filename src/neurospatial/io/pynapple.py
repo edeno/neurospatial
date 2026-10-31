@@ -30,7 +30,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._pynapple import interval_rows, refuse_permuted_spatial_columns
+from neurospatial._pynapple import (
+    interval_rows,
+    reads_pynapple_samples,
+    refuse_permuted_spatial_columns,
+)
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
@@ -152,6 +156,7 @@ ndarray of shape (n_epochs, 2)
     )
 
 
+@reads_pynapple_samples
 def to_pynapple(
     times: Any,
     values: NDArray[np.float64] | None = None,

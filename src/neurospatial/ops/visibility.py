@@ -84,7 +84,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
-from neurospatial._pynapple import adopts_time_support
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
@@ -597,6 +597,7 @@ class ViewshedResult(ReadOnlyArraysMixin):
         return env.bin_centers[self.visible_bins]
 
 
+@reads_pynapple_samples
 def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1341,6 +1342,7 @@ def visible_cues(
     )
 
 
+@reads_pynapple_samples
 def compute_viewshed_trajectory(
     env: BinningConsumer,
     positions: NDArray[np.float64],
@@ -1419,7 +1421,7 @@ def compute_viewshed_trajectory(
     ]
 
 
-@adopts_time_support
+@reads_pynapple_samples
 def visibility_occupancy(
     env: BinningConsumer,
     times: NDArray[np.float64],
