@@ -9,6 +9,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -129,16 +131,29 @@ class TestValidateCircularInput:
         with pytest.raises(ValueError, match="at least 3 samples"):
             _validate_circular_input(angles, "angles", min_samples=3)
 
-    def test_angles_outside_range_warns_and_wraps(self) -> None:
-        """Angles outside [0, 2pi] should warn and wrap."""
-        from neurospatial.stats.circular import _validate_circular_input
+    def test_unknown_angle_unit_raises(self) -> None:
+        """A misspelled unit must not be read as radians."""
+        from neurospatial.stats.circular import (
+            circular_basis,
+            circular_circular_correlation,
+            circular_linear_correlation,
+            circular_mean,
+            mean_resultant_length,
+            rayleigh_test,
+        )
 
-        angles = np.array([-np.pi, 3 * np.pi, 5 * np.pi])
-        with pytest.warns(UserWarning, match="outside \\[0, 2pi\\]"):
-            result, _ = _validate_circular_input(angles, "angles")
-        # All should be wrapped to [0, 2pi)
-        assert np.all(result >= 0)
-        assert np.all(result < 2 * np.pi)
+        angles = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+        calls = [
+            lambda: circular_mean(angles, angle_unit="degrees"),
+            lambda: mean_resultant_length(angles, angle_unit="degrees"),
+            lambda: rayleigh_test(angles, angle_unit="degrees"),
+            lambda: circular_linear_correlation(angles, angles, angle_unit="degrees"),
+            lambda: circular_circular_correlation(angles, angles, angle_unit="degrees"),
+            lambda: circular_basis(angles, angle_unit="degrees"),
+        ]
+        for call in calls:
+            with pytest.raises(ValueError, match="angle_unit must be 'rad' or 'deg'"):
+                call()
 
 
 class TestValidatePairedInput:
@@ -641,18 +656,18 @@ class TestCircularCircularCorrelation:
         with pytest.raises(ValueError, match="at least"):
             circular_circular_correlation(angles1, angles2)
 
-    def test_degenerate_case_no_variation(self) -> None:
-        """No variation in angles should return r=0 with warning."""
+    @pytest.mark.parametrize("constant", [np.pi, 1.3])
+    def test_degenerate_case_no_variation(self, constant: float) -> None:
+        """Constant angles make r undefined: NaN, not "no correlation"."""
         from neurospatial.stats.circular import circular_circular_correlation
 
-        # All angles the same
-        angles1 = np.ones(50) * np.pi
-        angles2 = np.ones(50) * np.pi
+        angles1 = np.full(50, constant)
+        angles2 = np.random.default_rng(0).uniform(0, 2 * np.pi, 50)
 
-        with pytest.warns(RuntimeWarning, match="[Nn]o variation|constant"):
+        with pytest.warns(RuntimeWarning, match="constant"):
             r, p = circular_circular_correlation(angles1, angles2)
-        assert r == 0.0
-        assert p == 1.0
+        assert np.isnan(r)
+        assert np.isnan(p)
 
     def test_nan_handling(self) -> None:
         """NaN values should be removed with warning."""
@@ -806,7 +821,10 @@ class TestPropertyBasedCircularCircularCorrelation:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.stats.circular import circular_circular_correlation
+        from neurospatial.stats.circular import (
+            circular_circular_correlation,
+            mean_resultant_length,
+        )
 
         @given(
             st.lists(
@@ -823,7 +841,14 @@ class TestPropertyBasedCircularCircularCorrelation:
                 angles1 + np.random.default_rng(42).uniform(-0.5, 0.5, len(angles1))
             ) % (2 * np.pi)
 
-            r, p = circular_circular_correlation(angles1, angles2)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                r, p = circular_circular_correlation(angles1, angles2)
+            if np.isnan(r):
+                # Undefined only for angles constant up to rounding.
+                assert mean_resultant_length(angles1) > 1 - 1e-12
+                assert np.isnan(p)
+                return
             assert -1 <= r <= 1, f"r={r} not in [-1, 1]"
             assert 0 <= p <= 1, f"p={p} not in [0, 1]"
 
@@ -926,56 +951,24 @@ class TestPropertyBasedCircularLinearCorrelation:
 class TestCircularBasisResult:
     """Tests for CircularBasisResult dataclass."""
 
-    def test_dataclass_can_be_imported(self) -> None:
-        """Test that CircularBasisResult can be imported."""
-        from neurospatial.stats.circular import CircularBasisResult
-
-        assert CircularBasisResult is not None
-
-    def test_dataclass_has_all_fields(self) -> None:
-        """Test that CircularBasisResult has all required fields."""
-        from neurospatial.stats.circular import CircularBasisResult
-
-        # Create instance with required fields
-        result = CircularBasisResult(
-            sin_component=np.array([0.0, 0.5, 1.0]),
-            cos_component=np.array([1.0, 0.866, 0.5]),
-            angles=np.array([0.0, np.pi / 6, np.pi / 3]),
-        )
-
-        assert hasattr(result, "sin_component")
-        assert hasattr(result, "cos_component")
-        assert hasattr(result, "angles")
-
     def test_design_matrix_property(self) -> None:
-        """Test that design_matrix property returns (n_samples, 2) array."""
+        """design_matrix is [sin, cos] of the stored angles."""
         from neurospatial.stats.circular import CircularBasisResult
 
         n = 100
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        sin_comp = np.sin(angles)
-        cos_comp = np.cos(angles)
-
-        result = CircularBasisResult(
-            sin_component=sin_comp,
-            cos_component=cos_comp,
-            angles=angles,
-        )
+        result = CircularBasisResult(angles=angles)
 
         dm = result.design_matrix
         assert dm.shape == (n, 2)
-        assert_allclose(dm[:, 0], sin_comp)
-        assert_allclose(dm[:, 1], cos_comp)
+        assert_allclose(dm[:, 0], np.sin(angles))
+        assert_allclose(dm[:, 1], np.cos(angles))
+        assert_allclose(result.sin_component, np.sin(angles))
+        assert_allclose(result.cos_component, np.cos(angles))
 
 
 class TestCircularBasis:
     """Tests for circular_basis() function."""
-
-    def test_function_exists(self) -> None:
-        """Test that circular_basis can be imported."""
-        from neurospatial.stats.circular import circular_basis
-
-        assert callable(circular_basis)
 
     def test_returns_circular_basis_result(self) -> None:
         """Test that circular_basis returns CircularBasisResult."""
@@ -1034,21 +1027,9 @@ class TestCircularBasis:
 
         assert result.design_matrix.shape == (n, 2)
 
-    def test_exported_from_stats(self) -> None:
-        """Test that function is exported from neurospatial.stats."""
-        from neurospatial.stats import circular_basis
-
-        assert callable(circular_basis)
-
 
 class TestCircularBasisMetrics:
     """Tests for circular_basis_metrics() function."""
-
-    def test_function_exists(self) -> None:
-        """Test that circular_basis_metrics can be imported."""
-        from neurospatial.stats.circular import circular_basis_metrics
-
-        assert callable(circular_basis_metrics)
 
     def test_returns_tuple_of_three(self) -> None:
         """Test that circular_basis_metrics returns (amplitude, phase, pvalue)."""
@@ -1149,21 +1130,9 @@ class TestCircularBasisMetrics:
         assert pvalue is not None
         assert pvalue > 0.1  # Not significant
 
-    def test_exported_from_stats(self) -> None:
-        """Test that function is exported from neurospatial.stats."""
-        from neurospatial.stats import circular_basis_metrics
-
-        assert callable(circular_basis_metrics)
-
 
 class TestIsModulated:
     """Tests for is_modulated() convenience function."""
-
-    def test_function_exists(self) -> None:
-        """Test that is_modulated can be imported."""
-        from neurospatial.stats.circular import is_modulated
-
-        assert callable(is_modulated)
 
     def test_returns_bool(self) -> None:
         """Test that is_modulated returns a boolean."""
@@ -1229,9 +1198,9 @@ class TestIsModulated:
         # Strict alpha
         result_strict = is_modulated(beta_sin, beta_cos, cov, alpha=0.001)
 
-        # Lenient should be at least as permissive as strict
-        if result_strict:
-            assert result_lenient  # If strict passes, lenient must too
+        # W = beta' inv(cov) beta = 5, so p = exp(-5 / 2) = 0.082.
+        assert result_lenient
+        assert not result_strict
 
     def test_custom_min_magnitude(self) -> None:
         """Test that custom min_magnitude threshold works."""
@@ -1280,12 +1249,6 @@ class TestIsModulated:
 
         assert result is False
 
-    def test_exported_from_stats(self) -> None:
-        """Test that function is exported from neurospatial.stats."""
-        from neurospatial.stats import is_modulated
-
-        assert callable(is_modulated)
-
 
 # ============================================================================
 # Visualization: plot_circular_basis_tuning
@@ -1294,12 +1257,6 @@ class TestIsModulated:
 
 class TestPlotCircularBasisTuning:
     """Tests for plot_circular_basis_tuning() visualization function."""
-
-    def test_function_exists(self) -> None:
-        """Test that plot_circular_basis_tuning can be imported."""
-        from neurospatial.stats.circular import plot_circular_basis_tuning
-
-        assert callable(plot_circular_basis_tuning)
 
     def test_polar_plot_creates_figure(self) -> None:
         """Test that polar projection creates a figure with polar axes."""
@@ -1469,12 +1426,6 @@ class TestPlotCircularBasisTuning:
         )
         assert ax is not None
         plt.close("all")
-
-    def test_exported_from_stats(self) -> None:
-        """Test that function is exported from neurospatial.stats."""
-        from neurospatial.stats import plot_circular_basis_tuning
-
-        assert callable(plot_circular_basis_tuning)
 
     def test_confidence_bands_require_cov_matrix(self) -> None:
         """Test that show_ci=True requires cov_matrix."""
@@ -1743,7 +1694,7 @@ class TestPlotCircularBasisTuning:
             cov_matrix=cov,
             show_ci=True,
             projection="linear",
-            n_points=4,  # θ = [0, π/2, π, 3π/2]
+            n_points=8,  # θ = 0, π/4, ..., 7π/4
         )
 
         # Verify fitted value at θ=0
@@ -1751,9 +1702,21 @@ class TestPlotCircularBasisTuning:
         rate_data = line.get_ydata()
         assert_allclose(rate_data[0], np.exp(eta_at_0), rtol=1e-10)
 
-        # The CI width at θ=0 should match our hand calculation
-        ci_width_expected = expected_upper - expected_lower
-        assert ci_width_expected > 0  # Sanity check
+        # Read the drawn band at θ=0 and at θ=π/4, where design = [√½, √½]
+        # brings in the covariance: var = (0.04 + 0.01 + 2 * 0.01) / 2.
+        vertices = ax.collections[0].get_paths()[0].vertices
+        at_zero = vertices[np.isclose(vertices[:, 0], 0.0), 1]
+        assert_allclose(
+            [at_zero.min(), at_zero.max()], [expected_lower, expected_upper]
+        )
+        theta = np.pi / 4
+        eta = intercept + beta_cos * np.cos(theta) + beta_sin * np.sin(theta)
+        se = np.sqrt(0.035)
+        at_quarter = vertices[np.isclose(vertices[:, 0], theta), 1]
+        assert_allclose(
+            [at_quarter.min(), at_quarter.max()],
+            [np.exp(eta - z * se), np.exp(eta + z * se)],
+        )
 
         plt.close("all")
 
