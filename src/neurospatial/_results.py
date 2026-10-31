@@ -203,6 +203,16 @@ def _unfrozen(value: Any, *, nested: bool) -> Any:
 _ResultT = TypeVar("_ResultT")
 
 
+def owned_analysis_settings(result: object) -> dict[str, Any] | None:
+    """The settings a :func:`_copy_analysis_settings` result owns, uncopied.
+
+    For reads inside the package: never edit the dictionary or hand it out,
+    since the public ``analysis_settings`` property returns a copy.
+    """
+    settings: dict[str, Any] | None = vars(result).get("_analysis_settings")
+    return settings
+
+
 def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
     """Give a result dataclass independently owned settings on every read and write.
 
@@ -215,8 +225,7 @@ def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
     """
 
     def read_settings(result: object) -> dict[str, Any] | None:
-        settings: dict[str, Any] | None = vars(result).get("_analysis_settings")
-        return deepcopy(settings)
+        return deepcopy(owned_analysis_settings(result))
 
     def write_settings(result: object, settings: dict[str, Any] | None) -> None:
         vars(result)["_analysis_settings"] = deepcopy(settings)
