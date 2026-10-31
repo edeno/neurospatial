@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ _EncodingConfig = tuple[str, float | None, float | None, float | None, int | Non
 
 
 @dataclass(frozen=True, eq=False)
-class _FittedState:
+class _FittedState(ReadOnlyArraysMixin):
     """A fitted decoder's encoding models with their identity and provenance.
 
     Holds read-only copies, so editing the arrays a decoder was built from
@@ -90,13 +91,6 @@ class _FittedState:
         object.__setattr__(
             self, "analysis_settings", copy.deepcopy(self.analysis_settings)
         )
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        self.__dict__.update(state)
-        for value in state.values():
-            if isinstance(value, np.ndarray):
-                value.flags.writeable = False
 
 
 @dataclass(frozen=True)

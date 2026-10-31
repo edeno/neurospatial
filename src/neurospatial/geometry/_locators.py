@@ -23,6 +23,7 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
+from neurospatial._results import read_only_copy
 from neurospatial.geometry._affine import AffineMap, _check_homogeneous
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
@@ -281,13 +282,6 @@ class AffineMatrix(Protocol):
 
     @property
     def A(self) -> NDArray[np.float64]: ...  # noqa: N802
-
-
-def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
-    """Own an array without freezing the caller's buffer."""
-    owned = np.array(array, dtype=dtype, copy=True)
-    owned.setflags(write=False)
-    return owned
 
 
 def snap_to_planes(
@@ -959,8 +953,8 @@ class MeshLocator(ReadOnlyState):
     boundary: Polygon | None
 
     def __post_init__(self) -> None:
-        simplices = _owned_array(self.simplices, np.intp)
-        object.__setattr__(self, "points", _owned_array(self.points, np.float64))
+        simplices = read_only_copy(self.simplices, np.intp)
+        object.__setattr__(self, "points", read_only_copy(self.points, np.float64))
         object.__setattr__(self, "simplices", simplices)
         object.__setattr__(
             self,
@@ -1158,7 +1152,7 @@ class NearestBinLocator(ReadOnlyState):
     def __post_init__(self) -> None:
         if self.max_distance is not None:
             object.__setattr__(self, "max_distance", _lookup_radius(self.max_distance))
-        centers = _owned_array(self.centers, np.float64)
+        centers = read_only_copy(self.centers, np.float64)
         if centers.ndim != 2:
             raise ValueError(
                 "centers must be a 2D array with shape (n_centers, n_dims)."
@@ -1166,7 +1160,7 @@ class NearestBinLocator(ReadOnlyState):
         bin_indices = (
             np.arange(len(centers), dtype=np.intp)
             if self.bin_indices is None
-            else _owned_array(self.bin_indices, np.intp)
+            else read_only_copy(self.bin_indices, np.intp)
         )
         if bin_indices.shape != (len(centers),):
             raise ValueError(
