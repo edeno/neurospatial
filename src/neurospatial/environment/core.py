@@ -5359,11 +5359,11 @@ class Environment(Generic[_C]):
         it to be stored alongside neural data and retrieved later using
         ``Environment.from_nwb()``.
 
-        Environment schema 4.0 stores Arena, explicit walls, bins, exact lookup,
-        cell faces, drawing components, clip mapping, track linearization,
-        regions and coordinate metadata. Loading does not rebuild a
-        layout. Only schema 4.0 is read; recreate older environments with a
-        factory and save them again.
+        The ``Environment-v4`` format stores Arena, explicit walls, bins, exact
+        lookup, cell faces, drawing components, clip mapping, track
+        linearization, regions and coordinate metadata. Loading does not
+        rebuild a layout. Only ``Environment-v4`` is read; recreate older
+        environments with a factory and save them again.
 
         Parameters
         ----------

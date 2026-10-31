@@ -373,24 +373,47 @@ def _environment_payload(
     return _json_safe(metadata), arrays
 
 
-def _check_schema(metadata: dict[str, Any], source: str) -> None:
-    """Refuse obsolete or unknown file formats with a reproducible recovery."""
+def _check_schema(
+    metadata: dict[str, Any],
+    source: str,
+    *,
+    current: str = _SCHEMA_VERSION,
+    kind: str = "Environment",
+    fix: str = "recreate the environment with an Environment factory and save "
+    "it again with this version",
+) -> None:
+    """Refuse a record whose schema is not ``current``, with a reproducible recovery.
+
+    Parameters
+    ----------
+    metadata : dict
+        The record's metadata.
+    source : str
+        Where the record is, for messages.
+    current : str, default ``"Environment-v4"``
+        The only schema version this release reads.
+    kind : str, default "Environment"
+        What the record stores, for messages.
+    fix : str
+        How to recreate the record.
+    """
     if not isinstance(metadata, dict):
         raise ValueError(
             _format_error(
-                f"Invalid environment metadata in {source}: expected a dictionary.",
-                why="Why: environment metadata must map field names to saved values.",
-                fix="restore a complete environment record saved by this version",
+                f"Invalid {kind.lower()} metadata in {source}: expected a dictionary.",
+                why="Why: the metadata must map field names to saved values.",
+                fix="restore a complete record saved by this version",
             )
         )
     version = metadata.get("schema_version")
-    if version != _SCHEMA_VERSION:
+    if version != current:
         raise ValueError(
             _format_error(
-                f"Environment schema {version!r} in {source} is no longer readable; "
-                f"this version reads only {_SCHEMA_VERSION!r}.",
-                why="Why: each format version stores a different record, and older records are not converted.",
-                fix="recreate the environment with an Environment factory and save it again with this version",
+                f"{kind} schema {version!r} in {source} is no longer readable; "
+                f"this version reads only {current!r}.",
+                why="Why: each format version stores a different record, and "
+                "older records are not converted.",
+                fix=fix,
             )
         )
 

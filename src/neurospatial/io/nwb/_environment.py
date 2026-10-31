@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from neurospatial.layout import LayoutType
     from neurospatial.regions import Region
 
-ENVIRONMENT_SCHEMA_VERSION: str = "4.0"
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
 # The "format" each /analysis record this package writes declares in its
 # description JSON; records are identified by it, never by column names.
@@ -45,14 +44,15 @@ def write_environment(
     name: str = DEFAULT_ENVIRONMENT_NAME,
     overwrite: bool = False,
 ) -> None:
-    """Store complete bins and Arena using NWB environment schema 4.0.
+    """Store complete bins and Arena in the ``Environment-v4`` format.
 
     Bins, lookup, cell faces, drawing components, regions, landmarks,
     coordinate metadata and Arena are saved losslessly in the file's
-    top-level ``/analysis`` group. Reading decodes these data without
-    rebuilding a layout, and rebuilds the connectivity graph from the
-    binning. :func:`read_environment` reads only schema 4.0 and refuses
-    records from earlier schemas.
+    top-level ``/analysis`` group, in the format :func:`~neurospatial.io.to_file`
+    writes. Reading decodes these data without rebuilding a layout, and
+    rebuilds the connectivity graph from the binning.
+    :func:`read_environment` reads only ``Environment-v4`` and refuses records
+    from earlier schemas.
 
     Parameters
     ----------
@@ -146,7 +146,6 @@ def _environment_record(env: Environment, name: str) -> tuple[DynamicTable, str]
     metadata, arrays = _environment_payload(env)
     fingerprint = _payload_fingerprint(metadata, arrays)
     metadata["format"] = ENVIRONMENT_FORMAT
-    metadata["schema_version"] = ENVIRONMENT_SCHEMA_VERSION
     columns: list[Any] = []
     for key, array in sorted(arrays.items()):
         # NWB names cannot contain "/"; the canonical keys contain no ".".
@@ -352,9 +351,9 @@ def read_environment(
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
-    smoothing, boundary bins, plotting and track linearization. Only schema 4.0
-    records are read; records from earlier schemas must be recreated with a
-    factory and saved again.
+    smoothing, boundary bins, plotting and track linearization. Only
+    ``Environment-v4`` records are read; records from earlier schemas must be
+    recreated with a factory and saved again.
 
     Parameters
     ----------
@@ -401,16 +400,15 @@ def read_environment(
     """
     _require_pynwb()
     from neurospatial._exceptions import _format_error
-    from neurospatial.io.files import _restore_environment
+    from neurospatial.io.files import _check_schema, _restore_environment
 
     if name not in nwbfile.analysis:
         if name in nwbfile.scratch:
             raise ValueError(
                 _format_error(
                     f"Environment {name!r} is in NWB scratch space, where "
-                    "neurospatial before NWB environment schema "
-                    f"{ENVIRONMENT_SCHEMA_VERSION} saved it; this version reads "
-                    "only records in /analysis.",
+                    "earlier versions of neurospatial saved it; this version "
+                    "reads only records in /analysis.",
                     why="Why: earlier records store a different layout and are "
                     "not converted.",
                     fix="recreate the environment with an Environment factory "
@@ -456,16 +454,7 @@ def read_environment(
                 else "save the environment with write_environment first",
             )
         )
-    version = metadata.get("schema_version")
-    if version != ENVIRONMENT_SCHEMA_VERSION:
-        raise ValueError(
-            _format_error(
-                f"NWB environment schema {version!r} in {source} is no longer readable; "
-                f"this version reads only {ENVIRONMENT_SCHEMA_VERSION!r}.",
-                why="Why: each schema version stores a different record, and older records are not converted.",
-                fix="recreate the environment with an Environment factory and save it again with this version",
-            )
-        )
+    _check_schema(metadata, source)
     try:
         if len(record) != 1:
             raise ValueError("a binning record must contain exactly one row")

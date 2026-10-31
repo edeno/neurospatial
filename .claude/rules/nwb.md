@@ -16,10 +16,11 @@ paths:
   group (`nwbfile.add_analysis`), never `scratch` ("not intended for sharing")
   or a processing module (intermediate data). Readers refuse records that earlier
   versions left in either place, with recreation instructions.
-- Environment records write schema `4.0`: Arena, explicit walls, exact binning,
-  lookup, faces, components, clip mapping and coordinate metadata are saved.
-  The connectivity graph is not stored; loading rebuilds it from the binning
-  and never runs a layout builder. Only schema `4.0` is read; every earlier
+- Environment records write the `Environment-v4` schema that `to_file` writes:
+  Arena, explicit walls, exact binning, lookup, faces, components, clip mapping
+  and coordinate metadata are saved. The connectivity graph is not stored;
+  loading rebuilds it from the binning and never runs a layout builder. Only
+  `Environment-v4` is read; every earlier
   schema is refused, never converted or given a guessed Arena. One-row ragged,
   gzip-compressed columns hold arrays, named by canonical key with `/` -> `.`;
   one description JSON attribute maps keys to columns, shapes and dtypes.
