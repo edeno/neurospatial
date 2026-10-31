@@ -564,3 +564,67 @@ def test_validated_break_before_is_read_only():
     assert not owned.flags.writeable
     flags[1] = False
     assert owned[1]
+
+
+_T7 = np.arange(7) / 10
+
+
+def _defined(*missing):
+    defined = np.ones(7, dtype=bool)
+    defined[list(missing)] = False
+    return defined
+
+
+@pytest.mark.parametrize(
+    ("break_at", "expected"),
+    [
+        (None, [True, True, True, True, True, True]),
+        (3, [True, True, False, False, True, True]),
+    ],
+    ids=["no-break", "break-at-missing"],
+)
+def test_restricted_gap_keeps_a_break_hidden_in_the_missing_sample(break_at, expected):
+    """Sample 3 is undefined; a break declared there still splits its gap."""
+    breaks = None
+    if break_at is not None:
+        breaks = np.zeros(7, dtype=bool)
+        breaks[break_at] = True
+    support = _support(_T7, max_gap=0.5, break_before=breaks)
+    restricted = support.restricted(_T7, _defined(3))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)
+    np.testing.assert_array_equal(restricted.sample_valid, _defined(3))
+    assert restricted.run_ids[3] == -1
+
+
+@pytest.mark.parametrize(
+    ("missing", "expected"),
+    [
+        # Gap [0.3, 0.5) lies inside the epoch [0.3, 0.6): bridged.
+        (4, [True, True, False, True, True, True]),
+        # Gap [0.1, 0.3) crosses the epoch edge at 0.2: excluded.
+        (2, [True, False, False, True, True, True]),
+    ],
+    ids=["inside-epoch", "across-epoch-edge"],
+)
+def test_restricted_gap_must_lie_inside_one_epoch(missing, expected):
+    support = _support(_T7, max_gap=0.5, epochs=[[0.0, 0.2], [0.3, 0.6]])
+    np.testing.assert_array_equal(
+        support.interval_mask, [True, True, False, True, True, True]
+    )
+    restricted = support.restricted(_T7, _defined(missing))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)
+
+
+@pytest.mark.parametrize(
+    ("max_gap", "expected"),
+    [
+        (0.35, [True, True, True, True, True, True]),  # 0.3 s gap bridged
+        (0.25, [True, True, False, False, False, True]),  # 0.3 s gap is a loss
+    ],
+)
+def test_restricted_gap_is_gated_by_max_gap(max_gap, expected):
+    """Samples 3 and 4 undefined: the gap from sample 2 to 5 lasts 0.3 s."""
+    support = _support(_T7, max_gap=max_gap)
+    assert support.interval_mask.all()
+    restricted = support.restricted(_T7, _defined(3, 4))
+    np.testing.assert_array_equal(restricted.interval_mask, expected)
