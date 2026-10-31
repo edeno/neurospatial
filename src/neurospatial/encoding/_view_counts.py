@@ -36,8 +36,9 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
+    IntervalGates,
     hold_last_valid,
-    interval_valid_mask,
+    interval_gates,
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 from neurospatial.encoding._validation import require_planar, validate_trajectory
@@ -64,17 +65,18 @@ def _view_observation_mask(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+) -> IntervalGates:
     """Resolve selected exposure before requiring bins at physical wall hits.
 
     A sample with a non-finite position, heading or gaze offset is missing
     and is bridged like a deleted row. Returns the interval mask, shape
-    ``(n_samples - 1,)``, and the observed samples, shape ``(n_samples,)``.
+    ``(n_samples - 1,)``, with the gates that built it; its ``sample_valid``
+    holds the observed samples, shape ``(n_samples,)``.
     """
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
     if gaze_offsets is not None:
         observed &= np.isfinite(gaze_offsets)
-    mask = interval_valid_mask(
+    gates = interval_gates(
         times,
         max_gap=max_gap,
         epochs=epochs,
@@ -82,8 +84,7 @@ def _view_observation_mask(
         break_before=break_before,
         sample_valid=observed,
     )
-    mask &= np.diff(times) > 0
-    return mask, observed
+    return gates.narrowed(np.diff(times) > 0)
 
 
 def require_allocentric_view(env: Environment, operation: str) -> None:
@@ -268,7 +269,7 @@ def prepare_view_binning(
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
-    mask, observed = _view_observation_mask(
+    gates = _view_observation_mask(
         times,
         positions,
         headings,
@@ -287,20 +288,8 @@ def prepare_view_binning(
             view_distance=view_distance,
             gaze_offsets=gaze_offsets,
             boundary_source=boundary_source,
-            interval_mask=mask,
+            interval_mask=gates.mask,
         )
 
-    mask &= hold_last_valid(view_bins, observed, fill=-1)[:-1] >= 0
-    n_bins = env.n_bins
-    prepared = prepare_frame_binning(
-        times,
-        view_bins,
-        n_bins,
-        max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
-        interval_mask=mask,
-        break_before=break_before,
-        sample_valid=observed,
-    )
-    return prepared
+    held = hold_last_valid(view_bins, gates.sample_valid, fill=-1)
+    return prepare_frame_binning(gates.narrowed(held[:-1] >= 0), view_bins, env.n_bins)

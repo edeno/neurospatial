@@ -203,6 +203,7 @@ def _align_true_positions(
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
     from neurospatial._intervals import (
         gap_endpoints,
+        interval_gates,
         interval_valid_mask,
         validate_max_gap,
         warn_excluded_intervals,
@@ -215,12 +216,8 @@ def _align_true_positions(
 
     aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
     finite = np.all(np.isfinite(true_positions), axis=1)
-    gates = interval_valid_mask(true_times, max_gap=max_gap, break_before=breaks)
     warn_excluded_intervals(
-        true_times,
-        gates,
-        max_gap=max_gap,
-        break_before=breaks,
+        interval_gates(true_times, max_gap=max_gap, break_before=breaks),
         result="true positions are known only at exact sample times",
     )
     # A missing true position is bridged like a deleted row: the gap between

@@ -19,7 +19,7 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     drop_missing_samples,
-    interval_valid_mask,
+    interval_gates,
     times_in_intervals,
     validate_max_gap,
     warn_excluded_intervals,
@@ -355,18 +355,9 @@ def detect_region_visits(
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    gates = interval_valid_mask(
-        clock, max_gap=max_gap, epochs=windows, break_before=breaks
-    )
-    warn_excluded_intervals(
-        clock,
-        gates,
-        max_gap=max_gap,
-        epochs=windows,
-        break_before=breaks,
-        result="every visit ends at its first sample",
-    )
-    continuous = valid[:-1] & valid[1:] & gates
+    gates = interval_gates(clock, max_gap=max_gap, epochs=windows, break_before=breaks)
+    warn_excluded_intervals(gates, result="every visit ends at its first sample")
+    continuous = valid[:-1] & valid[1:] & gates.mask
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
     stops = np.flatnonzero(selected & np.r_[~connected, True]) + 1

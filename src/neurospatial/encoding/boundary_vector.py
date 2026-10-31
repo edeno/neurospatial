@@ -628,33 +628,29 @@ def _count_boundary_events(
     support : TimeSupport
         The retained intervals, for the result's analysis settings.
     """
-    from neurospatial._intervals import hold_last_valid, warn_excluded_intervals
+    from neurospatial._intervals import (
+        hold_last_valid,
+        interval_gates,
+        warn_excluded_intervals,
+    )
     from neurospatial.encoding._egocentric_counts import BEYOND_RANGE
     from neurospatial.encoding._spatial_counts import prepare_frame_binning
 
-    prepared = prepare_frame_binning(
+    observed_bins = np.where(observed, 0, -1).astype(np.intp)
+    gates = interval_gates(
         times,
-        np.where(observed, 0, -1).astype(np.intp),
-        n_bins,
+        start_bin=observed_bins,
         max_gap=max_gap,
         epochs=epochs,
-        break_before=break_before,
         spike_window=spike_window,
+        break_before=break_before,
         sample_valid=observed,
     )
+    prepared = prepare_frame_binning(gates, observed_bins, n_bins)
     frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     support = prepared.support
     mask = support.mask
-    warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=support.max_gap,
-        epochs=support.epochs,
-        spike_window=support.spike_window,
-        start_bin_gate=True,
-        break_before=break_before,
-        result="the rate map is empty",
-    )
+    warn_excluded_intervals(gates, result="the rate map is empty")
     starts = frame_bins[:-1][mask]  # (n_kept_intervals, n_rays)
     durations = np.broadcast_to(np.diff(times)[mask][:, None], starts.shape)
     hit = starts >= 0

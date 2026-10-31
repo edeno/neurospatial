@@ -1535,7 +1535,7 @@ def visibility_occupancy(
     from neurospatial._intervals import (
         as_intervals,
         hold_last_valid,
-        interval_valid_mask,
+        interval_gates,
         validate_max_gap,
         warn_excluded_intervals,
     )
@@ -1570,22 +1570,15 @@ def visibility_occupancy(
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
     # A missing sample is bridged like a deleted row: the gap's time is
     # viewed from the observed sample that starts it.
-    usable = interval_valid_mask(
+    gates = interval_gates(
         times,
         max_gap=max_gap,
         epochs=resolved_epochs,
         break_before=breaks,
         sample_valid=observed,
     )
-    warn_excluded_intervals(
-        times,
-        usable,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        start_bin_gate=not bool(observed.all()),
-        break_before=breaks,
-        result="no bin received viewing time",
-    )
+    warn_excluded_intervals(gates, result="no bin received viewing time")
+    usable = gates.mask
 
     held = hold_last_valid(np.arange(n_time), observed, fill=0)
     dt = np.bincount(

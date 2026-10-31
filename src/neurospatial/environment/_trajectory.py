@@ -29,7 +29,7 @@ from neurospatial._intervals import (
     drop_missing_samples,
     fill_missing_positions,
     hold_last_valid,
-    interval_valid_mask,
+    interval_gates,
     observed_interval_mask,
     start_allocated_occupancy,
     warn_excluded_intervals,
@@ -210,7 +210,7 @@ def _occupancy(
     # spike binning uses: the gap between the valid samples on either side
     # passes the gates, and the missing rows are filled from those samples.
     finite = _finite_rows(positions)
-    valid_mask = interval_valid_mask(
+    gates = interval_gates(
         times,
         speed=speed,
         min_speed=min_speed,
@@ -223,6 +223,7 @@ def _occupancy(
         break_before=breaks,
         sample_valid=finite,
     )
+    valid_mask = gates.mask
     positions = fill_missing_positions(
         times,
         positions.reshape(len(times), -1),
@@ -234,8 +235,8 @@ def _occupancy(
         bin_indices = locate(
             binning, arena, positions, cache, call="Environment.occupancy"
         )
-    # Intervals that kept time; linear allocation narrows this below.
-    retained_mask = valid_mask
+    # Intervals that kept time; linear allocation narrows these below.
+    retained = gates
 
     # Initialize occupancy array
     occupancy = np.zeros(n_bins, dtype=np.float64)
@@ -264,11 +265,12 @@ def _occupancy(
                 return_seconds=return_seconds,
                 indexes=cache,
             )
-            retained_mask = np.zeros_like(valid_mask)
-            retained_mask[[piece.sample_index for piece in pieces]] = True
+            kept = np.zeros_like(valid_mask)
+            kept[[piece.sample_index for piece in pieces]] = True
+            retained = gates.narrowed(kept)
         else:
             assert grid is not None
-            retained_mask, occupancy = _linear_grid_occupancy(
+            kept, occupancy = _linear_grid_occupancy(
                 n_bins,
                 grid,
                 positions,
@@ -277,17 +279,9 @@ def _occupancy(
                 bin_indices,
                 return_seconds=return_seconds,
             )
+            retained = gates.narrowed(kept)
 
-    warn_excluded_intervals(
-        times,
-        retained_mask,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        min_speed=min_speed,
-        start_bin_gate=not observation_only or bool(valid_mask.any()),
-        break_before=breaks,
-        result="occupancy is zero in every bin",
-    )
+    warn_excluded_intervals(retained, result="occupancy is zero in every bin")
 
     # Apply kernel smoothing if requested
     if bandwidth is not None:

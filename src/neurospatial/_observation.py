@@ -26,6 +26,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    IntervalGates,
     as_intervals,
     gap_endpoints,
     interval_valid_mask,
@@ -149,6 +150,23 @@ class ObservationSupport(ReadOnlyArraysMixin):
             epochs=self.epochs,
             break_before=self.break_before,
             result=None,
+        )
+
+    def gates(self, times: NDArray[np.float64]) -> IntervalGates:
+        """The usable intervals with the gates that resolved them.
+
+        Parameters
+        ----------
+        times : ndarray, shape (n_samples,)
+            The times this support was resolved from, in seconds.
+        """
+        return IntervalGates(
+            times,
+            self.interval_mask,
+            self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+            sample_valid=self.sample_valid,
         )
 
     def run_samples(self) -> list[NDArray[np.intp]]:
@@ -331,15 +349,7 @@ def resolve_sample_support(
         # Warn on the usable intervals, after missing samples are bridged: a
         # gap across missing samples can exceed max_gap although every
         # sampling interval passes it.
-        warn_excluded_intervals(
-            times,
-            support.interval_mask,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            break_before=break_before,
-            sample_valid=sample_valid,
-            result=result,
-        )
+        warn_excluded_intervals(support.gates(times), result=result)
     return support
 
 
@@ -933,14 +943,15 @@ def validated_signals(
         for f in range(sig.shape[1])
     )
     # One warning for the table, when no feature keeps a usable interval.
-    usable = np.any([support.interval_mask for support in supports], axis=0)
     warn_excluded_intervals(
-        t,
-        usable,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        break_before=breaks,
-        sample_valid=np.asarray(sample_valid.any(axis=1)),
+        IntervalGates(
+            t,
+            np.any([support.interval_mask for support in supports], axis=0),
+            max_gap,
+            epochs=resolved_epochs,
+            break_before=breaks,
+            sample_valid=np.asarray(sample_valid.any(axis=1)),
+        ),
         result=result,
     )
     return t, sig, supports

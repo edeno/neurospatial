@@ -160,6 +160,29 @@ def test_gap_longer_than_max_gap_is_a_tracking_loss(env, tracking):
     np.testing.assert_allclose(occupancy.sum(), gaps[gaps <= 1.5 / FS].sum())
 
 
+@pytest.mark.parametrize("analysis", ["occupancy", "spatial_rate", "directional_rate"])
+def test_all_gaps_too_long_warning_names_the_missing_samples(env, tracking, analysis):
+    """Sparse valid samples: the warning blames the gaps, not the coordinates.
+
+    Every analysis warns with the gates that built its interval mask, so a
+    selection emptied by gaps across missing samples says so instead of
+    suggesting the positions are out of bounds.
+    """
+    times, positions, headings, spikes, _ = tracking
+    sparse = np.arange(times.size) % 60 != 0  # one valid sample every 2 s
+    calls = {
+        "occupancy": lambda: env.occupancy(times, _with_nan(positions, sparse)),
+        "spatial_rate": lambda: compute_spatial_rate(
+            env, spikes, times, _with_nan(positions, sparse)
+        ),
+        "directional_rate": lambda: compute_directional_rate(
+            spikes, times, _with_nan(headings, sparse)
+        ),
+    }
+    with pytest.warns(UserWarning, match="lie in gaps across missing samples"):
+        calls[analysis]()
+
+
 def test_animation_samples_a_bridged_gap_between_its_valid_rows(tracking):
     times, positions, _, _, lost = tracking
     kept = ~lost

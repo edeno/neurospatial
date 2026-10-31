@@ -32,7 +32,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._angles import to_radians
-from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._intervals import DEFAULT_MAX_GAP, interval_gates
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 
 __all__ = [
@@ -145,15 +145,14 @@ def prepare_directional_binning(
         headings, bin_size, angle_unit=angle_unit
     )
     n_bins = len(bin_centers)
-    prepared = prepare_frame_binning(
+    gates = interval_gates(
         times,
-        frame_bins,
-        n_bins,
+        start_bin=frame_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
-        samples="headings",
         sample_valid=np.isfinite(headings),
     )
+    prepared = prepare_frame_binning(gates, frame_bins, n_bins, samples="headings")
     return prepared, bin_centers

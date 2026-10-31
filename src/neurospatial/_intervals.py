@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import numbers
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, overload
 
 import numpy as np
@@ -810,6 +810,109 @@ def interval_valid_mask(
     return valid_mask
 
 
+@dataclass(frozen=True, eq=False)
+class IntervalGates:
+    """An interval mask and the gate inputs it was evaluated with.
+
+    Built by :func:`interval_gates`, so :func:`warn_excluded_intervals`
+    names exactly the gates that built the mask.
+
+    Attributes
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times in seconds.
+    mask : ndarray of bool, shape (max(n_samples - 1, 0),)
+        True for each kept interval.
+    max_gap : float or None
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Normalized windows.
+    min_speed : float or None
+    start_bin_gate : bool
+        Whether intervals were also dropped at samples outside the
+        environment, at NaN positions or at samples without a bin.
+    break_before : ndarray of bool, shape (n_samples,), or None
+    sample_valid : ndarray of bool, shape (n_samples,), or None
+        False at the missing samples the mask bridged like deleted rows.
+    """
+
+    times: NDArray[np.float64]
+    mask: NDArray[np.bool_]
+    max_gap: float | None
+    epochs: NDArray[np.float64] | None = None
+    spike_window: NDArray[np.float64] | None = None
+    min_speed: float | None = None
+    start_bin_gate: bool = False
+    break_before: NDArray[np.bool_] | None = None
+    sample_valid: NDArray[np.bool_] | None = None
+
+    def narrowed(self, keep: NDArray[np.bool_]) -> IntervalGates:
+        """These gates, with a bin check also dropping the intervals not in ``keep``.
+
+        Parameters
+        ----------
+        keep : ndarray of bool, shape (n_samples - 1,)
+            Intervals the bin or geometry check keeps.
+
+        Returns
+        -------
+        IntervalGates
+            ``mask & keep``; the bin check is named when it could drop an
+            interval the other gates kept.
+        """
+        return replace(
+            self,
+            mask=self.mask & keep,
+            start_bin_gate=self.start_bin_gate or bool(self.mask.any()),
+        )
+
+
+def interval_gates(
+    times: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    start_bin: NDArray[np.intp] | None = None,
+    require_end_bin: bool = False,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
+) -> IntervalGates:
+    """:func:`interval_valid_mask`, recorded with the inputs it was evaluated with.
+
+    Parameters are those of :func:`interval_valid_mask`.
+
+    Returns
+    -------
+    IntervalGates
+    """
+    times = np.asarray(times, dtype=np.float64)
+    mask = interval_valid_mask(
+        times,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        start_bin=start_bin,
+        require_end_bin=require_end_bin,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
+        sample_valid=sample_valid,
+    )
+    return IntervalGates(
+        times,
+        mask,
+        max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        min_speed=min_speed,
+        start_bin_gate=start_bin is not None,
+        break_before=break_before,
+        sample_valid=sample_valid,
+    )
+
+
 def hold_last_valid(
     values: NDArray[Any], sample_valid: NDArray[np.bool_] | None, *, fill: Any
 ) -> NDArray[Any]:
@@ -1000,39 +1103,21 @@ def observed_interval_mask(
     -------
     ndarray of bool, shape (n_samples - 1,)
     """
-    times = np.asarray(times, dtype=np.float64)
-    resolved_epochs = as_intervals(epochs, name="epochs")
-    mask = interval_valid_mask(
+    gates = interval_gates(
         times,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
         sample_valid=sample_valid,
     )
-    warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        break_before=break_before,
-        sample_valid=sample_valid,
-        result=result,
-    )
-    return mask
+    warn_excluded_intervals(gates, result=result)
+    return gates.mask
 
 
 def warn_excluded_intervals(
-    times: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
+    gates: IntervalGates,
     *,
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None = None,
-    spike_window: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    start_bin_gate: bool = False,
     samples: Literal["positions", "headings"] = "positions",
-    break_before: NDArray[np.bool_] | None = None,
-    sample_valid: NDArray[np.bool_] | None = None,
     result: str = EMPTY_RESULT,
     suppress_hint: str = "",
 ) -> None:
@@ -1055,37 +1140,25 @@ def warn_excluded_intervals(
 
     Parameters
     ----------
-    times : ndarray, shape (n_samples,)
-        Sample timestamps, expected in seconds.
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        The analysis's final interval validity.
-    max_gap : float or None
-        The gap threshold in seconds, or None when gap gating is off.
-    epochs, spike_window : ndarray, shape (n_windows, 2), or None
-        Active normalized time windows, named when supplied.
-    min_speed : float or None
-        Active speed threshold, named when set.
-    start_bin_gate : bool, default=False
-        Whether the mask also drops intervals at samples outside the
-        environment or at NaN positions (NaN headings for ``"headings"``).
+    gates : IntervalGates
+        The analysis's final interval mask, with the gates that built it
+        (:func:`interval_gates`). Times are expected in seconds. Active
+        windows, ``min_speed``, declared breaks and the start-bin gate (NaN
+        headings for ``"headings"``) are named; when every interval is
+        excluded only because the gaps across missing samples
+        (``sample_valid``) exceed ``max_gap``, the message says so.
     samples : {"positions", "headings"}, default="positions"
         What the start-bin gate bins, so the message names the right input.
-    break_before : ndarray of bool, shape (n_samples,), or None
-        Declared recording breaks, named when any is set.
-    sample_valid : ndarray of bool, shape (n_samples,), or None
-        False at missing samples, which ``interval_mask`` bridged like
-        deleted rows. When every interval is excluded only because the gaps
-        across missing samples exceed ``max_gap``, the message says so.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
     suppress_hint : str, optional
         Closing sentence naming how to silence the warning.
     """
-    if interval_mask.size == 0:
+    if gates.mask.size == 0:
         return
-    times = np.asarray(times, dtype=np.float64)
+    times, max_gap = gates.times, gates.max_gap
     dt = np.diff(times)
-    if interval_mask.any():
+    if gates.mask.any():
         # Data are kept, so only intervals longer than max_gap can warn.
         if max_gap is None or not np.any(dt > max_gap):
             return
@@ -1093,19 +1166,7 @@ def warn_excluded_intervals(
         if message is None:
             return
     else:
-        message = _all_excluded_message(
-            times,
-            dt,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-            min_speed=min_speed,
-            start_bin_gate=start_bin_gate,
-            samples=samples,
-            break_before=break_before,
-            sample_valid=sample_valid,
-            result=result,
-        )
+        message = _all_excluded_message(gates, dt, samples=samples, result=result)
     warnings.warn(
         f"{message} {suppress_hint}".rstrip(),
         UserWarning,
@@ -1188,21 +1249,26 @@ def _kept_intervals_message(
     return None
 
 
+_SAMPLES_FIX = (
+    "check that the samples are finite, observed values (NaN marks a missing sample)"
+)
+_HEADINGS_FIX = (
+    "check that headings are finite while the animal was tracked (NaN marks a "
+    "missing sample; all-NaN headings usually mean the heading was never "
+    "computed for these times)"
+)
+
+
 def _all_excluded_message(
-    times: NDArray[np.float64],
+    gates: IntervalGates,
     dt: NDArray[np.float64],
     *,
-    max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
-    spike_window: NDArray[np.float64] | None,
-    min_speed: float | None,
-    start_bin_gate: bool,
     samples: Literal["positions", "headings"],
-    break_before: NDArray[np.bool_] | None,
-    sample_valid: NDArray[np.bool_] | None,
     result: str,
 ) -> str:
     """The warning for a selection that excludes every interval."""
+    times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
+    min_speed, break_before = gates.min_speed, gates.break_before
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
         # No interval has an observed sample on each side: the missing samples
         # leave nothing to gate, whatever the gates are.
@@ -1210,14 +1276,13 @@ def _all_excluded_message(
         return (
             "Interval filtering excluded ALL trajectory intervals: only "
             f"{n_observed} of {times.size} samples are observed, and an interval "
-            f"needs an observed sample on each side, so {result}. Fix: check "
-            "that the samples are finite, observed values (NaN marks a missing "
-            "sample)."
+            f"needs an observed sample on each side, so {result}. Fix: "
+            f"{_HEADINGS_FIX if samples == 'headings' else _SAMPLES_FIX}."
         )
 
     n_long, n_rounded, slow_clock = _gap_excess(times, dt, max_gap)
     median_dt = float(np.median(dt))
-    gates = [f"max_gap={max_gap}"] if max_gap is not None else []
+    named = [f"max_gap={max_gap}"] if max_gap is not None else []
     fixes = []
     if slow_clock:
         fixes.append(
@@ -1247,40 +1312,39 @@ def _all_excluded_message(
                 "to disable gap gating"
             )
     if min_speed is not None:
-        gates.append(f"min_speed={min_speed}")
+        named.append(f"min_speed={min_speed}")
         fixes.append(
             f"check that min_speed={min_speed} is in the positions' length "
             "units per second"
         )
     windows = [
         name
-        for name, value in (("epochs", epochs), ("spike_window", spike_window))
+        for name, value in (
+            ("epochs", gates.epochs),
+            ("spike_window", gates.spike_window),
+        )
         if value is not None
     ]
     if windows:
-        gates.extend(windows)
+        named.extend(windows)
         fixes.append(
             f"check that {'/'.join(windows)} overlap `times` (same clock, seconds)"
         )
     if break_before is not None and np.any(np.asarray(break_before)[1:]):
-        gates.append("break_before")
+        named.append("break_before")
         fixes.append(
             "check that break_before is True only at the first sample of each "
             "new recording"
         )
-    if start_bin_gate and samples == "headings":
-        gates.append("samples at NaN headings")
-        fixes.append(
-            "check that headings are finite while the animal was tracked "
-            "(NaN marks a missing sample; all-NaN headings usually mean the "
-            "heading was never computed for these times)"
-        )
-    elif start_bin_gate:
-        gates.append("samples out of bounds or at NaN positions")
+    if gates.start_bin_gate and samples == "headings":
+        named.append("samples at NaN headings")
+        fixes.append(_HEADINGS_FIX)
+    elif gates.start_bin_gate:
+        named.append("samples out of bounds or at NaN positions")
         fixes.append("check that positions use the environment's coordinates")
     if not fixes:
         fixes.append("check that the samples are finite, observed values")
-    active = f" (active gate(s) {', '.join(gates)})" if gates else ""
+    active = f" (active gate(s) {', '.join(named)})" if named else ""
     return (
         f"Interval filtering excluded ALL trajectory intervals{active}, so "
         f"{result}. Fix: {'; '.join(fixes)}."
