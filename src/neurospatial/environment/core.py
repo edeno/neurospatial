@@ -32,6 +32,7 @@ from neurospatial.environment._cache import (
     DIFFERENTIAL_OPERATOR,
     DIVERGENCE_OPERATOR,
     EDGE_ATTRIBUTES,
+    GEODESIC_DIAMETER,
     AnalysisCache,
 )
 from neurospatial.environment._cartesian import (
@@ -369,6 +370,28 @@ class Environment(Generic[_C]):
         declared ranges, such as explicit point bins.
         """
         return self._binning.dimension_ranges
+
+    def _geodesic_diameter(self) -> float:
+        """Longest shortest path between two connected bins, in the units.
+
+        Exact: Dijkstra from every bin, in memory-bounded blocks, once per
+        environment, then kept in the analysis cache. 0 for a single bin.
+        """
+        from neurospatial.ops.distance import _bin_adjacency, _dijkstra_blocks
+
+        def build() -> float:
+            adjacency = _bin_adjacency(
+                self.connectivity, weight="distance", operation="geodesic diameter"
+            )
+            longest = 0.0
+            sources = np.arange(self.n_bins, dtype=np.intp)
+            for _, lengths in _dijkstra_blocks(adjacency, sources):
+                finite = lengths[np.isfinite(lengths)]
+                if finite.size:
+                    longest = max(longest, float(finite.max()))
+            return longest
+
+        return self._cache.get(GEODESIC_DIAMETER, build)
 
     @property
     def bin_spacing(self) -> float:

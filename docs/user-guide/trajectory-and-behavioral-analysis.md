@@ -1265,7 +1265,14 @@ $$
 d_H(A, B) = \max\{\sup_{a \in A} \inf_{b \in B} d(a, b), \sup_{b \in B} \inf_{a \in A} d(a, b)\}
 $$
 
-Converted to similarity: $1 - d_H / d_{\max}$
+Converted to similarity: $1 - d_H / d_{\max}$, where $d_{\max}$ is the
+environment's diameter.
+
+**Distance along the maze**: by default $d(a, b)$ is the shortest path through
+the environment, so it goes around walls and along the arms. Runs up two
+neighboring arms of a W-track are close in a straight line but far apart for
+the animal. Pass `metric="euclidean"` for the straight line between bin
+centers, for example to ask how close two routes came in the room.
 
 **Applications**:
 - **Path comparison**: Worst-case deviation

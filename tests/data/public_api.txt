@@ -150,7 +150,7 @@ neurospatial.behavior.shortest_path_length(env, start, goal, *, metric='geodesic
 neurospatial.behavior.subgoal_efficiency(env, times, positions, subgoals, *, metric='geodesic', max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.time_efficiency(times, positions, *, reference_speed, optimal_distance)
 neurospatial.behavior.time_to_goal(times, trials)
-neurospatial.behavior.trajectory_similarity(position_bins1, position_bins2, env, *, method='jaccard')
+neurospatial.behavior.trajectory_similarity(position_bins1, position_bins2, env, *, method='jaccard', metric=None)
 neurospatial.behavior.traveled_path_length(times, positions, *, metric='euclidean', env=None, max_gap=1.0, epochs=None, break_before=None)
 neurospatial.behavior.trials_to_region_arrays(trials, times, env)
 neurospatial.binning (module)

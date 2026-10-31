@@ -78,7 +78,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.spatial.distance import cdist, directed_hausdorff
+from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
@@ -102,6 +102,7 @@ if TYPE_CHECKING:
     from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops._types import DistanceMetric
 
 
 def _validated_samples(
@@ -2797,6 +2798,7 @@ def trajectory_similarity(
     env: Environment,
     *,
     method: Literal["jaccard", "correlation", "hausdorff", "dtw"] = "jaccard",
+    metric: DistanceMetric | None = None,
 ) -> float:
     """Compute similarity between two trajectories.
 
@@ -2822,10 +2824,19 @@ def trajectory_similarity(
           track, with negative correlations reported as 0. Needs a 1-D
           environment or a linearized track. Range [0, 1], or NaN when
           undefined (see Returns).
-        - 'hausdorff': 1 - Hausdorff distance / environment extent. Range [0, 1].
+        - 'hausdorff': 1 - Hausdorff distance / environment diameter.
+          Range [0, 1].
         - 'dtw': 1 - dynamic time warping distance / its largest possible
           value in this environment. Range [0, 1].
         Default is 'jaccard'.
+    metric : {'geodesic', 'euclidean'} or None, default=None
+        Distance between two places for ``'hausdorff'`` and ``'dtw'``:
+        ``'geodesic'`` (what None means) is the shortest path through the
+        environment's connectivity graph, so it goes around walls and along
+        a maze's arms; ``'euclidean'`` is the straight line between bin
+        centers. Runs up two neighboring arms of a maze are close in a
+        straight line but far apart along the maze. ``'jaccard'`` and
+        ``'correlation'`` compare bins, not distances, and refuse a metric.
 
     Returns
     -------
@@ -2845,7 +2856,8 @@ def trajectory_similarity(
     ValueError
         If a bin index is not ``-1`` or an active bin of ``env``.
     ValueError
-        If method is not one of the supported options.
+        If method is not one of the supported options, or ``metric`` is
+        given with ``'jaccard'`` or ``'correlation'``.
     ValueError
         If ``method`` is ``"correlation"`` and ``env`` is neither 1-D nor a
         linearized track.
@@ -2888,7 +2900,10 @@ def trajectory_similarity(
                             \\sup_{b \\in B} \\inf_{a \\in A} d(a, b)\\}
 
     Converted to similarity as :math:`1 - d_H / d_{max}` where :math:`d_{max}`
-    is the environment extent (the diagonal of the bin centers' bounding box).
+    is the environment's diameter in the chosen metric: the longest shortest
+    path between two connected bins for ``'geodesic'`` (computed once per
+    environment), or the diagonal of the bin centers' bounding box for
+    ``'euclidean'``.
 
     **Dynamic time warping (DTW)** finds optimal alignment between trajectories
     allowing temporal shifts. Useful for comparing paths with different speeds.
@@ -2900,6 +2915,10 @@ def trajectory_similarity(
     Both Hausdorff and DTW scores are relative to the environment's size:
     the same two paths, 5 cm apart, score higher in a 10 m arena than on a 1
     m track. Compare these scores only between paths in one environment.
+    Geodesic distances run along the bin graph, so on an open grid they can
+    exceed the straight line by up to about 8% (8-connected neighbors).
+    Two routes in parts of the environment not connected to each other have
+    no path between them and score 0.
 
     Samples with bin ``-1`` have no place in the environment. Jaccard,
     Hausdorff and DTW use only each trajectory's samples inside the
@@ -2947,6 +2966,21 @@ def trajectory_similarity(
         name="method",
         owner="trajectory_similarity()",
     )
+    if metric is not None:
+        if method in ("jaccard", "correlation"):
+            raise ValueError(
+                _format_error(
+                    f"metric={metric!r} has no effect with method={method!r}.",
+                    why=f"method={method!r} compares bins, not distances between them.",
+                    fix="remove metric, or use method='hausdorff' or method='dtw'.",
+                )
+            )
+        validate_choice(
+            metric,
+            ("geodesic", "euclidean"),
+            name="metric",
+            owner="trajectory_similarity()",
+        )
     if method == "correlation":
         from neurospatial.environment import _require_track_extents
 
@@ -3034,55 +3068,37 @@ def trajectory_similarity(
         # Map [-1, 1] to [0, 1], clamp negative correlations to 0
         return float(max(0.0, corr))
 
-    elif method == "hausdorff":
-        # Hausdorff distance between paths
-        # Get positions from bin indices
-        pos1 = env.bin_centers[position_bins1]
-        pos2 = env.bin_centers[position_bins2]
+    # Hausdorff and DTW: distances between the two routes' places.
+    first, row = np.unique(position_bins1, return_inverse=True)
+    second, column = np.unique(position_bins2, return_inverse=True)
+    if metric == "euclidean":
+        centers = env.bin_centers
+        table = cdist(centers[first], centers[second])
+        diameter = float(np.linalg.norm(np.ptp(centers, axis=0)))
+    else:
+        from neurospatial.ops.distance import _geodesic_pair_distances
 
-        # Compute Hausdorff distance
-        d_hausdorff = max(
-            directed_hausdorff(pos1, pos2)[0],
-            directed_hausdorff(pos2, pos1)[0],
-        )
-
-        # Normalize by environment extent (maximum possible distance)
-        extent = np.ptp(env.bin_centers, axis=0)  # range per dimension
-        max_distance = np.linalg.norm(extent)
-
-        if max_distance == 0:
-            return 1.0  # Degenerate environment
-
-        # Convert distance to similarity [0, 1]
-        similarity = 1.0 - min(d_hausdorff / max_distance, 1.0)
-        return float(similarity)
-
-    elif method == "dtw":
-        # Dynamic time warping
-        pos1 = env.bin_centers[position_bins1]
-        pos2 = env.bin_centers[position_bins2]
-
-        # Compute DTW distance using dynamic programming
-        dtw_distance = _dtw_distance(pos1, pos2)
-
-        # Normalize by the largest possible optimal cost: the diagonal path
-        # has max(len1, len2) steps, each at most the environment's extent.
-        extent = np.ptp(env.bin_centers, axis=0)
-        max_bin_distance = np.linalg.norm(extent)
-        max_dtw = max(len(pos1), len(pos2)) * max_bin_distance
-
-        if max_dtw == 0:
-            return 1.0
-
-        # Convert to similarity [0, 1]
-        similarity = 1.0 - min(dtw_distance / max_dtw, 1.0)
-        return float(similarity)
-
-    # All method cases covered above
-    raise ValueError(f"Unreachable: method validation failed for '{method}'")
+        table = _geodesic_pair_distances(
+            env.connectivity,
+            np.repeat(first, len(second)),
+            np.tile(second, len(first)),
+            operation="trajectory_similarity()",
+        ).reshape(len(first), len(second))
+        diameter = env._geodesic_diameter()
+    if method == "hausdorff":
+        distance = max(table.min(axis=1).max(), table.min(axis=0).max())
+        largest = diameter
+    else:
+        distance = _dtw_distance(table[row][:, column])
+        # The diagonal alignment path has max(len1, len2) steps, each at most
+        # the diameter, so the optimal cost can never exceed it.
+        largest = max(len(position_bins1), len(position_bins2)) * diameter
+    if largest == 0:
+        return 1.0  # Degenerate environment
+    return float(1.0 - min(distance / largest, 1.0))
 
 
-def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float:
+def _dtw_distance(cost: NDArray[np.float64]) -> float:
     """Compute Dynamic Time Warping distance between two sequences.
 
     The cumulative cost ``D[i, j] = cost(i, j) + min(D[i-1, j], D[i, j-1],
@@ -3092,18 +3108,16 @@ def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float
 
     Parameters
     ----------
-    seq1 : NDArray[np.float64], shape (n1, n_dims)
-        First sequence of positions; non-empty.
-    seq2 : NDArray[np.float64], shape (n2, n_dims)
-        Second sequence of positions; non-empty.
+    cost : NDArray[np.float64], shape (n1, n2)
+        Distance between each place of the first sequence and each place of
+        the second; non-empty, ``inf`` where no path joins them.
 
     Returns
     -------
     float
-        DTW distance: the smallest summed Euclidean distance over monotone
-        alignments of the two sequences.
+        DTW distance: the smallest summed cost over monotone alignments of
+        the two sequences.
     """
-    cost = cdist(seq1, seq2)
     n1, n2 = cost.shape
     # Diagonals indexed by row i of D (shape (n1 + 1, n2 + 1)); D[0, 0] = 0 and
     # the rest of row 0 and column 0 is inf.

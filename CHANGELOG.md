@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Comparing routes along the environment
+
+**Changed**
+
+- `trajectory_similarity(method="hausdorff" | "dtw")` measures distances
+  along the environment by default: the shortest path through its
+  connectivity graph, around walls and along a maze's arms, scaled by the
+  environment's geodesic diameter (computed once per environment). Runs up
+  two neighboring arms of a U maze were similar in a straight line; along
+  the maze they are far apart. `metric="euclidean"` keeps the straight-line
+  score. Routes in parts of the environment that do not connect score 0.
+  `metric` is refused with `method="jaccard"` or `"correlation"`, which
+  compare bins.
+
 ### Shared helpers: one rule each, faster
 
 **Changed**
