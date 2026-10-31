@@ -283,7 +283,7 @@ class TestOverwriteAtomicity:
 
 
 class TestSchemaVersionGuard:
-    """read_spatial_rates enforces the schema MAJOR version."""
+    """read_spatial_rates reads only the schema version this package writes."""
 
     def _write_then_patch_schema(self, nwbfile, env, schema_value):
         import json
@@ -303,21 +303,20 @@ class TestSchemaVersionGuard:
             meta["schema_version"] = schema_value
         table.fields["description"] = json.dumps(meta)
 
-    @pytest.mark.parametrize("bad", [_MISSING, "1.0", "3.0", "0.9"])
-    def test_incompatible_major_rejected(self, empty_nwb, sample_environment, bad):
-        """Missing / 1.x / a future-incompatible major all raise on read."""
+    @pytest.mark.parametrize(
+        "bad", [_MISSING, "0.9", "1.0", "2.0", "2.3", "2.4", "2.6", "3.0"]
+    )
+    def test_other_schema_versions_refused(self, empty_nwb, sample_environment, bad):
+        """Any other version is refused up front with recreate instructions,
+        even when every key the reader needs happens to be present."""
         from neurospatial.io.nwb import read_spatial_rates
 
         env = sample_environment
         self._write_then_patch_schema(empty_nwb, env, bad)
-        with pytest.raises(ValueError, match="schema"):
+        recorded = None if bad is _MISSING else bad
+        with pytest.raises(ValueError) as caught:
             read_spatial_rates(empty_nwb, env=env)
-
-    def test_same_major_minor_reads(self, empty_nwb, sample_environment):
-        """A 2.0 table (same major, older minor) still reads under the 2.1 reader."""
-        from neurospatial.io.nwb import read_spatial_rates
-
-        env = sample_environment
-        self._write_then_patch_schema(empty_nwb, env, "2.0")
-        back = read_spatial_rates(empty_nwb, env=env)
-        assert back.method == "diffusion_kde"
+        message = str(caught.value)
+        assert f"has schema_version={recorded!r}" in message
+        assert "reads only schema 2.5" in message
+        assert "write them again with write_spatial_rates" in message

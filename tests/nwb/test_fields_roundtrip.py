@@ -108,11 +108,47 @@ class TestSpatialRatesRoundTrip:
         np.testing.assert_array_equal(actual.times, expected.times)
         np.testing.assert_allclose(actual.posterior, expected.posterior)
 
-    @pytest.mark.parametrize("schema_version", ["2.0", "2.1", "2.2"])
-    def test_older_metadata_keeps_existing_provenance_defaults(
-        self, empty_nwb, sample_environment, schema_version
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "bandwidth",
+            "n_units",
+            "unit_table_columns",
+            "occupancy_name",
+            "unit_ids_generated",
+            "min_occupancy",
+            "n_spikes_outside_intervals",
+            "analysis_settings",
+            "spike_window",
+        ],
+    )
+    def test_missing_metadata_key_is_refused(self, empty_nwb, sample_environment, key):
+        """A key the writer always stores is never filled with a guess on read.
+
+        Defaults would read generated labels as explicit, drop the unit table,
+        or report full spike-recording coverage.
+        """
+        import json
+        import re
+
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+        write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
+        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        meta = json.loads(table.description)
+        meta.pop(key)
+        table.fields["description"] = json.dumps(meta)
+        message = (
+            f"Corrupt spatial-rates record 'spatial_rates': missing metadata key "
+            f"'{key}'."
+        )
+        with pytest.raises(ValueError, match=re.escape(message)):
+            read_spatial_rates(empty_nwb)
+
+    def test_unit_count_disagreeing_with_table_is_refused(
+        self, empty_nwb, sample_environment
     ):
-        """Old files lack provenance: do not infer it from numeric unit labels."""
+        """The recorded unit count must match the stored rows."""
         import json
 
         from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
@@ -120,15 +156,10 @@ class TestSpatialRatesRoundTrip:
         write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
         table = empty_nwb.processing["analysis"]["spatial_rates"]
         meta = json.loads(table.description)
-        meta["schema_version"] = schema_version
-        meta.pop("unit_ids_generated", None)
-        meta.pop("spike_window", None)
+        meta["n_units"] = 4
         table.fields["description"] = json.dumps(meta)
-
-        restored = read_spatial_rates(empty_nwb)
-        assert not restored._unit_ids_generated
-        assert restored.spike_window is None
-        assert restored.spike_window_assumed
+        with pytest.raises(ValueError, match="records n_units=4 but stores 3 rows"):
+            read_spatial_rates(empty_nwb)
 
     @pytest.mark.parametrize(
         ("key", "value"),
@@ -182,22 +213,6 @@ class TestSpatialRatesRoundTrip:
         back = read_spatial_rates(empty_nwb, env=sample_environment)
         np.testing.assert_array_equal(back.n_spikes_outside_intervals, [0, 4, 17])
         assert back[2].n_spikes_outside_intervals == 17
-
-    def test_metadata_without_min_occupancy_is_refused(
-        self, empty_nwb, sample_environment
-    ):
-        """Without the threshold the maps' support is unknown: refuse the file."""
-        import json
-
-        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
-
-        write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
-        table = empty_nwb.processing["analysis"]["spatial_rates"]
-        meta = json.loads(table.description)
-        meta.pop("min_occupancy")
-        table.fields["description"] = json.dumps(meta)
-        with pytest.raises(ValueError, match="records no min_occupancy"):
-            read_spatial_rates(empty_nwb)
 
     def test_full_roundtrip_equal(self, empty_nwb, sample_environment):
         """firing_rates/occupancy/unit_ids/unit_table/smoothing/bandwidth equal."""
@@ -516,7 +531,7 @@ class TestSpatialRatesRoundTrip:
             read_spatial_rates(empty_nwb, env=env)
 
     def test_wrong_table_name_raises_clear_error(self, empty_nwb, sample_environment):
-        """A name pointing at a non-spatial-rates table raises a clear error (L2)."""
+        """A name pointing at a non-spatial-rates table raises a clear error."""
         from hdmf.common import DynamicTable, VectorData
 
         from neurospatial.io.nwb import read_spatial_rates
@@ -537,7 +552,7 @@ class TestSpatialRatesRoundTrip:
             read_spatial_rates(empty_nwb, name="not_rates", env=sample_environment)
 
     def test_reserved_unit_table_columns_raise(self, empty_nwb, sample_environment):
-        """A unit_table column named unit_id/firing_rate raises a clear error (L3)."""
+        """A unit_table column named unit_id/firing_rate raises a clear error."""
         from neurospatial.io.nwb import write_spatial_rates
 
         env = sample_environment

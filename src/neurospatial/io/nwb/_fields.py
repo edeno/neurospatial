@@ -5,46 +5,12 @@ Spatial firing-rate maps in NWB files.
 maps, occupancy and the environment they were estimated on -- and
 ``read_spatial_rates`` restores it.
 
-Schema note
------------
-The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.5"``). Schema ``2.1`` persists the
-``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
-``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
-``reml_objective``). Schema ``2.2`` adds the per-neuron-``lambda``
-(``pooled=False``) diagnostics: ``pooled`` and a scalar ``reml_at_boundary`` in
-the metadata blob, and -- when ``penalty`` / ``reml_objective`` /
-``reml_at_boundary`` are per-unit vectors -- those plus ``penalty_selected_by_reml``
-as extra per-unit table columns. Ratio-method tables carry none of the GAM
-fields and read back with them ``None``. Schema ``2.3`` adds
-``unit_ids_generated`` and ``spike_window`` to the metadata, preserving decoder
-unit-pairing semantics and spike-recording coverage. Older files default to
-explicit unit labels and assumed coverage; their missing provenance cannot be
-recovered from the stored labels or rate maps.
-Schema ``2.4`` adds resolved ``analysis_settings`` (including epochs, observed
-intervals and occupancy thresholds). Older files report these as unknown.
-Schema ``2.5`` adds ``min_occupancy``, the occupancy threshold in seconds that
-defines ``spatial_support`` (files without it are refused), and each unit's
-``n_spikes_outside_intervals`` (``null`` when unknown).
-
-``read_spatial_rates`` enforces the schema **major** version: it reads only tables
-whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
-``2.1``, ``2.2``, and ``2.3`` are readable, since a minor bump only *adds*
-optional fields), and rejects any other (missing, ``1.x``, or an incompatible
-future major) with a clear ``ValueError``. A **schema-2.1** glm file carries no
-``pooled`` key; the reader defaults it **method-conditionally** -- ``pooled=True``
-for ``method="glm"`` (the only glm behavior that schema had) and ``pooled=None``
-for a ratio method (where ``pooled`` is meaningless) -- and a missing
-``reml_at_boundary`` / vector columns read back as ``None``. This is the
-clean break with no back-compatibility shim for the ``1.x`` layout: pre-0.9
-tables (which keyed the estimator as ``"smoothing_method"``) do not read.
-
-Forward compatibility is *not* guaranteed (the usual minor-bump direction): a
-pre-2.2 reader on a ``pooled=False`` (per-unit) 2.2 file shares the ``2.x`` major
-and reads it, but sees the blob's ``penalty`` / ``reml_objective`` JSON ``null``
-and ignores the unknown per-unit columns -- silently reconstructing a
-``penalty=None`` result and dropping the per-unit ``lambda`` data. Read a
-``pooled=False`` file with a >=2.2 reader.
+Schema
+------
+The metadata is a JSON blob in the table description, versioned by
+``SPATIAL_RATES_SCHEMA_VERSION``. ``read_spatial_rates`` reads only that exact
+version and refuses any other with instructions to recompute and rewrite the
+rates; it never fills in a metadata key the writer always stores.
 """
 
 from __future__ import annotations
@@ -54,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial.io.nwb._core import (
     _get_or_create_processing_module,
@@ -74,25 +41,9 @@ if TYPE_CHECKING:
 # Default name for the population spatial-rates container (unit axis)
 DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
-# Schema version for the spatial-rates DynamicTable metadata blob.
-# 2.0: estimator stored under the key "method"; a clean break -- older tables
-#      (which keyed the estimator differently) do not read.
-# 2.1: adds the method="glm" GAM diagnostics (scalars + penalty_weights in the
-#      metadata blob; deviance + coefficients as per-unit table columns). Ratio
-#      tables are byte-identical to 2.0 apart from the version string.
-# 2.2: adds the per-neuron-lambda (pooled=False) diagnostics -- ``pooled`` and a
-#      scalar ``reml_at_boundary`` in the blob, plus ``penalty`` /
-#      ``reml_objective`` / ``reml_at_boundary`` / ``penalty_selected_by_reml``
-#      as per-unit columns when they are vectors. A 2.1 file (no ``pooled`` key)
-#      reads back method-conditionally (glm -> pooled=True, ratio -> None).
-# 2.3: adds generated-unit-label provenance and spike-recording windows.
-# 2.4: records resolved analysis settings for reproducible spatial support.
+# Schema version of the spatial-rates metadata blob; the reader accepts only
+# this version.
 SPATIAL_RATES_SCHEMA_VERSION: str = "2.5"
-
-# The reader accepts any table sharing this MAJOR version (minor bumps only add
-# optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
-# 1.x, or an incompatible future major) are rejected on read.
-SPATIAL_RATES_SCHEMA_MAJOR: str = SPATIAL_RATES_SCHEMA_VERSION.split(".")[0]
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
@@ -101,7 +52,7 @@ COL_FIRING_RATE: str = "firing_rate"
 COL_DEVIANCE: str = "deviance"
 COL_COEFFICIENTS: str = "coefficients"
 # Per-unit-lambda (pooled=False) columns; present only when penalty/reml_objective
-# are per-unit vectors (schema 2.2).
+# are per-unit vectors.
 COL_PENALTY: str = "penalty"
 COL_REML_OBJECTIVE: str = "reml_objective"
 COL_REML_AT_BOUNDARY: str = "reml_at_boundary"
@@ -231,7 +182,7 @@ def write_spatial_rates(
     is_per_unit = is_glm and result.penalty_selected_by_reml is not None
 
     env = result.env
-    # L1: defensively COPY the arrays (np.array, not a no-copy np.asarray) so the
+    # Copy the arrays (np.array, not a no-copy np.asarray) so the
     # NWB containers never alias the live result's memory. Mutating
     # result.firing_rates / result.occupancy after the write must not change what
     # was written, and vice versa. dtype is preserved.
@@ -247,7 +198,7 @@ def write_spatial_rates(
     # Shapes need no check here: SpatialRatesResult refuses firing_rates or
     # occupancy that do not match its env's bins when it is constructed.
 
-    # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
+    # `unit_id` / `firing_rate` are reserved for the table's own columns; a
     # unit_table column with either name would collide inside the DynamicTable.
     # A glm result always writes `deviance` / `coefficients`, so those are always
     # reserved; the per-unit-lambda columns (`penalty` / `reml_objective` /
@@ -374,8 +325,7 @@ def write_spatial_rates(
             "per_unit": per_unit,
         }
         # Scalar slots: real values when scalar, JSON null when the value lives in
-        # a per-unit column instead (per_unit=True). A schema-2.1 reader will not
-        # find ``reml_at_boundary`` / ``pooled`` / ``per_unit`` and defaults them.
+        # a per-unit column instead (per_unit=True).
         gam_meta["penalty"] = None if per_unit or penalty is None else float(penalty)
         gam_meta["reml_objective"] = (
             None if per_unit or reml_objective is None else float(reml_objective)
@@ -546,7 +496,7 @@ def _verify_saved_environment(
     nwbfile: NWBFile, env: Environment, *, name: str, env_name: str
 ) -> None:
     """Refuse an explicit ``env=`` that differs from the rates' saved environment."""
-    from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
+    from neurospatial._exceptions import IncompatibleEnvironmentError
     from neurospatial.environment import _environment_differences
     from neurospatial.io.nwb._environment import read_environment
 
@@ -586,10 +536,11 @@ def read_spatial_rates(
     Read a population :class:`SpatialRatesResult` written by ``write_spatial_rates``.
 
     The inverse of :func:`write_spatial_rates`. Reconstructs the per-unit
-    firing-rate maps, shared occupancy, ``unit_ids``, optional ``unit_table``,
-    ``method`` and ``bandwidth``. Schema 2.3 also restores generated-label
-    provenance and ``spike_window``; older files retain explicit-label pairing
-    and assumed coverage because they did not store this provenance.
+    firing-rate maps, shared occupancy, ``unit_ids`` (and whether they were
+    generated), optional ``unit_table``, ``method``, ``bandwidth``,
+    ``min_occupancy`` (and so ``spatial_support``), ``spike_window``, spike
+    accounting, ``analysis_settings`` and, for ``method="glm"``, the GAM
+    diagnostics.
 
     Parameters
     ----------
@@ -624,7 +575,10 @@ def read_spatial_rates(
         is missing from ``nwbfile``.
     ValueError
         If ``name`` points at a table not written by ``write_spatial_rates``; if
-        the companion occupancy length does not match the table's recorded
+        the record was written with a schema version other than
+        ``SPATIAL_RATES_SCHEMA_VERSION`` (recompute and rewrite the rates); if
+        a metadata key the writer always stores is missing or the recorded unit
+        count does not match the table; if the companion occupancy length does not match the table's recorded
         ``n_bins``; if no persisted environment is in the file (whether or not
         ``env=`` is given, since an explicit ``env=`` cannot be verified
         without it); or if the obtained environment's ``n_bins`` does not match
@@ -660,9 +614,7 @@ def read_spatial_rates(
 
     table = analysis[name]
 
-    # L2: a ``name`` pointing at a table NOT written by write_spatial_rates has a
-    # plain-text (non-JSON) description; surface a clear ValueError rather than a
-    # raw JSONDecodeError leaking from json.loads.
+    # A table not written by write_spatial_rates has a plain-text description.
     try:
         meta = json.loads(table.description)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -676,40 +628,40 @@ def read_spatial_rates(
             f"missing the expected spatial-rates metadata ('method', 'n_bins')."
         )
 
-    # Enforce the schema MAJOR version. A minor bump only adds optional fields, so
-    # any 2.x table reads (2.0 and 2.1 are mutually readable); a missing version,
-    # a 1.x table (pre-0.9 "smoothing_method" layout), or an incompatible future
-    # major is rejected -- the clean break, no back-compat shim. Keyed on the
-    # major (not the exact version) so a later minor bump still reads this one.
-    schema_version = str(meta.get("schema_version", ""))
-    if schema_version.split(".")[0] != SPATIAL_RATES_SCHEMA_MAJOR:
-        raise ValueError(
-            f"Spatial rates '{name}' has schema_version={schema_version!r}, which "
-            f"this reader (schema {SPATIAL_RATES_SCHEMA_VERSION}) does not support. "
-            f"Only schema major {SPATIAL_RATES_SCHEMA_MAJOR}.x tables read; older "
-            f"layouts (e.g. the pre-0.9 'smoothing_method' schema) are a clean "
-            f"break with no back-compatibility shim. Recompute and re-write the "
-            f"spatial rates with this version."
-        )
-
+    _require_current_schema(meta, name)
     method = meta["method"]
-    bandwidth = meta["bandwidth"]
-    unit_table_columns = meta.get("unit_table_columns", [])
-    occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")
     meta_n_bins = int(meta["n_bins"])
+    bandwidth = _required_key(meta, "bandwidth", name)
+    n_units = int(_required_key(meta, "n_units", name))
+    unit_table_columns = _required_key(meta, "unit_table_columns", name)
+    occupancy_name = _required_key(meta, "occupancy_name", name)
+    min_occupancy = float(_required_key(meta, "min_occupancy", name))
+    n_spikes_outside_intervals = _required_key(meta, "n_spikes_outside_intervals", name)
+    analysis_settings = _required_key(meta, "analysis_settings", name)
 
-    unit_ids_generated = meta.get("unit_ids_generated", False)
+    unit_ids_generated = _required_key(meta, "unit_ids_generated", name)
     if not isinstance(unit_ids_generated, bool):
         raise ValueError(
             f"Spatial rates '{name}' has invalid unit_ids_generated metadata; "
             "expected a boolean to distinguish generated from explicit labels."
         )
-    spike_window = as_intervals(meta.get("spike_window"), name=f"{name}.spike_window")
+    spike_window = as_intervals(
+        _required_key(meta, "spike_window", name), name=f"{name}.spike_window"
+    )
     if spike_window is not None:
         spike_window.setflags(write=False)
 
     firing_rates = np.asarray(table[COL_FIRING_RATE][:])
     unit_ids = np.asarray(table[COL_UNIT_ID][:])
+    if unit_ids.shape[0] != n_units:
+        raise ValueError(
+            _format_error(
+                f"Corrupt spatial-rates record '{name}': it records "
+                f"n_units={n_units} but stores {unit_ids.shape[0]} rows.",
+                why="the table was truncated or edited after it was written",
+                fix=_RECREATE_FIX,
+            )
+        )
 
     unit_table = None
     if unit_table_columns:
@@ -726,10 +678,8 @@ def read_spatial_rates(
         )
     occupancy = np.asarray(analysis[occupancy_name].data[:]).reshape(-1)
 
-    # FIX 3: occupancy integrity guard at READ time. Validate the companion's
-    # length against the table's OWN recorded n_bins (not occupancy's own
-    # length), so a wrong-length companion is caught here rather than deferred to
-    # a distant spatial_information() call.
+    # Check the companion against the table's own recorded n_bins, so a
+    # wrong-length occupancy fails here rather than in a later analysis.
     if occupancy.shape != (meta_n_bins,):
         raise ValueError(
             f"Occupancy companion '{occupancy_name}' has length "
@@ -789,31 +739,37 @@ def read_spatial_rates(
         "pooled": None,
     }
     if method == "glm":
-        gam = meta.get("gam")
+        gam = _required_key(meta, "gam", name)
         if not isinstance(gam, dict):
             raise ValueError(
-                f"Spatial rates '{name}' has method='glm' but no GAM metadata "
-                f"blob; the file may be corrupt or written by an older schema."
+                _format_error(
+                    f"Corrupt spatial-rates record '{name}': the 'gam' metadata "
+                    f"is {type(gam).__name__}, not a mapping.",
+                    why="method='glm' records store their GAM diagnostics there",
+                    fix=_RECREATE_FIX,
+                )
             )
-        # Backward-compat (schema 2.1): a missing ``pooled`` key defaults to True
-        # for a glm file (the only glm behavior that schema had); ``per_unit`` and
-        # ``reml_at_boundary`` default to False / None.
-        per_unit = bool(gam.get("per_unit", False))
+
+        def gam_key(key: str) -> Any:
+            return _required_key(gam, key, name, prefix="gam.")
+
+        per_unit = bool(gam_key("per_unit"))
+        # The scalar slots are always written; they hold JSON null when the
+        # values live in the per-unit columns instead.
+        penalty = gam_key("penalty")
+        reml_objective = gam_key("reml_objective")
+        reml_at_boundary = gam_key("reml_at_boundary")
         gam_fields = {
             "coefficients": np.asarray(table[COL_COEFFICIENTS][:], dtype=np.float64).T,
-            "penalty_weights": np.asarray(gam["penalty_weights"], dtype=np.float64),
-            "rank": int(gam["rank"]),
+            "penalty_weights": np.asarray(gam_key("penalty_weights"), dtype=np.float64),
+            "rank": int(gam_key("rank")),
             "deviance": np.asarray(table[COL_DEVIANCE][:], dtype=np.float64),
-            "converged": bool(gam["converged"]),
-            "n_iter": int(gam["n_iter"]),
-            "pooled": bool(gam.get("pooled", True)),
+            "converged": bool(gam_key("converged")),
+            "n_iter": int(gam_key("n_iter")),
+            "pooled": bool(gam_key("pooled")),
         }
         if per_unit:
-            # Per-unit-lambda vectors live in table columns (schema 2.2). Verify
-            # they are all present first, so a truncated / externally-edited 2.2
-            # record fails with a clear schema-aware error (naming the table and
-            # the missing column) rather than a raw hdmf KeyError -- matching the
-            # missing-GAM-blob handling above.
+            # Name a missing per-unit column instead of a raw hdmf KeyError.
             missing_cols = [
                 c
                 for c in (
@@ -841,9 +797,6 @@ def read_spatial_rates(
                 table[COL_PENALTY_SELECTED][:], dtype=bool
             )
         else:
-            penalty = gam.get("penalty")
-            reml_objective = gam.get("reml_objective")
-            reml_at_boundary = gam.get("reml_at_boundary")
             gam_fields["penalty"] = None if penalty is None else float(penalty)
             gam_fields["reml_objective"] = (
                 None if reml_objective is None else float(reml_objective)
@@ -863,25 +816,52 @@ def read_spatial_rates(
         unit_table=unit_table,
         _unit_ids_generated=unit_ids_generated,
         spike_window=spike_window,
-        min_occupancy=_recorded_min_occupancy(meta, name),
+        min_occupancy=min_occupancy,
         n_spikes_outside_intervals=(
             None
-            if meta.get("n_spikes_outside_intervals") is None
-            else np.asarray(meta["n_spikes_outside_intervals"], dtype=np.int64)
+            if n_spikes_outside_intervals is None
+            else np.asarray(n_spikes_outside_intervals, dtype=np.int64)
         ),
-        analysis_settings=meta.get("analysis_settings"),
+        analysis_settings=analysis_settings,
         **gam_fields,  # type: ignore[arg-type]
     )
 
 
-def _recorded_min_occupancy(meta: dict[str, Any], name: str) -> float:
-    """The occupancy threshold in seconds that defines the maps' support."""
-    if "min_occupancy" not in meta:
+_RECREATE_FIX = (
+    "recompute the rates with this version of neurospatial and write them "
+    "again with write_spatial_rates"
+)
+
+
+def _require_current_schema(meta: dict[str, Any], name: str) -> None:
+    """Refuse a spatial-rates record written with another schema version."""
+    recorded = meta.get("schema_version")
+    if recorded != SPATIAL_RATES_SCHEMA_VERSION:
         raise ValueError(
-            f"Spatial rates '{name}' records no min_occupancy (schema "
-            f"{meta.get('schema_version')!r}).\n"
-            "Why: spatial_support is derived from the occupancy threshold, and "
-            "files before schema 2.5 did not store it.\n"
-            "Fix: recompute the rates and write them again with write_spatial_rates."
+            _format_error(
+                f"Spatial rates '{name}' has schema_version={recorded!r}; this "
+                f"version of neurospatial reads only schema "
+                f"{SPATIAL_RATES_SCHEMA_VERSION}.",
+                why="other versions store different metadata (records before "
+                "2.5 lack the occupancy threshold that defines spatial_support), "
+                "and reading them would mean guessing the missing values",
+                fix=_RECREATE_FIX,
+            )
         )
-    return float(meta["min_occupancy"])
+
+
+def _required_key(
+    meta: dict[str, Any], key: str, name: str, *, prefix: str = ""
+) -> Any:
+    """Return ``meta[key]``, refusing a record that lacks a key the writer stores."""
+    if key not in meta:
+        raise ValueError(
+            _format_error(
+                f"Corrupt spatial-rates record '{name}': missing metadata key "
+                f"'{prefix}{key}'.",
+                why="write_spatial_rates always stores this key, so the record "
+                "was truncated or edited after it was written",
+                fix=_RECREATE_FIX,
+            )
+        )
+    return meta[key]

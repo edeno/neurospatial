@@ -333,9 +333,11 @@ print("Supported bins:", int(rates.spatial_support.sum()))
 ```
 
 `to_xarray()` stores these settings as JSON in `attrs["analysis_settings"]`,
-alongside a `spatial_support` variable; they survive NetCDF export. NWB spatial
-rate schema 2.4 preserves them too. Legacy or manually constructed results use
-`analysis_settings=None` when these choices are unknown. CSV does not preserve
+alongside a `spatial_support` variable; they survive NetCDF export.
+`write_spatial_rates` stores them in NWB too (spatial-rates schema 2.5);
+`read_spatial_rates` refuses records written with an earlier schema, so
+recompute and rewrite those. Results you construct by hand without these choices
+have `analysis_settings=None`. CSV does not preserve
 DataFrame attributes: save the settings as a JSON sidecar, or use NetCDF/NWB.
 
 ## `BayesianDecoder`

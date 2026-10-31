@@ -1,9 +1,8 @@
 """NWB estimator-key contract: current ``"method"`` key, no legacy fallback.
 
-``write_spatial_rates`` stores the estimator under the metadata key ``"method"``
-(schema ``2.0``). The rename is a clean break with no back-compatibility shim:
-tables carrying only the old ``"smoothing_method"`` key (schema ``1.x``) are
-rejected, not silently read.
+``write_spatial_rates`` stores the estimator under the metadata key ``"method"``.
+Tables carrying only the old ``"smoothing_method"`` key are rejected, not
+silently read.
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
     meta["schema_version"] = "1.0"
     table.fields["description"] = json.dumps(meta)
 
-    with pytest.raises(ValueError, match="method"):
+    with pytest.raises(ValueError, match="not a spatial-rates table"):
         read_spatial_rates(empty_nwb, env=env)
 
 
