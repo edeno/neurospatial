@@ -13,9 +13,9 @@ import sys
 from types import ModuleType
 
 import pytest
+from test_public_api_snapshot import NAMESPACES
 
 import neurospatial as ns
-from test_public_api_snapshot import NAMESPACES
 
 # Submodules expected to be lazily accessible from the top-level package.
 _EXPECTED_SUBMODULES = (

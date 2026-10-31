@@ -160,9 +160,7 @@ def test_region_not_found_handles_missing_name():
 
 @pytest.mark.parametrize("available", [[], None])
 @pytest.mark.parametrize("argument", ["start_region", None])
-def test_region_not_found_without_regions_leads_with_creating_one(
-    available, argument
-):
+def test_region_not_found_without_regions_leads_with_creating_one(available, argument):
     # With no region to suggest, a placeholder name is not a fix to pass.
     exc = RegionNotFoundError(None, available=available, argument=argument)
     fix = str(exc).splitlines()[-1]
