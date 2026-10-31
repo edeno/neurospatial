@@ -323,10 +323,15 @@ def _environment_payload(
     """Build the shared lossless metadata and numerical-array payload."""
     from neurospatial._results import software_version
     from neurospatial.environment import _build_record
+    from neurospatial.environment._fields import with_cached_faces
     from neurospatial.geometry import encode, encode_arena
     from neurospatial.geometry._codecs import _json_safe
 
-    binning_meta, binning_arrays = encode(env.binning, "binning")
+    # Encode the cached cell faces: building them dominates the encoding, and
+    # smoothing has usually built them already.
+    binning_meta, binning_arrays = encode(
+        with_cached_faces(env._cache, env._binning), "binning"
+    )
     arena_meta, arena_arrays = encode_arena(env.arena)
     metadata: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
