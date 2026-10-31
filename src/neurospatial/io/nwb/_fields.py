@@ -24,6 +24,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial.io.nwb._core import (
     _get_or_create_processing_module,
+    _refuse_in_place_replacement,
     _require_pynwb,
     logger,
 )
@@ -134,7 +135,11 @@ def write_spatial_rates(
         If True, replace an existing container and *all* its companions (the
         ``f"{name}_occupancy"`` TimeSeries and the ``f"{name}_environment"``
         environment). If False, raise ``ValueError`` when any of those names is
-        already present.
+        already present. Replacing works on an in-memory ``NWBFile`` or one read
+        with mode ``"r"`` and then exported to a new path with
+        ``NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)``; pynwb
+        cannot delete objects already written to a file opened with ``"r+"`` or
+        ``"a"``.
 
     Raises
     ------
@@ -144,6 +149,9 @@ def write_spatial_rates(
         ``firing_rate`` (reserved -- plus ``deviance`` / ``coefficients`` for a
         glm result, whose GAM columns share the table); or if a companion add
         fails after a partial write (the partial objects are rolled back first).
+    NotImplementedError
+        If ``overwrite=True`` would replace a record in a file opened with
+        ``"r+"`` or ``"a"``.
     ImportError
         If pynwb is not installed.
 
@@ -232,16 +240,11 @@ def write_spatial_rates(
         nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
     )
 
-    # FIX 2 (atomic write): resolve ALL name collisions -- the table, its
-    # companion occupancy AND the persisted environment -- BEFORE the first add.
-    # A duplicate without overwrite raises before any mutation.
-    #
-    # For overwrite=True we CAPTURE the existing objects but do NOT delete them
-    # here: deleting the originals before the replacements are built and added
-    # would destroy a valid record if a later build/add fails (the rollback then
-    # only removes the partial new objects, never restoring the old ones). The
-    # deletion is deferred into the try-block below, right before the adds, and
-    # the captured originals are restored if that block raises.
+    # Resolve every name collision -- the table, its companion occupancy and
+    # the persisted environment -- before the first add, so a duplicate without
+    # overwrite raises before any mutation. For overwrite=True the existing
+    # objects are captured here but deleted only in the try-block below, after
+    # the replacements are built, so a failed write can restore them.
     existing = [n for n in (name, occupancy_name) if n in analysis.data_interfaces]
     if env_name in nwbfile.scratch:
         existing.append(env_name)
@@ -252,6 +255,7 @@ def write_spatial_rates(
                 f"Spatial rates '{name}' already exists (found: {existing}). "
                 f"Use overwrite=True to replace it and its companions."
             )
+        _refuse_in_place_replacement(nwbfile, f"spatial rates '{name}'")
         for obj_name in (name, occupancy_name):
             if obj_name in analysis.data_interfaces:
                 old_objects.append(
@@ -423,12 +427,10 @@ def write_spatial_rates(
         comments=f"Occupancy for spatial rates '{name}', n_bins={env.n_bins}.",
     )
 
-    # FIX 2 (atomic write): remove any originals (overwrite=True), then add the
-    # table, its companion occupancy, and persist the full environment (with
-    # connectivity + geometry). The originals are deleted HERE (not in preflight)
-    # so that if any step fails we can both roll back the newly-added objects AND
-    # restore the originals -- an overwrite that aborts leaves the pre-existing
-    # record intact rather than destroying it.
+    # Remove any originals (overwrite=True), then add the table, its companion
+    # occupancy and the full environment (with connectivity and geometry). If
+    # any step fails, the newly added objects are rolled back and the originals
+    # restored.
     added: list[tuple[str, str]] = []
     removed: list[tuple[str, str, object]] = []
     try:
@@ -442,9 +444,7 @@ def write_spatial_rates(
         added.append(("analysis", name))
         analysis.add(occupancy_ts)
         added.append(("analysis", occupancy_name))
-        # Originals were removed just above, so overwrite=True here just
-        # guarantees no late collision raise inside the try-block.
-        write_environment(nwbfile, env, name=env_name, overwrite=True)
+        write_environment(nwbfile, env, name=env_name)
         added.append(("scratch", env_name))
     except Exception as exc:
         # Roll back the newly-added (partial) objects...

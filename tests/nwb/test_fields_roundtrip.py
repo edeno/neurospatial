@@ -584,6 +584,72 @@ class TestSpatialRatesRoundTrip:
         np.testing.assert_array_equal(np.asarray(back.firing_rates), original_rates)
         np.testing.assert_array_equal(np.asarray(back.occupancy), original_occ)
 
+    def _write_rates_file(self, path, env, *, seed):
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import write_spatial_rates
+
+        from ._nwb_helpers import create_roundtrip_nwb
+
+        pytest.importorskip("ndx_events")
+        pytest.importorskip("ndx_pose")
+        nwbfile = create_roundtrip_nwb()
+        write_spatial_rates(nwbfile, _make_rates_result(env, seed=seed))
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(nwbfile)
+
+    def test_overwrite_in_file_opened_for_append_is_refused(
+        self, sample_environment, tmp_path
+    ):
+        """pynwb cannot delete written objects: refuse before touching the file."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+        env = sample_environment
+        path = tmp_path / "rates.nwb"
+        self._write_rates_file(path, env, seed=0)
+        original = _make_rates_result(env, seed=0)
+
+        with NWBHDF5IO(str(path), "r+") as io:
+            nwbfile = io.read()
+            with pytest.raises(
+                NotImplementedError,
+                match="Cannot replace the spatial rates 'spatial_rates'",
+            ):
+                write_spatial_rates(
+                    nwbfile, _make_rates_result(env, seed=1), overwrite=True
+                )
+            # Nothing was removed: the record still reads back unchanged.
+            back = read_spatial_rates(nwbfile)
+            np.testing.assert_array_equal(back.firing_rates, original.firing_rates)
+
+    def test_overwrite_in_read_file_exports_the_new_record(
+        self, sample_environment, tmp_path
+    ):
+        """Replace in a file opened with "r", then export to a new path."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+        env = sample_environment
+        path = tmp_path / "rates.nwb"
+        exported = tmp_path / "rates_replaced.nwb"
+        self._write_rates_file(path, env, seed=0)
+        replacement = _make_rates_result(env, seed=1)
+
+        with NWBHDF5IO(str(path), "r") as io:
+            nwbfile = io.read()
+            write_spatial_rates(nwbfile, replacement, overwrite=True)
+            with NWBHDF5IO(str(exported), "w") as out:
+                out.export(src_io=io, nwbfile=nwbfile)
+
+        with NWBHDF5IO(str(exported), "r") as io:
+            back = read_spatial_rates(io.read())
+            np.testing.assert_array_equal(back.firing_rates, replacement.firing_rates)
+            np.testing.assert_array_equal(back.occupancy, replacement.occupancy)
+            np.testing.assert_array_equal(back.env.bin_centers, env.bin_centers)
+
     def test_disk_roundtrip(self, sample_environment, tmp_path):
         """Population rates survive a real write -> close -> reopen cycle."""
         from pynwb import NWBHDF5IO
