@@ -150,6 +150,8 @@ from scipy import linalg, stats
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
+from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.stats._utils import _ensure_rng
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -1120,6 +1122,109 @@ def detect_assemblies(
     Johnstone IM (2001). On the distribution of the largest eigenvalue in
         principal components analysis. Ann Stat 29(2):295-327.
     """
+    unit_ids_generated = unit_ids is None
+    found = _detect(
+        spike_counts,
+        method=method,
+        n_components=n_components,
+        component_threshold=component_threshold,
+        percentile=percentile,
+        n_shuffles=n_shuffles,
+        member_rule=member_rule,
+        member_threshold=member_threshold,
+        rng=rng,
+        unit_ids=unit_ids,
+    )
+    # Activation strength of every pattern in every detection bin,
+    # shape (n_time_bins, n_found); excluded neurons have weight 0.
+    activations = _activation_strength(found.spike_counts_z.T, found.patterns)
+    assembly_patterns = tuple(
+        _embedded_pattern(
+            weights,
+            members,
+            explained_variance_ratio,
+            found.retained,
+            found.labels,
+            unit_ids_generated=unit_ids_generated,
+        )
+        for weights, members, explained_variance_ratio in zip(
+            found.patterns, found.member_masks, found.explained_variance, strict=True
+        )
+    )
+    return AssemblyDetectionResult(
+        patterns=assembly_patterns,
+        activations=activations,
+        method=method,
+        n_significant=found.n_significant,
+        eigenvalues=found.eigenvalues,
+        threshold=found.threshold,
+        unit_ids=found.labels,
+        component_threshold=component_threshold,
+        surrogate_max_eigenvalues=found.surrogate_max,
+        _unit_ids_generated=unit_ids_generated,
+    )
+
+
+class _Detection(NamedTuple):
+    """Patterns of the neurons that vary, before activations and embedding.
+
+    Attributes
+    ----------
+    patterns : ndarray, shape (n_found, n_retained)
+        Unit-length weights of the varying neurons, highest explained
+        variance first, each oriented so its largest-magnitude weight is
+        positive.
+    explained_variance : ndarray, shape (n_found,)
+        Fraction of the total variance each pattern explains.
+    member_masks : ndarray of bool, shape (n_found, n_retained)
+        Core members of each pattern among the varying neurons.
+    retained : ndarray of intp, shape (n_retained,)
+        Columns of the varying neurons, increasing.
+    spike_counts_z : ndarray, shape (n_retained, n_time_bins)
+        Z-scored counts of the varying neurons.
+    eigenvalues : ndarray, shape (n_neurons,)
+        Correlation eigenvalues, descending, 0 for each excluded neuron.
+    threshold : float
+        Eigenvalue threshold of the component-threshold rule.
+    n_significant : int
+        Number of eigenvalues above ``threshold``.
+    surrogate_max : ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate; empty for analytical rules.
+    labels : ndarray, shape (n_neurons,)
+        Label of each column.
+    """
+
+    patterns: NDArray[np.float64]
+    explained_variance: NDArray[np.float64]
+    member_masks: NDArray[np.bool_]
+    retained: NDArray[np.intp]
+    spike_counts_z: NDArray[np.float64]
+    eigenvalues: NDArray[np.float64]
+    threshold: float
+    n_significant: int
+    surrogate_max: NDArray[np.float64]
+    labels: NDArray[Any]
+
+
+def _detect(
+    spike_counts: NDArray[np.float64],
+    *,
+    method: AssemblyMethod = "ica",
+    n_components: int | Literal["auto"] = "auto",
+    component_threshold: ComponentThreshold = "marchenko_pastur",
+    percentile: float | None = None,
+    n_shuffles: int = 1000,
+    member_rule: MemberRule = "abs_z",
+    member_threshold: float = 2.0,
+    rng: int | np.random.Generator | None = None,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+) -> _Detection:
+    """Validate the counts and find the patterns of :func:`detect_assemblies`.
+
+    Takes the arguments of :func:`detect_assemblies`, raises and warns as it
+    does, and returns the patterns of the varying neurons without computing
+    their activation strength.
+    """
     spike_counts = _validated_counts(spike_counts, call="detect_assemblies()")
     n_time_bins, n_neurons = spike_counts.shape
     if method not in _METHODS:
@@ -1129,7 +1234,6 @@ def detect_assemblies(
         raise ValueError(
             f"Need at least 3 neurons for assembly detection, got {n_neurons}"
         )
-    unit_ids_generated = unit_ids is None
     labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
     _check_component_threshold(component_threshold, percentile, n_shuffles)
     if member_rule not in _MEMBER_RULES:
@@ -1147,7 +1251,7 @@ def detect_assemblies(
             "matrix is TRANSPOSED (n_neurons, n_time_bins); otherwise the "
             "recording is simply short and results may be unreliable.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # A neuron whose count never changes has no variance to correlate: it
@@ -1176,7 +1280,7 @@ def detect_assemblies(
             "other neurons. They are excluded from detection and get weight 0 "
             "in every pattern.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Work internally in (n_neurons, n_time_bins): the assembly structure is a
@@ -1194,7 +1298,8 @@ def detect_assemblies(
 
     # Derive an integer seed for sklearn from the public ``rng`` argument.
     # sklearn estimators accept an int seed (or RandomState), not a numpy
-    # Generator, so normalize a Generator to a reproducible integer seed.
+    # Generator, so normalize a Generator to a reproducible integer seed. A
+    # Generator gives the seed before it draws any surrogate.
     if rng is None:
         seed: int | None = None
     elif isinstance(rng, np.random.Generator):
@@ -1202,59 +1307,18 @@ def detect_assemblies(
     else:
         seed = int(rng)
 
-    mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
-    surrogate_max = np.zeros(0)
-    if component_threshold == "marchenko_pastur":
-        threshold = mp_threshold
-    elif component_threshold == "tracy_widom":
-        threshold = mp_threshold + n_retained ** (-2.0 / 3.0)
-    else:
-        surrogate_max = _surrogate_max_eigenvalues(
-            spike_counts_z,
-            component_threshold,
-            n_shuffles,
-            rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng),
-        )
-        assert percentile is not None  # checked by _check_component_threshold
-        threshold = float(np.percentile(surrogate_max, percentile))
+    threshold, surrogate_max = _eigenvalue_threshold(
+        component_threshold, spike_counts_z, percentile, n_shuffles, rng
+    )
     n_significant = int(np.sum(eigenvalues > threshold))
-
-    # Determine number of components
-    if n_components == "auto":
-        n_comp = n_significant
-        if n_comp == 0:
-            warnings.warn(
-                f"detect_assemblies(): no eigenvalue of the correlation matrix "
-                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
-                f"{threshold:.3f} (largest "
-                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
-                "structure beyond what independent neurons would give. The "
-                "result has no patterns; pass n_components= to fit exploratory "
-                "patterns anyway.",
-                UserWarning,
-                stacklevel=2,
-            )
-    else:
-        n_comp = int(n_components)
-        if n_comp < 1:
-            raise ValueError(f"n_components must be >= 1, got {n_comp}")
-        if n_comp > n_neurons:
-            raise ValueError(
-                f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
-            )
-
-    # The factorization can yield at most min(n_retained, n_time_bins)
-    # components. Requesting more (short recordings, excluded neurons) would
-    # index past the SVD output; clamp with a warning.
-    max_rank = min(n_retained, n_time_bins)
-    if n_comp > max_rank:
-        warnings.warn(
-            f"n_components ({n_comp}) exceeds the achievable rank "
-            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
-            UserWarning,
-            stacklevel=2,
-        )
-        n_comp = max_rank
+    n_comp = _n_components(
+        n_components,
+        n_significant,
+        eigenvalues,
+        threshold,
+        component_threshold,
+        min(n_retained, n_time_bins),
+    )
 
     # Perform dimensionality reduction
     if n_comp == 0:
@@ -1273,7 +1337,7 @@ def detect_assemblies(
             f"components carry no variance (the counts span only {n_found} "
             "dimensions), so they define no pattern and are dropped.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Order patterns by explained variance, highest first. PCA eigenvectors
@@ -1291,36 +1355,169 @@ def detect_assemblies(
     largest = patterns[np.arange(n_found), np.argmax(np.abs(patterns), axis=1)]
     patterns = patterns * np.where(largest < 0, -1.0, 1.0)[:, None]
 
-    # Activation strength of every pattern in every detection bin,
-    # shape (n_time_bins, n_found); excluded neurons have weight 0.
-    activations = _activation_strength(spike_counts_z.T, patterns)
-
-    # Members among the retained neurons; shape (n_found, n_retained).
-    member_masks = _member_masks(patterns, member_rule, member_threshold, n_neurons)
-    full_patterns = np.zeros((n_found, n_neurons))
-    full_patterns[:, retained] = patterns
-
-    assembly_patterns = tuple(
-        AssemblyPattern(
-            weights=full_patterns[i],
-            member_indices=retained[member_masks[i]].astype(np.int64),
-            explained_variance_ratio=explained_var[i],
-            unit_ids=labels,
-            _unit_ids_generated=unit_ids_generated,
-        )
-        for i in range(n_found)
-    )
-
-    return AssemblyDetectionResult(
-        patterns=assembly_patterns,
-        activations=activations,
-        method=method,
-        n_significant=n_significant,
+    return _Detection(
+        patterns=patterns,
+        explained_variance=explained_var,
+        member_masks=_member_masks(patterns, member_rule, member_threshold, n_neurons),
+        retained=retained,
+        spike_counts_z=spike_counts_z,
         eigenvalues=eigenvalues,
         threshold=threshold,
-        unit_ids=labels,
-        component_threshold=component_threshold,
-        surrogate_max_eigenvalues=surrogate_max,
+        n_significant=n_significant,
+        surrogate_max=surrogate_max,
+        labels=labels,
+    )
+
+
+def _eigenvalue_threshold(
+    component_threshold: str,
+    spike_counts_z: NDArray[np.float64],
+    percentile: float | None,
+    n_shuffles: int,
+    rng: int | np.random.Generator | None,
+) -> tuple[float, NDArray[np.float64]]:
+    """Eigenvalue threshold of a component-threshold rule.
+
+    Parameters
+    ----------
+    component_threshold : str
+        One of ``_COMPONENT_THRESHOLDS``.
+    spike_counts_z : ndarray, shape (n_retained, n_time_bins)
+        Z-scored counts of the varying neurons.
+    percentile : float or None
+        Percentile of the surrogate maxima, for the surrogate rules.
+    n_shuffles : int
+        Number of surrogate matrices.
+    rng : int, numpy.random.Generator or None
+        Source of the surrogates.
+
+    Returns
+    -------
+    threshold : float
+    surrogate_max : ndarray, shape (n_shuffles,)
+        Largest eigenvalue of each surrogate; empty for the analytical rules.
+    """
+    n_retained, n_time_bins = spike_counts_z.shape
+    # Computed for every rule: it warns when there are more neurons than bins.
+    mp_threshold = marchenko_pastur_threshold(n_retained, n_time_bins)
+    if component_threshold == "marchenko_pastur":
+        return mp_threshold, np.zeros(0)
+    if component_threshold == "tracy_widom":
+        return mp_threshold + n_retained ** (-2.0 / 3.0), np.zeros(0)
+    surrogate_max = _surrogate_max_eigenvalues(
+        spike_counts_z, component_threshold, n_shuffles, _ensure_rng(rng)
+    )
+    assert percentile is not None  # checked by _check_component_threshold
+    return float(np.percentile(surrogate_max, percentile)), surrogate_max
+
+
+def _n_components(
+    n_components: int | Literal["auto"],
+    n_significant: int,
+    eigenvalues: NDArray[np.float64],
+    threshold: float,
+    component_threshold: str,
+    max_rank: int,
+) -> int:
+    """Number of components to fit.
+
+    Parameters
+    ----------
+    n_components : int or "auto"
+        Requested number; ``"auto"`` takes ``n_significant``.
+    n_significant : int
+        Number of eigenvalues above ``threshold``.
+    eigenvalues : ndarray, shape (n_neurons,)
+        Correlation eigenvalues, descending.
+    threshold : float
+        Eigenvalue threshold, named in the warning when none exceeds it.
+    component_threshold : str
+        The rule that set ``threshold``.
+    max_rank : int
+        ``min(n_varying_neurons, n_time_bins)``, the most components the
+        factorization can give.
+
+    Returns
+    -------
+    int
+        At most ``max_rank``.
+    """
+    n_neurons = eigenvalues.size
+    if n_components == "auto":
+        n_comp = n_significant
+        if n_comp == 0:
+            warnings.warn(
+                f"detect_assemblies(): no eigenvalue of the correlation matrix "
+                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
+                f"{threshold:.3f} (largest "
+                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
+                "structure beyond what independent neurons would give. The "
+                "result has no patterns; pass n_components= to fit exploratory "
+                "patterns anyway.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+    else:
+        n_comp = int(n_components)
+        if n_comp < 1:
+            raise ValueError(f"n_components must be >= 1, got {n_comp}")
+        if n_comp > n_neurons:
+            raise ValueError(
+                f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
+            )
+
+    # The factorization can yield at most min(n_retained, n_time_bins)
+    # components. Requesting more (short recordings, excluded neurons) would
+    # index past the SVD output; clamp with a warning.
+    if n_comp > max_rank:
+        warnings.warn(
+            f"n_components ({n_comp}) exceeds the achievable rank "
+            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        n_comp = max_rank
+    return n_comp
+
+
+def _embedded_pattern(
+    weights: NDArray[np.float64],
+    members: NDArray[np.bool_] | NDArray[np.intp],
+    explained_variance_ratio: float,
+    positions: NDArray[np.intp],
+    unit_ids: NDArray[Any],
+    *,
+    unit_ids_generated: bool = False,
+) -> AssemblyPattern:
+    """A pattern of some units, with weight 0 for every other unit.
+
+    Parameters
+    ----------
+    weights : ndarray, shape (n_positions,)
+        Weights of the units at ``positions``.
+    members : ndarray of bool or of int
+        Core members among those units, as a mask or as indices.
+    explained_variance_ratio : float
+        The pattern's explained variance.
+    positions : ndarray of intp, shape (n_positions,)
+        Column of each weighted unit among all units.
+    unit_ids : ndarray, shape (n_units,)
+        Labels of all units.
+    unit_ids_generated : bool, default=False
+        Whether ``unit_ids`` were generated.
+
+    Returns
+    -------
+    AssemblyPattern
+        Weights over all units; members as sorted columns among them.
+    """
+    full = np.zeros(len(unit_ids))
+    full[positions] = weights
+    return AssemblyPattern(
+        weights=full,
+        member_indices=np.sort(positions[members]).astype(np.int64),
+        explained_variance_ratio=explained_variance_ratio,
+        unit_ids=unit_ids,
         _unit_ids_generated=unit_ids_generated,
     )
 

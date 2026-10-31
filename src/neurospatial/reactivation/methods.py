@@ -56,10 +56,11 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _activation_strength,
     _compared_activations,
+    _detect,
+    _embedded_pattern,
     _pairwise_correlations,
     _renormalized,
     _z_scores,
-    detect_assemblies,
     explained_variance_reactivation,
 )
 from neurospatial.reactivation.calibration import equalize_firing_rates
@@ -1834,7 +1835,7 @@ def _detected_patterns(
     failures = []
     for units, region in sets:
         try:
-            detection = detect_assemblies(
+            found = _detect(
                 counts[:, units],
                 method=method.detection,  # type: ignore[arg-type]
                 member_rule=method.member_rule,
@@ -1860,19 +1861,17 @@ def _detected_patterns(
                 stacklevel=2,
             )
             continue
-        for pattern in detection.patterns:
-            members = units[pattern.member_indices]
+        # Columns of the units the detection kept, among all units.
+        positions = units[found.retained]
+        for weights, members, explained_variance_ratio in zip(
+            found.patterns, found.member_masks, found.explained_variance, strict=True
+        ):
             if region == "cross_region":
-                member_regions = session.groups["region"][members]
+                member_regions = session.groups["region"][positions[members]]
                 if np.unique(member_regions).size < 2:
                     continue
-            weights = np.zeros(n_units)
-            weights[units] = pattern.weights
-            full = AssemblyPattern(
-                weights=weights,
-                member_indices=np.sort(members).astype(np.int64),
-                explained_variance_ratio=pattern.explained_variance_ratio,
-                unit_ids=session.labels,
+            full = _embedded_pattern(
+                weights, members, explained_variance_ratio, positions, session.labels
             )
             patterns.append((full, region))
     return patterns
