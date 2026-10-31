@@ -2897,16 +2897,15 @@ class VideoOverlay(_Overlay):
             # Determine video source: array or file path
             if isinstance(self.source, np.ndarray):
                 original_size = (self.source.shape[2], self.source.shape[1])
-                _validate_frame_processing(original_size, self.crop, self.downsample)
+                processed_size = _validate_frame_processing(
+                    original_size, self.crop, self.downsample
+                )
                 reader: NDArray[np.uint8] | Any = self.source
                 if self.crop is not None:
                     x, y, width, height = self.crop
                     reader = reader[:, y : y + height, x : x + width]
                 if self.downsample > 1:
                     reader = _DownsampledFrames(reader, self.downsample)
-                    processed_size = reader.frame_size_px
-                else:
-                    processed_size = (reader.shape[2], reader.shape[1])
                 n_video_frames = self.source.shape[0]
             else:
                 # File path - create _VideoReader

@@ -356,6 +356,41 @@ class TestVideoPrefetching:
         # Due to timing, we just verify the cache grew
         assert info_after.currsize >= 2
 
+    def test_prefetch_decodes_each_frame_once(self, video_path_30_frames: Path):
+        """The caller and the prefetch thread never decode the same frame twice."""
+        from collections import Counter
+
+        from neurospatial._video_io import _VideoReader
+
+        reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=5)
+        decoded: Counter[int] = Counter()
+        read_frame = reader._read_frame_uncached
+
+        def counting_read(frame_idx: int) -> np.ndarray:
+            decoded[frame_idx] += 1
+            return read_frame(frame_idx)
+
+        reader._read_frame_uncached = counting_read  # type: ignore[method-assign]
+        for i in range(30):
+            _ = reader[i]
+        if reader._prefetch_task is not None:
+            reader._prefetch_task.result()
+        reader.close()
+
+        assert set(decoded) == set(range(30))
+        assert max(decoded.values()) == 1
+
+    def test_frames_match_in_any_access_order(self, video_path_30_frames: Path):
+        """In-order reads, forward skips and backward seeks give the same frames."""
+        from neurospatial._video_io import _VideoReader
+
+        with _VideoReader(video_path_30_frames, cache_size=0) as first_pass:
+            expected = [first_pass[i].copy() for i in range(30)]
+        order = [0, 1, 2, 5, 29, 3, 4, 20, 21, 10, 10, 0]
+        with _VideoReader(video_path_30_frames, cache_size=0) as reader:
+            for i in order:
+                np.testing.assert_array_equal(reader[i], expected[i])
+
     def test_prefetch_stops_at_end_of_video(self, video_path_30_frames: Path):
         """Test that prefetch doesn't try to load frames past the end."""
         from neurospatial._video_io import _VideoReader
