@@ -466,8 +466,8 @@ def as_labelled_spike_trains(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     *,
     context: str,
-) -> tuple[list[NDArray[np.float64]], NDArray[Any], bool]:
-    """Coerce population spike input and resolve one label per train.
+) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
+    """Coerce population spike input and resolve any labels it is given.
 
     Parameters
     ----------
@@ -482,11 +482,10 @@ def as_labelled_spike_trains(
     Returns
     -------
     trains : list of ndarray, each shape (n_spikes,)
-    unit_ids : ndarray, shape (n_units,)
-        ``unit_ids``, else the labels a spike group carries, else ``arange``.
-    labels_supplied : bool
-        Whether the labels came from the caller (``unit_ids`` or a spike
-        group's own labels) rather than the ``arange`` default.
+    unit_ids : ndarray, shape (n_units,), or None
+        ``unit_ids``, else the labels a spike group carries, validated. None
+        when neither supplies labels: a result record given None numbers
+        the units ``0..n_units-1`` and marks the labels generated.
 
     Raises
     ------
@@ -500,16 +499,20 @@ def as_labelled_spike_trains(
     >>> import numpy as np
     >>> from neurospatial._spikes import as_labelled_spike_trains
     >>> trains = [np.array([0.1, 0.5]), np.array([0.2])]
-    >>> _, ids, supplied = as_labelled_spike_trains(trains, None, context="demo")
-    >>> ids.tolist(), supplied
-    ([0, 1], False)
-    >>> _, ids, supplied = as_labelled_spike_trains(trains, ["a", "b"], context="demo")
-    >>> ids.tolist(), supplied
-    (['a', 'b'], True)
+    >>> _, ids = as_labelled_spike_trains(trains, None, context="demo")
+    >>> ids is None
+    True
+    >>> _, ids = as_labelled_spike_trains(trains, ["a", "b"], context="demo")
+    >>> ids.tolist()
+    ['a', 'b']
     """
     trains, input_ids = _coerce_spike_input(spike_times)
-    resolved = resolve_unit_ids(
-        unit_ids, len(trains), context=context, input_ids=input_ids
+    labels = (
+        None
+        if unit_ids is None and input_ids is None
+        else resolve_unit_ids(
+            unit_ids, len(trains), context=context, input_ids=input_ids
+        )
     )
-    require_finite_spike_times(trains, resolved)
-    return trains, resolved, unit_ids is not None or input_ids is not None
+    require_finite_spike_times(trains, labels)
+    return trains, labels

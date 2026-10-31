@@ -1017,7 +1017,7 @@ def _boundary_vector_rates(
     require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+    spike_trains, resolved_unit_ids = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
@@ -1113,7 +1113,7 @@ def _boundary_vector_rates(
         boundary_source=boundary_source,
         method=method,
         bandwidth=resolved_bandwidth,
-        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,

@@ -3549,13 +3549,11 @@ def _spatial_rate_maps(
     # own labels; a differing unit_ids= raises. A standalone unit has no label.
     if single_unit:
         spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
-        resolved_unit_ids = None
         result_unit_ids = None
     else:
-        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+        spike_times_list, result_unit_ids = as_labelled_spike_trains(
             spike_times, unit_ids, context=context
         )
-        result_unit_ids = resolved_unit_ids if labels_supplied else None
     n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays
@@ -3643,9 +3641,13 @@ def _spatial_rate_maps(
             penalty=penalty,
             rank=rank,
             pooled=pooled,
-            # Resolved labels flow in so a per-unit convergence / boundary warning
-            # names the caller's unit_ids, not bare unit-axis indices.
-            unit_ids=resolved_unit_ids,
+            # Population labels flow in so a per-unit convergence / boundary
+            # warning names unit_ids, not bare unit-axis indices.
+            unit_ids=None
+            if single_unit
+            else np.arange(n_neurons)
+            if result_unit_ids is None
+            else result_unit_ids,
             resolved_backend=resolved_backend,
             dtype=dtype,
         )

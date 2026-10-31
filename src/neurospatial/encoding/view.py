@@ -1326,8 +1326,7 @@ class _ViewSetup(NamedTuple):
     """Validated view-rate inputs and the gaze binning shared by every unit."""
 
     trains: list[NDArray[np.float64]]  # one spike-time array per unit, seconds
-    unit_ids: NDArray[Any]  # (n_units,)
-    labels_supplied: bool
+    unit_ids: NDArray[Any] | None  # (n_units,); None: number the units
     prepared: FrameBinning
     gaze_model: Literal["fixed_distance", "ray_cast"]
     view_distance: float | None
@@ -1415,12 +1414,12 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
 
     if single_unit:
         trains = [np.asarray(spike_times, dtype=np.float64)]
-        resolved_unit_ids, labels_supplied = np.arange(1), False
+        resolved_unit_ids = None
     else:
         # Canonical list-of-arrays trains and their identity labels (default
         # arange). A labelled input keeps its own labels; a differing
         # unit_ids= raises.
-        trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+        trains, resolved_unit_ids = as_labelled_spike_trains(
             spike_times, unit_ids, context=context
         )
 
@@ -1474,7 +1473,6 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     return _ViewSetup(
         trains,
         resolved_unit_ids,
-        labels_supplied,
         prepared,
         gaze_model,
         view_distance,
@@ -2199,7 +2197,7 @@ def compute_view_rates(
         view_distance=setup.view_distance,
         method=method,
         bandwidth=setup.bandwidth,
-        unit_ids=setup.unit_ids if setup.labels_supplied else None,
+        unit_ids=setup.unit_ids,
         unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=rates.n_spikes_outside_intervals,
         spike_window=setup.spike_window,

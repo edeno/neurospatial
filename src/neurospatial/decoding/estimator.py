@@ -52,20 +52,21 @@ class _FittedState(ReadOnlyArraysMixin):
     """
 
     encoding_models: NDArray[np.float64]
+    # None numbers the units 0..n-1 and marks the labels generated.
     unit_ids: NDArray[Any] | Sequence[Any] | None
-    # True when ``arange`` labels were generated for an unlabelled input; such
-    # labels never drive label-based pairing.
-    unit_ids_generated: bool
     # Environment the models are defined on; a fitted decoder keeps it.
     env: Environment
     spatial_support: NDArray[np.bool_] | None = None
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
     encoding_config: _EncodingConfig = ("diffusion_kde", None, None, None, None)
+    # True when ``arange`` labels were generated for an unlabelled input; such
+    # labels never drive label-based pairing.
+    _unit_ids_generated: bool = False
 
     def __post_init__(self) -> None:
         """Snapshot the arrays and validate the models and their labels."""
-        from neurospatial._results import read_only_copy, resolve_unit_ids
+        from neurospatial._results import read_only_copy, resolve_record_unit_ids
 
         models = read_only_copy(self.encoding_models)
         if models.ndim != 2:
@@ -75,11 +76,7 @@ class _FittedState(ReadOnlyArraysMixin):
             )
         object.__setattr__(self, "encoding_models", models)
         # One distinct label per encoding model: label pairing relies on it.
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder"),
-        )
+        resolve_record_unit_ids(self, models.shape[0], context="BayesianDecoder")
         if self.spatial_support is not None:
             object.__setattr__(
                 self, "spatial_support", read_only_copy(self.spatial_support)
@@ -387,7 +384,7 @@ warn_on_drop
     @property
     def _unit_ids_generated(self) -> bool:
         """Whether the labels were generated, so pairing stays positional."""
-        return self._fit is not None and self._fit.unit_ids_generated
+        return self._fit is not None and self._fit._unit_ids_generated
 
     @property
     def is_fitted(self) -> bool:
@@ -492,12 +489,12 @@ warn_on_drop
             _fit=_FittedState(
                 models,
                 rates.unit_ids,
-                unit_ids_generated=rates._unit_ids_generated,
                 env=rates.env,
                 spatial_support=rates.spatial_support,
                 spike_window=rates.spike_window,
                 analysis_settings=rates.analysis_settings,
                 encoding_config=config,
+                _unit_ids_generated=rates._unit_ids_generated,
             ),
         )
 
@@ -605,7 +602,6 @@ warn_on_drop
             _fit=_FittedState(
                 models.astype(dtype, copy=False),
                 unit_ids,
-                unit_ids_generated=unit_ids is None,
                 env=env,
                 spatial_support=(
                     None if spatial_support is None else np.asarray(spatial_support)
@@ -750,7 +746,7 @@ warn_on_drop
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
-        trains, resolved_ids, labels_supplied = as_labelled_spike_trains(
+        trains, labels = as_labelled_spike_trains(
             spike_times, unit_ids, context="BayesianDecoder.fit"
         )
 
@@ -782,8 +778,7 @@ warn_on_drop
             self,
             _fit=_FittedState(
                 firing_rates,
-                resolved_ids,
-                unit_ids_generated=not labels_supplied,
+                labels,
                 env=self.env,
                 spatial_support=rates_result.spatial_support,
                 spike_window=resolved_spike_window,

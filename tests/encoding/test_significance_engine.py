@@ -113,3 +113,18 @@ def test_shuffle_result_owns_a_read_only_null():
         result.null_scores[0] = 99.0
     null[0, 0, 0] = 99.0
     assert result.null_scores[0] == 1.0
+
+
+def test_shuffle_inputs_name_a_non_finite_spike_by_its_unit_label():
+    from neurospatial.encoding._significance import shuffle_inputs
+
+    trains = [np.array([1.0, 2.0]), np.array([np.nan])]
+    with pytest.raises(ValueError, match="spike_times for unit 'b'"):
+        shuffle_inputs(
+            trains,
+            np.arange(10.0),
+            unit_ids=["a", "b"],
+            epochs=None,
+            spike_window=None,
+            call="demo",
+        )

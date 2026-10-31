@@ -14,8 +14,8 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
 from neurospatial._random import _entropy, _stream
-from neurospatial._results import plain_value, resolve_unit_ids
-from neurospatial._spikes import _as_spike_trains_with_ids
+from neurospatial._results import plain_value
+from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import (
@@ -102,14 +102,11 @@ def shuffle_inputs(
     -------
     ShuffleInputs
     """
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
+    trains, labels = as_labelled_spike_trains(spike_times, unit_ids, context=call)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     copied = tuple(np.array(x, dtype=np.float64, copy=True) for x in copies)
-    ids = np.array(
-        resolve_unit_ids(unit_ids, len(trains), input_ids=input_ids, context=call),
-        copy=True,
-    )
+    ids = np.arange(len(trains)) if labels is None else np.array(labels, copy=True)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     return ShuffleInputs(
         trains, times, copied, ids, resolved_epochs, resolved_spike_window

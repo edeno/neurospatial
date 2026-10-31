@@ -2073,7 +2073,7 @@ class SpikeRasterOverlay(_Overlay):
         """Check the spikes, the order and the labels."""
         from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, ids, _ = as_labelled_spike_trains(
+        trains, ids = as_labelled_spike_trains(
             self.spike_times,
             cast("Any", self.unit_ids),
             context="SpikeRasterOverlay",
@@ -2094,6 +2094,8 @@ class SpikeRasterOverlay(_Overlay):
                 "row of the raster is one unit. Fix: pass a permutation, such "
                 "as np.argsort of each unit's place-field peak."
             )
+        if ids is None:
+            ids = np.arange(len(trains))
         self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 

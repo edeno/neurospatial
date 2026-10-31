@@ -2851,12 +2851,12 @@ def _directional_rates(
 
     if single_unit:
         spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
-        resolved_unit_ids, labels_supplied = None, False
+        resolved_unit_ids = None
     else:
         # Normalize spike times to canonical list-of-arrays format and resolve
         # the per-unit identity labels (defaults to arange). A labelled input
         # keeps its own labels; a differing unit_ids= raises.
-        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+        spike_times_list, resolved_unit_ids = as_labelled_spike_trains(
             spike_times, unit_ids, context=context
         )
 
@@ -2912,7 +2912,7 @@ def _directional_rates(
         bin_size=counts.bin_size,
         bandwidth=counts.bandwidth,
         spike_counts=counts.spike_counts,
-        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,

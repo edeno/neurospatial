@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import fields
 from types import MappingProxyType
-from typing import Any, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -529,20 +529,23 @@ def resolve_record_unit_ids(
     *,
     context: str,
     input_ids: NDArray[Any] | Sequence[Any] | None = None,
+    label_field: Literal["unit_ids", "unit_id"] = "unit_ids",
 ) -> None:
-    """Resolve a frozen record's ``unit_ids`` field in place.
+    """Resolve a frozen record's unit labels in place.
 
     The one rule for generated labels: when neither the caller nor the input
-    (``input_ids``) supplies labels, the record is numbered ``0..n_units-1`` and its ``_unit_ids_generated``
-    flag is set. Generated labels are row positions, not identities the
-    caller supplied, so they pair units by position (for example with a
-    decoder's spike input) and the spike-input adapter does not carry them
-    into a later call as labels. ``dataclasses.replace`` passes the flag on.
+    (``input_ids``) supplies labels, the record's ``_unit_ids_generated``
+    flag is set, and a population record is numbered ``0..n_units-1``.
+    Generated labels are row positions, not identities the caller supplied,
+    so they pair units by position (for example with a decoder's spike
+    input) and the spike-input adapter does not carry them into a later call
+    as labels. ``dataclasses.replace`` passes the flag on.
 
     Parameters
     ----------
     record : dataclass instance
-        A frozen record with ``unit_ids`` and ``_unit_ids_generated`` fields.
+        A frozen record with a ``label_field`` field and a
+        ``_unit_ids_generated`` field.
     n_units : int
         Number of units the labels must describe.
     context : str
@@ -550,17 +553,22 @@ def resolve_record_unit_ids(
     input_ids : array-like, optional
         Labels the input itself carries, such as a ``TsGroup``'s index; see
         :func:`resolve_unit_ids`.
+    label_field : {"unit_ids", "unit_id"}, default="unit_ids"
+        ``"unit_ids"`` for a population record, whose labels are resolved by
+        :func:`resolve_unit_ids`; ``"unit_id"`` for a single-unit record,
+        whose label is kept as given (None: no identity).
 
     Raises
     ------
     ValueError
         As :func:`resolve_unit_ids`.
     """
-    given = record.unit_ids
+    given = getattr(record, label_field)
     if given is None and input_ids is None:
         object.__setattr__(record, "_unit_ids_generated", True)
-    labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
-    object.__setattr__(record, "unit_ids", labels)
+    if label_field == "unit_ids":
+        labels = resolve_unit_ids(given, n_units, context=context, input_ids=input_ids)
+        object.__setattr__(record, "unit_ids", labels)
 
 
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:

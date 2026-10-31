@@ -420,13 +420,13 @@ def restrict_spike_trains(
     # ``(n, 2)`` array via ``_mask_in_intervals`` -- avoiding the per-unit
     # re-normalization that ``in_epochs`` would repeat on every call.
     intervals = as_intervals(epochs, name="epochs")
-    trains, unit_ids, labelled = as_labelled_spike_trains(
+    trains, unit_ids = as_labelled_spike_trains(
         spike_times, None, context="restrict_spike_trains"
     )
     kept = [t[_mask_in_intervals(t, intervals, closed=closed)] for t in trains]
     return SpikeTrains(
         kept,
-        unit_ids=unit_ids if labelled else None,
+        unit_ids=unit_ids,
         unit_table=spike_unit_table(spike_times),
     )
 
