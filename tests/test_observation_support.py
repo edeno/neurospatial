@@ -99,9 +99,16 @@ def test_bridged_gaps_longer_than_max_gap_warn_once():
     assert not support.interval_mask.any()
 
 
-def test_no_observed_sample_warns_that_nothing_is_usable():
-    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite"):
-        _support(np.arange(5) * 0.1, np.full(5, np.nan))
+@pytest.mark.parametrize("observed", [[], [2]], ids=["none", "one"])
+def test_no_observed_interval_warns_that_samples_are_missing(observed):
+    """Missing samples, not the gates, leave nothing usable: say so."""
+    x = np.full(5, np.nan)
+    x[observed] = 1.0
+    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite") as record:
+        _support(np.arange(5) * 0.1, x)
+    message = str(record[0].message)
+    assert f"{len(observed)} of 5 samples are observed" in message
+    assert "max_gap" not in message
 
 
 @pytest.mark.parametrize("bad", [np.inf, -np.inf])

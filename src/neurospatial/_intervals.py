@@ -992,7 +992,8 @@ def warn_excluded_intervals(
 
     - When every interval is excluded, the message names the active gates and
       how to fix each one, so an empty result is not mistaken for a
-      measurement.
+      measurement. When fewer than two samples are observed at all, it names
+      the missing samples instead, since no gate is to blame.
     - Otherwise, when most sampling intervals exceed ``max_gap``, they count
       as recording gaps. That usually means ``times`` are not in seconds (for
       example milliseconds), and the message says so.
@@ -1072,6 +1073,20 @@ def warn_excluded_intervals(
             )
         else:
             return
+        warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
+        return
+
+    if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
+        # No interval has an observed sample on each side: the missing samples
+        # leave nothing to gate, whatever the gates are.
+        n_observed = int(np.count_nonzero(sample_valid))
+        message = (
+            "Interval filtering excluded ALL trajectory intervals: only "
+            f"{n_observed} of {times.size} samples are observed, and an interval "
+            f"needs an observed sample on each side, so {result}. Fix: check "
+            "that the samples are finite, observed values (NaN marks a missing "
+            f"sample). {suppress_hint}"
+        )
         warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
         return
 
