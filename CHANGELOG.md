@@ -173,6 +173,12 @@
   environment equals `env.smooth(field, bandwidth=bandwidth, mode="average")`.
   Use a `bandwidth` of at least the larger bin spacing. Infinite field values
   are refused, as with `method="nearest"`.
+- The directional tuning test's heading correlation time no longer builds a
+  time grid over breaks between recordings. Its grid spanned the whole
+  elapsed time at the sampling step, so two sessions ten years apart in one
+  call needed about 10^10 grid points; it now covers the analyzed time,
+  cutting each break to a length that changes no lag the estimate reads,
+  and gives the same value.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

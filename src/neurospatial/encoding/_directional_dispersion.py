@@ -68,36 +68,104 @@ def heading_correlation_time(
     if not valid.any():
         return step
     intervals = np.flatnonzero(valid)
-    start, stop = times[intervals[0]], times[intervals[-1] + 1]
-    midpoints = start + (np.arange(int(np.ceil((stop - start) / step))) + 0.5) * step
-    midpoints = midpoints[midpoints < stop]
-    # The interval that holds each grid point, and whether it is analyzed.
-    interval = np.searchsorted(times, midpoints, side="right") - 1
-    on_support = valid[interval]
     unit = np.stack([np.cos(bin_centers), np.sin(bin_centers)], axis=1)
     durations = np.diff(times)[intervals]
     mean = durations @ unit[prepared.frame_bins[intervals]] / durations.sum()
-    bins = np.where(on_support, prepared.frame_bins[interval], 0)
-    centered = (unit[bins] - mean) * on_support[:, None]  # (n_grid, 2)
+    # Grid point k is the midpoint start + (k + 0.5) * step. Only the points
+    # in analyzed runs are built; the stretches between runs hold no heading.
+    start = times[intervals[0]]
+    runs = _analyzed_grid_runs(times, valid, start, step)
+    k = np.concatenate([np.arange(lo, hi) for lo, hi in runs])
+    interval = np.searchsorted(times, start + (k + 0.5) * step, side="right") - 1
+    analyzed = unit[prepared.frame_bins[interval]] - mean  # (n_analyzed, 2)
+    # A lag-l product pairs grid points l apart, so cutting a stretch between
+    # runs to max_lag + 1 points changes no lag up to max_lag. The estimate
+    # reads lags up to the first nonpositive correlation; while that lag is
+    # past max_lag and a stretch was cut, max_lag doubles.
+    gaps = runs[1:, 0] - runs[:-1, 1]
+    max_lag = _FIRST_MAX_LAG
+    while True:
+        on_support, positions = _cut_grid(runs, max_lag)
+        centered = np.zeros((on_support.size, 2))
+        centered[positions] = analyzed
+        n = len(centered)
+        n_fft = next_fast_len(2 * n - 1, real=True)
+        spectrum = rfft(centered, n_fft, axis=0)
+        lagged = irfft((spectrum * spectrum.conj()).real.sum(axis=1), n_fft)[:n]
+        if lagged[0] <= 0:
+            return step
+        if on_support.all():
+            n_pairs = np.arange(n, 0, -1, dtype=np.float64)
+        else:
+            weights = rfft(on_support.astype(np.float64), n_fft)
+            n_pairs = irfft((weights * weights.conj()).real, n_fft)[:n]
+        # Lags with no analyzed pair carry no information; treat them as zero.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            correlation = np.where(n_pairs > 0.5, lagged / n_pairs, 0.0)
+        correlation = correlation / correlation[0]
+        nonpositive = np.flatnonzero(correlation[1:] <= 0)
+        end = int(nonpositive[0]) + 1 if nonpositive.size else n
+        if end <= max_lag or not np.any(gaps > max_lag + 1):
+            return step * (1.0 + 2.0 * float(correlation[1:end].sum()))
+        max_lag *= 2
 
-    n = len(centered)
-    n_fft = next_fast_len(2 * n - 1, real=True)
-    spectrum = rfft(centered, n_fft, axis=0)
-    lagged = irfft((spectrum * spectrum.conj()).real.sum(axis=1), n_fft)[:n]
-    if lagged[0] <= 0:
-        return step
-    if on_support.all():
-        n_pairs = np.arange(n, 0, -1, dtype=np.float64)
-    else:
-        weights = rfft(on_support.astype(np.float64), n_fft)
-        n_pairs = irfft((weights * weights.conj()).real, n_fft)[:n]
-    # Lags with no analyzed pair carry no information; treat them as zero.
-    with np.errstate(divide="ignore", invalid="ignore"):
-        correlation = np.where(n_pairs > 0.5, lagged / n_pairs, 0.0)
-    correlation = correlation / correlation[0]
-    nonpositive = np.flatnonzero(correlation[1:] <= 0)
-    end = int(nonpositive[0]) + 1 if nonpositive.size else n
-    return step * (1.0 + 2.0 * float(correlation[1:end].sum()))
+
+# Grid points kept across a stretch between analyzed runs, at first: over four
+# minutes at 60 Hz, far beyond the seconds a heading stays correlated.
+_FIRST_MAX_LAG = 2**14
+
+
+def _analyzed_grid_runs(
+    times: NDArray[np.float64],
+    valid: NDArray[np.bool_],
+    start: float,
+    step: float,
+) -> NDArray[np.int64]:
+    """Grid points of each run of analyzed intervals, shape (n_runs, 2), half-open.
+
+    Grid point ``k`` is the midpoint ``start + (k + 0.5) * step``. A run of
+    analyzed intervals covering ``[t0, t1)`` holds the points whose midpoints
+    lie in it, found with the same arithmetic as the midpoints themselves.
+    """
+    from neurospatial._intervals import run_sample_bounds
+
+    bounds = run_sample_bounds(valid)
+    ranges = np.zeros((len(bounds), 2), dtype=np.int64)
+    for row, (first, last) in enumerate(bounds):
+        t0, t1 = times[first], times[last]
+        lo = max(int(np.floor((t0 - start) / step - 0.5)) - 1, 0)
+        hi = int(np.ceil((t1 - start) / step - 0.5)) + 1
+        k = np.arange(lo, hi)
+        midpoints = start + (k + 0.5) * step
+        inside = k[(midpoints >= t0) & (midpoints < t1)]
+        ranges[row] = (inside[0], inside[-1] + 1) if inside.size else (lo, lo)
+    return ranges
+
+
+def _cut_grid(
+    runs: NDArray[np.int64], max_lag: int
+) -> tuple[NDArray[np.bool_], NDArray[np.int64]]:
+    """The grid with each stretch between runs cut to at most max_lag + 1 points.
+
+    Returns
+    -------
+    on_support : ndarray of bool, shape (n_points,)
+        Whether each point of the cut grid is analyzed.
+    positions : ndarray of int64, shape (n_analyzed,)
+        Index in the cut grid of each analyzed point, run by run.
+    """
+    lengths = runs[:, 1] - runs[:, 0]
+    gaps = np.minimum(runs[1:, 0] - runs[:-1, 1], max_lag + 1)
+    offsets = np.concatenate([[0], np.cumsum(lengths[:-1] + gaps)])
+    on_support = np.zeros(int(offsets[-1] + lengths[-1]), dtype=bool)
+    positions = np.concatenate(
+        [
+            offset + np.arange(length)
+            for offset, length in zip(offsets, lengths, strict=True)
+        ]
+    ).astype(np.int64)
+    on_support[positions] = True
+    return on_support, positions
 
 
 def cosine_model_rates(
