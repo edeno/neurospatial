@@ -273,7 +273,9 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 # the package loads. This keeps the top-level namespace cheap to import while
 # letting autocomplete and ``dir(neurospatial)`` reveal every domain.
 _LAZY_SUBMODULES: tuple[str, ...] = (
+    "environment",
     "arena",
+    "binning",
     "encoding",
     "decoding",
     "replay",
@@ -289,6 +291,8 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
     "annotation",
     "animation",
     "io",
+    "extensions",
+    "testing",
 )
 
 
@@ -355,12 +359,15 @@ __all__ = [
     "annotation",
     "arena",
     "behavior",
+    "binning",
     "compute_spatial_rate",
     "compute_spatial_rates",
     "decode_position",
     "decoding",
     "encoding",
+    "environment",
     "events",
+    "extensions",
     "io",
     "landmarks",
     "layout",
@@ -371,4 +378,5 @@ __all__ = [
     "replay",
     "simulation",
     "stats",
+    "testing",
 ]
