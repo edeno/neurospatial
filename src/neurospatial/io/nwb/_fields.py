@@ -29,7 +29,7 @@ from neurospatial.io.nwb._core import (
 )
 
 if TYPE_CHECKING:
-    from hdmf.common import DynamicTable
+    from hdmf.common import DynamicTable, DynamicTableRegion
     from pynwb import NWBFile
 
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -49,6 +49,9 @@ SPATIAL_RATES_SCHEMA_VERSION: str = "3.0"
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
 COL_FIRING_RATE: str = "firing_rate"
+# Link from each row to its row in nwbfile.units, written when every unit_id is
+# a units-table id.
+COL_UNITS: str = "units"
 # Per-unit GAM (method="glm") columns; absent for ratio methods.
 COL_DEVIANCE: str = "deviance"
 COL_COEFFICIENTS: str = "coefficients"
@@ -100,6 +103,14 @@ def write_spatial_rates(
     (it is shared across units) as a companion ``DynamicTable`` named
     ``f"{name}_occupancy"`` with one row per bin and an ``occupancy`` column in
     seconds. It is not a ``TimeSeries``: its axis is space, not time.
+
+    When the file has a units table (``nwbfile.units``) and every ``unit_id``
+    is one of its ids, the rates also get a ``units`` column, a
+    ``DynamicTableRegion`` pointing each row at its unit, so NWB tools can
+    join a rate map to that unit's spike times, electrodes and quality
+    metrics. Otherwise (no units table, generated ids, or any id missing from
+    it) only ``unit_id`` is written. :func:`read_spatial_rates` returns the
+    same result either way.
 
     For ``method="glm"`` results the GAM diagnostics are persisted alongside the
     rates: the scalars ``penalty`` / ``rank`` / ``n_iter`` / ``converged`` /
@@ -162,8 +173,9 @@ def write_spatial_rates(
         environment record; if ``name``, its occupancy companion and
         ``environment_name`` are not three distinct names, or ``name`` or the
         companion is an environment record; if a ``unit_table`` column is
-        named ``unit_id`` or ``firing_rate`` (reserved -- plus ``deviance`` /
-        ``coefficients`` for a glm result, whose GAM columns share the table);
+        named ``unit_id``, ``firing_rate`` or ``units`` (reserved -- plus
+        ``deviance`` / ``coefficients`` for a glm result, whose GAM columns
+        share the table);
         or if a companion add fails after a partial write (the message says
         what could not be cleaned up).
     NotImplementedError
@@ -220,14 +232,15 @@ def write_spatial_rates(
     # Shapes need no check here: SpatialRatesResult refuses firing_rates or
     # occupancy that do not match its env's bins when it is constructed.
 
-    # `unit_id` / `firing_rate` are reserved for the table's own columns; a
-    # unit_table column with either name would collide inside the DynamicTable.
+    # `unit_id` / `firing_rate` / `units` are reserved for the table's own
+    # columns; a unit_table column with one of these names would collide inside
+    # the DynamicTable.
     # A glm result always writes `deviance` / `coefficients`, so those are always
     # reserved; the per-unit-lambda columns (`penalty` / `reml_objective` /
     # `reml_at_boundary` / `penalty_selected_by_reml`) are written -- and thus
     # reserved -- only for a pooled=False per-unit result. Raise a clear
     # param-named error instead of a low-level hdmf error.
-    reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE)
+    reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE, COL_UNITS)
     if is_glm:
         reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
     if is_per_unit:
@@ -409,6 +422,7 @@ def write_spatial_rates(
                 ),
                 data=firing_rates,
             ),
+            *_units_link(nwbfile, unit_ids, generated=result._unit_ids_generated),
             *extra_columns,
             *gam_columns,
         ],
@@ -471,6 +485,34 @@ def write_spatial_rates(
         n_units,
         env.n_bins,
     )
+
+
+def _units_link(
+    nwbfile: NWBFile, unit_ids: np.ndarray, *, generated: bool
+) -> list[DynamicTableRegion]:
+    """A ``units`` column pointing each rate map at its ``nwbfile.units`` row.
+
+    Written only when the file has a units table and every unit_id is one of
+    its ids; generated ids (``0..n-1`` positions) are not identities and never
+    link. Otherwise the rates keep ``unit_id`` alone.
+    """
+    from hdmf.common import DynamicTableRegion
+
+    units = nwbfile.units
+    if units is None or generated or unit_ids.dtype.kind not in "iu":
+        return []
+    row_of = {int(unit_id): row for row, unit_id in enumerate(units.id[:])}
+    rows = [row_of.get(int(unit_id)) for unit_id in unit_ids]
+    if any(row is None for row in rows):
+        return []
+    return [
+        DynamicTableRegion(
+            name=COL_UNITS,
+            description="Row of each unit in the NWB units table.",
+            data=rows,
+            table=units,
+        )
+    ]
 
 
 def _plan_spatial_rates_write(

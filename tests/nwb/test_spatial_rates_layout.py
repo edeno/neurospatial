@@ -280,3 +280,86 @@ def test_missing_rates_list_the_saved_rates(empty_nwb, sample_environment):
     write_spatial_rates(empty_nwb, _rates(sample_environment), name="ca1")
     with pytest.raises(KeyError, match=r"Saved spatial rates: \['ca1'\]"):
         read_spatial_rates(empty_nwb, name="ca3")
+
+
+def _add_units(nwbfile, ids):
+    for unit_id in ids:
+        nwbfile.add_unit(id=unit_id, spike_times=[0.1 * unit_id, 1.0 + unit_id])
+
+
+@pytest.mark.parametrize("on_disk", [False, True])
+def test_rates_link_each_row_to_its_units_table_row(
+    empty_nwb, sample_environment, tmp_path, on_disk
+):
+    """With matching ids, a DynamicTableRegion joins rates to nwbfile.units."""
+    from hdmf.common import DynamicTableRegion
+
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    _add_units(empty_nwb, [3, 7, 11, 20])
+    rates = _rates(sample_environment, unit_ids=[11, 3, 20])
+    write_spatial_rates(empty_nwb, rates)
+
+    def check(nwbfile):
+        table = nwbfile.analysis["spatial_rates"]
+        link = table["units"]
+        assert isinstance(link, DynamicTableRegion)
+        assert link.table is nwbfile.units
+        np.testing.assert_array_equal(link.data[:], [2, 0, 3])
+        unit_table_ids = np.asarray(nwbfile.units.id[:])
+        np.testing.assert_array_equal(unit_table_ids[link.data[:]], [11, 3, 20])
+        back = read_spatial_rates(nwbfile)
+        np.testing.assert_array_equal(back.unit_ids, [11, 3, 20])
+        np.testing.assert_array_equal(back.firing_rates, rates.firing_rates)
+        assert back.unit_table is None
+
+    if not on_disk:
+        check(empty_nwb)
+        return
+    with _write_and_reopen(empty_nwb, tmp_path / "linked.nwb") as io:
+        check(io.read())
+
+
+@pytest.mark.parametrize(
+    ("units", "unit_ids"),
+    [
+        (None, [0, 1, 2]),  # no units table
+        ([0, 1], [0, 1, 2]),  # id 2 is not a unit of the file
+        ([0, 1, 2], None),  # generated ids are positions, not identities
+        ([0, 1, 2], ["a", "b", "c"]),  # labels, not table ids
+    ],
+    ids=["no_units_table", "mismatch", "generated", "labels"],
+)
+def test_rates_without_matching_units_keep_unit_id_only(
+    empty_nwb, sample_environment, units, unit_ids
+):
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    if units is not None:
+        _add_units(empty_nwb, units)
+    rates = _rates(sample_environment, unit_ids=unit_ids)
+    write_spatial_rates(empty_nwb, rates)
+
+    assert "units" not in empty_nwb.analysis["spatial_rates"].colnames
+    back = read_spatial_rates(empty_nwb)
+    np.testing.assert_array_equal(back.unit_ids, rates.unit_ids)
+    assert back._unit_ids_generated == (unit_ids is None)
+
+
+def test_unit_table_column_named_units_is_reserved(empty_nwb, sample_environment):
+    import pandas as pd
+
+    from neurospatial.encoding.spatial import SpatialRatesResult
+    from neurospatial.io.nwb import write_spatial_rates
+
+    rates = _rates(sample_environment)
+    rates = SpatialRatesResult(
+        firing_rates=rates.firing_rates,
+        occupancy=rates.occupancy,
+        env=sample_environment,
+        method="diffusion_kde",
+        bandwidth=5.0,
+        unit_table=pd.DataFrame({"units": ["CA1", "CA1", "CA3"]}),
+    )
+    with pytest.raises(ValueError, match=r"reserved column name\(s\) \['units'\]"):
+        write_spatial_rates(empty_nwb, rates)
