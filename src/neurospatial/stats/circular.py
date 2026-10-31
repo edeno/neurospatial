@@ -229,13 +229,35 @@ def _mean_vector(
         if len(angles) == 0:
             return np.nan, np.nan
         return float(np.mean(np.cos(angles))), float(np.mean(np.sin(angles)))
-    total = np.sum(weights)
-    if total == 0:
-        return np.nan, np.nan
-    normalized = weights / total
+    mean_cos, mean_sin = _weighted_mean_vectors(angles, weights)
+    return float(mean_cos), float(mean_sin)
+
+
+def _weighted_mean_vectors(
+    angles: NDArray[np.float64], weights: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Weighted means of (cos, sin) of ``angles``, one per row of ``weights``.
+
+    Parameters
+    ----------
+    angles : ndarray of shape (n,)
+        Angles in radians, without NaN.
+    weights : ndarray of shape (..., n)
+        Non-negative weights; each row is reduced on its own, with the same
+        arithmetic for one row or many.
+
+    Returns
+    -------
+    mean_cos, mean_sin : ndarray of shape (...)
+        NaN where a row's weights sum to zero.
+    """
+    total = np.sum(weights, axis=-1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        normalized = np.where(total > 0, weights / total, np.nan)
     return (
-        float(np.sum(normalized * np.cos(angles))),
-        float(np.sum(normalized * np.sin(angles))),
+        np.sum(normalized * np.cos(angles), axis=-1),
+        np.sum(normalized * np.sin(angles), axis=-1),
     )
 
 

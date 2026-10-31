@@ -280,73 +280,53 @@ def _check_dispersion(result: _DirectionalRateMixin) -> None:
     object.__setattr__(result, "dispersion_dof", int(dof))
 
 
-def _directional_preferred_direction(rates: NDArray, centers: NDArray) -> float:
-    """Shared circular metric with the existing valid-bin/count rules."""
-    from neurospatial.stats.circular import circular_mean
-
-    rates = np.asarray(rates, dtype=np.float64)
-    centers = np.asarray(centers, dtype=np.float64)
-
-    # Mask out NaN values (from unvisited bins) before computing circular mean
-    valid_mask = ~np.isnan(rates)
-    if not np.any(valid_mask):
-        return float(np.nan)
-
-    return circular_mean(centers[valid_mask], weights=rates[valid_mask])
-
-
-def _directional_mean_vector_length(rates: NDArray, centers: NDArray) -> float:
-    """Shared circular metric with the existing valid-bin/count rules."""
-    from neurospatial.stats.circular import mean_resultant_length
-
-    rates = np.asarray(rates, dtype=np.float64)
-    centers = np.asarray(centers, dtype=np.float64)
-
-    # Mask out NaN values (from unvisited bins) before computing MVL
-    valid_mask = ~np.isnan(rates)
-    if not np.any(valid_mask):
-        return float(np.nan)
-
-    return mean_resultant_length(centers[valid_mask], weights=rates[valid_mask])
-
-
 def _resultant(
     rates: ArrayLike, centers: ArrayLike
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
-    """Rate-weighted mean cosine and sine of each unit's tuning curve.
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Rate-weighted mean cosine and sine of each tuning curve.
 
-    Non-finite (unvisited) bins are dropped before the reduction, not
-    propagated, matching the single-unit circular statistics.
+    Unvisited (non-finite) bins carry no weight, as the single-unit circular
+    statistics drop them. One unit and many share one reduction, so their
+    metrics agree exactly.
 
     Parameters
     ----------
-    rates : array-like of shape (n_units, n_bins)
+    rates : array-like of shape (..., n_bins)
         Firing rates; NaN at unvisited bins.
     centers : array-like of shape (n_bins,)
         Bin centers in radians.
 
     Returns
     -------
-    mean_cos, mean_sin : ndarray of shape (n_units,)
-        Weighted means of ``cos(centers)`` and ``sin(centers)``.
-    valid : ndarray of bool, shape (n_units,)
-        False for a unit with no positive finite rate; its means are
-        meaningless.
+    mean_cos, mean_sin : ndarray of shape (...)
+        NaN for a curve with no positive finite rate.
     """
+    from neurospatial.stats.circular import _weighted_mean_vectors
+
     rates = np.asarray(rates, dtype=np.float64)
-    centers = np.asarray(centers, dtype=np.float64)
-    finite_rates = np.where(np.isfinite(rates), rates, 0.0)
-    weight_sums = finite_rates.sum(axis=1)
-    valid = weight_sums > 0
-    weights_norm = finite_rates / np.where(valid, weight_sums, 1.0)[:, np.newaxis]
-    return weights_norm @ np.cos(centers), weights_norm @ np.sin(centers), valid
+    return _weighted_mean_vectors(
+        np.asarray(centers, dtype=np.float64),
+        np.where(np.isfinite(rates), rates, 0.0),
+    )
+
+
+def _preferred_directions(rates: ArrayLike, centers: ArrayLike) -> NDArray[np.float64]:
+    """Circular mean direction of each tuning curve (..., n_bins), in radians.
+
+    NaN where the resultant is below rounding error and so has no direction,
+    as :func:`neurospatial.stats.circular_mean`.
+    """
+    mean_cos, mean_sin = _resultant(rates, centers)
+    directions: NDArray[np.float64] = np.where(
+        np.hypot(mean_cos, mean_sin) > 1e-12, np.arctan2(mean_sin, mean_cos), np.nan
+    )
+    return directions
 
 
 def _mean_vector_lengths(rates: ArrayLike, centers: ArrayLike) -> NDArray[np.float64]:
-    """Mean vector length of each row of ``rates`` (n_units, n_bins); NaN if empty."""
-    mean_cos, mean_sin, valid = _resultant(rates, centers)
+    """Mean vector length of each tuning curve (..., n_bins); NaN if empty."""
+    mean_cos, mean_sin = _resultant(rates, centers)
     mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
-    mvls[~valid] = np.nan
     return mvls
 
 
@@ -582,15 +562,7 @@ def _head_direction_classify(
     """The shared MVL and occupancy-corrected tuning-test screen."""
     inputs = _tuning_inputs(result)
     _warn_if_headings_incomplete(inputs["occupancy"])
-    # The scalar helper, not _mean_vector_lengths: the screen must agree with
-    # mean_vector_length() exactly at an inclusive threshold, and the two
-    # reductions can differ in the last bit.
-    mvls = np.array(
-        [
-            _directional_mean_vector_length(row, inputs["centers"])
-            for row in inputs["rates"]
-        ]
-    )
+    mvls = _mean_vector_lengths(inputs["rates"], inputs["centers"])
     pvalues = _tuning_pvalues(**inputs)
     # NaN MVLs or p-values compare False, so an untestable unit is not flagged.
     return np.asarray((mvls >= min_mvl) & (pvalues < alpha), dtype=np.bool_)
@@ -609,10 +581,8 @@ def _directional_summary_frame(
         inputs["centers"],
     )
     dispersion = inputs["dispersion"]
-    directions = np.array(
-        [_directional_preferred_direction(row, centers) for row in rates]
-    )
-    mvls = np.array([_directional_mean_vector_length(row, centers) for row in rates])
+    directions = _preferred_directions(rates, centers)
+    mvls = _mean_vector_lengths(rates, centers)
     widths = np.array(
         [_directional_tuning_width(row, result.bin_size) for row in rates]
     )
@@ -1009,8 +979,8 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         This is a more robust measure than simply taking the bin with maximum
         firing rate, as it accounts for the overall shape of the tuning curve.
 
-        For neurons with uniform firing (no directional preference), the result
-        may not be meaningful, but a value will still be returned.
+        NaN for a neuron without a mean direction: uniform firing, no
+        positive finite rate, or rates that cancel around the circle.
 
         Examples
         --------
@@ -1037,10 +1007,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         mean_vector_length : Strength of directional tuning
         neurospatial.stats.circular.circular_mean : Underlying circular mean function
         """
-        return _directional_preferred_direction(
-            np.asarray(self.firing_rate, dtype=np.float64),
-            np.asarray(self.bin_centers, dtype=np.float64),
-        )
+        return float(_preferred_directions(self.firing_rate, self.bin_centers))
 
     def preferred_direction_deg(self) -> float:
         """Compute the preferred direction in degrees.
@@ -1175,10 +1142,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         tuning_pvalue : Occupancy-corrected test of directional tuning
         neurospatial.stats.circular.mean_resultant_length : Underlying function
         """
-        return _directional_mean_vector_length(
-            np.asarray(self.firing_rate, dtype=np.float64),
-            np.asarray(self.bin_centers, dtype=np.float64),
-        )
+        return float(_mean_vector_lengths(self.firing_rate, self.bin_centers))
 
     def tuning_width(self) -> float:
         """Compute the tuning width (half-width at half-maximum) in radians.
@@ -1881,7 +1845,8 @@ class DirectionalRatesResult(
         -------
         numpy.ndarray
             Array of shape (n_neurons,) with preferred directions in radians,
-            range [-π, π].
+            range [-π, π]; NaN for a neuron without a mean direction, as
+            :meth:`DirectionalRateResult.preferred_direction`.
 
         Examples
         --------
@@ -1905,10 +1870,7 @@ class DirectionalRatesResult(
         --------
         DirectionalRateResult.preferred_direction : Single-neuron method
         """
-        mean_cos, mean_sin, valid = _resultant(self.firing_rates, self.bin_centers)
-        pref_dirs: NDArray[np.float64] = np.arctan2(mean_sin, mean_cos)
-        pref_dirs[~valid] = np.nan
-        return pref_dirs
+        return _preferred_directions(self.firing_rates, self.bin_centers)
 
     def mean_vector_lengths(self) -> NDArray[np.float64]:
         """Compute mean vector lengths for all neurons.

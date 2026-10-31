@@ -41,6 +41,11 @@
   integer, as the stats generators do, instead of yielding nothing.
 - NaN-dropped warnings from the circular statistics point at the calling
   line, and weight errors name the `weights` argument.
+- `DirectionalRatesResult.preferred_directions()` returns NaN for a unit
+  without a mean direction (for example flat tuning), as
+  `preferred_direction()` already did, instead of an arbitrary angle. One-unit
+  and many-unit directional metrics now share one computation and agree
+  exactly (they differed in the last bit).
 
 **Performance**
 

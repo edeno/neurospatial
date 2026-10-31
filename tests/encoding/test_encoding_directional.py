@@ -1941,7 +1941,7 @@ class TestDirectionalRatesResultPreferredDirections:
         pref_dirs = result.preferred_directions()
 
         for i, single in enumerate(result):
-            np.testing.assert_allclose(pref_dirs[i], single.preferred_direction())
+            assert pref_dirs[i] == single.preferred_direction()
 
     def test_preferred_directions_in_valid_range(
         self,
@@ -2033,7 +2033,7 @@ class TestDirectionalRatesResultMeanVectorLengths:
         mvls = result.mean_vector_lengths()
 
         for i, single in enumerate(result):
-            np.testing.assert_allclose(mvls[i], single.mean_vector_length())
+            assert mvls[i] == single.mean_vector_length()
 
     def test_mean_vector_lengths_in_valid_range(
         self,
@@ -4513,3 +4513,27 @@ def test_smoothed_tuning_is_missing_at_unvisited_headings(population):
     visited = np.asarray(result.occupancy) > 0
     assert not visited.all()
     np.testing.assert_array_equal(np.isfinite(rate), visited)
+
+
+def test_unit_and_population_circular_metrics_agree_exactly():
+    """Unvisited bins and a flat curve give the same values one unit at a time."""
+    from neurospatial.encoding.directional import DirectionalRatesResult
+
+    rng = np.random.default_rng(0)
+    centers = np.linspace(-np.pi, np.pi, 60, endpoint=False)
+    rates = rng.gamma(2.0, 2.0, (40, 60)) * np.exp(np.cos(centers - 1.0))
+    rates[rng.random(rates.shape) < 0.1] = np.nan  # unvisited headings
+    rates[0] = 1.0  # flat: no preferred direction
+    result = DirectionalRatesResult(
+        firing_rates=rates,
+        occupancy=np.full(60, 0.5),
+        bin_centers=centers,
+        bin_size=2 * np.pi / 60,
+        bandwidth=None,
+    )
+    directions = result.preferred_directions()
+    lengths = result.mean_vector_lengths()
+    assert np.isnan(directions[0])
+    for i, single in enumerate(result):
+        assert_array_equal(directions[i], single.preferred_direction())
+        assert lengths[i] == single.mean_vector_length()
