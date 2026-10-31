@@ -142,13 +142,23 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
                 if argument is None
                 else f"{argument}={name!r} was not found; region names must be strings."
             )
-            suggested = available[0] if available else "home"
-            fix = (
-                f"{use(suggested)}; if a new region is needed, create "
-                "regions = Regions(env.regions.values()); "
-                f"regions.add({suggested!r}, point=(x, y)); "
-                "env = env.with_regions(regions)"
-            )
+            if available:
+                what += f" Available regions: {sorted(available)!r}."
+                fix = (
+                    f"{use(available[0])}; if a new region is needed, create "
+                    "regions = Regions(env.regions.values()); "
+                    "regions.add('new_region', point=(x, y)); "
+                    "env = env.with_regions(regions)"
+                )
+            else:
+                if available is not None:
+                    what += " This environment has no regions."
+                then = "" if argument is None else f", then {use('home')}"
+                fix = (
+                    "create regions = Regions(env.regions.values()); "
+                    "regions.add('home', point=(x, y)) (or polygon=...); "
+                    f"env = env.with_regions(regions){then}."
+                )
         elif matches:
             fix = use(matches[0])
         else:

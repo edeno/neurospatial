@@ -158,6 +158,20 @@ def test_region_not_found_handles_missing_name():
     assert "Fix: pass start_region='home'" in str(exc)
 
 
+@pytest.mark.parametrize("available", [[], None])
+@pytest.mark.parametrize("argument", ["start_region", None])
+def test_region_not_found_without_regions_leads_with_creating_one(
+    available, argument
+):
+    # With no region to suggest, a placeholder name is not a fix to pass.
+    exc = RegionNotFoundError(None, available=available, argument=argument)
+    fix = str(exc).splitlines()[-1]
+    assert fix.startswith("Fix: create regions = Regions(env.regions.values()); ")
+    assert "region names must be strings" in str(exc)
+    if available is not None:
+        assert "This environment has no regions" in str(exc)
+
+
 @pytest.mark.parametrize("name,available", [("hom", ["home"]), ("home", [])])
 def test_region_not_found_formats_a_list_argument_as_a_list(name, available):
     exc = RegionNotFoundError(
