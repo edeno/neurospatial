@@ -9,11 +9,18 @@ Core Classes (Top-Level Exports)
 --------------------------------
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
-    Factory methods: from_samples, from_polygon, from_graph, from_grid_mask, from_pixel_mask.
+    Build one from tracking or apparatus geometry with from_samples,
+    open_field, linear_track, maze, from_polygon, from_graph, from_grid_mask,
+    from_pixel_mask or from_polar_egocentric; from your own bins with
+    from_bins or from_layout; join several with combine; read a saved one
+    with from_file, from_dict or from_nwb.
 Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
+Landmark, Landmarks : Named cues, monitors and objects
+    Geometry an animal sees or approaches, stored with an environment and
+    usable by name as ``object_positions``.
 compute_spatial_rate, compute_spatial_rates : Spatial encoding
     Estimate rate maps from environment, spikes, times and positions.
 SpatialRateResult, SpatialRatesResult : Spatial rate results
@@ -24,11 +31,36 @@ peri_event_histogram, PeriEventResult : Peri-event analysis
     Compute and inspect a histogram aligned to event times.
 NeurospatialError : Base library exception
     Catch library-defined errors through one public exception hierarchy.
+RegionNotFoundError, BinIndexOutOfRangeError : Lookup errors
+    An unknown region name; a bin index outside the environment.
+IncompatibleEnvironmentError, LayoutNotBuiltError, CartesianOnlyError : Usage errors
+    Two environments that must match but do not; a layout used before it is
+    built; a Cartesian-only operation on an egocentric polar environment.
 
 Submodule Organization
 ----------------------
 The flagship workflows are available at the root through lazy imports.
 Each domain namespace exposes its specialized user-facing functions and types.
+
+environment : The Environment class and its coordinate systems
+    Environment, CartesianSystem, EgocentricPolarSystem, BinMapping.
+
+    >>> from neurospatial.environment import Environment, BinMapping
+
+regions : Regions of interest
+    Region, Regions, membership tests, CVAT/LabelMe/JSON loaders.
+
+    >>> from neurospatial.regions import Region, Regions, regions_from_json
+
+landmarks : Named landmarks
+    Landmark and Landmarks for cue cards, monitors and objects.
+
+    >>> from neurospatial.landmarks import Landmark, Landmarks
+
+arena : The physical apparatus around the bins
+    What lies outside the bins: an open arena, a track, a mask, or unknown.
+
+    >>> from neurospatial.arena import OpenArena, TrackArena, MaskArena
 
 encoding : Neural encoding analysis
     Place cells, grid cells, head direction cells, border cells, object-vector
@@ -77,13 +109,17 @@ stats : Statistical methods
 
     >>> from neurospatial.stats import rayleigh_test, shuffle_time_bins
 
-io : File I/O and NWB integration
-    Save/load environments, NWB file integration.
+io : File I/O, NWB and pynapple
+    Save/load environments, NWB file integration, pynapple conversion
+    (from_pynapple, to_pynapple; needs the pynapple extra).
 
-    >>> from neurospatial.io import to_file, from_file
+    >>> from neurospatial.io import to_file, from_file, from_pynapple
 
 animation : Visualization
-    Napari viewer, video export, overlays (position, spike, event, HD, bodypart).
+    Animated fields on the recording clock, viewed in napari, a notebook
+    widget or fastplotlib, or exported to video; overlays for position, pose,
+    head direction, object vectors, spikes and spike rasters, events, epochs,
+    time series and video.
 
     >>> from neurospatial.animation import PositionOverlay, EventOverlay
 
@@ -101,6 +137,24 @@ annotation : Video annotation tools
     Environment annotation from video, CVAT/LabelMe format support.
 
     >>> from neurospatial.annotation import annotate_video
+
+binning : Your own bins
+    Bin centers, sizes, connections and lookup for building an environment
+    with Environment.from_bins.
+
+    >>> from neurospatial.binning import Binning, SpatialBins, BinConnections
+
+extensions : Extension packages
+    SnapshotAdapter, which an installed package declares so that its own
+    objects, such as a lab's track or arena type, can be used where
+    neurospatial expects bins, a bin locator, a track or an arena.
+
+    >>> from neurospatial.extensions import SnapshotAdapter
+
+testing : Checks for environments you build
+    assert_environment_contract checks bin lookup, read-only state and saving.
+
+    >>> from neurospatial.testing import assert_environment_contract
 
 Import Patterns
 ---------------
@@ -187,7 +241,27 @@ See Also
 --------
 Environment : Core environment class with detailed documentation
 Region : Region of interest documentation
-neurospatial.encoding : Neural encoding analysis
+neurospatial.environment : The Environment class and its coordinate systems
+    Environment, CartesianSystem, EgocentricPolarSystem, BinMapping.
+
+    >>> from neurospatial.environment import Environment, BinMapping
+
+regions : Regions of interest
+    Region, Regions, membership tests, CVAT/LabelMe/JSON loaders.
+
+    >>> from neurospatial.regions import Region, Regions, regions_from_json
+
+landmarks : Named landmarks
+    Landmark and Landmarks for cue cards, monitors and objects.
+
+    >>> from neurospatial.landmarks import Landmark, Landmarks
+
+arena : The physical apparatus around the bins
+    What lies outside the bins: an open arena, a track, a mask, or unknown.
+
+    >>> from neurospatial.arena import OpenArena, TrackArena, MaskArena
+
+encoding : Neural encoding analysis
 neurospatial.decoding : Neural decoding
 neurospatial.behavior : Behavioral analysis
 
