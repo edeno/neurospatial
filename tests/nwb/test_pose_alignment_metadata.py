@@ -374,3 +374,51 @@ def test_pose_without_skeleton_reads(empty_nwb):
     pose = read_pose(empty_nwb)
     assert pose.skeleton is None
     assert list(pose.bodyparts) == ["nose"]
+
+
+def test_overlay_refuses_skeleton_nodes_that_are_not_series_names(empty_nwb):
+    """Series 'PoseEstimationSeriesNose' is not node 'nose': fail at build time."""
+    from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+    from neurospatial.animation.overlays import BodypartOverlay
+
+    skeleton = Skeleton(
+        name="mouse", nodes=["nose", "tail"], edges=np.array([[0, 1]], dtype=np.uint8)
+    )
+    series = [
+        PoseEstimationSeries(
+            name=f"PoseEstimationSeries{node.title()}",
+            data=np.full((4, 2), float(i)),
+            confidence=np.ones(4),
+            timestamps=np.arange(4) / 10,
+            unit="cm",
+            reference_frame="arena",
+        )
+        for i, node in enumerate(("nose", "tail"))
+    ]
+    empty_nwb.create_processing_module(name="behavior", description="b").add(
+        PoseEstimation(name="pose", pose_estimation_series=series, skeleton=skeleton)
+    )
+    empty_nwb.create_processing_module(name="Skeletons", description="s").add(skeleton)
+    with pytest.raises(ValueError) as caught:
+        bodypart_overlay_from_nwb(empty_nwb)
+    message = str(caught.value)
+    assert (
+        "Skeleton 'mouse' connects nodes ['nose', 'tail'] that are not "
+        "PoseEstimationSeries names ['PoseEstimationSeriesNose', "
+        "'PoseEstimationSeriesTail']" in message
+    )
+    # The documented fix: map nodes to series explicitly.
+    pose = read_pose(empty_nwb)
+    overlay = BodypartOverlay(
+        data={
+            "nose": pose.bodyparts["PoseEstimationSeriesNose"],
+            "tail": pose.bodyparts["PoseEstimationSeriesTail"],
+        },
+        times=pose.times,
+        skeleton=pose.skeleton,
+        units=pose.units,
+        frame=pose.frame,
+    )
+    data = overlay.convert_to_data(np.arange(4) / 10, 4, _environment())
+    np.testing.assert_array_equal(data.bodyparts["tail"], np.ones((4, 2)))
