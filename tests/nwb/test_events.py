@@ -313,8 +313,45 @@ class TestReadIntervals:
         """Test KeyError when interval table not found."""
         from neurospatial.io.nwb import read_intervals
 
-        with pytest.raises(KeyError, match="nonexistent"):
+        with pytest.raises(
+            KeyError,
+            match=r"TimeIntervals 'nonexistent' not found in NWB file. "
+            r"Available intervals: \[\]",
+        ):
             read_intervals(empty_nwb, interval_name="nonexistent")
+
+    def test_not_found_lists_each_table_once(self, tmp_path):
+        """The listing names every table in the file once, predefined first."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_intervals, write_laps, write_trials
+
+        nwbfile = create_roundtrip_nwb()
+        write_trials(nwbfile, start_times=[0.0], stop_times=[1.0])
+        nwbfile.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
+        write_laps(nwbfile, start_times=[0.0], stop_times=[1.0])
+        with NWBHDF5IO(str(tmp_path / "intervals.nwb"), "w") as io:
+            io.write(nwbfile)
+
+        with (
+            NWBHDF5IO(str(tmp_path / "intervals.nwb"), "r") as io,
+            pytest.raises(KeyError) as caught,
+        ):
+            read_intervals(io.read(), interval_name="lap")
+        assert str(caught.value) == (
+            "\"TimeIntervals 'lap' not found in NWB file. "
+            "Available intervals: ['trials', 'invalid_times', 'laps']\""
+        )
+
+    def test_read_invalid_times(self, empty_nwb):
+        from neurospatial.io.nwb import read_intervals
+
+        empty_nwb.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
+        empty_nwb.add_invalid_time_interval(start_time=7.5, stop_time=8.0)
+
+        invalid = read_intervals(empty_nwb, interval_name="invalid_times")
+        np.testing.assert_array_equal(invalid["start_time"], [2.0, 7.5])
+        np.testing.assert_array_equal(invalid["stop_time"], [3.0, 8.0])
 
     def test_additional_columns_preserved(self, empty_nwb):
         """Test that additional columns from TimeIntervals are preserved."""

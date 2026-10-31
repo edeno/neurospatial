@@ -269,38 +269,27 @@ def read_intervals(
     # Verify pynwb is installed
     _require_pynwb()
 
-    # Check predefined interval tables first
-    if interval_name == PREDEFINED_TRIALS and nwbfile.trials is not None:
-        logger.debug("Reading trials table from NWB file")
-        return nwbfile.trials.to_dataframe()
+    # The predefined tables have their own attributes; a file read from disk
+    # also lists them in nwbfile.intervals, so each name is kept once.
+    tables = {
+        name: table
+        for name, table in (
+            (PREDEFINED_TRIALS, nwbfile.trials),
+            (PREDEFINED_EPOCHS, nwbfile.epochs),
+            (PREDEFINED_INVALID_TIMES, nwbfile.invalid_times),
+        )
+        if table is not None
+    }
+    for name, table in nwbfile.intervals.items():
+        tables.setdefault(name, table)
 
-    if interval_name == PREDEFINED_EPOCHS and nwbfile.epochs is not None:
-        logger.debug("Reading epochs table from NWB file")
-        return nwbfile.epochs.to_dataframe()
-
-    if interval_name == PREDEFINED_INVALID_TIMES and nwbfile.invalid_times is not None:
-        logger.debug("Reading invalid_times table from NWB file")
-        return nwbfile.invalid_times.to_dataframe()
-
-    # Check custom intervals (stored in nwbfile.intervals)
-    if interval_name in nwbfile.intervals:
-        logger.debug("Reading custom intervals '%s' from NWB file", interval_name)
-        return nwbfile.intervals[interval_name].to_dataframe()
-
-    # Not found - provide helpful error message
-    available = []
-    if nwbfile.trials is not None:
-        available.append(PREDEFINED_TRIALS)
-    if nwbfile.epochs is not None:
-        available.append(PREDEFINED_EPOCHS)
-    if nwbfile.invalid_times is not None:
-        available.append(PREDEFINED_INVALID_TIMES)
-    available.extend(list(nwbfile.intervals.keys()))
-
-    raise KeyError(
-        f"TimeIntervals '{interval_name}' not found in NWB file. "
-        f"Available intervals: {available}"
-    )
+    if interval_name not in tables:
+        raise KeyError(
+            f"TimeIntervals '{interval_name}' not found in NWB file. "
+            f"Available intervals: {list(tables)}"
+        )
+    logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
+    return tables[interval_name].to_dataframe()
 
 
 def _records(records: object, record_class: type, argument: str) -> list[Any]:
