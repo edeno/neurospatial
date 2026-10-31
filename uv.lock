@@ -4044,7 +4044,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
     { name = "psutil", marker = "extra == 'dev'", specifier = ">=5.9" },
     { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=22.0.0" },
-    { name = "pynapple", marker = "extra == 'pynapple'", specifier = ">=0.8.0" },
+    { name = "pynapple", marker = "extra == 'pynapple'", specifier = ">=0.11.3" },
     { name = "pynwb", marker = "extra == 'nwb'", specifier = ">=2.5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.2.3" },

@@ -389,8 +389,10 @@ pynapple objects convert to and from plain arrays **at the boundary** with
 (see [Passing pynapple objects directly](#passing-pynapple-objects-directly)).
 
 !!! note "Requires the `pynapple` extra"
-    `pip install neurospatial[pynapple]`. Only these two adapter functions
-    import pynapple, and they import it lazily.
+    `pip install neurospatial[pynapple]`, which installs pynapple 0.11.3 or
+    later: earlier releases round interval bounds to 1 ns, so a sample exactly
+    at a window's stop would be kept. Only these two adapter functions import
+    pynapple, and they import it lazily.
 
 A pynapple object is defined only on its `time_support`: the recording epochs,
 with gaps between them for artifacts, sleep boxes or lost tracking.

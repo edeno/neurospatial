@@ -37,8 +37,10 @@
 - `Animation.from_decoding` limits the posterior to `result.time_support`, so
   time between decoded epochs is blank rather than held from the last bin.
   A result without `time_support` is still limited to its `spike_window`.
-- The `pynapple` extra requires pynapple 0.8 or later, the first release with
-  metadata on `IntervalSet` and `TsdFrame`.
+- The `pynapple` extra requires pynapple 0.11.3 or later. Earlier releases
+  round interval bounds to 1 ns, which moves each exported interval end back
+  onto the half-open stop, so `restrict` kept a sample exactly at a window's
+  stop that neurospatial excludes.
 
 ### pynapple inputs keep their metadata and time support
 
