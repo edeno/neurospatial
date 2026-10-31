@@ -475,7 +475,7 @@ def test_to_pynapple_decode_result_without_times_raises() -> None:
 
 
 @_pynapple_test
-def test_to_pynapple_decode_result_keeps_multi_window_spike_window() -> None:
+def test_to_pynapple_decode_result_support_excludes_unrecorded_spike_time() -> None:
     from neurospatial.decoding import decode_session
 
     rng = np.random.default_rng(4)
@@ -491,6 +491,7 @@ def test_to_pynapple_decode_result_keeps_multi_window_spike_window() -> None:
     tsdframe = to_pynapple(result)
 
     # One interval per spike window: the 10-25 s gap is not decoded time.
+    np.testing.assert_array_equal(result.time_support, windows)
     np.testing.assert_array_equal(_half_open(tsdframe.time_support.values), windows)
     np.testing.assert_array_equal(tsdframe.t, result.times)
     np.testing.assert_array_equal(tsdframe.values, result.map_position)

@@ -339,7 +339,7 @@ neurospatial.io.nwb.write_spatial_rates(nwbfile, result, *, name='spatial_rates'
 neurospatial.io.nwb.write_trials(nwbfile, trials=None, *, start_times=None, stop_times=None, start_regions=None, end_regions=None, outcomes=None, description='Behavioral trials', overwrite=False)
 neurospatial.io.to_dict(env)
 neurospatial.io.to_file(env, path, *, overwrite=False)
-neurospatial.io.to_pynapple(times, values=None, *, columns=None, epochs=None)
+neurospatial.io.to_pynapple(data, values=None, *, columns=None, epochs=None, quantity='map_position')
 neurospatial.landmarks (module)
 neurospatial.landmarks.Landmark (class)
 neurospatial.landmarks.Landmarks (class)

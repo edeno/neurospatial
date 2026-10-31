@@ -18,21 +18,19 @@ from_pynapple
     ``IntervalSet`` to plain arrays plus its time support as ``(n_epochs, 2)``
     epochs.
 to_pynapple
-    Convert a decoded MAP track (or explicit ``times`` + ``values``) to a
-    pynapple ``Tsd`` (1-D) / ``TsdFrame`` (2-D) whose time support is the
-    decode's spike window or the given ``epochs``.
+    Convert ``times`` + ``values`` or a decode result (MAP or mean track, or
+    the posterior) to a pynapple ``Tsd`` / ``TsdFrame``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._pynapple import (
     interval_rows,
-    reads_pynapple_samples,
     refuse_permuted_spatial_columns,
 )
 
@@ -42,6 +40,9 @@ _IMPORT_ERROR_MSG = (
     "This function requires the optional 'pynapple' extra; install it with "
     "`pip install neurospatial[pynapple]` (or `uv add neurospatial[pynapple]`)."
 )
+
+_DecodeQuantity = Literal["map_position", "mean_position", "posterior"]
+_DECODE_QUANTITIES = ("map_position", "mean_position", "posterior")
 
 
 def _require_pynapple() -> Any:
@@ -156,109 +157,238 @@ ndarray of shape (n_epochs, 2)
     )
 
 
-@reads_pynapple_samples
 def to_pynapple(
-    times: Any,
+    data: Any,
     values: NDArray[np.float64] | None = None,
     *,
     columns: Any = None,
     epochs: Any = None,
+    quantity: _DecodeQuantity = "map_position",
 ) -> Any:
-    """Convert a decoded track (or ``times`` + ``values``) to a pynapple object.
+    """Convert neurospatial data to the matching pynapple object.
 
-    Accepts either explicit ``(times, values)`` arrays, or a single decode
-    result exposing ``.times`` and ``.map_position`` (duck-typed, e.g. a
-    :class:`~neurospatial.decoding.DecodingResult`). Returns a pynapple ``Tsd``
-    for 1-D values or a ``TsdFrame`` for 2-D values. Its ``time_support`` is
-    ``epochs`` when given, else the decode result's ``spike_window``, else
-    pynapple's default, one interval from the first to the last timestamp.
+    - timestamps with ``values``: a ``Tsd`` (1-D values) or ``TsdFrame``
+      (2-D values).
+    - a decode result: a ``TsdFrame`` of ``quantity``, the MAP track by
+      default.
 
     Parameters
     ----------
-    times : array-like or decode result
-        Finite, strictly increasing timestamps (seconds), or a decode result
-        exposing ``.times`` and ``.map_position`` (in which case ``values``
-        must be ``None``). Times are never sorted here: pynapple would sort
-        them without reordering ``values``.
+    data : array-like or decode result
+        Finite, strictly increasing timestamps in seconds (with ``values``),
+        or a :class:`~neurospatial.decoding.DecodingResult` or
+        :class:`~neurospatial.decoding.DecodingSummary` (any object with
+        ``.times`` and ``.map_position``). Timestamps are never sorted here:
+        pynapple would sort them without reordering ``values``.
     values : NDArray[np.float64] or None, default=None
-        Values sampled at ``times``, shape ``(n,)`` or ``(n, n_dims)``. Required
-        when ``times`` is a timestamp array; must be ``None`` when ``times`` is a
-        decode result.
+        Values sampled at ``data``, shape ``(n,)`` or ``(n, n_columns)``.
+        Required with timestamps; must be ``None`` for a decode result.
     columns : sequence, optional
-        Column labels for the resulting ``TsdFrame`` (2-D values only), one per
-        value column.
+        Column labels of a ``TsdFrame``, one per value column. Defaults to
+        the environment's axis names (``x``, ``y``, ...) for a decoded track.
+        Not accepted for a posterior, whose columns are bin indices.
     epochs : (start, stop), array-like of shape (n_epochs, 2), IntervalSet, \
 or None, optional
-        Time support of the output, in seconds: the epochs over which the
-        values were observed, so gaps between them are not read as recorded
-        time. Rows are half-open ``[start, stop)``, sorted and touching rows
-        merged, as for every ``epochs=`` argument; each pynapple interval ends
-        at the float just below ``stop``, so it holds the same timestamps.
-        Every timestamp must lie inside a row (pynapple would silently drop
-        the others). Default ``None`` uses a decode result's ``spike_window``
-        when it has one.
+        Time support of the output, in seconds: the time over which it was observed, so gaps between
+        epochs are not read as recorded time. Rows are half-open
+        ``[start, stop)``, sorted and touching rows merged, as for every
+        ``epochs=`` argument. Every timestamp must lie inside a row
+        (pynapple would silently drop the others). Default ``None``: a
+        decode result's ``time_support``, else pynapple's default, one
+        interval from the first to the last timestamp. Each pynapple interval
+        ends at the float just below ``stop``, so it holds the same
+        timestamps.
+    quantity : {"map_position", "mean_position", "posterior"}, \
+default="map_position"
+        Which estimate of a decode result to export: the MAP or posterior
+        mean track, as a ``TsdFrame`` with one column per spatial axis, or
+        the full posterior (``DecodingResult`` only), as a ``TsdFrame`` with
+        one column per environment bin; see Notes.
 
     Returns
     -------
     pynapple.Tsd or pynapple.TsdFrame
-        ``Tsd`` for 1-D values, ``TsdFrame`` for 2-D values.
+        See the list above. Arrays are copies: editing the pynapple object
+        never changes the neurospatial data.
 
     Raises
     ------
     ImportError
         If pynapple is not installed.
     TypeError
-        If ``values`` is ``None`` and ``times`` is not a decode result exposing
-        ``.times`` and ``.map_position``.
+        If ``values`` is ``None`` and ``data`` is not a decode result,
+        ``columns`` is given with a posterior, or ``quantity`` is given with
+        a ``values`` array.
     ValueError
-        If ``times`` is missing from the decode result, not 1-D, finite and
-        strictly increasing, ``values`` is not 1-D or 2-D, ``times`` and
-        ``values`` differ in length, ``columns`` does not have one label per
-        value column, ``epochs`` is not a valid set of windows, or a timestamp
-        lies outside ``epochs``. These checks run before pynapple is imported.
+        If timestamps are not 1-D, finite and strictly increasing, ``values``
+        is not 1-D or 2-D or differs in length, ``columns`` does not have one
+        label per value column, ``epochs`` is not a valid set of windows or
+        leaves a timestamp outside, a decode result has no ``times``,
+        or ``quantity`` is unknown or ``"posterior"`` for a
+        ``DecodingSummary``. These checks run before pynapple is imported.
 
     Notes
     -----
-    A decode result records its ``spike_window`` but not the ``epochs`` it
-    was decoded over. If you restricted decoding with ``epochs=``, pass the
-    same windows here so the gaps are kept.
+    **Decode results.** The time support is the result's ``time_support``,
+    the windows its time bins cover, so time between decoded epochs is not
+    part of the pynapple object.
+
+    **Posterior.** ``quantity="posterior"`` returns a ``TsdFrame`` with one
+    column per environment bin (column ``j`` is bin ``j``). Each value is
+    the probability mass in that bin, so each row sums to 1, or is entirely
+    NaN for a time bin that could not be decoded. The column metadata
+    ``bin_center_x``, ``bin_center_y`` (``bin_center_z``; or
+    ``bin_center_distance`` and ``bin_center_angle`` for a polar
+    environment) hold each bin's center, as in
+    :meth:`~neurospatial.decoding.DecodingResult.to_xarray`. A bin column
+    rather than a grid-shaped ``TsdTensor`` keeps every environment
+    (tracks, graphs, masked and hexagonal layouts) exact, never pads bins
+    outside the environment with values that read like probabilities or
+    missing data, and carries the bin coordinates with the data. To select
+    bins by place, index the columns, e.g.
+    ``posterior[:, posterior.bin_center_x < 50]``. On unequal bins the
+    largest mass is not the MAP bin: the MAP ranks density, mass divided by
+    ``env.bin_sizes``.
+
+    pynapple's own Bayesian decoder (``nap.decode_bayes``) differs from
+    neurospatial's in two ways that change posteriors near unvisited bins:
+    it sums each bin's log-likelihood with ``np.nansum``, so a unit whose
+    rate is NaN in a bin drops out of that bin's likelihood instead of
+    excluding the bin, and its uniform prior is flat over bins rather than
+    over space. neurospatial gives a bin where any rate is missing zero
+    probability, and its default prior is proportional to bin size.
 
     Examples
     --------
+    A decoded MAP track and posterior, with the decoded epochs as time
+    support:
+
     >>> from neurospatial.io import to_pynapple  # doctest: +SKIP
-    >>> tsdframe = to_pynapple(result)  # a DecodingResult MAP track  # doctest: +SKIP
+    >>> track = to_pynapple(result)  # TsdFrame with columns x, y  # doctest: +SKIP
+    >>> posterior = to_pynapple(result, quantity="posterior")  # doctest: +SKIP
+    >>> posterior.bin_center_x  # column metadata  # doctest: +SKIP
+
+    Plain arrays:
+
     >>> tsd = to_pynapple(times, linear_positions, epochs=run_epochs)  # doctest: +SKIP
     """
-    from neurospatial._intervals import as_intervals, stop_to_pynapple_end
-
     if values is None:
-        # Duck-typed decode result: pull the MAP track off it. Guard the
-        # duck-type up front so a non-result `times` yields an actionable error
-        # naming the expected inputs, not a bare AttributeError on `.times`.
-        result = times
-        if not (hasattr(result, "times") and hasattr(result, "map_position")):
+        if not (hasattr(data, "times") and hasattr(data, "map_position")):
             raise TypeError(
-                "to_pynapple(times) with values=None expects a decode result "
-                "exposing `.times` and `.map_position` (e.g. a "
-                "neurospatial.decoding.DecodingResult). To convert plain arrays, "
-                "pass to_pynapple(times, values) with an explicit `values` array."
+                "to_pynapple(data) without values expects a decode result "
+                "(e.g. a neurospatial.decoding.DecodingResult); got "
+                f"{type(data).__name__!r}.\n"
+                "Why: only a decode result carries its own values; timestamps "
+                "need the values sampled at them.\n"
+                "Fix: to convert plain arrays, pass to_pynapple(times, values) "
+                "with an explicit `values` array."
             )
-        if result.times is None:
-            raise ValueError(
-                "The decode result has no `times`.\n"
-                "Why: a pynapple Tsd/TsdFrame needs one timestamp per decoded "
-                "time bin.\n"
-                "Fix: pass to_pynapple(bin_times, result.map_position) with the "
-                "time-bin centers in seconds."
-            )
-        times = np.asarray(result.times, dtype=np.float64)
-        values = np.asarray(result.map_position, dtype=np.float64)
-        if epochs is None:
-            epochs = getattr(result, "spike_window", None)
-    else:
-        times = np.asarray(times, dtype=np.float64)
-        values = np.asarray(values, dtype=np.float64)
+        return _decode_to_pynapple(data, columns, epochs, quantity)
 
+    if quantity != "map_position":
+        raise TypeError(
+            f"to_pynapple got quantity={quantity!r} with a values array.\n"
+            "Why: quantity selects which estimate of a decode result to "
+            "export; plain arrays are exported as given.\n"
+            "Fix: omit quantity=, or pass the decode result itself."
+        )
+    times = np.asarray(data, dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
+    return _series_to_pynapple(times, values, columns, epochs, metadata=None)
+
+
+def _decode_to_pynapple(result: Any, columns: Any, epochs: Any, quantity: str) -> Any:
+    """Export one estimate of a decode result as a ``TsdFrame``."""
+    from neurospatial._results import _bin_center_coords, _coord_dim_names
+    from neurospatial._validation import validate_choice
+
+    validate_choice(
+        quantity, _DECODE_QUANTITIES, name="quantity", owner="to_pynapple()"
+    )
+    if result.times is None:
+        raise ValueError(
+            "The decode result has no `times`.\n"
+            "Why: a pynapple Tsd/TsdFrame needs one timestamp per decoded "
+            "time bin.\n"
+            "Fix: decode with times=, or pass to_pynapple(bin_times, "
+            "result.map_position) with the time-bin centers in seconds."
+        )
+    times = np.array(result.times, dtype=np.float64)
+    if epochs is None:
+        epochs = getattr(result, "time_support", None)
+    metadata = None
+    if quantity == "posterior":
+        if not hasattr(result, "posterior"):
+            raise ValueError(
+                f"to_pynapple got quantity='posterior' for a "
+                f"{type(result).__name__}, which keeps no posterior.\n"
+                "Why: the summary decoders reduce each posterior block to "
+                "per-time estimates and discard it.\n"
+                "Fix: decode with decode_session (or decode_position) to keep "
+                "the posterior, or export quantity='map_position'."
+            )
+        if columns is not None:
+            raise TypeError(
+                "to_pynapple got columns= with quantity='posterior'.\n"
+                "Why: posterior column j is environment bin j; its center is "
+                "in the bin_center_* column metadata.\n"
+                "Fix: omit columns=."
+            )
+        values = np.array(result.posterior)
+        columns = np.arange(values.shape[1])
+        metadata = {
+            name: np.array(centers)
+            for name, (_, centers) in _bin_center_coords(
+                result.env, values.shape[1]
+            ).items()
+        }
+    else:
+        values = np.array(getattr(result, quantity), dtype=np.float64)
+        if columns is None:
+            columns = _coord_dim_names(result.env)
+    return _series_to_pynapple(times, values, columns, epochs, metadata=metadata)
+
+
+def _checked_support(
+    times: NDArray[np.float64], epochs: Any
+) -> NDArray[np.float64] | None:
+    """Normalize ``epochs`` and require every timestamp to lie inside a row."""
+    from neurospatial._intervals import as_intervals, times_in_intervals
+
+    support = as_intervals(epochs, name="epochs")
+    if support is None:
+        return None
+    outside = np.flatnonzero(~times_in_intervals(support, times))
+    if outside.size:
+        i = int(outside[0])
+        raise ValueError(
+            f"{outside.size} of {len(times)} timestamp(s) lie outside "
+            f"`epochs` (first at index {i}, t={float(times[i])!r}).\n"
+            "Why: pynapple silently drops samples outside the time "
+            "support.\n"
+            "Fix: pass epochs that cover every timestamp, or select the "
+            "samples first, e.g. with neurospatial.behavior.restrict(times, "
+            "values, epochs=epochs)."
+        )
+    return support
+
+
+def _interval_set(nap: Any, support: NDArray[np.float64]) -> Any:
+    """A pynapple ``IntervalSet`` holding the same floats as half-open rows."""
+    from neurospatial._intervals import stop_to_pynapple_end
+
+    return nap.IntervalSet(start=support[:, 0], end=stop_to_pynapple_end(support[:, 1]))
+
+
+def _series_to_pynapple(
+    times: NDArray[np.float64],
+    values: NDArray[Any],
+    columns: Any,
+    epochs: Any,
+    *,
+    metadata: dict[str, NDArray[Any]] | None,
+) -> Any:
+    """Validate a time series and build its ``Tsd`` / ``TsdFrame``."""
     # Prevalidate at this boundary so bad shapes raise an actionable
     # neurospatial ValueError rather than a raw pynapple AssertionError from
     # deep inside nap.Tsd / nap.TsdFrame.
@@ -313,36 +443,17 @@ or None, optional
             "column names.\n"
             f"Fix: pass exactly {values.shape[1]} labels, or omit columns=."
         )
-
-    support = as_intervals(epochs, name="epochs")
-    if support is not None:
-        # Half-open membership, the same set as the inclusive pynapple
-        # intervals built below.
-        row = np.searchsorted(support[:, 0], times, side="right") - 1
-        inside = (row >= 0) & (times < support[np.maximum(row, 0), 1])
-        outside = np.flatnonzero(~inside)
-        if outside.size:
-            i = int(outside[0])
-            raise ValueError(
-                f"{outside.size} of {len(times)} timestamp(s) lie outside "
-                f"`epochs` (first at index {i}, t={float(times[i])!r}).\n"
-                "Why: pynapple silently drops samples outside the time "
-                "support.\n"
-                "Fix: pass epochs that cover every timestamp, or select the "
-                "samples first, e.g. with neurospatial.behavior.restrict(times, "
-                "values, epochs=epochs)."
-            )
+    support = _checked_support(times, epochs)
 
     # Import only after validation, so invalid input never reaches pynapple.
     nap = _require_pynapple()
-
-    time_support = (
-        None
-        if support is None
-        else nap.IntervalSet(
-            start=support[:, 0], end=stop_to_pynapple_end(support[:, 1])
-        )
-    )
+    time_support = None if support is None else _interval_set(nap, support)
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values, time_support=time_support)
-    return nap.TsdFrame(t=times, d=values, columns=columns, time_support=time_support)
+    return nap.TsdFrame(
+        t=times,
+        d=values,
+        columns=columns,
+        time_support=time_support,
+        metadata=metadata,
+    )
