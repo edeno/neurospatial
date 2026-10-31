@@ -1721,6 +1721,21 @@ def smooth_positions(
     compute_cumulative_distance : Path length along the positions.
     compute_speed : Speed, from velocity smoothed by its own ``smooth_window``.
 
+    Notes
+    -----
+    Neurospatial does not smooth positions for you: occupancy, rate maps,
+    path length, region visits and decoding error use the positions you
+    pass. The one smoothing it applies itself is to the motion derived from
+    them, since differencing positions turns even small jitter into speed
+    (0.5 cm reads as about 13 cm/s at 30 Hz). Velocity, speed and the
+    direction of motion are smoothed over 0.1 s (``smooth_window`` of
+    :func:`compute_speed`) wherever the package computes them: in
+    :func:`compute_speed`, :func:`heading_from_velocity` and
+    :func:`segment_by_velocity`, where ``smooth_window`` sets it; in the
+    ``min_speed`` gates of the rate-map functions; and in the goal
+    alignment, heading labels, pre-decision statistics, head sweeps and the
+    angular term of the path efficiencies.
+
     Examples
     --------
     A still animal tracked with 0.5 cm of jitter at 30 Hz for 5 s:

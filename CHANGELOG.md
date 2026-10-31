@@ -16,6 +16,9 @@
   a 5 s stop on a 100 cm path reads as 274 cm at 30 Hz and 968 cm at 120 Hz,
   and about 100 cm after `smooth_positions`. Motion at constant velocity is
   unchanged; a 10 cm out-and-back over 0.4 s keeps about 60% of its length.
+  Its documentation lists the one smoothing the package applies itself:
+  speed, velocity and direction of motion, smoothed over 0.1 s wherever they
+  are computed.
 
 ### Firing by distance from an event
 

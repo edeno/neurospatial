@@ -167,7 +167,12 @@ jitter as running: with 0.5 cm of jitter, a 5 s stop adds about 130 cm at
 at 30 Hz; after `smooth_positions` (0.1 s) the stop adds a few centimetres.
 Smoothing shortens quick reversals: a 10 cm out-and-back over 0.4 s keeps
 about 60% of its length, so choose `smooth_window` for what you measure, and
-skip this step for positions your pipeline already smoothed. `compute_cumulative_distance` returns the distance at every
+skip this step for positions your pipeline already smoothed. The one
+smoothing neurospatial applies itself is to motion derived from positions:
+speed, velocity and direction of motion are smoothed over 0.1 s wherever
+they are computed, because differencing positions turns even small jitter
+into speed; `compute_speed` and `heading_from_velocity` take
+`smooth_window` to change it. `compute_cumulative_distance` returns the distance at every
 frame (`run_distance` restarts at 0 in each run, `cumulative_distance` keeps
 adding across runs); `traveled_path_length` returns only the total.
 
