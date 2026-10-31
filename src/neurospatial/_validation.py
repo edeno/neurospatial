@@ -237,6 +237,8 @@ def times_positions_problems(
 ) -> tuple[list[str], bool]:
     """Collect pair problems, skipping an array that failed numeric conversion."""
     problems: list[str] = []
+    # Whether the recorded times go backwards, evidence of a swap below.
+    times_go_back = False
     if t is not None:
         if t.ndim != 1:
             problems.append(f"times must be 1-D (n_samples,), got shape {t.shape}.")
@@ -249,8 +251,12 @@ def times_positions_problems(
                     f"times has {int((~finite).sum())} non-finite value(s), "
                     f"first at index {int(np.argmin(finite))}."
                 )
+                # A NaN in times says nothing about order.
+                recorded = t[finite]
+                times_go_back = bool(np.any(recorded[1:] < recorded[:-1]))
             elif t.size > 1:
-                down = np.flatnonzero(np.diff(t) < 0)
+                down = np.flatnonzero(t[1:] < t[:-1])
+                times_go_back = bool(down.size)
                 if down.size:
                     k = int(down[0])
                     problems.append(
@@ -278,19 +284,14 @@ def times_positions_problems(
     # Suggest a swap only on evidence: 2-D times are a trajectory, or times
     # whose recorded values go backwards (as positions do) while positions
     # would be valid times. Positions that never decrease alone are normal on
-    # a linear track, and a NaN in times says nothing about order.
-    times_go_back = (
-        t is not None and t.ndim == 1 and bool(np.any(np.diff(t[np.isfinite(t)]) < 0))
-    )
-    positions_are_times = (
-        p is not None
+    # a linear track.
+    looks_swapped = (t is not None and t.ndim == 2) or (
+        times_go_back
+        and p is not None
         and p.ndim == 1
         and p.size > 1
         and bool(np.isfinite(p).all())
-        and bool(np.all(np.diff(p) >= 0))
-    )
-    looks_swapped = (t is not None and t.ndim == 2) or (
-        times_go_back and positions_are_times
+        and bool(np.all(p[1:] >= p[:-1]))
     )
     return problems, looks_swapped
 
@@ -362,7 +363,7 @@ def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> No
     ValueError
         Naming the first repeated timestamp and how to resolve it.
     """
-    repeated = np.flatnonzero(np.diff(times) <= 0)
+    repeated = np.flatnonzero(times[1:] <= times[:-1])
     if repeated.size == 0:
         return
     k = int(repeated[0])
