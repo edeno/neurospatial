@@ -30,6 +30,7 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import refuse_infinite, validate_choice
 from neurospatial.decoding.estimates import _egocentric_plane
 from neurospatial.geometry import require_cartesian
+from neurospatial.geometry._arena import _track_distances
 from neurospatial.ops.distance import _geodesic_pair_distances
 
 if TYPE_CHECKING:
@@ -68,11 +69,12 @@ def decoding_error(
           along the environment's connectivity graph (along the track on a
           linearized track), measured between bin centers: the error is
           quantized to the bins, and two positions in one bin are 0 apart.
-          A position outside every bin but within one ``env.bin_spacing``
-          of the environment's extent (its bounding box), such as tracking
-          jitter at an edge or a posterior mean between two arms, is
-          measured from its nearest bin. A position farther out is not in
-          the environment: its error is NaN, with a warning. Bins in
+          A position outside every bin but within about one
+          ``env.bin_spacing`` of the environment itself, such as tracking
+          jitter at an edge, is measured from its nearest bin. A position
+          farther out, such as a posterior mean between two arms of a maze,
+          is not in the environment: its error is NaN, with a warning. Use
+          ``map_position`` for a decoded position that is always a bin. Bins in
           disconnected components are ``inf`` apart. On an open grid the
           graph path can exceed the straight line by up to about 8%
           (8-connected neighbors).
@@ -223,25 +225,30 @@ def _bins_or_nearest(
     """Bin of each finite position, its nearest bin when just outside, else -1.
 
     A position outside every bin is measured from its nearest bin when it
-    lies within one ``env.bin_spacing`` of the environment's extent (its
-    domain's bounding box, or the bin centers' when the domain is unknown):
-    tracking jitter at an edge, or a posterior mean between two arms of a
-    maze. A position farther out is not in the environment and gets -1.
+    lies within about one ``env.bin_spacing`` of the environment: tracking
+    jitter at an edge. On a track with a width that is one spacing beyond
+    the track's sides; elsewhere it is 1.5 spacings from the nearest bin
+    center (half a bin to the cell's edge, then one spacing). A position
+    farther out, such as a posterior mean in the gap between two arms of a
+    maze, is not in the environment and gets -1: its nearest bin would pick
+    an arm by proximity, not by where the posterior put its mass.
     """
     bins = np.asarray(env.bin_at(positions), dtype=np.intp)
     outside = np.flatnonzero(bins < 0)
     if outside.size:
-        bounds = env.arena.domain_bounds()
-        if bounds is None:
-            centers = env.bin_centers
-            bounds = np.stack([centers.min(axis=0), centers.max(axis=0)])
-        margin = env.bin_spacing
-        near = np.all(
-            (positions[outside] >= bounds[0] - margin)
-            & (positions[outside] <= bounds[1] + margin),
-            axis=1,
-        )
-        bins[outside[near]] = env.nearest_bin(positions[outside[near]])
+        query = positions[outside]
+        nearest = np.asarray(env.nearest_bin(query, max_distance=np.inf), np.intp)
+        spacing = env.bin_spacing
+        track = env.arena.as_track()
+        if track is not None and track.width is not None:
+            # Track bins are centered on the centerline; the track spans
+            # half its width to either side.
+            beyond = _track_distances(track, query) - track.width / 2
+            near = beyond <= spacing
+        else:
+            distance = np.linalg.norm(query - env.bin_centers[nearest], axis=1)
+            near = distance <= 1.5 * spacing
+        bins[outside[near]] = nearest[near]
     return bins
 
 

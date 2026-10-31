@@ -131,6 +131,15 @@
   largest value now count as 0; larger negative values are still refused.
   `env.smooth` itself is unchanged and stays exactly linear for signed
   fields.
+- `decoding_error` (geodesic, the default) no longer measures a position in
+  the gap between arms of a maze from the nearest arm. Any position inside
+  the environment's bounding box was snapped to its nearest bin, so a
+  posterior mean between two arm tips (half the mass on each) was reported
+  as a 4 cm error on a U maze, from whichever arm was closer. Such positions
+  are now NaN with a warning, like positions outside the environment;
+  tracking jitter within about one bin spacing of the environment is still
+  measured from its nearest bin. Use `map_position` for a decoded position
+  that is always a bin.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers
