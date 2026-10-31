@@ -13,6 +13,11 @@ from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
+    detect_laps,
+    detect_region_crossings,
+    detect_runs_between_regions,
+    running_direction_labels,
+    segment_trials,
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import compute_home_range
@@ -170,3 +175,93 @@ def test_goal_directed_runs_without_a_place_are_empty(strip):
     )
 
     assert runs.shape == (0, 2)
+
+
+@pytest.fixture(scope="module")
+def shuttle(strip):
+    """Two round trips between "start" (x < 10) and "goal" (x > 90) at 10 Hz.
+
+    Three samples are outside the environment: halfway back on the first
+    return (60), halfway out on the second trip (100), and just before that
+    trip enters the goal.
+    """
+    regions = Regions(strip.regions.values())
+    regions.add("start", polygon=box(-5, -5, 10, 5))
+    env = strip.with_regions(regions)
+    trip = np.linspace(1, 99, 41)
+    xs = np.r_[trip, trip[::-1][1:], trip[1:], trip[::-1][1:]]
+    times = np.arange(xs.size) * 0.1
+    bins = env.bin_at(np.c_[xs, np.ones_like(xs)])
+    entry = 81 + int(np.argmax(xs[81:] > 90))
+    return env, times, bins, np.array([60, 100, entry - 1])
+
+
+SHUTTLE_CALLS = {
+    "detect_region_crossings": lambda env, b, t, **kw: detect_region_crossings(
+        b, t, env, region_name="goal", **kw
+    ),
+    "detect_runs_between_regions": lambda env, b, t, **kw: (
+        detect_runs_between_regions(b, t, env, source="goal", target="start", **kw)
+    ),
+    "running_direction_labels": lambda env, b, t, **kw: running_direction_labels(
+        b, t, env, start_region="start", end_regions="goal", **kw
+    ),
+    "segment_trials": lambda env, b, t, **kw: segment_trials(
+        b, t, env, start_region="start", end_regions="goal", **kw
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SHUTTLE_CALLS))
+def test_an_outside_sample_ends_the_run_like_a_declared_break(shuttle, name):
+    """As in env.occupancy, an interval touching bin -1 is not observed.
+
+    The result equals that of the recording with the outside row deleted and
+    a break declared on the row after it, however short the gap would be.
+    """
+    env, times, bins, rows = shuttle
+    outside = bins.copy()
+    outside[rows] = -1
+    kept = np.delete(np.arange(times.size), rows)
+    breaks = np.isin(kept, rows + 1)
+    call = SHUTTLE_CALLS[name]
+    with_outside = call(env, outside, times)
+    with_break = call(env, bins[kept], times[kept], break_before=breaks)
+    if name == "running_direction_labels":
+        np.testing.assert_array_equal(with_outside[kept], with_break)
+    else:
+        assert repr(with_outside) == repr(with_break)
+
+
+def test_an_outside_sample_censors_the_run_it_interrupts(shuttle):
+    """The first return no longer reaches "start": it is censored at the outside sample."""
+    env, times, bins, rows = shuttle
+    k = rows[0]
+    outside = bins.copy()
+    outside[k] = -1
+    runs = detect_runs_between_regions(
+        outside, times, env, source="goal", target="start"
+    )
+    assert [run.outcome for run in runs] == ["censored", "reached"]
+    assert runs[0].end_time == pytest.approx(times[k - 1])
+
+
+def test_an_outside_sample_ends_a_lap():
+    """A lap never spans a sample outside the environment."""
+    theta = np.linspace(0, 20 * np.pi, 1801)
+    positions = np.column_stack([50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)])
+    times = np.linspace(0, 60, 1801)
+    env = Environment.from_samples(positions, bin_size=3.0)
+    bins = env.bin_at(positions)
+    k = 900
+    outside = bins.copy()
+    outside[k] = -1
+    kept = np.delete(np.arange(times.size), k)
+    breaks = np.zeros(kept.size, dtype=bool)
+    breaks[k] = True
+    laps = detect_laps(outside, times, env, method="auto")
+    assert laps
+    assert repr(laps) == repr(
+        detect_laps(bins[kept], times[kept], env, method="auto", break_before=breaks)
+    )
+    assert not any(lap.start_time < times[k] < lap.end_time for lap in laps)

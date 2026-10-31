@@ -84,14 +84,13 @@ from scipy.stats import pearsonr
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
-    EMPTY_RESULT,
     as_intervals,
     run_sample_bounds,
     start_allocation,
     times_in_intervals,
     warn_excluded_intervals,
 )
-from neurospatial._observation import resolve_sample_support, validate_break_before
+from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_choice, validate_finite_scalar
@@ -172,27 +171,20 @@ length closer to the goal; expressed in ``env.units`` when they are metric.
 """
 
 
-def _located(position_bins: NDArray[np.int64]) -> NDArray[np.bool_]:
-    """True for samples in a bin; a sample at bin -1 is missing.
-
-    ``position_bins`` come from :func:`_validated_samples`, so every entry is
-    -1 or a bin of the environment. Missing samples are skipped as if their
-    rows were deleted, and the gap around them is bridged when it is no
-    longer than ``max_gap``.
-    """
-    located: NDArray[np.bool_] = position_bins >= 0
-    return located
-
-
 def _event_runs(
     times: NDArray[np.float64],
+    position_bins: NDArray[np.int64],
     *,
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
-    sample_valid: NDArray[np.bool_],
 ) -> list[NDArray[np.intp]]:
     """Observed runs holding only samples inside the half-open ``epochs``.
+
+    As in ``env.occupancy``, an interval is observed when its gap passes
+    ``max_gap``, ``epochs`` and ``break_before`` and both of its samples are
+    in a bin: a sample at bin -1 (outside the environment, or missing) ends
+    the run.
 
     An observed run keeps the sample at an epoch's ``stop``, because the
     interval that ends there lies inside the epoch. That instant is outside
@@ -200,14 +192,19 @@ def _event_runs(
     or trial end there: such a run ends at its last sample before ``stop``,
     as :func:`detect_region_visits` does.
     """
-    runs = resolve_sample_support(
+    gates = start_allocation(
         times,
-        sample_valid,
+        position_bins,
+        None,
         max_gap=max_gap,
-        epochs=epochs,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
-        result=EMPTY_RESULT,
-    ).run_samples()
+    ).gates
+    warn_excluded_intervals(gates)
+    runs = [
+        np.arange(first, last + 1, dtype=np.intp)
+        for first, last in run_sample_bounds(gates.mask)
+    ]
     windows = as_intervals(epochs, name="epochs")
     if windows is None:
         return runs
@@ -580,11 +577,13 @@ def detect_region_crossings(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -639,10 +638,10 @@ def detect_region_crossings(
     results: list[Crossing] = []
     for run in _event_runs(
         times,
+        position_bins,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_region_crossings_contiguous(
@@ -798,11 +797,13 @@ def detect_runs_between_regions(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart.
 
     A run in progress when a recording ends is emitted there with
     ``outcome='censored'``: it neither reached the target nor timed out
@@ -884,10 +885,10 @@ def detect_runs_between_regions(
     results: list[Run] = []
     for run in _event_runs(
         times,
+        position_bins,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
     ):
         results.extend(
             _detect_runs_between_regions_contiguous(
@@ -1447,11 +1448,13 @@ def detect_laps(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart.
 
     Laps never span recordings. Samples outside the environment are left
     out as if their rows were deleted.
@@ -1667,10 +1670,10 @@ def detect_laps(
     breaks = validate_break_before(break_before, len(times), call="detect_laps")
     runs = _event_runs(
         times,
+        position_bins,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
     )
     laps: list[Lap] = []
     if method == "region":
@@ -2340,11 +2343,13 @@ def running_direction_labels(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart.
 
     Outbound and inbound runs are detected per end region (start -> end and
     end -> start) with :func:`detect_runs_between_regions`, so each run ends
@@ -2413,10 +2418,10 @@ def running_direction_labels(
     )
     recordings = _event_runs(
         times,
+        position_bins,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
     )
 
     runs: list[tuple[Run, str]] = []
@@ -2501,10 +2506,11 @@ def segment_trials(
          ``epochs`` edge, a ``break_before`` or the end of the recording
          (``outcome='censored'``; the result is unknown)
 
-    Samples outside every bin (``-1``, such as lost tracking while the animal
-    waits at a well) are missing: a dropout no longer than ``max_gap`` is
-    bridged, so it is not a departure or a return, and a longer one ends the
-    recording as any tracking loss does.
+    Samples outside every bin (``-1``, outside the environment or lost
+    tracking) are not located: as in ``env.occupancy``, an interval touching
+    one is not observed, so it ends the recording (``outcome='censored'``)
+    rather than counting as a departure or a return. To bridge a short
+    dropout, delete its rows before binning.
 
     Parameters
     ----------
@@ -2583,11 +2589,13 @@ def segment_trials(
 
     Notes
     -----
-    A missing sample (bin ``-1``, outside the environment) is skipped as if
-    its row were deleted, and the gap around it is bridged when the valid
-    samples on either side are no more than ``max_gap`` apart. Only a longer gap, an ``epochs`` edge or a
-    ``break_before`` splits the recording; each resulting stretch is analyzed
-    on its own, so no segment spans a pause.
+    A sample at bin ``-1`` (outside the environment, or missing) is not
+    located, so, as in ``env.occupancy``, an interval with either sample at
+    ``-1`` is not observed and splits the recording, like a gap longer than
+    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
+    stretch is analyzed on its own, so no segment spans a pause. To bridge
+    missing samples instead, delete their rows before binning: a deleted row
+    is bridged when the samples around it are no more than ``max_gap`` apart.
 
     A trial in progress when a recording ends is emitted there with
     ``outcome='censored'``, as at the end of a complete recording. Leave
@@ -2721,10 +2729,10 @@ def segment_trials(
     results: list[Trial] = []
     for run in _event_runs(
         times,
+        position_bins,
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        sample_valid=_located(position_bins),
     ):
         results.extend(
             _segment_trials_contiguous(
