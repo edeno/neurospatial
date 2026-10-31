@@ -472,3 +472,9 @@ notebooks = [
     "ipykernel>=6.0.0",
     "jupytext>=1.16.0",
 ]
+
+[tool.codespell]
+skip = "uv.lock,*.ipynb,*.npz,*.pkl,*.svg,*.png,site"
+# Domain terms, author names and abbreviations: allocentric (allo), phase
+# precession, theta trough, Zar (2010), standard errors (SEMs), N-dimensional.
+ignore-words-list = "abl,allo,alo,disjointness,nd,precesses,precessing,sems,theses,trough,unparseable,zar"

@@ -217,7 +217,7 @@ they are not additions to the six accepted continuous-behavior workstreams.
   * `ScaleBarConfig`, `scale_bar=True` for plots and animations
 * [ ] Color bar.
 * [ ] 3D support (3D tunnels, ramps, VR environments).
-* [x] Dynamic spike raster overlayed on position heatmap.
+* [x] Dynamic spike raster overlaid on position heatmap.
   * `EventOverlay` / `SpikeOverlay` with decay_frames for visualization
 * [ ] Show events timeline synced to time slider.
 * [ ] add a small overview strip (full-session timeline) with a brushed window indicating the current animated window; the right-column plots then show “detail in context,” which aligns with his recommendations on focus+context views.

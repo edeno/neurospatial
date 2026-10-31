@@ -1,9 +1,9 @@
 # Repository, Architectural, and Mathematical Review — 2026-10-01
 
-**Repository:** `edeno/neurospatial`  
-**Current Branch:** `feat/public-api-curation`  
-**Package Version:** `0.8.0`  
-**Date:** 2026-10-01  
+**Repository:** `edeno/neurospatial`
+**Current Branch:** `feat/public-api-curation`
+**Package Version:** `0.8.0`
+**Date:** 2026-10-01
 **Scope:** Full repository audit covering architectural design, API contracts, scientific data integrity, testing/CI health, and an in-depth mathematical and numerical verification of all core algorithms.
 
 ---
@@ -142,16 +142,16 @@ The following key algorithms were audited and verified to be strictly mathematic
 
 Running `ruff check .` on the current working tree identified **two linting errors in the test suite that will block CI on push/PR**:
 
-1. **`tests/nwb/test_fields_pooled.py:205:42`**  
-   - **Rule:** `RUF043` (Pattern passed to `match=` contains metacharacters but is neither escaped nor raw).  
-   - **Code:** `with pytest.raises(ValueError, match="predates schema 3.0"):`  
-   - **Cause:** The unescaped `.` in `3.0` acts as a regex wildcard.  
+1. **`tests/nwb/test_fields_pooled.py:205:42`**
+   - **Rule:** `RUF043` (Pattern passed to `match=` contains metacharacters but is neither escaped nor raw).
+   - **Code:** `with pytest.raises(ValueError, match="predates schema 3.0"):`
+   - **Cause:** The unescaped `.` in `3.0` acts as a regex wildcard.
    - **Remediation:** Change to `match=r"predates schema 3\.0"`.
 
-2. **`tests/test_session_nwb_roundtrip_contract.py:293:5`**  
-   - **Rule:** `B018` (Useless attribute access).  
-   - **Code:** `sess.read_session(os.fspath(destination)).env  # no raise`  
-   - **Cause:** Standalone attribute access without assignment or assertion.  
+2. **`tests/test_session_nwb_roundtrip_contract.py:293:5`**
+   - **Rule:** `B018` (Useless attribute access).
+   - **Code:** `sess.read_session(os.fspath(destination)).env  # no raise`
+   - **Cause:** Standalone attribute access without assignment or assertion.
    - **Remediation:** Change to `assert sess.read_session(os.fspath(destination)).env is not None`.
 
 ---

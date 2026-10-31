@@ -393,8 +393,9 @@ class TestApproachRate:
 
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = np.linspace(0, 5, 11)
-        with pytest.raises(ValueError, match="got metric='euclidian'"):
-            approach_rate(times, positions, np.array([100.0, 0.0]), metric="euclidian")
+        misspelled = "euclidian"  # codespell:ignore euclidian
+        with pytest.raises(ValueError, match=f"got metric='{misspelled}'"):
+            approach_rate(times, positions, np.array([100.0, 0.0]), metric=misspelled)
 
     @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
     @pytest.mark.parametrize("heading", [0.0, 0.5])
