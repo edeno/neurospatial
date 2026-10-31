@@ -153,6 +153,11 @@
   position range (one NaN position used to remove it), and takes
   `angle_unit="deg"` like `compute_phase_precession`; phases that look like
   degrees with the default `angle_unit="rad"` warn.
+- `DirectionalRateResult` and `DirectionalRatesResult` built by hand refuse
+  bins that do not tile the circle (consecutive centers `bin_size` apart and
+  `n_bins * bin_size == 2 * pi`). Uneven bins or bins covering part of a
+  turn were accepted, and the preferred direction, tuning width and tuning
+  test were computed as if they covered the circle.
 - `TriangularMesh` layouts triangulate a triangular lattice of points instead
   of a square one, so interior triangles are equilateral. On the right
   triangles of the square lattice, the line between neighboring centers

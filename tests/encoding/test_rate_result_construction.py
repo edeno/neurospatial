@@ -261,23 +261,53 @@ def test_list_inputs_become_read_only_arrays(population: Any) -> None:
     assert not rebuilt.occupancy.flags.writeable
 
 
+_THREE_BINS = -np.pi + 2 * np.pi / 3 * (np.arange(3) + 0.5)
+_THIRD_TURN = 2 * np.pi / 3
+
+
 def test_directional_refuses_counts_and_bins_that_disagree() -> None:
     from neurospatial.encoding import DirectionalRateResult, DirectionalRatesResult
 
     with pytest.raises(ValueError, match="not \\(n_bins,\\) over the result's 3 bins"):
-        DirectionalRateResult(
-            np.ones(10), np.ones(7), np.linspace(0, 360, 3), 6.0, None
-        )
+        DirectionalRateResult(np.ones(10), np.ones(7), _THREE_BINS, _THIRD_TURN, None)
     with pytest.raises(ValueError, match="occupancy has shape \\(7,\\)"):
-        DirectionalRateResult(np.ones(3), np.ones(7), np.zeros(3), 2.0, None)
+        DirectionalRateResult(np.ones(3), np.ones(7), _THREE_BINS, _THIRD_TURN, None)
     with pytest.raises(ValueError, match=r"bin_size=12\.0 is not an angular bin width"):
         DirectionalRateResult(np.ones(3), np.ones(3), np.zeros(3), 6.0 * 2, None)
     with pytest.raises(ValueError, match="bin_centers must be a 1-D array"):
         DirectionalRateResult(np.ones(3), np.ones(3), np.zeros((3, 1)), 2.0, None)
     with pytest.raises(ValueError, match="spike_counts has shape"):
         DirectionalRatesResult(
-            np.ones((2, 3)), np.ones(3), np.zeros(3), 2.0, None, np.ones((2, 4))
+            np.ones((2, 3)), np.ones(3), _THREE_BINS, _THIRD_TURN, None, np.ones((2, 4))
         )
+
+
+@pytest.mark.parametrize(
+    ("centers", "bin_size"),
+    [
+        (np.array([0.1, 0.2, 0.3, 3.0]), 0.1),  # uneven, a fraction of a turn
+        (np.array([0.0, 0.1, 0.2, 0.3]), 0.1),  # even, a fraction of a turn
+        (np.array([0.0, 2.0, 1.0]), _THIRD_TURN),  # a turn, out of order
+    ],
+)
+def test_directional_refuses_bins_that_do_not_tile_the_circle(
+    centers, bin_size
+) -> None:
+    """Preferred direction and tuning assume equal bins covering one turn."""
+    from neurospatial.encoding import DirectionalRateResult
+
+    with pytest.raises(ValueError, match="tile the circle"):
+        DirectionalRateResult(
+            np.ones(len(centers)), np.ones(len(centers)), centers, bin_size, None
+        )
+
+
+def test_directional_accepts_bins_tiling_the_circle_from_any_start() -> None:
+    from neurospatial.encoding import DirectionalRateResult
+
+    centers = (np.arange(60) + 0.5) * np.pi / 30  # 0 to 2 pi, not -pi to pi
+    result = DirectionalRateResult(np.ones(60), np.ones(60), centers, np.pi / 30, None)
+    assert result.bin_centers.size == 60
 
 
 def test_view_refuses_unknown_gaze_model(recording: dict[str, Any]) -> None:
