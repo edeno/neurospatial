@@ -660,9 +660,7 @@ class TestShuffleTestResult:
             observed_score=5.0,
             null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
             p_value=0.2,
-            z_score=1.5,
             shuffle_type="time_bins",
-            n_shuffles=4,
         )
         # Try to modify - should raise
         with pytest.raises((AttributeError, TypeError)):
@@ -686,8 +684,6 @@ class TestShuffleTestResult:
             observed_score=5.0,
             null_scores=np.array([1.0, 2.0, 3.0]),
             p_value=p_value,
-            z_score=2.5,
             shuffle_type="time_bins",
-            n_shuffles=3,
         )
         assert result.is_significant(alpha=alpha) is expected

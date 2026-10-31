@@ -219,8 +219,7 @@ def test_from_null_records_tail():
     [
         ({"p_value": 0.0}, "p_value"),
         ({"p_value": 1.5}, "p_value"),
-        ({"n_shuffles": 5}, "n_shuffles"),
-        ({"null_scores": np.ones((2, 2)), "n_shuffles": 4}, "1-D"),
+        ({"null_scores": np.ones((2, 2))}, "1-D"),
         ({"tail": "up"}, "tail"),
     ],
 )
@@ -238,9 +237,7 @@ def test_shuffle_test_result_allows_nan_p_value_and_has_short_repr():
         observed_score=np.nan,
         null_scores=np.full(1000, 1.0),
         p_value=np.nan,
-        z_score=np.nan,
         shuffle_type="x",
-        n_shuffles=1000,
     )
     assert not result.is_significant()
     assert len(repr(result)) < 300

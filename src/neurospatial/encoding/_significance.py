@@ -21,7 +21,6 @@ from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     _shuffle_p_values,
-    compute_shuffle_zscore,
     shuffle_spike_times_circular,
 )
 
@@ -277,9 +276,7 @@ def shuffle_test_result(
         observed_score=observed,
         null_scores=null_scores,
         p_value=p_value,
-        z_score=compute_shuffle_zscore(observed, null_scores),
         shuffle_type="circular_time_shift",
-        n_shuffles=len(null_scores),
     )
 
 

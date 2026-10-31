@@ -61,7 +61,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import _resolve_intervals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
@@ -77,6 +77,30 @@ if TYPE_CHECKING:
 # =============================================================================
 # I. Temporal Order Shuffles - Test sequential structure within events
 # =============================================================================
+
+
+def _spike_train(
+    spike_times: NDArray[np.float64], *, call: str, require_sorted: bool = False
+) -> NDArray[np.float64]:
+    """One neuron's spike times as float64, refusing what is not a train."""
+    train = np.asarray(spike_times, dtype=np.float64)
+    if (
+        train.ndim != 1
+        or not np.all(np.isfinite(train))
+        or (require_sorted and np.any(np.diff(train) < 0))
+    ):
+        order = "sorted, " if require_sorted else ""
+        raise ValueError(
+            _format_error(
+                f"{call}: spike_times must be a {order}finite 1-D array, got "
+                f"shape {train.shape}.",
+                why="Why: it is one neuron's spike train, in seconds",
+                fix=f"pass {'np.sort(' if require_sorted else ''}"
+                f"spike_times[np.isfinite(spike_times)]"
+                f"{')' if require_sorted else ''} for one neuron",
+            )
+        )
+    return train
 
 
 def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
@@ -157,34 +181,19 @@ def shuffle_spike_times_circular(
     [3, 3, 3]
     """
     _validate_circular_shift_settings(n_shuffles, min_shift)
-    try:
-        normalized = as_intervals(windows, name="windows")
-    except ValueError as exc:
-        problems = str(exc).split("\nWhy:", 1)[0]
+    normalized, problems = _resolve_intervals(windows, "windows")
+    if normalized is None:
+        problem = (
+            "; ".join(problems) or "windows must contain analyzed recording intervals"
+        )
         raise ValueError(
             _format_error(
-                f"shuffle_spike_times_circular: {problems}",
+                f"shuffle_spike_times_circular: {problem}.",
                 why="Why: circular shifting requires finite half-open analyzed-time windows with start < stop",
                 fix="pass windows=np.array([[0.0, 100.0], [200.0, 300.0]]) in seconds",
             )
-        ) from None
-    if normalized is None:
-        raise ValueError(
-            _format_error(
-                "windows must contain analyzed recording intervals.",
-                why="Why: spikes need explicit valid time bounds for circular shifting",
-                fix="pass windows=np.array([[start, stop]]) in seconds",
-            )
         )
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
-        raise ValueError(
-            _format_error(
-                f"spike_times must be a finite 1-D array, got shape {spike_times.shape}.",
-                why="Why: circular shifting operates on one spike train in seconds",
-                fix="pass a finite 1-D spike_times array",
-            )
-        )
+    spike_times = _spike_train(spike_times, call="shuffle_spike_times_circular()")
     offsets = np.concatenate([[0.0], np.cumsum(normalized[:, 1] - normalized[:, 0])])
     total = float(offsets[-1])
     if total <= 2.0 * min_shift:
@@ -422,28 +431,29 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         defined null scores at least as extreme as observed in the direction
         of ``tail`` and n is ``n_shuffles_used``. NaN when the test is
         undefined: a non-finite observed score or no defined null score.
-    z_score : float
-        Standard score: (observed - mean(null)) / std(null), over the finite
-        null scores. NaN if they have zero variance, fewer than two are
-        finite, or a null score is infinite.
     shuffle_type : str
         Name of the shuffle method used (e.g., "time_bins", "cell_identity").
-    n_shuffles : int
-        Number of shuffles performed, ``len(null_scores)``, including any
-        with an undefined score.
     tail : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test the p-value belongs to.
 
     Attributes
     ----------
+    z_score : float
+        Standard score of the observed score against the null scores, from
+        :func:`compute_shuffle_zscore`: (observed - mean(null)) / std(null)
+        over the defined null scores. NaN if they have zero variance, fewer
+        than two are defined, or a null score is infinite.
+    n_shuffles : int
+        Number of shuffles performed, ``len(null_scores)``, including any
+        with an undefined score.
     n_shuffles_used : int
         Shuffles with a defined (non-NaN) score, the n of the p-value.
 
     Raises
     ------
     ValueError
-        If ``null_scores`` is not 1-D, ``n_shuffles`` is not its length,
-        ``p_value`` is neither in (0, 1] nor NaN, or ``tail`` is unknown.
+        If ``null_scores`` is not 1-D, ``p_value`` is neither in (0, 1] nor
+        NaN, or ``tail`` is unknown.
 
     Examples
     --------
@@ -469,9 +479,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     observed_score: float
     null_scores: NDArray[np.float64]
     p_value: float
-    z_score: float
     shuffle_type: str
-    n_shuffles: int
     tail: Literal["greater", "less", "two-sided"] = "greater"
 
     def __post_init__(self) -> None:
@@ -480,11 +488,6 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         problems = []
         if null.ndim != 1:
             problems.append(f"null_scores must be 1-D, got shape {null.shape}")
-        elif self.n_shuffles != null.size:
-            problems.append(
-                f"n_shuffles={self.n_shuffles!r} must equal len(null_scores)="
-                f"{null.size}"
-            )
         if not (np.isnan(self.p_value) or 0.0 < self.p_value <= 1.0):
             problems.append(f"p_value={self.p_value!r} must be in (0, 1] or NaN")
         if self.tail not in _TAILS:
@@ -493,8 +496,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             raise ValueError(
                 _format_error(
                     "ShuffleTestResult: " + "; ".join(problems) + ".",
-                    why="a result's p-value, z-score and counts must describe its "
-                    "null scores",
+                    why="a result's p-value must describe its null scores",
                     fix="build it with ShuffleTestResult.from_null(observed, "
                     "null_scores, shuffle_type=...)",
                 )
@@ -574,11 +576,19 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             observed_score=observed_score,
             null_scores=null,
             p_value=p_value,
-            z_score=compute_shuffle_zscore(observed_score, defined),
             shuffle_type=shuffle_type,
-            n_shuffles=null.size,
             tail=tail,
         )
+
+    @property
+    def z_score(self) -> float:
+        """Standard score of the observed score against the null scores."""
+        return compute_shuffle_zscore(self.observed_score, self.null_scores)
+
+    @property
+    def n_shuffles(self) -> int:
+        """Shuffles performed, ``len(null_scores)``, including undefined ones."""
+        return len(self.null_scores)
 
     @property
     def n_shuffles_used(self) -> int:
@@ -1099,21 +1109,9 @@ def shuffle_spikes_isi(
     shuffle_time_bins : Shuffle temporal order of binned spike counts.
     generate_poisson_surrogates : Generate Poisson surrogate spike trains.
     """
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if (
-        spike_times.ndim != 1
-        or not np.all(np.isfinite(spike_times))
-        or np.any(np.diff(spike_times) < 0)
-    ):
-        raise ValueError(
-            _format_error(
-                f"spike_times must be a sorted, finite 1-D array, got shape "
-                f"{spike_times.shape}.",
-                why="Why: inter-spike intervals are differences of consecutive "
-                "spike times",
-                fix="pass np.sort(spike_times[np.isfinite(spike_times)])",
-            )
-        )
+    spike_times = _spike_train(
+        spike_times, call="shuffle_spikes_isi()", require_sorted=True
+    )
     validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_spikes_isi()")
     if spike_times.size < 3:
         warnings.warn(

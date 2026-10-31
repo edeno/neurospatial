@@ -51,6 +51,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import validate_draw_count, validate_integer_at_least
+from neurospatial.stats.shuffle import _spike_train
 
 
 def _validated_counts(spike_counts: NDArray[np.int64]) -> NDArray[np.float64]:
@@ -345,16 +346,7 @@ def generate_jittered_spikes(
     generate_poisson_surrogates : Rate-matched surrogates (destroys all timing)
     neurospatial.stats.shuffle.shuffle_spikes_isi : ISI-preserving shuffle
     """
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    if spike_times.ndim != 1 or not np.all(np.isfinite(spike_times)):
-        raise ValueError(
-            _format_error(
-                f"spike_times must be a finite 1-D array, got shape "
-                f"{spike_times.shape}.",
-                why="Why: each spike time is jittered independently",
-                fix="pass spike_times[np.isfinite(spike_times)] for one neuron",
-            )
-        )
+    spike_times = _spike_train(spike_times, call="generate_jittered_spikes()")
     if not (np.isfinite(jitter_std) and jitter_std > 0):
         raise ValueError(
             _format_error(
