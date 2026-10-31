@@ -64,6 +64,7 @@ from neurospatial.environment._fields import (
     diffusion_geometry,
     require_face_geometry,
     smoothing_geometry,
+    warn_mesh_skew_once,
 )
 from neurospatial.environment._lookup import bin_spacing, center_tree, nearest_bin
 from neurospatial.environment._metrics import (
@@ -1153,6 +1154,14 @@ class Environment(Generic[_C]):
         NotImplementedError
             If the layout has no finite-volume cell geometry.
 
+        Warns
+        -----
+        UserWarning
+            Once per environment, when the bins are a triangle mesh with many
+            skewed triangles. The two-point flux needs the line between
+            neighboring centers to cross their shared side at a right angle;
+            where it does not, the divergence of a field is only approximate.
+
         Examples
         --------
         >>> import numpy as np
@@ -1168,7 +1177,9 @@ class Environment(Generic[_C]):
         get_differential_operator : The edge gradient operator it is adjoint to.
         neurospatial.ops.calculus.divergence : Apply it to an edge field.
         """
-        return self._divergence_operator_cached.copy()
+        operator = self._divergence_operator_cached.copy()
+        warn_mesh_skew_once(self._cache, self._binning)
+        return operator
 
     @property
     def _differential_operator_cached(self) -> sparse.csc_matrix:

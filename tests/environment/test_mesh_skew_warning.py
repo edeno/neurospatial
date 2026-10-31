@@ -1,8 +1,9 @@
-"""The triangle-mesh skew warning appears where a field is smoothed.
+"""The triangle-mesh skew warning appears where the skew makes a result approximate.
 
 Building a mesh's cell faces never warns: comparing environments, decoding,
-subsetting and gradients build faces without smoothing anything. Smoothing
-warns once per cached geometry, at the scientist's call.
+subsetting and gradients build faces without smoothing anything. Smoothing a
+field, or taking its divergence, warns once per cached geometry, at the
+scientist's call.
 """
 
 from __future__ import annotations
@@ -133,6 +134,21 @@ def test_subset_and_gradient_are_silent_and_the_subset_warns_when_smoothed() -> 
     )
     assert parent is not None
     assert _counts(str(skew[0].message)) != _counts(parent)
+
+
+def test_divergence_warns_once_on_a_skewed_mesh() -> None:
+    from neurospatial.ops import divergence, gradient
+
+    env = _sheared_mesh()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        flux = gradient(env, env.bin_centers[:, 0])
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        divergence(env, flux)
+        divergence(env, flux)
+        env.smooth(np.ones(env.n_bins), bandwidth=3.0, mode="average")
+    assert [w.filename for w in _skew_warnings(record)] == [__file__]
 
 
 def test_well_shaped_mesh_never_warns() -> None:

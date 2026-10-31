@@ -388,6 +388,15 @@ def _warn_mesh_skew(binning: Binning) -> str | None:
     return "\n".join(messages) or None
 
 
+def warn_mesh_skew_once(cache: AnalysisCache, binning: Binning) -> None:
+    """Warn once per cached geometry when the bins are a skewed triangle mesh.
+
+    Called at the scientist's call to an operation whose result the skew
+    makes approximate: smoothing, and the divergence of a field.
+    """
+    cache.get(MESH_SKEW_WARNING, lambda: _warn_mesh_skew(binning))
+
+
 def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeometry:
     """Diffusion geometry for an operation that smooths a field.
 
@@ -396,7 +405,7 @@ def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
     cannot smooth raises without warning.
     """
     geometry = diffusion_geometry(cache, binning)
-    cache.get(MESH_SKEW_WARNING, lambda: _warn_mesh_skew(binning))
+    warn_mesh_skew_once(cache, binning)
     return geometry
 
 

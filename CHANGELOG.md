@@ -48,6 +48,8 @@
   kernel is isotropic. Lattice points closer than half a spacing to the
   outline are left out, so the boundary triangles stay well shaped. Meshes
   built with the same `point_spacing` have different bins than before.
+- `divergence` and `env.get_divergence_operator()` give the skewed-mesh
+  warning that smoothing gives, once per environment.
 
 ### Exporting decoding and behavior results to pynapple
 
