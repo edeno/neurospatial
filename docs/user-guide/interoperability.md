@@ -639,6 +639,16 @@ copy with `NWBHDF5IO(new_path, "w").export(src_io=io, nwbfile=nwbfile)`. pynwb
 cannot delete objects already written to a file opened with `"r+"`, so
 `overwrite=True` refuses such files.
 
+### Trials, laps, crossings and events
+
+`write_trials`, `write_laps`, `write_region_crossings` and `write_events` store
+behavioral records as NWB tables. A session with zero records writes no table:
+NWB best practice is not to write empty tables, and DANDI validation reports
+them. The writer warns instead, and reading that table back raises `KeyError`,
+so treat a missing table as zero trials, laps, crossings or events. Laps found
+without a template lap (`detect_laps(..., method="region")`) have no overlap
+score, so their table has no `overlap_score` column.
+
 ## See Also
 
 - **[Complete Workflows](workflows.md)**: End-to-end encode / decode examples
