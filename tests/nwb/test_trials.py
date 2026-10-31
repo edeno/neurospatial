@@ -358,6 +358,23 @@ class TestWriteTrialsValidation:
 
         assert list(read_trials(empty_nwb)["end_region"]) == ["goal", ""]
 
+    @pytest.mark.parametrize(
+        ("column", "message"),
+        [
+            ({"start_regions": ["home", None]}, "Trial 1 has start_region None"),
+            ({"end_regions": ["goal", 3]}, "Trial 1 has end_region 3"),
+        ],
+    )
+    def test_region_that_is_not_a_string_is_refused(self, empty_nwb, column, message):
+        """A region name is never stored as the text of None or a number."""
+        from neurospatial.io.nwb import write_trials
+
+        with pytest.raises(TypeError, match=message):
+            write_trials(
+                empty_nwb, start_times=[0.0, 10.0], stop_times=[5.0, 15.0], **column
+            )
+        assert empty_nwb.trials is None
+
 
 class TestWriteTrialsOverwrite:
     """Tests for write_trials() overwrite behavior."""

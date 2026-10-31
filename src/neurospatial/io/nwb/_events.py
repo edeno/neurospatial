@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, get_args, get_type_hints
+from dataclasses import dataclass
+from itertools import repeat
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin, get_type_hints
 
 import numpy as np
 import pandas as pd
@@ -54,18 +56,6 @@ _PREDEFINED_INTERVALS: tuple[str, ...] = (
     PREDEFINED_TRIALS,
     PREDEFINED_EPOCHS,
     PREDEFINED_INVALID_TIMES,
-)
-
-_LAP_DIRECTION_DESCRIPTION = (
-    "Direction of the lap: clockwise, counter-clockwise or unknown"
-)
-_REGION_DESCRIPTION = "Name of the region crossed"
-_CROSSING_DIRECTION_DESCRIPTION = "Direction of the crossing: entry or exit"
-_BIN_INDEX_DESCRIPTION = "Environment bin index of the sample at the crossing time"
-_OVERLAP_SCORE_DESCRIPTION = (
-    "Jaccard overlap of the lap's bins with the template lap's bins, in [0, 1]; "
-    "NaN for a lap without a template score; the column is left out when no lap "
-    "has one (laps detected with method='region')"
 )
 
 
@@ -346,7 +336,7 @@ def _records(
     record_class: type,
     argument: str,
     *,
-    arrays: str = "start_times/stop_times",
+    arrays: str,
 ) -> list[Any]:
     """Return ``records`` as a list after checking every element's type."""
     if not isinstance(records, (list, tuple)):
@@ -385,7 +375,13 @@ def _checked_event_times(values: object, argument: str) -> NDArray[np.float64]:
 
     NWB times are finite seconds from the session start, so none is negative.
     """
-    times = validate_finite(np.array(values, dtype=np.float64), name=argument)
+    times = np.array(values, dtype=np.float64)
+    if times.ndim != 1:
+        raise ValueError(
+            f"{argument} must be a 1-D array of times in seconds; got shape "
+            f"{times.shape}."
+        )
+    validate_finite(times, name=argument)
     negative = np.flatnonzero(times < 0)
     if negative.size:
         raise ValueError(
@@ -399,25 +395,10 @@ def _checked_event_times(values: object, argument: str) -> NDArray[np.float64]:
     return times
 
 
-def _checked_intervals(
-    start_times: object, stop_times: object, *, record: str
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return start and stop times as validated 1-D float arrays (copies)."""
-    start = np.array(start_times, dtype=np.float64)
-    stop = np.array(stop_times, dtype=np.float64)
-    for argument, values in (("start_times", start), ("stop_times", stop)):
-        if values.ndim != 1:
-            raise ValueError(
-                f"{argument} must be a 1-D array of times in seconds; got shape "
-                f"{values.shape}."
-            )
-    if len(stop) != len(start):
-        raise ValueError(
-            f"stop_times length ({len(stop)}) must match start_times length "
-            f"({len(start)})."
-        )
-    for argument, values in (("start_times", start), ("stop_times", stop)):
-        _checked_event_times(values, argument)
+def _refuse_reversed_intervals(
+    start: NDArray[np.float64], stop: NDArray[np.float64], *, record: str
+) -> None:
+    """Refuse an interval that stops before it starts."""
     backwards = np.flatnonzero(stop < start)
     if backwards.size:
         i = backwards[0]
@@ -425,47 +406,199 @@ def _checked_intervals(
             f"stop_time must be >= start_time for every {record}. "
             f"{record.capitalize()} {i}: start_time={start[i]}, stop_time={stop[i]}"
         )
-    return start, stop
 
 
-def _per_record(
-    values: Sequence[Any] | None, argument: str, n: int, reference: str = "start_times"
-) -> list[Any]:
-    """Return one value per record, checking the length against ``reference``."""
-    if values is None:
-        return []
+@dataclass(frozen=True)
+class _Column:
+    """A per-record column, read from record objects or from an array argument.
+
+    ``name`` is both the column name and the record attribute that holds it.
+    The attribute's annotation on the record class sets what the column
+    accepts: a ``Literal`` lists the allowed strings, ``str`` takes any
+    string, ``str | None`` also takes None (stored as ``""``), and ``float``
+    and ``int`` are stored as float64 and int64.
+    """
+
+    name: str
+    description: str
+    argument: str | None = None
+    """Array keyword of the writer; None when only the records carry it."""
+    required: bool = False
+    """Whether the writer needs the array when it is given no records."""
+
+
+_INTERVAL_TIMES = {"start_times": "start_time", "stop_times": "end_time"}
+_LAP_COLUMNS = (
+    _Column(
+        "direction",
+        "Direction of the lap: clockwise, counter-clockwise or unknown",
+        "directions",
+    ),
+    _Column(
+        "overlap_score",
+        "Jaccard overlap of the lap's bins with the template lap's bins, in "
+        "[0, 1]; NaN for a lap without a template score; the column is left out "
+        "when no lap has one (laps detected with method='region')",
+    ),
+)
+_CROSSING_COLUMNS = (
+    _Column("region", "Name of the region crossed", "regions", required=True),
+    _Column(
+        "direction",
+        "Direction of the crossing: entry or exit",
+        "directions",
+        required=True,
+    ),
+    _Column("bin_index", "Environment bin index of the sample at the crossing time"),
+)
+_TRIAL_COLUMNS = (
+    _Column("start_region", "Region where trial started", "start_regions"),
+    _Column(
+        "end_region",
+        "Region reached (empty string if none was reached)",
+        "end_regions",
+    ),
+    _Column(
+        "outcome",
+        "How the trial ended: reached (end region entered), timeout, returned "
+        "(back to the start region) or censored (cut off by the recording)",
+        "outcomes",
+    ),
+)
+
+
+def _record_columns(
+    record_class: type,
+    records: object,
+    arrays: dict[str, Any],
+    *,
+    times: dict[str, str],
+    columns: tuple[_Column, ...],
+    needs: str,
+) -> tuple[list[NDArray[np.float64]], dict[str, tuple[str, NDArray[np.generic]]]]:
+    """Return the times and columns of a table, from records or from arrays.
+
+    Parameters
+    ----------
+    record_class : type
+        The record type: ``Lap``, ``Crossing`` or ``Trial``.
+    records : sequence of record_class or None
+        The writer's records argument; None to read ``arrays`` instead.
+    arrays : dict of str to array-like or None
+        Every array argument of the writer, by keyword.
+    times : dict of str to str
+        Array keyword of each time to the record attribute that holds it,
+        e.g. ``{"start_times": "start_time", "stop_times": "end_time"}``.
+    columns : tuple of _Column
+        The other columns, in table order.
+    needs : str
+        Error message for arrays without every required one.
+
+    Returns
+    -------
+    times : list of NDArray[np.float64], each shape (n_records,)
+        The checked times, in the order of ``times``.
+    columns : dict of str to (str, NDArray), values shape (n_records,)
+        ``name -> (description, values)`` for each column given.
+    """
+    record = record_class.__name__.lower()
+    attributes = {**times, **{c.argument or c.name: c.name for c in columns}}
+    if records is not None:
+        _refuse_records_with_arrays(f"{record}s", arrays)
+        objects = _records(records, record_class, f"{record}s", arrays="/".join(times))
+        given = {
+            key: [getattr(o, attribute) for o in objects]
+            for key, attribute in attributes.items()
+        }
+    else:
+        required = [*times, *(c.argument or c.name for c in columns if c.required)]
+        if any(arrays[key] is None for key in required):
+            raise ValueError(needs)
+        given = {key: value for key, value in arrays.items() if value is not None}
+
+    reference = next(iter(times))
+    checked = [_checked_event_times(given[key], key) for key in times]
+    n = len(checked[0])
+    for key, values in zip(times, checked, strict=True):
+        _refuse_length(len(values), key, n, reference)
+    hints = get_type_hints(record_class)
+    built = {
+        c.name: (
+            c.description,
+            _column_values(
+                given[key], hints[c.name], key, n, reference, record_class, c.name
+            ),
+        )
+        for c in columns
+        if (key := c.argument or c.name) in given
+    }
+    return checked, built
+
+
+def _refuse_length(length: int, argument: str, n: int, reference: str) -> None:
+    """Refuse an argument whose length differs from the reference's."""
+    if length != n:
+        raise ValueError(
+            f"{argument} length ({length}) must match {reference} length ({n})."
+        )
+
+
+def _column_values(
+    values: Any,
+    hint: Any,
+    argument: str,
+    n: int,
+    reference: str,
+    record_class: type,
+    name: str,
+) -> NDArray[np.generic]:
+    """Return one value per record as the array type ``hint`` names.
+
+    A list of strings becomes an object array first, so numpy never turns a
+    number or None into text before it is checked.
+    """
     if isinstance(values, str):
         raise TypeError(
             f"{argument} must be a sequence with one value per record, not the "
             f"single string {values!r}; a string would be split into its "
             f"characters. Pass [{values!r}] * {n} to use it for every record."
         )
-    values = list(values)
-    if len(values) != n:
-        raise ValueError(
-            f"{argument} length ({len(values)}) must match {reference} length ({n})."
-        )
-    return values
-
-
-def _refuse_unknown(
-    values: list[Any],
-    allowed: tuple[str, ...],
-    *,
-    argument: str,
-    what: str,
-    why: str,
-) -> None:
-    """Refuse a value outside the vocabulary of a record field."""
-    bad = [value for value in values if value not in allowed]
-    if bad:
-        raise ValueError(
+    if hint is float or hint is int:
+        numbers = np.array(values, dtype=np.float64 if hint is float else np.int64)
+        _refuse_length(len(numbers), argument, n, reference)
+        return numbers
+    array: NDArray[Any] = (
+        values if isinstance(values, np.ndarray) else np.fromiter(values, object)
+    )
+    _refuse_length(len(array), argument, n, reference)
+    if array.dtype.kind != "U":
+        array = array.astype(object)
+        if type(None) in get_args(hint):
+            array = np.array(["" if v is None else v for v in array], object)
+        if all(map(isinstance, array, repeat(str))):
+            array = array.astype(str)
+    record = record_class.__name__
+    if get_origin(hint) is Literal:
+        allowed = get_args(hint)
+        bad = np.flatnonzero(~np.isin(array, allowed))
+        if bad.size:
+            raise ValueError(
+                _format_error(
+                    f"{argument} contains {array.item(bad[0])!r}, which is not a "
+                    f"{record.lower()} {name}.",
+                    why=f"the {name} column uses the vocabulary of {record}.{name}.",
+                    fix=f"use one of {allowed}.",
+                )
+            )
+    if array.dtype.kind != "U":
+        i = next(i for i, value in enumerate(array) if not isinstance(value, str))
+        raise TypeError(
             _format_error(
-                f"{argument} contains {bad[0]!r}, which is not a {what}.",
-                why=why,
-                fix=f"use one of {allowed}.",
+                f"{record} {i} has {name} {array.item(i)!r}, not a string.",
+                fix=f"give every {record.lower()} its {name} as a string.",
             )
         )
+    return array.astype(str)
 
 
 def _build_time_intervals(
@@ -637,51 +770,24 @@ def write_laps(
             "predefined table of that name. Use another name, such as 'laps'."
         )
 
-    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
-    if laps is not None:
-        _refuse_records_with_arrays(
-            "laps",
-            {
-                "start_times": start_times,
-                "stop_times": stop_times,
-                "directions": directions,
-            },
-        )
-        records = _records(laps, Lap, "laps")
-        start, stop = _checked_intervals(
-            [lap.start_time for lap in records],
-            [lap.end_time for lap in records],
-            record="lap",
-        )
-        columns["direction"] = (
-            _LAP_DIRECTION_DESCRIPTION,
-            np.array([lap.direction for lap in records], dtype=str),
-        )
-        overlap = np.array([lap.overlap_score for lap in records], dtype=np.float64)
-        # Laps detected without a template (method="region") have no score;
-        # an all-NaN column breaks NWB best practice, so it is left out.
-        if not np.all(np.isnan(overlap)):
-            columns["overlap_score"] = (_OVERLAP_SCORE_DESCRIPTION, overlap)
-    else:
-        if start_times is None or stop_times is None:
-            raise ValueError(
-                "write_laps needs either 'laps' (from detect_laps) or both "
-                "'start_times' and 'stop_times'."
-            )
-        start, stop = _checked_intervals(start_times, stop_times, record="lap")
-        if directions is not None:
-            directions_list = _per_record(directions, "directions", len(start))
-            _refuse_unknown(
-                directions_list,
-                get_args(get_type_hints(Lap)["direction"]),
-                argument="directions",
-                what="lap direction",
-                why="the direction column uses the vocabulary of Lap.direction.",
-            )
-            columns["direction"] = (
-                _LAP_DIRECTION_DESCRIPTION,
-                np.array(directions_list, dtype=str),
-            )
+    (start, stop), columns = _record_columns(
+        Lap,
+        laps,
+        {
+            "start_times": start_times,
+            "stop_times": stop_times,
+            "directions": directions,
+        },
+        times=_INTERVAL_TIMES,
+        columns=_LAP_COLUMNS,
+        needs="write_laps needs either 'laps' (from detect_laps) or both "
+        "'start_times' and 'stop_times'.",
+    )
+    _refuse_reversed_intervals(start, stop, record="lap")
+    # Laps detected without a template (method="region") have no score;
+    # an all-NaN column breaks NWB best practice, so it is left out.
+    if "overlap_score" in columns and np.all(np.isnan(columns["overlap_score"][1])):
+        del columns["overlap_score"]
 
     table = _build_time_intervals(name, description, start, stop, columns)
 
@@ -804,67 +910,16 @@ def write_region_crossings(
     # Check ndx-events first so users see the install hint.
     _require_ndx_events()
 
-    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
-    if crossings is not None:
-        _refuse_records_with_arrays(
-            "crossings",
-            {"times": times, "regions": regions, "directions": directions},
-        )
-        records = _records(crossings, Crossing, "crossings", arrays="times")
-        crossing_times = np.array([c.time for c in records], dtype=np.float64)
-        regions_list = [c.region for c in records]
-        directions_list: list[Any] = [c.direction for c in records]
-        columns["bin_index"] = (
-            _BIN_INDEX_DESCRIPTION,
-            np.array([c.bin_index for c in records], dtype=np.int64),
-        )
-    else:
-        if times is None or regions is None or directions is None:
-            raise ValueError(
-                "write_region_crossings needs either 'crossings' (from "
-                "detect_region_crossings) or all of 'times', 'regions' and "
-                "'directions'."
-            )
-        crossing_times = np.array(times, dtype=np.float64)
-        if crossing_times.ndim != 1:
-            raise ValueError(
-                "times must be a 1-D array of crossing times in seconds; got "
-                f"shape {crossing_times.shape}."
-            )
-        regions_list = _per_record(regions, "regions", len(crossing_times), "times")
-        directions_list = _per_record(
-            directions, "directions", len(crossing_times), "times"
-        )
-        _refuse_unknown(
-            directions_list,
-            get_args(get_type_hints(Crossing)["direction"]),
-            argument="directions",
-            what="crossing direction",
-            why="the direction column uses the vocabulary of Crossing.direction.",
-        )
-    missing = [
-        i for i, region in enumerate(regions_list) if not isinstance(region, str)
-    ]
-    if missing:
-        raise TypeError(
-            f"Crossing {missing[0]} has region {regions_list[missing[0]]!r}; every "
-            "crossing needs the region name as a string."
-        )
-    _checked_event_times(crossing_times, "times")
-
-    events_table = _build_events_table(
-        name,
-        description,
-        crossing_times,
-        {
-            "region": (_REGION_DESCRIPTION, np.array(regions_list, dtype=str)),
-            "direction": (
-                _CROSSING_DIRECTION_DESCRIPTION,
-                np.array(directions_list, dtype=str),
-            ),
-            **columns,
-        },
+    (crossing_times,), columns = _record_columns(
+        Crossing,
+        crossings,
+        {"times": times, "regions": regions, "directions": directions},
+        times={"times": "time"},
+        columns=_CROSSING_COLUMNS,
+        needs="write_region_crossings needs either 'crossings' (from "
+        "detect_region_crossings) or all of 'times', 'regions' and 'directions'.",
     )
+    events_table = _build_events_table(name, description, crossing_times, columns)
     _add_events_table(
         nwbfile,
         events_table,
@@ -879,12 +934,6 @@ def write_region_crossings(
         name,
         len(crossing_times),
     )
-
-
-_OUTCOME_DESCRIPTION = (
-    "How the trial ended: reached (end region entered), timeout, returned "
-    "(back to the start region) or censored (cut off by the recording)"
-)
 
 
 @reads_pynapple_samples
@@ -950,7 +999,8 @@ def write_trials(
         table refers to the rows of the trials table being replaced.
     TypeError
         If ``trials`` is not a list of ``Trial`` objects, or a per-trial
-        argument is a single string.
+        argument is a single string, or a region is not a string (None is
+        allowed in ``end_regions``).
     NotImplementedError
         If ``overwrite=True`` would replace the trials table of a file read
         from disk.
@@ -1003,66 +1053,26 @@ def write_trials(
     read_intervals : Read generic TimeIntervals.
     segment_trials : Segment trajectory into trials.
     """
-    from neurospatial.behavior.segmentation import Outcome, Trial
+    from neurospatial.behavior.segmentation import Trial
 
     _require_pynwb()
 
-    columns: dict[str, tuple[str, NDArray[np.generic]]] = {}
-    if trials is not None:
-        _refuse_records_with_arrays(
-            "trials",
-            {
-                "start_times": start_times,
-                "stop_times": stop_times,
-                "start_regions": start_regions,
-                "end_regions": end_regions,
-                "outcomes": outcomes,
-            },
-        )
-        records = _records(trials, Trial, "trials")
-        start, stop = _checked_intervals(
-            [trial.start_time for trial in records],
-            [trial.end_time for trial in records],
-            record="trial",
-        )
-        start_regions_list = [trial.start_region for trial in records]
-        end_regions_list = [trial.end_region for trial in records]
-        outcomes_list = [trial.outcome for trial in records]
-    else:
-        if start_times is None or stop_times is None:
-            raise ValueError(
-                "write_trials needs either 'trials' (from segment_trials) or "
-                "both 'start_times' and 'stop_times'."
-            )
-        start, stop = _checked_intervals(start_times, stop_times, record="trial")
-        start_regions_list = _per_record(start_regions, "start_regions", len(start))
-        end_regions_list = _per_record(end_regions, "end_regions", len(start))
-        outcomes_list = _per_record(outcomes, "outcomes", len(start))
-        _refuse_unknown(
-            outcomes_list,
-            get_args(Outcome),
-            argument="outcomes",
-            what="trial outcome",
-            why="the outcome column records how each trial ended.",
-        )
-    if trials is not None or start_regions is not None:
-        columns["start_region"] = (
-            "Region where trial started",
-            np.array(start_regions_list, dtype=str),
-        )
-    if trials is not None or end_regions is not None:
-        columns["end_region"] = (
-            "Region reached (empty string if none was reached)",
-            np.array(
-                ["" if region is None else region for region in end_regions_list],
-                dtype=str,
-            ),
-        )
-    if trials is not None or outcomes is not None:
-        columns["outcome"] = (
-            _OUTCOME_DESCRIPTION,
-            np.array(outcomes_list, dtype=str),
-        )
+    (start, stop), columns = _record_columns(
+        Trial,
+        trials,
+        {
+            "start_times": start_times,
+            "stop_times": stop_times,
+            "start_regions": start_regions,
+            "end_regions": end_regions,
+            "outcomes": outcomes,
+        },
+        times=_INTERVAL_TIMES,
+        columns=_TRIAL_COLUMNS,
+        needs="write_trials needs either 'trials' (from segment_trials) or "
+        "both 'start_times' and 'stop_times'.",
+    )
+    _refuse_reversed_intervals(start, stop, record="trial")
 
     table = _build_time_intervals(PREDEFINED_TRIALS, description, start, stop, columns)
     removed = nwbfile.trials is not None
