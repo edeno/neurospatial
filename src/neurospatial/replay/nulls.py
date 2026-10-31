@@ -27,7 +27,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.stats import _ensure_rng
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -129,7 +128,7 @@ def shuffle_cell_identity(
     shuffle_place_fields_circular : Circular shift of place fields
     shuffle_time_bins : Temporal order shuffle
     """
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     n_neurons = spike_counts.shape[1]
 
     if encoding_models.shape[0] != n_neurons:
@@ -307,7 +306,9 @@ def shuffle_place_fields_circular(
         np.isfinite(np.asarray(encoding_models)).all(axis=0)
     )
     order = order[supported[order]]
-    return _roll_rows_along_track(encoding_models, order, n_shuffles, _ensure_rng(rng))
+    return _roll_rows_along_track(
+        encoding_models, order, n_shuffles, np.random.default_rng(rng)
+    )
 
 
 def _roll_rows_along_track(
@@ -473,7 +474,7 @@ def shuffle_place_fields_circular_2d(
                 fix=_NO_2D_FIELD_SHUFFLE,
             )
         )
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     n_neurons = encoding_models.shape[0]
 
     # Pre-compute indices for vectorized 2D roll
@@ -630,7 +631,7 @@ def shuffle_posterior_circular(
         posterior,
         order,
         n_shuffles,
-        _ensure_rng(rng),
+        np.random.default_rng(rng),
         exclude_zero_shift=bool(exclude_zero_shift),
     )
 
@@ -760,7 +761,7 @@ def shuffle_posterior_weighted_circular(
         env, order, peak_weights, edge_exclusion, operation
     )
     return _peak_weighted_rolls(
-        posterior, order, probabilities, n_shuffles, _ensure_rng(rng)
+        posterior, order, probabilities, n_shuffles, np.random.default_rng(rng)
     )
 
 
@@ -922,7 +923,7 @@ def shuffle_spike_counts_circular(
             f"spike_counts must be 2-D (n_time_bins, n_neurons), got shape "
             f"{counts.shape}."
         )
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     n_time, n_neurons = counts.shape
     rows = np.arange(n_time)[:, np.newaxis]
     columns = np.arange(n_neurons)[np.newaxis, :]
@@ -1015,7 +1016,7 @@ def shuffle_spike_counts_uniform(
             "(n_time_bins, n_neurons) non-negative counts, got shape "
             f"{counts.shape}."
         )
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     n_time = len(counts)
     totals = counts.sum(axis=0)
     share = np.full(n_time, 1.0 / max(n_time, 1))

@@ -13,11 +13,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
+from neurospatial._random import _entropy, _stream
 from neurospatial._results import plain_value, resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
-from neurospatial.stats._utils import _entropy
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     _shuffle_p_values,
@@ -150,9 +150,7 @@ def run_shuffle_test(
             windows,
             n_shuffles=n_shuffles,
             min_shift=min_shift,
-            rng=np.random.default_rng(
-                np.random.SeedSequence(entropy, spawn_key=(_stream_key(uid),))
-            ),
+            rng=_stream(entropy, _stream_key(uid)),
         )
         for train, uid in zip(spike_times, unit_ids, strict=True)
     ]

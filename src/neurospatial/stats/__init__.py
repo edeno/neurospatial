@@ -21,7 +21,7 @@ Imports
 >>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 """
 
-from neurospatial.stats._utils import _ensure_rng as _ensure_rng
+from neurospatial.stats._utils import _binomial_rate as _binomial_rate
 from neurospatial.stats.circular import (
     CircularBasisResult,
     circular_basis,

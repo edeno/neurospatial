@@ -440,7 +440,6 @@ def rank_order_significance(
     >>> print(f"rho = {result.observed.score:.2f}, p = {result.p_value:.3f}")
     rho = 1.00, p = 0.002
     """
-    from neurospatial.stats import _ensure_rng
 
     operation = "rank_order_significance()"
     validate_integer_at_least(
@@ -481,7 +480,7 @@ def rank_order_significance(
             )
         )
     test = _cell_order_test(
-        pairs, observed.score, n_shuffles, alternative, _ensure_rng(rng)
+        pairs, observed.score, n_shuffles, alternative, np.random.default_rng(rng)
     )
     return RankOrderSignificanceResult(
         observed=observed,

@@ -49,7 +49,7 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_choice, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
 from neurospatial.replay._inputs import _checked_intervals
-from neurospatial.stats._utils import _binomial_rate
+from neurospatial.stats import _binomial_rate
 
 if TYPE_CHECKING:
     import pandas as pd

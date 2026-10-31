@@ -46,6 +46,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._random import _entropy, _stream
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
     is_integer_at_least,
@@ -73,7 +74,6 @@ from neurospatial.replay.significance import (
     _NULLS,
     _score_specs,
 )
-from neurospatial.stats._utils import _entropy, _stream
 from neurospatial.stats.shuffle import _tail_p_values
 
 if TYPE_CHECKING:

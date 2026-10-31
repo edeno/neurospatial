@@ -79,20 +79,19 @@ def test_one_offset_preserves_compressed_circular_spacings():
         )
 
 
-def test_large_clock_rounding_stays_below_excluded_stop(monkeypatch):
-    from types import SimpleNamespace
-
-    from neurospatial.stats import shuffle
+def test_large_clock_rounding_stays_below_excluded_stop():
+    class LargestShift(np.random.Generator):
+        def uniform(self, *_):
+            return np.nextafter(1.0, 0.0)
 
     t0 = 1e9
-    monkeypatch.setattr(
-        shuffle,
-        "_ensure_rng",
-        lambda _: SimpleNamespace(uniform=lambda *_: np.nextafter(1.0, 0.0)),
-    )
     train = next(
         stats.shuffle_spike_times_circular(
-            np.array([t0]), np.array([[t0, t0 + 1.0]]), n_shuffles=1, min_shift=0
+            np.array([t0]),
+            np.array([[t0, t0 + 1.0]]),
+            n_shuffles=1,
+            min_shift=0,
+            rng=LargestShift(np.random.PCG64(0)),
         )
     )
     assert len(train) == 1

@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._validation import is_integer_at_least
 from neurospatial.replay._inputs import (
@@ -47,7 +48,6 @@ from neurospatial.replay.trajectory import (
     detect_trajectory_radon,
     regression_line_score,
 )
-from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     from neurospatial.decoding.likelihood import _PoissonRates
@@ -598,7 +598,6 @@ def replay_significance(
     >>> print(f"r = {result.observed.score:.2f}, p = {result.p_value:.3f}")
     r = 1.00, p = 0.005
     """
-    from neurospatial.stats import _ensure_rng
 
     if isinstance(posterior, Mapping):
         return _max_over_templates(
@@ -629,7 +628,7 @@ def replay_significance(
     spec = _score_specs().get(score)
     if use_absolute is None:
         use_absolute = spec is not None and spec.signed
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     if _takes_rng(score) and "rng" not in options:
         options["rng"] = int(generator.integers(2**63 - 1))
     track_env = _track_env(env, encoding_models, template)

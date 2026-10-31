@@ -842,7 +842,6 @@ def _significance(
     use_absolute: bool,
     rng: np.random.Generator | int | None,
 ) -> BiasSimilarityResult:
-    from neurospatial.stats import _ensure_rng
     from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
     n_units = len(template)
@@ -856,7 +855,7 @@ def _significance(
     observed = float(
         _cosines(active_template, bias[np.ix_(active, active)][np.newaxis])[0]
     )
-    generator = _ensure_rng(rng)
+    generator = np.random.default_rng(rng)
     null = np.empty(n_shuffles)
     # Blocks of shuffles bound the memory of the stacked matrices.
     block = max(1, _BLOCK_VALUES // max(active.size**2, 1))

@@ -55,6 +55,7 @@ from neurospatial._intervals import (
     pynapple_end_to_stop,
     times_in_intervals,
 )
+from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -86,7 +87,6 @@ from neurospatial.reactivation.coactivity import (
     assembly_member_cofiring,
     ev_rev_contrast,
 )
-from neurospatial.stats._utils import _entropy, _name_key, _stream
 
 if TYPE_CHECKING:
     import pandas as pd

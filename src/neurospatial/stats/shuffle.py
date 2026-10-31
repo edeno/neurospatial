@@ -64,7 +64,6 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.stats._utils import _ensure_rng
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -234,7 +233,7 @@ def shuffle_spike_times_circular(
         total,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
-        generator=_ensure_rng(rng),
+        generator=np.random.default_rng(rng),
     )
 
 
@@ -329,7 +328,9 @@ def shuffle_time_bins(
         that all neurons share one permutation.
     """
     _validate_draw_count(n_shuffles, "n_shuffles")
-    return _row_permutations(np.asarray(spike_counts), n_shuffles, _ensure_rng(rng))
+    return _row_permutations(
+        np.asarray(spike_counts), n_shuffles, np.random.default_rng(rng)
+    )
 
 
 def _row_permutations(
@@ -1029,7 +1030,7 @@ def shuffle_trials(
     # Trial index of each sample: a new trial starts where the label changes.
     trial = np.concatenate([[0], np.cumsum(trial_labels[1:] != trial_labels[:-1])])
     run_labels = trial_labels[np.flatnonzero(np.diff(trial, prepend=-1))]
-    return _relabeled_trials(run_labels, trial, n_shuffles, _ensure_rng(rng))
+    return _relabeled_trials(run_labels, trial, n_shuffles, np.random.default_rng(rng))
 
 
 def _relabeled_trials(
@@ -1140,7 +1141,7 @@ def shuffle_spikes_isi(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return _isi_permutations(spike_times, n_shuffles, _ensure_rng(rng))
+    return _isi_permutations(spike_times, n_shuffles, np.random.default_rng(rng))
 
 
 def _isi_permutations(

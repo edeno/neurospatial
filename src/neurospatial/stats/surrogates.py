@@ -50,7 +50,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.stats._utils import _ensure_rng
 from neurospatial.stats.shuffle import _validate_draw_count
 
 
@@ -148,7 +147,7 @@ def generate_poisson_surrogates(
     _validate_draw_count(n_surrogates, "n_surrogates")
     # Each (time_bin, neuron) pair samples Poisson(mean count of its neuron).
     lam = np.broadcast_to(counts.mean(axis=0) if len(counts) else 0.0, counts.shape)
-    return _poisson_draws(lam, n_surrogates, _ensure_rng(rng))
+    return _poisson_draws(lam, n_surrogates, np.random.default_rng(rng))
 
 
 def _poisson_draws(
@@ -250,7 +249,7 @@ def generate_inhomogeneous_poisson_surrogates(
         if len(counts)
         else counts
     )
-    return _poisson_draws(lam, n_surrogates, _ensure_rng(rng))
+    return _poisson_draws(lam, n_surrogates, np.random.default_rng(rng))
 
 
 def generate_jittered_spikes(
@@ -372,7 +371,7 @@ def generate_jittered_spikes(
             )
         window = (start, stop)
     return _jitter_draws(
-        spike_times, jitter_std, window, n_surrogates, _ensure_rng(rng)
+        spike_times, jitter_std, window, n_surrogates, np.random.default_rng(rng)
     )
 
 
