@@ -275,6 +275,24 @@ def test_rates_from_an_earlier_layout_are_refused(empty_nwb, sample_environment)
     assert "Fix: recompute the rates" in str(error.value)
 
 
+@pytest.mark.parametrize("pass_env", [False, True])
+def test_rates_on_an_earlier_environment_schema_are_refused(
+    empty_nwb, sample_environment, pass_env
+):
+    """env= skips decoding the saved record but not its schema check."""
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    write_spatial_rates(empty_nwb, _rates(sample_environment), name="ca1")
+    record = empty_nwb.analysis["ca1_environment"]
+    meta = json.loads(record.description)
+    meta["schema_version"] = "4.0"
+    record.fields["description"] = json.dumps(meta)
+
+    env = sample_environment if pass_env else None
+    with pytest.raises(ValueError, match=r"schema '4\.0'"):
+        read_spatial_rates(empty_nwb, name="ca1", env=env)
+
+
 def test_missing_rates_list_the_saved_rates(empty_nwb, sample_environment):
     from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 

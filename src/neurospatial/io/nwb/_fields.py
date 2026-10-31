@@ -439,16 +439,23 @@ def write_spatial_rates(
         occupancy_name: f"occupancy {occupancy_name!r}",
     }
     removed: list[tuple[str, object]] = []
-    for old_name in old_names:
-        old = nwbfile.analysis[old_name]
-        _clear_for_write(
-            nwbfile,
-            nwbfile.analysis,
-            old_name,
-            overwrite=overwrite,
-            what=what.get(old_name, f"environment record {old_name!r}"),
-        )
-        removed.append((old_name, old))
+    try:
+        for old_name in old_names:
+            old = nwbfile.analysis[old_name]
+            _clear_for_write(
+                nwbfile,
+                nwbfile.analysis,
+                old_name,
+                overwrite=overwrite,
+                what=what.get(old_name, f"environment record {old_name!r}"),
+            )
+            removed.append((old_name, old))
+    except Exception:
+        # A refusal comes from the first removal, before anything is removed;
+        # put back whatever a later failure would otherwise lose.
+        for _old_name, old in reversed(removed):
+            nwbfile.add_analysis(old)
+        raise
     added: list[str] = []
     try:
         for obj in new_objects:
@@ -842,7 +849,7 @@ def read_spatial_rates(
             )
         )
     _require_unchanged_environment(
-        analysis[env_name], env_fingerprint, name=name, env_name=env_name
+        nwbfile, env_fingerprint, name=name, env_name=env_name
     )
     if env is None:
         env = read_environment(nwbfile, name=env_name)
@@ -954,16 +961,31 @@ _RECREATE_FIX = (
 
 
 def _require_unchanged_environment(
-    record: object, fingerprint: str, *, name: str, env_name: str
+    nwbfile: NWBFile, fingerprint: str, *, name: str, env_name: str
 ) -> None:
     """Refuse rates whose environment record is not the one they were written with.
 
-    Equal bin counts do not show equal bins: a record replaced or edited after
-    the rates were written could move every bin or relabel its units.
+    The record must be a current-schema environment record, read or not:
+    ``env=`` skips decoding it, but not this check. Equal bin counts do not
+    show equal bins: a record replaced or edited after the rates were written
+    could move every bin or relabel its units.
     """
-    from neurospatial.io.nwb._environment import _record_fingerprint
+    from neurospatial.io.files import _check_schema
+    from neurospatial.io.nwb._environment import (
+        ENVIRONMENT_FORMAT,
+        _record_fingerprint,
+        _require_record,
+    )
 
-    if _record_fingerprint(record) != fingerprint:
+    metadata = _require_record(
+        nwbfile,
+        env_name,
+        ENVIRONMENT_FORMAT,
+        what="an environment",
+        writer="write_environment",
+    )
+    _check_schema(metadata, f"NWB analysis/{env_name}")
+    if _record_fingerprint(nwbfile.analysis[env_name]) != fingerprint:
         raise ValueError(
             _format_error(
                 f"Spatial rates '{name}': the environment record '{env_name}' "
