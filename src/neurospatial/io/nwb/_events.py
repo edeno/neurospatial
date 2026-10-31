@@ -370,6 +370,12 @@ def _per_record(
     """Return one value per record, checking the length against ``reference``."""
     if values is None:
         return []
+    if isinstance(values, str):
+        raise TypeError(
+            f"{argument} must be a sequence with one value per record, not the "
+            f"single string {values!r}; a string would be split into its "
+            f"characters. Pass [{values!r}] * {n} to use it for every record."
+        )
     values = list(values)
     if len(values) != n:
         raise ValueError(
@@ -504,7 +510,8 @@ def write_laps(
         If ``name`` is reserved by NWB, or a table with that name exists and
         ``overwrite=False``.
     TypeError
-        If ``laps`` is not a list of ``Lap`` objects.
+        If ``laps`` is not a list of ``Lap`` objects, or ``directions`` is a
+        single string.
     NotImplementedError
         If ``overwrite=True`` would replace a table in a file opened with
         ``"r+"`` or ``"a"``.
@@ -658,7 +665,8 @@ def write_region_crossings(
         If times are non-finite or negative.
         If a table with the same name exists and ``overwrite=False``.
     TypeError
-        If ``crossings`` is not a list of ``Crossing`` objects.
+        If ``crossings`` is not a list of ``Crossing`` objects, ``regions`` or
+        ``directions`` is a single string, or a region is not a string.
     NotImplementedError
         If ``overwrite=True`` would replace a table in a file opened with
         ``"r+"`` or ``"a"``.
@@ -726,10 +734,18 @@ def write_region_crossings(
             what="crossing direction",
             why="the direction column uses the vocabulary of Crossing.direction.",
         )
-        if not np.all(np.isfinite(crossing_times)):
-            raise ValueError("times contains non-finite values (NaN or Inf)")
-        if np.any(crossing_times < 0):
-            raise ValueError("times contains negative timestamps")
+    missing = [
+        i for i, region in enumerate(regions_list) if not isinstance(region, str)
+    ]
+    if missing:
+        raise TypeError(
+            f"Crossing {missing[0]} has region {regions_list[missing[0]]!r}; every "
+            "crossing needs the region name as a string."
+        )
+    if not np.all(np.isfinite(crossing_times)):
+        raise ValueError("times contains non-finite values (NaN or Inf)")
+    if np.any(crossing_times < 0):
+        raise ValueError("times contains negative timestamps")
 
     events_table = _build_events_table(
         name,
@@ -820,9 +836,11 @@ def write_trials(
         If array lengths don't match, or an outcome is not one of the four.
         If stop_times < start_times for any trial.
         If timestamps contain non-finite or negative values.
-        If a trials table already exists and ``overwrite=False``.
+        If a trials table already exists and ``overwrite=False``, or another
+        table refers to the rows of the trials table being replaced.
     TypeError
-        If ``trials`` is not a list of ``Trial`` objects.
+        If ``trials`` is not a list of ``Trial`` objects, or a per-trial
+        argument is a single string.
     NotImplementedError
         If ``overwrite=True`` would replace the trials table of a file read
         from disk.
@@ -936,11 +954,28 @@ def write_trials(
                 "another name with nwbfile.add_time_intervals(...) (read back "
                 "with read_intervals)."
             )
-        # The trials attribute can be set only once; clearing the field is
-        # the only way to replace the table of an in-memory file.
+        old = nwbfile.trials
+        referrers = sorted(
+            f"column {obj.name!r} of {getattr(obj.parent, 'name', None)!r}"
+            for obj in nwbfile.all_children()
+            if getattr(obj, "table", None) is old
+        )
+        if referrers:
+            raise ValueError(
+                f"Cannot replace the trials table: {', '.join(referrers)} "
+                "refers to its rows and would point at a table that is no "
+                "longer in the file. Build a new NWBFile, or remove those "
+                "references first."
+            )
+        # The trials attribute can be set only once; clearing the field and
+        # detaching the old table is the only way to replace it in memory.
         nwbfile.fields.pop(PREDEFINED_TRIALS)
+        old.reset_parent()
         logger.info("Overwriting existing trials table")
     nwbfile.trials = table
+    if overwrite:
+        # all_children() rebuilt pynwb's object cache with the old table in it.
+        nwbfile.all_children()
     logger.debug("Wrote %d trials to NWB file", len(start))
 
 

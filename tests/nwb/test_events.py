@@ -568,6 +568,35 @@ class TestWriteRegionCrossings:
                 empty_nwb, times=times, regions=["goal"] * n, directions=["entry"] * n
             )
 
+    def test_negative_crossing_record_is_refused(self, empty_nwb):
+        """Records get the same time checks as arrays."""
+        from neurospatial.behavior.segmentation import Crossing
+        from neurospatial.io.nwb import write_region_crossings
+
+        crossing = Crossing(time=-1.0, direction="entry", bin_index=0, region="goal")
+        with pytest.raises(ValueError, match="times contains negative timestamps"):
+            write_region_crossings(empty_nwb, [crossing])
+
+    def test_single_region_string_is_refused(self, empty_nwb):
+        """'goal' for four crossings would otherwise be written as g, o, a, l."""
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(TypeError, match=r"Pass \['goal'\] \* 4"):
+            write_region_crossings(
+                empty_nwb,
+                times=np.arange(4.0),
+                regions="goal",
+                directions=["entry", "exit"] * 2,
+            )
+
+    def test_missing_region_is_refused(self, empty_nwb):
+        from neurospatial.io.nwb import write_region_crossings
+
+        with pytest.raises(TypeError, match="Crossing 0 has region None"):
+            write_region_crossings(
+                empty_nwb, times=np.array([1.0]), regions=[None], directions=["entry"]
+            )
+
     def test_duplicate_name_needs_overwrite(self, empty_nwb):
         from neurospatial.io.nwb import read_events, write_region_crossings
 

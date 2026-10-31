@@ -440,6 +440,48 @@ class TestWriteTrialsOverwrite:
             )
         np.testing.assert_array_equal(read_trials(empty_nwb)["start_time"], [0.0])
 
+    def test_replaced_table_is_detached_from_the_file(self, empty_nwb):
+        from neurospatial.io.nwb import write_trials
+
+        write_trials(empty_nwb, self._trials(0.0))
+        old = empty_nwb.trials
+        write_trials(empty_nwb, self._trials(100.0), overwrite=True)
+
+        assert old.parent is None
+        assert old not in empty_nwb.children
+        for objects in (empty_nwb.all_children(), empty_nwb.objects.values()):
+            assert [obj for obj in objects if obj.name == "trials"] == [
+                empty_nwb.trials
+            ]
+
+    def test_trials_referenced_by_another_table_are_kept(self, empty_nwb):
+        """Replacing referenced trials would leave a dangling reference that
+        only fails at io.write, so it is refused up front."""
+        from hdmf.common import DynamicTable, DynamicTableRegion
+
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        write_trials(empty_nwb, self._trials(0.0, n=2))
+        selection = DynamicTable(
+            name="rewarded_trials",
+            description="trials that were rewarded",
+            columns=[
+                DynamicTableRegion(
+                    name="trial",
+                    description="trial row",
+                    data=[1],
+                    table=empty_nwb.trials,
+                )
+            ],
+        )
+        empty_nwb.add_scratch(selection)
+
+        with pytest.raises(
+            ValueError, match="column 'trial' of 'rewarded_trials' refers to its rows"
+        ):
+            write_trials(empty_nwb, self._trials(100.0), overwrite=True)
+        np.testing.assert_array_equal(read_trials(empty_nwb)["start_time"], [0.0, 10.0])
+
     @pytest.mark.parametrize("mode", ["r", "r+", "a"])
     def test_overwrite_in_a_file_read_from_disk_is_refused(
         self, empty_nwb, tmp_path, mode
