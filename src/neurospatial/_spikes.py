@@ -30,7 +30,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import _is_pynapple_object
 from neurospatial._pynapple import is_pynapple_type, tsgroup_unit_table
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
 from neurospatial._validation import timestamps_of
@@ -137,7 +136,7 @@ _SPIKE_FORMS = (
 )
 
 
-def _refuse_spike_raster(arr: NDArray[np.float64], unit: int | None) -> None:
+def _refuse_spike_raster(arr: NDArray[np.float64], which: str) -> None:
     """Refuse a spike raster passed where spike times are expected.
 
     A raster marks spikes per time sample (boolean, or 0/1 integers or
@@ -147,13 +146,15 @@ def _refuse_spike_raster(arr: NDArray[np.float64], unit: int | None) -> None:
     repeats a value is a raster, because one unit cannot fire twice at the
     same instant. Distinct times such as ``[0, 1]`` or ``[0, 1, 2]`` are kept.
     """
+    # The min/max bound rejects real spike times cheaply; NaN fails it too.
     if not (
-        arr.ndim >= 1
+        arr.size
+        and arr.min() >= 0.0
+        and arr.max() <= 1.0
         and np.isin(arr, (0.0, 1.0)).all()
         and np.any(np.diff(np.sort(arr, axis=-1), axis=-1) == 0)
     ):
         return
-    which = "spike_times" if unit is None else f"spike_times for unit {unit}"
     raise ValueError(
         _format_error(
             f"{which} holds only 0s and 1s with repeats: a spike raster "
@@ -184,7 +185,7 @@ def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
                 fix="pass one 1-D array of spike times per unit.",
             )
         )
-    _refuse_spike_raster(arr, unit)
+    _refuse_spike_raster(arr, which)
     return arr
 
 
@@ -253,7 +254,7 @@ def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
 
 def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
     """Split a 2-D ``(n_units, max_spikes)`` array, removing trailing NaN."""
-    _refuse_spike_raster(arr, None)
+    _refuse_spike_raster(arr, "spike_times")
     n_rows, n_cols = arr.shape
     if n_cols == 1 and n_rows > 1:
         raise ValueError(
@@ -269,8 +270,9 @@ def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
                 "1-D arrays.",
             )
         )
-    rows_decrease = bool(np.any(np.diff(arr, axis=1) < 0))
-    if rows_decrease and n_rows > 1 and not np.any(np.diff(arr, axis=0) < 0):
+    steps_down = np.diff(arr, axis=1) < 0
+    decreasing = np.flatnonzero(steps_down.any(axis=1))
+    if decreasing.size and n_rows > 1 and not np.any(np.diff(arr, axis=0) < 0):
         raise ValueError(
             _format_error(
                 f"spike_times of shape {arr.shape} looks transposed: its "
@@ -280,10 +282,9 @@ def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
                 fix="if each column is one unit, pass spike_times.T.",
             )
         )
-    decreasing = np.flatnonzero((np.diff(arr, axis=1) < 0).any(axis=1))
     if decreasing.size:
         row = int(decreasing[0])
-        col = int(np.flatnonzero(np.diff(arr[row]) < 0)[0])
+        col = int(np.flatnonzero(steps_down[row])[0])
         raise ValueError(
             _format_error(
                 f"spike_times row(s) {decreasing[:5].tolist()} decrease, first "
@@ -327,10 +328,9 @@ def _single_train(obj: Any) -> Any | None:
     """
     if isinstance(obj, Mapping):
         return None
-    if _is_pynapple_object(obj):
-        t = getattr(obj, "t", None)
-        if t is not None and np.ndim(t) == 1:
-            return t
+    times = timestamps_of(obj, name="spike_times")
+    if times is not obj:
+        return times
     if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
         values = obj.to_numpy()
         if values.dtype == object and any(np.ndim(v) > 0 for v in values):
