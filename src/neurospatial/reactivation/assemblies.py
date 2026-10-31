@@ -151,6 +151,7 @@ from scipy import linalg, stats
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_integer_at_least
 from neurospatial.stats._utils import _ensure_rng
 
 __all__ = [
@@ -1635,14 +1636,7 @@ def _check_component_threshold(
         )
     if percentile is not None and not 0.0 < float(percentile) < 100.0:
         raise ValueError(f"{call}: percentile must be in (0, 100), got {percentile}.")
-    if (
-        isinstance(n_shuffles, bool)
-        or not isinstance(n_shuffles, (int, np.integer))
-        or n_shuffles < 1
-    ):
-        raise ValueError(
-            f"{call}: n_shuffles must be a positive integer, got {n_shuffles!r}."
-        )
+    validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=call)
 
 
 def _surrogate_max_eigenvalues(
