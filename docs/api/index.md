@@ -462,9 +462,8 @@ NWB (Neurodata Without Borders) read / write integration.
 - `read_environment()`, `read_position()`, `read_units()`, `read_head_direction()`, `read_pose()`,
   `read_events()`, `read_intervals()`, `read_trials()`: Read NWB
   components into neurospatial types
-- `write_environment()`, `write_place_field()`,
-  `write_occupancy()`, `write_events()`, `write_laps()`,
-  `write_region_crossings()`, `write_trials()`: Persist neurospatial
+- `write_environment()`, `write_spatial_rates()`, `write_events()`,
+  `write_laps()`, `write_region_crossings()`, `write_trials()`: Persist neurospatial
   results back into an NWBFile
 - `environment_from_position()`: Build an environment directly from
   the position channel of an NWB file

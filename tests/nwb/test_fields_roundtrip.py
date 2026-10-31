@@ -467,8 +467,31 @@ class TestSpatialRatesRoundTrip:
             np.asarray(back.occupancy), np.asarray(result.occupancy)
         )
 
+    def test_rates_on_two_environments_keep_their_own_bin_centers(
+        self, empty_nwb, sample_environment
+    ):
+        """Each record carries its own environment; no shared bin_centers."""
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env_a = sample_environment
+        positions = np.random.default_rng(42).uniform(0, 100, (1000, 2))
+        env_b = Environment.from_samples(positions + 500.0, bin_size=5.0, units="m")
+        assert env_b.n_bins == env_a.n_bins
+        write_spatial_rates(empty_nwb, _make_rates_result(env_a), name="session_a")
+        write_spatial_rates(empty_nwb, _make_rates_result(env_b), name="session_b")
+
+        # A file-wide bin_centers dataset would describe only the first
+        # environment and silently mislabel the second record's bins.
+        assert "bin_centers" not in empty_nwb.processing["analysis"].data_interfaces
+        back_a = read_place_field(empty_nwb, name="session_a")
+        back_b = read_place_field(empty_nwb, name="session_b")
+        np.testing.assert_array_equal(back_a.env.bin_centers, env_a.bin_centers)
+        np.testing.assert_array_equal(back_b.env.bin_centers, env_b.bin_centers)
+        assert back_b.env.units == "m"
+
     def test_wrong_length_occupancy_raises_at_read(self, empty_nwb, sample_environment):
-        """A companion occupancy of wrong length raises at READ time (FIX 3)."""
+        """A companion occupancy of wrong length raises at READ time."""
         from pynwb import TimeSeries
 
         from neurospatial.io.nwb import read_place_field, write_spatial_rates

@@ -286,8 +286,6 @@ def test_free_function_required_data_lists_are_current():
         ("read_events", 1, "table_name", "laps"),
         ("read_intervals", 1, "interval_name", "trials"),
         ("write_events", 2, "name", "rewards"),
-        ("write_place_field", 3, "name", "cell_1"),
-        ("write_occupancy", 3, "name", "occupancy_1"),
         ("write_laps", 3, "description", "laps"),
         ("write_region_crossings", 4, "description", "crossings"),
         ("dataframe_to_events_table", 1, "name", "rewards"),

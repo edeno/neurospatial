@@ -20,9 +20,7 @@ Reading Functions:
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
-    write_place_field : Write place field to NWB analysis/
     write_spatial_rates : Write a population SpatialRatesResult to NWB analysis/
-    write_occupancy : Write occupancy map to NWB analysis/
     write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write lap events to NWB processing/behavior/
     write_region_crossings : Write region crossing events
@@ -53,11 +51,10 @@ Creating an environment from NWB position data:
 
 Writing analysis results:
 
->>> from neurospatial.io.nwb import write_place_field, write_occupancy
+>>> from neurospatial.io.nwb import write_spatial_rates
 >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
-...     write_place_field(nwbfile, env, place_field, name="cell_001")
-...     write_occupancy(nwbfile, env, occupancy)
+...     write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
 ...     io.write(nwbfile)
 
 Environment round-trip (save and reload):
@@ -135,12 +132,6 @@ if TYPE_CHECKING:
         read_place_field as read_place_field,
     )
     from neurospatial.io.nwb._fields import (
-        write_occupancy as write_occupancy,
-    )
-    from neurospatial.io.nwb._fields import (
-        write_place_field as write_place_field,
-    )
-    from neurospatial.io.nwb._fields import (
         write_spatial_rates as write_spatial_rates,
     )
     from neurospatial.io.nwb._holders import (
@@ -189,9 +180,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_environment": "neurospatial.io.nwb._environment:read_environment",
     "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
-    "write_place_field": "neurospatial.io.nwb._fields:write_place_field",
     "write_spatial_rates": "neurospatial.io.nwb._fields:write_spatial_rates",
-    "write_occupancy": "neurospatial.io.nwb._fields:write_occupancy",
     "write_events": "neurospatial.io.nwb._events:write_events",
     "write_laps": "neurospatial.io.nwb._events:write_laps",
     "write_region_crossings": "neurospatial.io.nwb._events:write_region_crossings",
@@ -241,8 +230,6 @@ __all__ = [
     "write_environment",
     "write_events",
     "write_laps",
-    "write_occupancy",
-    "write_place_field",
     "write_region_crossings",
     "write_spatial_rates",
     "write_trials",
