@@ -436,6 +436,9 @@ def times_in_intervals(
 ) -> NDArray[np.bool_]:
     """Whether each instant lies inside a window row, tested as ``[t, t + ulp)``.
 
+    ``[t, t + ulp)`` lies in ``[start, stop)`` exactly when
+    ``start <= t < stop``, so an instant at a window's stop is outside.
+
     Parameters
     ----------
     windows : ndarray, shape (n_windows, 2)
@@ -446,9 +449,17 @@ def times_in_intervals(
     Returns
     -------
     ndarray of bool, shape (n,)
+        False for a NaN instant.
     """
     times = np.asarray(times, dtype=np.float64)
-    return intervals_contain(windows, times, np.nextafter(times, np.inf))
+    if windows.shape[0] == 0:
+        return np.zeros(times.shape, dtype=bool)
+    row = np.searchsorted(windows[:, 0], times, side="right") - 1
+    j = np.maximum(row, 0)
+    inside: NDArray[np.bool_] = (
+        (row >= 0) & (times >= windows[j, 0]) & (times < windows[j, 1])
+    )
+    return inside
 
 
 def intervals_contain(
@@ -768,17 +779,59 @@ def interval_valid_mask(
             )
         )
     times = np.asarray(times, dtype=np.float64)
-
-    n_samples = len(times)
-    if n_samples < 2:
+    if len(times) < 2:
         return np.zeros(0, dtype=bool)
+    return gated_intervals(
+        times,
+        None if sample_valid is None else gap_endpoints(sample_valid),
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        start_bin=start_bin,
+        require_end_bin=require_end_bin,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
+    )
 
-    if sample_valid is None:
-        start = np.arange(n_samples - 1, dtype=np.intp)
-        end = start + 1
-        valid_mask = np.ones(n_samples - 1, dtype=bool)
+
+def gated_intervals(
+    times: NDArray[np.float64],
+    endpoints: tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]] | None,
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    start_bin: NDArray[np.intp] | None = None,
+    require_end_bin: bool = False,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
+) -> NDArray[np.bool_]:
+    """The gates of :func:`interval_valid_mask` on already validated inputs.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,), n_samples >= 2
+    endpoints : tuple of ndarray, or None
+        ``gap_endpoints(sample_valid)``, for callers that reuse it; None
+        when every sample is valid.
+    speed, min_speed, max_gap, start_bin, require_end_bin, epochs, spike_window, break_before
+        As for :func:`interval_valid_mask`, already validated.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_samples - 1,)
+    """
+    start: NDArray[np.intp] | slice
+    end: NDArray[np.intp] | slice
+    if endpoints is None:
+        # Each interval's own samples, as views rather than index arrays.
+        start, end = slice(None, -1), slice(1, None)
+        valid_mask = np.ones(times.size - 1, dtype=bool)
     else:
-        start, end, valid_mask = gap_endpoints(sample_valid)
+        start, end, linked = endpoints
+        valid_mask = linked.copy()
     t_start, t_end = times[start], times[end]
 
     if max_gap is not None:

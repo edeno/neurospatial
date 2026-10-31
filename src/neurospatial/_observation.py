@@ -18,6 +18,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, Literal
 
 import numpy as np
@@ -29,6 +30,7 @@ from neurospatial._intervals import (
     IntervalGates,
     as_intervals,
     gap_endpoints,
+    gated_intervals,
     interval_valid_mask,
     ragged_arange,
     run_sample_bounds,
@@ -99,6 +101,16 @@ class ObservationSupport(ReadOnlyArraysMixin):
 
     def __post_init__(self) -> None:
         self._own_arrays()
+
+    @cached_property
+    def gap_endpoints(
+        self,
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]]:
+        """:func:`~neurospatial._intervals.gap_endpoints` of ``sample_valid``, read-only."""
+        endpoints = gap_endpoints(self.sample_valid)
+        for array in endpoints:
+            array.setflags(write=False)
+        return endpoints
 
     def restricted(
         self, times: NDArray[np.float64], defined: NDArray[np.bool_]
@@ -218,15 +230,19 @@ def _support_from_gates(
     samples, used for intervals with no valid sample on one side.
     """
     n_samples = times.size
-    interval_mask = interval_valid_mask(
-        times,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        sample_valid=sample_valid,
-    )
-    _, _, linked = gap_endpoints(sample_valid)
-    interval_gates = np.where(linked, interval_mask, raw_gates)
+    if n_samples < 2 or sample_valid.all():
+        # Every interval is linked to its own samples: the gates are the mask.
+        interval_mask = interval_gates = raw_gates
+    else:
+        endpoints = gap_endpoints(sample_valid)
+        interval_mask = gated_intervals(
+            times,
+            endpoints,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+        )
+        interval_gates = np.where(endpoints[2], interval_mask, raw_gates)
     bounds = run_sample_bounds(interval_mask)
     run_ids = np.full(n_samples, -1, dtype=np.intp)
     lengths = bounds[:, 1] - bounds[:, 0] + 1
@@ -428,7 +444,7 @@ def sample_feature(
 
     # Interpolate between the valid samples that bound the (bridged) gap, as
     # if missing samples had been deleted.
-    start, end, _ = gap_endpoints(support.sample_valid)
+    start, end, _ = support.gap_endpoints
     left, right = start[k[between]], end[k[between]]
     x0 = values[left]
     if interpolation == "previous":
