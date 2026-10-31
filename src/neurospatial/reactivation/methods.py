@@ -48,7 +48,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, times_in_intervals
+from neurospatial._intervals import (
+    as_intervals,
+    intersect_intervals,
+    times_in_intervals,
+)
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -294,7 +298,8 @@ class ReactivationWindows:
             if self.clock == "concatenated":
                 pieces = _concatenated_pieces(starts, edges, max(low, 0.0), high)
             else:
-                pieces = _clipped(rows, starts[0] + max(low, 0.0), starts[0] + high)
+                window = starts[0] + np.array([[max(low, 0.0), high]])
+                pieces = intersect_intervals(rows, window)
             if len(pieces):
                 windows.append(pieces)
         return windows
@@ -325,14 +330,6 @@ def _concatenated_pieces(
     keep = end > begin
     offsets = starts - edges[:-1]
     return np.column_stack([begin[keep], end[keep]]) + offsets[keep, None]
-
-
-def _clipped(rows: NDArray[np.float64], low: float, high: float) -> NDArray[np.float64]:
-    """The parts of ``rows`` inside ``[low, high)``, shape (n_pieces, 2)."""
-    begin = np.maximum(rows[:, 0], low)
-    end = np.minimum(rows[:, 1], high)
-    keep = end > begin
-    return np.column_stack([begin[keep], end[keep]])
 
 
 @dataclass(frozen=True)
