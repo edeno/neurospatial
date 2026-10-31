@@ -35,8 +35,8 @@ class _LazyUnitSpikeTrain:
 
     The materialized array is **memoized** on first access: the ragged slice is
     read and sorted once, then cached read-only and reused on every subsequent
-    ``__getitem__`` / ``__len__`` / ``np.asarray``, so repeated access does not
-    re-read and re-sort the whole unit off disk. ``np.array(train)`` or
+    ``__getitem__`` / ``np.asarray``, so repeated access does not re-read and
+    re-sort the whole unit off disk. ``len`` reads only the ragged index. ``np.array(train)`` or
     ``np.asarray(train, copy=True)`` returns a writable copy.
     """
 
@@ -73,7 +73,13 @@ class _LazyUnitSpikeTrain:
         return self._materialize()[key]
 
     def __len__(self) -> int:
-        return len(self._materialize())
+        if self._cache is not None:
+            return len(self._cache)
+        # The ragged column's index stores each unit's end offset, so the
+        # count needs no spike times read.
+        ends = self._units["spike_times"].data
+        start = int(ends[self._row - 1]) if self._row else 0
+        return int(ends[self._row]) - start
 
 
 def read_units(
