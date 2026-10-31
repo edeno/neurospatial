@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### NWB I/O follow-ups
+
+**Changed**
+
+- `write_spatial_rates` stores occupancy as a table with one row per bin (an
+  `occupancy` column in seconds) instead of a `TimeSeries` stamped at t = 0,
+  which pynapple and other NWB tools read as a time series. Spatial-rates
+  schema 2.6; `read_spatial_rates` refuses 2.5 records with recreation
+  instructions.
+- `write_region_crossings(nwbfile, crossings)` writes the output of
+  `detect_region_crossings` directly, with `region`, `direction` and
+  `bin_index` columns, like `write_laps` and `write_trials`. The array form is
+  `times=`, `regions=`, `directions=`; directions must be `"entry"` or
+  `"exit"`, and the column is named `direction` (was `event_type`).
+- `write_trials(..., overwrite=True)` replaces the trials table of an
+  `NWBFile` built in memory. A file read from disk is still refused, in every
+  mode: pynwb cannot remove a written trials table, and an export would
+  silently keep the old trials.
+
 ### File and NWB I/O: review fixes
 
 **Fixed**
