@@ -61,6 +61,7 @@ from neurospatial.reactivation.assemblies import (
     _MEMBER_RULES,
     AssemblyPattern,
     _activation_strength,
+    _selected_pairs,
     _z_scores,
     detect_assemblies,
     explained_variance_reactivation,
@@ -109,7 +110,6 @@ __all__ = [
 ]
 
 _CALL = "compare_reactivation_methods()"
-_MEASURES = ("explained_variance", "assembly", "member_cofiring")
 _PAIRS = ("all", "different_tetrodes", "different_shanks", "different_regions")
 # The unit_groups key each pair rule reads.
 _GROUP_OF_PAIRS = {
@@ -1196,27 +1196,18 @@ def compare_reactivation_methods(
             )
         )
     groups = _checked_groups(unit_groups, methods, n_units)
-    n_pairs = n_units * (n_units - 1) // 2
-    selected = np.ones(n_pairs, dtype=bool)
-    if pair_mask is not None:
-        mask = np.asarray(pair_mask)
-        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
-            raise ValueError(
-                _format_error(
-                    f"{_CALL}: pair_mask must be a boolean array with one entry "
-                    f"per pair ({n_pairs} for {n_units} units), got dtype "
-                    f"{mask.dtype} and shape {mask.shape}.",
-                    fix="pass a boolean array in np.triu_indices(n_units, k=1) order",
-                )
-            )
-        selected = mask.copy()
+    selected = _selected_pairs(
+        n_units * (n_units - 1) // 2, None, pair_mask, call=_CALL
+    )
 
     entropy = _entropy(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
         assert control is not None  # every method needs one, checked above
-        session = _Session(trains, template, control, match, events, labels, groups)
+        session = _Session(
+            trains, template, control, match, events, labels, groups, selected
+        )
     for method in methods:
         key = _name_key(method.name)
 
@@ -1225,19 +1216,7 @@ def compare_reactivation_methods(
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:
-                if method.measure == "explained_variance":
-                    pair_rule = selected.copy()
-                    if method.pairs != "all":
-                        unit_group = groups[_GROUP_OF_PAIRS[method.pairs]]
-                        first, second = np.triu_indices(n_units, k=1)
-                        pair_rule &= unit_group[first] != unit_group[second]
-                    method_rows = _explained_variance_rows(
-                        method, session, pair_rule, stream
-                    )
-                elif method.measure == "assembly":
-                    method_rows = _assembly_rows(method, session, stream)
-                else:
-                    method_rows = _member_cofiring_rows(method, session, stream)
+                method_rows = _ROW_BUILDERS[method.measure](method, session, stream)
             except _MethodError as failure:
                 method_rows = [{"error": str(failure)}]
         rows.extend({"method": method.name, **row} for row in method_rows)
@@ -1267,6 +1246,7 @@ class _Session:
     events: dict[str, NDArray[np.float64] | None]
     labels: NDArray[Any]
     groups: dict[str, NDArray[Any]]
+    pair_mask: NDArray[np.bool_]  # pairs every EV method may use
 
 
 def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
@@ -1537,18 +1517,24 @@ def _match_window_rows(
 
 
 def _explained_variance_rows(
-    method: ReactivationMethod,
-    session: _Session,
-    pair_rule: NDArray[np.bool_],
-    stream: Any,
+    method: ReactivationMethod, session: _Session, stream: Any
 ) -> list[dict[str, Any]]:
     """One row per match window of an EV method."""
-    n_units = len(session.trains)
-    if pair_rule.size < 3:
+    n_pairs = session.pair_mask.size
+    if n_pairs < 3:
         raise _MethodError(
-            f"EV needs at least 3 pairs of units; {n_units} units hold "
-            f"{pair_rule.size} pair{'s' * (pair_rule.size != 1)}"
+            f"EV needs at least 3 pairs of units; {len(session.trains)} units "
+            f"hold {n_pairs} pair{'s' * (n_pairs != 1)}"
         )
+    # The method's pairs rule, on top of the call's pair_mask.
+    pair_rule = _selected_pairs(
+        n_pairs,
+        None
+        if method.pairs == "all"
+        else session.groups[_GROUP_OF_PAIRS[method.pairs]],
+        session.pair_mask,
+        call=_CALL,
+    )
     template_correlations = _pair_correlations(_template_counts(method, session))
     control_counts = []
     control_events = []
@@ -2383,6 +2369,18 @@ def _fraction_above_cell_shuffle(
         above += np.sum(actual[first : first + block] > bound, axis=0)
     shares: NDArray[np.float64] = above / n_bins
     return shares
+
+
+# The rows of each measure's methods; defined before the recipes below, whose
+# construction checks the measure against _MEASURES.
+_ROW_BUILDERS: dict[
+    str, Callable[[ReactivationMethod, _Session, Any], list[dict[str, Any]]]
+] = {
+    "explained_variance": _explained_variance_rows,
+    "assembly": _assembly_rows,
+    "member_cofiring": _member_cofiring_rows,
+}
+_MEASURES = tuple(_ROW_BUILDERS)
 
 
 # =============================================================================
