@@ -196,7 +196,13 @@ def annotate_video(
         If ``project_path`` exists and ``overwrite`` is False. Resume it with
         :func:`annotate_project` instead.
     FileNotFoundError
-        If the folder for ``project_path`` does not exist.
+        If the folder for ``project_path`` or the video file does not exist.
+    IndexError
+        If ``frame_index`` is outside the video's frames.
+    OSError
+        If OpenCV cannot decode the frame at ``frame_index`` (a corrupt
+        frame, a missing codec, or a frame count the container overstates);
+        re-encoding the video usually fixes it.
     RuntimeError
         If the drawn annotations cannot be saved, for example multiple
         environment boundaries with ``multiple_boundaries="error"``, and the
