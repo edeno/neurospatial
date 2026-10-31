@@ -317,9 +317,11 @@ def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataF
     df = events_table.to_dataframe()
 
     if "timestamp" not in df.columns:
-        raise KeyError(
-            f"EventsTable '{table_name}' does not have a 'timestamp' column. "
-            "This may not be a valid EventsTable."
+        raise missing_error(
+            f"EventsTable '{table_name}' does not have a 'timestamp' column, "
+            "so it may not be a valid EventsTable.",
+            fix="read an ndx-events EventsTable, which stores event times in "
+            "its 'timestamp' column.",
         )
 
     return df

@@ -122,10 +122,10 @@ class TestReadUnits:
         np.testing.assert_array_equal(train, np.sort(unsorted))
 
     def test_read_units_no_table_raises(self, empty_nwb):
-        """An NWBFile without a units table raises a clear ValueError."""
+        """An NWBFile without a units table raises KeyError, like other readers."""
         from neurospatial.io.nwb import read_units
 
-        with pytest.raises(ValueError, match="no `units` table"):
+        with pytest.raises(KeyError, match=r"no `units` table\.\nFix: add sorted"):
             read_units(empty_nwb)
 
     def test_read_units_lazy_export(self):
