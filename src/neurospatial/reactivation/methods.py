@@ -58,6 +58,7 @@ from neurospatial._validation import (
     validate_integer_at_least,
 )
 from neurospatial.reactivation.assemblies import (
+    _MEMBER_RULES,
     AssemblyPattern,
     _activation_strength,
     _z_scores,
@@ -141,7 +142,6 @@ _TESTS = {
 }
 _DETECTIONS = ("pca", "ica")
 _BINS = ("fixed", "events")
-_MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
 _Z_MEMBER_RULES = ("abs_z", "positive_z")
 _DETECTION_UNITS = ("all", "each_region", "each_region_and_cross_region")
 _ZSCORE_OVER = ("period", "control_and_match", "all_periods")
