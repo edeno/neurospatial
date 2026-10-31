@@ -2050,7 +2050,7 @@ class TestComputeFieldEMD:
         field_2 = (~left).astype(float)
 
         assert compute_field_emd(env, field_1, field_2, metric="geodesic") == np.inf
-        assert np.isfinite(compute_field_emd(env, field_1, field_2))
+        assert np.isfinite(compute_field_emd(env, field_1, field_2, metric="euclidean"))
 
     def test_emd_geodesic_moves_mass_within_each_room(self, two_rooms):
         """With the same mass in each room, mass moves only inside rooms."""

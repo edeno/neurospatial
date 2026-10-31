@@ -48,6 +48,15 @@
   plan, which grows with the square of the bin count (30 s at 1,444 bins);
   use `metric="geodesic"` for finely binned maps.
 
+**Changed**
+
+- `compute_field_emd` defaults to `metric="geodesic"`, as other distances in
+  the package do: mass moves around walls, and the solve is fast at any
+  resolution. On an open arena the result exceeds the straight-line value by
+  at most the grid's path excess (about 8% with 8-connected neighbors); in a
+  maze it measures distance for the animal. Pass `metric="euclidean"` for the
+  straight-line distance.
+
 ### Shared helpers: one rule each, faster
 
 **Changed**

@@ -1135,7 +1135,7 @@ def compute_field_emd(
     firing_rate_1: NDArray[np.float64],
     firing_rate_2: NDArray[np.float64],
     *,
-    metric: DistanceMetric = "euclidean",
+    metric: DistanceMetric = "geodesic",
     normalize: bool = True,
 ) -> float:
     """Compute Earth Mover's Distance (EMD) between two firing rate distributions.
@@ -1160,10 +1160,12 @@ def compute_field_emd(
     firing_rate_2 : NDArray[np.float64], shape (n_bins,)
         Second firing rate distribution across spatial bins. NaN marks an
         unsampled bin.
-    metric : str, default="euclidean"
-        Distance metric to use. Options:
-        - "euclidean": Straight-line distance between bin centers
-        - "geodesic": Shortest path distance through connectivity graph
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        Distance the firing moves over. Options:
+        - "geodesic": Shortest path through the connectivity graph, so mass
+          goes around walls; fast at any resolution.
+        - "euclidean": Straight line between bin centers, through walls;
+          slow on finely binned maps (see Notes).
     normalize : bool, default=True
         If True, normalize each map's mass (rate x bin measure) to sum to 1.0
         over the bins finite in both maps before computing EMD. If False,
@@ -1224,13 +1226,14 @@ def compute_field_emd(
 
     **Metric choice:**
 
-    - **Euclidean**: Fast, works for any environment, but ignores barriers and walls.
-      Use for simple open fields or when computational speed is critical.
+    - **Geodesic** (default): respects the environment's structure (walls,
+      barriers, connectivity), and is fast at any resolution. Mass moves only
+      along paths in the connectivity graph, never between disconnected parts
+      of the environment.
 
-    - **Geodesic**: Slower, respects environment structure (barriers, walls, connectivity).
-      Use for complex environments like mazes, multi-room layouts, or non-convex arenas.
-      Mass moves only along paths in the connectivity graph, never between
-      disconnected parts of the environment.
+    - **Euclidean**: the straight line between bin centers, through walls.
+      Use it to ask how far a field moved in the room rather than for the
+      animal; it is slow on finely binned maps.
 
     **Interpretation:**
 
