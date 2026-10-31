@@ -1671,6 +1671,54 @@ def _z_scores(
     return z, constant
 
 
+def _correlations(
+    values: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Pearson correlation between the columns, NaN with a constant column.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n_samples, n_variables)
+        Finite values.
+
+    Returns
+    -------
+    correlations : ndarray, shape (n_variables, n_variables)
+        ``z.T @ z / n_samples`` of the z-scored columns, clipped to [-1, 1];
+        the rows and columns of a constant column are NaN.
+    constant : ndarray of bool, shape (n_variables,)
+        Columns with the same value in every sample.
+    """
+    z, constant = _z_scores(values)
+    matrix = z.T @ z / len(z)
+    matrix[constant, :] = np.nan
+    matrix[:, constant] = np.nan
+    correlations: NDArray[np.float64] = np.clip(matrix, -1.0, 1.0)
+    return correlations, constant
+
+
+def _pairwise_correlations(
+    spike_counts: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Pearson correlation of each pair of neurons, without a warning.
+
+    Parameters
+    ----------
+    spike_counts : ndarray, shape (n_time_bins, n_neurons)
+        Finite counts.
+
+    Returns
+    -------
+    correlations : ndarray, shape (n_neurons * (n_neurons - 1) / 2,)
+        In ``np.triu_indices(n_neurons, k=1)`` order; NaN for a pair with a
+        constant neuron.
+    constant : ndarray of bool, shape (n_neurons,)
+        Neurons with the same count in every time bin.
+    """
+    matrix, constant = _correlations(spike_counts)
+    return matrix[np.triu_indices(spike_counts.shape[1], k=1)], constant
+
+
 def _activation_strength(
     spike_counts_z: NDArray[np.float64], weights: NDArray[np.float64]
 ) -> NDArray[np.float64]:
@@ -2311,9 +2359,7 @@ def pairwise_correlations(
     ... )
     """
     spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
-    n_neurons = spike_counts.shape[1]
-
-    constant = np.ptp(spike_counts, axis=0) == 0
+    correlations, constant = _pairwise_correlations(spike_counts)
     if np.any(constant):
         warnings.warn(
             f"pairwise_correlations(): neuron columns "
@@ -2324,15 +2370,6 @@ def pairwise_correlations(
             UserWarning,
             stacklevel=2,
         )
-    corr_matrix = np.full((n_neurons, n_neurons), np.nan)
-    varying = np.flatnonzero(~constant)
-    if varying.size >= 2:
-        corr_matrix[np.ix_(varying, varying)] = np.corrcoef(
-            spike_counts[:, varying], rowvar=False
-        )
-
-    # Extract upper triangle (excluding diagonal)
-    correlations: NDArray[np.float64] = corr_matrix[np.triu_indices(n_neurons, k=1)]
     return correlations
 
 
@@ -2916,7 +2953,7 @@ def explained_variance_reactivation(
     vectors = np.vstack([template_correlations, match_correlations, *controls])[
         :, valid_mask
     ]
-    period_correlations = _correlation_matrix(vectors)
+    period_correlations, _ = _correlations(vectors.T)
     control_rows = list(range(2, 2 + n_controls))
     # EV: variance of match correlations explained by template, after
     # partialling out the control periods; the plain correlation without one.
@@ -3101,27 +3138,6 @@ def _check_correlation_values(correlations: NDArray[np.float64], argument: str) 
                 fix="pass the output of pairwise_correlations() for each period",
             )
         )
-
-
-def _correlation_matrix(vectors: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Pearson correlations between the rows, NaN for a constant row.
-
-    Parameters
-    ----------
-    vectors : ndarray, shape (n_vectors, n_pairs)
-        Finite values.
-
-    Returns
-    -------
-    ndarray, shape (n_vectors, n_vectors)
-        Correlation matrix; rows and columns of a constant vector are NaN.
-    """
-    constant = np.ptp(vectors, axis=1) == 0
-    matrix = np.full((len(vectors), len(vectors)), np.nan)
-    varying = np.flatnonzero(~constant)
-    if varying.size:
-        matrix[np.ix_(varying, varying)] = np.atleast_2d(np.corrcoef(vectors[varying]))
-    return matrix
 
 
 def _partial_correlation(

@@ -34,9 +34,9 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _columns_by_label,
     _label_order,
+    _pairwise_correlations,
     _validated_counts,
     explained_variance_reactivation,
-    pairwise_correlations,
 )
 
 __all__ = [
@@ -233,8 +233,11 @@ def assembly_member_cofiring(
     member_labels = np.asarray(pattern.unit_ids)[members]
     correlations = []
     for counts, period in zip(periods, ("control_counts", "match_counts"), strict=True):
-        constant = np.ptp(counts[:, members], axis=0) == 0 if counts.size else []
-        if members.size >= 2 and np.any(constant):
+        if members.size < 2:
+            correlations.append(np.zeros(0))
+            continue
+        pairs, constant = _pairwise_correlations(counts[:, members])
+        if np.any(constant):
             warnings.warn(
                 f"{call}: members {member_labels[constant].tolist()} have the "
                 f"same count in every bin of {period}, so their pairs have no "
@@ -242,13 +245,7 @@ def assembly_member_cofiring(
                 UserWarning,
                 stacklevel=2,
             )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            correlations.append(
-                pairwise_correlations(counts[:, members])
-                if members.size >= 2
-                else np.zeros(0)
-            )
+        correlations.append(pairs)
     control, match = correlations
     if members.size < 2:
         warnings.warn(

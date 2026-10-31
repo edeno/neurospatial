@@ -55,6 +55,7 @@ from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _activation_strength,
+    _pairwise_correlations,
     _z_scores,
     detect_assemblies,
     explained_variance_reactivation,
@@ -1452,12 +1453,7 @@ def _pair_correlations(counts: NDArray[np.float64]) -> NDArray[np.float64]:
     ndarray, shape (n_units * (n_units - 1) / 2,)
         In ``np.triu_indices(n_units, k=1)`` order.
     """
-    z, constant = _z_scores(counts)
-    matrix = z.T @ z / len(z)
-    matrix[constant, :] = np.nan
-    matrix[:, constant] = np.nan
-    correlations: NDArray[np.float64] = matrix[np.triu_indices(counts.shape[1], k=1)]
-    return correlations
+    return _pairwise_correlations(counts)[0]
 
 
 def _windows_or_error(
