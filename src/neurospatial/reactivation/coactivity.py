@@ -19,9 +19,9 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -34,9 +34,12 @@ from neurospatial.reactivation.assemblies import (
     AssemblyPattern,
     _columns_by_label,
     _label_order,
+    _n_units_from_pairs,
+    _one_control_ev,
+    _pairwise_correlations,
+    _selected_pairs,
     _validated_counts,
     explained_variance_reactivation,
-    pairwise_correlations,
 )
 
 __all__ = [
@@ -233,8 +236,11 @@ def assembly_member_cofiring(
     member_labels = np.asarray(pattern.unit_ids)[members]
     correlations = []
     for counts, period in zip(periods, ("control_counts", "match_counts"), strict=True):
-        constant = np.ptp(counts[:, members], axis=0) == 0 if counts.size else []
-        if members.size >= 2 and np.any(constant):
+        if members.size < 2:
+            correlations.append(np.zeros(0))
+            continue
+        pairs, constant = _pairwise_correlations(counts[:, members])
+        if np.any(constant):
             warnings.warn(
                 f"{call}: members {member_labels[constant].tolist()} have the "
                 f"same count in every bin of {period}, so their pairs have no "
@@ -242,13 +248,7 @@ def assembly_member_cofiring(
                 UserWarning,
                 stacklevel=2,
             )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            correlations.append(
-                pairwise_correlations(counts[:, members])
-                if members.size >= 2
-                else np.zeros(0)
-            )
+        correlations.append(pairs)
     control, match = correlations
     if members.size < 2:
         warnings.warn(
@@ -516,19 +516,81 @@ class AssemblyEventResponseResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-def _checked_window(value: Any, name: str, call: str) -> tuple[float, float]:
-    """A ``(start, stop)`` pair in seconds with ``start < stop``."""
-    window = np.asarray(value, dtype=np.float64)
-    if (
-        window.shape != (2,)
-        or not np.all(np.isfinite(window))
-        or window[0] >= window[1]
+def _checked_event_windows(
+    window: Any,
+    response_window: Any,
+    baseline_window: Any,
+    owner: str,
+    step: float | None = None,
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float] | None]:
+    """Check the peri-event windows of an event response.
+
+    Each window must be ``(start, stop)`` seconds with ``start < stop``, and
+    the response and baseline windows must lie inside ``window``.
+
+    Parameters
+    ----------
+    window, response_window : array-like, shape (2,)
+    baseline_window : array-like, shape (2,), or None
+    owner : str
+        Start of each message: ``"EventResponse"`` or the function call.
+    step : float, optional
+        Sample step of the R(t) trace a function call measures. Given, the
+        response and baseline windows must also hold one of its lags, and
+        the messages name the events and the step.
+
+    Returns
+    -------
+    window, response_window, baseline_window : tuple of float, or None
+    """
+    relative = "" if step is None else " relative to the events"
+
+    def pair(name: str, value: Any) -> tuple[float, float]:
+        array = np.asarray(value, dtype=np.float64)
+        if (
+            array.shape != (2,)
+            or not np.all(np.isfinite(array))
+            or array[0] >= array[1]
+        ):
+            raise ValueError(
+                f"{owner}: {name} must be (start, stop) in seconds{relative} with "
+                f"start < stop, got {value!r}."
+            )
+        return float(array[0]), float(array[1])
+
+    full = pair("window", window)
+    response = pair("response_window", response_window)
+    baseline = (
+        None if baseline_window is None else pair("baseline_window", baseline_window)
+    )
+    for name, value, part in (
+        ("response_window", response_window, response),
+        ("baseline_window", baseline_window, baseline),
     ):
-        raise ValueError(
-            f"{call}: {name} must be (start, stop) in seconds relative to the "
-            f"events with start < stop, got {value!r}."
-        )
-    return float(window[0]), float(window[1])
+        if part is None:
+            continue
+        inside = full[0] <= part[0] and part[1] <= full[1]
+        if step is None:
+            if not inside:
+                raise ValueError(
+                    f"{owner}: {name}={value} must lie inside window={window}."
+                )
+        elif not inside or not _window_holds_lag(full, part, step):
+            raise ValueError(
+                _format_error(
+                    f"{owner}: {name}={part} must lie inside window={full} and "
+                    f"hold at least one lag of the {step:g} s sample step.",
+                    fix=f"widen window= or choose a {name} inside it",
+                )
+            )
+    return full, response, baseline
+
+
+def _window_holds_lag(
+    window: tuple[float, float], part: tuple[float, float], step: float
+) -> bool:
+    """Whether ``part`` holds one of the lags of ``window`` sampled every ``step``."""
+    return bool(_in_lag_window(_lags(window, step), part, step).any())
 
 
 def _lags(window: tuple[float, float], step: float) -> NDArray[np.float64]:
@@ -584,7 +646,7 @@ def _peri_event_values(
     found = index >= 0
     index = np.clip(index, 0, times.size - 1)
     inside = found & (queries < times[index] + step / 2 - tolerance)
-    out = values[index].astype(np.float64)
+    out = values[index].astype(np.float64, copy=False)
     out[~inside] = np.nan
     return out
 
@@ -597,6 +659,107 @@ def _nanmean(values: NDArray[np.float64], axis: int) -> NDArray[np.float64]:
     with np.errstate(invalid="ignore", divide="ignore"):
         mean: NDArray[np.float64] = np.where(count > 0, total / count, np.nan)
     return mean
+
+
+def _mean_over_events(responses: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Mean of each series' defined responses, shape (n_series,)."""
+    return _nanmean(responses, axis=0)
+
+
+def _mean_of_defined_events(responses: NDArray[np.float64]) -> NDArray[np.float64]:
+    """:func:`_mean_over_events`, averaging each series' defined responses alone.
+
+    Summed without the undefined events, so it can differ in the last bit.
+    """
+    means = []
+    for series in responses.T:
+        defined = series[np.isfinite(series)]
+        means.append(defined.mean() if defined.size else np.nan)
+    return np.array(means, dtype=np.float64)
+
+
+class _PeriEventResponses(NamedTuple):
+    """Peri-event measures of R(t) series, from :func:`_peri_event_responses`.
+
+    Attributes
+    ----------
+    lags : ndarray, shape (n_lags,)
+    peri_event_mean : ndarray, shape (n_lags, n_series)
+        Mean over the events at each lag.
+    responses : ndarray, shape (n_events, n_series)
+        Each event's mean over the response lags.
+    summary : ndarray, shape (n_series,)
+        The ``event_mean`` of the responses, or with ``reduce="peak"`` the
+        largest finite peri-event mean over the response lags.
+    baselines : ndarray, shape (n_events, n_series), or None
+        Each event's mean over the baseline lags.
+    """
+
+    lags: NDArray[np.float64]
+    peri_event_mean: NDArray[np.float64]
+    responses: NDArray[np.float64]
+    summary: NDArray[np.float64]
+    baselines: NDArray[np.float64] | None
+
+
+def _peri_event_responses(
+    times: NDArray[np.float64],
+    activation: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    step: float,
+    window: tuple[float, float],
+    response_window: tuple[float, float],
+    baseline_window: tuple[float, float] | None,
+    reduce: Literal["mean", "peak"],
+    event_mean: Callable[
+        [NDArray[np.float64]], NDArray[np.float64]
+    ] = _mean_over_events,
+) -> _PeriEventResponses:
+    """Event responses of R(t) series sampled every ``step``.
+
+    The windows must already be checked (:func:`_checked_event_windows`).
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times (bin centers), increasing.
+    activation : ndarray, shape (n_samples, n_series)
+    event_times : ndarray, shape (n_events,)
+    step : float
+        Sample spacing, seconds.
+    window, response_window, baseline_window : tuple of float
+        Seconds relative to the events, half-open; ``baseline_window`` may be
+        None.
+    reduce : {"mean", "peak"}
+    event_mean : callable
+        Maps the responses, shape (n_events, n_series), to their mean over
+        the defined events, shape (n_series,); formulations round
+        differently.
+
+    Returns
+    -------
+    _PeriEventResponses
+    """
+    lags = _lags(window, step)
+    in_response = _in_lag_window(lags, response_window, step)
+    # Shape (n_events, n_lags, n_series).
+    values = _peri_event_values(times, activation, step, event_times, lags)
+    peri_event_mean = _nanmean(values, axis=0)
+    responses = _nanmean(values[:, in_response], axis=1)
+    if reduce == "mean":
+        summary = event_mean(responses)
+    else:
+        peak = peri_event_mean[in_response]
+        finite = np.isfinite(peak)
+        summary = np.where(
+            finite.any(axis=0), np.max(np.where(finite, peak, -np.inf), axis=0), np.nan
+        )
+    baselines = (
+        None
+        if baseline_window is None
+        else _nanmean(values[:, _in_lag_window(lags, baseline_window, step)], axis=1)
+    )
+    return _PeriEventResponses(lags, peri_event_mean, responses, summary, baselines)
 
 
 def _signed_rank_p(
@@ -742,62 +905,36 @@ def assembly_event_response(
         raise ValueError(f"{call}: event_times must be a 1-D array of finite times.")
     if reduce not in ("mean", "peak"):
         raise ValueError(f"{call}: reduce must be 'mean' or 'peak', got {reduce!r}.")
-    full = _checked_window(window, "window", call)
-    response = _checked_window(response_window, "response_window", call)
-    baseline = (
-        None
-        if baseline_window is None
-        else _checked_window(baseline_window, "baseline_window", call)
-    )
     step = float(np.median(np.diff(sample_times)))
-    lags = _lags(full, step)
-    masks = {}
-    for name, part in (("response_window", response), ("baseline_window", baseline)):
-        if part is None:
-            continue
-        mask = _in_lag_window(lags, part, step)
-        if part[0] < full[0] or part[1] > full[1] or not mask.any():
-            raise ValueError(
-                _format_error(
-                    f"{call}: {name}={part} must lie inside window={full} and "
-                    f"hold at least one lag of the {step:g} s sample step.",
-                    fix=f"widen window= or choose a {name} inside it",
-                )
-            )
-        masks[name] = mask
-    values = _peri_event_values(sample_times, strength[:, None], step, events, lags)[
-        :, :, 0
-    ]
-    peri_event_mean = _nanmean(values, axis=0)
-    event_responses = _nanmean(values[:, masks["response_window"]], axis=1)
-    baseline_responses = (
-        _nanmean(values[:, masks["baseline_window"]], axis=1)
-        if baseline is not None
-        else np.full(events.size, np.nan)
+    full, response, baseline = _checked_event_windows(
+        window, response_window, baseline_window, call, step
     )
-    defined = np.isfinite(event_responses)
-    if reduce == "mean":
-        value = float(event_responses[defined].mean()) if defined.any() else np.nan
+    measured = _peri_event_responses(
+        sample_times,
+        strength[:, None],
+        events,
+        step,
+        full,
+        response,
+        baseline,
+        reduce,
+        event_mean=_mean_of_defined_events,
+    )
+    event_responses = measured.responses[:, 0]
+    if measured.baselines is None:
+        baseline_responses = np.full(events.size, np.nan)
+        p_value = np.nan
     else:
-        peak = peri_event_mean[masks["response_window"]]
-        value = (
-            float(np.max(peak[np.isfinite(peak)]))
-            if np.isfinite(peak).any()
-            else np.nan
-        )
-    p_value = (
-        _signed_rank_p(event_responses, baseline_responses)[0]
-        if baseline is not None
-        else np.nan
-    )
+        baseline_responses = measured.baselines[:, 0]
+        p_value = _signed_rank_p(event_responses, baseline_responses)[0]
     return AssemblyEventResponseResult(
-        lags=lags,
-        peri_event_mean=peri_event_mean,
+        lags=measured.lags,
+        peri_event_mean=measured.peri_event_mean[:, 0],
         event_responses=event_responses,
         baseline_responses=baseline_responses,
-        response=value,
+        response=float(measured.summary[0]),
         p_value=p_value,
-        n_events=int(defined.sum()),
+        n_events=int(np.isfinite(event_responses).sum()),
         window=full,
         response_window=response,
         baseline_window=baseline,
@@ -946,22 +1083,14 @@ def explained_variance_contributions(
             f"{call}: the correlation vectors must be 1-D with the same length, "
             f"got shapes {[vector.shape for vector in vectors]}."
         )
-    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
-    if n_units * (n_units - 1) // 2 != n_pairs:
+    n_units = _n_units_from_pairs(n_pairs)
+    if n_units is None:
         raise ValueError(
             f"{call}: {n_pairs} pairs is not n_units * (n_units - 1) / 2 for any "
             "number of units; pass pairwise_correlations() output."
         )
     labels = resolve_unit_ids(unit_ids, n_units, context=call)
-    valid = np.ones(n_pairs, dtype=bool)
-    if pair_mask is not None:
-        mask = np.asarray(pair_mask)
-        if mask.dtype != np.bool_ or mask.shape != (n_pairs,):
-            raise ValueError(
-                f"{call}: pair_mask must be a boolean array with one entry per "
-                f"pair ({n_pairs}), got dtype {mask.dtype} and shape {mask.shape}."
-            )
-        valid &= mask
+    valid = _selected_pairs(n_pairs, None, pair_mask, call=call)
     for vector in vectors:
         valid &= np.isfinite(vector)
     n_valid = int(valid.sum())
@@ -983,16 +1112,16 @@ def explained_variance_contributions(
         c = vectors[2][valid]
         r_tc = _leave_one_out_correlations(t, c)
         r_mc = _leave_one_out_correlations(m, c)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            without = (r_tm - r_tc * r_mc) ** 2 / ((1 - r_tc**2) * (1 - r_mc**2))
+        without = _one_control_ev(r_tm, r_tc, r_mc)
     pair_contributions = np.full(n_pairs, np.nan)
     pair_contributions[valid] = total - without
     first, second = np.triu_indices(n_units, k=1)
-    sums = np.zeros(n_units)
-    counts = np.zeros(n_units)
-    for units in (first[valid], second[valid]):
-        np.add.at(sums, units, pair_contributions[valid])
-        np.add.at(counts, units, 1)
+    # Each pair counts toward both of its units.
+    units = np.concatenate([first[valid], second[valid]])
+    sums = np.bincount(
+        units, weights=np.tile(pair_contributions[valid], 2), minlength=n_units
+    )
+    counts = np.bincount(units, minlength=n_units)
     with np.errstate(invalid="ignore", divide="ignore"):
         unit_contributions = np.where(counts > 0, sums / counts, np.nan)
     return ExplainedVarianceContributionResult(

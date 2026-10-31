@@ -49,6 +49,7 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import validate_choice, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
 from neurospatial.replay._inputs import _checked_intervals
+from neurospatial.stats._utils import _binomial_rate
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -562,13 +563,7 @@ def _stratum_rate(
     calls = frame["is_replay"] & ~failed
     n_events = int(len(frame) if errors == "not_replay" else (~failed).sum())
     n_replay = int(calls.sum())
-    if n_events:
-        interval = binomtest(n_replay, n_events).proportion_ci(
-            confidence_level=confidence, method="exact"
-        )
-        rate, low, high = n_replay / n_events, interval.low, interval.high
-    else:
-        rate = low = high = np.nan
+    rate, low, high = _binomial_rate(n_replay, n_events, confidence)
     stats: dict[str, Any] = {
         "n_events": n_events,
         "n_replay": n_replay,
