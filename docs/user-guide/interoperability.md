@@ -401,6 +401,8 @@ from neurospatial.io import from_pynapple, to_pynapple
 
 # Ingress: pynapple -> plain arrays plus their time support.
 times, positions, epochs = from_pynapple(tsdframe)   # TsdFrame / Tsd
+# A TsGroup's support is the recording coverage only if it was built with the
+# acquisition intervals; by default it runs from the first to the last spike.
 trains, unit_ids, recorded = from_pynapple(tsgroup)  # TsGroup
 spike_times, unit_epochs = from_pynapple(ts)         # one unit's Ts
 run_epochs = from_pynapple(intervalset)              # IntervalSet -> (n, 2)

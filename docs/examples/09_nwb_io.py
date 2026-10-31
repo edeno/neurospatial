@@ -242,8 +242,7 @@ plt.show()
 # arena geometry, and analysis settings together. Calling `io.write` writes
 # those changes to disk.
 #
-# Reopen the saved file and load the maps with `read_spatial_rates`. This reader
-# can return maps for several neurons even though its name is singular.
+# Reopen the saved file and load the maps with `read_spatial_rates`.
 
 # %%
 shutil.copy2(source_path, analysis_path)
