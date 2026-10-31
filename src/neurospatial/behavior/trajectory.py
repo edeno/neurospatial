@@ -360,7 +360,8 @@ def compute_speed(
     ValueError
         If ``times`` and ``positions`` are empty, swapped or misaligned; if
         ``times`` repeats or is not increasing; if ``max_gap`` or
-        ``break_before`` is invalid; or if ``smooth_window`` is negative.
+        ``break_before`` is invalid; or if ``smooth_window`` is not a finite
+        number of seconds >= 0.
 
     See Also
     --------

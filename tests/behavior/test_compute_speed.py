@@ -182,10 +182,15 @@ def test_malformed_break_before_raises():
         )
 
 
-def test_negative_smooth_window_raises():
+@pytest.mark.parametrize("window", [-0.1, np.nan, np.inf, None, True, "0.1"])
+def test_invalid_smooth_window_raises_with_a_fix(window):
+    """A Boolean or text window is refused, not read as 1 s or a raw TypeError."""
     times = np.arange(5) / 10
-    with pytest.raises(ValueError, match="smooth_window must be a finite number"):
-        compute_speed(times, np.arange(10.0).reshape(5, 2), smooth_window=-0.1)
+    with pytest.raises(
+        ValueError, match="smooth_window must be a finite number"
+    ) as caught:
+        compute_speed(times, np.arange(10.0).reshape(5, 2), smooth_window=window)
+    assert "Fix: pass smooth_window=0.0" in str(caught.value)
 
 
 def test_smoothing_window_is_in_seconds_across_a_bridged_gap():

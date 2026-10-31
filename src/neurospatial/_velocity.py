@@ -14,6 +14,8 @@ from collections.abc import Iterator
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 #: Gaussian standard deviation (seconds) of the default velocity smoothing.
 DEFAULT_SPEED_SMOOTHING = 0.1
 
@@ -56,9 +58,22 @@ def smoothed_velocity(
     """
     from neurospatial._intervals import run_sample_bounds
 
-    if smooth_window < 0 or not np.isfinite(smooth_window):
+    if (
+        isinstance(smooth_window, (bool, np.bool_))
+        or not isinstance(smooth_window, (int, float, np.integer, np.floating))
+        or not np.isfinite(smooth_window)
+        or smooth_window < 0
+    ):
         raise ValueError(
-            f"smooth_window must be a finite number of seconds >= 0, got {smooth_window}."
+            _format_error(
+                "smooth_window must be a finite number of seconds >= 0; got "
+                f"{smooth_window!r}.",
+                why="smooth_window is the standard deviation, in seconds, of "
+                "the Gaussian that averages the velocity over time.",
+                fix="pass smooth_window=0.0 for the unsmoothed velocity, or a "
+                "number of seconds such as the default "
+                f"smooth_window={DEFAULT_SPEED_SMOOTHING}.",
+            )
         )
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
