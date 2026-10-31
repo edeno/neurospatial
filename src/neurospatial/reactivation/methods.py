@@ -72,15 +72,13 @@ from neurospatial.reactivation.assemblies import (
 )
 from neurospatial.reactivation.calibration import equalize_firing_rates
 from neurospatial.reactivation.coactivity import (
+    _checked_event_windows,
     _in_lag_window,
     _lags,
-    _peri_event_values,
+    _peri_event_responses,
     _signed_rank_p,
     assembly_member_cofiring,
     ev_rev_contrast,
-)
-from neurospatial.reactivation.coactivity import (
-    _nanmean as _nanmean_along,
 )
 from neurospatial.stats._utils import _entropy, _name_key, _stream
 
@@ -373,31 +371,9 @@ class EventResponse:
 
     def __post_init__(self) -> None:
         """Check the windows."""
-        windows = {
-            "window": self.window,
-            "response_window": self.response_window,
-            "baseline_window": self.baseline_window,
-        }
-        for name, value in windows.items():
-            if value is None:
-                continue
-            pair = np.asarray(value, dtype=np.float64)
-            if (
-                pair.shape != (2,)
-                or not np.all(np.isfinite(pair))
-                or pair[0] >= pair[1]
-            ):
-                raise ValueError(
-                    f"EventResponse: {name} must be (start, stop) in seconds with "
-                    f"start < stop, got {value!r}."
-                )
-            if name != "window" and (
-                pair[0] < self.window[0] or pair[1] > self.window[1]
-            ):
-                raise ValueError(
-                    f"EventResponse: {name}={value} must lie inside "
-                    f"window={self.window}."
-                )
+        _checked_event_windows(
+            self.window, self.response_window, self.baseline_window, "EventResponse"
+        )
         if self.reduce not in ("mean", "peak"):
             raise ValueError(
                 f"EventResponse: reduce must be 'mean' or 'peak', got {self.reduce!r}."
@@ -1927,11 +1903,10 @@ def _assembly_rows(
     )
     if method.event_response is not None:
         # Every match window is compared with the control window's events.
-        _check_min_events(
-            method,
-            len(_events_in(session.events["control_events"], control_window)),
-            "control",
-        )
+        control_onsets = _events_in(session.events["control_events"], control_window)[
+            :, 0
+        ]
+        _check_min_events(method, control_onsets.size, "control")
     n_components = len(patterns)
     all_weights = np.array([pattern.weights for pattern, _ in patterns])
 
@@ -1976,11 +1951,12 @@ def _assembly_rows(
                 stream(index, 1),
             )
         if method.event_response is not None:
+            match_onsets = _events_in(session.events["match_events"], window)[:, 0]
+            _check_min_events(method, match_onsets.size, "match")
             event_columns = _event_response_columns(
                 method,
-                session,
-                (control_window, control_samples.times, control_activation),
-                (window, match_samples.times, match_activation),
+                (control_onsets, control_samples.times, control_activation),
+                (match_onsets, match_samples.times, match_activation),
             )
         rows: list[dict[str, Any]] = []
         for component, (pattern, region) in enumerate(patterns):
@@ -2032,7 +2008,6 @@ def _assembly_rows(
 
 def _event_response_columns(
     method: ReactivationMethod,
-    session: _Session,
     control: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
     match: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
 ) -> dict[str, Any]:
@@ -2042,10 +2017,9 @@ def _event_response_columns(
     ----------
     method : ReactivationMethod
         Its ``event_response``, ``statistic``, ``test`` and ``alpha``.
-    session : _Session
-        The events.
-    control, match : tuple of (window, times, activation)
-        Each period's window, sample times (n_samples,) and R(t), shape
+    control, match : tuple of (onsets, times, activation)
+        Each period's event onsets (n_events,), already checked against
+        ``min_events``, sample times (n_samples,) and R(t), shape
         (n_samples, n_components).
 
     Returns
@@ -2057,40 +2031,25 @@ def _event_response_columns(
     response = method.event_response
     assert response is not None
     step = _sample_step(method)
-    lags = _lags(response.window, step)
-    in_response = _in_lag_window(lags, response.response_window, step)
     periods = {}
-    for name, (window, times, activation) in (("control", control), ("match", match)):
-        onsets = _events_in(session.events[f"{name}_events"], window)[:, 0]
-        _check_min_events(method, onsets.size, name)
-        # Shape (n_events, n_lags, n_components).
-        values = _peri_event_values(times, activation, step, onsets, lags)
-        responses = _nanmean_along(values[:, in_response], axis=1)
-        if response.reduce == "mean":
-            summary = _nanmean_along(responses, axis=0)
-        else:
-            peri_event = _nanmean_along(values, axis=0)[in_response]
-            summary = np.where(
-                np.isfinite(peri_event).any(axis=0),
-                np.nanmax(
-                    np.where(np.isfinite(peri_event), peri_event, -np.inf), axis=0
-                ),
-                np.nan,
-            )
-        baselines = (
-            _nanmean_along(
-                values[:, _in_lag_window(lags, response.baseline_window, step)], axis=1
-            )
-            if response.baseline_window is not None
-            else None
+    for name, (onsets, times, activation) in (("control", control), ("match", match)):
+        periods[name] = _peri_event_responses(
+            times,
+            activation,
+            onsets,
+            step,
+            response.window,
+            response.response_window,
+            response.baseline_window,
+            response.reduce,
         )
-        periods[name] = (onsets.size, responses, summary, baselines)
-    n_control, control_responses, control_summary, _ = periods["control"]
-    n_match, match_responses, match_summary, match_baselines = periods["match"]
+    control_responses = periods["control"].responses
+    match_responses = periods["match"].responses
+    match_baselines = periods["match"].baselines
     components = []
     for component in range(control_responses.shape[1]):
-        before = float(control_summary[component])
-        after = float(match_summary[component])
+        before = float(periods["control"].summary[component])
+        after = float(periods["match"].summary[component])
         if method.statistic == "event_response_ratio":
             value = (after - before) / before if before > 0 else np.nan
             if not before > 0:
@@ -2142,7 +2101,10 @@ def _event_response_columns(
             )
         components.append(columns)
     return {
-        "shared": {"n_control_events": n_control, "n_match_events": n_match},
+        "shared": {
+            "n_control_events": len(control_responses),
+            "n_match_events": len(match_responses),
+        },
         "components": components,
     }
 
