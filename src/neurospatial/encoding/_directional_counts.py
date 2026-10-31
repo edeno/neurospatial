@@ -31,6 +31,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import to_radians
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 
@@ -86,8 +87,6 @@ def directional_frame_bins(
     same heading minus 2π fall in the same bin. ``bin_size=None`` means 6°
     expressed in ``angle_unit``.
     """
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
     if bin_size is None:
         bin_size = (
             DEFAULT_HEADING_BIN_SIZE_DEG
@@ -101,8 +100,8 @@ def directional_frame_bins(
             f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
         )
 
-    headings_rad = np.radians(headings) if angle_unit == "deg" else headings
-    bin_size_rad = np.radians(bin_size) if angle_unit == "deg" else bin_size
+    headings_rad = to_radians(headings, angle_unit)
+    bin_size_rad = float(to_radians(bin_size, angle_unit))
 
     n_bins = int(np.round(2 * np.pi / bin_size_rad))
     if n_bins < 1:

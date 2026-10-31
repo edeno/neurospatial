@@ -1,9 +1,41 @@
-"""Angle wrapping and vector turns shared across the package."""
+"""Angle units, wrapping and vector turns shared across the package."""
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 import numpy as np
 from numpy.typing import NDArray
+
+
+def to_radians(angles: Any, angle_unit: Literal["rad", "deg"]) -> NDArray[np.float64]:
+    """Angles as a float64 array in radians.
+
+    Parameters
+    ----------
+    angles : array-like
+        Angles in ``angle_unit``.
+    angle_unit : {'rad', 'deg'}
+        Unit of ``angles``.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        The angles in radians, in the shape given.
+
+    Raises
+    ------
+    ValueError
+        If ``angle_unit`` is not ``'rad'`` or ``'deg'``.
+    """
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(
+            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
+            "Fix: pass angle_unit='deg' for degrees or 'rad' (default) for "
+            "radians."
+        )
+    radians: NDArray[np.float64] = np.asarray(angles, dtype=np.float64)
+    return np.radians(radians) if angle_unit == "deg" else radians
 
 
 def wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:

@@ -17,23 +17,23 @@ from numpy.testing import assert_allclose
 
 
 class TestToRadians:
-    """Tests for _to_radians internal helper."""
+    """Tests for the to_radians angle-unit helper."""
 
     def test_radians_passthrough(self) -> None:
         """Radians input should pass through unchanged."""
-        from neurospatial.stats.circular import _to_radians
+        from neurospatial._angles import to_radians
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        result = _to_radians(angles, "rad")
+        result = to_radians(angles, "rad")
         assert_allclose(result, angles)
 
     def test_degrees_conversion(self) -> None:
         """Degrees should be converted to radians."""
-        from neurospatial.stats.circular import _to_radians
+        from neurospatial._angles import to_radians
 
         angles_deg = np.array([0, 90, 180, 270])
         expected = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        result = _to_radians(angles_deg, "deg")
+        result = to_radians(angles_deg, "deg")
         assert_allclose(result, expected)
 
 
@@ -95,41 +95,41 @@ class TestMeanResultantLength:
 
 
 class TestValidateCircularInput:
-    """Tests for _validate_circular_input internal helper."""
+    """Tests for the _valid_angles input helper."""
 
     def test_all_nan_raises_error(self) -> None:
         """All NaN values should raise ValueError with diagnostic message."""
-        from neurospatial.stats.circular import _validate_circular_input
+        from neurospatial.stats.circular import _valid_angles
 
         angles = np.array([np.nan, np.nan, np.nan])
-        with pytest.raises(ValueError, match=r"All.*values are NaN"):
-            _validate_circular_input(angles, "phases")
+        with pytest.raises(ValueError, match="All angles are NaN"):
+            _valid_angles(angles, "rad", min_samples=3)
 
     def test_partial_nan_warns_and_removes(self) -> None:
         """Partial NaN should warn and remove NaN values."""
-        from neurospatial.stats.circular import _validate_circular_input
+        from neurospatial.stats.circular import _valid_angles
 
         angles = np.array([0.0, np.nan, np.pi, np.nan, 2 * np.pi])
         with pytest.warns(UserWarning, match="Removed.*NaN"):
-            result, _ = _validate_circular_input(angles, "angles")
+            result, _ = _valid_angles(angles, "rad", min_samples=3)
         assert len(result) == 3
         assert not np.any(np.isnan(result))
 
     def test_inf_values_raise_error(self) -> None:
         """Infinite values should raise ValueError."""
-        from neurospatial.stats.circular import _validate_circular_input
+        from neurospatial.stats.circular import _valid_angles
 
         angles = np.array([0.0, np.inf, np.pi])
         with pytest.raises(ValueError, match="infinite values"):
-            _validate_circular_input(angles, "angles")
+            _valid_angles(angles, "rad", min_samples=3)
 
     def test_insufficient_samples_raises_error(self) -> None:
         """Too few samples should raise ValueError."""
-        from neurospatial.stats.circular import _validate_circular_input
+        from neurospatial.stats.circular import _valid_angles
 
         angles = np.array([0.0, 0.5])
         with pytest.raises(ValueError, match="at least 3 samples"):
-            _validate_circular_input(angles, "angles", min_samples=3)
+            _valid_angles(angles, "rad", min_samples=3)
 
     def test_unknown_angle_unit_raises(self) -> None:
         """A misspelled unit must not be read as radians."""

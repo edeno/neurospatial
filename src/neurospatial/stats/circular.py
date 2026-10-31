@@ -118,8 +118,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._angles import wrap_angle
+from neurospatial._angles import to_radians, wrap_angle
 from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -148,41 +149,6 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 # Internal Helper Functions
 # =============================================================================
-
-
-def _to_radians(
-    angles: NDArray[np.float64],
-    angle_unit: Literal["rad", "deg"],
-) -> NDArray[np.float64]:
-    """
-    Convert angles to radians if needed.
-
-    Parameters
-    ----------
-    angles : ndarray of shape (n,)
-        Input angles.
-    angle_unit : {'rad', 'deg'}
-        Unit of input angles.
-
-    Returns
-    -------
-    ndarray of shape (n,)
-        Angles in radians.
-
-    Raises
-    ------
-    ValueError
-        If ``angle_unit`` is not ``'rad'`` or ``'deg'``.
-    """
-    if angle_unit == "deg":
-        return np.radians(angles)
-    if angle_unit != "rad":
-        raise ValueError(
-            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
-            f"Fix: pass angle_unit='deg' for degrees or 'rad' (default) for "
-            f"radians."
-        )
-    return angles
 
 
 def _validate_weights(
@@ -307,110 +273,88 @@ def _mean_resultant_length(
 def _valid_angles(
     angles: NDArray[np.float64],
     angle_unit: Literal["rad", "deg"],
-    weights: NDArray[np.float64] | None,
+    weights: NDArray[np.float64] | None = None,
+    *,
+    min_samples: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """
     Angles in radians with NaN angles, and their weights, dropped.
 
-    NaN angles are dropped with a ``UserWarning``. Empty or all-NaN input
-    returns no angles, so descriptive statistics come out NaN.
-    """
-    angles = _to_radians(np.asarray(angles, dtype=np.float64).ravel(), angle_unit)
-    if np.isnan(angles).all():
-        if weights is not None:
-            _validate_weights(angles, weights)
-        return angles[:0], None
-    return _validate_circular_input(angles, "angles", min_samples=1, weights=weights)
-
-
-def _validate_circular_input(
-    angles: NDArray[np.float64],
-    name: str = "angles",
-    *,
-    min_samples: int = 3,
-    weights: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
-    """
-    Validate circular input array.
-
     Parameters
     ----------
     angles : ndarray of shape (n,)
-        Input angles to validate.
-    name : str, default='angles'
-        Name for error messages.
-    min_samples : int, default=3
-        Minimum required samples.
+        Input angles in ``angle_unit``; raveled to 1-D.
+    angle_unit : {'rad', 'deg'}
+        Unit of ``angles``.
     weights : ndarray of shape (n,), optional
-        Optional per-angle weights to keep aligned with ``angles``. If
-        supplied they are validated (equal length, non-negative) up front
-        and co-filtered by the same NaN mask used to drop invalid angles.
+        Per-angle weights, validated (equal length, finite, non-negative)
+        and co-filtered by the NaN mask of ``angles``.
+    min_samples : int
+        Fewest angles that must remain. With 0, empty or all-NaN input
+        returns no angles, so descriptive statistics come out NaN.
 
     Returns
     -------
     angles : ndarray of shape (m,)
-        Validated angles with NaN values removed, where m <= n.
+        Angles in radians without NaN, where m <= n.
     weights : ndarray of shape (m,) or None
-        Weights co-filtered by the same NaN mask, or ``None`` if no
-        weights were passed.
+        The weights of the remaining angles, or None if none were passed.
 
     Raises
     ------
     ValueError
-        If validation fails with actionable error message.
+        If ``angle_unit`` is unknown, an angle is infinite, every angle is
+        NaN while ``min_samples > 0``, or fewer than ``min_samples`` remain.
     """
-    angles = np.asarray(angles, dtype=np.float64).ravel()
+    angles = to_radians(angles, angle_unit).ravel()
     if weights is not None:
-        weights = _validate_weights(angles, weights, name=f"{name}_weights")
+        weights = _validate_weights(angles, weights)
 
-    # Check for NaN
     nan_mask = np.isnan(angles)
-    n_nan = np.sum(nan_mask)
-    if n_nan > 0:
-        if n_nan == len(angles):
-            raise ValueError(
-                f"All {name} values are NaN ({len(angles)} samples). "
-                f"Cannot compute circular statistics.\n"
-                f"\n"
-                f"Diagnostic steps:\n"
-                f"1. Check your data: print({name}[:10]) to see actual values\n"
-                f"2. If all zeros: spike detection may have failed\n"
-                f"3. If all identical: phase extraction may be broken\n"
-                f"4. Check data types: {name}.dtype should be float, not object\n"
-                f"\n"
-                f"Common causes:\n"
-                f"  - Wrong variable passed (e.g., spike times instead of phases)\n"
-                f"  - Array indexing error (e.g., phases[spike_indices] where "
-                f"indices are all -1)\n"
-                f"  - Phase computation failed (check LFP signal quality)\n"
-                f"\n"
-                f"Quick fix: Verify extraction with: np.isnan({name}).sum()"
-            )
-        # Remove NaN and warn
+    n_nan = int(np.sum(nan_mask))
+    if n_nan and n_nan == len(angles) and min_samples > 0:
+        raise ValueError(
+            f"All angles are NaN ({len(angles)} samples). "
+            f"Cannot compute circular statistics.\n"
+            f"\n"
+            f"Diagnostic steps:\n"
+            f"1. Check your data: print(angles[:10]) to see actual values\n"
+            f"2. If all zeros: spike detection may have failed\n"
+            f"3. If all identical: phase extraction may be broken\n"
+            f"4. Check data types: angles.dtype should be float, not object\n"
+            f"\n"
+            f"Common causes:\n"
+            f"  - Wrong variable passed (e.g., spike times instead of phases)\n"
+            f"  - Array indexing error (e.g., phases[spike_indices] where "
+            f"indices are all -1)\n"
+            f"  - Phase computation failed (check LFP signal quality)\n"
+            f"\n"
+            f"Quick fix: Verify extraction with: np.isnan(angles).sum()"
+        )
+    if n_nan:
         angles = angles[~nan_mask]
         if weights is not None:
             weights = weights[~nan_mask]
-        warnings.warn(
-            f"Removed {n_nan} NaN values from {name}. "
-            f"Proceeding with {len(angles)} valid samples.",
-            category=UserWarning,
-            stacklevel=2,
-        )
+        if len(angles):
+            warnings.warn(
+                f"Removed {n_nan} NaN values from angles. "
+                f"Proceeding with {len(angles)} valid samples.",
+                category=UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
 
-    # Check for Inf
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
         raise ValueError(
-            f"{name} contains {n_inf} infinite values. "
+            f"angles contains {n_inf} infinite values. "
             f"Cannot compute circular statistics.\n"
             f"Fix: Remove or replace infinite values before calling this function."
         )
 
-    # Check minimum samples
     if len(angles) < min_samples:
         raise ValueError(
             f"Need at least {min_samples} samples for circular statistics. "
-            f"Got {len(angles)} valid samples in {name}.\n"
+            f"Got {len(angles)} valid samples in angles.\n"
             f"Fix: Provide more data points or use a different analysis method."
         )
 
@@ -472,7 +416,7 @@ def _validate_paired_input(
             f"Removed {n_removed} pairs containing NaN values. "
             f"Proceeding with {len(arr1) - n_removed} valid pairs.",
             category=UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         arr1 = arr1[~nan_mask]
         arr2 = arr2[~nan_mask]
@@ -580,31 +524,12 @@ def rayleigh_test(
     >>> p > 0.5
     True
     """
-    # Convert to radians if needed
-    angles = np.asarray(angles, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
-
-    # Validate input (handles NaN drop + Inf + min samples) and co-filter
-    # weights so angle/weight alignment survives NaN removal. Weight
-    # non-negativity and equal-length are enforced inside the validator.
-    #
-    # The validator's ``min_samples`` gate counts the number of *angles*
-    # (distinct samples). That is correct for UNWEIGHTED input but wrong for
-    # WEIGHTED (count) input: a genuinely well-tuned cell can put 100 spikes
-    # into just 1-2 angular bins, so the effective sample size is the total
-    # weight (sum of counts), not the number of occupied bins. For the
-    # weighted path we therefore only require >= 1 angle here and enforce the
-    # real minimum-sample-size check on ``sum(weights)`` below (via n_eff).
-    validator_min_samples = 1 if weights is not None else 3
-    angles, weights = _validate_circular_input(
-        angles,
-        "angles",
-        min_samples=validator_min_samples,
-        weights=weights,
+    # The weighted test's sample size is the total count, not the number of
+    # angles: a tuned cell can put 100 spikes into one or two phase bins. So
+    # the 3-sample minimum applies to n_eff below.
+    angles, weights = _valid_angles(
+        angles, angle_unit, weights, min_samples=1 if weights is not None else 3
     )
-
-    n = len(angles)
-
     if weights is not None and np.any(weights != np.round(weights)):
         raise ValueError(
             "rayleigh_test weights must be whole-number counts (e.g., spike "
@@ -614,39 +539,15 @@ def rayleigh_test(
             "Fix: pass integer counts, or use mean_resultant_length(angles, "
             "weights=...) for a descriptive weighted concentration."
         )
-
-    # Weighted mean resultant length (weights already validated above).
-    r_mean = _mean_resultant_length(angles, weights=weights)
-
-    # Count for the z-statistic and p-value: for the grouped-data test,
-    # n_eff = sum(weights); for unit weights, n_eff = n.
-    if weights is not None:
-        n_eff: float = float(np.sum(weights))
-    else:
-        n_eff = float(n)
-
-    # Guard: all-zero (or empty) weights give n_eff == 0. The weighted R
-    # is already NaN in that case; surface an actionable error instead of a
-    # bare ZeroDivisionError in the finite-sample correction below.
-    if n_eff <= 0:
-        raise ValueError(
-            "Total weight (sum of weights) is zero; cannot run the weighted "
-            "Rayleigh test. At least one angle must carry positive weight.\n"
-            "Fix: check that your per-angle counts/occupancy are not all zero."
-        )
-
-    # Minimum effective sample size. For weighted (count) data the effective
-    # sample size is the total weight, so we enforce the same minimum (3) on
-    # ``n_eff`` that the validator enforces on the angle count for unweighted
-    # data. This rejects genuinely-insufficient data (e.g. 2 total spikes)
-    # while accepting a strongly-tuned cell whose many spikes land in only
-    # 1-2 angular bins.
-    if weights is not None and n_eff < 3:
+    n_eff = float(np.sum(weights)) if weights is not None else float(len(angles))
+    if n_eff < 3:
         raise ValueError(
             f"Need at least 3 total weight (sum of counts) for the weighted "
             f"Rayleigh test. Got sum(weights) = {n_eff:g}.\n"
-            f"Fix: provide more spikes/counts or use a different analysis method."
+            f"Fix: provide more spikes/counts (all-zero counts carry no "
+            f"data), or use a different analysis method."
         )
+    r_mean = _mean_resultant_length(angles, weights=weights)
 
     # Rayleigh z-statistic: z = n_eff * R^2.
     z = n_eff * r_mean**2
@@ -736,10 +637,7 @@ def circular_linear_correlation(
     # scipy.stats is imported on use; it adds ~0.2 s to importing the package.
     from scipy.stats import chi2
 
-    # Convert to arrays and radians if needed
-    angles = np.asarray(angles, dtype=np.float64)
-    linear_values = np.asarray(linear_values, dtype=np.float64)
-    angles = _to_radians(angles, angle_unit)
+    angles = to_radians(angles, angle_unit)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
     angles, linear_values = _validate_paired_input(
@@ -753,7 +651,7 @@ def circular_linear_correlation(
             "linear_values are constant, so the circular-linear correlation is "
             "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -770,7 +668,7 @@ def circular_linear_correlation(
             "angles are constant, so the circular-linear correlation is "
             "undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -903,11 +801,8 @@ def circular_circular_correlation(
     """
     from scipy import stats
 
-    # Convert to radians if needed
-    angles1 = np.asarray(angles1, dtype=np.float64)
-    angles2 = np.asarray(angles2, dtype=np.float64)
-    angles1 = _to_radians(angles1, angle_unit)
-    angles2 = _to_radians(angles2, angle_unit)
+    angles1 = to_radians(angles1, angle_unit)
+    angles2 = to_radians(angles2, angle_unit)
 
     # Validate paired inputs (handles NaN removal and length check)
     angles1, angles2 = _validate_paired_input(
@@ -930,7 +825,7 @@ def circular_circular_correlation(
             "One or both circular variables are constant, so the "
             "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return np.nan, np.nan
 
@@ -953,7 +848,7 @@ def circular_circular_correlation(
             "Cannot compute the p-value: no pair varies in both variables at "
             "once, so the statistic's variance is zero. Returning p=NaN.",
             category=RuntimeWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return rho, np.nan
 
@@ -1009,7 +904,9 @@ def circular_mean(
     >>> bool(np.abs(mean - np.pi / 4) < 0.1)
     True
     """
-    mean_cos, mean_sin = _mean_vector(*_valid_angles(angles, angle_unit, weights))
+    mean_cos, mean_sin = _mean_vector(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
     # A resultant below rounding error has no direction (NaN fails the test).
     if not np.hypot(mean_cos, mean_sin) > 1e-12:
         return np.nan
@@ -1056,7 +953,9 @@ def circular_variance(
     >>> var < 0.1
     True
     """
-    return 1.0 - _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
+    return 1.0 - _mean_resultant_length(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
 
 
 def mean_resultant_length(
@@ -1103,7 +1002,9 @@ def mean_resultant_length(
     >>> bool(np.abs(r - 1.0) < 0.01)
     True
     """
-    return _mean_resultant_length(*_valid_angles(angles, angle_unit, weights))
+    return _mean_resultant_length(
+        *_valid_angles(angles, angle_unit, weights, min_samples=0)
+    )
 
 
 # =============================================================================
@@ -1242,7 +1143,7 @@ def _wald_test_magnitude(
     except np.linalg.LinAlgError:
         warnings.warn(
             "Covariance matrix is singular. Cannot compute p-value; returning NaN.",
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
             category=UserWarning,
         )
         return np.nan
@@ -1351,7 +1252,7 @@ def circular_basis(
             f"Fix: pass one angle per GLM sample, and drop the samples (with "
             f"their spike counts) where the angle is missing."
         )
-    return CircularBasisResult(angles=_to_radians(angles, angle_unit))
+    return CircularBasisResult(angles=to_radians(angles, angle_unit))
 
 
 def circular_basis_metrics(
