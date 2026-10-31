@@ -1460,19 +1460,11 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
 
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays, including each spike train."""
-        trains = []
-        for train in self.spike_times:
-            owned = np.array(train, dtype=np.float64)
-            owned.flags.writeable = False
-            trains.append(owned)
-        object.__setattr__(self, "spike_times", tuple(trains))
+        trains = tuple(
+            np.asarray(train, dtype=np.float64) for train in self.spike_times
+        )
+        object.__setattr__(self, "spike_times", trains)
         self._own_arrays()
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping every array read-only."""
-        super().__setstate__(state)
-        for train in self.spike_times:
-            train.flags.writeable = False
 
     @property
     def n_events(self) -> int:

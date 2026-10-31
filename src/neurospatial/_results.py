@@ -37,6 +37,31 @@ def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     return owned
 
 
+def mark_read_only(value: object) -> None:
+    """Mark an array, or the arrays in a (named, nested) tuple, read-only in place."""
+    if isinstance(value, np.ndarray):
+        value.setflags(write=False)
+    elif isinstance(value, tuple):
+        for item in value:
+            mark_read_only(item)
+
+
+def _read_only_owned(value: Any) -> Any:
+    """A read-only copy of an array, or of the arrays in a (nested) tuple.
+
+    Anything else, and a tuple holding no arrays, is returned as given; a
+    named tuple keeps its type.
+    """
+    if isinstance(value, np.ndarray):
+        return read_only_copy(value)
+    if not isinstance(value, tuple):
+        return value
+    items = [_read_only_owned(item) for item in value]
+    if all(new is old for new, old in zip(items, value, strict=True)):
+        return value
+    return value._make(items) if hasattr(value, "_make") else type(value)(items)
+
+
 def as_label_array(labels: Any) -> NDArray[Any]:
     """Convert unit labels to an array without changing any label's type.
 
@@ -230,22 +255,24 @@ class ReadOnlyArraysMixin:
     Editing an array the result was built from then cannot change it, and
     editing an array read from it raises. Copy with ``np.array(...)`` to
     modify values. JAX arrays are immutable already and are kept as given.
-    Only direct array attributes are copied; a subclass owns arrays it keeps
-    inside containers.
+    Array attributes and arrays inside (nested) tuple attributes, such as one
+    spike train per unit, are copied; a subclass converts lists to tuples
+    first. Arrays in mappings are the subclass's to own (see
+    :func:`reduce_through_constructor`).
     """
 
     def _own_arrays(self) -> None:
-        """Replace every NumPy array attribute with a read-only copy."""
+        """Replace every array, directly or inside tuples, with a read-only copy."""
         for name, value in list(vars(self).items()):
-            if isinstance(value, np.ndarray):
-                object.__setattr__(self, name, read_only_copy(value))
+            owned = _read_only_owned(value)
+            if owned is not value:
+                object.__setattr__(self, name, owned)
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
         self.__dict__.update(state)
         for value in state.values():
-            if isinstance(value, np.ndarray):
-                value.flags.writeable = False
+            mark_read_only(value)
 
 
 _Unit_co = TypeVar("_Unit_co", covariant=True)

@@ -448,3 +448,111 @@ def test_summary_xarray_export_is_editable_and_independent(env):
     np.testing.assert_array_equal(result.map_bin, [0, 1])
     np.testing.assert_array_equal(result.times, [0, 1])
     np.testing.assert_array_equal(result.spike_window, [[0, 2]])
+
+
+def _nested_arrays(value, path=""):
+    """Every NumPy array held directly or inside (nested) tuples."""
+    if isinstance(value, np.ndarray):
+        yield path, value
+    elif isinstance(value, tuple):
+        for i, item in enumerate(value):
+            yield from _nested_arrays(item, f"{path}[{i}]")
+
+
+def _tuple_holders():
+    """Records that keep arrays inside tuples, with the arrays they were built from."""
+    from neurospatial.encoding import SpikeTrains
+    from neurospatial.geometry._capabilities import RectilinearGrid
+    from neurospatial.replay import DatasetTestResult, NullSpikeData, ShuffledDataset
+    from neurospatial.simulation import ReplayEventSimulation
+
+    trains = [np.array([0.1, 0.2]), np.array([0.3])]
+    return [
+        (SpikeTrains, {"trains": trains}),
+        (
+            ReplayEventSimulation,
+            {
+                "spike_times": tuple(trains),
+                "times": np.array([0.0, 0.1]),
+                "track_positions": np.array([0.0, 1.0]),
+                "positions": np.zeros((2, 2)),
+                "kind": "forward",
+                "duration": 0.1,
+                "speed": 10.0,
+                "drop_fraction": 0.0,
+                "n_dropped_spikes": 0,
+                "n_noise_spikes": 0,
+            },
+        ),
+        (
+            NullSpikeData,
+            {
+                "spike_times": tuple(trains),
+                "intervals": np.array([[0.0, 1.0]]),
+                "source_events": np.array([0]),
+                "copy_index": np.array([0]),
+                "kind": "spike_identity",
+            },
+        ),
+        (
+            DatasetTestResult,
+            {
+                "statistic": np.array([0.5, 0.6]),
+                "null_statistics": np.zeros((3, 2)),
+                "p_value": np.array([0.2, 0.3]),
+                "percentile": np.array([80.0, 70.0]),
+                "alternative": "greater",
+                "n_datasets": 3,
+                "n_observed": 4,
+                "labels": ("score",),
+                "thresholds": (np.array([0.1, 0.2]),),
+            },
+        ),
+        (
+            ShuffledDataset,
+            {
+                "events": (),
+                "spike_counts": (np.array([[1, 0], [0, 2]]),),
+                "null": "time_bin_permutation",
+            },
+        ),
+        (
+            RectilinearGrid,
+            {
+                "edges": (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0])),
+                "shape": (2, 1),
+                "active_mask": np.array([[True], [True]]),
+            },
+        ),
+    ]
+
+
+@pytest.mark.parametrize("how", ["original", "pickle", "deepcopy", "replace"])
+@pytest.mark.parametrize(
+    ("cls", "template"),
+    _tuple_holders(),
+    ids=lambda case: getattr(case, "__name__", ""),
+)
+def test_arrays_inside_tuples_are_owned_and_stay_read_only(cls, template, how):
+    """Arrays a record keeps inside tuples are read-only copies it owns, and
+    stay read-only through pickle, deepcopy and dataclasses.replace."""
+    from dataclasses import replace
+
+    inputs = copy.deepcopy(template)
+    record = cls(**inputs)
+    restored = {
+        "original": lambda: record,
+        "pickle": lambda: pickle.loads(pickle.dumps(record)),
+        "deepcopy": lambda: copy.deepcopy(record),
+        "replace": lambda: replace(record),
+    }[how]()
+    held = {
+        f"{name}{path}": array
+        for name, value in vars(restored).items()
+        for path, array in _nested_arrays(value)
+    }
+    assert any("[" in path for path in held), "no array inside a tuple"
+    given = [array for value in inputs.values() for _, array in _nested_arrays(value)]
+    for path, array in held.items():
+        assert not array.flags.writeable, path
+        assert not any(np.shares_memory(array, source) for source in given), path

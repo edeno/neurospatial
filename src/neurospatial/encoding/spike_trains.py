@@ -191,12 +191,6 @@ class SpikeTrains(UnitSelectionMixin):
             align_unit_table(self.unit_table, self.unit_ids, context="SpikeTrains"),
         )
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        super().__setstate__(state)
-        for train in self.trains:
-            train.flags.writeable = False
-
     @property
     def index(self) -> NDArray[Any]:
         """Unit ids, one per train (the spike-group key surface).
