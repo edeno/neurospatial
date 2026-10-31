@@ -143,8 +143,12 @@ def test_no_valid_transition_pairs_returns_zero_matrix(
 def test_invalid_epochs_still_raise_for_empty_inputs(small_2d_env, name):
     function = getattr(small_2d_env, name)
     args = (np.array([]), np.empty((0, 2)))
-    with pytest.raises(ValueError, match="epochs"):
+
+    def attempt():
         if name == "transitions":
             function(times=args[0], positions=args[1], epochs=(1, 0))
         else:
             function(*args, epochs=(1, 0))
+
+    with pytest.raises(ValueError, match="epochs"):
+        attempt()

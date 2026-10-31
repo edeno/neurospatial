@@ -18,6 +18,8 @@ from neurospatial import Environment
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import AffineND
 
+from ._video_helpers import read_video
+
 pytestmark = pytest.mark.integration
 
 # Ten rows at 9 Hz: the export of [0, 1] s holds one frame per row.
@@ -26,7 +28,7 @@ FRAME_TIMES = np.linspace(0.0, 1.0, N_ROWS)
 
 
 def test_hexagonal_layout_exports_every_frame_at_the_sampling_rate(tmp_path):
-    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+    pytest.importorskip("imageio_ffmpeg")
     env = Environment.from_layout(
         create_layout(
             "hexagonal",
@@ -46,9 +48,8 @@ def test_hexagonal_layout_exports_every_frame_at_the_sampling_rate(tmp_path):
         dpi=40,
     )
     assert path == tmp_path / "hexagonal.mp4"
-    reader = imageio_ffmpeg.read_frames(str(path))
-    meta = next(reader)
-    frames = [np.frombuffer(frame, dtype=np.uint8) for frame in reader]
+    meta, raw_frames = read_video(path)
+    frames = [np.frombuffer(frame, dtype=np.uint8) for frame in raw_frames]
     assert meta["fps"] == pytest.approx(9.0, rel=0.01)
     assert len(frames) == N_ROWS
     assert not np.array_equal(frames[0], frames[-1])

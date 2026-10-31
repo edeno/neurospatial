@@ -175,13 +175,14 @@ def test_time_gap_breaks_pairing_and_max_gap_equality_passes(region_env):
 
 
 def test_singleton_observations_are_zero_duration_censored_visits(region_env):
-    visits = detect_region_visits(
-        np.array([0, 3, 5]),
-        np.array([0.0, 2.0, 4.0]),
-        region_env,
-        region_names=["A", "B", "C"],
-        max_gap=0.5,
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        visits = detect_region_visits(
+            np.array([0, 3, 5]),
+            np.array([0.0, 2.0, 4.0]),
+            region_env,
+            region_names=["A", "B", "C"],
+            max_gap=0.5,
+        )
     assert len(visits) == 3
     assert all(not v.entry_observed and not v.exit_observed for v in visits)
     assert [v.duration for v in visits] == [0.0, 0.0, 0.0]
@@ -227,14 +228,15 @@ def test_disjoint_epochs_keep_original_indices_and_censor_each_restart(region_en
 
 
 def test_fractional_epoch_limits_do_not_interpolate_dwell(region_env):
-    (visit,) = detect_region_visits(
-        np.array([0, 0, 0]),
-        np.array([0.0, 1.0, 2.0]),
-        region_env,
-        region_names=["A"],
-        max_gap=None,
-        epochs=(0.5, 1.5),
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        (visit,) = detect_region_visits(
+            np.array([0, 0, 0]),
+            np.array([0.0, 1.0, 2.0]),
+            region_env,
+            region_names=["A"],
+            max_gap=None,
+            epochs=(0.5, 1.5),
+        )
     assert (visit.start_index, visit.stop_index) == (1, 2)
     assert not visit.entry_observed
     assert not visit.exit_observed

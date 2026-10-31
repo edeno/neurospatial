@@ -135,13 +135,16 @@ class TestPublishedGeometryIsReadOnly:
         else:
             attrs, key, value = env.connectivity.graph, "test", "changed"
 
-        with pytest.raises(TypeError, match="read-only"):
+        def attempt():
             if method == "assignment":
                 attrs[key] = value
             elif method == "update":
                 attrs.update({key: value})
             else:
                 attrs.pop(key, None)
+
+        with pytest.raises(TypeError, match="read-only"):
+            attempt()
         assert env.distance_between(points=[np.array([0.5]), np.array([2.5])]) == 2.0
 
     @pytest.mark.parametrize("how", ["deepcopy", "pickle"])

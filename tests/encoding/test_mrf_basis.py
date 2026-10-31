@@ -548,7 +548,8 @@ def test_mode_component_recovery(two_component_env):
     holder = _fresh_holder(two_component_env)
 
     grown, (Q, _Lam, mode_comp) = _ensure_global_modes(holder, S, labels, 6)
-    assert holder.G == 0 and Q.shape[1] == grown.G  # replaced, never edited
+    assert holder.G == 0  # replaced, never edited
+    assert Q.shape[1] == grown.G
 
     for m in range(Q.shape[1]):
         nonzero_labels = np.unique(labels[Q[:, m] != 0.0])

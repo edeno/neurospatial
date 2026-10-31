@@ -267,11 +267,12 @@ def test_export_clock_preserves_exact_observations_and_half_open_stop(tmp_path):
 
     # The explicit scene clock need not include this stream's observations.
     source = np.array([100.1, 100.3])
-    field = AnimationField(
-        np.array([[1.0], [2.0], [3.0]]),
-        [100.1, 100.2, 100.3],
-        break_before=[False, True, True],
-    )
+    with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+        field = AnimationField(
+            np.array([[1.0], [2.0], [3.0]]),
+            [100.1, 100.2, 100.3],
+            break_before=[False, True, True],
+        )
     # The whole recording ends on its last sample; a selection excludes stop.
     plan = prepare_export(
         tmp_path / "clock.gif", source, fps=10, sample_times=[field.times]

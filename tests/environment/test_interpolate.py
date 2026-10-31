@@ -116,7 +116,8 @@ class TestInterpolateOutsideBehavior:
     def test_interpolate_outside_returns_nan(self):
         """Points outside environment should return NaN."""
         data = np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=2.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=2.0)
 
         field = np.ones(env.n_bins, dtype=np.float64)
 
@@ -130,7 +131,8 @@ class TestInterpolateOutsideBehavior:
     def test_interpolate_mixed_inside_outside(self):
         """Mix of inside and outside points."""
         data = np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=2.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=2.0)
 
         field = np.arange(env.n_bins, dtype=np.float64)
 

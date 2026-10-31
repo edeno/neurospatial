@@ -4427,12 +4427,9 @@ default="diffusion_kde"
     >>> # Create trajectory timestamps
     >>> times = np.linspace(0, 10, 1000)
 
-    >>> # Spike times for 3 neurons (each sorted ascending)
-    >>> spike_times = [
-    ...     np.array([1.0, 2.5, 4.0]),  # Neuron 0
-    ...     np.array([0.5, 1.5, 2.5, 3.5]),  # Neuron 1
-    ...     np.array([5.0, 8.0]),  # Neuron 2
-    ... ]
+    >>> # Spike times for 3 neurons (each sorted ascending); enough spikes
+    >>> # per neuron for the summary table's information screen
+    >>> spike_times = [np.sort(rng.uniform(0, 10, n)) for n in (400, 500, 600)]
 
     >>> # Compute spatial rates for all neurons
     >>> result = compute_spatial_rates(

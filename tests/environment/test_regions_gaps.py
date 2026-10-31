@@ -668,10 +668,9 @@ class TestRegionIntegrationAdvanced:
         region_builder = Regions(env.regions.values())
         region_builder.add("test", point=(5.0, 5.0))
         env = env.with_regions(region_builder)
+        region_builder = Regions(env.regions.values())
         with pytest.raises(KeyError, match="Duplicate"):
-            region_builder = Regions(env.regions.values())
             region_builder.add("test", point=(7.0, 7.0))
-            env = env.with_regions(region_builder)
 
 
 class TestRegionErrorHandling:
@@ -695,10 +694,9 @@ class TestRegionErrorHandling:
         env = env.with_regions(region_builder)
 
         # Duplicate name should raise error
+        region_builder = Regions(env.regions.values())
         with pytest.raises(KeyError, match="Duplicate region name"):
-            region_builder = Regions(env.regions.values())
             region_builder.add("region1", polygon=box(0, 0, 10, 10))
-            env = env.with_regions(region_builder)
 
     def test_region_queries_nonexistent_region(self):
         """Test queries for non-existent regions.
@@ -729,10 +727,9 @@ class TestRegionErrorHandling:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
+        region_builder = Regions(env.regions.values())
         with pytest.raises(KeyError):
-            region_builder = Regions(env.regions.values())
             region_builder.update_region("does_not_exist", point=(5.0, 5.0))
-            env = env.with_regions(region_builder)
 
     def test_region_remove_nonexistent_raises(self):
         """``regions.remove(...)`` on a missing name raises.
@@ -746,14 +743,13 @@ class TestRegionErrorHandling:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
+        region_builder = Regions(env.regions.values())
         with pytest.raises(KeyError):
-            region_builder = Regions(env.regions.values())
             region_builder.remove("does_not_exist")
-            env = env.with_regions(region_builder)
 
         # ``del regions[name]`` continues to raise as well.
+        builder = Regions(env.regions.values())
         with pytest.raises(KeyError):
-            builder = Regions(env.regions.values())
             del builder["does_not_exist"]
 
     def test_point_region_outside_environment(self):

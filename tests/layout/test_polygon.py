@@ -68,24 +68,33 @@ def test_clip_mapping_owns_strided_indices_and_preserves_protection():
     [([0.5], 2), ([True], 2), ([-1], 2), ([2], 2), ([[0]], 2), ([0], -1), ([0], True)],
 )
 def test_mapping_rejects_invalid_indices(indices, count):
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"parent_bin_indices must be|n_parent_bins must be"
+    ):
         ClipMapping(indices, count)
 
 
 @pytest.mark.parametrize(
-    "polygons",
+    ("polygons", "message"),
     [
-        (Point(0, 0),),
-        (Polygon(),),
-        (Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]),),
-        (box(0, 0, 2, 2), box(1, 0, 3, 2)),
-        (MultiPolygon([box(0, 0, 1, 1), box(2, 0, 3, 1)]),),
+        ((Point(0, 0),), r"cells\[0\] must be a connected Polygon"),
+        ((Polygon(),), r"cells\[0\] must be nonempty, finite and two-dimensional"),
+        (
+            (Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]),),
+            r"cells\[0\] is invalid",
+        ),
+        (
+            (box(0, 0, 2, 2), box(1, 0, 3, 2)),
+            r"cells\[0\] and cells\[1\] overlap in their interiors",
+        ),
+        (
+            (MultiPolygon([box(0, 0, 1, 1), box(2, 0, 3, 1)]),),
+            r"cells\[0\] must be a connected Polygon",
+        ),
     ],
 )
-def test_polygon_cells_reject_invalid_partition(polygons):
-    with pytest.raises(
-        ValueError, match=r"Why: exact cell geometry must remain consistent with point"
-    ):
+def test_polygon_cells_reject_invalid_partition(polygons, message):
+    with pytest.raises(ValueError, match=message):
         PolygonCells(polygons)
 
 
@@ -353,12 +362,15 @@ def test_transform_polygon_cells_maps_shared_vertices_and_keeps_holes():
 
 
 @pytest.mark.parametrize(
-    "polygon", [Point(0, 0), Polygon(), Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])]
+    ("polygon", "message"),
+    [
+        (Point(0, 0), r"clip polygon must be a Polygon or MultiPolygon"),
+        (Polygon(), r"clip polygon must be nonempty, finite and two-dimensional"),
+        (Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]), r"clip polygon is invalid"),
+    ],
 )
-def test_clipping_rejects_invalid_geometry_without_repair(polygon):
-    with pytest.raises(
-        ValueError, match=r"Why: exact cell geometry must remain consistent with point"
-    ):
+def test_clipping_rejects_invalid_geometry_without_repair(polygon, message):
+    with pytest.raises(ValueError, match=message):
         clip_binning(_grid(), polygon)
 
 

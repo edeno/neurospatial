@@ -149,7 +149,7 @@ class TestDifferentialOperatorComputation:
         """Test that differential operator has shape (n_bins, n_edges)."""
         # Create simple 2x2 grid environment
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         D = env.get_differential_operator()
 
@@ -249,7 +249,7 @@ class TestEnvironmentCachedProperty:
     def test_differential_operator_property_exists(self):
         """Environment exposes get_differential_operator() (method form)."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         assert hasattr(env, "get_differential_operator")
         assert callable(env.get_differential_operator)
@@ -257,7 +257,7 @@ class TestEnvironmentCachedProperty:
     def test_differential_operator_caching(self):
         """The internal operator is cached and public exports are detached."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         # Access twice
         D1 = env.get_differential_operator()
@@ -282,7 +282,7 @@ class TestEnvironmentCachedProperty:
     def test_differential_operator_matches_function(self):
         """Test that property returns same result as direct function call."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         D_property = env.get_differential_operator()
         D_function = env.get_differential_operator()
@@ -359,7 +359,7 @@ class TestGradientOperator:
         """Test that gradient output has shape (n_edges,)."""
         # Create simple 2x2 grid environment
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         # Create a test field (one value per bin)
         rng = np.random.default_rng(42)
@@ -412,7 +412,7 @@ class TestGradientOperator:
         """Test that gradient validates input field shape."""
         # Create environment
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         from neurospatial.ops.calculus import gradient
 
@@ -440,7 +440,7 @@ class TestDivergenceOperator:
         """Test that divergence output has shape (n_bins,)."""
         # Create simple 2x2 grid environment
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         # Create a test edge field (one value per edge)
         n_edges = len(env.connectivity.edges)
@@ -501,7 +501,7 @@ class TestDivergenceOperator:
         """Test that divergence validates input edge field shape."""
         # Create environment
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        env = Environment.from_samples(data, bin_size=0.5)
 
         from neurospatial.ops.calculus import divergence
 

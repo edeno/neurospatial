@@ -226,15 +226,17 @@ def test_smoothed_turns_declared_break_equals_separate_calls(two_epoch_recording
 )
 def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
     r = two_epoch_recording
-    result = function(positions=r.positions, times=r.times, epochs=(500, 600))
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = function(positions=r.positions, times=r.times, epochs=(500, 600))
     assert np.isnan(result).all()
 
 
 def test_home_range_without_observations_is_empty(two_epoch_recording):
     r = two_epoch_recording
-    result = compute_home_range(
-        r.env.bin_at(r.positions), r.env, times=r.times, epochs=(500, 600)
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = compute_home_range(
+            r.env.bin_at(r.positions), r.env, times=r.times, epochs=(500, 600)
+        )
     assert result.size == 0
 
 

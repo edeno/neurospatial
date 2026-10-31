@@ -70,8 +70,10 @@ def render_public_api() -> str:
     lines = []
     for namespace in NAMESPACES:
         module = importlib.import_module(namespace)
-        for name in module.__all__:
-            lines.append(f"{namespace}.{name}{_describe(getattr(module, name))}")
+        lines.extend(
+            f"{namespace}.{name}{_describe(getattr(module, name))}"
+            for name in module.__all__
+        )
     return "\n".join(sorted(lines)) + "\n"
 
 

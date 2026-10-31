@@ -53,16 +53,10 @@ def test_html_generation_performance(benchmark_env, tmp_path):
 
     generation_time = end - start
 
-    # Print results
-    print(f"\nHTML Generation Performance ({n_frames} frames):")
-    print(f"  Total time: {generation_time:.2f}s")
-    print(f"  Per frame:  {(generation_time / n_frames) * 1000:.2f}ms")
-
     # Target: <20s for 100 frames
     assert generation_time < 20, (
         f"HTML generation {generation_time:.2f}s exceeds 20s target"
     )
-    print("  ✓ Target met: <20s for 100 frames")
 
 
 @pytest.mark.slow
@@ -92,20 +86,14 @@ def test_subsample_frames_performance(tmp_path):
 
     subsample_time = end - start
 
-    # Print results
     expected_frames = int(n_frames * (30 / 250))
-    print(f"\nSubsample Performance (900K frames → {expected_frames} frames):")
-    print(f"  Time: {subsample_time:.3f}s")
-    print(f"  Frames/s: {n_frames / subsample_time:,.0f}")
 
     # Target: <3s (includes memmap creation time, not just subsample operation)
     # Note: Pure subsample is instant, but memmap creation adds ~2s overhead
     assert subsample_time < 3.0, (
         f"Subsample time {subsample_time:.3f}s exceeds 3s target"
     )
-    print("  ✓ Target met: <3s (includes memmap creation overhead)")
 
     # Verify correct output shape
     assert len(subsampled) == expected_frames
     assert subsampled.shape == (expected_frames, n_bins)
-    print(f"  ✓ Correct output shape: {subsampled.shape}")

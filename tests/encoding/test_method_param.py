@@ -107,6 +107,9 @@ def _firing(result):
     [(c[1], c[2]) for c in KWARG_CASES],
     ids=[c[0] for c in KWARG_CASES],
 )
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_method_kwarg_each_encoder(ovc_session, call, default_method):
     """``method=`` is accepted and is a pure rename of the default path."""
     r_explicit = call(ovc_session, default_method)
@@ -218,6 +221,9 @@ def test_result_field_renamed(ovc_session, call, default_method):
     assert not hasattr(result, "smoothing_method")
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_egocentric_default_preserved(ovc_session):
     """Egocentric encoders default to ``"binned"`` (not ``"diffusion_kde"``)."""
     env, st, t, pos, hd, obj = ovc_session

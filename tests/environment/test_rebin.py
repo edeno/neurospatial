@@ -196,7 +196,8 @@ class TestRebinBasic:
         original_shape = env.grid_shape
 
         # Rebin by factor 2 (may warn if not evenly divisible)
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # Check new shape is original // 2 (truncated if not evenly divisible)
         expected_shape = (original_shape[0] // 2, original_shape[1] // 2)
@@ -256,7 +257,8 @@ class TestRebinBasic:
         grid_shape = env.grid_shape
 
         # Rebin (may warn if not evenly divisible)
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # Verify geometry is correct (truncated to nearest divisible size)
         expected_shape = (grid_shape[0] // 2, grid_shape[1] // 2)
@@ -307,7 +309,8 @@ class TestRebinBasic:
             infer_active_bins=False,
         )
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         assert coarse.layout_type == "RegularGrid"
         assert coarse._geometry is not env._geometry
@@ -355,7 +358,8 @@ class TestRebinFactorVariations:
         original_shape = env.grid_shape
 
         # Coarsen by (2, 3)
-        coarse = env.rebin(factor=(2, 3))
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=(2, 3))
 
         # Expected shape: (original[0]//2, original[1]//3)
         expected_shape = (original_shape[0] // 2, original_shape[1] // 3)
@@ -373,7 +377,8 @@ class TestRebinFactorVariations:
         grid_shape = env.grid_shape
 
         # Rebin by 3 (may warn if not evenly divisible)
-        coarse = env.rebin(factor=3)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=3)
 
         # Should be shape // 3 (truncated if not evenly divisible)
         expected_shape = (grid_shape[0] // 3, grid_shape[1] // 3)
@@ -393,7 +398,8 @@ class TestRebinConnectivity:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Rebin to 2x2
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # 2x2 grid should have 4 nodes
         assert coarse.connectivity.number_of_nodes() == 4
@@ -411,7 +417,8 @@ class TestRebinConnectivity:
         data = rng.random((200, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # Check edges have required attributes
         for _u, _v, attrs in coarse.connectivity.edges(data=True):
@@ -516,13 +523,15 @@ class TestRebinEdgeCases:
         # 2D grid
         data_2d = rng.random((200, 2)) * 40
         env_2d = Environment.from_samples(data_2d, bin_size=10.0)
-        coarse_2d = env_2d.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse_2d = env_2d.rebin(factor=2)
         assert coarse_2d.n_dims == 2
 
         # 3D grid
         data_3d = rng.random((500, 3)) * 40
         env_3d = Environment.from_samples(data_3d, bin_size=10.0)
-        coarse_3d = env_3d.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse_3d = env_3d.rebin(factor=2)
         assert coarse_3d.n_dims == 3
 
     def test_rebin_preserves_units_and_frame(self):
@@ -533,7 +542,8 @@ class TestRebinEdgeCases:
         env = env.with_metadata(units="cm")
         env = env.with_metadata(frame="session1")
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         assert coarse.units == "cm"
         assert coarse.frame == "session1"
@@ -549,7 +559,8 @@ class TestRebinIntegration:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Rebin first
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # Then smooth a field
         field = rng.random(coarse.n_bins)
@@ -564,7 +575,8 @@ class TestRebinIntegration:
         data = rng.random((200, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
 
         # All original bin centers should map to some bin in coarse
 
@@ -588,7 +600,8 @@ class TestRebinDiagonalConnectivityMaskedGrid:
         src_max_degree = max(deg for _, deg in env.connectivity.degree())
         assert src_max_degree == 8
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
         indices = _assert_masked_connectivity(env, coarse, diagonal=True)
         assert any(
             np.count_nonzero(indices[u] != indices[v]) > 1
@@ -604,7 +617,8 @@ class TestRebinDiagonalConnectivityMaskedGrid:
         src_max_degree = max(deg for _, deg in env.connectivity.degree())
         assert src_max_degree == 4
 
-        coarse = env.rebin(factor=2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            coarse = env.rebin(factor=2)
         _assert_masked_connectivity(env, coarse, diagonal=False)
 
 

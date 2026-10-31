@@ -76,7 +76,12 @@ def validate_polygon_geometry(
 
     >>> # Self-intersecting (bowtie) polygon
     >>> bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-    >>> issues = validate_polygon_geometry(bowtie, "bowtie")
+    >>> import warnings
+    >>> with warnings.catch_warnings(record=True) as caught:
+    ...     warnings.simplefilter("always")
+    ...     issues = validate_polygon_geometry(bowtie, "bowtie")
+    >>> "self-intersecting" in str(caught[0].message)  # it also warns
+    True
     >>> "self-intersect" in issues[0].lower()
     True
 

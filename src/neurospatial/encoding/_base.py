@@ -426,11 +426,12 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         # An empty result (0 neurons in a batch, or 0 bins) has no firing-rate
         # values to reduce over. np.nanmax over a zero-size axis raises
         # "zero-size array to reduction operation fmax which has no identity",
-        # so report a NaN peak instead of crashing.
-        if rates.size == 0:
-            peak_value = float("nan")
-        else:
-            peak_value = float(np.nanmax(np.asarray(self.peak_firing_rate())))
+        # so report a NaN peak instead of crashing. Units with no supported
+        # bin have NaN peaks; when every unit does, the maximum is NaN too.
+        peaks = (
+            np.asarray(self.peak_firing_rate()) if rates.size else np.array([np.nan])
+        )
+        peak_value = float("nan") if np.isnan(peaks).all() else float(np.nanmax(peaks))
 
         out: dict[str, Any] = {}
         if rates.ndim > 1:

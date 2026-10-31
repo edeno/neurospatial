@@ -2106,9 +2106,9 @@ def compute_view_rates(
 
     >>> # Spike times for 3 neurons
     >>> spike_times = [
-    ...     np.sort(rng.uniform(0, 10, 15)),  # Neuron 0
-    ...     np.sort(rng.uniform(0, 10, 20)),  # Neuron 1
-    ...     np.sort(rng.uniform(0, 10, 25)),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 10, 300)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 10, 400)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 10, 500)),  # Neuron 2
     ... ]
 
     >>> # Compute view rates for all neurons

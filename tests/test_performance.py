@@ -83,10 +83,8 @@ class TestRegionMembershipPerformance:
 
         # Performance checks
         time_1_region = times[0]
-        time_5_regions = times[1]
         time_10_regions = times[2]
 
-        speedup_ratio_5 = time_5_regions / time_1_region
         speedup_ratio_10 = time_10_regions / time_1_region
 
         # Key assertion: scaling is at most linear (~10x), not quadratic
@@ -95,16 +93,6 @@ class TestRegionMembershipPerformance:
             f"Performance regression: 10 regions took {speedup_ratio_10:.1f}x "
             f"the time of 1 region (expected at most linear, <15x). "
             f"Times: 1={time_1_region * 1000:.2f}ms, 10={time_10_regions * 1000:.2f}ms"
-        )
-
-        # Print timing info for manual inspection
-        print("\nRegion membership performance:")
-        print(f"  1 region:  {time_1_region * 1000:6.2f} ms")
-        print(
-            f"  5 regions: {time_5_regions * 1000:6.2f} ms (ratio: {speedup_ratio_5:.2f}x)"
-        )
-        print(
-            f"  10 regions: {time_10_regions * 1000:6.2f} ms (ratio: {speedup_ratio_10:.2f}x)"
         )
 
     @pytest.mark.wallclock
@@ -141,9 +129,6 @@ class TestRegionMembershipPerformance:
 
         # Verify correctness
         assert membership.shape == (env.n_bins, 10)
-        print(
-            f"\nAbsolute performance: {elapsed * 1000:.2f} ms for 2500 bins x 10 regions"
-        )
 
 
 @pytest.mark.slow
@@ -172,9 +157,6 @@ class TestEnvironmentCreationPerformance:
         )
 
         assert env.n_bins > 0
-        print(
-            f"\nEnvironment creation: {elapsed * 1000:.0f} ms for 10k points → {env.n_bins} bins"
-        )
 
 
 @pytest.mark.slow
@@ -212,9 +194,6 @@ class TestSpatialQueryPerformance:
         # Verify correctness
         assert len(bin_indices) == len(query_points)
         assert bin_indices.dtype == np.int_
-        print(
-            f"\nKDTree batch query: {elapsed * 1000:.2f} ms for 10k queries on {env.n_bins} bins"
-        )
 
 
 @pytest.mark.slow
@@ -258,10 +237,6 @@ class TestGraphAlgorithmPerformance:
         assert len(path) > 0
         assert path[0] == start_bin
         assert path[-1] == end_bin
-        print(
-            f"\nShortest path: {avg_time * 1000:.2f} ms avg for {env.n_bins}-node graph "
-            f"({env.connectivity.number_of_edges()} edges)"
-        )
 
 
 @pytest.mark.slow
@@ -308,7 +283,3 @@ class TestTrajectoryPerformance:
         assert occupancy.shape == (env.n_bins,)
         assert np.all(occupancy >= 0)
         assert occupancy.sum() > 0  # Should have some occupancy
-        print(
-            f"\nOccupancy computation: {elapsed * 1000:.0f} ms for {n_points} time points "
-            f"on {env.n_bins} bins (total occupancy: {occupancy.sum():.0f})"
-        )

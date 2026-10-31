@@ -561,9 +561,9 @@ def test_pixel_size_refuses_what_the_autocorrelogram_refuses(case) -> None:
 
     env = _pixel_size_cases()[case]()
     rate = np.random.default_rng(13).random(env.n_bins)
-    with pytest.raises(Exception) as autocorrelation_error:
+    with pytest.raises((NotImplementedError, TypeError)) as autocorrelation_error:
         spatial_autocorrelation(env, rate)
-    with pytest.raises(Exception) as pixel_error:
+    with pytest.raises((NotImplementedError, TypeError)) as pixel_error:
         autocorrelation_pixel_size(env)
 
     assert type(pixel_error.value) is type(autocorrelation_error.value)

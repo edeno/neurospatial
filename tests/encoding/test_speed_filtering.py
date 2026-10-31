@@ -70,7 +70,8 @@ def two_speed_trajectory() -> dict:
     fast_x = slow_end + np.arange(1, n_fast + 1) * 3.0  # ends near 75
 
     x = np.concatenate([slow_x, fast_x])
-    assert x.min() >= 0 and x.max() <= 100  # stay inside the environment
+    assert x.min() >= 0  # stay inside the environment
+    assert x.max() <= 100
     positions = x.reshape(-1, 1)
     n = len(x)
     times = np.arange(n, dtype=np.float64) * dt

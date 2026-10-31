@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -19,7 +19,7 @@ from neurospatial.encoding.population import (
     rate_map_correlations,
 )
 
-matplotlib.use("Agg")  # Use non-interactive backend for testing
+mpl.use("Agg")  # Use non-interactive backend for testing
 
 
 def _coverage_result(place_fields, is_observed):
@@ -438,7 +438,7 @@ class TestPlotPopulationCoverage:
         plt.close()
 
     @staticmethod
-    def _gap_line_positions(ax: matplotlib.axes.Axes) -> np.ndarray:
+    def _gap_line_positions(ax: mpl.axes.Axes) -> np.ndarray:
         """Sorted x positions of the dashed vertical gap lines."""
         return np.sort(
             [line.get_xdata()[0] for line in ax.lines if line.get_linestyle() == "--"]

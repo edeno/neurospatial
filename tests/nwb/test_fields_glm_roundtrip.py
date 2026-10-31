@@ -157,7 +157,11 @@ class TestGlmRoundTrip:
         times = np.arange(positions.shape[0], dtype=np.float64) * 0.05
         spike_times = [np.sort(rng.uniform(times[0], times[-1], 40)) for _ in range(3)]
 
-        result = compute_spatial_rates(env, spike_times, times, positions, method="glm")
+        # 40 spikes per unit leave the REML penalty at its upper search bound.
+        with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
+            result = compute_spatial_rates(
+                env, spike_times, times, positions, method="glm"
+            )
         assert result.method == "glm"
 
         write_spatial_rates(empty_nwb, result)
@@ -317,7 +321,7 @@ class TestSchemaVersionGuard:
         env = sample_environment
         self._write_then_patch_schema(empty_nwb, env, bad)
         recorded = None if bad is _MISSING else bad
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="Spatial-rates schema") as caught:
             read_spatial_rates(empty_nwb, env=env)
         message = str(caught.value)
         assert (

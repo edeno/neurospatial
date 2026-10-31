@@ -110,7 +110,8 @@ class TestMapProbabilities:
         src_probs = np.array([])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
+        with pytest.warns(UserWarning, match="zero bins"):
+            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
         np.testing.assert_allclose(tgt_probs, [0, 0])
 
     def test_empty_target(self):
@@ -120,7 +121,8 @@ class TestMapProbabilities:
         src_probs = np.array([1.0])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
+        with pytest.warns(UserWarning, match="zero bins"):
+            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
         assert tgt_probs.size == 0
 
     def test_shape_mismatch(self):

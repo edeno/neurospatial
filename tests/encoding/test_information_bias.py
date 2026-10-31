@@ -72,7 +72,9 @@ def test_screen_rejects_untuned_cells_that_pass_uncorrected(box):
         env, _untuned(times, 60, 40, seed=200), times, positions, bandwidth=5.0
     )
     assert (rates.spatial_information() >= 0.3).mean() > 0.5
-    assert not rates.classify(min_info=0.3).any()
+    with pytest.warns(UserWarning, match="fewer spikes than their rate maps"):
+        verdict = rates.classify(min_info=0.3)
+    assert not verdict.any()
 
 
 def test_place_cell_passes_after_correction(box):

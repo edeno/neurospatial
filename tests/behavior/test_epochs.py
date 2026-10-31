@@ -223,7 +223,8 @@ def test_restrict_times_and_positions_aligned() -> None:
     """times and positions are sliced by the SAME mask, order preserved."""
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
     positions = np.column_stack([times * 10.0, times * -1.0])
-    t_kept, pos_kept = restrict(times, positions, epochs=(1.0, 3.0))
+    with pytest.warns(UserWarning, match=r"restrict\(\) returns samples without"):
+        t_kept, pos_kept = restrict(times, positions, epochs=(1.0, 3.0))
 
     expected_mask = (times >= 1.0) & (times < 3.0)
     np.testing.assert_array_equal(t_kept, times[expected_mask])
@@ -246,7 +247,8 @@ def test_restrict_multiple_arrays_returns_tuple() -> None:
     times = np.arange(5.0)
     a = times * 2.0
     b = times * 3.0
-    out = restrict(times, a, b, epochs=(1.0, 3.0))
+    with pytest.warns(UserWarning, match=r"restrict\(\) returns samples without"):
+        out = restrict(times, a, b, epochs=(1.0, 3.0))
     assert isinstance(out, tuple)
     assert len(out) == 3
 
@@ -273,9 +275,13 @@ def test_restrict_array_vs_fake_intervalset_parity() -> None:
 
     # Two length-2 arrays as (starts, ends) is now ambiguous, so pass the
     # unambiguous (n, 2) interval-rows form for the array side.
-    t_arr, pos_arr = restrict(times, positions, epochs=np.column_stack([starts, ends]))
+    with pytest.warns(UserWarning, match=r"restrict\(\) returns samples without"):
+        t_arr, pos_arr = restrict(
+            times, positions, epochs=np.column_stack([starts, ends])
+        )
     iset = FakeIntervalSet(start=starts, end=ends)
-    t_iset, pos_iset = restrict(times, positions, epochs=iset)
+    with pytest.warns(UserWarning, match=r"restrict\(\) returns samples without"):
+        t_iset, pos_iset = restrict(times, positions, epochs=iset)
 
     np.testing.assert_array_equal(t_arr, t_iset)
     np.testing.assert_array_equal(pos_arr, pos_iset)
@@ -294,9 +300,15 @@ def test_restrict_array_vs_real_intervalset_parity() -> None:
 
     # Two length-2 arrays as (starts, ends) is now ambiguous, so pass the
     # unambiguous (n, 2) interval-rows form for the array side.
-    t_arr, pos_arr = restrict(times, positions, epochs=np.column_stack([starts, ends]))
+    # Samples cannot carry their windows, so both calls warn that joined
+    # samples can bridge the excluded time between the two windows.
+    with pytest.warns(UserWarning, match="without their observation windows"):
+        t_arr, pos_arr = restrict(
+            times, positions, epochs=np.column_stack([starts, ends])
+        )
     iset = nap.IntervalSet(start=starts, end=ends)
-    t_iset, pos_iset = restrict(times, positions, epochs=iset)
+    with pytest.warns(UserWarning, match="without their observation windows"):
+        t_iset, pos_iset = restrict(times, positions, epochs=iset)
 
     np.testing.assert_array_equal(t_arr, t_iset)
     np.testing.assert_array_equal(pos_arr, pos_iset)
@@ -386,10 +398,15 @@ def test_compute_spatial_rates_honors_restriction() -> None:
 
     # Unrestricted vs restricted.
     unrestricted = compute_spatial_rates(env, trains, times, positions)
+    with pytest.warns(UserWarning, match=r"restrict\(\) returns samples without"):
+        restricted_times, restricted_positions = restrict(
+            times, positions, epochs=epochs
+        )
     restricted = compute_spatial_rates(
         env,
         restrict_spike_trains(trains, epochs),
-        *restrict(times, positions, epochs=epochs),
+        restricted_times,
+        restricted_positions,
     )
 
     # Restriction changes the result.

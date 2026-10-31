@@ -228,9 +228,9 @@ def test_shuffle_test_result_allows_nan_p_value_and_has_short_repr():
 
 
 def test_shuffle_test_result_plot_with_infinite_nulls():
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     with pytest.warns(UserWarning, match="undefined"):
@@ -246,9 +246,9 @@ def test_shuffle_test_result_plot_with_infinite_nulls():
 def test_zscore_is_nan_with_infinite_null():
     """An infinite null score leaves the mean and SD undefined."""
     assert np.isnan(compute_shuffle_zscore(1.0, np.array([0.0, 1.0, np.inf])))
-    assert compute_shuffle_zscore(2.0, np.array([0.0, np.nan, 2.0])) == pytest.approx(
-        1.0
-    )
+    with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null"):
+        z = compute_shuffle_zscore(2.0, np.array([0.0, np.nan, 2.0]))
+    assert z == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------

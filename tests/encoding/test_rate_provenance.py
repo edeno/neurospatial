@@ -56,6 +56,9 @@ def rate_family(request):
     return family, compute, trains
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_rate_support_and_provenance_match_the_actual_analysis(rate_family):
     family, compute, trains = rate_family
     result = compute(trains, unit_ids=["first", "second"])
@@ -98,6 +101,10 @@ def test_rate_support_and_provenance_match_the_actual_analysis(rate_family):
         assert result.analysis_settings["epochs"][0][0] == 0
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_rate_metadata_survives_tables_and_netcdf(rate_family, tmp_path):
     _, compute, trains = rate_family
     result = compute(trains, unit_ids=["first", "second"])
@@ -127,6 +134,9 @@ def test_rate_metadata_survives_tables_and_netcdf(rate_family, tmp_path):
             )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_empty_populations_keep_observation_provenance(rate_family):
     _, compute, trains = rate_family
     populated = compute(trains)
@@ -140,6 +150,9 @@ def test_empty_populations_keep_observation_provenance(rate_family):
 @pytest.mark.parametrize("family", ["view", "object_vector", "egocentric"])
 @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde"])
 @pytest.mark.parametrize("declared_units", [True, False])
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
     family, method, declared_units
 ):

@@ -60,7 +60,7 @@ class TestReadEvents:
 
         # Check timestamps match
         np.testing.assert_array_almost_equal(
-            events["timestamp"].values, original_table["timestamp"][:]
+            events["timestamp"].to_numpy(), original_table["timestamp"][:]
         )
 
     def test_with_explicit_processing_module(self, empty_nwb):
@@ -115,7 +115,7 @@ class TestReadEvents:
         assert "timestamp" in events.columns
 
         # Timestamps should be sorted (as created in fixture)
-        timestamps = events["timestamp"].values
+        timestamps = events["timestamp"].to_numpy()
         assert all(timestamps[:-1] <= timestamps[1:])
 
     def test_additional_columns_preserved(self, sample_nwb_with_events):

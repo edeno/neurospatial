@@ -92,7 +92,7 @@ class TestMethodSettings:
         ],
     )
     def test_bad_settings_are_refused(self, change):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"'ji_wilson_2007': \w+ must be"):
             dataclasses.replace(JI_WILSON_2007, **change)
 
     def test_the_active_cell_criterion(self):

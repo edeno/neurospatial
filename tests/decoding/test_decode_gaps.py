@@ -71,7 +71,10 @@ def test_epochs_restrict_decode_bins(gap_population, options):
 
 def test_no_bin_fits_error(gap_population):
     r, trains = gap_population
-    with pytest.raises(ValueError, match="No decode time bin fits") as caught:
+    with (
+        pytest.warns(UserWarning, match="is not decoded"),
+        pytest.raises(ValueError, match="No decode time bin fits") as caught,
+    ):
         decode_session(r.env, trains, r.times, r.positions, method="binned", dt=200.0)
     assert any(line.startswith("Fix:") for line in str(caught.value).splitlines())
 

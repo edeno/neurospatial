@@ -298,7 +298,7 @@ def restrict(
     >>> from neurospatial.behavior import restrict
     >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> positions = np.column_stack([times, times])
-    >>> t, pos = restrict(times, positions, epochs=(1.0, 3.0))
+    >>> t, pos = restrict(times, positions, epochs=(1.0, 2.5))
     >>> t
     array([1., 2.])
     """

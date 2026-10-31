@@ -137,6 +137,19 @@ addopts = [
 ]
 xfail_strict = true
 log_level = "INFO"
+# Every warning fails its test unless the test expects it (pytest.warns).
+filterwarnings = [
+    "error",
+    # Documentation examples end with plt.show(); tests draw with Agg.
+    "ignore:FigureCanvasAgg is non-interactive, and thus cannot be shown:UserWarning",
+    # alphashape builds its matrices with np.bmat (alpha-shape boundaries).
+    "ignore:the matrix subclass is not the recommended way:PendingDeprecationWarning",
+    # Once JAX is loaded it warns at every fork, including a subprocess such
+    # as ffmpeg, whose child execs at once.
+    "ignore:os.fork\\(\\) was called:RuntimeWarning",
+    # pytest-benchmark disables timing under xdist and says so at startup.
+    "ignore:Benchmarks are automatically disabled because xdist plugin is active:pytest_benchmark.logger.PytestBenchmarkWarning",
+]
 markers = [
     "hypothesis: property tests driven by Hypothesis",
     "gui: marks tests as requiring GUI/display (deselect with '-m \"not gui\"')",

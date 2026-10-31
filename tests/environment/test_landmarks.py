@@ -226,10 +226,19 @@ _BINS = {
 }
 
 
+# The recorded animal stays on one side of the monitor, which sits at the arena
+# edge, so the rate functions warn that some object-relative directions are
+# never sampled; these tests are about how landmarks are named.
+_UNSAMPLED_DIRECTIONS = pytest.mark.filterwarnings(
+    "ignore:compute_.*_rate.*no time was spent with the nearest object"
+)
+
+
 def _rings(result):
     return np.nanmean(np.asarray(result.firing_rate).reshape(5, 8), axis=1)
 
 
+@_UNSAMPLED_DIRECTIONS
 def test_a_monitor_is_measured_from_its_nearest_edge(env, recording):
     times, positions, spike_times = recording
     by_name = compute_object_vector_rate(
@@ -239,12 +248,14 @@ def test_a_monitor_is_measured_from_its_nearest_edge(env, recording):
         env, spike_times, times, positions, [[50.0, 100.0]], **_BINS
     )
     near, far = _rings(by_name)[0], _rings(by_name)[1:]
-    assert near > 15 and np.all(far < 2)  # the cell's 10 cm tuning
+    assert near > 15  # the cell's 10 cm tuning
+    assert np.all(far < 2)
     assert _rings(by_center)[1] > 5  # the center point smears it outward
     assert by_name.analysis_settings["objects"] == ["monitor"]
     assert by_center.analysis_settings["objects"] is None
 
 
+@_UNSAMPLED_DIRECTIONS
 def test_point_landmark_names_match_their_coordinates(env, recording):
     times, positions, spike_times = recording
     by_name = compute_egocentric_rate(
@@ -256,6 +267,7 @@ def test_point_landmark_names_match_their_coordinates(env, recording):
     np.testing.assert_array_equal(by_name.firing_rate, by_value.firing_rate)
 
 
+@_UNSAMPLED_DIRECTIONS
 def test_positions_per_sample_match_the_landmark(env, recording):
     times, positions, spike_times = recording
     per_sample = env.landmarks.nearest_points(positions, ["monitor"])

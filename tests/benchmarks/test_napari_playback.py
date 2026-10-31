@@ -833,7 +833,7 @@ class TestNapariPlaybackFieldSizes:
     """
 
     @pytest.fixture(scope="class")
-    def _env_100x100(self) -> Environment:
+    def env_100x100(self) -> Environment:
         """100x100 grid environment (~10,000 bins)."""
         from neurospatial import Environment
 
@@ -844,16 +844,16 @@ class TestNapariPlaybackFieldSizes:
         return Environment.from_samples(positions, bin_size=1.0)
 
     @pytest.fixture(scope="class")
-    def _fields_100x100(self, _env_100x100: Environment) -> NDArray[np.float32]:
+    def fields_100x100(self, env_100x100: Environment) -> NDArray[np.float32]:
         """Fields for 100x100 environment."""
         rng = np.random.default_rng(DEFAULT_SEED)
-        return rng.random((DEFAULT_FRAMES, _env_100x100.n_bins)).astype(np.float32)
+        return rng.random((DEFAULT_FRAMES, env_100x100.n_bins)).astype(np.float32)
 
     def test_field_size_100x100(
         self,
         benchmark,
-        _env_100x100: Environment,
-        _fields_100x100: NDArray[np.float32],
+        env_100x100: Environment,
+        fields_100x100: NDArray[np.float32],
         frame_times: NDArray[np.float64],
     ) -> None:
         """Benchmark playback with 100x100 grid (~10,000 bins).
@@ -866,8 +866,8 @@ class TestNapariPlaybackFieldSizes:
         pytest.importorskip("napari")
 
         def setup_and_step():
-            viewer = _env_100x100.animate_fields(
-                _fields_100x100,
+            viewer = env_100x100.animate_fields(
+                fields_100x100,
                 frame_times=frame_times,
                 backend="napari",
                 cmap="viridis",

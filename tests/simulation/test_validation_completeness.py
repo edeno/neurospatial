@@ -226,7 +226,10 @@ def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
 
 def test_a_selection_of_only_excluded_units_cannot_pass():
     session = _with_border_unit(_session())
-    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+    with (
+        pytest.warns(UserWarning, match="are not place fields"),
+        pytest.warns(UserWarning, match="No cells could be fully validated"),
+    ):
         result = validate_simulation(session, unit_ids=[3])
     assert result.unit_status == ("excluded",)
     assert result.passed is False
@@ -238,7 +241,10 @@ def test_a_selection_of_only_excluded_units_cannot_pass():
 def test_an_unevaluable_place_unit_blocks_a_pass_beside_excluded_units():
     session = _with_border_unit(_session())
     session = replace(session, spike_times=[np.array([]), session.spike_times[1]])
-    with pytest.warns(UserWarning, match="No cells could be fully validated"):
+    with (
+        pytest.warns(UserWarning, match="are not place fields"),
+        pytest.warns(UserWarning, match="No cells could be fully validated"),
+    ):
         result = validate_simulation(session)
     assert result.unit_status == ("not_evaluable", "excluded")
     assert result.passed is False

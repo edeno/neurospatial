@@ -472,7 +472,8 @@ def test_resolve_unit_ids_rejects_duplicates():
 def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trains):
     env, times, positions, headings = trajectory
     trains = spike_trains[:2]
-    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+
+    def run() -> None:
         if name == "peri_event":
             from neurospatial.events import population_peri_event_histogram
 
@@ -482,8 +483,18 @@ def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trai
         else:
             _compute(name, env, times, positions, headings, trains, unit_ids=[5, 5])
 
+    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+        run()
+
 
 @pytest.mark.parametrize("name", ALL)
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_summary_table_relabel_rejects_duplicates(name, trajectory, spike_trains):
     env, times, positions, headings = trajectory
     result = _compute(name, env, times, positions, headings, spike_trains[:2])

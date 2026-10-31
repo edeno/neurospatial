@@ -139,6 +139,9 @@ def test_exact_selection_accepts_the_same_units_in_any_order(make, maps):
     np.testing.assert_array_equal(exact, population_vector_correlation(first, second))
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_unvisited_bins_are_nan_never_zero(make, maps):
     """An unsupported bin is missing whatever finite rate the map holds there."""
     first, second = maps
@@ -149,14 +152,16 @@ def test_unvisited_bins_are_nan_never_zero(make, maps):
     filled[:, 0] = [0.0, 0.0, 3.0, 0.0, 0.0]  # unvisited: filled or extrapolated
     filled[:, 4] = [1.0, 0.0, 0.0, 2.0, 0.0]  # visited for less than min_occupancy
 
-    pv_kept = population_vector_correlation(
-        make(first, IDS),
-        make(kept, IDS, occupancy, min_occupancy=0.05),
-    )
-    pv_filled = population_vector_correlation(
-        make(first, IDS),
-        make(filled, IDS, occupancy, min_occupancy=0.05),
-    )
+    with pytest.warns(UserWarning, match="different min_occupancy"):
+        pv_kept = population_vector_correlation(
+            make(first, IDS),
+            make(kept, IDS, occupancy, min_occupancy=0.05),
+        )
+    with pytest.warns(UserWarning, match="different min_occupancy"):
+        pv_filled = population_vector_correlation(
+            make(first, IDS),
+            make(filled, IDS, occupancy, min_occupancy=0.05),
+        )
 
     np.testing.assert_array_equal(pv_kept, pv_filled)
     assert np.isnan(pv_filled[[0, 4]]).all()

@@ -169,7 +169,8 @@ def test_boundary_owned_spike_without_dwell_refuses_undefined_exposure(n_jobs):
     record = prepare_linear_spatial_intervals(env, times, positions, max_gap=None)
     np.testing.assert_array_equal(record.occupancy, [0, 1, 1, 0])
     np.testing.assert_array_equal(env.bin_at(np.array([[1.0, 1.0]])), [3])
-    with pytest.raises(ValueError, match=r"boundary ownership.*zero dwell"):
+
+    def run() -> None:
         if n_jobs is None:
             bin_spike_trains(
                 env,
@@ -192,6 +193,9 @@ def test_boundary_owned_spike_without_dwell_refuses_undefined_exposure(n_jobs):
                     n_jobs=n_jobs,
                     warn_on_drop=False,
                 )
+
+    with pytest.raises(ValueError, match=r"boundary ownership.*zero dwell"):
+        run()
 
 
 def test_linear_fractional_support_refuses_unresolvable_absolute_clock():

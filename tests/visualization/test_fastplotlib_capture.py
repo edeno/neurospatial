@@ -207,16 +207,18 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
         animation._unit.show(animation._rasters[0], 1)
         animation.widget.indices = {"time": 0.2}
         animation.widget.ui_sliders._playing["time"] = True
-        with (
-            pytest.raises(RuntimeError, match="writer failed"),
-            animation.capture_session() as capture,
-        ):
-            capture(100.8)
-            np.testing.assert_allclose(animation._unit.field.values, rates[1])
-            low, high = animation.figure["series 0"].x_range
-            assert (low + high) / 2 == pytest.approx(0.8)
-            msg = "writer failed"
-            raise RuntimeError(msg)
+
+        def capture_then_fail():
+            with animation.capture_session() as capture:
+                capture(100.8)
+                np.testing.assert_allclose(animation._unit.field.values, rates[1])
+                low, high = animation.figure["series 0"].x_range
+                assert (low + high) / 2 == pytest.approx(0.8)
+                msg = "writer failed"
+                raise RuntimeError(msg)
+
+        with pytest.raises(RuntimeError, match="writer failed"):
+            capture_then_fail()
         assert animation.widget.indices["time"] == pytest.approx(0.2)
         assert animation.widget.ui_sliders._playing["time"]
         assert all(not graphic.pause for graphic in animation.widget.ndgraphics)

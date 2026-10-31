@@ -146,11 +146,11 @@ class TestAssemblyReactivation:
         counts = np.random.default_rng(0).poisson(1.0, (300, 3)).astype(float)
         silent = counts.copy()
         silent[:, :2] = 0.0
-        with pytest.warns(UserWarning) as caught:
+        with (
+            pytest.warns(UserWarning, match="excluded from both periods"),
+            pytest.warns(UserWarning, match="comparison is undefined"),
+        ):
             result = assembly_reactivation(silent, counts, pattern)
-        messages = [str(warning.message) for warning in caught]
-        assert any("excluded from both periods" in m for m in messages)
-        assert any("comparison is undefined" in m for m in messages)
         assert np.isnan(result.mean_activation_difference)
         assert np.isnan(result.fraction_above_control_threshold)
 

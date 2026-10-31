@@ -81,7 +81,7 @@ class TestRebin:
         """
         # Attempting factor < 1 should raise ValueError
         with pytest.raises((ValueError, TypeError)):
-            small_2d_env.rebin(factor=0.5)  # type: ignore
+            small_2d_env.rebin(factor=0.5)  # type: ignore[arg-type]
 
     def test_rebin_preserves_connectivity_structure(
         self, small_2d_env: Environment
@@ -118,6 +118,7 @@ class TestRebin:
             small_2d_env.rebin(factor=too_large_factor)
 
     @pytest.mark.parametrize("factor", [1, 2, 3, 5])
+    @pytest.mark.filterwarnings("ignore:Grid shape .* is not evenly divisible")
     def test_rebin_various_factors(
         self, medium_2d_env: Environment, factor: int
     ) -> None:
@@ -138,6 +139,7 @@ class TestRebin:
             assert new_size <= expected_size + 1
             assert new_size >= expected_size - 1
 
+    @pytest.mark.filterwarnings("ignore:Grid shape .* is not evenly divisible")
     def test_rebin_anisotropic_factor_tuple(self, medium_2d_env: Environment) -> None:
         """Test rebinning with different factors per dimension."""
         # Get original shape
@@ -215,7 +217,7 @@ class TestRebin:
     def test_rebin_factor_non_integer(self, medium_2d_env: Environment) -> None:
         """Test that non-integer factor raises error."""
         with pytest.raises((ValueError, TypeError)):
-            medium_2d_env.rebin(factor=2.5)  # type: ignore
+            medium_2d_env.rebin(factor=2.5)  # type: ignore[arg-type]
 
 
 class TestSubset:
@@ -286,7 +288,7 @@ class TestSubset:
         bin_ids = np.arange(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match="mask= is a boolean array"):
-            medium_2d_env.subset(mask=bin_ids)  # type: ignore
+            medium_2d_env.subset(mask=bin_ids)  # type: ignore[arg-type]
 
     def test_subset_by_polygon(self, medium_2d_env: Environment) -> None:
         """Test subsetting by Shapely polygon."""
@@ -428,9 +430,12 @@ class TestSubset:
     ) -> None:
         """Test that region_names with wrong type raises error."""
         with pytest.raises(ValueError, match="must be a list or tuple"):
-            medium_2d_env.subset(region_names="not_a_list")  # type: ignore
+            medium_2d_env.subset(region_names="not_a_list")  # type: ignore[arg-type]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Grid shape .* is not evenly divisible"
+)  # drawn factors need not divide the grid
 class TestRebinProperties:
     """Property-based tests for rebin() using Hypothesis.
 

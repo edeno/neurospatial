@@ -173,11 +173,18 @@ def test_two_dimensional_event_times_are_refused(population_call):
     """A (2, 2) array was flattened into four events."""
     spikes = np.array([1.0, 2.0])
     events = np.array([[1.0, 2.0], [3.0, 4.0]])
-    with pytest.raises(ValueError, match="event_times must be a 1-D"):
-        if population_call:
+    if population_call:
+
+        def call():
             population_peri_event_histogram([spikes], events, (-0.5, 0.5))
-        else:
+
+    else:
+
+        def call():
             peri_event_histogram(spikes, events, (-0.5, 0.5))
+
+    with pytest.raises(ValueError, match="event_times must be a 1-D"):
+        call()
 
 
 def test_bad_event_time_errors_name_the_first_bad_entry():

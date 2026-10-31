@@ -368,7 +368,10 @@ def test_decode_one_finite_bin_with_inf_elsewhere_validate_false_decodes() -> No
     spike_counts = np.array([[2]], dtype=np.int64)
 
     # Must not raise the no-finite-bins ValueError (guard sees a finite bin).
-    post = decode_position(env, spike_counts, rates, dt=0.1, validate=False).posterior
+    with pytest.warns(UserWarning, match=r"NaN or Inf rate"):
+        post = decode_position(
+            env, spike_counts, rates, dt=0.1, validate=False
+        ).posterior
     assert post.shape == (1, n_bins)
 
 

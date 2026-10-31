@@ -449,14 +449,17 @@ def test_occupancy_with_no_usable_sample_warns(
     env = occupancy_envs[name]
     times = np.arange(8) / 30.0
     inside = np.tile(np.asarray(env.bin_centers[0], dtype=float), (8, 1))
+    refusal = None
     try:
         env.occupancy(times, inside, time_allocation=allocation)
     except NotImplementedError as error:
+        refusal = error
+    if refusal is not None:
         # Linear allocation needs rectangular or exact polygon cells; a track
         # with a width has a known footprint but no polygon cells.
         assert allocation == "linear"
-        assert "time_allocation='linear'" in str(error) or (
-            "Linear occupancy" in str(error)
+        assert "time_allocation='linear'" in str(refusal) or (
+            "Linear occupancy" in str(refusal)
         )
         return
 

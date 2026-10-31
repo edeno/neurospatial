@@ -308,9 +308,12 @@ class TestNoActiveBinsError:
         layout = RegularGridLayout()
 
         # With all NaN data, the active_mask will be all False after filtering
-        with pytest.raises(
-            ValueError, match=r"No active bins found after filtering"
-        ) as exc_info:
+        with (
+            pytest.warns(UserWarning, match="no row without NaN"),
+            pytest.raises(
+                ValueError, match=r"No active bins found after filtering"
+            ) as exc_info,
+        ):
             layout.build(
                 bin_size=1.0,
                 dimension_ranges=[(0, 10), (0, 10)],  # Must provide explicit range

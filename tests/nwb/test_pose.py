@@ -364,7 +364,9 @@ class TestReadPose:
         )
         nwbfile.processing["Skeletons"].add(skeleton)
 
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match="Found 2 PoseEstimation container candidates"
+        ) as caught:
             read_pose(nwbfile)
         message = str(caught.value)
         assert (

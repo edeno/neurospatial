@@ -424,7 +424,10 @@ def test_unsupported_assisted_outline_does_not_partially_mutate_history(
     mask = np.zeros((16, 24), dtype=bool)
     mask[1:4, 1:4] = True
     mask[10:14, 16:20] = True
-    with pytest.raises(ValueError):
+    # Walls and landmarks refuse an area; an environment refuses two components.
+    with pytest.raises(
+        ValueError, match=r"An outline is an area|needs one connected outline"
+    ):
         _accept(session, SegmentationProposal(mask))
     assert len(shapes.data) == 0
     session.undo()

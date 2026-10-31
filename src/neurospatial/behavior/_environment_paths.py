@@ -1590,7 +1590,13 @@ class _OpenPaths(EnvironmentPaths):
         settled = is_source.copy()
         flat = graph.ravel()
         # Layers of graph distance, one shortest edge thick (inf unreached).
-        layer_of = np.floor(flat / (self._spacing / _PROBE_FRACTION))
+        # Without connections every reached bin is a source, in layer 0.
+        thickness = self._spacing / _PROBE_FRACTION
+        layer_of = (
+            np.floor(flat / thickness)
+            if np.isfinite(thickness)
+            else np.where(np.isfinite(flat), 0.0, np.inf)
+        )
         needed = None
         if stop_bins is None:
             grown = np.flatnonzero(np.isfinite(flat))

@@ -27,6 +27,8 @@ from neurospatial.animation.core import (
 from neurospatial.animation.overlays import PositionOverlay
 from neurospatial.animation.scene import Animation, AnimationField
 
+from ._video_helpers import read_video
+
 
 @pytest.fixture
 def env():
@@ -272,7 +274,7 @@ class TestExports:
                 assert not np.array_equal(frames[1], other.render_frame(0.1, dpi=30))
 
     def test_video_holds_one_frame_per_row_at_the_sampling_rate(self, env, tmp_path):
-        imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+        pytest.importorskip("imageio_ffmpeg")
         times = np.arange(5) / 20.0
         path = animate_fields(
             env,
@@ -282,10 +284,9 @@ class TestExports:
             dpi=30,
         )
         assert path == tmp_path / "a.mp4"
-        reader = imageio_ffmpeg.read_frames(str(path))
-        meta = next(reader)
+        meta, frames = read_video(path)
         assert meta["fps"] == pytest.approx(20.0)
-        assert len(list(reader)) == 5
+        assert len(frames) == 5
         assert [item.name for item in tmp_path.iterdir()] == ["a.mp4"]
 
     @pytest.mark.parametrize(("speed", "fps"), [(1.0, 30.0), (0.5, 15.0), (2.0, 60.0)])

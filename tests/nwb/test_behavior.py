@@ -141,7 +141,9 @@ class TestReadPosition:
         from neurospatial.io.nwb import read_position
 
         file = sample_nwb_with_position_multiple_series
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match="Found 2 Position series candidates"
+        ) as caught:
             read_position(file)
         message = str(caught.value)
         assert (
@@ -981,7 +983,7 @@ class TestReadHeadDirectionUnits:
         if unit is not None:
             kwargs["unit"] = unit
         _add_compass(empty_nwb, np.array([0.0, 90.0, 180.0]), **kwargs)
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="is not an angle unit") as caught:
             read_head_direction(empty_nwb)
         message = str(caught.value)
         assert "is not an angle unit" in message
@@ -1082,7 +1084,9 @@ def test_two_position_containers_in_one_module_are_refused(empty_nwb):
         {"processing_module": "behavior"},
         {"position_name": "position"},
     ):
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match="Found 2 Position series candidates"
+        ) as caught:
             read_position(empty_nwb, **kwargs)
         assert (
             "Found 2 Position series candidates: ['processing/behavior/PositionCm/position', "

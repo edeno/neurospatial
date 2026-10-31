@@ -618,9 +618,11 @@ class TestComputeShuffleZscore:
         rng = np.random.default_rng(0)
         finite = rng.normal(0.0, 1.0, 1999)
         null_scores = np.append(finite, [np.nan])
-        z = compute_shuffle_zscore(3.0, null_scores)
+        with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null"):
+            z = compute_shuffle_zscore(3.0, null_scores)
         assert z == pytest.approx((3.0 - finite.mean()) / finite.std())
-        assert np.isnan(compute_shuffle_zscore(3.0, np.array([np.nan, 1.0])))
+        with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null"):
+            assert np.isnan(compute_shuffle_zscore(3.0, np.array([np.nan, 1.0])))
 
     def test_single_null_value_returns_nan(self) -> None:
         """Z-score should be NaN with single null value (undefined std)."""

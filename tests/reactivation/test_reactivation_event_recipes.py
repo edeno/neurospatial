@@ -295,6 +295,7 @@ def test_a_failed_match_window_keeps_the_other_windows(
     assert (kept["error"] == "").all()
     assert kept["value"].notna().all()
     # The error row's missing region turns the column's None into NaN.
+    alone = alone.assign(region=alone["region"].mask(alone["region"].isna(), np.nan))
     pd.testing.assert_frame_equal(kept, alone, check_dtype=False)
     failed = table[table["window"] == 1]
     assert len(failed) == 1

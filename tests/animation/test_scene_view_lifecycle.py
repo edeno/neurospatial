@@ -266,8 +266,8 @@ def test_context_preserves_body_failure_and_reports_cleanup_failure(
         seek=Mock(),
         close=Mock(side_effect=ValueError("cleanup failure")),
     )
-    with pytest.raises(RuntimeError, match="body failure") as captured, scene:
-        msg = "body failure"
+    msg = "body failure"
+    with pytest.raises(RuntimeError, match=msg) as captured, scene:
         raise RuntimeError(msg)
     assert any("cleanup failure" in note for note in captured.value.__notes__)
     assert scene._closed

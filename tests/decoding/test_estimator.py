@@ -251,9 +251,10 @@ def test_predict_forwards_max_gap_and_windows(two_epoch_recording):
     r = two_epoch_recording
     trains = [r.spike_times + 0.04 * u for u in range(5)]
     default = BayesianDecoder(r.env, method="binned").fit(trains, r.times, r.positions)
-    wide = BayesianDecoder(r.env, method="binned", max_gap=2000.0).fit(
-        trains, r.times, r.positions
-    )
+    with pytest.warns(UserWarning, match=r"units are silent from"):
+        wide = BayesianDecoder(r.env, method="binned", max_gap=2000.0).fit(
+            trains, r.times, r.positions
+        )
     assert len(default.predict(trains, r.times).times) == 7998
     assert len(wide.predict(trains, r.times).times) == 47999
     predicted = default.predict(trains, r.times, epochs=[(1100, 1200)])
@@ -1209,27 +1210,23 @@ def test_from_rates_nan_bins_are_excluded_from_spatial_support(sim):
 def test_fit_without_surviving_data_raises(sim, fit_kwargs) -> None:
     """A model fit on no data would decode every time bin as uniform."""
     env, spike_times, times, positions = sim
-    with (
-        warnings.catch_warnings(),
-        pytest.raises(ValueError, match=r"no occupied bin") as exc,
-    ):
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
-            spike_times, times, positions, **fit_kwargs
-        )
+        with pytest.raises(ValueError, match=r"no occupied bin") as exc:
+            BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
+                spike_times, times, positions, **fit_kwargs
+            )
     assert "Fix:" in str(exc.value)
 
 
 def test_min_occupancy_masking_every_bin_raises(sim) -> None:
     env, spike_times, times, positions = sim
-    with (
-        warnings.catch_warnings(),
-        pytest.raises(ValueError, match=r"min_occupancy"),
-    ):
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
-            spike_times, times, positions
-        )
+        with pytest.raises(ValueError, match=r"min_occupancy"):
+            BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
+                spike_times, times, positions
+            )
 
 
 def test_fitted_decoder_refuses_a_different_environment(sim):

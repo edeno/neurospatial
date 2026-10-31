@@ -311,7 +311,7 @@ class TestNeighborReduce:
     def test_neighbor_reduce_parameter_order(self) -> None:
         """Test that parameter order is (field, env, ...)."""
         positions = np.array([[0, 0], [1, 0]], dtype=np.float64)
-        env = Environment.from_samples(positions, bin_size=1.0)
+        env = Environment.from_samples(positions, bin_size=0.5)
         field = np.ones(env.n_bins, dtype=np.float64)
 
         # This should work (correct order)
@@ -602,7 +602,7 @@ class TestConvolve:
     def test_convolve_parameter_order(self) -> None:
         """Test that parameter order is (field, kernel, env, ...)."""
         positions = np.array([[0, 0], [1, 0]], dtype=np.float64)
-        env = Environment.from_samples(positions, bin_size=1.0)
+        env = Environment.from_samples(positions, bin_size=0.5)
         field = np.ones(env.n_bins, dtype=np.float64)
 
         def kernel_fn(distances: np.ndarray) -> np.ndarray:

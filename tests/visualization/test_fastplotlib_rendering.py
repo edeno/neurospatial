@@ -622,7 +622,8 @@ def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk
         "t = 0.5000 s",  # from the first frame, at 100 s
     ]
     low, high = panel.y_range
-    assert high == pytest.approx(2.5) and low < -0.5  # room below for the time axis
+    assert high == pytest.approx(2.5)
+    assert low < -0.5  # room below for the time axis
     (marks,) = [g for g in panel.graphics if g.name == "reward times"]
     np.testing.assert_allclose(marks.data[:], t[[20]], rtol=1e-5)
     animation.frame = 60
@@ -1172,7 +1173,9 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
         track=track,
         overlays=[PositionOverlay(positions=along[:20], times=times)],
     ).native
-    assert animation._plots and animation._tracks  # both views
+    # both views
+    assert animation._plots
+    assert animation._tracks
     _render(animation)
     panel = animation._tracks[0]
     _, nearest = track.bin_center_tree().query(plane.bin_centers[hot])
@@ -1355,8 +1358,8 @@ def test_video_follows_the_slider_and_stands_upright_without_calibration(
     frames = np.zeros((len(t), 20, 40, 3), dtype=np.uint8)
     frames[:, :10, :, 0] = 255  # top rows red
     frames[60:, :, :, 2] = 255  # later frames also blue
+    overlay = VideoOverlay(source=frames, times=t, alpha=1.0)
     with pytest.warns(UserWarning, match="no calibration"):
-        overlay = VideoOverlay(source=frames, times=t, alpha=1.0)
         animation = apparatus.animate_fields(
             np.zeros((len(t), apparatus.n_bins)),
             frame_times=t,

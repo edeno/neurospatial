@@ -19,6 +19,8 @@ from neurospatial.animation import Animation, AnimationField
 from neurospatial.animation._export import prepare_export
 from neurospatial.animation.overlays import PositionOverlay, VideoOverlay
 
+from ._video_helpers import read_video
+
 TIMES = np.arange(4) / 10
 # Exporting the whole recording samples [0, 0.3] at 10 fps, last row included.
 N_FRAMES = 4
@@ -55,11 +57,9 @@ def _labels(path: Path) -> list[str]:
 def test_video_containers_hold_every_frame_at_rendered_size(
     scene, tmp_path, suffix, codec
 ):
-    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+    pytest.importorskip("imageio_ffmpeg")
     path = scene.export(tmp_path / f"movie{suffix}", fps=10, dpi=30)
-    reader = imageio_ffmpeg.read_frames(str(path))
-    meta = next(reader)
-    frames = list(reader)
+    meta, frames = read_video(path)
     expected = scene.render_frame(0.0, dpi=30)
     assert meta["codec"] == codec
     assert meta["pix_fmt"].startswith("yuv420p")
@@ -275,10 +275,10 @@ def test_workers_render_identical_frames_and_reopen_sources(
         ],
         window_seconds=0.5,
     )
-    import matplotlib
+    import matplotlib as mpl
 
     # Workers draw with the caller's Matplotlib style, not the defaults.
-    with scene, matplotlib.rc_context({"figure.facecolor": "black"}):
+    with scene, mpl.rc_context({"figure.facecolor": "black"}):
         serial = scene.export(tmp_path / "serial.html", fps=10, dpi=30)
         parallel = scene.export(tmp_path / "parallel.html", fps=10, dpi=30, n_workers=3)
     expected, frames = _embedded(serial), _embedded(parallel)

@@ -155,7 +155,7 @@ def test_mutual_information_invalid_base(base):
     [np.zeros((2, 2)), [[-1, 2]], [[np.nan, 1]], [[np.inf, 1]], np.empty((2, 0))],
 )
 def test_mutual_information_invalid_histogram(counts):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="joint"):
         mutual_information(counts)
 
 

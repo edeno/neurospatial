@@ -464,17 +464,23 @@ def test_arena_rejects_invalid_geometry(constructor):
 
 def test_codec_rejects_unknown_versions_missing_arrays_and_wrong_dtypes():
     meta, arrays = encode_arena(arenas()[4])
-    for patch in [
-        {"codec": "ExternalArena"},
-        {"codec_version": 2},
-        {"codec_version": 4},
-        {"outline": "glass"},
-        {"outline": False},
+    for patch, match in [
+        ({"codec": "ExternalArena"}, "no codec or installed snapshot adapter"),
+        ({"codec_version": 2}, "Arena codec version 2 is not supported"),
+        ({"codec_version": 4}, "Arena codec version 4 is not supported"),
+        ({"outline": "glass"}, "is not a boundary kind"),
+        ({"outline": False}, "is not a boundary kind"),
     ]:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=match):
             decode_arena({**meta, **patch}, arrays)
-    for broken in [{}, {**arrays, "active_mask": np.ones((2, 2), dtype=np.int64)}]:
-        with pytest.raises(ValueError):
+    for broken, match in [
+        ({}, "Malformed arena payload"),
+        (
+            {**arrays, "active_mask": np.ones((2, 2), dtype=np.int64)},
+            "active_mask must be boolean",
+        ),
+    ]:
+        with pytest.raises(ValueError, match=match):
             decode_arena(meta, broken)
     polygon_meta, polygon_arrays = encode_arena(arenas()[2])
     with pytest.raises(

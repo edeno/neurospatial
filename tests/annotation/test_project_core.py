@@ -1,6 +1,7 @@
 """Entry points resume embedded drafts and export using live session settings."""
 
 import sys
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,11 +26,16 @@ def test_invalid_autosave_settings_fail_before_loading_or_viewer(
     monkeypatch.setattr(core, "_setup_annotation_viewer", forbidden)
     monkeypatch.setattr(core, "_load_video_frame", forbidden)
     monkeypatch.setattr(AnnotationProject, "load", forbidden)
+    if entry == "video":
+        call = partial(
+            core.annotate_video, "unused.mp4", bin_size=1.0, autosave_interval=interval
+        )
+    else:
+        call = partial(
+            core.annotate_project, "unused.project", autosave_interval=interval
+        )
     with pytest.raises(ValueError, match="autosave_interval"):
-        if entry == "video":
-            core.annotate_video("unused.mp4", bin_size=1.0, autosave_interval=interval)
-        else:
-            core.annotate_project("unused.project", autosave_interval=interval)
+        call()
 
 
 def test_fresh_session_cannot_overwrite_existing_project(tmp_path, monkeypatch):
@@ -439,14 +445,15 @@ def test_missing_project_folder_fails_before_editing(tmp_path, monkeypatch, entr
         lambda *args, **kwargs: pytest.fail("Must reject the destination first"),
     )
     destination = tmp_path / "typo" / "draft.annotation.npz"
+    if entry == "video":
+        call = partial(
+            core.annotate_video, "unused.mp4", bin_size=1.0, project_path=destination
+        )
+    else:
+        draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
+        call = partial(core.annotate_project, draft, project_path=destination)
     with pytest.raises(FileNotFoundError, match=r"folder for project_path.*typo"):
-        if entry == "video":
-            core.annotate_video("unused.mp4", bin_size=1.0, project_path=destination)
-        else:
-            draft = AnnotationProject(
-                np.zeros((4, 4, 3), dtype=np.uint8), mode="regions"
-            )
-            core.annotate_project(draft, project_path=destination)
+        call()
 
 
 def test_failed_final_draft_save_still_returns_the_valid_result(monkeypatch):

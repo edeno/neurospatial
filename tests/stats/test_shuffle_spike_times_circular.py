@@ -121,14 +121,14 @@ def test_invalid_windows_fix_names_primitive_argument(windows):
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "message"),
     [
-        {"n_shuffles": -5},
-        {"windows": np.array([[10.0, 5.0]])},
-        {"min_shift": 1e6},
+        ({"n_shuffles": -5}, "must be a positive integer"),
+        ({"windows": np.array([[10.0, 5.0]])}, "have stop <= start"),
+        ({"min_shift": 1e6}, "not longer than 2 \\* min_shift"),
     ],
 )
-def test_invalid_arguments_raise_at_call_not_first_draw(kwargs):
+def test_invalid_arguments_raise_at_call_not_first_draw(kwargs, message):
     """Errors must surface where the shuffle is set up, before any draw."""
     options = {
         "windows": np.array([[0.0, 100.0]]),
@@ -137,5 +137,5 @@ def test_invalid_arguments_raise_at_call_not_first_draw(kwargs):
         "rng": 0,
         **kwargs,
     }
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         stats.shuffle_spike_times_circular(np.array([1.0, 2.0]), **options)

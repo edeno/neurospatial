@@ -105,16 +105,21 @@ class TestVTEDecisionAnalysisIntegration:
             position_bins, times, env, region="decision"
         )
 
-        # Run VTE session - should use same entry detection
-        result = compute_vte_session(
-            env,
-            times,
-            trajectory,
-            decision_region="decision",
-            trials=trials,
-            window_duration=0.5,
-            min_speed=1.0,
-        )
+        # Run VTE session - should use same entry detection. A single trial has
+        # no across-trial variation in head sweep or speed to z-score.
+        with (
+            pytest.warns(UserWarning, match="No variation in head sweep"),
+            pytest.warns(UserWarning, match="No variation in speed"),
+        ):
+            result = compute_vte_session(
+                env,
+                times,
+                trajectory,
+                decision_region="decision",
+                trials=trials,
+                window_duration=0.5,
+                min_speed=1.0,
+            )
 
         # Should have found the trial
         assert len(result.trial_results) == 1
@@ -190,18 +195,20 @@ class TestVTERoundTrip:
             for i in range(n_trials)
         ]
 
-        # Run VTE session
-        result = compute_vte_session(
-            env,
-            times_array,
-            positions_array,
-            decision_region="decision",
-            trials=trials,
-            window_duration=0.8,
-            min_speed=1.0,
-            alpha=0.5,
-            vte_threshold=0.0,  # Lower threshold for testing
-        )
+        # Run VTE session; the trial that never reaches the decision region
+        # is reported as NaN.
+        with pytest.warns(UserWarning, match="never enters decision region"):
+            result = compute_vte_session(
+                env,
+                times_array,
+                positions_array,
+                decision_region="decision",
+                trials=trials,
+                window_duration=0.8,
+                min_speed=1.0,
+                alpha=0.5,
+                vte_threshold=0.0,  # Lower threshold for testing
+            )
 
         # Should find some trials
         assert len(result.trial_results) > 0

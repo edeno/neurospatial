@@ -11,6 +11,7 @@ Tests
 
 from __future__ import annotations
 
+import contextlib
 import warnings
 
 import numpy as np
@@ -243,14 +244,15 @@ class TestDecodeSessionEquivalence:
             t_stop=times_arr.max(),
         )  # counts: (n_time, n_neurons)
 
-        manual_result = decode_position(
-            env,
-            counts,
-            firing_rates,
-            dt=dt,
-            times=centers,
-            prior=rates_result.spatial_support.astype(float),
-        )
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            manual_result = decode_position(
+                env,
+                counts,
+                firing_rates,
+                dt=dt,
+                times=centers,
+                prior=rates_result.spatial_support.astype(float),
+            )
 
         # --- decode_session path ---
         session_result = decode_session(
@@ -302,14 +304,15 @@ class TestDecodeSessionEquivalence:
             t_start=times_arr.min(),
             t_stop=times_arr.max(),
         )
-        manual_result = decode_position(
-            env,
-            counts,
-            rates_result.firing_rates,
-            dt=dt,
-            times=centers,
-            prior=rates_result.spatial_support.astype(float),
-        )
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            manual_result = decode_position(
+                env,
+                counts,
+                rates_result.firing_rates,
+                dt=dt,
+                times=centers,
+                prior=rates_result.spatial_support.astype(float),
+            )
         session_result = decode_session(
             env,
             spike_times,
@@ -454,7 +457,10 @@ class TestDecodeSessionOutOfWindowWarning:
         # outside the seconds-scale decode window.
         ms_spikes = [s * 1000.0 for s in spike_times]
 
-        with pytest.warns(UserWarning, match=self._MATCH):
+        with (
+            pytest.warns(UserWarning, match="encoding_models has a NaN or Inf rate"),
+            pytest.warns(UserWarning, match=self._MATCH),
+        ):
             _decode_with_models(env, ms_spikes, times, models, dt=0.1)
 
     def test_single_warning_in_non_passthrough_branch(self) -> None:
@@ -473,14 +479,12 @@ class TestDecodeSessionOutOfWindowWarning:
         )
         ms_spikes = [s * 1000.0 for s in spike_times]
 
-        with (
-            warnings.catch_warnings(record=True) as caught,
-            pytest.raises(ValueError, match="milliseconds"),
-        ):
+        with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             # Every millisecond spike lies after the 10 s window, so the
             # decode step refuses after the encoder's single warning.
-            decode_session(env, ms_spikes, times, positions, dt=0.1)
+            with pytest.raises(ValueError, match="milliseconds"):
+                decode_session(env, ms_spikes, times, positions, dt=0.1)
 
         # Either phrasing ("position time window" from the encoder, or "decode
         # time window" from decode_session) — there must be exactly one.
@@ -562,20 +566,36 @@ class TestSpikeClockMismatch:
             spike_times = [s + 1e4 for s in spike_times]
         else:
             times = times + 1e4
-        with pytest.raises(ValueError, match=f"lie {side} the decode") as err:
+
+        # The drop warning is silenced by warn_on_drop=False, and otherwise
+        # announces the mismatch just before the refusal.
+        def dropped():
+            if warn_on_drop:
+                return pytest.warns(
+                    UserWarning, match="fell outside the decode time window"
+                )
+            return contextlib.nullcontext()
+
+        with (
+            dropped(),
+            pytest.raises(ValueError, match=f"lie {side} the decode") as err,
+        ):
             decoder.predict(spike_times, times)
         assert "different clocks" in str(err.value)
         assert "Fix:" in str(err.value)
-        with pytest.raises(ValueError, match="different clocks"):
+        with dropped(), pytest.raises(ValueError, match="different clocks"):
             decoder.predict_summary(spike_times, times)
-        with (
-            warnings.catch_warnings(),
-            pytest.raises(ValueError, match="different clocks"),
-        ):
+        with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            decode_session(
-                env, spike_times, times, positions, dt=0.1, warn_on_drop=warn_on_drop
-            )
+            with pytest.raises(ValueError, match="different clocks"):
+                decode_session(
+                    env,
+                    spike_times,
+                    times,
+                    positions,
+                    dt=0.1,
+                    warn_on_drop=warn_on_drop,
+                )
 
     def test_millisecond_spikes_warning_names_the_unit_mismatch(self) -> None:
         from neurospatial.decoding import BayesianDecoder
@@ -723,7 +743,10 @@ class TestDecodeSessionDtype:
         assert models64.dtype == np.float64
 
         seen = self._spy_decode_position(monkeypatch)
-        _decode_with_models(env, spike_times, times, models64, dt=0.1, dtype=np.float32)
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            _decode_with_models(
+                env, spike_times, times, models64, dt=0.1, dtype=np.float32
+            )
 
         # dtype is authoritative end-to-end: float64-in is cast down to float32.
         assert seen["models_dtype"] == np.float32
@@ -803,8 +826,10 @@ class TestDecodeSessionDtype:
         assert models32.dtype == np.float32
         assert models64.dtype == np.float64
 
-        result32 = _decode_with_models(env, spike_times, times, models32, dt=dt)
-        result64 = _decode_with_models(env, spike_times, times, models64, dt=dt)
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            result32 = _decode_with_models(env, spike_times, times, models32, dt=dt)
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            result64 = _decode_with_models(env, spike_times, times, models64, dt=dt)
 
         assert_allclose(
             result32.map_position,
@@ -1077,12 +1102,14 @@ class TestDecodeSessionSummaryStreaming:
         counts, centers = bin_spikes_in_time(
             spike_times, dt=dt, t_start=times_arr.min(), t_stop=times_arr.max()
         )
-        ref = decode_position_summary(
-            env, counts, models, dt=dt, times=centers, time_chunk=50
-        )
-        got = _decode_with_models_summary(
-            env, spike_times, times, models, dt=dt, time_chunk=50
-        )
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            ref = decode_position_summary(
+                env, counts, models, dt=dt, times=centers, time_chunk=50
+            )
+        with pytest.warns(UserWarning, match=r"encoding_models has a NaN or Inf rate"):
+            got = _decode_with_models_summary(
+                env, spike_times, times, models, dt=dt, time_chunk=50
+            )
         self._assert_summary_equal(got, ref)
 
     def test_block_centers_match_global_grid(self) -> None:

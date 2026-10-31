@@ -302,7 +302,8 @@ class TestNulls:
         )
         observed_weights = calls[0][0][0]
         active = [u for u, train in enumerate(trains) if len(train)]
-        assert not centers[4] and 4 in active  # an active cell without a field
+        assert not centers[4]
+        assert 4 in active  # an active cell without a field
         field_sets = [tuple(c) for c in centers if len(c)]
         null = result.shuffles["cell_identity"].null_scores
         silent_field_taken = 0

@@ -137,9 +137,9 @@ def test_full_decode_exports_name_polar_coordinates(polar):
 
 
 def test_summary_exports_name_polar_coordinates(polar):
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     counts, rates = _polar_counts(polar)
     summary = decode_position_summary(polar, counts, rates, dt=0.2)
     table = summary.to_dataframe()

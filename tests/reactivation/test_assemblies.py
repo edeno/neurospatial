@@ -5,6 +5,7 @@ Tests cover cell assembly detection, activation computation, and reactivation an
 
 from __future__ import annotations
 
+import contextlib
 import warnings
 
 import numpy as np
@@ -185,6 +186,9 @@ class TestDetectAssemblies:
             assert_allclose(pattern.explained_variance_ratio, expected, rtol=1e-10)
             assert 0.0 <= pattern.explained_variance_ratio <= 1.0
 
+    # The neurons are copies of one train, so z-scoring them loses precision
+    # and SciPy says so.
+    @pytest.mark.filterwarnings("ignore:Precision loss occurred:RuntimeWarning")
     @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_one_component_explaining_everything_is_at_most_one(
         self, rng: np.random.Generator, method: str
@@ -269,6 +273,8 @@ class TestDetectAssemblies:
         diffs = np.diff(result.eigenvalues)
         assert np.all(diffs <= 0)
 
+    # FastICA may not converge on this small noise sample; only the count is checked.
+    @pytest.mark.filterwarnings("ignore:FastICA did not converge")
     def test_n_components_fixed(self, small_spike_counts: np.ndarray) -> None:
         """Should respect fixed n_components parameter."""
         n_comp = 3
@@ -363,7 +369,10 @@ class TestDetectAssemblies:
         from a genuinely short recording.
         """
         spike_counts = rng.poisson(5, (10, 20)).astype(np.float64)  # 10 t, 20 n
-        with pytest.warns(UserWarning, match="n_time_bins.*n_neurons") as record:
+        with (
+            pytest.warns(UserWarning, match="Marchenko-Pastur"),
+            pytest.warns(UserWarning, match="n_time_bins.*n_neurons") as record,
+        ):
             detect_assemblies(spike_counts, rng=42)
         msg = str(record[0].message).lower()
         assert "transpos" in msg or "time-first" in msg
@@ -1097,7 +1106,10 @@ class TestEdgeCases:
         """All-silent counts have no assemblies to find: raise, not zero patterns."""
         spike_counts = np.zeros((10, 100), dtype=np.float64)
 
-        with pytest.raises(ValueError, match="only 0 of 100 neurons vary"):
+        with (
+            pytest.warns(UserWarning, match="n_time_bins.*n_neurons"),
+            pytest.raises(ValueError, match="only 0 of 100 neurons vary"),
+        ):
             detect_assemblies(spike_counts, rng=42)
 
     def test_explained_variance_identical_correlations(self) -> None:
@@ -1225,7 +1237,19 @@ class TestDetectAssembliesShortRecording:
         """n_time_bins < n_components <= n_neurons must clamp, not IndexError."""
         # 8 neurons, 3 time bins, request 5 components: (n_time_bins, n_neurons).
         spike_counts = rng.poisson(5, (3, 8)).astype(np.float64)
-        with pytest.warns(UserWarning, match="achievable rank"):
+        # Three time bins span at most two dimensions once centered, so the
+        # PCA and ICA bases also report a component without variance.
+        no_variance = (
+            contextlib.nullcontext()
+            if method == "nmf"
+            else pytest.warns(UserWarning, match="carry no variance")
+        )
+        with (
+            no_variance,
+            pytest.warns(UserWarning, match="Marchenko-Pastur"),
+            pytest.warns(UserWarning, match="n_time_bins.*n_neurons"),
+            pytest.warns(UserWarning, match="achievable rank"),
+        ):
             result = detect_assemblies(
                 spike_counts,
                 method=method,
@@ -1245,8 +1269,13 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
     rng = np.random.default_rng(42)
     sources = rng.poisson([2.0, 7.0], size=(20000, 2))
     counts = sources @ np.array([[1, 2, 3, 0], [3, 1, 0, 2]])
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "1 of the 3 requested components")
+    # The counts span two dimensions, so a third component has no variance.
+    dropped = (
+        pytest.warns(UserWarning, match="1 of the 3 requested components")
+        if n_components == 3
+        else contextlib.nullcontext()
+    )
+    with dropped:
         result = detect_assemblies(
             counts, method="ica", n_components=n_components, rng=0
         )

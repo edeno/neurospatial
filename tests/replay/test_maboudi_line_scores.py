@@ -255,19 +255,24 @@ class TestRandomLines:
         # can miss the track at every time bin: about 1 seed in 7 here.
         posterior = np.full((5, short_track.n_bins), 1.0 / short_track.n_bins)
         times = np.arange(5) * DT
-        refused = 0
-        for seed in range(50):
+
+        def score_or_error(seed):
             try:
-                result = detect_trajectory_radon(
+                return detect_trajectory_radon(
                     short_track, posterior, times, band=2.0, n_lines=1, line_seed=seed
                 )
             except ValueError as error:
-                assert "none of the 1 random lines" in str(error)
-                assert "0 lie on the track" in str(error)
-                refused += 1
-            else:
+                return error
+
+        outcomes = [score_or_error(seed) for seed in range(50)]
+        refused = [o for o in outcomes if isinstance(o, ValueError)]
+        for error in refused:
+            assert "none of the 1 random lines" in str(error)
+            assert "0 lie on the track" in str(error)
+        for result in outcomes:
+            if not isinstance(result, ValueError):
                 assert np.isfinite(result.score)
-        assert refused > 0
+        assert len(refused) > 0
 
     @pytest.mark.parametrize(
         ("name", "value"), [("n_lines", 0), ("n_lines", 2.5), ("line_seed", -1)]

@@ -439,7 +439,7 @@ class TestSpatialRatesRoundTrip:
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail)
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="disk full") as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
             )
@@ -471,7 +471,7 @@ class TestSpatialRatesRoundTrip:
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail_then_refuse_restore)
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="could not be restored") as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
             )

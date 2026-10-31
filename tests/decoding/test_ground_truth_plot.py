@@ -99,10 +99,13 @@ def test_gap_limit_can_be_disabled_without_extrapolating_or_filling_nan(env):
     times = np.array([-0.1, 0, 0.5, 1, 1.1])
     result = delta_result(env, times, np.zeros(len(times), dtype=int))
     truth = np.array([[0.0], [100.0]])
-    np.testing.assert_allclose(
-        result.error_against([0, 1], truth, max_gap=0.5),
-        [np.nan, 0, np.nan, 100, np.nan],
-    )
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ):
+        np.testing.assert_allclose(
+            result.error_against([0, 1], truth, max_gap=0.5),
+            [np.nan, 0, np.nan, 100, np.nan],
+        )
     np.testing.assert_allclose(
         result.error_against([0, 1], truth, max_gap=None), [np.nan, 0, 50, 100, np.nan]
     )
@@ -118,13 +121,21 @@ def test_gap_limit_can_be_disabled_without_extrapolating_or_filling_nan(env):
 
 def test_truth_line_never_joins_distinct_runs_even_with_only_two_decode_rows(env):
     result = delta_result(env, [0, 10], [0, 20])
-    ax = result.plot(
-        true_times=np.array([0.0, 10.0]), true_positions=np.array([[0.0], [100.0]])
-    )
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ):
+        ax = result.plot(
+            true_times=np.array([0.0, 10.0]), true_positions=np.array([[0.0], [100.0]])
+        )
     try:
         line = ax.lines[0]
         assert np.isnan(line.get_ydata()[1])
-        np.testing.assert_allclose(result.error_against([0, 10], [[0], [100]]), [0, 0])
+        with pytest.warns(
+            UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+        ):
+            np.testing.assert_allclose(
+                result.error_against([0, 10], [[0], [100]]), [0, 0]
+            )
     finally:
         plt.close(ax.figure)
 

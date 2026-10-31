@@ -299,12 +299,15 @@ def from_file(path: PathLike) -> Environment[Any]:
 
     _check_schema(metadata, str(json_path))
     try:
-        archive = np.load(npz_path, allow_pickle=False)
-        if not isinstance(archive, np.lib.npyio.NpzFile):
-            msg = "expected an NPZ archive containing named numerical arrays"
-            raise ValueError(msg)
-        with archive:
-            arrays = {key: archive[key] for key in archive.files}
+        # Our handle, not a path: np.load leaves the file it opened unclosed
+        # when the zip header is corrupt.
+        with npz_path.open("rb") as handle:
+            archive = np.load(handle, allow_pickle=False)
+            if not isinstance(archive, np.lib.npyio.NpzFile):
+                msg = "expected an NPZ archive containing named numerical arrays"
+                raise ValueError(msg)
+            with archive:
+                arrays = {key: archive[key] for key in archive.files}
     except (BadZipFile, EOFError, ValueError, zlib.error) as error:
         raise ValueError(
             _format_error(

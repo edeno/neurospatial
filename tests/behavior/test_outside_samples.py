@@ -177,9 +177,14 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
 def test_goal_directed_runs_without_a_place_are_empty(strip):
     _, times = _approach(strip)
 
-    runs = detect_goal_directed_runs(
-        np.full(len(times), -1), times, strip, goal_region="goal", min_progress=10.0
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        runs = detect_goal_directed_runs(
+            np.full(len(times), -1),
+            times,
+            strip,
+            goal_region="goal",
+            min_progress=10.0,
+        )
 
     assert runs.shape == (0, 2)
 

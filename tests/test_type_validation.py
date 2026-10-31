@@ -147,7 +147,7 @@ class TestDataSamplesTypeValidation:
     def test_data_samples_list_of_numeric_strings_succeeds(self):
         """data_samples as list of numeric strings should work (NumPy converts)."""
         # NumPy can convert numeric strings to floats, so this should work
-        env = Environment.from_samples([["1", "2"], ["3", "4"]], bin_size=2.0)
+        env = Environment.from_samples([["1", "2"], ["3", "4"]], bin_size=1.0)
         assert env.n_bins > 0  # Should successfully create environment
 
     def test_data_samples_dict_raises_type_error(self):

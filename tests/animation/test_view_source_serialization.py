@@ -237,7 +237,8 @@ def test_scene_close_waits_for_view_statistics_snapshot(env, monkeypatch):
         try:
             view = opened.result(timeout=5)
         except RuntimeError as error:
-            assert "clos" in str(error)  # codespell:ignore clos
+            if "clos" not in str(error):  # codespell:ignore clos
+                raise
         else:
             view.close()
         closed.result(timeout=5)

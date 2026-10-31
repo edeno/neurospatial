@@ -214,10 +214,10 @@ def test_regions_add_duplicate_name():
 
 def test_regions_add_both_point_and_polygon():
     regs = Regions()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Specify \*\*one\*\*"):
         regs.add(name="bad", point=(1.0, 2.0), polygon=[(0, 0), (1, 0), (0, 1)])
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Specify \*\*one\*\*"):
         regs.add("bar", point=[1, 2], polygon=poly)
 
 

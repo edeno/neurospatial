@@ -369,6 +369,8 @@ def median_decoding_error(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
+    if np.isnan(errors).all():  # no time bin with an actual position
+        return float("nan")
     return float(np.nanmedian(errors))
 
 
@@ -435,7 +437,7 @@ def confusion_matrix(
 
     Create a simple environment and posterior:
 
-    >>> positions = np.array([[0, 0], [5, 0], [0, 5], [5, 5]])
+    >>> positions = np.array([[0, 0], [10, 0], [0, 10], [10, 10]])
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> n_bins = env.n_bins
 

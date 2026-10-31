@@ -202,9 +202,9 @@ class TestTraveledPathLength:
         from neurospatial.behavior.navigation import traveled_path_length
 
         assert np.isnan(traveled_path_length(np.array([0.0]), np.array([[1.0, 2.0]])))
-        assert np.isnan(
-            traveled_path_length(np.arange(3) * 0.1, np.full((3, 2), np.nan))
-        )
+        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+            length = traveled_path_length(np.arange(3) * 0.1, np.full((3, 2), np.nan))
+        assert np.isnan(length)
 
     def test_stationary_observed_travel_is_zero(self):
         from neurospatial.behavior.navigation import traveled_path_length

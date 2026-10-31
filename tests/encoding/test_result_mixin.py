@@ -7,9 +7,9 @@ guarantee that pre-existing spatial-result accessors keep working.
 
 from __future__ import annotations
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")  # non-interactive backend for headless test runs
+mpl.use("Agg")  # non-interactive backend for headless test runs
 
 import numpy as np
 import pandas as pd

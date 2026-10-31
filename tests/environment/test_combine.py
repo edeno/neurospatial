@@ -3,6 +3,7 @@
 import copy
 import math
 import pickle
+import re
 
 import numpy as np
 import pytest
@@ -706,8 +707,6 @@ def _with_child_arena(data, source, child=0):
     ],
 )
 def test_saved_composition_rejects_links_across_child_walls(wall, message):
-    import re
-
     from shapely.geometry import LineString
 
     saved = Environment.combine({"a": _walled_grid(), "b": _walled_grid(4.0)})
@@ -724,8 +723,18 @@ def test_saved_composition_rejects_links_across_child_walls(wall, message):
         Environment.from_dict(data)
 
 
-@pytest.mark.parametrize("corruption", ["faces", "bridge_distance", "arena"])
-def test_saved_composition_rejects_inconsistent_geometry(corruption):
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("faces", "combined faces.A does not match the binning geometry"),
+        (
+            "bridge_distance",
+            "Inferred bridge distances must match endpoint separation",
+        ),
+        ("arena", "Combined arena disagrees with stored component domains"),
+    ],
+)
+def test_saved_composition_rejects_inconsistent_geometry(corruption, message):
     env = Environment.combine(
         {"a": grid(), "b": grid(4.0)}, auto_bridge=corruption != "faces"
     )
@@ -741,9 +750,7 @@ def test_saved_composition_rejects_inconsistent_geometry(corruption):
         for key in list(data["arrays"]):
             if key.startswith("arena/children/0/edges_0"):
                 data["arrays"][key] = [100.0, 101.0, 102.0]
-    with pytest.raises(
-        ValueError, match=r"Why: a saved environment must be complete and internally"
-    ):
+    with pytest.raises(ValueError, match=re.escape(message)):
         Environment.from_dict(data)
 
 

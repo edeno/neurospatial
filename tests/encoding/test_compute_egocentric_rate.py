@@ -449,19 +449,22 @@ class TestUnsampledObjectDirections:
 
         env, spikes, times, positions, _ = _far_object_vector_cell(30.0)
         outside = np.array([[175.0, 75.0]])  # 25 cm east of the 150 cm box
-        with pytest.warns(UserWarning, match="no time was spent") as record:
+
+        def run():
             if call == "single":
-                result = compute_object_vector_rate(
+                return compute_object_vector_rate(
                     env, spikes, times, positions, outside
                 )
-            elif call == "population":
-                result = compute_object_vector_rates(
+            if call == "population":
+                return compute_object_vector_rates(
                     env, [spikes], times, positions, outside
                 )[0]
-            else:
-                object_vector_cell_significance(
-                    env, [spikes], times, positions, outside, n_shuffles=3, rng=0
-                )
+            return object_vector_cell_significance(
+                env, [spikes], times, positions, outside, n_shuffles=3, rng=0
+            )
+
+        with pytest.warns(UserWarning, match="no time was spent") as record:
+            result = run()
         unsampled = [w for w in record if "no time was spent" in str(w.message)]
         assert len(unsampled) == 1  # once per call, not once per shuffle
         # Seen from the animal, the object is always within 72 degrees of due
@@ -1125,6 +1128,9 @@ class TestComputeObjectVectorRateResultMethods:
         info = result.spatial_information()
         assert isinstance(info, float)
 
+    @pytest.mark.filterwarnings(
+        "ignore:.*fewer spikes than their rate maps:UserWarning"
+    )
     def test_is_ovc_returns_bool(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],

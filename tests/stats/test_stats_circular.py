@@ -16,9 +16,9 @@ duplicated ``test_rayleigh_test_uniform`` / ``test_*_basic`` tests that
 overlap with ``test_circular_metrics.py``) was removed.
 """
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")  # non-interactive
+mpl.use("Agg")  # non-interactive
 
 import matplotlib.pyplot as plt
 import numpy as np

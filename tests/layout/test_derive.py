@@ -159,19 +159,25 @@ def test_subset_binning_refuses_invalid_selections(keep):
 
 
 @pytest.mark.parametrize(
-    "matrix",
+    ("matrix", "message"),
     [
-        np.diag([0.0, 1.0, 1.0]),
-        np.array([[1.0, 0.0, np.inf], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-        np.eye(4),
-        np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.1, 0.0, 1.0]]),
+        (np.diag([0.0, 1.0, 1.0]), "singular matrix"),
+        (
+            np.array([[1.0, 0.0, np.inf], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            "NaN or infinite entries",
+        ),
+        (np.eye(4), "expected shape"),
+        (
+            np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.1, 0.0, 1.0]]),
+            "needs the last row",
+        ),
     ],
 )
-def test_transform_binning_refuses_invalid_affine_maps(matrix):
+def test_transform_binning_refuses_invalid_affine_maps(matrix, message):
     parent = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )._binning
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=message) as caught:
         transform_binning(parent, AffineND(matrix))
     assert "Why:" in str(caught.value)
     assert "Fix:" in str(caught.value)

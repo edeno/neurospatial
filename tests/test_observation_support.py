@@ -147,7 +147,8 @@ def test_infinite_signal_is_refused_in_any_feature():
 
 
 def test_isolated_finite_sample():
-    s = _support([0, 0.1, 5, 10, 10.1])
+    with pytest.warns(UserWarning, match="longer than max_gap"):
+        s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
     assert s.sample_valid[2]
     np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
@@ -168,7 +169,9 @@ def test_sample_in_epochs_excludes_the_stop_instant():
     """The interval ending at an epoch's stop is inside; that sample is not."""
     s = _support([0, 0.5, 1.0, 1.5, 2.0], epochs=[(0, 1.0), (1.5, 3.0)])
     np.testing.assert_array_equal(s.sample_in_epochs, [True, True, False, True, True])
-    np.testing.assert_array_equal(_support([0, 1.0]).sample_in_epochs, [True, True])
+    with pytest.warns(UserWarning, match="excluded ALL"):
+        one_interval = _support([0, 1.0])
+    np.testing.assert_array_equal(one_interval.sample_in_epochs, [True, True])
 
 
 def test_max_gap_none_keeps_long_interval():

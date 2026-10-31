@@ -29,7 +29,7 @@ class TestIntervalsToEvents:
 
         assert "timestamp" in result.columns
         assert len(result) == 3
-        assert_allclose(result["timestamp"].values, [1.0, 3.0, 5.0])
+        assert_allclose(result["timestamp"].to_numpy(), [1.0, 3.0, 5.0])
 
     def test_extract_stop_times(self):
         """Test extracting stop times from intervals."""
@@ -46,7 +46,7 @@ class TestIntervalsToEvents:
 
         assert "timestamp" in result.columns
         assert len(result) == 3
-        assert_allclose(result["timestamp"].values, [2.0, 4.0, 6.0])
+        assert_allclose(result["timestamp"].to_numpy(), [2.0, 4.0, 6.0])
 
     def test_extract_both_times(self):
         """Test extracting both start and stop times."""
@@ -66,11 +66,11 @@ class TestIntervalsToEvents:
         assert len(result) == 4  # 2 starts + 2 stops
 
         # Should be sorted by timestamp
-        timestamps = result["timestamp"].values
+        timestamps = result["timestamp"].to_numpy()
         assert_allclose(timestamps, [1.0, 2.0, 5.0, 6.0])
 
         # Check boundary labels
-        boundaries = result["boundary"].values
+        boundaries = result["boundary"].to_numpy()
         assert list(boundaries) == ["start", "stop", "start", "stop"]
 
     def test_custom_column_names(self):
@@ -92,7 +92,7 @@ class TestIntervalsToEvents:
         )
 
         assert len(result) == 2
-        assert_allclose(result["timestamp"].values, [1.0, 3.0])
+        assert_allclose(result["timestamp"].to_numpy(), [1.0, 3.0])
 
     def test_preserve_columns(self):
         """Test preserving additional columns from intervals."""
@@ -192,7 +192,7 @@ class TestIntervalsToEvents:
         result = intervals_to_events(intervals, which="both")
 
         assert len(result) == 2
-        assert_allclose(result["timestamp"].values, [5.0, 10.0])
+        assert_allclose(result["timestamp"].to_numpy(), [5.0, 10.0])
         assert list(result["boundary"]) == ["start", "stop"]
 
     def test_overlapping_intervals(self):
@@ -210,7 +210,7 @@ class TestIntervalsToEvents:
 
         assert len(result) == 4
         # Should be sorted by timestamp
-        assert_allclose(result["timestamp"].values, [1.0, 2.0, 3.0, 4.0])
+        assert_allclose(result["timestamp"].to_numpy(), [1.0, 2.0, 3.0, 4.0])
 
     def test_missing_start_column_raises(self):
         """Test missing start column raises ValueError."""
@@ -630,7 +630,7 @@ class TestFilterByIntervals:
         result = filter_by_intervals(events, intervals, include=True)
 
         assert len(result) == 2  # Events at 3.0 and 9.0
-        assert_allclose(result["timestamp"].values, [3.0, 9.0])
+        assert_allclose(result["timestamp"].to_numpy(), [3.0, 9.0])
         assert list(result["value"]) == ["b", "e"]
 
     def test_basic_exclusion_filter(self):
@@ -652,7 +652,7 @@ class TestFilterByIntervals:
         result = filter_by_intervals(events, intervals, include=False)
 
         assert len(result) == 3  # Events at 1.0, 5.0, 7.0
-        assert_allclose(result["timestamp"].values, [1.0, 5.0, 7.0])
+        assert_allclose(result["timestamp"].to_numpy(), [1.0, 5.0, 7.0])
 
     def test_interval_is_half_open(self):
         """An event at the interval start is kept; one at the stop is not."""
@@ -673,7 +673,7 @@ class TestFilterByIntervals:
         result = filter_by_intervals(events, intervals, include=True)
 
         # Half-open [start, stop): the event at the start is in, the one at the stop out.
-        assert_allclose(result["timestamp"].values, [2.0])
+        assert_allclose(result["timestamp"].to_numpy(), [2.0])
 
     def test_overlapping_intervals(self):
         """Test filtering with overlapping intervals."""
@@ -694,7 +694,7 @@ class TestFilterByIntervals:
         result = filter_by_intervals(events, intervals, include=True)
 
         # Events at 3.0 and 5.0 are within [2, 5) or [4, 7); 7.0 is a stop.
-        assert_allclose(result["timestamp"].values, [3.0, 5.0])
+        assert_allclose(result["timestamp"].to_numpy(), [3.0, 5.0])
 
     def test_empty_intervals_with_include(self):
         """Test empty intervals with include=True returns empty."""
@@ -822,7 +822,7 @@ class TestFilterByIntervals:
         result = filter_by_intervals(events, intervals, include=True)
 
         assert len(result) == 3  # Events at 2.0, 3.0, 4.0
-        assert_allclose(result["timestamp"].values, [2.0, 3.0, 4.0])
+        assert_allclose(result["timestamp"].to_numpy(), [2.0, 3.0, 4.0])
 
     def test_missing_timestamp_column_raises(self):
         """Test missing timestamp column raises ValueError."""

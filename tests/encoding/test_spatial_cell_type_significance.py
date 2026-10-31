@@ -94,10 +94,12 @@ def test_result_layout_and_table(significance_recording):
         "cell_type",
     ]
     assert table.attrs["null_percentile"] == 90.0
-    np.testing.assert_allclose(
-        table["grid_score_null_percentile"],
-        np.nanpercentile(result.null_scores[:, :, 1], 90, axis=1),
-    )
+    with warnings.catch_warnings():
+        # A unit with no finite null grid score has a NaN threshold; the
+        # reference percentile warns about that all-NaN row.
+        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+        expected = np.nanpercentile(result.null_scores[:, :, 1], 90, axis=1)
+    np.testing.assert_allclose(table["grid_score_null_percentile"], expected)
     np.testing.assert_array_equal(
         table["passes_border_score"].to_numpy(dtype=bool),
         result.p_values[:, 2] < 0.1,

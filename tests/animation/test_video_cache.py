@@ -325,7 +325,9 @@ class TestVideoPrefetching:
         """Test that negative prefetch_ahead raises ValueError."""
         from neurospatial._video_io import _VideoReader
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match="prefetch_ahead must be non-negative"
+        ) as exc_info:
             _VideoReader(video_path_30_frames, prefetch_ahead=-1)
 
         assert "prefetch_ahead" in str(exc_info.value).lower()

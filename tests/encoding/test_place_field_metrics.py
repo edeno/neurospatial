@@ -120,8 +120,7 @@ class TestDetectPlaceFields:
         # Create 2D environment (10x10 grid, 20cm x 20cm)
         positions = []
         for x in np.linspace(0, 20, 100):
-            for y in np.linspace(0, 20, 100):
-                positions.append([x, y])
+            positions.extend([x, y] for y in np.linspace(0, 20, 100))
         positions = np.array(positions)
 
         env = Environment.from_samples(positions, bin_size=2.0)
@@ -499,8 +498,7 @@ class TestFieldMetrics:
         # Create simple environment
         positions = []
         for x in np.linspace(0, 20, 100):
-            for y in np.linspace(0, 20, 100):
-                positions.append([x, y])
+            positions.extend([x, y] for y in np.linspace(0, 20, 100))
         positions = np.array(positions)
 
         env = Environment.from_samples(positions, bin_size=2.0)
@@ -998,8 +996,7 @@ class TestRateMapCoherence:
         # Create environment
         positions = []
         for x in np.linspace(0, 40, 400):
-            for y in np.linspace(0, 40, 400):
-                positions.append([x, y])
+            positions.extend([x, y] for y in np.linspace(0, 40, 400))
         positions = np.array(positions)
         env = Environment.from_samples(positions, bin_size=4.0)
 
@@ -1845,7 +1842,7 @@ class TestComputeFieldEMD:
 
         with pytest.warns(UserWarning, match="zero total mass"):
             emd = compute_field_emd(env, field1, field2, metric="euclidean")
-            assert np.isnan(emd)
+        assert np.isnan(emd)
 
     def test_emd_single_bin(self):
         """Test EMD with single non-zero bin."""
@@ -2295,8 +2292,7 @@ class TestRateMapCoherenceEdgeCases:
         """Test rate_map_coherence returns NaN when zero variance."""
         positions = []
         for x in np.linspace(0, 20, 50):
-            for y in np.linspace(0, 20, 50):
-                positions.append([x, y])
+            positions.extend([x, y] for y in np.linspace(0, 20, 50))
         positions = np.array(positions)
 
         env = Environment.from_samples(positions, bin_size=2.0)

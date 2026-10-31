@@ -179,8 +179,9 @@ def test_population_unit_table_edits_stay_with_the_caller(spike_trains, event_ti
         unit_ids=result.unit_ids,
         unit_table=table,
     )
-    result.unit_table.drop(index=0, inplace=True)
-    result.unit_table.loc[:, "region"] = "V1"
+    edited = result.unit_table
+    edited.drop(index=0, inplace=True)  # noqa: PD002  # the test is about in-place edits
+    edited.loc[:, "region"] = "V1"
     table.loc[:, "region"] = "PFC"
     assert result.unit_table is not result.unit_table
     for restored in (result, pickle.loads(pickle.dumps(result)), copy.deepcopy(result)):

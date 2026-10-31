@@ -238,8 +238,9 @@ class TestEgocentricInputValidation:
     def test_mismatched_times_positions_raises(self, object_positions: np.ndarray):
         """Mismatched times and positions lengths raise error."""
         times = np.linspace(0, 10, 100)
-        positions = np.random.rand(90, 2)  # Wrong length
-        headings = np.random.rand(100)
+        rng = np.random.default_rng(0)
+        positions = rng.random((90, 2))  # Wrong length
+        headings = rng.random(100)
 
         with pytest.raises(ValueError, match=r"times.*positions"):
             compute_egocentric_rate(
@@ -255,8 +256,9 @@ class TestEgocentricInputValidation:
     def test_mismatched_times_headings_raises(self, object_positions: np.ndarray):
         """Mismatched times and headings lengths raise error."""
         times = np.linspace(0, 10, 100)
-        positions = np.random.rand(100, 2)
-        headings = np.random.rand(90)  # Wrong length
+        rng = np.random.default_rng(0)
+        positions = rng.random((100, 2))
+        headings = rng.random(90)  # Wrong length
 
         with pytest.raises(ValueError, match=r"times.*headings"):
             compute_egocentric_rate(
@@ -283,8 +285,9 @@ class TestEgocentricInputValidation:
     def test_unsorted_times_raises(self, object_positions: np.ndarray):
         """Non-monotonic times raise error."""
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
-        positions = np.random.rand(4, 2)
-        headings = np.random.rand(4)
+        rng = np.random.default_rng(0)
+        positions = rng.random((4, 2))
+        headings = rng.random(4)
 
         with pytest.raises(ValueError, match="strictly increasing; it decreases"):
             prepare_egocentric_binning(
@@ -669,16 +672,13 @@ class TestEgocentricNaNHandling:
         positions = []
         # Lower-left quadrant
         for x in x_lower:
-            for y in y_lower:
-                positions.append([x, y])
+            positions.extend([x, y] for y in y_lower)
         # Upper-left strip
         for x in x_upper:
-            for y in y_upper:
-                positions.append([x, y])
+            positions.extend([x, y] for y in y_upper)
         # Lower-right strip
         for x in x_right:
-            for y in y_right:
-                positions.append([x, y])
+            positions.extend([x, y] for y in y_right)
 
         positions = np.array(positions)
         return Environment.from_samples(positions, bin_size=5.0)
@@ -827,6 +827,7 @@ class TestEgocentricNaNHandling:
         # Time 1: should have NaN distance
         assert np.isnan(distances[1, 0]), "Position outside: should have NaN distance"
 
+    @pytest.mark.filterwarnings("ignore:Interval filtering excluded ALL:UserWarning")
     def test_occupancy_with_nan_distances(self, env_with_hole: Environment):
         """Occupancy computation should handle NaN distances gracefully."""
         n_time = 100

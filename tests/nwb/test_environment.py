@@ -638,14 +638,14 @@ class TestWriteEnvironment:
 
         # Modify environment
         modified_env = sample_environment
-        modified_env = modified_env.with_metadata(units="meters")
+        modified_env = modified_env.with_metadata(units="m")
 
         # Should succeed with overwrite=True
         write_environment(empty_nwb, modified_env, overwrite=True)
 
         # Check new data is present
         record = empty_nwb.analysis["spatial_environment"]
-        assert "meters" in record.description
+        assert '"units": "m"' in record.description
 
     def test_overwrite_in_a_file_opened_for_writing_is_refused(
         self, empty_nwb, sample_environment, tmp_path
@@ -657,7 +657,8 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         with pynwb.NWBHDF5IO(str(path), "w") as io:
             io.write(empty_nwb)
-        replacement = sample_environment.rebin(2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            replacement = sample_environment.rebin(2)
         with pynwb.NWBHDF5IO(str(path), "r+") as io:
             nwbfile = io.read()
             with pytest.raises(NotImplementedError, match="mode='r\\+'"):
@@ -679,7 +680,8 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         with pynwb.NWBHDF5IO(str(source), "w") as io:
             io.write(empty_nwb)
-        replacement = sample_environment.rebin(2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            replacement = sample_environment.rebin(2)
         assert replacement.n_bins != sample_environment.n_bins
         with pynwb.NWBHDF5IO(str(source), "r") as io:
             nwbfile = io.read()
@@ -1951,11 +1953,15 @@ class TestEnvironmentFromNwb:
         for module in [m for m in sys.modules if m.split(".")[0] == "pynwb"]:
             monkeypatch.delitem(sys.modules, module)
         monkeypatch.setitem(sys.modules, "hdmf", None)
-        with pytest.raises(ModuleNotFoundError) as caught:
+
+        def attempt():
             if direction == "from_nwb":
                 Environment.from_nwb(empty_nwb)
             else:
                 sample_environment.to_nwb(empty_nwb)
+
+        with pytest.raises(ModuleNotFoundError) as caught:
+            attempt()
         assert caught.value.name == "hdmf"
         assert "pynwb is required" not in str(caught.value)
 
@@ -1995,10 +2001,10 @@ class TestEnvironmentToNwb:
             sample_environment.to_nwb(empty_nwb)
 
         # Should succeed with overwrite=True
-        sample_environment = sample_environment.with_metadata(units="meters")
+        sample_environment = sample_environment.with_metadata(units="m")
         sample_environment.to_nwb(empty_nwb, overwrite=True)
 
-        assert "meters" in empty_nwb.analysis["spatial_environment"].description
+        assert '"units": "m"' in empty_nwb.analysis["spatial_environment"].description
 
     def test_to_nwb_roundtrip(self, tmp_path, sample_environment):
         """Test that to_nwb and from_nwb work together."""

@@ -207,6 +207,8 @@ def test_unlocated_rows_are_not_bridged_by_bin_detectors(nan_bridged_track):
 def test_disabling_the_gap_gate_is_silent(coarse_track, name):
     env, times, positions = coarse_track
     with warnings.catch_warnings():
+        # The toy trials have identical kinematics; that warning is not under test.
+        warnings.filterwarnings("ignore", message="No variation in ")
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=None)
 

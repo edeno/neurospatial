@@ -296,7 +296,7 @@ class TestEventOverlayValidation:
         event_times = np.array([[0.5, 1.5], [2.0, 2.5]])  # 2D!
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])
 
-        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
+        with pytest.raises(ValueError, match=r"is not 1D") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -312,7 +312,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.nan, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
+        with pytest.raises(
+            ValueError, match=r"non-finite values \(NaN or Inf\)"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -328,7 +330,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.inf, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError, match=r"WHAT: Event times for") as exc_info:
+        with pytest.raises(
+            ValueError, match=r"non-finite values \(NaN or Inf\)"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -855,6 +859,7 @@ class TestEventOverlayEdgeCases:
             event_times=event_times,
             positions=positions,
             position_times=position_times,
+            max_gap=None,  # the 10 s sampling is deliberate; bridge it
         )
 
         frame_times = np.linspace(0.0, 10.0, 11)
@@ -1001,6 +1006,7 @@ class TestConvertOverlaysToDataWithEvents:
         position_overlay = PositionOverlay(
             positions=np.array([[10.0, 20.0], [30.0, 40.0]]),
             times=np.array([0.0, 10.0]),
+            max_gap=None,  # the 10 s sampling is deliberate; bridge it
         )
         event_overlay = EventOverlay(
             event_times=np.array([5.0]),

@@ -446,8 +446,11 @@ def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
     pytest.importorskip("jax")
     basis, c, o = _rank_deficient_case(open_field_env)
 
-    fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
-    fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
+    # The flat over-smoothed regime puts lambda at the REML upper search bound.
+    with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
+        fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
+    with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
+        fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
     assert fit_jax.penalty == fit_np.penalty  # same lambda (both float64 REML)
     np.testing.assert_array_equal(
         np.asarray(fit_jax.coefficients), np.asarray(fit_np.coefficients)

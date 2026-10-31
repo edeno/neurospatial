@@ -1,6 +1,6 @@
 """Movie clocks preserve native observations without widening scientific support."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -49,12 +49,21 @@ def test_export_retains_isolated_overlay_observations_and_excludes_stop(
             positions, observed, break_before=np.array([False, True, True])
         )
     )
-    with Animation(
-        env,
-        np.ones((2, env.n_bins)),
-        frame_times=[100.0, 100.5],
-        overlays=[overlay],
-    ) as scene:
+    # The overlay observes only part of the frame clock, by design.
+    # A position stream also reports that its declared breaks leave no interval.
+    with (
+        pytest.warns(UserWarning, match="Partial temporal overlap"),
+        nullcontext()
+        if adapter
+        else pytest.warns(UserWarning, match="Interval filtering excluded ALL"),
+    ):
+        scene = Animation(
+            env,
+            np.ones((2, env.n_bins)),
+            frame_times=[100.0, 100.5],
+            overlays=[overlay],
+        )
+    with scene:
         prepared = PreparedScene(scene)
         item = scene._overlay_data.positions[0]
         captures = []

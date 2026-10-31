@@ -6,7 +6,7 @@ import copy
 import pickle
 from dataclasses import fields
 
-import matplotlib
+import matplotlib as mpl
 import numpy as np
 import pytest
 from environment_helpers import rates_result
@@ -17,7 +17,7 @@ from neurospatial.encoding import (
     compare_spatial_rates,
 )
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 F = [1.0, 2.0, 3.0, 4.0, 5.0]
 G = [5.0, 1.0, 4.0, 2.0, 3.0]
@@ -483,7 +483,7 @@ def test_difference_map_is_symmetric_and_nan_outside_common_support(
     def spy(self, field, ax=None, **kwargs):
         seen["field"] = np.array(field)
         seen["kwargs"] = kwargs
-        return ax if ax is not None else matplotlib.pyplot.subplots()[1]
+        return ax if ax is not None else mpl.pyplot.subplots()[1]
 
     monkeypatch.setattr(Env, "plot_field", spy)
     result.plot(unit_id=4)
@@ -497,7 +497,7 @@ def test_difference_map_is_symmetric_and_nan_outside_common_support(
     assert seen["kwargs"]["vmax"] == bound
     assert seen["kwargs"]["cmap"] == "RdBu_r"
     assert "B" in seen["kwargs"]["colorbar_label"]
-    matplotlib.pyplot.close("all")
+    mpl.pyplot.close("all")
 
 
 def test_difference_map_with_no_common_bins_has_a_finite_color_range(
@@ -509,7 +509,7 @@ def test_difference_map_with_no_common_bins_has_a_finite_color_range(
 
     def spy(self, field, ax=None, **kwargs):
         seen.update(kwargs)
-        return matplotlib.pyplot.subplots()[1]
+        return mpl.pyplot.subplots()[1]
 
     monkeypatch.setattr(Env, "plot_field", spy)
     empty = compare_spatial_rates(
@@ -519,7 +519,7 @@ def test_difference_map_with_no_common_bins_has_a_finite_color_range(
     empty.plot(unit_id=4)
 
     assert (seen["vmin"], seen["vmax"]) == (-1.0, 1.0)
-    matplotlib.pyplot.close("all")
+    mpl.pyplot.close("all")
 
 
 def test_difference_map_unknown_unit_is_a_key_error(result) -> None:

@@ -551,9 +551,9 @@ class TestPlotBasisFunctions:
 
     def test_returns_figure(self, simple_2d_env):
         """Should return a matplotlib Figure."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")  # Non-interactive backend
+        mpl.use("Agg")  # Non-interactive backend
 
         basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, n_examples=4)
@@ -565,9 +565,9 @@ class TestPlotBasisFunctions:
 
     def test_respects_indices(self, simple_2d_env):
         """Should plot specified indices."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
 
         basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, indices=[0, 1, 2])

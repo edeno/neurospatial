@@ -187,6 +187,8 @@ class TestTrackEnvironments:
 # loaded machine while still catching the per-bin path rebuild this replaced
 # (6 s and 13 s).
 @pytest.mark.wallclock
+# The full-size maze grids are the point of this timing test.
+@pytest.mark.filterwarnings("ignore:Creating large grid:UserWarning")
 @pytest.mark.parametrize(
     ("maze", "budget"),
     [("make_hampton_court_maze", 2.0), ("make_rat_hexmaze", 3.0)],

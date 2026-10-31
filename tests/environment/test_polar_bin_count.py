@@ -78,18 +78,21 @@ def test_sixty_one_direction_occupancy_matches_the_published_bin_centers():
 
 
 def test_sixty_one_direction_rate_peak_matches_the_firing_object_bearing():
-    result = compute_egocentric_rate(
-        None,
-        np.array([0.05]),
-        np.array([0.0, 0.1]),
-        np.zeros((2, 2)),
-        np.zeros(2),
-        np.array([[5.0, 0.0]]),
-        distance_range=(0.0, 10.0),
-        distance_bin_size=10.0,
-        direction_bin_size=2 * np.pi / 61,
-        method="binned",
-    )
+    # The animal sits at the origin facing the object, so only one direction
+    # is ever sampled and the rate function warns about it.
+    with pytest.warns(UserWarning, match="no time was spent with the nearest object"):
+        result = compute_egocentric_rate(
+            None,
+            np.array([0.05]),
+            np.array([0.0, 0.1]),
+            np.zeros((2, 2)),
+            np.zeros(2),
+            np.array([[5.0, 0.0]]),
+            distance_range=(0.0, 10.0),
+            distance_bin_size=10.0,
+            direction_bin_size=2 * np.pi / 61,
+            method="binned",
+        )
     assert result.env.n_bins == result.firing_rate.size == 61
     peak = int(np.nanargmax(result.firing_rate))
     np.testing.assert_allclose(result.env.bin_centers[peak], [5.0, 0.0], atol=1e-15)

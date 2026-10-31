@@ -357,7 +357,7 @@ class TestUnitTable:
 
         units = read_units(_units_with_metadata())
         table = units.unit_table
-        table.drop(index=10, inplace=True)
+        table.index = [1, 2, 3]
         assert units.unit_table.index.tolist() == [10, 20, 30]
 
     def test_electrode_group_column_without_electrodes(self):

@@ -1,5 +1,6 @@
 """Named NWB reader outputs preserve physical data and acquisition coverage."""
 
+import re
 from dataclasses import FrozenInstanceError
 
 import numpy as np
@@ -212,7 +213,7 @@ def test_units_holder_rejects_misaligned_fields(unit_ids, obs_intervals):
     ],
 )
 def test_behavior_holders_check_shapes(holder, kwargs, fragment):
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=re.escape(fragment)) as caught:
         holder(**kwargs)
     assert fragment in str(caught.value)
     assert "Fix:" in str(caught.value)
@@ -307,12 +308,14 @@ def test_units_spike_window_is_derived_not_supplied():
 
 
 def test_units_holder_checks_interval_shape_and_unique_ids():
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"obs_intervals for unit 7 must have shape"
+    ) as caught:
         NWBUnits([np.array([0.1])], np.array([7]), [np.array([0.0, 1.0])])
     assert "obs_intervals for unit 7 must have shape (n_intervals, 2), got (2,)" in str(
         caught.value
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match="unit_ids repeats") as caught:
         NWBUnits([np.array([0.1]), np.array([0.2])], np.array([7, 7]), None)
     assert "unit_ids repeats [7]" in str(caught.value)
 
@@ -328,7 +331,7 @@ def test_read_units_refuses_a_table_with_repeated_ids(empty_nwb):
     empty_nwb.add_unit(id=7, spike_times=[0.1])
     empty_nwb.add_unit(id=7, spike_times=[0.2])
     for unit_ids in (None, [7]):
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match=r"The units table repeats id") as caught:
             read_units(empty_nwb, unit_ids=unit_ids)
         assert "The units table repeats id(s) [7]" in str(caught.value)
 

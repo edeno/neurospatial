@@ -73,7 +73,7 @@ def _adapter(**overrides):
 
 
 @pytest.fixture(autouse=True)
-def _registry(monkeypatch):
+def registry(monkeypatch):
     from neurospatial.geometry import _codecs
 
     entries = []
@@ -90,8 +90,8 @@ def _registry(monkeypatch):
     _snapshot_adapters.cache_clear()
 
 
-def test_locator_snapshot_owns_data_and_saves_as_a_builtin(_registry):
-    _registry.append(_EntryPoint("lookup", _adapter()))
+def test_locator_snapshot_owns_data_and_saves_as_a_builtin(registry):
+    registry.append(_EntryPoint("lookup", _adapter()))
     provider = _ExternalLocator()
     snapshot = snapshot_provider(provider, "locator")
     assert type(snapshot) is NearestBinLocator
@@ -100,7 +100,7 @@ def test_locator_snapshot_owns_data_and_saves_as_a_builtin(_registry):
     assert not snapshot.centers.flags.writeable
     saved, arrays = encode(snapshot, "lookup")
     assert saved["codec"] == "NearestBinLocator"
-    _registry.clear()
+    registry.clear()
     _snapshot_adapters.cache_clear()
     restored = decode(saved, arrays, "lookup")
     np.testing.assert_array_equal(
@@ -108,14 +108,14 @@ def test_locator_snapshot_owns_data_and_saves_as_a_builtin(_registry):
     )
 
 
-def test_saved_custom_codec_uses_installed_decoder_without_mutating_payload(_registry):
+def test_saved_custom_codec_uses_installed_decoder_without_mutating_payload(registry):
     def adapter_decode(meta, arrays, prefix):
         meta["edited"] = True
         result = NearestBinLocator(arrays[f"{prefix}/centers"])
         arrays[f"{prefix}/centers"][:] = 100
         return result
 
-    _registry.append(_EntryPoint("lookup", _adapter(decode=adapter_decode)))
+    registry.append(_EntryPoint("lookup", _adapter(decode=adapter_decode)))
     meta = {"codec": "laboratory.lookup", "codec_version": 1}
     arrays = {"old/centers": np.array([[0.0, 0.0], [2.0, 0.0]])}
     before = copy.deepcopy((meta, arrays))
@@ -136,14 +136,14 @@ def test_saved_custom_codec_uses_installed_decoder_without_mutating_payload(_reg
     ],
 )
 def test_failing_custom_decoder_is_reported_as_an_invalid_payload(
-    _registry, decode_result
+    registry, decode_result
 ):
     def adapter_decode(meta, arrays, prefix):
         if decode_result == "missing_array":
             return NearestBinLocator(arrays[f"{prefix}/missing"])
         return NearestBinLocator(arrays[f"{prefix}/centers"], -1.0)
 
-    _registry.append(_EntryPoint("lookup", _adapter(decode=adapter_decode)))
+    registry.append(_EntryPoint("lookup", _adapter(decode=adapter_decode)))
     with pytest.raises(
         ValueError, match=r"invalid laboratory\.lookup snapshot payload at old"
     ):
@@ -154,8 +154,8 @@ def test_failing_custom_decoder_is_reported_as_an_invalid_payload(
         )
 
 
-def test_custom_payload_version_two_is_routed_before_builtin_version_checks(_registry):
-    _registry.append(_EntryPoint("lookup", _adapter(version=2)))
+def test_custom_payload_version_two_is_routed_before_builtin_version_checks(registry):
+    registry.append(_EntryPoint("lookup", _adapter(version=2)))
     result = decode(
         {"codec": "laboratory.lookup", "codec_version": 2},
         {"old/centers": np.array([[0.0, 0.0], [2.0, 0.0]])},
@@ -165,10 +165,10 @@ def test_custom_payload_version_two_is_routed_before_builtin_version_checks(_reg
 
 
 def test_published_snapshot_does_not_retain_provider_or_returned_array_headers(
-    _registry,
+    registry,
 ):
     value = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
-    _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: value)))
+    registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: value)))
     provider = _ExternalLocator()
     reference = weakref.ref(provider)
     snapshot = snapshot_provider(provider, "locator")
@@ -179,14 +179,14 @@ def test_published_snapshot_does_not_retain_provider_or_returned_array_headers(
     assert snapshot.centers.shape == (2, 2)
 
 
-def test_custom_nested_locator_decodes_and_resaves_as_canonical_builtin(_registry):
+def test_custom_nested_locator_decodes_and_resaves_as_canonical_builtin(registry):
     from neurospatial import Environment
 
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
     locator = env._binning.locator
-    _registry.append(_EntryPoint("lookup", _adapter(decode=lambda m, a, p: locator)))
+    registry.append(_EntryPoint("lookup", _adapter(decode=lambda m, a, p: locator)))
     meta, arrays = encode(env._binning, "old")
     meta["locator"] = {"codec": "laboratory.lookup", "codec_version": 1}
     restored = decode(meta, arrays, "old")
@@ -195,19 +195,19 @@ def test_custom_nested_locator_decodes_and_resaves_as_canonical_builtin(_registr
     )
     canonical, buffers = encode(restored, "new")
     assert canonical["locator"]["codec"] == "RectilinearLocator"
-    _registry.clear()
+    registry.clear()
     _snapshot_adapters.cache_clear()
     assert type(decode(canonical, buffers, "new")) is Binning
 
 
-def test_wrong_custom_role_cannot_fill_a_builtin_locator_field(_registry):
+def test_wrong_custom_role_cannot_fill_a_builtin_locator_field(registry):
     from neurospatial import Environment
     from neurospatial.arena import UnknownArena
 
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
-    _registry.append(
+    registry.append(
         _EntryPoint(
             "lookup", _adapter(role="arena", decode=lambda m, a, p: UnknownArena(2))
         )
@@ -230,13 +230,11 @@ def test_builtin_decode_does_not_discover_or_import_extensions(monkeypatch):
 
 
 @pytest.mark.parametrize("version", [None, True, 1.0, 0, 2, "1"])
-def test_unknown_or_malformed_version_refuses_before_calling_decoder(
-    _registry, version
-):
+def test_unknown_or_malformed_version_refuses_before_calling_decoder(registry, version):
     def fail(*args):
         pytest.fail("unsupported payload version must not call the decoder")
 
-    _registry.append(_EntryPoint("lookup", _adapter(decode=fail)))
+    registry.append(_EntryPoint("lookup", _adapter(decode=fail)))
     with pytest.raises(ValueError, match="version"):
         _decode_snapshot(
             {"codec": "laboratory.lookup", "codec_version": version}, {}, "old"
@@ -251,7 +249,7 @@ def test_missing_installed_adapter_explains_package_requirement():
 
 
 @pytest.mark.parametrize("duplicate", ["name", "provider_role"])
-def test_duplicate_entries_are_rejected_deterministically(_registry, duplicate):
+def test_duplicate_entries_are_rejected_deterministically(registry, duplicate):
     first = _adapter()
     second = (
         _adapter(name="laboratory.other")
@@ -262,7 +260,7 @@ def test_duplicate_entries_are_rejected_deterministically(_registry, duplicate):
         [_EntryPoint("z", first), _EntryPoint("a", second)],
         [_EntryPoint("a", second), _EntryPoint("z", first)],
     ):
-        _registry[:] = entries
+        registry[:] = entries
         _snapshot_adapters.cache_clear()
         with pytest.raises(ValueError, match="duplicate") as caught:
             _snapshot_adapters()
@@ -273,7 +271,7 @@ def test_duplicate_entries_are_rejected_deterministically(_registry, duplicate):
 
 
 @pytest.mark.parametrize("role", ["locator", "track", "arena", "binning"])
-def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
+def test_each_supported_role_normalizes_a_builtin_record(registry, role):
     from neurospatial import Environment
     from neurospatial.arena import MaskArena
 
@@ -285,7 +283,7 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
         env = Environment.linear_track(endpoints=[(0, 0), (4, 0)], bin_size=1)
         value = env._binning.linearization if role == "track" else env._binning
         assert type(value) is (TrackLinearization if role == "track" else Binning)
-    _registry.append(
+    registry.append(
         _EntryPoint("adapter", _adapter(role=role, snapshot=lambda p: value))
     )
     snapshot = snapshot_provider(_ExternalLocator(), role)
@@ -294,14 +292,14 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
 
 
 @pytest.mark.parametrize("result", [object(), _ExternalLocator(), None])
-def test_adapter_cannot_preserve_a_custom_runtime_object(_registry, result):
-    _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: result)))
+def test_adapter_cannot_preserve_a_custom_runtime_object(registry, result):
+    registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: result)))
     with pytest.raises(ValueError, match=r"built-in.*locator"):
         snapshot_provider(_ExternalLocator(), "locator")
 
 
-def test_wrong_declared_role_is_not_accepted(_registry):
-    _registry.append(_EntryPoint("lookup", _adapter(role="arena")))
+def test_wrong_declared_role_is_not_accepted(registry):
+    registry.append(_EntryPoint("lookup", _adapter(role="arena")))
     with pytest.raises(ValueError, match=r"built-in.*arena"):
         snapshot_provider(_ExternalLocator(), "arena")
 
@@ -323,11 +321,11 @@ def test_adapter_declaration_is_validated(field, value):
         _adapter(**{field: value})
 
 
-def test_entrypoint_requires_an_adapter_object_and_cannot_shadow_builtins(_registry):
-    _registry.append(_EntryPoint("wrong", lambda: _adapter()))
+def test_entrypoint_requires_an_adapter_object_and_cannot_shadow_builtins(registry):
+    registry.append(_EntryPoint("wrong", lambda: _adapter()))
     with pytest.raises(TypeError, match="SnapshotAdapter"):
         _snapshot_adapters()
-    _registry[:] = [_EntryPoint("shadow", _adapter(name="Binning"))]
+    registry[:] = [_EntryPoint("shadow", _adapter(name="Binning"))]
     with pytest.raises(ValueError, match="built-in"):
         _snapshot_adapters()
 
@@ -399,14 +397,14 @@ def _explicit_binning(env):
 
 @pytest.mark.parametrize("ingress", ["constructor", "from_bins"])
 def test_public_binning_adapter_owns_data_and_drops_provider_provenance(
-    _registry, ingress
+    registry, ingress
 ):
     original = Environment.linear_track(
         endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
     )
     data = _explicit_binning(original)
     provider_type = _ExternalLayout if ingress == "constructor" else _ExternalBinning
-    _registry.append(_EntryPoint("binning", _data_adapter(provider_type, "binning")))
+    registry.append(_EntryPoint("binning", _data_adapter(provider_type, "binning")))
     provider = provider_type(data)
     reference = weakref.ref(provider)
     if ingress == "constructor":
@@ -439,7 +437,7 @@ def _externalize_locator(locator):
     return provider, provider
 
 
-def test_public_locator_ingress_detaches_caller_buffers_and_provider(_registry):
+def test_public_locator_ingress_detaches_caller_buffers_and_provider(registry):
     provider = _ExternalLocator()
     source = Binning(
         "sample_sites",
@@ -448,7 +446,7 @@ def test_public_locator_ingress_detaches_caller_buffers_and_provider(_registry):
         provider,
         MissingFaces("No physical faces are available."),
     )
-    _registry.append(
+    registry.append(
         _EntryPoint(
             "lookup",
             _adapter(
@@ -468,7 +466,7 @@ def test_public_locator_ingress_detaches_caller_buffers_and_provider(_registry):
     assert reference() is None
 
 
-def test_public_adapter_result_still_requires_cross_component_consistency(_registry):
+def test_public_adapter_result_still_requires_cross_component_consistency(registry):
     native = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
@@ -479,14 +477,14 @@ def test_public_adapter_result_still_requires_cross_component_consistency(_regis
             data.bins.centers + 0.1, data.bins.sizes, data.bins.measure_dim
         ),
     )
-    _registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
+    registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
     with pytest.raises(ValueError, match="centers"):
         Environment.from_bins(_ExternalBinning(inconsistent))
 
 
 @pytest.mark.parametrize("operation", ["clip", "subset", "transform", "nested"])
 def test_public_ingress_adapts_nested_locators_without_changing_maps(
-    _registry, operation
+    registry, operation
 ):
     env = Environment.from_grid_mask(
         np.ones((3, 2), dtype=bool), (np.arange(4.0), np.arange(3.0))
@@ -498,7 +496,7 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
     original = _explicit_binning(env)
     locator, provider = _externalize_locator(original.locator)
     source = replace(original, locator=locator)
-    _registry.append(
+    registry.append(
         _EntryPoint("lookup", _data_adapter(_ExternalWrappedLocator, "locator"))
     )
     queries = np.vstack((env.bin_centers, [[999.0, 999.0]]))
@@ -518,14 +516,14 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
     assert reference() is None
 
 
-def test_public_track_adapter_drops_delegated_conversions(_registry):
+def test_public_track_adapter_drops_delegated_conversions(registry):
     original = Environment.linear_track(
         endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
     )
     data = _explicit_binning(original)
     provider = _ExternalTrack(data.linearization)
     source = replace(data, linearization=provider)
-    _registry.append(_EntryPoint("track", _data_adapter(_ExternalTrack, "track")))
+    registry.append(_EntryPoint("track", _data_adapter(_ExternalTrack, "track")))
     env = Environment.from_bins(source)
     assert env.is_linearized_track
     np.testing.assert_allclose(
@@ -541,10 +539,8 @@ def test_public_track_adapter_drops_delegated_conversions(_registry):
 
 
 @pytest.mark.parametrize("ingress", ["layout_factory", "from_bins", "mask_factory"])
-def test_public_arena_adapter_normalizes_before_lookup_and_selection(
-    _registry, ingress
-):
-    _registry.append(
+def test_public_arena_adapter_normalizes_before_lookup_and_selection(registry, ingress):
+    registry.append(
         _EntryPoint(
             "arena",
             _adapter(
@@ -587,7 +583,7 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     assert reference() is None
 
 
-def test_custom_arena_decoder_receives_local_array_namespace(_registry):
+def test_custom_arena_decoder_receives_local_array_namespace(registry):
     def read_domain(meta, arrays, prefix):
         assert prefix == ""
         assert "bounds" in arrays
@@ -596,7 +592,7 @@ def test_custom_arena_decoder_receives_local_array_namespace(_registry):
         arrays["bounds"][:] = 999
         return result
 
-    _registry.append(
+    registry.append(
         _EntryPoint(
             "arena",
             _adapter(
@@ -615,13 +611,13 @@ def test_custom_arena_decoder_receives_local_array_namespace(_registry):
 
 @pytest.mark.parametrize("custom_role", ["locator", "arena", "both"])
 def test_custom_file_and_dict_load_resave_without_adapter_package(
-    _registry, tmp_path, custom_role
+    registry, tmp_path, custom_role
 ):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
     locator = env._binning.locator
-    _registry.extend(
+    registry.extend(
         [
             _EntryPoint("lookup", _adapter(decode=lambda m, a, p: locator)),
             _EntryPoint(
@@ -682,7 +678,7 @@ def test_custom_file_and_dict_load_resave_without_adapter_package(
             "MaskArena" if custom_role == "locator" else "OpenArena"
         )
         assert "laboratory." not in json.dumps(canonical)
-    _registry.clear()
+    registry.clear()
     _snapshot_adapters.cache_clear()
     with pytest.raises(ValueError, match=r"install.*package"):
         Environment.from_dict(dictionary)
@@ -696,7 +692,7 @@ def test_custom_file_and_dict_load_resave_without_adapter_package(
         np.testing.assert_array_equal(restored.bin_at(env.bin_centers), np.arange(4))
 
 
-def test_public_contract_kit_accepts_an_adapter_published_environment(_registry):
+def test_public_contract_kit_accepts_an_adapter_published_environment(registry):
     from neurospatial.testing import assert_environment_contract
 
     centers = np.array([[0.0, 0.0], [2.0, 0.0]])
@@ -707,14 +703,14 @@ def test_public_contract_kit_accepts_an_adapter_published_environment(_registry)
         NearestBinLocator(centers, max_distance=0.1),
         MissingFaces("No physical faces are available."),
     )
-    _registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
+    registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
     env = Environment.from_bins(_ExternalBinning(data))
     assert_environment_contract(env, [[0, 0], [2, 0], [10, 0]], [0, 1, -1])
 
 
 @pytest.mark.parametrize("adapted", [True, False])
 def test_from_layout_checks_center_lookup_of_every_layout(
-    _registry, monkeypatch, adapted
+    registry, monkeypatch, adapted
 ):
     """Built engines and adapted objects both have each bin center located."""
     from neurospatial.geometry._locators import RectilinearLocator
@@ -726,7 +722,7 @@ def test_from_layout_checks_center_lookup_of_every_layout(
     )
     centers = layout.bin_centers.copy()
     if adapted:
-        _registry.append(
+        registry.append(
             _EntryPoint("binning", _data_adapter(_ExternalBinning, "binning"))
         )
         layout = _ExternalBinning(_explicit_binning(Environment.from_layout(layout)))

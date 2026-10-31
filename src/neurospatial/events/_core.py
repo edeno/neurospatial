@@ -338,9 +338,12 @@ def _response_metrics(
     """Peak rate, peak latency and baseline rate per row of ``rates`` (Hz)."""
     n_units = rates.shape[0]
     peak_rate, peak_latency = _peak_latencies(rates, bin_centers)
-    baseline = (
-        np.nanmean(rates[:, pre], axis=1) if pre.any() else np.full(n_units, np.nan)
-    )
+    # The mean of each unit's observed pre-event bins; NaN when it has none.
+    pre_rates = rates[:, pre]
+    n_observed = np.sum(~np.isnan(pre_rates), axis=1)
+    baseline = np.full(n_units, np.nan)
+    observed = n_observed > 0
+    baseline[observed] = np.nanmean(pre_rates[observed], axis=1)
     return {
         "peak_rate": peak_rate,
         "peak_latency": peak_latency,

@@ -178,9 +178,10 @@ def test_goal_distances_are_nan_when_nothing_is_observed():
         units="cm",
     )
     positions = np.full((10, 2), np.nan)
-    result = compute_goal_directed_metrics(
-        env, _times(10), positions, np.array([100.0, 0.0]), min_speed=1.0
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = compute_goal_directed_metrics(
+            env, _times(10), positions, np.array([100.0, 0.0]), min_speed=1.0
+        )
     assert np.isnan(result.min_distance_to_goal)
     assert np.isnan(result.goal_distance_at_start)
     assert np.isnan(result.goal_distance_at_end)

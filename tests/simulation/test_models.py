@@ -489,17 +489,23 @@ class TestBorderCellModel:
         }
 
     @pytest.mark.parametrize(
-        "kwargs",
+        ("kwargs", "match"),
         [
-            {"distance_tolerance": 0.0},
-            {"distance_tolerance": 3.0, "preferred_distance": -1.0},
-            {"distance_tolerance": 3.0, "baseline_rate": 20.0},
+            ({"distance_tolerance": 0.0}, "distance_tolerance must be finite"),
+            (
+                {"distance_tolerance": 3.0, "preferred_distance": -1.0},
+                "preferred_distance must be finite",
+            ),
+            (
+                {"distance_tolerance": 3.0, "baseline_rate": 20.0},
+                "baseline_rate .* is above max_rate",
+            ),
         ],
     )
-    def test_invalid_parameters_raise(self, walled_box, kwargs):
+    def test_invalid_parameters_raise(self, walled_box, kwargs, match):
         from neurospatial.simulation.models import BorderCellModel
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=match):
             BorderCellModel(walled_box, **kwargs)
 
 
@@ -616,17 +622,20 @@ class TestBoundaryVectorCellModel:
         }
 
     @pytest.mark.parametrize(
-        "kwargs",
+        ("kwargs", "match"),
         [
-            {"distance_tolerance": 0.0},
-            {"direction_tolerance": 0.0},
-            {"direction_tolerance": 4.0},
-            {"preferred_direction": np.nan},
-            {"preferred_distance": -1.0},
+            ({"distance_tolerance": 0.0}, "distance_tolerance must be finite"),
+            ({"direction_tolerance": 0.0}, "direction_tolerance must be a half-width"),
+            ({"direction_tolerance": 4.0}, "direction_tolerance must be a half-width"),
+            (
+                {"preferred_direction": np.nan},
+                "preferred_direction must be a finite angle",
+            ),
+            ({"preferred_distance": -1.0}, "preferred_distance must be finite"),
         ],
     )
-    def test_invalid_parameters_raise(self, walled_box, kwargs):
-        with pytest.raises(ValueError):
+    def test_invalid_parameters_raise(self, walled_box, kwargs, match):
+        with pytest.raises(ValueError, match=match):
             self._west_cell(walled_box, **kwargs)
 
 
@@ -1420,11 +1429,9 @@ def test_every_model_refuses_invalid_rates(walled_box, cell_type, rates):
     model = _every_model(walled_box)[cell_type]
     params = {k: v for k, v in model.ground_truth.items() if k not in _DERIVED_KEYS}
     params.update(rates)
+    args = () if cell_type == "head_direction" else (walled_box,)
     with pytest.raises(ValueError, match="rate"):
-        if cell_type == "head_direction":
-            type(model)(**params)
-        else:
-            type(model)(walled_box, **params)
+        type(model)(*args, **params)
 
 
 class TestPlaceCellRefusals:

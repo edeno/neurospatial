@@ -22,7 +22,7 @@ def rate_family_inputs():
     headings = np.arctan2(velocity[:, 1], velocity[:, 0])
     rng = np.random.default_rng(0)
     spikes = [np.sort(rng.uniform(0, times[-1], count)) for count in (200, 50, 300)]
-    return env, times, positions, headings, spikes, np.array([[30.0, 30.0]])
+    return env, times, positions, headings, spikes, np.array([[50.0, 50.0]])
 
 
 @pytest.fixture(scope="module")
@@ -330,15 +330,6 @@ def frame_family(request):
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-
-
-@pytest.fixture(autouse=True)
-def restore_numpy_random_state() -> Generator[None, None, None]:
-    """Make legacy global np.random use deterministic and order-independent."""
-    previous_state: tuple[Any, ...] = np.random.get_state()
-    np.random.seed(0)
-    yield
-    np.random.set_state(previous_state)
 
 
 @pytest.fixture(autouse=True)

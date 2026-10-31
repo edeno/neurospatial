@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -270,15 +271,21 @@ def test_isolated_sample_produces_no_output():
 
 
 @pytest.mark.parametrize(
-    ("times", "positions"),
+    ("times", "positions", "warns"),
     [
-        (np.array([0.0]), np.array([[1.0, 2.0]])),
-        (np.arange(4) * 0.1, np.full((4, 2), np.nan)),
+        (np.array([0.0]), np.array([[1.0, 2.0]]), False),
+        (np.arange(4) * 0.1, np.full((4, 2), np.nan), True),
     ],
     ids=["single-sample", "all-missing"],
 )
-def test_no_runs_give_empty_arrays(times, positions):
-    result = resample_by_distance(times, positions, spacing=1.0)
+def test_no_runs_give_empty_arrays(times, positions, warns):
+    # Only the all-missing recording has samples to exclude, so only it warns.
+    with (
+        pytest.warns(UserWarning, match="excluded ALL trajectory intervals")
+        if warns
+        else nullcontext()
+    ):
+        result = resample_by_distance(times, positions, spacing=1.0)
     for name in (
         "times",
         "run_distance",
@@ -419,7 +426,8 @@ def test_break_before_marks_first_sample_of_each_run(two_epoch_recording):
 
 def test_break_before_empty_result():
     times = np.arange(3) * 0.1
-    result = resample_by_distance(times, np.full((3, 2), np.nan), spacing=1.0)
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = resample_by_distance(times, np.full((3, 2), np.nan), spacing=1.0)
     assert result.break_before.shape == (0,)
 
 

@@ -3,6 +3,7 @@
 Scene frames are checked in test_scene_frame_pixels.py.
 """
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -55,9 +56,20 @@ def test_native_events_submit_only_located_points(located_events, decay, all_mis
             graphics.append(graphic)
             return graphic
 
-    with Animation(
-        env, np.ones((len(times), env.n_bins)), frame_times=times, overlays=[overlay]
-    ) as scene:
+    # With every location missing there is no interval to interpolate across.
+    expected = (
+        pytest.warns(UserWarning, match="Interval filtering excluded ALL")
+        if all_missing
+        else nullcontext()
+    )
+    with expected:
+        scene = Animation(
+            env,
+            np.ones((len(times), env.n_bins)),
+            frame_times=times,
+            overlays=[overlay],
+        )
+    with scene:
         data = scene._overlay_data.events[0]
         source_positions = data.event_positions["event"].copy()
         drawn = _Events([Plot()], PreparedScene(scene), data)

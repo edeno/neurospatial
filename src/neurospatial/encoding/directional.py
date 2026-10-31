@@ -1100,7 +1100,9 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         preferred_direction : Direction of peak firing
         """
         rates = np.asarray(self.firing_rate, dtype=np.float64)
-        return float(np.nanmax(rates))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN -> NaN
+            return float(np.nanmax(rates))
 
     def mean_vector_length(self) -> float:
         """Compute the mean vector length (MVL) of the tuning curve.

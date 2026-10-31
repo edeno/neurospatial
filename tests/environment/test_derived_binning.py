@@ -748,7 +748,7 @@ def test_wrapped_geometry_corruption_is_rejected(
                 for node in metadata["binning"]["linearization"]["graph"]["nodes"]:
                     node["pos"] = (np.asarray(node["pos"]) + 0.01).tolist()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid environment data in"):
         corrupted_environment_round_trip(corrupt, environment=child)
 
 

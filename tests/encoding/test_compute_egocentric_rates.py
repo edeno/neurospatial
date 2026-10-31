@@ -328,6 +328,7 @@ class TestComputeEgocentricRatesParameters:
 
         assert result.n_distance_bins == n_distance_bins
 
+    @pytest.mark.filterwarnings("ignore:.*peak in the outermost ring:UserWarning")
     def test_n_direction_bins_stored(self, trajectory_data, spike_times_list):
         """Test that n_direction_bins parameter is stored."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -366,6 +367,7 @@ class TestComputeEgocentricRatesParameters:
 
         assert result is not None
 
+    @pytest.mark.filterwarnings("ignore:.*peak in the outermost ring:UserWarning")
     def test_method_options(self, trajectory_data, spike_times_list):
         """Test that all smoothing methods work."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -908,11 +910,11 @@ class TestComputeObjectVectorRatesResultMethods:
 
     def test_plot_method_works(self, trajectory_data, spike_times_list):
         """Test that plot method works on batch result."""
-        import matplotlib
+        import matplotlib as mpl
 
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
 
         result = compute_egocentric_rates(
             None,
@@ -1008,6 +1010,9 @@ class TestComputeObjectVectorRatesResultMethods:
         np.testing.assert_array_equal(result.preferred_distances(), expected_dist)
         np.testing.assert_array_equal(result.preferred_directions(), expected_dir)
 
+    @pytest.mark.filterwarnings(
+        "ignore:.*fewer spikes than their rate maps:UserWarning"
+    )
     def test_classify_method_works(self, trajectory_data, spike_times_list):
         """Test that classify method works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -1027,6 +1032,9 @@ class TestComputeObjectVectorRatesResultMethods:
         assert len(is_egocentric_object_vector_cell) == len(spike_times_list)
         assert is_egocentric_object_vector_cell.dtype == bool
 
+    @pytest.mark.filterwarnings(
+        "ignore:.*fewer spikes than their rate maps:UserWarning"
+    )
     def test_summary_table_method_works(self, trajectory_data, spike_times_list):
         """Test that summary_table (per-unit) and to_dataframe (dense) work."""
         import pandas as pd

@@ -166,16 +166,17 @@ class TestBenchmarkRunner:
         data = benchmark_module.create_benchmark_data(
             n_neurons=3, n_samples=500, seed=44
         )
-        result = benchmark_module.run_single_benchmark(
-            data=data,
-            function_name="compute_spatial_rates",
-            backend="numpy",
-            n_iterations=1,
-            method="glm",
-            penalty=None,  # automatic REML -> pooled matters
-            rank=10,
-            pooled=False,
-        )
+        with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
+            result = benchmark_module.run_single_benchmark(
+                data=data,
+                function_name="compute_spatial_rates",
+                backend="numpy",
+                n_iterations=1,
+                method="glm",
+                penalty=None,  # automatic REML -> pooled matters
+                rank=10,
+                pooled=False,
+            )
 
         assert result.backend == "numpy"
         assert result.n_neurons == 3

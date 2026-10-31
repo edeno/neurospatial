@@ -150,6 +150,7 @@ def test_supplied_labels_are_not_marked_generated(labelled_population: Any) -> N
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_every_family_reports_its_estimator(population: Any) -> None:
     """method and bandwidth are fields on every family and reach every export."""
     method, bandwidth = population.method, population.bandwidth
@@ -380,6 +381,8 @@ def test_refuses_a_threshold_that_disagrees_with_the_record(population: Any) -> 
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
+@pytest.mark.filterwarnings("ignore:ChainedAssignmentError:FutureWarning")
 def test_unit_table_edits_through_the_result_do_not_change_it(
     family: str, recording: dict[str, Any]
 ) -> None:
@@ -389,7 +392,7 @@ def test_unit_table_edits_through_the_result_do_not_change_it(
     table = pd.DataFrame({"unit_id": ["a", "b", "c"], "region": ["CA1", "CA1", "CA3"]})
     labelled = FAMILIES[family](recording, unit_ids=["a", "b", "c"])
     result = dataclasses.replace(labelled, unit_table=table)
-    result.unit_table.drop(index=result.unit_table.index[0], inplace=True)
+    result.unit_table.drop(index=result.unit_table.index[0], inplace=True)  # noqa: PD002  # mutating the returned copy is what is tested
     result.unit_table.loc[:, "region"] = "V1"
     table.loc[:, "region"] = "PFC"
     assert result.unit_table["unit_id"].tolist() == ["a", "b", "c"]
@@ -409,7 +412,7 @@ def test_spike_trains_unit_table_is_copied_on_read() -> None:
         unit_ids=[7, 9],
         unit_table=pd.DataFrame({"unit_id": [7, 9], "depth": [10.0, 20.0]}),
     )
-    trains.unit_table.drop(index=0, inplace=True)
+    trains.unit_table.drop(index=0, inplace=True)  # noqa: PD002  # mutating the returned copy is what is tested
     assert trains.unit_table["depth"].tolist() == [10.0, 20.0]
 
 
@@ -494,6 +497,7 @@ def spikes_with_known_exclusions() -> tuple[list[np.ndarray], list[int]]:
     return trains, outside
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_spikes_outside_the_analyzed_intervals_are_counted_per_unit(
     family: str,
     recording: dict[str, Any],
@@ -530,6 +534,7 @@ def test_accounting_does_not_vary_settings_between_population_and_units(
         assert unit.analysis_settings == population.analysis_settings
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_unknown_accounting_is_missing_not_zero(population: Any) -> None:
     unknown = dataclasses.replace(population, n_spikes_outside_intervals=None)
     column = unknown.summary_table()["n_spikes_outside_intervals"]

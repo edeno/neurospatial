@@ -134,6 +134,9 @@ def _assert_within(inner, outer, scale: float) -> None:
     assert np.all(inner[:, 1] <= outer[:, 1] + tolerance), (inner, outer)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Grid shape .* is not evenly divisible"
+)  # _derived rebins by 2
 @pytest.mark.parametrize("built_environment", _CARTESIAN, indirect=True)
 @settings(derandomize=True, max_examples=10, deadline=None)
 @given(seed=st.integers(min_value=0, max_value=2**32 - 1))

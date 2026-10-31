@@ -15,7 +15,7 @@ def _space_for(positions):
     """An environment fixing only the number of dimensions, for Euclidean error."""
     n_dims = np.asarray(positions).shape[1]
     return Environment.from_samples(
-        np.array([[0.0] * n_dims, [1.0] * n_dims]), bin_size=1.0
+        np.array([[0.0] * n_dims, [1.0] * n_dims]), bin_size=0.5
     )
 
 

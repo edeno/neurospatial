@@ -403,7 +403,8 @@ class TestVideoOverlay:
 
     def test_interp_linear(self, sample_video_array: np.ndarray):
         """Test VideoOverlay with linear interpolation."""
-        overlay = VideoOverlay(source=sample_video_array, interp="linear")
+        with pytest.warns(UserWarning, match="interp='linear' is not yet implemented"):
+            overlay = VideoOverlay(source=sample_video_array, interp="linear")
 
         assert overlay.interp == "linear"
 
@@ -414,16 +415,17 @@ class TestVideoOverlay:
         times = np.linspace(0.0, 1.0, len(sample_video_array))
         crop = (0, 0, 8, 8)
 
-        overlay = VideoOverlay(
-            source=sample_video_array,
-            calibration=sample_calibration,
-            times=times,
-            alpha=0.3,
-            z_order="above",
-            crop=crop,
-            downsample=2,
-            interp="linear",
-        )
+        with pytest.warns(UserWarning, match="interp='linear' is not yet implemented"):
+            overlay = VideoOverlay(
+                source=sample_video_array,
+                calibration=sample_calibration,
+                times=times,
+                alpha=0.3,
+                z_order="above",
+                crop=crop,
+                downsample=2,
+                interp="linear",
+            )
 
         assert overlay.calibration is sample_calibration
         assert_array_equal(overlay.times, times)
@@ -1635,9 +1637,13 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
 
-        converted = _convert_on_frames(
-            overlays=[overlay], frame_times=frame_times, n_frames=n_frames, env=mock_env
-        )
+        with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+            converted = _convert_on_frames(
+                overlays=[overlay],
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=mock_env,
+            )
         assert np.isnan(converted.positions[0].data[1]).all()
         np.testing.assert_array_equal(
             converted.positions[0].data[[0, 2]], positions[[0, 2]]
@@ -1750,12 +1756,13 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0, 2.0, 3.0])
         n_frames = 4
 
-        overlay_data = _convert_on_frames(
-            overlays=[overlay],
-            frame_times=frame_times,
-            n_frames=n_frames,
-            env=mock_env,
-        )
+        with pytest.warns(UserWarning, match="Partial temporal overlap"):
+            overlay_data = _convert_on_frames(
+                overlays=[overlay],
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=mock_env,
+            )
 
         pos_data = overlay_data.positions[0]
 
@@ -1832,7 +1839,7 @@ class TestConvertOverlaysToData:
 
         with pytest.raises(TypeError, match="must implement OverlayProtocol"):
             _convert_on_frames(
-                overlays=[not_overlay],  # type: ignore
+                overlays=[not_overlay],  # type: ignore[list-item]
                 frame_times=np.array([0.0, 1.0]),
                 n_frames=2,
                 env=mock_env,
@@ -2017,12 +2024,13 @@ class TestConvertVideoOverlay:
         frame_times = np.linspace(0.0, 1.0, 5)
         n_frames = 5
 
-        overlay_data = _convert_on_frames(
-            overlays=[overlay],
-            frame_times=frame_times,
-            n_frames=n_frames,
-            env=mock_env_2d,
-        )
+        with pytest.warns(UserWarning, match="no calibration"):
+            overlay_data = _convert_on_frames(
+                overlays=[overlay],
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=mock_env_2d,
+            )
 
         # Should have video data in the result
         assert hasattr(overlay_data, "videos")
@@ -2040,12 +2048,13 @@ class TestConvertVideoOverlay:
         frame_times = np.linspace(0.0, 0.9, 10)
         n_frames = 10
 
-        overlay_data = _convert_on_frames(
-            overlays=[overlay],
-            frame_times=frame_times,
-            n_frames=n_frames,
-            env=mock_env_2d,
-        )
+        with pytest.warns(UserWarning, match="no calibration"):
+            overlay_data = _convert_on_frames(
+                overlays=[overlay],
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=mock_env_2d,
+            )
 
         # Check that frame_indices were computed
         video_data = overlay_data.videos[0]
@@ -2102,7 +2111,9 @@ def test_conversion_keeps_an_overlays_samples_and_checks_them_against_frames():
     ].positions
     assert_array_equal(framed.times, frame_times)
     # Sampled at the frames, rows follow them too.
-    (aligned,) = _convert_on_frames(overlays[:1], frame_times, 40, env).positions
+    with pytest.warns(UserWarning, match="Partial temporal overlap"):
+        aligned_data = _convert_on_frames(overlays[:1], frame_times, 40, env)
+    (aligned,) = aligned_data.positions
     assert_array_equal(aligned.times, frame_times)
     assert len(aligned.data) == 40
 

@@ -535,7 +535,7 @@ def test_object_significance_metric_errors_teach(
     f, r = significance_family, significance_recording
     args = list(f.args(r))
     args[0] = None
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match="metric") as exc:
         f.function(*args, metric=metric, n_shuffles=1, rng=0)
     message = str(exc.value)
     assert f.function.__name__ in message

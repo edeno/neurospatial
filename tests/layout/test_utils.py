@@ -93,7 +93,8 @@ def test_infer_dimension_ranges_from_samples_buffer_sequence():
 
 def test_infer_dimension_ranges_from_samples_point_data():
     data = np.array([[2, 3], [2, 3]])
-    result = _infer_dimension_ranges_from_samples(data)
+    with pytest.warns(UserWarning, match="zero extent"):
+        result = _infer_dimension_ranges_from_samples(data)
     assert np.allclose(result[0], (1.5, 2.5))
     assert np.allclose(result[1], (2.5, 3.5))
 

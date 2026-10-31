@@ -126,6 +126,9 @@ def test_frame_compute_signatures_are_truthful():
         )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_allocentric_preserves_gap_and_window_gates():
     times = np.array([0, 0.1, 0.2, 100, 100.1, 100.2])
     positions = np.zeros((len(times), 2))
@@ -166,6 +169,7 @@ def test_egocentric_requires_nonnull_headings():
 
 @pytest.mark.parametrize("frame", ["allocentric", "egocentric"])
 @pytest.mark.parametrize("method", ["binned", "gaussian_kde"])
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_free_predicates_match_methods(
     frame, method, ou_env, ou_2min, noise_trains, obj
 ):
@@ -225,6 +229,10 @@ def test_frame_predicate_signatures_are_truthful():
         )
 
 
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_zero_heading_equivalence_at_direction_bin_edge():
     times = np.arange(4) * 0.1
     positions = np.zeros((4, 2))
@@ -370,7 +378,8 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
 
     r = continuous_recording
     args = (r.env, r.spike_times, r.times, r.positions, None, np.array([[50.0, 50.0]]))
-    with pytest.raises(ValueError, match="headings is required") as exc:
+
+    def run() -> None:
         if call == "significance":
             egocentric_object_vector_cell_significance(
                 *args,
@@ -383,6 +392,9 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
             is_egocentric_object_vector_cell(
                 *args, criterion="shuffle", n_shuffles=3, rng=0
             )
+
+    with pytest.raises(ValueError, match="headings is required") as exc:
+        run()
     assert "Fix:" in str(exc.value)
 
 

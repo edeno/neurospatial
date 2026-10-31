@@ -216,14 +216,15 @@ class TestReplaySignificanceAnyScore:
         env = _track(bin_size=10.0)
         posterior = np.zeros((4, env.n_bins))
         posterior[np.arange(4), [9, 6, 6, 8]] = 1.0
-        result = replay_significance(
-            env,
-            posterior,
-            np.arange(4) * 0.02,
-            score=weighted_correlation,
-            n_shuffles=2000,
-            rng=7,
-        )
+        with pytest.warns(UserWarning, match=r"shuffles have an undefined"):
+            result = replay_significance(
+                env,
+                posterior,
+                np.arange(4) * 0.02,
+                score=weighted_correlation,
+                n_shuffles=2000,
+                rng=7,
+            )
         test = result.shuffles["column_cycle"]
         null = test.null_scores[np.isfinite(test.null_scores)]  # NaN: no variation
         at_least = int(np.sum(null >= test.observed_score))

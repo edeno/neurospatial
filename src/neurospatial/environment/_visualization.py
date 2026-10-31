@@ -318,12 +318,13 @@ def field_color_limits(
     An all-missing or infinite end falls back to 0 or 1, and equal limits
     widen by one, as every ``plot_field`` backend draws them.
     """
+    all_missing = bool(np.isnan(field).all())
     if vmin is None:
-        vmin = np.nanmin(field)
+        vmin = np.nanmin(field) if not all_missing else np.nan
         if np.isnan(vmin) or np.isinf(vmin):
             vmin = 0.0
     if vmax is None:
-        vmax = np.nanmax(field)
+        vmax = np.nanmax(field) if not all_missing else np.nan
         if np.isnan(vmax) or np.isinf(vmax):
             vmax = 1.0
     if vmin >= vmax:

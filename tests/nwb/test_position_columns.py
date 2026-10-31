@@ -67,7 +67,9 @@ def test_compound_unit_with_extra_column_is_refused(xy_speed_file):
         lambda: read_position(xy_speed_file, lazy=True),
         lambda: environment_from_position(xy_speed_file, bin_size=5.0, units="cm"),
     ):
-        with pytest.raises(ValueError) as info:
+        with pytest.raises(
+            ValueError, match="pass columns= with the spatial columns"
+        ) as info:
             read()
         message = str(info.value)
         assert (

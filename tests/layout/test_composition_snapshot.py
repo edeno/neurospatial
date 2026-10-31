@@ -62,17 +62,17 @@ def test_lookup_keeps_child_support_and_nonfinite_sentinels(restore):
 
 
 @pytest.mark.parametrize(
-    "change",
+    ("change", "message"),
     [
-        {"keys": ("same", "same")},
-        {"arenas": ()},
-        {"bridge_pairs": np.array([[0, 0]])},
-        {"bridge_conductances": np.array([-1.0])},
-        {"bridge_distances": np.array([np.inf])},
+        ({"keys": ("same", "same")}, "Component keys must be unique"),
+        ({"arenas": ()}, "must have equal lengths"),
+        ({"bridge_pairs": np.array([[0, 0]])}, "is a self pair"),
+        ({"bridge_conductances": np.array([-1.0])}, "Bridge conductances must be"),
+        ({"bridge_distances": np.array([np.inf])}, "pair_distances.* must be finite"),
     ],
 )
-def test_malformed_composition_refuses(change):
-    with pytest.raises(ValueError):
+def test_malformed_composition_refuses(change, message):
+    with pytest.raises(ValueError, match=message):
         replace(snapshot(), **change)
 
 

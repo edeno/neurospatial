@@ -383,14 +383,17 @@ def test_context_warnings_survive_an_error_in_the_block() -> None:
 
     from neurospatial._stacklevel import _warnings_with_context
 
+    def emit_then_fail() -> None:
+        with _warnings_with_context("ctx"):
+            warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
+            msg = "nothing left"
+            raise ValueError(msg)
+
     with (
         pytest.warns(UserWarning, match="ctx: all intervals excluded"),
         pytest.raises(ValueError, match="nothing left"),
-        _warnings_with_context("ctx"),
     ):
-        warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
-        msg = "nothing left"
-        raise ValueError(msg)
+        emit_then_fail()
 
 
 def test_break_declared_on_a_missing_row_moves_to_the_next_kept_row():

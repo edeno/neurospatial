@@ -362,9 +362,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -1265,9 +1265,9 @@ class ObjectVectorRatesResult(
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -1279,7 +1279,7 @@ class ObjectVectorRatesResult(
         ...     distance_range=(0.0, 50.0),
         ...     distance_bin_size=5.0,
         ... )
-        >>> is_object_vector_cell = result.classify()  # untuned: warns, none pass
+        >>> is_object_vector_cell = result.classify()  # untuned cells: none pass
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
         Found 0 OVCs
 
@@ -1371,9 +1371,9 @@ class ObjectVectorRatesResult(
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -1636,7 +1636,7 @@ def compute_egocentric_rate(
     >>> positions = rng.uniform(10, 90, (1000, 2))
     >>> headings = rng.uniform(-np.pi, np.pi, 1000)
     >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
-    >>> spike_times = np.sort(rng.uniform(0, 40, 100))
+    >>> spike_times = np.sort(rng.uniform(0, 40, 500))
 
     >>> # Compute egocentric rate
     >>> result = compute_egocentric_rate(
@@ -2668,9 +2668,9 @@ def compute_egocentric_rates(
 
     >>> # Spike times for 3 neurons
     >>> spike_times = [
-    ...     np.sort(rng.uniform(0, 40, 100)),  # Neuron 0
-    ...     np.sort(rng.uniform(0, 40, 150)),  # Neuron 1
-    ...     np.sort(rng.uniform(0, 40, 50)),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 40, 400)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 40, 500)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 40, 600)),  # Neuron 2
     ... ]
 
     >>> # Compute egocentric rates for all neurons
@@ -2682,7 +2682,7 @@ def compute_egocentric_rates(
     ...     headings,
     ...     object_positions,
     ...     n_jobs=2,  # Parallel spike binning,
-    ...     distance_range=(0.0, 50.0),
+    ...     distance_range=(0.0, 60.0),
     ...     distance_bin_size=5.0,
     ... )
 
@@ -2690,7 +2690,7 @@ def compute_egocentric_rates(
     >>> print(f"Number of neurons: {len(result)}")
     Number of neurons: 3
     >>> print(f"Firing rates shape: {result.firing_rates.shape}")
-    Firing rates shape: (3, 120)
+    Firing rates shape: (3, 144)
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
@@ -2698,8 +2698,8 @@ def compute_egocentric_rates(
     ...     pref_dir = single.preferred_direction()
     ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
     Neuron 0: 2.5 cm at 15 deg
-    Neuron 1: 7.5 cm at 45 deg
-    Neuron 2: 17.5 cm at 135 deg
+    Neuron 1: 52.5 cm at -135 deg
+    Neuron 2: 52.5 cm at 15 deg
 
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
@@ -3672,7 +3672,7 @@ def is_object_vector_cell(
     >>> times = np.arange(0, 40, 0.04)
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
     >>> result = is_object_vector_cell(
     ...     None,
     ...     spikes,
@@ -3935,7 +3935,7 @@ def is_egocentric_object_vector_cell(
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> headings = rng.uniform(-np.pi, np.pi, len(times))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
     >>> result = is_egocentric_object_vector_cell(
     ...     None,
     ...     spikes,

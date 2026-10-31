@@ -332,7 +332,7 @@ def test_layout_engine_protocol_adherence(
     for k, value in params.items():
         try:
             expected = _choice(value)
-        except TypeError:
+        except TypeError:  # noqa: PERF203  # a data argument is the expected branch
             assert k not in layout._build_params_used, (
                 f"{layout_kind}._build_params_used records data argument '{k}'"
             )
@@ -824,9 +824,9 @@ def test_a_failed_rebuild_leaves_the_engine_unbuilt():
 def test_every_engine_plots_its_cells_like_environment_plot(
     layout_kind, simple_graph_for_layout
 ):
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
@@ -843,9 +843,9 @@ def test_every_engine_plots_its_cells_like_environment_plot(
 def test_track_plot_honors_figsize_and_refuses_unknown_options(
     simple_graph_for_layout,
 ):
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     layout = create_layout(

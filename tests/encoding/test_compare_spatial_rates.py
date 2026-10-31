@@ -1222,7 +1222,7 @@ def test_an_unknown_option_names_the_function_and_its_choices(
     make, option, value, allowed
 ) -> None:
     rates = make([F])
-    with pytest.raises(ValueError) as info:
+    with pytest.raises(ValueError, match=r"compare_spatial_rates\(\) got") as info:
         compare_spatial_rates(rates, rates, **{option: value})
     message = str(info.value)
     assert f"compare_spatial_rates() got {option}={value!r}" in message

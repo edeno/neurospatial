@@ -122,7 +122,7 @@ def test_mixed_large_event_ids_preserve_identity(recording, as_records):
     assert inspector.time_range() == pytest.approx((10.1, 10.3))
     inspector.select(ids[1])
     assert inspector.time_range() == pytest.approx((10.4, 10.6))
-    result.at[0, "event_id"] = "changed"
+    result.loc[0, "event_id"] = "changed"
     assert inspector.events_table().event_id.tolist() == ids
 
 
@@ -231,16 +231,16 @@ def test_empty_event_table_preserves_schema_and_exports_json(
 def test_filter_and_annotation_preserve_overlap_identity(recording, records, tmp_path):
     inspector = recording.inspect_events(records, padding=0.05)
     assert len(inspector.events_table()) == 3  # overlapping rows stay distinct
-    records.at[0, "metadata"]["trial"].append(99)
-    assert inspector.events_table().at[0, "metadata"] == {"trial": [1]}
+    records.loc[0, "metadata"]["trial"].append(99)
+    assert inspector.events_table().loc[0, "metadata"] == {"trial": [1]}
     inspector.annotate("ripple-3", review="accepted", tags=["forward"])
     inspector.select("ripple-3")
     inspector.filter_events(inspector.events_table()["score"] >= 0.8)
     assert inspector.selected_id == "ripple-3"
     assert inspector.time_range() == pytest.approx((10.15, 10.55))
     exported = inspector.events_table()
-    exported.at[1, "annotation_tags"].append("changed")
-    assert inspector.events_table().at[1, "annotation_tags"] == ["forward"]
+    exported.loc[1, "annotation_tags"].append("changed")
+    assert inspector.events_table().loc[1, "annotation_tags"] == ["forward"]
 
     path = inspector.export_events(tmp_path / "review.json", selected_only=True)
     restored = pd.read_json(path, orient="table")

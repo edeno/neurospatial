@@ -1,5 +1,6 @@
 """Spatial rates recover known firing rates across pauses between recordings."""
 
+import contextlib
 from dataclasses import replace
 
 import numpy as np
@@ -99,9 +100,17 @@ def test_spatial_recovers_true_rate_across_pause(two_epoch_recording, plural):
 )
 def test_spatial_all_methods_recover_rate(two_epoch_recording, method):
     r = two_epoch_recording
-    result = compute_spatial_rate(
-        r.env, r.spike_times, r.times, r.positions, method=method
+    # The GLM's REML penalty sits at its upper search bound on this smooth,
+    # homogeneous rate; the other methods do not warn.
+    expected = (
+        pytest.warns(UserWarning, match="smoothing penalty lambda is near the")
+        if method == "glm"
+        else contextlib.nullcontext()
     )
+    with expected:
+        result = compute_spatial_rate(
+            r.env, r.spike_times, r.times, r.positions, method=method
+        )
     pooled = np.nansum(result.firing_rate * result.occupancy) / result.occupancy.sum()
     assert pooled == pytest.approx(5.0, rel=0.05)
     assert result.occupancy.sum() == pytest.approx(199.96, abs=1e-6)
@@ -177,6 +186,9 @@ _FREE_PREDICATES = {
 }
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_shuffle_predicates_forward_time_windows(
     significance_family, significance_recording, monkeypatch
 ):

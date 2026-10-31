@@ -342,7 +342,11 @@ def corridor_width(corridor: Polygon) -> float:
     >>> corridor_width(box(0.0, 0.0, 50.0, 8.0))
     8.0
     """
-    corners = np.asarray(corridor.minimum_rotated_rectangle.exterior.coords)[:4]
+    # GEOS leaves floating-point flags set after building the rectangle, which
+    # NumPy reports as spurious "divide by zero"/"invalid value" warnings.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rectangle = corridor.minimum_rotated_rectangle
+    corners = np.asarray(rectangle.exterior.coords)[:4]
     sides = np.hypot(*(np.roll(corners, -1, axis=0) - corners).T)
     return float(sides.min())
 

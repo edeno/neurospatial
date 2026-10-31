@@ -698,7 +698,8 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
                 [5.0, 5.0],  # inside
             ]
         )
-        occ = env.occupancy(times, positions, max_gap=None)
+        with pytest.warns(UserWarning, match="excluded ALL"):
+            occ = env.occupancy(times, positions, max_gap=None)
 
         # bin_sequence agrees: the middle sample is -1.
         bin_seq = env.bin_sequence(

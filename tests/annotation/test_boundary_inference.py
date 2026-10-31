@@ -148,7 +148,10 @@ class TestBoundaryFromPositionsValidation:
             ]
         )
 
-        with pytest.raises(ValueError, match="at least 3 valid points"):
+        with (
+            pytest.warns(UserWarning, match="Filtered 3 positions"),
+            pytest.raises(ValueError, match="at least 3 valid points"),
+        ):
             boundary_from_positions(positions)
 
     def test_no_nan_warning_without_nan(self):

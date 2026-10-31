@@ -206,14 +206,9 @@ class TestHexagonalErrorMessages:
         """Test data_samples validation shows actual shape when not (n, 2)."""
         bad_data = np.array([[0, 0, 0], [10, 10, 10]])  # 3D data for 2D hexagonal grid
 
-        with pytest.raises(ValueError) as exc_info:
+        # Should show the expected shape requirements
+        with pytest.raises(ValueError, match=r"must be shape \(n_samples, 2\)"):
             _create_hex_grid(positions=bad_data, hexagon_width=2.0)
-
-        error_msg = str(exc_info.value)
-        # Should show expected shape requirements
-        assert "2" in error_msg
-        # Should mention shape or samples
-        assert ("shape" in error_msg.lower()) or ("sample" in error_msg.lower())
 
 
 class TestGraphErrorMessages:

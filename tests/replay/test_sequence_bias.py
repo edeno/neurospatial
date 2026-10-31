@@ -299,7 +299,8 @@ def test_recipe_finds_forward_and_reverse_sequences_in_compare(session):
     assert rows["is_replay"][kinds == "random"].sum() <= 1
     assert np.allclose(rows["p_value"][kinds != "random"], 1 / 101)
     # The table's verdicts can be recalibrated like any p-value test.
-    calibrated = matched_alpha(table, replay_methods=[method], target=0.5)
+    with pytest.warns(UserWarning, match=r"smallest p-value its"):
+        calibrated = matched_alpha(table, replay_methods=[method], target=0.5)
     assert calibrated.loc[0, "method"] == method.name
 
 

@@ -644,12 +644,13 @@ class TestBatchGridScores:
         env = env_2d_grid
 
         # 1D array should raise
-        firing_rate_1d = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(0)
+        firing_rate_1d = rng.random(env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             batch_grid_scores(env, firing_rate_1d)
 
         # Wrong n_bins should raise
-        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        firing_rates_wrong = rng.random((3, env.n_bins + 10))
         with pytest.raises(ValueError, match="bins"):
             batch_grid_scores(env, firing_rates_wrong)
 
@@ -1153,12 +1154,13 @@ class TestBatchBorderScores:
         env = env_2d_grid
 
         # 1D array should raise
-        firing_rate_1d = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(0)
+        firing_rate_1d = rng.random(env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             batch_border_scores(env, firing_rate_1d, boundary_source="analysis")
 
         # Wrong n_bins should raise
-        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        firing_rates_wrong = rng.random((3, env.n_bins + 10))
         with pytest.raises(ValueError, match="bins"):
             batch_border_scores(env, firing_rates_wrong, boundary_source="analysis")
 

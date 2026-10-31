@@ -1077,9 +1077,9 @@ class TestPolarBoundaryGuardsExtended:
 
     def test_plot_field_relabels_polar_axes(self, polar_env):
         """plot_field on a polar env labels axes Distance / Angle (rad), not X/Y."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         field = np.zeros(polar_env.n_bins)
@@ -1620,9 +1620,9 @@ def test_combine_refuses_polar_components_with_the_shared_error():
 )
 def test_layout_plot_names_axes_by_coordinate_meaning(coordinate_kind, labels, aspect):
     """env.plot() labels and scales the axes as plot_field does."""
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     if coordinate_kind == "polar":

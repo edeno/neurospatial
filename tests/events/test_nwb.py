@@ -21,14 +21,14 @@ pytest.importorskip("ndx_events")
 @pytest.fixture
 def nwbfile():
     """Create a minimal NWBFile for testing."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from pynwb import NWBFile
 
     return NWBFile(
         session_description="Test session",
         identifier="test_session_001",
-        session_start_time=datetime(2025, 1, 1, 12, 0, 0),
+        session_start_time=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
     )
 
 

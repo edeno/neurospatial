@@ -132,6 +132,7 @@ def test_batch_to_dataframe_is_dense_and_carries_unit_id(fixture_name, request):
 
 
 @pytest.mark.parametrize("fixture_name", BATCH_FIXTURES)
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_batch_summary_table_is_one_row_per_unit(fixture_name, request):
     """summary_table() is one row per unit, unit_id-indexed."""
     result = request.getfixturevalue(fixture_name)
@@ -145,6 +146,7 @@ def test_batch_summary_table_is_one_row_per_unit(fixture_name, request):
 
 
 @pytest.mark.parametrize("fixture_name", BATCH_FIXTURES)
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_batch_summary_table_custom_unit_ids(fixture_name, request):
     """summary_table(unit_ids=...) re-labels the index."""
     result = request.getfixturevalue(fixture_name)

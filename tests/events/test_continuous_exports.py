@@ -329,9 +329,9 @@ def test_summary_scalars_and_repr():
 
 @pytest.fixture
 def agg():
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     yield plt

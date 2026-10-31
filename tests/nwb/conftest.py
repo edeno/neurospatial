@@ -421,7 +421,6 @@ def sample_nwb_with_events():
     events.add_column(
         name="direction", description="Lap direction (0=outbound, 1=inbound)"
     )
-    events.add_column(name="duration", description="Lap duration in seconds")
 
     # Add sample lap events
     rng = np.random.default_rng(42)

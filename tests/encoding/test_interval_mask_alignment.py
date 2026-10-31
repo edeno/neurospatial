@@ -21,6 +21,9 @@ from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, offset):
     f = frame_family
     r = replace(

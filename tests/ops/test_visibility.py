@@ -1118,31 +1118,39 @@ class TestVisibilityOccupancySupport:
             self._seen(open_square, times, positions, headings[:-1])
 
     @pytest.mark.parametrize(
-        "options",
+        ("options", "error", "match"),
         [
-            {"fov": 7.0},
-            {"boundary_source": "nope"},
-            {"boundary_source": "physical"},  # no declared walls
-            {"fov": -1.0},
+            ({"fov": 7.0}, ValueError, "is not a field-of-view angle"),
+            (
+                {"boundary_source": "nope"},
+                ValueError,
+                "boundary_source must be 'physical' or 'analysis'",
+            ),
+            (
+                {"boundary_source": "physical"},  # no declared walls
+                NotImplementedError,
+                "Physical boundaries are unknown",
+            ),
+            ({"fov": -1.0}, ValueError, "is not a field-of-view angle"),
         ],
     )
     @pytest.mark.parametrize("data", ["all_excluded", "single_sample"])
     def test_invalid_viewshed_options_raise_without_usable_intervals(
-        self, open_square, walk, options, data
+        self, open_square, walk, options, error, match, data
     ):
         """The errors match compute_viewshed's, even when no viewshed is needed."""
         from neurospatial.ops.visibility import compute_viewshed, visibility_occupancy
 
         times, positions, headings = walk
         kwargs = {"boundary_source": "analysis", **options}
-        with pytest.raises(Exception) as expected:
+        with pytest.raises(error, match=match) as expected:
             compute_viewshed(open_square, positions[0], headings[0], **kwargs)
 
         if data == "all_excluded":
             times, positions, headings = times * 100.0, positions, headings
         else:
             times, positions, headings = times[:1], positions[:1], headings[:1]
-        with pytest.raises(expected.type) as raised:
+        with pytest.raises(error, match=match) as raised:
             visibility_occupancy(open_square, times, positions, headings, **kwargs)
         assert str(raised.value) == str(expected.value)
 

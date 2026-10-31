@@ -7,9 +7,9 @@ import json
 import warnings
 from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -129,7 +129,7 @@ def record_figure(figure):
 
 def render_case(env, operation):
     # Isolate plots from process-wide style changes made by earlier tests.
-    with matplotlib.rc_context(matplotlib.rcParamsDefault):
+    with mpl.rc_context(mpl.rcParamsDefault):
         return _render_case(env, operation)
 
 

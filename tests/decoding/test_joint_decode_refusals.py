@@ -55,7 +55,10 @@ def test_refuses_a_prior_only_on_excluded_bins(two_directions):
     inbound = models["inbound"].copy()
     inbound[:, :5] = np.nan
     prior = {"outbound": _flat(env), "inbound": np.r_[np.ones(5), np.zeros(5)]}
-    with pytest.raises(ValueError, match="no mass in the bins where every"):
+    with (
+        pytest.warns(UserWarning, match="NaN or Inf rate"),
+        pytest.raises(ValueError, match="no mass in the bins where every"),
+    ):
         decode_jointly(
             env,
             counts,

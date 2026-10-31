@@ -694,12 +694,15 @@ def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
     graph = nx.path_graph(3)
     nx.set_edge_attributes(graph, 1.0, "A")
     nx.set_edge_attributes(graph, 1.0, "distance")
-    with pytest.warns(UserWarning, match="dense diffusion kernel") as record:
+    with pytest.warns(UserWarning, match="dense diffusion kernel") as direct:
         compute_diffusion_kernels(
             graph, volumes=np.ones(3), bandwidth=1.0, mode="average"
         )
+    with pytest.warns(UserWarning, match="dense diffusion kernel") as via_env:
         face_env.compute_kernel(bandwidth=1.0, cache=False, mode="density")
-    dense = [w for w in record if "dense diffusion kernel" in str(w.message)]
+    dense = [
+        w for w in [*direct, *via_env] if "dense diffusion kernel" in str(w.message)
+    ]
     assert [w.filename for w in dense] == [__file__, __file__]
 
 

@@ -223,7 +223,7 @@ def _half_open(rows):
 
 def test_tsdframe_positions_keep_their_time_support_in_occupancy(gapped, session):
     env = session[0]
-    times, positions = gapped.t, gapped.values
+    times, positions = gapped.t, gapped.to_numpy()
 
     direct = env.occupancy(times, gapped)
     with_epochs = env.occupancy(times, positions, epochs=gapped.time_support)
@@ -291,7 +291,7 @@ def test_tsd_headings_use_their_time_support(nap, gapped, session):
     from neurospatial.encoding import compute_directional_rates
 
     _, _, _, trains = session
-    values = gapped.values
+    values = gapped.to_numpy()
     angles = np.arctan2(np.gradient(values[:, 1]), np.gradient(values[:, 0]))
     headings = nap.Tsd(t=gapped.t, d=angles, time_support=gapped.time_support)
 

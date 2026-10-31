@@ -106,7 +106,10 @@ def test_nested_wrappers_round_trip_without_layout_objects(full_locator):
 def test_wrappers_validate_coordinate_width(wrapper_and_inputs, width, n_rows, fill):
     locator, _, _ = wrapper_and_inputs
     points = np.full((n_rows, width), fill)
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"Dimensionality mismatch|Expected points of shape|Query points have",
+    ):
         locator.locate(points)
 
 

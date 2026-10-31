@@ -58,7 +58,10 @@ def scene(env):
         TimeSeriesOverlay(np.sin(CLOCK * 5), CLOCK, label="LFP"),
         SpikeRasterOverlay([np.array([0.1, 0.9]), np.array([0.2])]),
     ]
-    with pytest.warns(UserWarning, match="no calibration"):
+    with (
+        pytest.warns(UserWarning, match="no calibration"),
+        pytest.warns(UserWarning, match="Partial temporal overlap"),
+    ):
         animation = Animation(env, fields, frame_times=CLOCK, overlays=overlays)
     yield animation
     animation.close()
@@ -114,7 +117,9 @@ def test_raster_rows_stay_fixed_while_units_fall_silent(scene):
     renderer.render(0.2)
     raster = next(ax for ax in renderer.figure.axes if ax.get_ylabel() == "Unit")
     limits = raster.get_ylim()
-    assert limits[0] <= -0.4 and limits[1] >= 1.4  # every row is in view
+    # every row is in view
+    assert limits[0] <= -0.4
+    assert limits[1] >= 1.4
     renderer.render(1.1)  # the second unit has no spike in this window
     assert raster.get_ylim() == limits
     renderer.close()

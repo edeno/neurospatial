@@ -403,9 +403,9 @@ class TestDecodingSummaryTerminalVerbs:
             assert np.isscalar(v) or isinstance(v, (int, float))
 
     def test_plot_returns_axes(self, small_2d_env):
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         summ, _ = self._summary(small_2d_env)
         ax = summ.plot()
         from matplotlib.axes import Axes

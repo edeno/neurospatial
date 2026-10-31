@@ -422,7 +422,8 @@ def _validate_paired_input(
     Raises
     ------
     ValueError
-        If lengths don't match or insufficient samples after NaN removal.
+        If lengths don't match, either array has an infinite value, or
+        insufficient samples remain after NaN removal.
     """
     arr1 = np.asarray(arr1, dtype=np.float64).ravel()
     arr2 = np.asarray(arr2, dtype=np.float64).ravel()
@@ -435,6 +436,14 @@ def _validate_paired_input(
             f"(e.g., same spikes)."
         )
         raise ValueError(msg)
+
+    for name, arr in ((name1, arr1), (name2, arr2)):
+        if np.isinf(arr).any():
+            msg = (
+                f"{name} has {int(np.isinf(arr).sum())} infinite value(s).\n"
+                "Fix: NaN marks a missing value; replace infinities with NaN."
+            )
+            raise ValueError(msg)
 
     # Remove pairs where either is NaN
     nan_mask = np.isnan(arr1) | np.isnan(arr2)
