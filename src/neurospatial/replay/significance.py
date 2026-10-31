@@ -15,7 +15,7 @@ import inspect
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
@@ -98,7 +98,7 @@ class _NullSpec:
     rolls: bool = False
     along_track: bool = False
     shareable: bool = False
-    options: Mapping[str, Any] = MappingProxyType({})
+    options: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
 
 
 # Every null, in the order the random numbers are drawn.
@@ -1776,7 +1776,9 @@ class _ScoreSpec:
     scorer: Callable[..., _Scorer]
     signed: bool = False
     undefined: str = ""
-    joint_weights: Mapping[str, Any] = MappingProxyType({})
+    joint_weights: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     moment_tables: Mapping[str, Any] | None = None
 
 
