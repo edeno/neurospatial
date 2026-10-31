@@ -23,7 +23,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
 )
 from neurospatial._results import resolve_unit_ids
-from neurospatial._spikes import _as_spike_trains_with_ids
+from neurospatial._spikes import _as_spike_trains_with_ids, spike_unit_table
 from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
@@ -435,6 +435,8 @@ def population_peri_event_histogram(
         - event_indices: Positions of retained events in the original input;
           use ``event_times[result.event_indices]`` for a matching raster cohort
         - n_units: Number of units
+        - unit_table: Per-unit metadata of a ``SpikeTrains`` or a pynapple
+          ``TsGroup`` input (its ``rate`` column dropped), else None
         - window: The input window
         - bin_size: The input bin_size
 
@@ -512,6 +514,7 @@ def population_peri_event_histogram(
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
+        unit_table=spike_unit_table(spike_times),
         n_events_dropped=n_dropped,
         event_indices=event_indices,
     )

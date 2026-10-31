@@ -24,14 +24,18 @@ provides spike data.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _is_pynapple_object
+from neurospatial._pynapple import is_pynapple_type, tsgroup_unit_table
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def as_spike_trains(
@@ -323,6 +327,29 @@ def _coerce_spike_input(
         # Generated ``arange`` labels are not caller-supplied identity.
         return trains, None
     return trains, unit_ids
+
+
+def spike_unit_table(spike_times: Any) -> pd.DataFrame | None:
+    """Return the per-unit metadata a spike input carries, or None.
+
+    A :class:`~neurospatial.encoding.SpikeTrains` carries its ``unit_table``;
+    a pynapple ``TsGroup`` carries its metadata without pynapple's computed
+    ``rate`` column (see :func:`neurospatial._pynapple.tsgroup_unit_table`).
+    Other inputs carry none.
+
+    Parameters
+    ----------
+    spike_times : any spike input
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        One row per unit, or None.
+    """
+    if is_pynapple_type(spike_times, "TsGroup"):
+        return tsgroup_unit_table(spike_times)
+    table: pd.DataFrame | None = getattr(spike_times, "unit_table", None)
+    return table
 
 
 def _as_spike_trains_with_ids(

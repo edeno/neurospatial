@@ -71,6 +71,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     PopulationRateMixin,
     SingleUnitRateMixin,
@@ -3274,7 +3275,7 @@ def _object_vector_rates(
         method=method,
         bandwidth=counts.bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,

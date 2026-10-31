@@ -75,6 +75,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
     BandwidthRule,
@@ -2907,7 +2908,7 @@ def _directional_rates(
         bandwidth=counts.bandwidth,
         spike_counts=counts.spike_counts,
         unit_ids=resolved_unit_ids if labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,
         dispersion_dof=counts.dispersion_dof,

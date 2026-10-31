@@ -28,14 +28,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._pynapple import interval_rows, refuse_permuted_spatial_columns
+
 __all__ = ["from_pynapple", "to_pynapple"]
 
 _IMPORT_ERROR_MSG = (
     "This function requires the optional 'pynapple' extra; install it with "
     "`pip install neurospatial[pynapple]` (or `uv add neurospatial[pynapple]`)."
 )
-
-_SPATIAL_AXES = ("x", "y", "z")
 
 
 def _require_pynapple() -> Any:
@@ -50,36 +50,6 @@ def _require_pynapple() -> Any:
     except ImportError as exc:  # pragma: no cover - exercised only when absent
         raise ImportError(_IMPORT_ERROR_MSG) from exc
     return pynapple
-
-
-def _epochs_of(support: Any) -> NDArray[np.float64]:
-    """Return a pynapple ``IntervalSet`` as owned half-open ``(n, 2)`` rows."""
-    from neurospatial._intervals import pynapple_end_to_stop
-
-    return np.column_stack(
-        [
-            np.array(support.start, dtype=np.float64),
-            pynapple_end_to_stop(np.asarray(support.end, dtype=np.float64)),
-        ]
-    )
-
-
-def _refuse_permuted_spatial_columns(columns: Any) -> None:
-    """Refuse a TsdFrame whose columns are x/y(/z) in another order."""
-    labels = [str(c) for c in columns]
-    lowered = [label.lower() for label in labels]
-    spatial = set(lowered) <= set(_SPATIAL_AXES) and len(set(lowered)) == len(lowered)
-    if not spatial or lowered == sorted(lowered):
-        return
-    canonical = sorted(lowered)
-    ordered = sorted(labels, key=str.lower)
-    raise ValueError(
-        f"TsdFrame columns {labels} are spatial axes not in x, y, z order.\n"
-        "Why: neurospatial reads positions by column position, so these values "
-        f"would be used as ({', '.join(lowered)}) where every analysis expects "
-        f"({', '.join(canonical)}), silently swapping the axes.\n"
-        f"Fix: reorder the columns first, from_pynapple(tsdframe.loc[{ordered}])."
-    )
 
 
 def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
@@ -152,16 +122,16 @@ ndarray of shape (n_epochs, 2)
     nap = _require_pynapple()
 
     if isinstance(obj, nap.IntervalSet):
-        return _epochs_of(obj)
+        return interval_rows(obj)
     if isinstance(obj, nap.Ts):
-        return np.array(obj.t, dtype=np.float64), _epochs_of(obj.time_support)
+        return np.array(obj.t, dtype=np.float64), interval_rows(obj.time_support)
     if isinstance(obj, (nap.Tsd, nap.TsdFrame)):
         if isinstance(obj, nap.TsdFrame):
-            _refuse_permuted_spatial_columns(obj.columns)
+            refuse_permuted_spatial_columns(obj.columns, fix="from_pynapple({frame})")
         return (
             np.array(obj.t, dtype=np.float64),
             np.array(obj.values, dtype=np.float64),
-            _epochs_of(obj.time_support),
+            interval_rows(obj.time_support),
         )
     if isinstance(obj, nap.TsGroup):
         from neurospatial._spikes import _as_spike_trains_with_ids
@@ -170,7 +140,7 @@ ndarray of shape (n_epochs, 2)
         return (
             [np.array(train) for train in trains],
             unit_ids,
-            _epochs_of(obj.time_support),
+            interval_rows(obj.time_support),
         )
 
     raise TypeError(

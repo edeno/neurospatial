@@ -63,6 +63,7 @@ from neurospatial._results import (
     _copy_unit_table,
     read_only_copy,
 )
+from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -4487,7 +4488,7 @@ default="diffusion_kde"
         single_unit=False,
     )
     return _spatial_rates_result(
-        env, maps, method=method, unit_table=getattr(spike_times, "unit_table", None)
+        env, maps, method=method, unit_table=spike_unit_table(spike_times)
     )
 
 

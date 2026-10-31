@@ -96,6 +96,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -2192,7 +2193,7 @@ def compute_view_rates(
         method=method,
         bandwidth=setup.bandwidth,
         unit_ids=setup.unit_ids if setup.labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=rates.n_spikes_outside_intervals,
         spike_window=setup.spike_window,
         analysis_settings=rates.analysis_settings,

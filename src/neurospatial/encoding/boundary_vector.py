@@ -60,6 +60,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     PopulationRateMixin,
     SingleUnitRateMixin,
@@ -1108,7 +1109,7 @@ def _boundary_vector_rates(
         method=method,
         bandwidth=resolved_bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
-        unit_table=getattr(spike_times, "unit_table", None),
+        unit_table=spike_unit_table(spike_times),
         n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
