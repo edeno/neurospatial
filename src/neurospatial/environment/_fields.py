@@ -332,10 +332,16 @@ def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:
 
     A derivation that carries faces into its child then reads the parent's
     cached faces instead of building them again from the layout's recipe.
+    The child keeps whole shared faces, so a face a wall partly covers is
+    built anew rather than copied narrowed.
     """
     if not binning.faces.available or isinstance(binning.faces, KnownFaces):
         return binning
-    return replace(binning, faces=KnownFaces(face_geometry(cache, binning)))
+    if np.all(binning.connections.pair_open_fraction == 1.0):
+        faces = face_geometry(cache, binning)
+    else:
+        faces = binning.shared_faces()
+    return replace(binning, faces=KnownFaces(faces))
 
 
 def require_face_geometry(

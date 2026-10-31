@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Correctness fixes
+
+**Fixed**
+
+- An environment with a wall covering part of a shared cell face can be saved
+  and loaded, subset, rebuilt with `from_bins`, transformed and combined.
+  Before, all of these raised `grid faces.A does not match shared cell-face
+  measures`. The binning now keeps the whole shared face and records the
+  share no wall covers in `binning.connections.open_fraction`;
+  `binning.build_faces()` multiplies the two, as smoothing and the other
+  finite-volume operations always did. Saved environments store
+  `open_fraction`, so files written by earlier versions must be rebuilt
+  from their source geometry.
+
 ### Exporting decoding and behavior results to pynapple
 
 **Added**

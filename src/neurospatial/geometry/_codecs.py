@@ -325,6 +325,7 @@ def _encode_connections(obj: BinConnections, prefix: str) -> Payload:
         all_distances=obj.all_distances,
         is_open=obj.is_open,
         closed_by=obj.closed_by,
+        open_fraction=obj.open_fraction,
     )
 
 
@@ -336,6 +337,7 @@ def _decode_connections(
         _array(arrays, prefix, "all_distances", np.float64),
         _array(arrays, prefix, "is_open", np.bool_),
         _array(arrays, prefix, "closed_by", np.intp),
+        _array(arrays, prefix, "open_fraction", np.float64),
     )
 
 
@@ -783,7 +785,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
     ):
         part = getattr(obj, name)
         if name == "faces" and isinstance(part, NativeFaces):
-            part = KnownFaces(obj.build_faces())
+            part = KnownFaces(obj.shared_faces())
         if part is None:
             meta[name] = None
         elif isinstance(part, (PolygonCells, ClipMapping)):
@@ -1147,7 +1149,9 @@ _CODECS: dict[str, Codec] = {
     "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
     "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins, version=2),
-    "BinConnections": Codec(BinConnections, _encode_connections, _decode_connections),
+    "BinConnections": Codec(
+        BinConnections, _encode_connections, _decode_connections, version=2
+    ),
     "KnownFaces": Codec(KnownFaces, _encode_faces, _decode_faces),
     "MissingFaces": Codec(MissingFaces, _encode_missing, _decode_missing),
     "RectilinearGrid": Codec(RectilinearGrid, _encode_grid, _decode_grid),

@@ -580,7 +580,7 @@ def _pieces_binning(
     by_parent: dict[int, list[int]] = defaultdict(list)
     for child, parent in enumerate(mapping.parent_bin_indices):
         by_parent[int(parent)].append(child)
-    old_faces = binning.build_faces() if binning.faces.available else None
+    old_faces = binning.shared_faces() if binning.faces.available else None
     wall = unary_union(walls)
     divider = wall if dividers is None else unary_union(dividers)
 
