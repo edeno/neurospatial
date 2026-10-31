@@ -24,8 +24,9 @@ class NeurospatialError(Exception):
     """Base class for every exception neurospatial defines.
 
     Each concrete error also inherits a built-in type, listed first, so
-    ``except ValueError`` keeps working. ``except NeurospatialError`` catches
-    only problems that neurospatial itself detected.
+    ``except ValueError`` (or that type) also catches it.
+    ``except NeurospatialError`` catches only problems that neurospatial
+    itself detected.
 
     Subclasses build their message from structured constructor arguments, so
     the default pickling (which re-calls the class with the formatted message)
@@ -80,8 +81,8 @@ def _format_error(what: str, *, fix: str, why: str | None = None) -> str:
 class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
     """Raised when a region name is requested but not in the Regions container.
 
-    Inherits from :class:`KeyError` and :class:`ValueError` so existing
-    catch blocks for region lookups and segmentation keep working.
+    Inherits from :class:`KeyError` and :class:`ValueError`, so
+    ``except KeyError`` and ``except ValueError`` also catch it.
 
     Parameters
     ----------
@@ -179,16 +180,8 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
 class BinIndexOutOfRangeError(ValueError, NeurospatialError):
     """Raised when a bin index falls outside ``[0, n_bins)``.
 
-    Inherits from :class:`ValueError` so existing ``except ValueError``
-    blocks around bin lookups keep working.
-
-    Examples
-    --------
-    >>> from neurospatial._exceptions import BinIndexOutOfRangeError
-    >>> raise BinIndexOutOfRangeError(99, n_bins=42)
-    Traceback (most recent call last):
-        ...
-    neurospatial._exceptions.BinIndexOutOfRangeError: Bin index 99 ...
+    Inherits from :class:`ValueError`, so ``except ValueError`` also
+    catches it.
 
     Parameters
     ----------
@@ -200,6 +193,14 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
         The environment's coordinates, so the fix shows the rows ``bin_at``
         takes there: a point for Cartesian bins, ``(distance, angle)`` for
         egocentric polar bins.
+
+    Examples
+    --------
+    >>> from neurospatial._exceptions import BinIndexOutOfRangeError
+    >>> raise BinIndexOutOfRangeError(99, n_bins=42)
+    Traceback (most recent call last):
+        ...
+    neurospatial._exceptions.BinIndexOutOfRangeError: Bin index 99 ...
     """
 
     def __init__(
@@ -238,13 +239,15 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
 class IncompatibleEnvironmentError(ValueError, NeurospatialError):
     """Raised when two environments are required to share a property but do not.
 
-    Typical examples: composing a 2D environment with a 3D one,
-    requiring matching ``bin_size`` between source and target, requiring
-    compatible coordinate meanings (Cartesian positions or egocentric
-    radius/angle), etc.
+    Typical examples: combining or mapping a 2-D environment with a 3-D
+    one; decoding with rates estimated on a different environment than the
+    decoding one; comparing two rate maps whose bins are not the same
+    places; mapping bins between environments in different coordinate
+    systems (Cartesian positions vs egocentric (distance, angle) bins),
+    units or frames.
 
-    Inherits from :class:`ValueError` so existing ``except ValueError``
-    blocks keep working.
+    Inherits from :class:`ValueError`, so ``except ValueError`` also
+    catches it.
 
     Parameters
     ----------
