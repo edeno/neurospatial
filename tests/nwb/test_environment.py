@@ -911,6 +911,44 @@ class TestReadEnvironment:
         with pytest.raises(KeyError, match="No environment named 'nonexistent'"):
             read_environment(empty_nwb, name="nonexistent")
 
+    def test_record_with_more_than_one_row_is_refused(
+        self, empty_nwb, sample_environment
+    ):
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        record = empty_nwb.scratch["spatial_environment"]
+        record.add_row(
+            **{
+                name: list(record[name][0])
+                for name in record.colnames
+                if not name.endswith("_index")
+            }
+        )
+        assert len(record) == 2
+        with pytest.raises(
+            ValueError, match="a binning record must contain exactly one row"
+        ) as error:
+            read_environment(empty_nwb)
+        assert "Fix:" in str(error.value)
+
+    def test_column_dtype_must_match_the_description(
+        self, empty_nwb, sample_environment
+    ):
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        record = empty_nwb.scratch["spatial_environment"]
+        metadata = json.loads(record.description)
+        assert metadata["array_specs"]["bin_centers"]["dtype"] == "<f8"
+        metadata["array_specs"]["bin_centers"]["dtype"] = "<f4"
+        record.fields["description"] = json.dumps(metadata)
+        with pytest.raises(
+            ValueError, match="array 'bin_centers' does not match its stored dtype"
+        ) as error:
+            read_environment(empty_nwb)
+        assert "Fix:" in str(error.value)
+
     def test_custom_name_parameter(self, empty_nwb, sample_environment):
         """Test reading environment with custom name."""
         from neurospatial.io.nwb import read_environment, write_environment

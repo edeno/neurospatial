@@ -268,7 +268,13 @@ def read_environment(
                 raise ValueError(f"array {key!r} does not match its stored dtype")
             arrays[key] = values.reshape(spec["shape"]).copy()
     except (ValueError, TypeError, KeyError, IndexError) as error:
-        raise ValueError(f"Invalid environment arrays in {source}: {error}") from error
+        raise ValueError(
+            _format_error(
+                f"Invalid environment arrays in {source}: {error}",
+                why="Why: the record holds one row whose columns match the shapes and dtypes in its description.",
+                fix="restore the original environment record, or re-save the original environment",
+            )
+        ) from error
     return _restore_environment(metadata, source=source, arrays=arrays)
 
 

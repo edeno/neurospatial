@@ -753,7 +753,11 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
         arrays = _arrays_from_lists(data)
     except (ValueError, TypeError, KeyError, OverflowError) as error:
         raise ValueError(
-            f"Invalid arrays in the environment dictionary: {error}"
+            _format_error(
+                f"Invalid arrays in the environment dictionary: {error}",
+                why="Why: each array must hold values of its stored dtype; casting would change indices, masks or coordinates.",
+                fix="pass the dictionary to_dict returned, unmodified, or re-save the original environment",
+            )
         ) from error
     return _restore_environment(
         data, source="the environment dictionary", arrays=arrays
