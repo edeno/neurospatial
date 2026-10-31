@@ -68,6 +68,7 @@ from neurospatial.reactivation.assemblies import (
     _compared_activations,
     _detect,
     _embedded_pattern,
+    _one_control_ev,
     _pairwise_correlations,
     _renormalized,
     _selected_pairs,
@@ -1806,10 +1807,9 @@ def _bootstrap_ev_minus_rev(
         correlation("t", "c"),
         correlation("m", "c"),
     )
-    with np.errstate(invalid="ignore", divide="ignore"):
-        explained = (r_tm - r_tc * r_mc) ** 2 / ((1 - r_tc**2) * (1 - r_mc**2))
-        reversed_ = (r_tc - r_tm * r_mc) ** 2 / ((1 - r_tm**2) * (1 - r_mc**2))
-    difference: NDArray[np.float64] = explained - reversed_
+    difference: NDArray[np.float64] = _one_control_ev(
+        r_tm, r_tc, r_mc
+    ) - _one_control_ev(r_tc, r_tm, r_mc)
     return difference
 
 
