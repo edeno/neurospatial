@@ -584,10 +584,13 @@ class Intervals(Generic[R]):
         import pandas as pd
 
         column = self._field_array(name)
+        # The column's own dtype: pandas 3 would read strings with None as
+        # its string dtype and turn the None into NaN.
         return pd.Series(
             np.array(column),
             index=pd.Index(np.array(self._ids), name="interval_id"),
             name=name,
+            dtype=column.dtype,
         )
 
     def _field_array(self, name: str) -> NDArray[Any]:
@@ -950,10 +953,10 @@ class Intervals(Generic[R]):
             "stop_time": np.array(self._stop),
         }
         for name in self._fields:
-            data[name] = np.array(self._field_array(name))
-        table = pd.DataFrame(
-            data, index=pd.Index(np.array(self._ids), name="interval_id")
-        )
+            column = self._field_array(name)
+            data[name] = pd.Series(np.array(column), dtype=column.dtype)
+        table = pd.DataFrame(data)
+        table.index = pd.Index(np.array(self._ids), name="interval_id")
         table.attrs["analysis_settings"] = self.analysis_settings
         return table
 

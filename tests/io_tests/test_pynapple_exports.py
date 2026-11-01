@@ -288,7 +288,10 @@ def test_intervals_export_ids_and_fields():
     np.testing.assert_array_equal(iset.end, stop_to_pynapple_end(timed.stop))
     assert list(iset.metadata_columns) == ["interval_id", *trials.fields]
     assert list(iset.interval_id) == [3, 7]
-    assert list(iset.end_region) == ["left", None]
+    # pynapple keeps a missing text value as None or, with pandas 3, NaN.
+    import pandas as pd
+
+    assert [None if pd.isna(v) else v for v in iset.end_region] == ["left", None]
     assert list(iset.outcome) == ["reached", "returned"]
     _assert_same_membership(iset, timed.windows)
 

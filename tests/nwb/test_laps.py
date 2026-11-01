@@ -59,7 +59,10 @@ class TestWriteLaps:
             }
         )
         # The region method's NaN overlap score stays NaN, not zero.
-        pd.testing.assert_frame_equal(recovered[list(expected.columns)], expected)
+        # Values, not dtypes: pandas 3 reads text columns as its string dtype.
+        pd.testing.assert_frame_equal(
+            recovered[list(expected.columns)], expected, check_dtype=False
+        )
 
     def test_interval_ids_are_the_table_ids(self, empty_nwb):
         from neurospatial.io.nwb import read_intervals, write_laps
