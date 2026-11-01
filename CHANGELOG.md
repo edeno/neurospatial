@@ -74,17 +74,17 @@ trial in one call.
   timeout is a rule of the task. Pass your task's value to keep timeouts.
 - `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
   window `[start_time, stop_time)`.
-- `time_to_goal`, `goal_pair_direction_labels`, `compute_vte_session` and
-  `trials_to_region_arrays` take an `Intervals` and read fields, so trials
+- `time_to_goal`, `goal_pair_direction_labels` and `compute_vte_session`
+  take an `Intervals` and read fields, so trials
   read back from NWB or a task log work too. `time_to_goal` now treats
   trials as half-open (the arrival sample is NaN, not 0) and, like
   `goal_pair_direction_labels`, needs strictly increasing `times` and
   refuses overlapping trials instead of letting the later one win.
   `compute_vte_session` results follow the row order of the trials (sorted
   by time). Every trial consumer now reads a trial as `[start, stop)`:
-  `compute_vte_session` and `trials_to_region_arrays` no longer include the
-  stop (arrival) sample, and a VTE trial without duration has status
-  `"no_samples"` without a clock warning.
+  `compute_vte_session` no longer includes the stop (arrival) sample, and a
+  VTE trial without duration has status `"no_samples"` without a clock
+  warning.
 - `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` become
   the table `id` and every field a column, with `None` stored as `""`.
   `read_trials` returns an `Intervals` with those ids and fields, reading

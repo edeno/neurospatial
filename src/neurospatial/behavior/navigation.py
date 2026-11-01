@@ -602,15 +602,17 @@ def _harmonic_progress(
     return u
 
 
-def _is_point(target: object) -> bool:
-    """Whether ``target`` is one point (a 1-D numeric array-like), not names."""
+def _as_point(target: object) -> NDArray[np.float64] | None:
+    """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
     if isinstance(target, str) or target is None:
-        return False
+        return None
     try:
-        array = np.asarray(target, dtype=np.float64)
-    except (TypeError, ValueError):
-        return False
-    return array.ndim == 1
+        raw = np.asarray(target)
+    except ValueError:  # ragged: points mixed with None, one per interval
+        return None
+    if raw.dtype.kind not in "iuf" or raw.ndim > 1:
+        return None  # names, None entries or one point per interval
+    return raw.astype(np.float64).reshape(-1)
 
 
 def _rows_and_targets(
@@ -621,16 +623,19 @@ def _rows_and_targets(
     name: str,
     call: str,
     rows: NDArray[np.intp] | None = None,
-) -> tuple[NDArray[np.intp], list[Any]]:
-    """Row of each sample and the target of each row.
+) -> tuple[NDArray[np.intp], list[Any], bool]:
+    """Row of each sample, the target of each row, and whether it is one target.
 
     Without ``intervals`` every sample is row 0 and ``target`` is one target.
     With them, each sample's row comes from the intervals (``-1`` outside
     every row; overlapping rows are refused), and ``target`` is one target
-    for every row or one per row (a ``pandas.Series`` indexed by
-    ``interval_id`` is aligned by id).
+    for every row or one per row: a sequence of region names, points or
+    ``None`` in row order, or a ``pandas.Series`` indexed by
+    ``interval_id``.
     """
-    single = isinstance(target, str) or _is_point(target)
+    point = _as_point(target)
+    single = isinstance(target, str) or point is not None
+    one = target if point is None else point
     if intervals is None:
         if not single:
             raise ValueError(
@@ -642,19 +647,32 @@ def _rows_and_targets(
                     "(a region name or a point).",
                 )
             )
-        return np.zeros(times.size, dtype=np.intp), [target]
+        return np.zeros(times.size, dtype=np.intp), [one], True
     if rows is None:
         rows = intervals._sample_positions(times, call)
     if single:
-        return rows, [target] * len(intervals)
-    raw = np.asarray(target, dtype=object)
-    if (
-        raw.ndim == 2
-        and raw.shape[0] == len(intervals)
-        and not hasattr(target, "reindex")
-    ):
-        return rows, [np.asarray(point, dtype=np.float64) for point in raw]
-    return rows, list(intervals._per_row(target, name=name))
+        return rows, [one] * len(intervals), True
+    if hasattr(target, "reindex"):  # a Series indexed by interval_id
+        values = list(intervals._per_row(target, name=name))
+    else:
+        values = list(target)
+    if len(values) != len(intervals):
+        msg = (
+            f"{call}: {name}= has {len(values)} entries; give one per interval "
+            f"({len(intervals)}), in row order, or one {name} for all."
+        )
+        raise ValueError(msg)
+    targets: list[Any] = []
+    for value in values:
+        entry = _as_point(value)
+        if entry is None and value is not None and not isinstance(value, str):
+            msg = (
+                f"{call}: {name}= entries must be region names, points or None; "
+                f"got {value!r}."
+            )
+            raise TypeError(msg)
+        targets.append(value if entry is None else entry)
+    return rows, targets, False
 
 
 def _target_key(target: Any) -> tuple[Any, ...]:
@@ -884,7 +902,8 @@ def path_progress(
         and points) off a linearized track: each becomes the bins whose
         centres lie within ``point_radius`` of the point, for example the
         radius of a reward well. Required for point targets in 2-D and 3-D
-        (see Notes); ignored on a linearized track.
+        environments that are not linearized tracks (see Notes); ignored in
+        1-D and on a linearized track.
 
     Returns
     -------
@@ -973,9 +992,11 @@ def path_progress(
       went, known only after the trial. For a predictive model, use the
       instructed goal from the task log (a field read with
       ``Intervals.from_dataframe``).
-    - *Cost.* One sparse solve per distinct start and goal pair, reused
-      within a call: about 5 ms for 15,000 bins in 2-D, 20 ms for 6,500 bins
-      in 3-D and 2 s for 33,000 bins in 3-D.
+    - *Cost.* One sparse direct solve per distinct start and goal pair,
+      reused within a call. Its time grows about linearly with the number of
+      bins on tracks and in 2-D (about 5 ms for 15,000 bins) and faster in
+      3-D, where the matrix fills in more (20 ms for 6,500 bins, 2 s for
+      33,000).
 
     **Plotting a trial that lands on the goal.** Intervals are half-open, so a
     trial's arrival sample is just outside it. Compute progress without
@@ -1024,15 +1045,29 @@ def path_progress(
         env, times, positions, intervals, call=call
     )
     radius = _validated_point_radius(point_radius)
-    sized = not env.is_linearized_track
-    rows, starts = _rows_and_targets(
+    # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
+    sized = env.n_dims > 1 and not env.is_linearized_track
+    rows, starts, single_start = _rows_and_targets(
         intervals, times, start, name="start", call=f"{call}()"
     )
-    _, goals = _rows_and_targets(
+    _, goals, single_goal = _rows_and_targets(
         intervals, times, goal, name="goal", call=f"{call}()", rows=rows
     )
     bins = env.bin_at(positions)
-    conductances = env.get_diffusion_geometry().W
+    from neurospatial.geometry import MissingCellGeometryError
+
+    try:
+        conductances = env.get_diffusion_geometry().W
+    except MissingCellGeometryError as exc:
+        raise MissingCellGeometryError(
+            _format_error(
+                f"{call}() needs the cell faces of the environment's bins: "
+                "progress is computed from the conductances between bins.",
+                why=str(exc).splitlines()[0],
+                fix="build the environment with a layout that has cell geometry "
+                "(a grid, polygon, mesh or track), or use distance_to_goal.",
+            )
+        ) from exc
 
     progress = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)
@@ -1063,7 +1098,7 @@ def path_progress(
         if key not in fields:
             start_bins, goal_bins = bins_of(st, "start"), bins_of(gl, "goal")
             overlap = np.intersect1d(start_bins, goal_bins)
-            if overlap.size and intervals is None:
+            if overlap.size and single_start and single_goal:
                 raise ValueError(
                     _format_error(
                         f"{call}(): start and goal share {overlap.size} bin(s), so "
@@ -1202,7 +1237,7 @@ def distance_to_goal(
     times, positions = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
-    rows, goals = _rows_and_targets(
+    rows, goals, _ = _rows_and_targets(
         intervals, times, goal, name="goal", call=f"{call}()"
     )
     distances = np.full(times.size, np.nan)

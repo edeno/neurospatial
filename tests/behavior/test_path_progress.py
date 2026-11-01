@@ -50,7 +50,8 @@ OPEN_MAZES = {
 @cache
 def _maze(name: str):
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # large-grid notices for the 2-D forms
+        # The large 2-D mazes announce their grid size; that is not under test.
+        warnings.filterwarnings("ignore", message="Creating large grid")
         return getattr(mazes, name)()
 
 
@@ -87,6 +88,21 @@ def _route_distances(track: Environment, start: str, goal: str):
     return d_start, d_goal, route
 
 
+def _assert_no_false_extrema(env: Environment, progress, fixed) -> None:
+    """No bin outside the start and goal bins is above or below all neighbours."""
+    finite = np.isfinite(progress)
+    coo = env.get_diffusion_geometry().W.tocoo()
+    keep = (coo.data > 0) & finite[coo.row] & finite[coo.col]
+    rows, cols = coo.row[keep], coo.col[keep]
+    neighbour_max = np.full(env.n_bins, -np.inf)
+    neighbour_min = np.full(env.n_bins, np.inf)
+    np.maximum.at(neighbour_max, rows, progress[cols])
+    np.minimum.at(neighbour_min, rows, progress[cols])
+    free = finite & ~fixed & np.isfinite(neighbour_max)
+    assert not np.any(progress[free] > neighbour_max[free] + 1e-12)
+    assert not np.any(progress[free] < neighbour_min[free] - 1e-12)
+
+
 ALL_FORMS = [
     *((name, "env_track", pair) for name, pair in {**TREE_MAZES, **LOOP_MAZES}.items()),
     *(
@@ -117,17 +133,7 @@ def test_maze_invariants(name, form, pair):
     )
     both = np.intersect1d(component[start_bins], component[goal_bins])
     np.testing.assert_array_equal(finite, np.isin(component, both))
-    # No strict local extremum outside the start and goal bins.
-    coo = conductances.tocoo()
-    keep = (coo.data > 0) & finite[coo.row] & finite[coo.col]
-    rows, cols = coo.row[keep], coo.col[keep]
-    neighbour_max = np.full(env.n_bins, -np.inf)
-    neighbour_min = np.full(env.n_bins, np.inf)
-    np.maximum.at(neighbour_max, rows, progress[cols])
-    np.minimum.at(neighbour_min, rows, progress[cols])
-    free = finite & ~fixed & np.isfinite(neighbour_max)
-    assert not np.any(progress[free] > neighbour_max[free] + 1e-12)
-    assert not np.any(progress[free] < neighbour_min[free] - 1e-12)
+    _assert_no_false_extrema(env, progress, fixed)
 
 
 @pytest.mark.parametrize("name", list(TREE_MAZES))
@@ -168,14 +174,18 @@ def test_dead_ends_flat_on_tracks(name):
 def test_hampton_court_blinds_flat_except_the_loop():
     track = _maze("make_hampton_court_maze").env_track
     progress = _at_bins(track, *LOOP_MAZES["make_hampton_court_maze"])
+    conductances = track.get_diffusion_geometry().W.tocsr()
     for blind in (f"blind_{k}" for k in range(1, 8)):
-        values = progress[track.bins_in_region(blind)]
-        spread = np.ptp(values)
+        inside = track.bins_in_region(blind)
+        values = progress[inside]
         if blind == "blind_4":
             # Two openings make it a loop, not a dead end.
-            assert spread > 1e-3
-        else:
-            assert spread < 1e-12, blind
+            assert np.ptp(values) > 1e-3
+            continue
+        assert np.ptp(values) < 1e-12, blind
+        # The blind has the value of the corridor bins it opens onto.
+        neighbours = np.setdiff1d(conductances[inside].indices, inside)
+        np.testing.assert_allclose(progress[neighbours], values[0], atol=1e-12)
 
 
 def test_dead_ends_bounded_in_2d():
@@ -284,6 +294,11 @@ def test_wall_respected_3d():
 
     finite = progress[np.isfinite(progress)]
     assert np.all((finite >= 0) & (finite <= 1))
+    centers = env.bin_centers
+    fixed = (np.linalg.norm(centers - start, axis=1) <= 3.0) | (
+        np.linalg.norm(centers - goal, axis=1) <= 3.0
+    )
+    _assert_no_false_extrema(env, progress, fixed)
     before = env.bin_at(np.array([[7.0, 1.0, 1.0]]))[0]
     after = env.bin_at(np.array([[11.0, 1.0, 1.0]]))[0]
     assert progress[after] - progress[before] > 0.5
@@ -439,7 +454,10 @@ def test_mostly_nan_warns():
     right = left + np.array([100.0, 0.0])
     env = Environment.from_samples(np.vstack([left, right]), bin_size=2.0)
     positions = np.vstack([left[:5], right])  # mostly in the other component
-    with pytest.warns(UserWarning, match=r"does not connect to both start and goal"):
+    with pytest.warns(
+        UserWarning,
+        match=r"40 of 45 analyzed samples \(89%\) are NaN.*does not connect",
+    ) as record:
         progress = path_progress(
             env,
             np.arange(len(positions), dtype=float),
@@ -448,6 +466,7 @@ def test_mostly_nan_warns():
             goal=[18.0, 0.0],
             point_radius=2.5,
         )
+    assert len(record) == 1
     assert np.all(np.isnan(progress[5:]))
 
 
@@ -465,3 +484,79 @@ def test_start_goal_same_bin(t_track_trials):
         )
     assert np.all(np.isnan(progress[25:]))
     assert np.isfinite(progress[:25]).all()
+
+
+def test_target_forms(t_track_trials):
+    """Per-interval targets as lists, tuples, points, None and Series by id."""
+    import pandas as pd
+
+    track, times, positions, trials = t_track_trials
+    left = np.asarray(track.regions["well_left"].data, dtype=float)
+    right = np.asarray(track.regions["well_right"].data, dtype=float)
+    by_name = path_progress(
+        track,
+        times,
+        positions,
+        trials,
+        start="start",
+        goal=["well_left", None, "well_right"],
+    )
+    as_tuple = path_progress(
+        track,
+        times,
+        positions,
+        trials,
+        start="start",
+        goal=("well_left", None, "well_right"),
+    )
+    as_points = path_progress(
+        track, times, positions, trials, start="start", goal=[left, None, right]
+    )
+    series = pd.Series(
+        ["well_right", "well_left", None], index=trials.interval_ids[[2, 0, 1]]
+    )
+    by_id = path_progress(track, times, positions, trials, start="start", goal=series)
+    for other in (as_tuple, as_points, by_id):
+        np.testing.assert_array_equal(other, by_name)
+    assert np.isnan(by_name[10:20]).all()
+
+    # No trial reached an end region: every sample is NaN, which is expected.
+    none = Intervals.from_arrays([0.0, 10.0], [10.0, 20.0], goal=[None, None])
+    with pytest.warns(UserWarning, match="the start or goal is unknown"):
+        unknown = path_progress(
+            track, times, positions, none, start="start", goal=none.goal
+        )
+    assert np.isnan(unknown).all()
+    with pytest.raises(ValueError, match="has 2 entries"):
+        path_progress(
+            track, times, positions, trials, start="start", goal=["well_left"] * 2
+        )
+    with pytest.raises(TypeError, match="region names, points or None"):
+        path_progress(
+            track,
+            times,
+            positions,
+            trials,
+            start="start",
+            goal=[{"x": 1}, None, "well_left"],
+        )
+    # A list of numbers is one point, checked against the environment.
+    with pytest.raises(ValueError, match="has 3 coordinates"):
+        path_progress(track, times, positions, trials, start="start", goal=[1, 2, 3])
+
+
+def test_one_dimensional_points_need_no_radius():
+    line = np.arange(0.0, 100.0, 0.5)[:, None]
+    env = Environment.from_samples(line, bin_size=2.0)
+    progress = path_progress(
+        env, [0.0, 1.0, 2.0], [[1.0], [50.0], [99.0]], start=1.0, goal=[99.0]
+    )
+    np.testing.assert_allclose(progress, [0.0, 0.5, 1.0], atol=0.02)
+
+
+def test_single_shared_target_raises_with_intervals(t_track_trials):
+    track, times, positions, trials = t_track_trials
+    with pytest.raises(ValueError, match="share 1 bin"):
+        path_progress(
+            track, times, positions, trials, start="well_left", goal="well_left"
+        )
