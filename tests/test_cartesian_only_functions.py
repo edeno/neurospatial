@@ -160,7 +160,7 @@ def _polar_regions_env(env: Environment) -> Environment:
             "graph_turn_sequence()",
         ),
         (
-            lambda env: detect_laps(np.arange(4), np.arange(4.0), env),
+            lambda env: detect_laps(env, np.arange(4.0), np.zeros((4, env.n_dims))),
             "detect_laps()",
         ),
         (

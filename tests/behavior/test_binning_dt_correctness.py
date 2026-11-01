@@ -32,8 +32,8 @@ from neurospatial.behavior.segmentation import (
     detect_region_crossings,
     segment_by_velocity,
 )
-from neurospatial.behavior.trials import detect_trials
 from neurospatial.behavior.trajectory import mean_square_displacement
+from neurospatial.behavior.trials import detect_trials
 
 from .conftest import duplicate_timestamps, nonfinite_timestamps
 
@@ -59,14 +59,12 @@ class TestSafeGatherRegions:
         # Surrounding samples are outside the region; the middle sample is -1
         # (out of env). A wrapped -1 -> last_bin would be *inside* the region,
         # creating a spurious entry+exit crossing.
-        position_bins = np.array(
-            [outside_bin, outside_bin, -1, outside_bin, outside_bin],
-            dtype=np.int64,
-        )
-        times = np.linspace(0.0, 1.0, len(position_bins))
+        positions = env.bin_centers[[outside_bin] * 5]
+        positions[2] = np.nan  # lost tracking: bin -1
+        times = np.linspace(0.0, 1.0, len(positions))
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name=region_name
+            env, times, positions, region_name=region_name
         )
 
         assert crossings == []

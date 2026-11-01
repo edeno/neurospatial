@@ -244,12 +244,11 @@ class TestDetectGoalDirectedRuns:
         env = self._corridor()
         x = np.linspace(10.0, 90.0, 41)
         times = np.arange(x.size) / 10.0
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         runs = detect_goal_directed_runs(
-            bins,
-            times,
             env,
+            times,
+            np.c_[x, np.zeros_like(x)],
             goal_region="goal",
             directedness_threshold=1.0,
             min_progress=70.0,
@@ -262,12 +261,11 @@ class TestDetectGoalDirectedRuns:
         env = self._corridor()
         x = np.linspace(90.0, 10.0, 41)
         times = np.arange(x.size) / 10.0
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         runs = detect_goal_directed_runs(
-            bins,
-            times,
             env,
+            times,
+            np.c_[x, np.zeros_like(x)],
             goal_region="goal",
             directedness_threshold=0.0,
             min_progress=0.0,
@@ -293,13 +291,13 @@ class TestDetectGoalDirectedRuns:
         env = env.with_regions(region_builder)
 
         # Very short trajectory (minimal progress)
-        position_bins = np.array([0, 1, 2], dtype=np.int64)
+        positions = env.bin_centers[[0, 1, 2]]
         times = np.array([0.0, 1.0, 2.0])
 
         runs = detect_goal_directed_runs(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             goal_region="goal",
             directedness_threshold=0.5,
             min_progress=50.0,  # high threshold - should filter out
@@ -317,15 +315,15 @@ class TestDetectGoalDirectedRuns:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        position_bins = np.array([0, 1, 2], dtype=np.int64)
+        positions = env.bin_centers[[0, 1, 2]]
         times = np.array([0.0, 1.0, 2.0])
 
         # Missing goal region
         with pytest.raises(ValueError, match=r"Region.*not found"):
             detect_goal_directed_runs(
-                position_bins,
-                times,
                 env,
+                times,
+                positions,
                 goal_region="nonexistent",
                 directedness_threshold=0.7,
                 min_progress=10.0,
@@ -343,9 +341,9 @@ class TestDetectGoalDirectedRuns:
             ValueError, match=r"directedness_threshold must be in \[0, 1\]"
         ):
             detect_goal_directed_runs(
-                position_bins,
-                times,
                 env,
+                times,
+                positions,
                 goal_region="goal",
                 directedness_threshold=1.5,  # invalid
                 min_progress=10.0,
@@ -354,9 +352,9 @@ class TestDetectGoalDirectedRuns:
         # Negative min_progress
         with pytest.raises(ValueError, match=r"min_progress must be finite and nonneg"):
             detect_goal_directed_runs(
-                position_bins,
-                times,
                 env,
+                times,
+                positions,
                 goal_region="goal",
                 directedness_threshold=0.7,
                 min_progress=-10.0,  # invalid
@@ -377,11 +375,12 @@ class TestDetectGoalDirectedRuns:
         region_builder.add("goal", polygon=goal_polygon)
         env = env.with_regions(region_builder)
 
-        empty_bins = np.array([], dtype=np.int64)
-        empty_times = np.array([])
-
         runs = detect_goal_directed_runs(
-            empty_bins, empty_times, env, goal_region="goal", min_progress=20.0
+            env,
+            np.array([]),
+            np.empty((0, env.n_dims)),
+            goal_region="goal",
+            min_progress=20.0,
         )
 
         assert runs.shape == (0, 2)
@@ -413,9 +412,10 @@ class TestGoalDirectedApproachBouts:
 
     def _runs(self, x, **kwargs):
         env = self._corridor()
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
         times = np.arange(x.size) / self.FS
-        return detect_goal_directed_runs(bins, times, env, goal_region="goal", **kwargs)
+        return detect_goal_directed_runs(
+            env, times, np.c_[x, np.zeros_like(x)], goal_region="goal", **kwargs
+        )
 
     LEG = np.arange(0.0, 101.0, 2.0)  # 0 -> 100 cm, 51 samples
 
@@ -505,8 +505,10 @@ class TestGoalDirectedRunsUnreachableSamples:
 
     def _runs(self, bins, env):
         times = np.arange(bins.size) * 0.1
+        positions = env.bin_centers[np.maximum(bins, 0)].copy()
+        positions[bins < 0] = np.nan
         return detect_goal_directed_runs(
-            bins, times, env, goal_region="goal", min_progress=1.0
+            env, times, positions, goal_region="goal", min_progress=1.0
         )
 
     def test_island_sample_before_the_approach(self):
@@ -571,10 +573,18 @@ class TestSimilarityIntegration:
 
         # Detect goal-directed runs
         runs1 = detect_goal_directed_runs(
-            traj1_bins, traj1_times, env, goal_region="goal", min_progress=20.0
+            env,
+            traj1_times,
+            env.bin_centers[traj1_bins],
+            goal_region="goal",
+            min_progress=20.0,
         )
         runs2 = detect_goal_directed_runs(
-            traj2_bins, traj2_times, env, goal_region="goal", min_progress=20.0
+            env,
+            traj2_times,
+            env.bin_centers[traj2_bins],
+            goal_region="goal",
+            min_progress=20.0,
         )
 
         # Both are straight walks toward the goal corner.

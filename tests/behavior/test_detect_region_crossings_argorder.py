@@ -1,4 +1,4 @@
-"""Region crossings take the environment third and a keyword-only region name."""
+"""Region crossings take (env, times, positions) and a keyword-only region name."""
 
 from __future__ import annotations
 
@@ -25,19 +25,18 @@ def _make_env_and_trajectory() -> tuple[Environment, np.ndarray, np.ndarray]:
     traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
     traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
     trajectory = np.column_stack([traj_x, traj_y])
-    position_bins = env.bin_at(trajectory)
     times = np.arange(len(trajectory), dtype=float)
-    return env, position_bins, times
+    return env, times, trajectory
 
 
 def test_new_order_is_warning_free() -> None:
-    env, position_bins, times = _make_env_and_trajectory()
+    env, times, positions = _make_env_and_trajectory()
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             region_name="goal",
             direction="both",
             max_gap=None,
@@ -46,12 +45,12 @@ def test_new_order_is_warning_free() -> None:
 
 
 def test_missing_region_name_in_new_order_raises() -> None:
-    env, position_bins, times = _make_env_and_trajectory()
+    env, times, positions = _make_env_and_trajectory()
     with pytest.raises(TypeError, match="region_name"):
-        detect_region_crossings(position_bins, times, env)
+        detect_region_crossings(env, times, positions)
 
 
 def test_new_order_with_positional_region_name_raises_clear_type_error() -> None:
-    env, position_bins, times = _make_env_and_trajectory()
+    env, times, positions = _make_env_and_trajectory()
     with pytest.raises(TypeError, match="takes 3 positional arguments"):
-        detect_region_crossings(position_bins, times, env, "goal")
+        detect_region_crossings(env, times, positions, "goal")

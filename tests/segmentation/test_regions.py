@@ -33,15 +33,14 @@ class TestDetectRegionCrossings:
             [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
         )
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="both",
             max_gap=None,
@@ -70,15 +69,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([20.0, 40.0, 50.0, 30.0, 50.0])
         y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="entry",
             max_gap=None,
@@ -104,15 +102,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([50.0, 55.0, 30.0, 50.0, 20.0])
         y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="exit",
             max_gap=None,
@@ -138,15 +135,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([10.0, 15.0, 20.0, 15.0, 10.0])
         y_traj = np.array([10.0, 10.0, 10.0, 10.0, 10.0])
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="both",
             max_gap=None,
@@ -345,14 +341,13 @@ class TestRegionSegmentationIntegration:
         )
 
         # Map to bins
-        position_bins = env.bin_at(trajectory)
 
         # 1. Detect region crossings
         source_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="source", direction="both"
+            env, times, trajectory, region_name="source", direction="both"
         )
         target_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            env, times, trajectory, region_name="target", direction="both"
         )
 
         # 2. Detect trials between the regions
@@ -468,10 +463,13 @@ class TestCrossingAndLapRecords:
         regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
         env = env.with_regions(regions)
         x = np.array([90.0, 92.0, 96.0, 98.0, 92.0])
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         crossings = detect_region_crossings(
-            bins, np.arange(5.0), env, region_name="goal", max_gap=None
+            env,
+            np.arange(5.0),
+            np.c_[x, np.zeros_like(x)],
+            region_name="goal",
+            max_gap=None,
         )
 
         assert [(c.time, c.direction, c.region) for c in crossings] == [

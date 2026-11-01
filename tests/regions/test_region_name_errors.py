@@ -85,7 +85,9 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "pass regions=['reward']",
         ),
         "decision_region_entry_time": (
-            lambda value: decision_region_entry_time(bins, times, env, region=value),
+            lambda value: decision_region_entry_time(
+                env, times, positions, region=value
+            ),
             "rewrd",
             "pass region='reward'",
         ),

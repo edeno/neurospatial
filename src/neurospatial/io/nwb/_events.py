@@ -732,7 +732,7 @@ def write_laps(
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> from neurospatial.behavior import detect_laps  # doctest: +SKIP
-    >>> laps = detect_laps(position_bins, times, env)  # doctest: +SKIP
+    >>> laps = detect_laps(env, times, positions)  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_laps(nwbfile, laps)
@@ -870,7 +870,7 @@ def write_region_crossings(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> from neurospatial.behavior import detect_region_crossings  # doctest: +SKIP
     >>> crossings = detect_region_crossings(  # doctest: +SKIP
-    ...     position_bins, times, env, region_name="goal"
+    ...     env, times, positions, region_name="goal"
     ... )
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()

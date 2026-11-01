@@ -320,11 +320,11 @@ default="map_position"
 
     Behavior records as interval sets with metadata, and crossings as a group:
 
-    >>> laps = to_pynapple(detect_laps(position_bins, times, env))  # doctest: +SKIP
+    >>> laps = to_pynapple(detect_laps(env, times, positions))  # doctest: +SKIP
     >>> cw = laps[laps.direction == "clockwise"]  # doctest: +SKIP
     >>> spikes.restrict(cw)  # spikes during clockwise laps  # doctest: +SKIP
     >>> crossings = to_pynapple(  # doctest: +SKIP
-    ...     detect_region_crossings(position_bins, times, env, region_name="reward"),
+    ...     detect_region_crossings(env, times, positions, region_name="reward"),
     ...     epochs=(times[0], times[-1]),
     ... )
 

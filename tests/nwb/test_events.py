@@ -466,9 +466,7 @@ class TestWriteRegionCrossings:
         regions = Regions(env.regions.values())
         regions.add("goal", polygon=box(7, 0, 11, 2))
         env = env.with_regions(regions)
-        crossings = detect_region_crossings(
-            env.bin_at(positions), times, env, region_name="goal"
-        )
+        crossings = detect_region_crossings(env, times, positions, region_name="goal")
         assert [c.direction for c in crossings] == ["entry", "exit"]
 
         write_region_crossings(empty_nwb, crossings)

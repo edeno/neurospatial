@@ -197,6 +197,8 @@ def detect_trials(
     epochs : (start, stop), array-like of shape (n, 2), Intervals, or None
         Half-open windows on the clock of ``times``; observation outside them
         is not used, and an epoch boundary ends a trial under way.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break (a new recording) between
         samples ``k - 1`` and ``k``.

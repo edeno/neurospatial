@@ -104,7 +104,7 @@ class TestVTEDecisionAnalysisIntegration:
             pytest.skip("Trajectory does not have valid bins in environment")
 
         entry_from_analysis = decision_region_entry_time(
-            position_bins, times, env, region="decision"
+            env, times, trajectory, region="decision"
         )
 
         # Run VTE session - should use same entry detection.

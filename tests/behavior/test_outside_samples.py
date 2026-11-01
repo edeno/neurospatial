@@ -17,8 +17,8 @@ from neurospatial.behavior.segmentation import (
     detect_region_crossings,
     trajectory_similarity,
 )
-from neurospatial.behavior.trials import detect_trials
 from neurospatial.behavior.trajectory import compute_home_range
+from neurospatial.behavior.trials import detect_trials
 from neurospatial.regions import Regions
 
 # Equal one-unit bins: the home range ranks them by occupancy alone.
@@ -143,9 +143,9 @@ def strip() -> Environment:
     return env.with_regions(regions)
 
 
-def _approach(strip):
+def _approach():
     positions = np.c_[np.linspace(1, 80, 40), np.full(40, 1.0)]
-    return strip.bin_at(positions), np.linspace(0, 10, 40)
+    return positions, np.linspace(0, 10, 40)
 
 
 @pytest.mark.parametrize("max_gap", [1.0, None, "sampling"])
@@ -155,15 +155,15 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
     The approach splits at the outside sample whatever ``max_gap`` is: it is
     not a missing row to bridge but a position outside the environment.
     """
-    position_bins, times = _approach(strip)
-    position_bins[20] = -1
+    positions, times = _approach()
+    positions[20] = OUTSIDE
     if max_gap == "sampling":
         max_gap = 1.5 * (times[1] - times[0])
 
     runs = detect_goal_directed_runs(
-        position_bins,
-        times,
         strip,
+        times,
+        positions,
         goal_region="goal",
         min_progress=10.0,
         max_gap=max_gap,
@@ -173,13 +173,13 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
 
 
 def test_goal_directed_runs_without_a_place_are_empty(strip):
-    _, times = _approach(strip)
+    _, times = _approach()
 
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
         runs = detect_goal_directed_runs(
-            np.full(len(times), -1),
-            times,
             strip,
+            times,
+            np.full((len(times), 2), np.nan),
             goal_region="goal",
             min_progress=10.0,
         )
@@ -210,7 +210,7 @@ OUTSIDE = [500.0, 500.0]  # beyond the environment: bin -1
 
 SHUTTLE_CALLS = {
     "detect_region_crossings": lambda env, p, t, **kw: detect_region_crossings(
-        env.bin_at(p), t, env, region_name="goal", **kw
+        env, t, p, region_name="goal", **kw
     ),
     "detect_trials": lambda env, p, t, **kw: detect_trials(
         env, t, p, regions=["start", "goal"], **kw
@@ -254,16 +254,17 @@ def test_an_outside_sample_ends_a_lap():
     positions = np.column_stack([50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)])
     times = np.linspace(0, 60, 1801)
     env = Environment.from_samples(positions, bin_size=3.0)
-    bins = env.bin_at(positions)
     k = 900
-    outside = bins.copy()
-    outside[k] = -1
+    outside = positions.copy()
+    outside[k] = OUTSIDE
     kept = np.delete(np.arange(times.size), k)
     breaks = np.zeros(kept.size, dtype=bool)
     breaks[k] = True
-    laps = detect_laps(outside, times, env, method="auto")
+    laps = detect_laps(env, times, outside, method="auto")
     assert laps
     assert repr(laps) == repr(
-        detect_laps(bins[kept], times[kept], env, method="auto", break_before=breaks)
+        detect_laps(
+            env, times[kept], positions[kept], method="auto", break_before=breaks
+        )
     )
     assert not any(lap.start_time < times[k] < lap.end_time for lap in laps)

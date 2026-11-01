@@ -31,33 +31,33 @@ def capture_segmentation_outputs(pause, laps):
     trials = Intervals([Trial(0.0, p.times[-1], "source", "target", "reached")])
     return {
         "detect_region_crossings": detect_region_crossings(
-            p.position_bins, p.times, p.env, region_name="target"
+            p.env, p.times, p.positions, region_name="target"
         ),
         "segment_by_velocity": segment_by_velocity(
             p.times, p.positions, min_speed=5.0, min_duration=0.1
         ),
         "detect_laps_region": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="region",
             start_region="start",
         ),
         "detect_laps_auto": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="auto",
         ),
         "detect_laps_reference": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="reference",
             reference_lap=reference,
         ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
-            p.position_bins, p.times, p.env, goal_region="target"
+            p.env, p.times, p.positions, goal_region="target"
         ),
         "detect_boundary_crossings": detect_boundary_crossings(
             p.position_bins, labels, p.times

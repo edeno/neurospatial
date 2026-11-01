@@ -63,8 +63,8 @@ if TYPE_CHECKING:
         spatial_basis(polar)  # type: ignore[arg-type]
         graph_turn_sequence(cartesian, bins)
         graph_turn_sequence(polar, bins)  # type: ignore[arg-type]
-        detect_laps(bins, values, cartesian)
-        detect_laps(bins, values, polar)  # type: ignore[arg-type]
+        detect_laps(cartesian, values, values)
+        detect_laps(polar, values, values)  # type: ignore[arg-type]
         # Both read positions as the animal's allocentric positions.
         path_progress(cartesian, values, values, start="start", goal="goal")
         path_progress(polar, values, values, start="start", goal="goal")  # type: ignore[arg-type]

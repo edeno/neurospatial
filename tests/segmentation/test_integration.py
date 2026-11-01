@@ -63,9 +63,9 @@ class TestFullTrajectoryAnalysisWorkflow:
         )
         env = env.with_regions(region_builder)
         laps = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            traj_positions,
             method="region",
             start_region="start",
             direction="both",
@@ -184,10 +184,10 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 2: Detect region crossings
         left_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="left", direction="entry"
+            env, times, traj_positions, region_name="left", direction="entry"
         )
         right_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="right", direction="entry"
+            env, times, traj_positions, region_name="right", direction="entry"
         )
 
         assert len(left_crossings) >= 1, "Should detect left entries"
@@ -197,15 +197,15 @@ class TestFullTrajectoryAnalysisWorkflow:
         if len(trials) > 0:
             trial = trials[0]
             trial_mask = (times >= trial.start_time) & (times <= trial.stop_time)
-            trial_bins = position_bins[trial_mask]
+            trial_positions = traj_positions[trial_mask]
             trial_times = times[trial_mask]
 
             # Detect goal-directed behavior toward trial end_region
             if trial.end_region:
                 goal_runs = detect_goal_directed_runs(
-                    trial_bins,
-                    trial_times,
                     env,
+                    trial_times,
+                    trial_positions,
                     goal_region=trial.end_region,
                     directedness_threshold=0.3,  # Lower for synthetic data
                     min_progress=5.0,
@@ -284,9 +284,9 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 1: Detect goal-directed runs (should only find in phase 2)
         goal_runs = detect_goal_directed_runs(
-            position_bins,
-            all_times,
             env,
+            all_times,
+            all_positions,
             goal_region="goal",
             directedness_threshold=0.7,
             min_progress=10.0,
@@ -334,14 +334,12 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
     env = Environment.from_samples(positions, bin_size=5.0)
 
     times = np.linspace(0, 10, 20)
-    position_bins = env.bin_at(
-        np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
-    )
+    walk = np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
 
     with pytest.raises(ValueError, match=r"(?s)not found.*goal_region="):
         detect_goal_directed_runs(
-            position_bins,
-            times,
             env,
+            times,
+            walk,
             goal_region="nonexistent",
         )

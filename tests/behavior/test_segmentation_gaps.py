@@ -26,8 +26,7 @@ from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 def test_no_crossing_reported_across_pause(pause_track):
     r = pause_track
     assert (
-        detect_region_crossings(r.position_bins, r.times, r.env, region_name="target")
-        == []
+        detect_region_crossings(r.env, r.times, r.positions, region_name="target") == []
     )
 
 
@@ -36,10 +35,10 @@ def test_crossing_epochs_equal_slicing(continuous_pause_track):
     # [0, 100) excludes the sample at 100 s, where the target is entered.
     selected = r.times < 100
     expected = detect_region_crossings(
-        r.position_bins[selected], r.times[selected], r.env, region_name="target"
+        r.env, r.times[selected], r.positions[selected], region_name="target"
     )
     actual = detect_region_crossings(
-        r.position_bins, r.times, r.env, region_name="target", epochs=(0, 100)
+        r.env, r.times, r.positions, region_name="target", epochs=(0, 100)
     )
     assert actual == expected
 
@@ -48,7 +47,7 @@ def test_canonical_crossings_do_not_warn_for_multiple_runs(pause_track):
     r = pause_track
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        detect_region_crossings(r.position_bins, r.times, r.env, region_name="target")
+        detect_region_crossings(r.env, r.times, r.positions, region_name="target")
     deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert not deprecations
 
@@ -57,9 +56,9 @@ def test_invalid_epochs_raise_without_observed_samples(pause_track):
     r = pause_track
     with pytest.raises(ValueError, match="epochs"):
         detect_region_crossings(
-            np.array([], dtype=np.int64),
-            np.array([]),
             r.env,
+            np.array([]),
+            np.empty((0, 2)),
             region_name="target",
             epochs=(2, 1),
         )
@@ -89,7 +88,7 @@ def test_velocity_epochs_do_not_span_pause(pause_track):
 def test_region_laps_do_not_pair_entries_across_pause(lap_track):
     r = lap_track
     laps = detect_laps(
-        r.position_bins, r.times, r.env, method="region", start_region="start"
+        r.env, r.times, r.positions, method="region", start_region="start"
     )
     assert len(laps) == 4
     assert all(lap.end_time < 100 or lap.start_time >= 1100 for lap in laps)
@@ -100,9 +99,9 @@ def test_region_laps_do_not_pair_entries_across_pause(lap_track):
 def test_reference_laps_do_not_span_pause(lap_track):
     r = lap_track
     laps = detect_laps(
-        r.position_bins,
-        r.times,
         r.env,
+        r.times,
+        r.positions,
         method="reference",
         reference_lap=r.position_bins[100:501],
     )
@@ -115,13 +114,13 @@ def test_reference_laps_do_not_span_pause(lap_track):
 def test_auto_laps_keep_one_global_template(lap_track):
     """The first circuit is the template for every recording."""
     r = lap_track
-    actual = detect_laps(r.position_bins, r.times, r.env, method="auto")
+    actual = detect_laps(r.env, r.times, r.positions, method="auto")
     first = actual[0]
     in_first = (r.times >= first.start_time) & (r.times < first.end_time)
     expected = detect_laps(
-        r.position_bins,
-        r.times,
         r.env,
+        r.times,
+        r.positions,
         method="reference",
         reference_lap=r.position_bins[in_first],
     )
@@ -149,9 +148,7 @@ def test_goal_directed_runs_do_not_span_pause(pause_track):
     min_progress); after the pause it stays at the target.
     """
     r = pause_track
-    runs = detect_goal_directed_runs(
-        r.position_bins, r.times, r.env, goal_region="target"
-    )
+    runs = detect_goal_directed_runs(r.env, r.times, r.positions, goal_region="target")
     assert runs.shape == (1, 2)
     # The departure is the last sample in the resting bin: within the time to
     # cross one 2 cm bin, plus one sample, of 98 s.
@@ -334,19 +331,18 @@ def test_auto_laps_with_missing_template_rows_equal_deleted_rows_with_breaks():
     missing[50:70] = True  # 0.67 s of lost tracking, bridged by max_gap=1
     missing[150:170] = True
     positions[missing] = np.nan
-    position_bins = env.bin_at(positions)
     kept = ~missing
     breaks = np.zeros(times.size, dtype=bool)
     breaks[[70, 170]] = True  # first rows after the lost tracking
     expected = detect_laps(
-        position_bins[kept],
-        times[kept],
         env,
+        times[kept],
+        positions[kept],
         method="auto",
         break_before=breaks[kept],
     )
     assert expected
-    assert detect_laps(position_bins, times, env, method="auto") == expected
+    assert detect_laps(env, times, positions, method="auto") == expected
 
 
 def _corridor_with_wells():
@@ -370,18 +366,19 @@ def test_no_event_at_an_epoch_stop_sample():
     env = _corridor_with_wells()
     x = np.array([0.0, 0.0, 20.0, 50.0, 80.0, 98.0, 98.0])
     times = np.arange(x.size, dtype=float)
-    bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+    positions = np.c_[x, np.zeros_like(x)]
     common = {"max_gap": None, "epochs": (0.0, 5.0)}
 
-    assert detect_region_crossings(bins, times, env, region_name="goal", **common) == []
-    (trial,) = detect_trials(
-        env, times, np.c_[x, np.zeros_like(x)], regions=["start", "goal"], **common
+    assert (
+        detect_region_crossings(env, times, positions, region_name="goal", **common)
+        == []
     )
+    (trial,) = detect_trials(env, times, positions, regions=["start", "goal"], **common)
     assert (trial.start_time, trial.stop_time, trial.outcome) == (2.0, 5.0, "censored")
 
     # Without the epoch the same arrival is observed at 5 s.
     (entry,) = detect_region_crossings(
-        bins, times, env, region_name="goal", direction="entry", max_gap=None
+        env, times, positions, region_name="goal", direction="entry", max_gap=None
     )
     assert entry.time == 5.0
 
@@ -397,16 +394,15 @@ def test_region_lap_does_not_end_at_an_epoch_stop_sample():
     regions = Regions(env.regions.values())
     regions.add("start", polygon=Point(80.0, 50.0).buffer(4.0))
     env = env.with_regions(regions)
-    bins = env.bin_at(positions)
     times = np.arange(theta.size, dtype=float)
-    laps = detect_laps(bins, times, env, method="region", start_region="start")
+    laps = detect_laps(env, times, positions, method="region", start_region="start")
     entries = sorted({lap.start_time for lap in laps} | {lap.end_time for lap in laps})
     second_entry = entries[1]
 
     clipped = detect_laps(
-        bins,
-        times,
         env,
+        times,
+        positions,
         method="region",
         start_region="start",
         epochs=(0.0, second_entry),

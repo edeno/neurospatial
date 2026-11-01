@@ -114,7 +114,7 @@ Case = Callable[[Joined, np.ndarray, dict], Any]
 
 PAUSE_CASES: dict[str, Case] = {
     "detect_region_crossings": lambda r, t, kw: detect_region_crossings(
-        r.position_bins, t, r.env, region_name="target", **kw
+        r.env, t, r.positions, region_name="target", **kw
     ),
     "segment_by_velocity": lambda r, t, kw: segment_by_velocity(
         t, r.positions, min_speed=5.0, min_duration=0.1, **kw
@@ -123,7 +123,7 @@ PAUSE_CASES: dict[str, Case] = {
         r.env, t, r.positions, regions=["source", "target"], **kw
     ),
     "detect_goal_directed_runs": lambda r, t, kw: detect_goal_directed_runs(
-        r.position_bins, t, r.env, goal_region="target", min_progress=1.0, **kw
+        r.env, t, r.positions, goal_region="target", min_progress=1.0, **kw
     ),
     "detect_region_visits": lambda r, t, kw: detect_region_visits(
         r.env, t, r.positions, regions=["source", "target"], **kw
@@ -148,9 +148,9 @@ PAUSE_CASES: dict[str, Case] = {
 LAP_CASES: dict[str, Case] = {
     f"detect_laps[{method}]": (
         lambda r, t, kw, method=method: detect_laps(
-            r.position_bins,
-            t,
             r.env,
+            t,
+            r.positions,
             method=method,
             start_region="start" if method == "region" else None,
             reference_lap=r.position_bins[160:800] if method == "reference" else None,
@@ -259,9 +259,9 @@ def test_visit_after_break_is_left_censored(pause):
 def test_lap_spanning_break_is_dropped(laps):
     r = laps
     kwargs = {"method": "region", "start_region": "start"}
-    joined = detect_laps(r.position_bins, r.times, r.env, **kwargs)
+    joined = detect_laps(r.env, r.times, r.positions, **kwargs)
     split = detect_laps(
-        r.position_bins, r.times, r.env, break_before=r.break_before, **kwargs
+        r.env, r.times, r.positions, break_before=r.break_before, **kwargs
     )
     spans = [lap for lap in joined if lap.start_time < r.times[BREAK] <= lap.end_time]
     assert len(spans) == 1

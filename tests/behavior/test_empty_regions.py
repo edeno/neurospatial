@@ -36,44 +36,44 @@ def arena():
     env = env.with_regions(regions)
     times = np.arange(45) / 30.0
     positions = np.column_stack([np.linspace(2, 38, 45), np.full(45, 10.0)])
-    return env, times, positions, env.bin_at(positions)
+    return env, times, positions
 
 
 CALLS = {
-    "detect_trials": lambda env, t, p, b, empty: detect_trials(
+    "detect_trials": lambda env, t, p, empty: detect_trials(
         env, t, p, regions=["right", empty]
     ),
-    "detect_region_crossings": lambda env, t, p, b, empty: detect_region_crossings(
-        b, t, env, region_name=empty
+    "detect_region_crossings": lambda env, t, p, empty: detect_region_crossings(
+        env, t, p, region_name=empty
     ),
-    "detect_region_visits": lambda env, t, p, b, empty: detect_region_visits(
+    "detect_region_visits": lambda env, t, p, empty: detect_region_visits(
         env, t, p, regions=["left", empty]
     ),
-    "detect_laps": lambda env, t, p, b, empty: detect_laps(
-        b, t, env, method="region", start_region=empty
+    "detect_laps": lambda env, t, p, empty: detect_laps(
+        env, t, p, method="region", start_region=empty
     ),
-    "detect_goal_directed_runs": lambda env, t, p, b, empty: (
-        detect_goal_directed_runs(b, t, env, goal_region=empty)
+    "detect_goal_directed_runs": lambda env, t, p, empty: (
+        detect_goal_directed_runs(env, t, p, goal_region=empty)
     ),
-    "decision_region_entry_time": lambda env, t, p, b, empty: (
-        decision_region_entry_time(b, t, env, region=empty)
+    "decision_region_entry_time": lambda env, t, p, empty: (
+        decision_region_entry_time(env, t, p, region=empty)
     ),
-    "compute_decision_analysis": lambda env, t, p, b, empty: (
+    "compute_decision_analysis": lambda env, t, p, empty: (
         compute_decision_analysis(
             env, t, p, decision_region=empty, goal_regions=["left", "right"]
         )
     ),
-    "compute_vte_session": lambda env, t, p, b, empty: compute_vte_session(
+    "compute_vte_session": lambda env, t, p, empty: compute_vte_session(
         env,
         t,
         p,
         decision_region=empty,
         trials=detect_trials(env, t, p, regions=["left", "right"]),
     ),
-    "region_reward_field": lambda env, t, p, b, empty: region_reward_field(
+    "region_reward_field": lambda env, t, p, empty: region_reward_field(
         env, region_name=empty
     ),
-    "distance_to_boundary": lambda env, t, p, b, empty: distance_to_boundary(
+    "distance_to_boundary": lambda env, t, p, empty: distance_to_boundary(
         env, p, boundary_type="region", region_name=empty
     ),
 }
@@ -82,13 +82,13 @@ CALLS = {
 @pytest.mark.parametrize("empty", ["outside_well", "sliver"])
 @pytest.mark.parametrize("call", list(CALLS), ids=list(CALLS))
 def test_region_covering_no_bins_raises(arena, call, empty):
-    env, times, positions, bins = arena
+    env, times, positions = arena
     with pytest.raises(ValueError, match=rf"Region '{empty}' covers no bins"):
-        CALLS[call](env, times, positions, bins, empty)
+        CALLS[call](env, times, positions, empty)
 
 
 def test_point_region_error_names_the_point_and_a_polygon_fix(arena):
-    env, times, positions, _ = arena
+    env, times, positions = arena
     with pytest.raises(ValueError, match=r"covers no bins, so detect_trials") as caught:
         detect_trials(env, times, positions, regions=["outside_well", "right"])
     message = str(caught.value)
@@ -97,6 +97,6 @@ def test_point_region_error_names_the_point_and_a_polygon_fix(arena):
 
 
 def test_region_with_bins_still_works(arena):
-    env, times, positions, _ = arena
+    env, times, positions = arena
     trials = detect_trials(env, times, positions, regions=["left", "right"])
     assert trials.outcome.tolist() == ["reached"]

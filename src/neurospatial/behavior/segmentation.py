@@ -79,6 +79,7 @@ from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial.behavior._position_bins import sample_bins
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -87,25 +88,6 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
     from neurospatial.ops._types import DistanceMetric
-
-
-def _validated_samples(
-    position_bins: ArrayLike, times: ArrayLike, env: Environment, *, call: str
-) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Check a bin trajectory and its timestamps; return them as int64 and float64.
-
-    ``position_bins`` must be integer bin indices of ``env`` or ``-1`` (outside
-    the environment, as :meth:`Environment.bin_at` returns); a float array
-    would be truncated to unrelated bins. ``times`` must be finite and
-    strictly increasing, in seconds.
-    """
-    from neurospatial._observation import _validated_signal_times
-    from neurospatial.behavior._position_bins import validated_position_bins
-
-    bins = validated_position_bins(position_bins, env, call=call, times=times)
-    if bins.size == 0:
-        return bins, np.asarray(times, dtype=np.float64)
-    return bins, _validated_signal_times(times, call=call)
 
 
 def _region_names(
@@ -406,9 +388,9 @@ class Trial:
 
 @reads_pynapple_samples
 def detect_region_crossings(
-    position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
     env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
@@ -424,12 +406,13 @@ def detect_region_crossings(
 
     Parameters
     ----------
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
-    times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing the named region.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where tracking was
+        lost. Each is located in its bin inside the function.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
         Passed as a keyword-only argument.
@@ -451,6 +434,8 @@ def detect_region_crossings(
         counts only if it lies entirely inside one window, and a sample at a
         window's ``stop`` is outside it, so no event is reported there.
         ``None`` (default) means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -468,12 +453,9 @@ def detect_region_crossings(
         If region_name not in env.regions, or direction is not one of
         'both', 'entry', 'exit'.
     ValueError
-        If position_bins and times are not 1-D with the same length, if
-        times are not finite and strictly increasing, or if a bin index is
-        neither -1 nor a bin of ``env``.
-    TypeError
-        If position_bins does not hold integer bin indices (a float array
-        would be truncated to unrelated bins).
+        If ``times`` are not finite and strictly increasing, or
+        ``positions`` do not have one row per time with the environment's
+        number of coordinates.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -484,13 +466,13 @@ def detect_region_crossings(
 
     Notes
     -----
-    A sample at bin ``-1`` (outside the environment, or missing) is not
-    located, so, as in ``env.occupancy``, an interval with either sample at
-    ``-1`` is not observed and splits the recording, like a gap longer than
-    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
-    stretch is analyzed on its own, so no segment spans a pause. To bridge
-    missing samples instead, delete their rows before binning: a deleted row
-    is bridged when the samples around it are no more than ``max_gap`` apart.
+    A NaN position (lost tracking) or one outside the environment is not
+    located, so, as in ``env.occupancy``, an interval with either sample
+    unlocated is not observed and splits the recording, like a gap longer
+    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
+    resulting stretch is analyzed on its own, so no segment spans a pause.
+    To bridge missing samples instead, delete their rows: a deleted row is
+    bridged when the samples around it are no more than ``max_gap`` apart.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -512,13 +494,12 @@ def detect_region_crossings(
     >>> traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
     >>> traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
     >>> trajectory = np.column_stack([traj_x, traj_y])
-    >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
     >>> # Treat these 1 Hz samples as continuous with max_gap=None
     >>> crossings = detect_region_crossings(
-    ...     position_bins,
-    ...     times,
     ...     env,
+    ...     times,
+    ...     trajectory,
     ...     region_name="goal",
     ...     direction="both",
     ...     max_gap=None,
@@ -536,8 +517,8 @@ def detect_region_crossings(
         owner="detect_region_crossings()",
     )
 
-    position_bins, times = _validated_samples(
-        position_bins, times, env, call="detect_region_crossings"
+    times, position_bins = sample_bins(
+        env, times, positions, call="detect_region_crossings"
     )
     breaks = validate_break_before(
         break_before, len(times), call="detect_region_crossings"
@@ -881,9 +862,9 @@ def _detect_lap_direction(
 
 @reads_pynapple_samples
 def detect_laps(
-    position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
     env: Environment[CartesianSystem],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     method: Literal["auto", "reference", "region"] = "auto",
     min_overlap: float = 0.8,
@@ -902,12 +883,13 @@ def detect_laps(
 
     Parameters
     ----------
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
-    times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing spatial structure.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where tracking was
+        lost. Each is located in its bin inside the function.
     method : {'auto', 'reference', 'region'}, optional
         Method for detecting laps:
         - 'auto': the first complete circuit is the template (default)
@@ -923,8 +905,9 @@ def detect_laps(
         - 'clockwise': only clockwise laps
         - 'counter-clockwise': only counter-clockwise laps
     reference_lap : NDArray[np.int64] | None, optional
-        Bin sequence of one complete lap, for the 'reference' method; its
-        first bin marks where laps start. Required when method='reference'.
+        Bin sequence of one complete lap, for the 'reference' method, for
+        example ``env.bin_at(positions[lap_start:lap_stop])``; its first bin
+        marks where laps start. Required when method='reference'.
     start_region : str | None, optional
         Name of start region for 'region' method, drawn across the loop
         track. Required when method='region'.
@@ -945,6 +928,8 @@ def detect_laps(
         counts only if it lies entirely inside one window, and a sample at a
         window's ``stop`` is outside it, so no event is reported there.
         ``None`` (default) means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -975,12 +960,9 @@ def detect_laps(
         If ``env`` is polar: each lap's clockwise or counter-clockwise
         direction is the signed area of Cartesian bin centers.
     ValueError
-        If position_bins and times are not 1-D with the same length, if
-        times are not finite and strictly increasing, or if a bin index is
-        neither -1 nor a bin of ``env``.
-    TypeError
-        If position_bins does not hold integer bin indices (a float array
-        would be truncated to unrelated bins).
+        If ``times`` are not finite and strictly increasing, or
+        ``positions`` do not have one row per time with the environment's
+        number of coordinates.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -993,13 +975,13 @@ def detect_laps(
 
     Notes
     -----
-    A sample at bin ``-1`` (outside the environment, or missing) is not
-    located, so, as in ``env.occupancy``, an interval with either sample at
-    ``-1`` is not observed and splits the recording, like a gap longer than
-    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
-    stretch is analyzed on its own, so no segment spans a pause. To bridge
-    missing samples instead, delete their rows before binning: a deleted row
-    is bridged when the samples around it are no more than ``max_gap`` apart.
+    A NaN position (lost tracking) or one outside the environment is not
+    located, so, as in ``env.occupancy``, an interval with either sample
+    unlocated is not observed and splits the recording, like a gap longer
+    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
+    resulting stretch is analyzed on its own, so no segment spans a pause.
+    To bridge missing samples instead, delete their rows: a deleted row is
+    bridged when the samples around it are no more than ``max_gap`` apart.
 
     Laps never span recordings. Samples outside the environment are left
     out as if their rows were deleted.
@@ -1084,19 +1066,18 @@ def detect_laps(
     >>> y = 50 + 30 * np.sin(theta)
     >>> positions = np.column_stack([x, y])
     >>> env = Environment.from_samples(positions, bin_size=3.0)
-    >>> position_bins = env.bin_at(positions)
     >>> times = np.linspace(0, 60, 1801)
-    >>> laps = detect_laps(position_bins, times, env, method="auto")
+    >>> laps = detect_laps(env, times, positions, method="auto")
     >>> len(laps)
     10
 
     Detect laps with user-provided reference:
 
-    >>> reference = position_bins[:181]
+    >>> reference = env.bin_at(positions[:181])
     >>> laps = detect_laps(
-    ...     position_bins,
-    ...     times,
     ...     env,
+    ...     times,
+    ...     positions,
     ...     method="reference",
     ...     reference_lap=reference,
     ... )
@@ -1105,11 +1086,11 @@ def detect_laps(
 
     Filter laps by direction:
 
-    >>> laps_cw = detect_laps(position_bins, times, env, direction="clockwise")
+    >>> laps_cw = detect_laps(env, times, positions, direction="clockwise")
     >>> laps_ccw = detect_laps(
-    ...     position_bins,
-    ...     times,
     ...     env,
+    ...     times,
+    ...     positions,
     ...     direction="counter-clockwise",
     ... )
     >>> len(laps_ccw) > 0
@@ -1139,11 +1120,8 @@ def detect_laps(
     >>> regions = Regions(env.regions.values())
     >>> _ = regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
     >>> env = env.with_regions(regions)
-    >>> position_bins = env.bin_at(positions)
     >>> times = np.linspace(0, 60, 300)
-    >>> laps = detect_laps(
-    ...     position_bins, times, env, method="region", start_region="start"
-    ... )
+    >>> laps = detect_laps(env, times, positions, method="region", start_region="start")
     >>> direction_labels = laps_to_direction_labels(laps, times)
     >>> rng = np.random.default_rng(0)
     >>> spike_times = np.sort(rng.uniform(0, 60, 40))
@@ -1191,7 +1169,8 @@ def detect_laps(
         raise ValueError(
             _format_error(
                 "reference_lap is required when method='reference'",
-                fix="pass reference_lap=position_bins_of_one_complete_lap when method='reference'",
+                fix="pass reference_lap=env.bin_at(positions_of_one_complete_lap) when "
+                "method='reference'",
                 why="Why: reference-based detection compares each traversal to that lap.",
             )
         )
@@ -1209,9 +1188,7 @@ def detect_laps(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
-    position_bins, times = _validated_samples(
-        position_bins, times, env, call="detect_laps"
-    )
+    times, position_bins = sample_bins(env, times, positions, call="detect_laps")
     breaks = validate_break_before(break_before, len(times), call="detect_laps")
     runs = _event_runs(
         times,
@@ -1265,7 +1242,7 @@ def detect_laps(
         if template.size == 0:
             msg = (
                 "reference_lap is empty; pass the bin sequence of one complete "
-                "lap, for example position_bins[lap_start:lap_stop]."
+                "lap, for example env.bin_at(positions[lap_start:lap_stop])."
             )
             raise ValueError(msg)
     else:
@@ -2031,9 +2008,9 @@ def _dtw_distance(cost: NDArray[np.float64]) -> float:
 
 @reads_pynapple_samples
 def detect_goal_directed_runs(
-    position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
     env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     goal_region: str,
     directedness_threshold: float = 0.7,
@@ -2052,13 +2029,13 @@ def detect_goal_directed_runs(
 
     Parameters
     ----------
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory. ``-1`` marks a
-        sample outside the environment or missing.
-    times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing the goal region definition.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where tracking was
+        lost. Each is located in its bin inside the function.
     goal_region : str
         Name of goal region in env.regions. Runs are detected toward this region.
     directedness_threshold : float, optional
@@ -2087,6 +2064,8 @@ def detect_goal_directed_runs(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2113,12 +2092,9 @@ def detect_goal_directed_runs(
         If min_progress is negative or not finite, or is None while
         ``env.units`` is not a metric length.
     ValueError
-        If position_bins and times are not 1-D with the same length, if
-        times are not finite and strictly increasing, or if a bin index is
-        neither -1 nor a bin of ``env``.
-    TypeError
-        If position_bins does not hold integer bin indices (a float array
-        would be truncated to unrelated bins).
+        If ``times`` are not finite and strictly increasing, or
+        ``positions`` do not have one row per time with the environment's
+        number of coordinates.
     ValueError
         If ``break_before`` is not a Boolean array with one entry per sample.
 
@@ -2129,13 +2105,13 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    A sample at bin ``-1`` (outside the environment, or missing) is not
-    located, so, as in ``env.occupancy``, an interval with either sample at
-    ``-1`` is not observed and splits the recording, like a gap longer than
-    ``max_gap``, an ``epochs`` edge or a ``break_before``; each resulting
-    stretch is analyzed on its own, so no segment spans a pause. To bridge
-    missing samples instead, delete their rows before binning: a deleted row
-    is bridged when the samples around it are no more than ``max_gap`` apart. A sample in a part of the
+    A NaN position (lost tracking) or one outside the environment is not
+    located, so, as in ``env.occupancy``, an interval with either sample
+    unlocated is not observed and splits the recording, like a gap longer
+    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
+    resulting stretch is analyzed on its own, so no segment spans a pause.
+    To bridge missing samples instead, delete their rows: a deleted row is
+    bridged when the samples around it are no more than ``max_gap`` apart. A sample in a part of the
     environment that is not connected to the goal has no distance to it and
     splits the recording the same way: no approach includes it, and the
     approaches before and after it are scored on their own.
@@ -2184,9 +2160,9 @@ def detect_goal_directed_runs(
     >>> _ = regions.add("goal", polygon=box(95, -5, 105, 5))
     >>> env = env.with_regions(regions)
     >>> x = np.linspace(10, 90, 41)  # 80 cm toward the goal in 4 s
-    >>> position_bins = env.bin_at(np.c_[x, np.zeros_like(x)])
+    >>> positions = np.c_[x, np.zeros_like(x)]
     >>> times = np.arange(41) / 10.0
-    >>> detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
+    >>> detect_goal_directed_runs(env, times, positions, goal_region="goal")
     array([[0., 4.]])
 
     Out to the goal, back, and out again: each approach is its own row, and
@@ -2194,9 +2170,9 @@ def detect_goal_directed_runs(
 
     >>> trips = np.r_[x, x[::-1][1:], x[1:]]
     >>> detect_goal_directed_runs(
-    ...     env.bin_at(np.c_[trips, np.zeros_like(trips)]),
-    ...     np.arange(trips.size) / 10.0,
     ...     env,
+    ...     np.arange(trips.size) / 10.0,
+    ...     np.c_[trips, np.zeros_like(trips)],
     ...     goal_region="goal",
     ... )
     array([[ 0.,  4.],
@@ -2204,9 +2180,7 @@ def detect_goal_directed_runs(
 
     Walking the same path away from the goal is not goal-directed:
 
-    >>> detect_goal_directed_runs(
-    ...     position_bins[::-1], times, env, goal_region="goal"
-    ... ).shape
+    >>> detect_goal_directed_runs(env, times, positions[::-1], goal_region="goal").shape
     (0, 2)
 
     """
@@ -2233,8 +2207,8 @@ def detect_goal_directed_runs(
         )
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
-    position_bins, times = _validated_samples(
-        position_bins, times, env, call="detect_goal_directed_runs"
+    times, position_bins = sample_bins(
+        env, times, positions, call="detect_goal_directed_runs"
     )
     breaks = validate_break_before(
         break_before, len(times), call="detect_goal_directed_runs"

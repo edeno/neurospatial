@@ -71,9 +71,7 @@ class TestTrialEnds:
             regions=["start", "goal"],
             max_gap=None,
         )
-        return [
-            (t.start_time, t.stop_time, t.end_region, t.outcome) for t in trials
-        ]
+        return [(t.start_time, t.stop_time, t.end_region, t.outcome) for t in trials]
 
     def test_trial_runs_from_departure_to_arrival(self):
         """A trial starts at the first sample outside the start region and

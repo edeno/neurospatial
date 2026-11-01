@@ -207,7 +207,7 @@ REQUIRED_DATA_NAMES = {
     *("entry_time", "reward_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("template_epochs", "match_epochs"),
-    *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
+    *("laps", "visits", "labels", "direction_labels", "voronoi_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).
     "window",
