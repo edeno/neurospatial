@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### Trials from positions or port visits
+
+**Added**
+
+- `detect_trials(env, times, positions, *, regions, max_gap, epochs,
+  break_before)`: trials from tracked positions, the runs between
+  consecutive visits to the named regions (wells, ports, start boxes). A
+  trial is `[departure, arrival)`: from the first sample outside the region
+  the animal left to the first sample inside the next one, whichever it is,
+  so single-start (T-maze) and multi-start (W-track alternation) tasks are
+  the same call. `outcome` is `"reached"`, `"returned"` or `"censored"`; no
+  trial spans a tracking gap, an epoch edge or a declared break.
+- `trials_between_visits(visits, *, region="region")`: the same trials from
+  visits you bring, such as a table of port pokes read with
+  `Intervals.from_dataframe` (map port names to region names first).
+  Overlapping visits raise and name both `interval_id`s.
+
+**Changed**
+
+- The behavior detectors take `(env, times, positions, *, ...)` and find
+  each position's bin themselves: `detect_region_visits`,
+  `detect_region_crossings`, `detect_laps`, `detect_goal_directed_runs` and
+  `decision_region_entry_time` (before: `(position_bins, times, env)`). A
+  NaN position (lost tracking) is the unlocated sample a `-1` bin was;
+  results are unchanged. `detect_region_visits` takes `regions=` (was
+  `region_names=`).
+- Every detector returns an `Intervals`: `detect_region_visits` gives
+  `Intervals[RegionVisit]`, `detect_laps` `Intervals[Lap]`, and
+  `segment_by_velocity` and `detect_goal_directed_runs` `Intervals[Interval]`
+  (the latter with a `goal_region` field) instead of an `(n, 2)` array, whose
+  `.windows` is that array. Their parameters are in `analysis_settings`.
+- Records name their bounds `start_time`/`stop_time`: `Lap.end_time` and
+  `RegionVisit.end_time` are now `stop_time`, and `RegionVisit.region_name`
+  is `region`. `Trial.outcome` no longer has `"timeout"` (no detector makes
+  it); a task's timeout is a label you add with `with_fields`.
+- `detect_region_visits` and `detect_trials` refuse point regions: a one-bin
+  well misses an animal that stops beside it. Give the well its size with
+  `Regions.add(name, point=..., radius=...)`.
+- `laps_to_direction_labels` and `write_laps` take an `Intervals` only;
+  `write_laps` writes the `interval_ids` as the table's `id` and every field
+  as a column (its `start_times`/`stop_times`/`directions` arrays are
+  removed). `to_pynapple` takes an `Intervals` for interval records and
+  refuses a list of them; lists of region crossings are unchanged.
+
+**Removed**
+
+- `segment_trials` and `detect_runs_between_regions`: use `detect_trials`
+  (there is no `min_duration` or `max_duration`; select by
+  `trials.durations` or label a timeout yourself).
+- `region_transitions` and `RegionTransition`: entry-to-entry intervals
+  mixed time at the first region into travel time; the trials between visits
+  replace them.
+- The `Run` record, `runs_to_direction_labels` and
+  `running_direction_labels`. For inbound/outbound labels, use the reached
+  trials' regions:
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
+
 ### Trial fields, labels and wells with a size
 
 **Changed**
