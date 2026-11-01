@@ -17,8 +17,9 @@
   closed, as in `numpy.histogram`, so progress of exactly 1 is counted. A NaN
   value (progress between trials) excludes its sampling interval instead of
   being filled from the previous sample. `epochs=` takes a selection of trials
-  (an `Intervals`, whose `interval_ids` are recorded) and an empty selection
-  gives NaN rates, zero occupancy and a warning; `speed=` with `min_speed=`
+  (an `Intervals`, whose `interval_ids` are recorded); with `bin_edges` or
+  `value_range`, an empty selection gives NaN rates, zero occupancy and a
+  warning; `speed=` with `min_speed=`
   excludes slow intervals from spikes and occupancy alike; `bandwidth=`
   smooths counts and occupancy separately. A pynapple `Tsd` of values gives
   its time support as `epochs`.

@@ -1451,9 +1451,9 @@ well. It pauses for 1 s at the choice point, where the centre arm meets the
 base, on every outbound run, and it eats at the well for 2 s after each run.
 Its running speed varies from trial to trial between 25 and 60 cm/s.
 
-The cell has a place field on the left half of the base corridor (25 Hz peak,
-8 cm wide) and also fires at 12 Hz whenever the animal is stopped, wherever
-that is: a mix of place and pause firing that the analysis below has to take
+The cell fires at 1 Hz in the background, up to 25 Hz more in a place field
+on the left half of the base corridor (a Gaussian with an 8 cm standard
+deviation), and 12 Hz more whenever the animal is stopped, wherever that is: a mix of place and pause firing that the analysis below has to take
 apart.
 
 The task software writes a log with one row per trial: when the trial started
@@ -1605,10 +1605,10 @@ between trials: [nan nan nan]
 ```
 
 The first trial runs from the centre well to the left well. Progress rises
-steadily along the route, stays at 0.4 during the 1 s pause at the choice
-point (about 0.4 of the way: 69 of the route's 172.5 cm), and is 0.99 on
-the last sample before the left well, where it would be 1. On a corridor maze like this, read on
-the linearized track, progress is the fraction of the route covered, so equal
+steadily along the route, holds at about 0.4 during the 1 s pause at the
+choice point (69 of the route's 172.5 cm), and is 0.99 on the last sample
+before the left well, where it would be 1. On a corridor maze like this, read
+on the linearized track, progress is the fraction of the route covered, so equal
 steps of progress are equal distances. On an error trial the animal turns
 right at the choice point; the right half of the base is not on the route to
 the left well, so progress stays at the choice point's value there: a
@@ -1669,7 +1669,8 @@ C: inbound, error: epochs selects no time (an Intervals with no windows, such as
 The top row is firing rate against progress, the bottom row the seconds spent
 in each bin. On left trials (A) the cell fires most between progress 0.45 and
 0.55: the left half of the base, just past the choice point. On right trials
-(B) the animal never goes there, and the curve is flat except at progress 0.4.
+(B) the animal never goes there, and the curve is low except around progress
+0.4.
 Both conditions have a tall occupancy bar at 0.4, the 1 s pause at the choice
 point on every outbound trial, and both have an elevated rate in that bin: the
 cell fires while the animal is stopped, and that firing is credited to the
@@ -1752,8 +1753,9 @@ choice point, running:  6.3 Hz over 7.0 s
 Over all time, the choice-point bin holds 15.7 s and an 11 Hz rate. Over
 running time only it holds 7.0 s and 6 Hz: the stopped time, and the spikes
 fired then, are gone from it. The other bins hardly change. Some pause time
-remains because `compute_speed` smooths over 0.1 s, so speed takes a moment to
-fall below 2 cm/s after the animal stops and rises again before it moves.
+remains, about 0.3 s per trial, because `compute_speed` smooths velocity over
+time: speed stays above 2 cm/s for a moment after the animal stops and rises
+above it shortly before it moves again.
 Report which you used: the all-time curve answers "where along the route does
 the cell fire", the running curve "where does it fire while running".
 
