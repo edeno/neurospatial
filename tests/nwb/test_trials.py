@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -334,6 +336,12 @@ def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
 
     trials = Intervals([Trial(0.0, 5.0, "home", None, "timeout")])
     write_trials(empty_nwb, trials)
-    with pd.option_context("future.infer_string", True):
+    # The string dtype is the default from pandas 3 and opt-in before it.
+    string_dtype = (
+        contextlib.nullcontext()
+        if int(pd.__version__.split(".")[0]) >= 3
+        else pd.option_context("future.infer_string", True)
+    )
+    with string_dtype:
         back = read_trials(empty_nwb)
     assert back.end_region.tolist() == [None]
