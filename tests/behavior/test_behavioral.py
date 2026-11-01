@@ -97,9 +97,10 @@ def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
     start_bin = env.bins_in_region("start")[0]
     goal_bin = env.bins_in_region("goal1")[0]
 
-    # All timepoints should have same start/goal bins
-    assert np.all(start_bins == start_bin)
-    assert np.all(goal_bins == goal_bin)
+    # Every sample in [0, 10) has the trial's bins; the arrival at 10 is outside
+    assert np.all(start_bins[:-1] == start_bin)
+    assert np.all(goal_bins[:-1] == goal_bin)
+    assert start_bins[-1] == goal_bins[-1] == -1
 
 
 def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions):
@@ -130,25 +131,23 @@ def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions
     goal1_bin = env.bins_in_region("goal1")[0]
     goal2_bin = env.bins_in_region("goal2")[0]
 
-    # Check Trial 1 (t=0 to t=5: indices 0-5)
-    assert np.all(start_bins[0:6] == start_bin)
-    assert np.all(goal_bins[0:6] == goal1_bin)
+    # Check Trial 1 ([0, 5): indices 0-4); t=5 is outside every trial
+    assert np.all(start_bins[0:5] == start_bin)
+    assert np.all(goal_bins[0:5] == goal1_bin)
+    assert start_bins[5] == goal_bins[5] == -1
 
-    # Check gap between trials (t=5.1 to t=5.4: just before trial 2 starts)
-    # No exact timepoint in gap, but t=5 is in trial 1
-
-    # Check Trial 2 (t=5.5 to t=10: indices 6-10, approximately)
-    trial2_mask = (times >= 5.5) & (times <= 10.0)
+    # Check Trial 2 ([5.5, 10): indices 6-9)
+    trial2_mask = (times >= 5.5) & (times < 10.0)
     assert np.all(start_bins[trial2_mask] == start_bin)
     assert np.all(goal_bins[trial2_mask] == goal2_bin)
 
-    # Check gap between trials (t=10.1 to t=10.9)
-    gap_mask = (times > 10.0) & (times < 11.0)
+    # Check gap between trials ([10, 11))
+    gap_mask = (times >= 10.0) & (times < 11.0)
     assert np.all(start_bins[gap_mask] == -1)
     assert np.all(goal_bins[gap_mask] == -1)
 
-    # Check Trial 3 (t=11 to t=15: indices 11-15)
-    trial3_mask = (times >= 11.0) & (times <= 15.0)
+    # Check Trial 3 ([11, 15): indices 11-14)
+    trial3_mask = (times >= 11.0) & (times < 15.0)
     assert np.all(start_bins[trial3_mask] == start_bin)
     assert np.all(goal_bins[trial3_mask] == goal1_bin)
 
@@ -176,9 +175,9 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
     # Call function
     start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
 
-    # Start bins should be set
+    # Start bins should be set inside [0, 10)
     start_bin = env.bins_in_region("start")[0]
-    assert np.all(start_bins == start_bin)
+    assert np.all(start_bins[:-1] == start_bin)
 
     # Goal bins should remain -1 (no goal for failed trial)
     assert np.all(goal_bins == -1)
@@ -224,8 +223,8 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
     expected_start = _expected_centroid_bin(env, "start_zone")
     expected_goal = _expected_centroid_bin(env, "goal_zone")
 
-    assert np.all(start_bins == expected_start)
-    assert np.all(goal_bins == expected_goal)
+    assert np.all(start_bins[:-1] == expected_start)
+    assert np.all(goal_bins[:-1] == expected_goal)
 
     # The chosen representative must lie inside the region (a real region bin).
     assert expected_start in set(start_zone_bins.tolist())
@@ -273,8 +272,8 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
     times = np.linspace(0.0, 5.0, 6)
     start_bins, goal_bins = trials_to_region_arrays(Intervals([trial]), times, env)
 
-    assert np.all(start_bins == expected)
-    assert np.all(goal_bins == expected)
+    assert np.all(start_bins[:-1] == expected)
+    assert np.all(goal_bins[:-1] == expected)
     assert not np.any(start_bins == first_bin)
 
 

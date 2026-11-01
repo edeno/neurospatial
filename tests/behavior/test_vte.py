@@ -1716,3 +1716,27 @@ def test_session_result_refuses_entries_that_are_not_trial_results():
         TypeError, match=r"trial_results entry must be a VTETrialResult"
     ):
         VTESessionResult(trial_results=(1.0,))
+
+
+def test_session_trial_without_duration_has_no_samples_and_no_warning(
+    t_maze_environment,
+):
+    """A trial with start == stop holds no sample; that is not a clock problem."""
+    import warnings
+
+    from neurospatial.behavior.vte import compute_vte_session
+
+    times, positions, trials = _t_maze_session([2.0, 4.0])
+    instant = Trial(trials[0].stop_time, trials[0].stop_time, "start", None, "censored")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vte_session(
+            t_maze_environment,
+            times,
+            positions,
+            trials=Intervals([*trials, instant]),
+            **_SESSION_KWARGS,
+        )
+    statuses = [r.status for r in result.trial_results]
+    assert statuses.count("no_samples") == 1
+    assert statuses.count("ok") == 2

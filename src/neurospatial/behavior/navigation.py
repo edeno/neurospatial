@@ -559,58 +559,6 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
-def _warn_if_no_trial_overlaps(
-    times: NDArray[np.float64],
-    trials: Intervals[Trial],
-    *,
-    call: str,
-    result: str,
-) -> None:
-    """Warn when trials exist but none of them contains a sample of ``times``.
-
-    That almost always means the trials and ``times`` are on different
-    clocks (for example milliseconds against seconds), which would otherwise
-    give a silent all-missing result.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Sample times in seconds.
-    trials : Intervals
-        Trials with ``start`` and ``stop`` in seconds.
-    call : str
-        Public function name for the message.
-    result : str
-        What the caller returns everywhere in that case, e.g. ``"NaN"``.
-    """
-    import warnings
-
-    from neurospatial._stacklevel import _external_stacklevel
-
-    if len(trials) == 0 or len(times) == 0:
-        return
-    starts, ends = trials.start, trials.stop
-    # Each trial's first sample at or after its start; it is inside the trial
-    # when it is not after the trial's end.
-    ordered = np.sort(times)
-    first = np.searchsorted(ordered, starts, side="left")
-    inside = (first < len(ordered)) & (
-        ordered[np.minimum(first, len(ordered) - 1)] <= ends
-    )
-    if inside.any():
-        return
-    warnings.warn(
-        f"{call}: none of the {len(trials)} trials (spanning "
-        f"[{starts.min():g}, {ends.max():g}] s) contains a sample of times "
-        f"(spanning [{ordered[0]:g}, {ordered[-1]:g}] s), so every output is "
-        f"{result}. Fix: check that the trials and times are on the same "
-        "clock, in seconds (for example trials from segment_trials() on the "
-        "same recording).",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
-
-
 @reads_pynapple_samples
 def trials_to_region_arrays(
     trials: Intervals[Trial],
@@ -635,7 +583,8 @@ def trials_to_region_arrays(
     Returns
     -------
     start_bins : NDArray[np.int_], shape (n_samples,)
-        Start bin index at each timepoint (-1 outside trials).
+        Start bin index at each timepoint, for samples in a trial's
+        ``[start, stop)`` (-1 outside trials).
     goal_bins : NDArray[np.int_], shape (n_samples,)
         Goal bin index at each timepoint (-1 outside trials).
 
@@ -692,9 +641,6 @@ def trials_to_region_arrays(
 
     require_intervals(trials, name="trials", owner="trials_to_region_arrays()")
     times = _validated_signal_times(times, call="trials_to_region_arrays")
-    _warn_if_no_trial_overlaps(
-        times, trials, call="trials_to_region_arrays()", result="-1"
-    )
     start_bins = np.full(len(times), -1, dtype=np.int_)
     goal_bins = np.full(len(times), -1, dtype=np.int_)
 
@@ -711,42 +657,17 @@ def trials_to_region_arrays(
             representative[name] = region_representative_bin(env, name)
         return representative[name]
 
-    # Samples with start_time <= t <= end_time, a slice of the sorted times;
-    # a later trial overwrites an overlapping earlier one.
-    for trial, first, stop in zip(
-        trials, *_trial_sample_bounds(times, trials), strict=True
-    ):
+    # Each trial's samples, start <= t < stop; a later trial overwrites an
+    # overlapping earlier one.
+    for trial, samples in zip(trials, trials.sample_slices(times), strict=True):
         start_bin = region_bin(trial.start_region)
         if start_bin is not None:
-            start_bins[first:stop] = start_bin
+            start_bins[samples] = start_bin
         goal_bin = region_bin(trial.end_region)
         if goal_bin is not None:
-            goal_bins[first:stop] = goal_bin
+            goal_bins[samples] = goal_bin
 
     return start_bins, goal_bins
-
-
-def _trial_sample_bounds(
-    times: NDArray[np.float64], trials: Intervals[Trial]
-) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
-    """First and one-past-last sample of each trial in strictly increasing times.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Strictly increasing sample times in seconds.
-    trials : Intervals
-        Trials in seconds.
-
-    Returns
-    -------
-    first, stop : ndarray of intp, shape (n_trials,)
-        ``times[first:stop]`` are the samples with
-        ``start_time <= t <= end_time``.
-    """
-    first: NDArray[np.intp] = np.searchsorted(times, trials.start, side="left")
-    stop: NDArray[np.intp] = np.searchsorted(times, trials.stop, side="right")
-    return first, stop
 
 
 def _bin_distances(
