@@ -670,7 +670,7 @@ class _PeriEventExports:
                 "firing_rate_sem": (sem / self.bin_size).reshape(-1),
                 "histogram": histograms.reshape(-1),
                 "sem": sem.reshape(-1),
-                "n_events": np.tile(per_bin, n_units),
+                "events_per_bin": np.tile(per_bin, n_units),
             }
         )
         df.attrs = self._table_attrs()
@@ -810,7 +810,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             Columns ``unit_id``, ``bin_center`` (s, time relative to event),
             ``firing_rate`` (Hz), ``firing_rate_sem`` (Hz), ``histogram``
             (mean spike count per bin), ``sem`` (count units) and
-            ``n_events`` (events averaged in the bin). ``df.attrs`` holds
+            ``events_per_bin`` (events averaged in the bin; ``n_events`` in
+            every bin for plain event times). ``df.attrs`` holds
             ``window``, ``bin_size``, ``n_events``, ``n_events_dropped``,
             ``align`` and ``event_ids`` (a list, or None).
 
@@ -828,7 +829,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'n_events']
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'events_per_bin']
         >>> df["bin_center"].tolist()
         [-0.5, 0.0, 0.5]
         """
@@ -1164,8 +1165,9 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         pandas.DataFrame
             Columns ``unit_id``, ``bin_center`` (s), ``firing_rate`` (Hz),
             ``firing_rate_sem`` (Hz), ``histogram`` (mean spike count per
-            bin), ``sem`` (count units) and ``n_events`` (events averaged in
-            the bin). ``df.attrs`` holds ``window``, ``bin_size``,
+            bin), ``sem`` (count units) and ``events_per_bin`` (events
+            averaged in the bin; ``n_events`` in every bin for plain event
+            times). ``df.attrs`` holds ``window``, ``bin_size``,
             ``n_events``, ``n_events_dropped``, ``align`` and ``event_ids``
             (a list, or None).
 
@@ -1184,7 +1186,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'n_events']
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'events_per_bin']
         >>> len(df) == 2 * 3
         True
         """

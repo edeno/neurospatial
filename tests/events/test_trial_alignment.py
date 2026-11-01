@@ -122,7 +122,7 @@ def test_psth_averages_each_bin_over_the_trials_under_way(trials):
     np.testing.assert_allclose(result.sem, sem)
     assert result.n_events == 3
     assert result.align == "start"
-    assert result.to_dataframe()["n_events"].tolist() == n.tolist()
+    assert result.to_dataframe()["events_per_bin"].tolist() == n.tolist()
 
 
 def test_psth_of_trials_longer_than_the_window_equals_plain_times():
