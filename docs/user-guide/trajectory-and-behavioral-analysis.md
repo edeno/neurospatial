@@ -1155,25 +1155,33 @@ route_of_sample = trials[trials.outcome == "reached"].sample_values(
 To attach columns of a task log with one row per trial, find each trial's log
 row with `log.sample_interval_ids(trials.start)`.
 
-**Lost tracking ends a trial.** A NaN position (lost tracking) is not
-observed: the trial under way becomes `"censored"`, and the next trial starts
-only after the animal is seen leaving a region again. For short dropouts, such
-as a few frames where the tracker lost the head, delete those rows instead of
-keeping them as NaN: a deleted row is bridged when the samples around it are
-no more than `max_gap` (1 s by default) apart.
+**Lost tracking.** A NaN position (lost tracking, a low-confidence frame) is
+a missing sample, the same as a deleted row. A short dropout, such as a few
+frames where the tracker lost the head, is bridged when the samples around it
+are no more than `max_gap` (1 s by default) apart, and the trial goes on. A
+longer gap ends observation: the trial under way becomes `"censored"`, and the
+next trial starts only after the animal is seen leaving a region again.
 
 <!-- docs-test: run setup=docs_trials_from_positions -->
 ```python
-lost = positions.copy()
 middle = 0.5 * (trials.start[1] + trials.stop[1])  # during the second run
-lost[(times >= middle) & (times < middle + 0.5)] = np.nan  # 0.5 s lost
-print(detect_trials(env, times, lost, regions=list(wells)).outcome.tolist())
 
-tracked = ~np.isnan(lost).any(axis=1)  # delete the lost rows to bridge them
-bridged = detect_trials(env, times[tracked], lost[tracked], regions=list(wells))
+short = positions.copy()
+short[(times >= middle) & (times < middle + 0.5)] = np.nan  # 0.5 s lost
+bridged = detect_trials(env, times, short, regions=list(wells))
 print(bridged.outcome.tolist())
 assert bridged.outcome.tolist() == ["reached"] * 4
+
+long = positions.copy()
+long[(times >= middle) & (times < middle + 1.5)] = np.nan  # 1.5 s lost
+cut = detect_trials(env, times, long, regions=list(wells))
+print(cut.outcome.tolist())
+assert cut.outcome.tolist() == ["reached", "censored", "reached", "reached"]
 ```
+
+The 1.5 s gap hides the arrival at `well_2`, so the second trial is censored
+at the last tracked time, the start of the gap. Tracking returns while the
+animal rests at `well_2`, and the next trial starts normally when it leaves.
 
 ---
 
