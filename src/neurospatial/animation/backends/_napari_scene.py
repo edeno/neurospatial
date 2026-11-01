@@ -725,7 +725,9 @@ class NapariScene:
                 for name, (key, positions, colors) in prepared.items():
                     if drawn.get(name) != key:
                         layers[name].data = positions
-                        layers[name].face_color = colors
+                        # napari cannot parse an empty color array and warns.
+                        if len(colors):
+                            layers[name].face_color = colors
                         drawn[name] = key
 
             self._updates.append(_LayerUpdate(prepare_events, apply_events))
