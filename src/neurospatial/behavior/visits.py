@@ -169,11 +169,26 @@ def _observed_visits(
     epochs: Any,
     break_before: ArrayLike | None,
     call: str,
+    result: str,
 ) -> _ObservedVisits:
-    """Detect visits, keeping each run's end for trials censored by it."""
+    """Detect visits, keeping each run's end for trials censored by it.
+
+    NaN positions are missing samples, bridged like deleted rows: they are
+    dropped before detection, so the samples around them are joined when
+    no more than ``max_gap`` apart. A position outside the environment is
+    observed but not located and ends the run. Sample indices refer to the
+    original arrays.
+    """
     from neurospatial._exceptions import _format_error
 
     clock, bins = sample_bins(env, times, positions, call=call)
+    samples = np.asarray(positions, dtype=np.float64)
+    tracked = (
+        np.isfinite(samples.reshape(clock.size, -1)).all(axis=1)
+        if clock.size
+        else np.zeros(0, dtype=bool)
+    )
+    kept = np.flatnonzero(tracked)
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(regions, str):
@@ -196,6 +211,11 @@ def _observed_visits(
         msg = f"{call}(): regions must not contain duplicate names."
         raise ValueError(msg)
     breaks = validate_break_before(break_before, clock.size, call=call)
+    if breaks is not None:
+        # A break declared at a dropped row applies to the next kept sample.
+        declared = np.cumsum(np.asarray(breaks, dtype=np.intp))
+        breaks = np.r_[False, declared[kept[1:]] > declared[kept[:-1]]]
+    clock, bins = clock[kept], bins[kept]
 
     # Resolve every bin's exclusive label before looking at this trajectory:
     # unvisited overlap is still ambiguous geometry, not a name-order policy.
@@ -244,7 +264,7 @@ def _observed_visits(
     gates = start_allocation(
         clock, bins, None, max_gap=max_gap, epochs=windows, break_before=breaks
     ).gates
-    warn_excluded_intervals(gates, result="every visit ends at its first sample")
+    warn_excluded_intervals(gates, result=result)
     continuous = gates.mask
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
@@ -265,8 +285,14 @@ def _observed_visits(
             label = int(run_labels[first])
             if label < 0:
                 continue
-            start_index, stop_index = int(run_start + first), int(run_start + stop)
-            exit_observed = bool(stop_index < run_stop)
+            start, stop_k = int(run_start + first), int(run_start + stop)
+            exit_observed = bool(stop_k < run_stop)
+            # Back to the original arrays: dropped rows inside the visit, up
+            # to its first outside sample, are within its index bounds.
+            start_index = int(kept[start])
+            stop_index = (
+                int(kept[stop_k]) if exit_observed else int(kept[stop_k - 1]) + 1
+            )
             visits.append(
                 RegionVisit(
                     visit_id=len(visits),
@@ -274,11 +300,9 @@ def _observed_visits(
                     region=names[label],
                     start_index=start_index,
                     stop_index=stop_index,
-                    start_time=float(clock[start_index]),
-                    stop_time=float(
-                        clock[stop_index] if exit_observed else run_end_time
-                    ),
-                    entry_observed=bool(start_index > run_start),
+                    start_time=float(clock[start]),
+                    stop_time=float(clock[stop_k] if exit_observed else run_end_time),
+                    entry_observed=bool(start > run_start),
                     exit_observed=exit_observed,
                 )
             )
@@ -310,12 +334,12 @@ def detect_region_visits(
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
     positions : ndarray, shape (n_samples, n_dims)
-        Positions in the environment's coordinates. A NaN position (lost
-        tracking) or one outside the environment is not located: as in
-        ``env.occupancy``, an interval touching it is not observed, so it
-        ends the run and censors the visits around it. To bridge short
-        dropouts instead, delete their rows; a deleted row is bridged when
-        the samples around it are no more than ``max_gap`` apart.
+        Positions in the environment's coordinates. A NaN position is a
+        missing sample (lost tracking, a low-confidence frame), the same as
+        a deleted row: it is bridged when the samples around it are no more
+        than ``max_gap`` apart, and a longer gap ends the run. A position
+        outside the environment is observed but not located: as in
+        ``env.occupancy``, it ends the run and censors the visits around it.
     regions : sequence of str
         Nonempty, unique region names. Bin-center membership follows
         ``regions_to_mask``: regions that only share edges, such as
@@ -391,6 +415,7 @@ def detect_region_visits(
         epochs=epochs,
         break_before=break_before,
         call="detect_region_visits",
+        result="every visit ends at its first sample",
     )
     return Intervals(
         observed.visits,

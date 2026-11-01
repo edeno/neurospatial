@@ -120,45 +120,53 @@ def test_reentries_are_separate_visits(region_env):
     np.testing.assert_allclose(trials.stop, [0.3, 0.5])
 
 
-def test_lost_tracking_censors_like_a_long_gap(region_env):
-    """An interval touching a NaN position is not observed, as in env.occupancy.
+def test_lost_tracking_is_bridged_like_a_deleted_row(region_env):
+    """A NaN position is a missing sample: bridged within max_gap, split beyond.
 
-    The visit around the lost sample is split into two censored visits,
-    exactly as a gap longer than ``max_gap`` splits it, and no exit is
+    Within ``max_gap`` the visits are those of the recording with the NaN
+    row deleted; sample indices still refer to the original arrays. Beyond
+    it, the gap splits the visit into two censored visits and no exit is
     fabricated at the lost sample.
     """
     bins = [1, 0, -1, 0, 1, 3]
     times = np.arange(6) / 10
+    positions = _at(region_env, bins)
+    kept = [0, 1, 3, 4, 5]
     visits = _visits(region_env, bins, times, regions=["A", "B"])
-    long_gap = _visits(region_env, bins, times, regions=["A", "B"], max_gap=0.15)
-    assert list(visits) == list(long_gap)
-    assert list(zip(visits.run_id, visits.region, strict=True)) == [
-        (0, "A"),
-        (1, "A"),
-        (1, "B"),
-    ]
-    assert not visits[0].exit_observed
-    assert visits[0].stop_time == 0.1
-    assert not visits[1].entry_observed
-    assert visits[1].start_index == 3
-    assert visits[2].entry_observed
-    # The visit before the loss has no departure; the one after it does.
-    trials = detect_trials(region_env, times, _at(region_env, bins), regions=["A", "B"])
+    deleted = detect_region_visits(
+        region_env, times[kept], positions[kept], regions=["A", "B"]
+    )
+    assert visits.region.tolist() == deleted.region.tolist() == ["A", "B"]
+    np.testing.assert_array_equal(visits.start, deleted.start)
+    np.testing.assert_array_equal(visits.stop, deleted.stop)
+    assert visits[0].exit_observed
+    assert (visits[0].start_index, visits[0].stop_index) == (1, 4)
+    trials = detect_trials(region_env, times, positions, regions=["A", "B"])
     assert list(zip(trials.start_region, trials.end_region, strict=True)) == [
         ("A", "B")
     ]
     assert trials.start.tolist() == [0.4]
 
+    split = _visits(region_env, bins, times, regions=["A", "B"], max_gap=0.15)
+    assert list(zip(split.run_id, split.region, strict=True)) == [
+        (0, "A"),
+        (1, "A"),
+        (1, "B"),
+    ]
+    assert not split[0].exit_observed
+    assert not split[1].entry_observed
+    assert split[1].start_index == 3
+
 
 def test_positions_outside_the_environment_are_not_located(region_env):
-    """A position beyond the environment ends observation like a NaN row."""
+    """A position beyond the environment ends observation; it is not bridged."""
     times = np.arange(6) / 10
     outside = _at(region_env, [1, 0, 0, 0, 1, 3])
     outside[2] = [50.0, 50.0]
-    lost = _at(region_env, [1, 0, -1, 0, 1, 3])
-    assert list(
-        detect_region_visits(region_env, times, outside, regions=["A"])
-    ) == list(detect_region_visits(region_env, times, lost, regions=["A"]))
+    visits = detect_region_visits(region_env, times, outside, regions=["A"])
+    assert visits.run_id.tolist() == [0, 1]
+    assert not visits[0].exit_observed
+    assert not visits[1].entry_observed
 
 
 def test_positions_need_the_environment_dimensions(region_env):
@@ -177,13 +185,17 @@ def test_time_gap_splits_runs_and_max_gap_equality_passes(region_env):
     gap = detect_trials(
         region_env, times, _at(region_env, bins), regions=["A", "B"], max_gap=1.0
     )
-    # The animal leaves A on the last sample before the 2 s gap: no observed
-    # time outside A, so no trial; the arrival at B after it starts none.
-    assert len(gap) == 0
+    # The animal leaves A on the last sample before the 2 s gap, and B on the
+    # last sample of the recording: each departure is an observation with no
+    # time (a zero-duration censored trial), and the arrival at B after the
+    # gap starts no trial.
+    assert gap.outcome.tolist() == ["censored", "censored"]
+    assert gap.start_region.tolist() == ["A", "B"]
+    assert gap.durations.tolist() == [0.0, 0.0]
     continuous = detect_trials(
         region_env, times, _at(region_env, bins), regions=["A", "B"], max_gap=None
     )
-    assert continuous.outcome.tolist() == ["reached"]
+    assert continuous.outcome.tolist() == ["reached", "censored"]
 
 
 def test_epoch_stop_closes_exposure_without_creating_entry_or_exit(region_env):
