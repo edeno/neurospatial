@@ -108,6 +108,7 @@ References
 
 from __future__ import annotations
 
+import numbers
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -622,6 +623,7 @@ def _rows_and_targets(
     *,
     name: str,
     call: str,
+    n_dims: int,
     rows: NDArray[np.intp] | None = None,
 ) -> tuple[NDArray[np.intp], list[Any], bool]:
     """Row of each sample, the target of each row, and whether it is one target.
@@ -631,7 +633,8 @@ def _rows_and_targets(
     every row; overlapping rows are refused), and ``target`` is one target
     for every row or one per row: a sequence of region names, points or
     ``None`` in row order, or a ``pandas.Series`` indexed by
-    ``interval_id``.
+    ``interval_id``. In an environment of more than one dimension a number
+    per interval (a well number) is refused: it cannot be a point there.
     """
     # A Series is one value per interval_id, whatever its values are.
     by_id = hasattr(target, "reindex") and hasattr(target, "index")
@@ -662,7 +665,21 @@ def _rows_and_targets(
         )
         raise ValueError(msg)
     targets: list[Any] = []
-    for value in values:
+    for interval_id, value in zip(intervals.interval_ids, values, strict=True):
+        if n_dims > 1 and (
+            isinstance(value, numbers.Number)
+            or (isinstance(value, np.ndarray) and value.ndim == 0)
+        ):
+            raise TypeError(
+                _format_error(
+                    f"{call}: {name}= for interval_id {interval_id} is the number "
+                    f"{value}, not a region name or a point.",
+                    why="a number per interval, such as a well number, is not a "
+                    "region name, and a point is a sequence of coordinates.",
+                    fix=f"map the numbers to the environment's region names, e.g. "
+                    f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}).",
+                )
+            )
         entry = _as_point(value)
         if entry is None and value is not None and not isinstance(value, str):
             msg = (
@@ -895,7 +912,11 @@ def path_progress(
         or point per interval in row order (a ``pandas.Series`` indexed by
         ``interval_id`` is aligned by id), for example
         ``goal=trials.end_region``. ``None`` marks an unknown start or goal:
-        that interval's samples are NaN.
+        that interval's samples are NaN. Well or port numbers are not region
+        names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
+        In 2-D and 3-D a number per interval is refused; in 1-D it is a
+        position, so a well number there would be read as that many units
+        along the track without an error.
     point_radius : float, optional
         Size, in environment units, of point starts and goals (point regions
         and points) off a linearized track: each becomes the bins whose
@@ -1045,10 +1066,16 @@ def path_progress(
     # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
     sized = env.n_dims > 1 and not env.is_linearized_track
     rows, starts, single_start = _rows_and_targets(
-        intervals, times, start, name="start", call=f"{call}()"
+        intervals, times, start, name="start", call=f"{call}()", n_dims=env.n_dims
     )
     _, goals, single_goal = _rows_and_targets(
-        intervals, times, goal, name="goal", call=f"{call}()", rows=rows
+        intervals,
+        times,
+        goal,
+        name="goal",
+        call=f"{call}()",
+        n_dims=env.n_dims,
+        rows=rows,
     )
     bins = env.bin_at(positions)
     from neurospatial.geometry import MissingCellGeometryError
@@ -1172,7 +1199,11 @@ def distance_to_goal(
         interval in row order (a ``pandas.Series`` indexed by
         ``interval_id`` is aligned by id), for example
         ``goal=trials.end_region``. ``None`` marks an unknown goal: that
-        interval's samples are NaN.
+        interval's samples are NaN. Well or port numbers are not region
+        names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
+        In 2-D and 3-D a number per interval is refused; in 1-D it is a
+        position, so a well number there would be read as that many units
+        along the track without an error.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         ``"geodesic"`` is the length of the shortest path that stays inside
         the environment, measured from the position itself; ``"euclidean"``
@@ -1235,7 +1266,7 @@ def distance_to_goal(
         env, times, positions, intervals, call=call
     )
     rows, goals, _ = _rows_and_targets(
-        intervals, times, goal, name="goal", call=f"{call}()"
+        intervals, times, goal, name="goal", call=f"{call}()", n_dims=env.n_dims
     )
     distances = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)

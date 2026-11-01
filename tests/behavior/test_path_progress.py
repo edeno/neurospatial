@@ -582,3 +582,24 @@ def test_numeric_series_aligns_by_interval_id():
     np.testing.assert_allclose(remaining, [40.0, 40.0, 40.0, 40.0], atol=1.0)
     with pytest.raises(ValueError, match="one value per interval"):
         path_progress(env, times, positions, start=[49.0], goal=goals)
+
+
+@pytest.mark.parametrize("n_trials", [2, 3])
+def test_integer_goal_entries_refused_in_2d(n_trials):
+    """Well numbers are not points: two of them once read as one 2-D point."""
+    from neurospatial.simulation.mazes import make_w_maze
+
+    track = make_w_maze().env_track
+    times = np.arange(0.0, 30.0, 0.5)
+    positions = np.column_stack(
+        [np.zeros(times.size), np.linspace(69.0, 0.0, times.size)]
+    )
+    trials = Intervals.from_arrays(
+        np.arange(n_trials) * 10.0,
+        np.arange(1, n_trials + 1) * 10.0,
+        goal_well=[1, 3, 1][:n_trials],
+    )
+    with pytest.raises(TypeError, match=r"(?s)is the number 1,.*map the numbers"):
+        path_progress(
+            track, times, positions, trials, start="well_2", goal=trials.goal_well
+        )
