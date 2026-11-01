@@ -1592,11 +1592,13 @@ def test_head_sweep_of_a_full_circle_is_two_pi():
     """Each extra revolution adds exactly 2 pi.
 
     The first revolution falls short of 2 pi only by its edges: the last
-    sample is one frame short of a full turn, and the velocity smoothing
-    (sigma 0.1 s) cannot see past the ends of the recording. At each end it
-    averages one side of the window only, whose mean lies sigma * sqrt(2 / pi)
-    seconds inside the recording, so each end costs at most the angle turned
-    in that time.
+    sample is one frame short of a full turn, and the velocity, the slope of
+    a Gaussian-weighted line fit (sigma 0.1 s), cannot see past the ends of
+    the recording. At each end the fit holds one half of the window, and on a
+    path turning at a constant rate its slope points along the path as it was
+    cov(tau, tau**2) / (2 var(tau)) seconds earlier, with tau half-normal:
+    sigma * sqrt(2 / pi) / (2 * (1 - 2 / pi)), about 1.1 sigma. Each end
+    costs at most the angle turned in that time.
     """
     from neurospatial.behavior.vte import head_sweep_from_positions
 
@@ -1605,7 +1607,7 @@ def test_head_sweep_of_a_full_circle_is_two_pi():
         two = head_sweep_from_positions(*_circle(2, fs=fs), min_speed=1.0)
         assert_allclose(two - one, 2 * np.pi, rtol=1e-9)
         omega = 2 * np.pi / 4.0  # rad/s
-        one_sided_lag = 0.1 * np.sqrt(2 / np.pi)
+        one_sided_lag = 0.1 * np.sqrt(2 / np.pi) / (2 * (1 - 2 / np.pi))
         assert 0 < 2 * np.pi - one < omega * (1 / fs + 2 * one_sided_lag)
 
 

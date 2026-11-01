@@ -299,9 +299,10 @@ def compute_speed(
 ) -> NDArray[np.float64]:
     """Running speed at each tracking sample, robust to tracking jitter.
 
-    The velocity vector is estimated by centered differences and smoothed
-    with a Gaussian of ``smooth_window`` seconds before its magnitude is
-    taken. Differencing raw positions instead turns camera jitter into
+    The velocity at each sample is the slope of a straight line fitted to the
+    positions around it, weighted by a Gaussian of ``smooth_window`` seconds
+    in time (the same fit whose value is the smoothed position of
+    :func:`smooth_positions`); speed is its magnitude. Differencing raw positions instead turns camera jitter into
     speed: an animal sitting still with 0.5 cm of jitter reads about
     20 cm/s at 30 Hz and 200 cm/s at 500 Hz, so a ``min_speed`` filter would
     keep nearly all of its rest. The per-sample ``min_speed`` gates of rate
@@ -316,6 +317,12 @@ def compute_speed(
     around it are within ``max_gap``. Speed is never smoothed across a longer
     gap, the edge of an ``epochs`` window or a declared break.
 
+    One mistracked frame (a keypoint jump in pose tracking) changes the speed
+    of every sample within ``4 * smooth_window`` seconds of it: 30 cm of error
+    makes a still animal read faster than 4 cm/s for most of that window.
+    Set low-likelihood frames to NaN before calling; a missing frame is
+    skipped, not smoothed in.
+
     All coordinate columns enter the speed: for 3-D tracking it is the 3-D
     speed. ``heading_from_velocity`` uses x and y only; pass
     ``positions[:, :2]`` for the horizontal speed.
@@ -329,9 +336,9 @@ def compute_speed(
         coordinate (for example a linearized track). Rows with a non-finite
         coordinate are missing.
     smooth_window : float, default=0.1
-        Standard deviation, in seconds, of the Gaussian smoothing applied to
-        each velocity component (the default of spyglass's position
-        pipeline). 0 gives the unsmoothed centered-difference speed.
+        Standard deviation, in seconds, of the Gaussian that weights the
+        local line fit (the default of spyglass's position pipeline). 0
+        gives the unsmoothed centered-difference speed.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -510,9 +517,10 @@ def heading_from_velocity(
     no velocity or heading spans a longer gap, an ``epochs`` edge or a
     declared break.
 
-    Velocity is the centered secant of position over each sample's actual
-    elapsed time (one-sided at a run's ends), smoothed separately within each
-    run. Samples touching no valid interval have NaN headings. If no samples
+    Velocity is the slope of a Gaussian-weighted local line fit in time, as
+    in :func:`compute_speed`, fitted separately within each run (with
+    ``smooth_window=0``, the centered secant over each sample's actual
+    elapsed time, one-sided at a run's ends). Samples touching no valid interval have NaN headings. If no samples
     belong to any run, the result is all NaN.
 
     Movement heading is the direction of the velocity vector, so it is not
@@ -1728,8 +1736,9 @@ def smooth_positions(
     pass. The one smoothing it applies itself is to the motion derived from
     them, since differencing positions turns even small jitter into speed
     (0.5 cm reads as about 13 cm/s at 30 Hz). Velocity, speed and the
-    direction of motion are smoothed over 0.1 s (``smooth_window`` of
-    :func:`compute_speed`) wherever the package computes them: in
+    direction of motion are the slope of the same local line fit, over
+    0.1 s (``smooth_window`` of :func:`compute_speed`), wherever the package
+    computes them: in
     :func:`compute_speed`, :func:`heading_from_velocity` and
     :func:`segment_by_velocity`, where ``smooth_window`` sets it; in the
     ``min_speed`` gates of the rate-map functions; and in the goal

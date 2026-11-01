@@ -35,6 +35,11 @@ of the recording starts no interval, so it no longer receives the run's
 median interval. Bin 19 (29 samples, the last) now holds 28 intervals, as
 bin 18 does, and the tie is listed in ascending bin order: ``[18, 19, ...]``
 instead of ``[19, 18, ...]``.
+The velocity-based entries were captured again when velocity became the slope
+of the Gaussian-weighted local line fit that ``smooth_positions`` uses,
+instead of a Gaussian mean of centered secants: headings more than 20 samples
+from the ends of the recording moved by less than 3e-6 rad, those at the ends
+by up to 0.014 rad.
 """
 
 import json

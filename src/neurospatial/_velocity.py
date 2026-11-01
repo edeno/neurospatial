@@ -3,11 +3,16 @@
 Differencing raw positions turns tracking jitter into speed: a still animal
 tracked with 0.5 cm of camera noise per coordinate reads as a mean speed of
 about 13 cm/s at 30 Hz and 220 cm/s at 500 Hz (centered secant). The velocity
-vector is therefore smoothed in time with a Gaussian of ``smooth_window``
-seconds before its magnitude is taken, as in non_local_detector's
-``get_velocity`` and spyglass's position processing (whose speed smoothing
-default is 0.1 s); after the default 0.1 s the same jitter reads as about
-1.3 cm/s at 30 Hz and 0.3 cm/s at 500 Hz.
+at each sample is therefore the slope of a straight line fitted to the
+positions around it, weighted by a Gaussian of ``smooth_window`` seconds in
+time (spyglass's speed smoothing default is 0.1 s); after the default 0.1 s
+the same jitter reads as about 1.4 cm/s at 30 Hz and 0.3 cm/s at 500 Hz.
+The intercept of the same fit is the smoothed position of
+``smooth_positions``, so velocity, speed and direction of motion agree with
+the smoothed path. A local line has no lag in the middle of a run and, unlike
+a mean of frame-to-frame velocities, is not dominated by the single noisy
+one-sided difference at the end of a run: with 0.5 cm of jitter the speed at
+the last sample of a 25 cm/s run is off by about 1 cm/s instead of 3-6 cm/s.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ def smoothed_velocity(
     *,
     smooth_window: float,
 ) -> NDArray[np.float64]:
-    """Velocity at each sample, smoothed within each observed run.
+    """Velocity at each sample, the slope of a local line fit within each run.
 
     Parameters
     ----------
@@ -46,12 +51,14 @@ def smoothed_velocity(
         bridged gap uses the elapsed time between the valid samples on either
         side.
     smooth_window : float
-        Standard deviation, in seconds, of the Gaussian that averages each
-        velocity component over time within the run
-        (:func:`smooth_run_in_time`): samples are weighted by their time
-        difference, so the window stays ``smooth_window`` seconds wide across
-        irregular sampling and bridged gaps. 0 keeps the unsmoothed
-        centered-secant velocity.
+        Standard deviation, in seconds, of the Gaussian that weights the
+        samples of the run in a local straight-line fit around each sample
+        (:func:`time_smoothed_positions`); the velocity is the slope of that
+        line. Samples are weighted by their time difference, so the window
+        stays ``smooth_window`` seconds wide across irregular sampling and
+        bridged gaps. A sample with no other sample within four standard
+        deviations, and every sample when ``smooth_window`` is 0, keeps the
+        unsmoothed centered-secant velocity.
 
     Returns
     -------
@@ -84,10 +91,11 @@ def smoothed_velocity(
     for run in valid_run_samples(mask, finite):
         if run.size < 2:
             continue
-        run_times = times[run]
-        run_velocity = _secant_velocity(run_times, positions[run])
+        run_times, run_positions = times[run], positions[run]
+        run_velocity = _secant_velocity(run_times, run_positions)
         if smooth_window > 0:
-            run_velocity = smooth_run_in_time(run_velocity, run_times, smooth_window)
+            _, slope, fitted = _local_line_fits(run_times, run_positions, smooth_window)
+            run_velocity[fitted] = slope[fitted]
         velocity[run] = run_velocity
     return velocity
 
@@ -275,43 +283,76 @@ def time_smoothed_positions(
     for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
         if run.size < 2:
             continue
-        t, p = times[run], positions[run]
-        # Weighted sums for the local fit p_j - p_i ~ a + b * (t_j - t_i),
-        # in differences from each sample so a still animal stays exactly still.
-        # Each sample weighs itself by 1; each pair (i, i + k) within reach
-        # adds to both samples, with lag and deviation negated for the later.
-        s0 = np.ones(run.size)
-        s1 = np.zeros(run.size)
-        s2 = np.zeros(run.size)
-        m0 = np.zeros_like(p)
-        m1 = np.zeros_like(p)
-        for k, weight in gaussian_pair_weights(t, sigma):
-            lag = t[k:] - t[:-k]
-            weighted_lag = weight * lag
-            weighted_square = weighted_lag * lag
-            deviation = p[k:] - p[:-k]
-            weighted_deviation = weight[:, None] * deviation
-            lagged_deviation = weighted_lag[:, None] * deviation
-            s0[:-k] += weight
-            s0[k:] += weight
-            s1[:-k] += weighted_lag
-            s1[k:] -= weighted_lag
-            s2[:-k] += weighted_square
-            s2[k:] += weighted_square
-            m0[:-k] += weighted_deviation
-            m0[k:] -= weighted_deviation
-            m1[:-k] += lagged_deviation
-            m1[k:] += lagged_deviation
-        det = s0 * s2 - s1**2
-        # A sample alone in its window (det ~ 0) keeps its own position.
-        fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
-        shift = np.where(
-            fitted[:, None],
-            (s2[:, None] * m0 - s1[:, None] * m1) / np.where(fitted, det, 1.0)[:, None],
-            0.0,
-        )
-        smoothed[run] = p + shift
+        shift, _, _ = _local_line_fits(times[run], positions[run], sigma)
+        smoothed[run] = positions[run] + shift
     return smoothed
+
+
+def _local_line_fits(
+    times: NDArray[np.float64], positions: NDArray[np.float64], sigma: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Gaussian-weighted straight-line fit around each sample of one run.
+
+    Around each sample ``i`` the line ``p_j - p_i ~ a + b * (t_j - t_i)`` is
+    fitted by least squares with weights ``exp(-(t_j - t_i)**2 / (2 sigma**2))``
+    (:func:`gaussian_pair_weights`). Working in differences from each sample
+    keeps a still animal exactly still and its velocity exactly zero.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing, in seconds; at least two samples.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Finite positions.
+    sigma : float
+        Positive standard deviation in seconds.
+
+    Returns
+    -------
+    shift : NDArray[np.float64], shape (n_samples, n_dims)
+        Intercept ``a``: the fitted position minus the sample's own; 0 where
+        not ``fitted``.
+    slope : NDArray[np.float64], shape (n_samples, n_dims)
+        Slope ``b``, the velocity in position units per second; 0 where not
+        ``fitted``.
+    fitted : NDArray[np.bool_], shape (n_samples,)
+        False for a sample with no other sample within reach, where a line is
+        undetermined.
+    """
+    # Each sample weighs itself by 1; each pair (i, i + k) within reach adds
+    # to both samples, with lag and deviation negated for the later.
+    s0 = np.ones(times.size)
+    s1 = np.zeros(times.size)
+    s2 = np.zeros(times.size)
+    m0 = np.zeros_like(positions)
+    m1 = np.zeros_like(positions)
+    for k, weight in gaussian_pair_weights(times, sigma):
+        lag = times[k:] - times[:-k]
+        weighted_lag = weight * lag
+        weighted_square = weighted_lag * lag
+        deviation = positions[k:] - positions[:-k]
+        weighted_deviation = weight[:, None] * deviation
+        lagged_deviation = weighted_lag[:, None] * deviation
+        s0[:-k] += weight
+        s0[k:] += weight
+        s1[:-k] += weighted_lag
+        s1[k:] -= weighted_lag
+        s2[:-k] += weighted_square
+        s2[k:] += weighted_square
+        m0[:-k] += weighted_deviation
+        m0[k:] -= weighted_deviation
+        m1[:-k] += lagged_deviation
+        m1[k:] += lagged_deviation
+    det = s0 * s2 - s1**2
+    fitted = det > 1e-12 * s0 * np.maximum(s2, np.finfo(float).tiny)
+    safe_det = np.where(fitted, det, 1.0)[:, None]
+    shift = np.where(
+        fitted[:, None], (s2[:, None] * m0 - s1[:, None] * m1) / safe_det, 0.0
+    )
+    slope = np.where(
+        fitted[:, None], (s0[:, None] * m1 - s1[:, None] * m0) / safe_det, 0.0
+    )
+    return shift, slope, fitted
 
 
 def validated_smooth_window(smooth_window: float, *, call: str) -> float:

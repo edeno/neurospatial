@@ -1163,12 +1163,11 @@ def segment_by_velocity(
     Smoothing and hysteresis are applied separately within each recording.
     A movement epoch in progress at its end is truncated there.
 
-    Speed is the speed of :func:`compute_speed`: the centered-secant velocity
-    ``(p[i+1] - p[i-1]) / (t[i+1] - t[i-1])`` (one-sided at the ends of a
-    recording), each component smoothed with a Gaussian of standard
-    deviation ``smooth_window`` seconds (edges extended with the nearest
-    value, ``mode="nearest"``, so movement that reaches the end of a
-    recording is not suppressed), then its magnitude.
+    Speed is the speed of :func:`compute_speed`: the magnitude of the slope
+    of a straight line fitted to the positions around each sample, weighted
+    by a Gaussian of standard deviation ``smooth_window`` seconds. Near the
+    end of a recording the fit uses the samples on one side, so movement that
+    reaches the end is not suppressed.
 
     Hysteresis thresholding prevents "flickering" near the threshold:
     - Movement starts at the first sample whose speed exceeds ``min_speed``
