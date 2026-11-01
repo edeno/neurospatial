@@ -157,8 +157,11 @@ so every bin averages the same trials, align plain times and restrict: `peri_eve
 
 **The same with pynapple.** `build_tensor` makes a trial × sample array.
 It aligns by sample index (so it assumes regular sampling without dropped
-frames), includes the sample at each trial's stop (pynapple intervals are
-closed), pads with NaN, and returns a plain array without trial ids. Trials
+frames), pads with NaN, and returns a plain array without trial ids.
+pynapple intervals include their end, so `to_pynapple` ends each exported
+interval one float below the trial's stop: each row holds the same
+`[start, stop)` samples as `trials.sample_slices(times)`, without the arrival
+sample. Trials
 without duration are dropped, so recover the row ids from the trials that
 have one:
 
