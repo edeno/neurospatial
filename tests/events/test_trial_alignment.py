@@ -181,3 +181,54 @@ def test_misuse_is_refused(clock, trials, events, kwargs, match):
 def test_an_intervals_without_rows_is_refused(clock, trials):
     with pytest.raises(ValueError, match="Intervals with no rows"):
         peri_event_histogram(SPIKES, trials[np.zeros(3, dtype=bool)], (0.0, 1.0))
+
+
+def test_continuous_cut_is_exact_at_float_rounded_trial_bounds():
+    times = np.round(np.arange(0, 5, 0.1), 10)
+    # 0.7 + 0.1 rounds below 0.8: that query is the trial's stop, not inside.
+    result = align_continuous_to_events(
+        times,
+        times,
+        Intervals.from_arrays([0.7], [0.8]),
+        (0.0, 1.0),
+        dt=0.1,
+        window_coverage="partial",
+    )
+    np.testing.assert_allclose(
+        result.values[0, :, 0][~np.isnan(result.values[0, :, 0])], [0.7]
+    )
+    # 0.3 - 0.2 rounds below 0.1: that query is the trial's start, inside
+    # (and after the stop is kept when aligned at the stop).
+    result = align_continuous_to_events(
+        times,
+        times,
+        Intervals.from_arrays([0.1], [0.3]),
+        (-0.2, 0.1),
+        dt=0.1,
+        align="stop",
+        window_coverage="partial",
+    )
+    np.testing.assert_allclose(result.values[0, :, 0], [0.1, 0.2, 0.3])
+
+
+def test_psth_leaves_a_spike_at_a_trial_stop_to_the_next_trial():
+    trials = Intervals.from_arrays([0.1, 0.3], [0.3, 0.6])
+    result = peri_event_histogram(np.array([0.3]), trials, (0.0, 0.3), bin_size=0.1)
+    np.testing.assert_allclose(result.histogram, [0.5, 0.0, 0.0])
+    raster = align_spikes_to_events(np.array([0.3]), trials, (0.0, 0.3))
+    assert [r.tolist() for r in raster] == [[], [0.0]]
+
+
+def test_response_plot_cuts_raster_rows_like_the_histogram():
+    from neurospatial.events import plot_peri_event_response
+
+    trials = Intervals.from_arrays([1.0, 2.0], [2.0, 3.0])
+    spikes = np.array([1.5, 2.1, 2.5])
+    result = peri_event_histogram(spikes, trials, (0.0, 2.0), bin_size=0.5)
+    raster_ax, _ = plot_peri_event_response(spikes, trials, result)
+    # Trial [1, 2) shows only its spike at 1.5; 2.1 and 2.5 are the next
+    # trial's, in its own row.
+    rows = [list(np.round(c.get_positions(), 9)) for c in raster_ax.collections]
+    assert rows == [[0.5], [0.1, 0.5]]
+    with pytest.raises(ValueError, match="computed from intervals"):
+        plot_peri_event_response(spikes, trials.start, result)

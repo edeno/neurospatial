@@ -277,6 +277,11 @@ def _peri_event_histograms(
         covered = (lefts >= limits[0][event_indices, None]) & (
             rights <= limits[1][event_indices, None]
         )
+        # Count only inside the cut: a bin edge rounded past a trial's stop
+        # must not take a spike at the stop (the next trial's).
+        edges = np.clip(
+            edges, limits[0][event_indices, None], limits[1][event_indices, None]
+        )
         has_bin = covered.any(axis=1)
         event_times, event_indices = event_times[has_bin], event_indices[has_bin]
         edges, covered = edges[has_bin], covered[has_bin]

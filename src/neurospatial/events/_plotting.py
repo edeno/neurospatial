@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,17 +13,20 @@ from neurospatial.events._core import (
     PeriEventResult,
     _finite_times,
     _make_bin_edges,
+    interval_events,
 )
 from neurospatial.events.alignment import _peri_event_bin_edges, _sorted_times
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
+    from neurospatial._interval_table import Intervals
+
 
 @reads_pynapple_samples
 def plot_peri_event_response(
     spike_times: NDArray[np.float64],
-    event_times: NDArray[np.float64],
+    event_times: NDArray[np.float64] | Intervals[Any],
     result: PeriEventResult,
     *,
     axes: tuple[Axes, Axes] | None = None,
@@ -45,11 +48,13 @@ def plot_peri_event_response(
         Spike times in seconds for the unit represented by ``result``. Unsorted
         times and an empty train are supported. A plain array has no unit
         identity metadata: the caller must supply the matching train.
-    event_times : ndarray of shape (n_input_events,)
+    event_times : ndarray of shape (n_input_events,), or Intervals
         The complete original event array, in its original order and on the
         same clock as ``spike_times``. Include the events dropped by the
         histogram's exposure filter. Duplicate timestamps remain distinct rows.
-        A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+        A pynapple ``Ts`` or ``Tsd`` is read by its timestamps. For a
+        histogram of trials, the same ``Intervals``: each raster row is
+        aligned and cut like the histogram (``result.align``).
     result : PeriEventResult
         A single-unit result with known ``event_indices``, returned by
         ``peri_event_histogram`` or selected from a population with
@@ -137,6 +142,19 @@ def plot_peri_event_response(
         )
         raise ValueError(msg)
     spike_times = _finite_times(spike_times, "spike_times")
+    call = "plot_peri_event_response"
+    event_times, _, limits = interval_events(
+        event_times, result.align or "start", call=call
+    )
+    if (limits is None) != (result.align is None):
+        msg = (
+            f"{call}: result was computed from "
+            f"{'plain event times' if result.align is None else 'intervals'}, but "
+            f"event_times {'is an Intervals' if limits is not None else 'are plain times'}. "
+            "Pass the same event_times the histogram was computed from, so the "
+            "raster rows are aligned and cut like its bins."
+        )
+        raise ValueError(msg)
     event_times = _finite_times(event_times, "event_times")
     n_input_events = result.n_events + result.n_events_dropped
     if event_times.size != n_input_events:
@@ -170,6 +188,12 @@ def plot_peri_event_response(
     edges = _peri_event_bin_edges(
         selected_events, result.window, bin_edges, result.bin_size
     )
+    if limits is not None:
+        edges = np.clip(
+            edges,
+            limits[0][result.event_indices, None],
+            limits[1][result.event_indices, None],
+        )
     first = np.searchsorted(spikes, edges[:, 0], side="left")
     stop = np.searchsorted(spikes, edges[:, -1], side="left")
     below_stop = np.nextafter(bin_edges[-1], bin_edges[0])

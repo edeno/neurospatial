@@ -26,6 +26,9 @@ by its trial.
   A bin that a trial covers only in part does not count for that trial.
   PSTH tables gain an `n_events` column per bin, and every PSTH and
   continuous table records `align` in `df.attrs`.
+- `plot_peri_event_response` takes the same `Intervals` for a trial
+  histogram, and cuts each raster row like the histogram's bins; plain times
+  with a trial result (or the reverse) are refused.
 
 ### One row per trial
 

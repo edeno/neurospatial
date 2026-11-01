@@ -28,6 +28,7 @@ from neurospatial._results import (
     as_label_array,
     require_label_sequence,
 )
+from neurospatial._time_bins import _edge_rounding
 from neurospatial.events._continuous import (
     _ALLOWED_INTERPOLATION,
     _EVENT_STATUSES,
@@ -1060,9 +1061,12 @@ def align_continuous_to_events(
             events[rows], relative_times, t, sig, supports, spec, normalized_epochs
         )
         if limits is not None:
+            # A query computed as event + offset is off by a few ulp: one
+            # nominally at the trial's start is in, one at its stop is out.
             queries = events[rows, None] + relative_times[None, :]
-            outside = (queries < limits[0][rows, None]) | (
-                queries >= limits[1][rows, None]
+            slack = _edge_rounding(queries, queries)
+            outside = (queries < limits[0][rows, None] - slack) | (
+                queries >= limits[1][rows, None] - slack
             )
             values[outside] = np.nan
             support[outside] = False
