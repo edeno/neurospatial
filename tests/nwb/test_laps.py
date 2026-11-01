@@ -32,7 +32,7 @@ def _read_laps(path, name="laps"):
     from neurospatial.io.nwb import read_intervals
 
     with NWBHDF5IO(str(path), "r") as io:
-        return read_intervals(io.read(), interval_name=name)
+        return read_intervals(io.read(), interval_name=name).intervals_table()
 
 
 class TestWriteLapsFromLaps:
@@ -178,7 +178,7 @@ class TestWriteLapsFromArrays:
 
         write_laps(empty_nwb, start_times=[1.0], stop_times=[2.0])
 
-        table = read_intervals(empty_nwb, interval_name="laps")
+        table = read_intervals(empty_nwb, interval_name="laps").intervals_table()
         assert set(table.columns) == {"start_time", "stop_time"}
 
     @pytest.mark.parametrize(
@@ -265,7 +265,7 @@ class TestWriteLapsOverwrite:
         write_laps(empty_nwb, LAPS)
         write_laps(empty_nwb, LAPS[:1], overwrite=True)
 
-        table = read_intervals(empty_nwb, interval_name="laps")
+        table = read_intervals(empty_nwb, interval_name="laps").intervals_table()
         np.testing.assert_array_equal(table["start_time"], [1.0])
 
     def test_overwrite_with_zero_laps_removes_the_table(self, empty_nwb):
@@ -299,7 +299,7 @@ class TestWriteLapsOverwrite:
             )
 
         kept = read_intervals(empty_nwb, interval_name="laps")
-        assert list(kept["direction"]) == [lap.direction for lap in LAPS]
+        assert list(kept.direction) == [lap.direction for lap in LAPS]
 
     @pytest.mark.parametrize("mode", ["r+", "a"])
     def test_in_place_overwrite_is_refused(self, tmp_path, mode):

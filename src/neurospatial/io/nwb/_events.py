@@ -235,12 +235,16 @@ def read_intervals(
     nwbfile: NWBFile,
     *,
     interval_name: str,
-) -> pd.DataFrame:
+) -> Intervals[Interval]:
     """
-    Read time intervals from NWB file.
+    Read an NWB TimeIntervals table as Intervals.
 
-    Reads TimeIntervals tables from the NWB file, including predefined tables
-    (trials, epochs, invalid_times) and custom interval tables.
+    Reads predefined tables (trials, epochs, invalid_times) and custom
+    interval tables. Each row becomes one :class:`~neurospatial.Interval`:
+    the table ``id`` is its ``interval_id`` and every other column a field,
+    in column order. Text ``""`` reads back as ``None`` (NWB text columns
+    cannot hold ``None``, so the writers store a missing value as ``""``); a
+    list cell (for example NWB ``tags``) becomes a tuple.
 
     Parameters
     ----------
@@ -255,8 +259,10 @@ def read_intervals(
 
     Returns
     -------
-    DataFrame
-        Intervals data with start_time, stop_time, and any additional columns.
+    Intervals of Interval
+        The rows, sorted by time, with the table's columns as fields. Select
+        rows by field (``epochs[epochs.tags == ("run",)]``) and pass them as
+        ``epochs=``; ``intervals_table()`` gives a DataFrame.
 
     Raises
     ------
@@ -269,20 +275,20 @@ def read_intervals(
     this function reads interval data with start/stop times from the built-in
     NWB TimeIntervals type. No extension dependencies required.
 
-    Pass the rows as ``epochs=`` (``df[["start_time", "stop_time"]].to_numpy()``)
-    to read each as the half-open window ``[start_time, stop_time)``, the
-    meaning :func:`write_trials` and :func:`write_laps` give them. pynapple's
-    ``load_file`` reads the same table with inclusive ends; see
-    :func:`write_trials` for how to get identical selections on both routes.
+    Each row is the half-open window ``[start_time, stop_time)``, the meaning
+    :func:`write_trials` and :func:`write_laps` give them: a sample exactly at
+    ``stop_time`` is outside it. pynapple's ``load_file`` reads the same
+    table with inclusive ends; see :func:`write_trials` for how to get
+    identical selections on both routes.
 
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     trials = read_intervals(nwbfile, interval_name="trials")
-    ...     print(f"Found {len(trials)} trials")
+    ...     epochs = read_intervals(io.read(), interval_name="epochs")
+    >>> epochs.interval_ids, epochs.fields  # doctest: +SKIP
     """
+    from neurospatial._interval_table import Intervals
 
     # Verify pynwb is installed
     _require_pynwb()
@@ -311,7 +317,17 @@ def read_intervals(
             fix="pass interval_name= with a name from this list.",
         )
     logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
-    return tables[interval_name].to_dataframe()
+    table = tables[interval_name].to_dataframe()
+    for name in table.columns:
+        # Text is object or, with pandas 3, string dtype; numbers are left as is.
+        if not pd.api.types.is_numeric_dtype(table[name].dtype):
+            table[name] = pd.Series(
+                [_field_value(value) for value in table[name]],
+                index=table.index,
+                dtype=object,
+            )
+    # The table's ids are its index, named "id"; a column cannot share it.
+    return Intervals.from_dataframe(table.reset_index(), id_column="id")
 
 
 def _records(
@@ -711,7 +727,7 @@ def write_laps(
     See Also
     --------
     detect_laps : Detect laps on a circular track.
-    read_intervals : Read the laps back as a DataFrame.
+    read_intervals : Read the laps back as Intervals.
     write_trials : Write trials to the predefined NWB trials table.
 
     Notes
@@ -1114,21 +1130,9 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     See Also
     --------
     write_trials : Write trials to NWB file.
-    read_intervals : Read generic TimeIntervals.
+    read_intervals : Read any TimeIntervals table the same way.
     """
-    from neurospatial._interval_table import Intervals
-
-    table = read_intervals(nwbfile, interval_name="trials")
-    for name in table.columns:
-        # Text is object or, with pandas 3, string dtype; numbers are left as is.
-        if not pd.api.types.is_numeric_dtype(table[name].dtype):
-            table[name] = pd.Series(
-                [_field_value(value) for value in table[name]],
-                index=table.index,
-                dtype=object,
-            )
-    # The table's ids are its index, named "id"; a column cannot share it.
-    return Intervals.from_dataframe(table.reset_index(), id_column="id")
+    return read_intervals(nwbfile, interval_name=PREDEFINED_TRIALS)
 
 
 def _field_value(value: Any) -> Any:
