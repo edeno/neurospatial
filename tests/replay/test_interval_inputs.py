@@ -148,5 +148,5 @@ def test_a_zero_duration_event_is_refused_not_dropped(session):
     """Dropping it would shift every later event's results by one row."""
     trains = session[0]
     events = Intervals.from_arrays([1.0, 3.0], [1.0, 3.5])
-    with pytest.raises(ValueError, match="start < stop"):
+    with pytest.raises(ValueError, match="no duration"):
         relative_rank_template(trains, events)

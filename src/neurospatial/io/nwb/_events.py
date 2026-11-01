@@ -317,17 +317,26 @@ def read_intervals(
             fix="pass interval_name= with a name from this list.",
         )
     logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
+    import warnings
+
+    from neurospatial._interval_table import readable_fields
+    from neurospatial._stacklevel import _external_stacklevel
+
     table = tables[interval_name].to_dataframe()
-    for name in table.columns:
-        # Text is object or, with pandas 3, string dtype; numbers are left as is.
-        if not pd.api.types.is_numeric_dtype(table[name].dtype):
-            table[name] = pd.Series(
-                [_field_value(value) for value in table[name]],
-                index=table.index,
-                dtype=object,
-            )
     # The table's ids are its index, named "id"; a column cannot share it.
-    return Intervals.from_dataframe(table.reset_index(), id_column="id")
+    table, dropped = readable_fields(
+        table.reset_index(), keep=("id", "start_time", "stop_time")
+    )
+    if dropped:
+        warnings.warn(
+            f"read_intervals: columns {dropped} of '{interval_name}' cannot be "
+            "Intervals fields (references to other tables, nested arrays, or a "
+            "name Intervals uses) and were left out. Fix: read them with "
+            f"nwbfile.intervals['{interval_name}'].to_dataframe() if you need them.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return Intervals.from_dataframe(table, id_column="id")
 
 
 def _records(
@@ -742,7 +751,9 @@ def write_laps(
     same selection on both routes, pick one meaning: the half-open one with
     ``epochs=np.column_stack([iset.start, iset.end])`` (a plain array is
     half-open), or the inclusive one with ``in_epochs(t, rows,
-    closed="both")`` on the rows from ``read_intervals(nwbfile, interval_name="laps")``.
+    closed="both")`` on ``np.column_stack([laps.start, laps.stop])`` for
+    ``laps = read_intervals(nwbfile, interval_name="laps")`` (every row,
+    including laps with no duration, which ``laps.windows`` leaves out).
 
     Examples
     --------
@@ -1133,15 +1144,6 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     read_intervals : Read any TimeIntervals table the same way.
     """
     return read_intervals(nwbfile, interval_name=PREDEFINED_TRIALS)
-
-
-def _field_value(value: Any) -> Any:
-    """A table cell as a field value: ``""`` is missing, a list a tuple."""
-    if isinstance(value, str) and value == "":
-        return None
-    if isinstance(value, (list, np.ndarray)):
-        return tuple(value)
-    return value
 
 
 def _field_column(values: NDArray[Any], name: str) -> NDArray[np.generic]:

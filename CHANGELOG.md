@@ -6,6 +6,14 @@
 
 **Changed**
 
+- Reading NWB interval tables and pynapple `IntervalSet` metadata: list
+  cells (NWB `tags`) become tuples and `""` becomes None; columns that cannot
+  be fields (references to other tables, nested arrays, names `Intervals`
+  uses such as `start`) are left out with a warning naming them.
+- Replay per-event functions read a pynapple `IntervalSet` with its
+  inclusive `end` (the stop is the next float above it), so a spike at `end`
+  belongs to the event, as in pynapple; an `Intervals` event with no duration
+  is refused, naming its id.
 - `events_to_intervals` returns an `Intervals` instead of a DataFrame: the
   other columns of the start events (including `match_by`) become fields,
   `durations` replaces the `duration` column, and an `interval_id` column

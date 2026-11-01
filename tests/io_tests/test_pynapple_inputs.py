@@ -637,3 +637,30 @@ def test_decoding_metrics_refuse_permuted_position_frames(nap, session):
     )
     with pytest.raises(ValueError, match=r"decoded_positions=tsdframe"):
         decoding_error(env, swapped, actual, metric="euclidean")
+
+
+def test_interval_set_with_list_metadata_reads_and_filters(nap):
+    """Array-valued metadata (NWB tags loaded by pynapple) becomes tuples."""
+    from neurospatial.events import filter_by_intervals
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(start=[0.0, 10.0], end=[5.0, 15.0])
+    tags = np.empty(2, dtype=object)  # one array per row, as pynapple loads tags
+    tags[0], tags[1] = np.array(["run", "maze"]), np.array(["sleep"])
+    iset.set_info(tags=tags)
+    events = pd.DataFrame({"timestamp": [1.0, 5.0, 7.0, 12.0]})
+    assert filter_by_intervals(events, iset)["timestamp"].tolist() == [1.0, 5.0, 12.0]
+    intervals = from_pynapple(iset)
+    assert intervals.tags.tolist() == [("run", "maze"), ("sleep",)]
+
+
+def test_interval_set_metadata_that_cannot_be_a_field_is_left_out(nap):
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(start=[0.0, 10.0], end=[5.0, 15.0])
+    with pytest.warns(UserWarning, match="metadata"):
+        iset.set_info(**{"trial type": ["a", "b"]})
+    iset.set_info(goal=["left", "right"])
+    with pytest.warns(UserWarning, match=r"\['trial type'\].*left out"):
+        intervals = from_pynapple(iset)
+    assert intervals.fields == ("goal",)

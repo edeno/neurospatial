@@ -15,7 +15,11 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _format_rows, _merge, times_in_intervals
-from neurospatial._pynapple import intervals_from_interval_set, is_pynapple_type
+from neurospatial._pynapple import (
+    interval_rows,
+    intervals_from_interval_set,
+    is_pynapple_type,
+)
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.events._core import _event_times
 
@@ -243,6 +247,12 @@ def events_to_intervals(
         Matching (``match_by=...``): if the column is missing or has missing
         values, if a value is unmatched or duplicated (one-to-one pairing is
         required), or if a pair stops before it starts.
+        Fields: the other columns of ``start_events`` become fields, so each
+        name must be an identifier not used by ``Intervals`` (``start``,
+        ``stop``, ``fields``, ...) and a text value cannot be ``""`` (use
+        None for missing); an ``interval_id`` column must hold unique
+        integers, since it becomes the ids (drop it, or renumber it after
+        concatenating sessions).
 
     See Also
     --------
@@ -389,6 +399,17 @@ def events_to_intervals(
         result = result[result["stop_time"] - result["start_time"] <= max_duration]
     result = result.sort_values(["start_time", "stop_time"], kind="stable")
     id_column = "interval_id" if "interval_id" in result.columns else None
+    if id_column is not None:
+        ids = result["interval_id"].to_numpy()
+        if ids.dtype.kind not in "iu" or len(np.unique(ids)) != len(ids):
+            msg = (
+                f"{call}: start_events has an 'interval_id' column, which becomes "
+                "the ids of the intervals, but its values are not unique integers.\n"
+                "  WHY: an interval_id identifies one interval; events from two "
+                "sessions concatenated together repeat them.\n"
+                "  Fix: drop the column, or renumber it so each pair has its own id."
+            )
+            raise ValueError(msg)
     return Intervals.from_dataframe(result.reset_index(drop=True), id_column=id_column)
 
 
@@ -495,9 +516,13 @@ def filter_by_intervals(
     [5.0, 25.0, 35.0]
     """
     call = "filter_by_intervals"
-    rows = _as_intervals(intervals, call=call)
+    if is_pynapple_type(intervals, "IntervalSet"):
+        # Only the bounds matter here, so the metadata is never converted.
+        bounds = interval_rows(intervals)
+        windows = bounds[bounds[:, 1] > bounds[:, 0]]
+    else:
+        windows = _as_intervals(intervals, call=call).windows
     timestamps = _event_times(events, timestamp_column, name="events", call=call)
-    windows = rows.windows
     if windows.shape[0] == 0:
         in_any_interval = np.zeros(timestamps.size, dtype=bool)
     else:

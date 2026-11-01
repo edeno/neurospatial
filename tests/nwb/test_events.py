@@ -851,3 +851,19 @@ class TestEventTablesOnDisk:
         np.testing.assert_array_equal(recovered["rewarded"], [True, False, True])
         assert np.issubdtype(recovered["count"].dtype, np.integer)
         np.testing.assert_array_equal(recovered["count"], [1, 2, 3])
+
+
+def test_read_intervals_leaves_out_columns_that_cannot_be_fields(empty_nwb):
+    """Reference and reserved-name columns are left out with a warning."""
+    from neurospatial.io.nwb import read_intervals
+
+    empty_nwb.add_trial_column("goal", "instructed goal")
+    empty_nwb.add_trial_column("start", "a column named like an Intervals member")
+    empty_nwb.add_trial_column("xy", "2-D ragged values", index=True)
+    empty_nwb.add_trial(start_time=0.0, stop_time=1.0, goal="a", start=1, xy=[[1, 2]])
+    empty_nwb.add_trial(start_time=2.0, stop_time=3.0, goal="b", start=2, xy=[[3, 4]])
+    with pytest.warns(UserWarning, match=r"\['start'\].*left out"):
+        trials = read_intervals(empty_nwb, interval_name="trials")
+    assert trials.goal.tolist() == ["a", "b"]
+    assert trials.xy.tolist() == [((1, 2),), ((3, 4),)]
+    assert "start" not in trials.fields

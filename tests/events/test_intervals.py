@@ -573,3 +573,11 @@ class TestRoundTrip:
         assert_array_equal(recovered.interval_ids, original.interval_ids)
         assert recovered.fields == ("label",)
         pd.testing.assert_series_equal(recovered.label, original.label)
+
+
+def test_events_to_intervals_refuses_repeated_interval_ids():
+    """Concatenated sessions repeat interval_id; the error names the column."""
+    starts = pd.DataFrame({"timestamp": [0.0, 10.0], "interval_id": [0, 0]})
+    stops = pd.DataFrame({"timestamp": [5.0, 15.0]})
+    with pytest.raises(ValueError, match="'interval_id' column"):
+        events_to_intervals(starts, stops)

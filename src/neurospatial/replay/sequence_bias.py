@@ -429,7 +429,9 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
                 f"{bounds.shape}.",
                 why="each row is one event, such as a theta cycle, whose spikes "
                 "give one skew-bias matrix",
-                fix="pass np.column_stack([starts, stops]) in seconds",
+                fix="pass an Intervals of the events (with duration: "
+                "intervals[intervals.durations > 0]) or "
+                "np.column_stack([starts, stops]) in seconds",
             )
         )
     total = np.zeros((n_units, n_units))

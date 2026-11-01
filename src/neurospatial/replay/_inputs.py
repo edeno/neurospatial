@@ -69,6 +69,18 @@ def _checked_intervals(
     windows = _event_rows(intervals)
     if allow_empty and windows.size == 0:
         return windows.reshape(0, 2)
+    ids = getattr(intervals, "interval_ids", None)
+    if ids is not None and windows.ndim == 2 and np.any(windows[:, 1] <= windows[:, 0]):
+        empty = np.asarray(ids)[windows[:, 1] <= windows[:, 0]]
+        raise ValueError(
+            _format_error(
+                f"{operation}: {name} has events with no duration (interval_id "
+                f"{empty[:5].tolist()}).",
+                why="each event's spikes are those at start <= t < stop, so an "
+                "event with stop == start holds none.",
+                fix=f"select the events with duration: {name}[{name}.durations > 0].",
+            )
+        )
     if (
         windows.ndim != 2
         or windows.shape[1] != 2
