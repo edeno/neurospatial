@@ -23,7 +23,6 @@ All navigation functions are importable from ``behavior.navigation``::
         cost_to_goal,
         time_to_goal,
         graph_turn_sequence,
-        goal_pair_direction_labels,
         heading_direction_labels,
         headings_to_direction_labels,
         # Path efficiency
@@ -149,7 +148,6 @@ __all__ = [  # noqa: RUF022
     "distance_to_boundary",
     "distance_to_goal",
     "distance_to_reward",
-    "goal_pair_direction_labels",
     "graph_turn_sequence",
     "heading_direction_labels",
     "headings_to_direction_labels",
@@ -2571,79 +2569,6 @@ def _simplified_polyline(
 
 
 @reads_pynapple_samples
-def goal_pair_direction_labels(
-    times: NDArray[np.float64],
-    trials: Intervals[Trial],
-) -> NDArray[np.object_]:
-    """Generate per-timepoint direction labels from trial data.
-
-    Creates labels like ``'home→goal_left'`` or ``'goal_left→home'`` from the
-    trial (if any) each timepoint belongs to. Samples outside every completed
-    trial are ``None``, which :func:`compute_directional_place_fields` and
-    :func:`labels_to_epochs` leave out.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for the entire session (seconds).
-    trials : Intervals
-        Trials from ``detect_trials()``, ``read_trials()`` or a task log,
-        with ``start_region`` and ``end_region`` fields. Each completed trial
-        labels ``[start, stop)``; trials with ``end_region=None`` label
-        nothing.
-
-    Returns
-    -------
-    NDArray[np.object_], shape (n_samples,)
-        Direction label for each timepoint using arrow notation, dtype
-        ``object``; ``None`` outside every completed trial.
-
-    Raises
-    ------
-    ValueError
-        If ``times`` is empty, not 1-D, holds a non-finite value or is not
-        strictly increasing, or if two completed trials overlap.
-    TypeError
-        If ``trials`` is not an Intervals.
-
-    Warns
-    -----
-    UserWarning
-        If completed trials contain no sample of ``times`` (usually trials on
-        a different clock).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Intervals
-    >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
-    >>> times = np.arange(6.0)
-    >>> trials = Intervals([Trial(1.0, 3.0, "home", "goal_left", "reached")])
-    >>> goal_pair_direction_labels(times, trials).tolist()
-    [None, 'home→goal_left', 'home→goal_left', None, None, None]
-
-    See Also
-    --------
-    detect_trials : Trials between visits to named regions
-    heading_direction_labels : Direction labels from the direction of movement
-    headings_to_direction_labels : Direction labels from headings you computed
-    laps_to_direction_labels : Direction labels from detected laps
-    """
-    from neurospatial._interval_table import require_intervals
-
-    require_intervals(trials, name="trials", owner="goal_pair_direction_labels()")
-    completed = trials[np.array([end is not None for end in trials.end_region], bool)]
-    labels = [
-        f"{start}\u2192{end}"
-        for start, end in zip(completed.start_region, completed.end_region, strict=True)
-    ]
-    out: NDArray[np.object_] = completed.sample_values(
-        times, np.array(labels, dtype=object)
-    )
-    return out
-
-
-@reads_pynapple_samples
 def heading_direction_labels(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -2737,7 +2662,7 @@ def heading_direction_labels(
     See Also
     --------
     headings_to_direction_labels : The same sectors for headings you computed.
-    goal_pair_direction_labels : Direction labels for trialized tasks.
+    neurospatial.Intervals.sample_values : Labels from trials or laps.
     labels_to_epochs : Turn the labels into ``[start, stop)`` windows.
 
     Notes

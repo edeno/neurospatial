@@ -40,8 +40,8 @@
 - `detect_region_visits` and `detect_trials` refuse point regions: a one-bin
   well misses an animal that stops beside it. Give the well its size with
   `Regions.add(name, point=..., radius=...)`.
-- `laps_to_direction_labels` and `write_laps` take an `Intervals` only;
-  `write_laps` writes the `interval_ids` as the table's `id` and every field
+- `write_laps` takes an `Intervals` only; it writes the `interval_ids` as
+  the table's `id` and every field
   as a column (its `start_times`/`stop_times`/`directions` arrays are
   removed). `to_pynapple` takes an `Intervals` for interval records and
   refuses a list of them; lists of region crossings are unchanged.
@@ -119,6 +119,11 @@
   `to_pynapple` exports it with `interval_id` and `label` columns. The
   empty string is refused as a label, because NWB reads it back as missing;
   pass `missing_label=""` if it means "no label".
+- Per-sample lap labels refuse overlapping laps instead of giving a sample
+  in two laps the later lap's direction (last writer wins): `sample_values`
+  raises, naming both `interval_id`s. Select non-overlapping laps first.
+  `detect_laps` never returns overlapping laps; this affects hand-built or
+  merged laps.
 
 **Removed**
 
@@ -126,6 +131,13 @@
   `summary()`: use `intervals_table()` and the `Intervals` columns. The
   per-interval provenance (`interval_labels`, `interval_supported`,
   `epoch_intervals`) is gone.
+- `laps_to_direction_labels(laps, times)`: use
+  `laps[laps.direction != "unknown"].sample_values(times, "direction")`.
+- `goal_pair_direction_labels(times, trials)`: use
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
+  Each label is a `(start_region, end_region)` tuple instead of a
+  `"start→end"` string; `compute_directional_place_fields` and
+  `labels_to_epochs` take tuple labels as they are.
 
 ### Trial fields, labels and wells with a size
 
@@ -265,12 +277,11 @@ trial in one call.
   timeout is a rule of the task. Pass your task's value to keep timeouts.
 - `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
   window `[start_time, stop_time)`.
-- `time_to_goal`, `goal_pair_direction_labels` and `compute_vte_session`
-  take an `Intervals` and read fields, so trials
-  read back from NWB or a task log work too. `time_to_goal` now treats
-  trials as half-open (the arrival sample is NaN, not 0) and, like
-  `goal_pair_direction_labels`, needs strictly increasing `times` and
-  refuses overlapping trials instead of letting the later one win.
+- `time_to_goal` and `compute_vte_session` take an `Intervals` and read
+  fields, so trials read back from NWB or a task log work too.
+  `time_to_goal` now treats trials as half-open (the arrival sample is NaN,
+  not 0), needs strictly increasing `times` and refuses overlapping trials
+  instead of letting the later one win.
   `compute_vte_session` results follow the row order of the trials (sorted
   by time). Every trial consumer now reads a trial as `[start, stop)`:
   `compute_vte_session` no longer includes the stop (arrival) sample, and a

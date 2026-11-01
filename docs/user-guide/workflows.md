@@ -373,12 +373,13 @@ comparison.summary_table()
   where tracking was lost), `spike_times` (one array of spike times in
   seconds per unit) and `unit_ids` with your arrays. Take unit IDs from spike
   sorting; they must name the same cells in every condition.
-- Labels come from your task: a trial table converted to one label per frame,
-  `laps_to_direction_labels` on detected laps,
-  `goal_pair_direction_labels` on detected trials, or door-state intervals.
-  Samples labeled `None` or `NaN` are left out; the direction-label
-  functions give `None` to frames outside any lap or trial; pass
-  `missing_label=` if your own labels use another value.
+- Labels come from your task, one per frame: from detected laps,
+  `laps[laps.direction != "unknown"].sample_values(times, "direction")`;
+  from detected trials or your trial table,
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`;
+  or from door-state intervals. Samples labeled `None` or `NaN` are left
+  out; `sample_values` gives `None` to frames outside every lap or trial;
+  pass `missing_label=` if your own labels use another value.
 - Build `valid` from your tracking quality, for example
   `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
 - When you join several recordings on one clock, pass `break_before`, True at
@@ -1061,7 +1062,7 @@ import numpy as np
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
-from neurospatial.behavior import detect_trials, goal_pair_direction_labels
+from neurospatial.behavior import detect_trials
 from neurospatial.encoding import compute_directional_place_fields
 from neurospatial.simulation import generate_poisson_spikes
 
@@ -1095,17 +1096,23 @@ region_builder.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 
 env = env.with_regions(region_builder)
 # Trials run from leaving one zone to arriving at the other, in both directions.
 trials = detect_trials(env, times, positions, regions=["home", "goal"])
-labels = goal_pair_direction_labels(times, trials)
+# Each frame of a reached trial gets its route, ("home", "goal") or
+# ("goal", "home"); frames outside every reached trial get None.
+reached = trials[trials.outcome == "reached"]
+labels = reached.sample_values(times, ("start_region", "end_region"))
 fields = compute_directional_place_fields(env, spikes, times, positions, labels)
+assert set(fields.labels) == {("home", "goal"), ("goal", "home")}
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
-for ax, label, truth in zip(axes, ["home→goal", "goal→home"], [60.0, 40.0], strict=True):
-    field = fields.firing_rates[label]
+routes = [("home", "goal"), ("goal", "home")]
+for ax, route, truth in zip(axes, routes, [60.0, 40.0], strict=True):
+    field = fields.firing_rates[route]
     recovered = env.bin_centers[np.nanargmax(field), 0]
     assert abs(recovered - truth) <= 5.0  # Recover each planted center within one bin.
     env.plot_field(field, ax=ax, colorbar_label="Firing rate (Hz)")
-    ax.set_title(f"{label}: peak {recovered:.1f} cm")
-    print(f"{label}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
+    name = " → ".join(route)
+    ax.set_title(f"{name}: peak {recovered:.1f} cm")
+    print(f"{name}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
 plt.show()
 ```
 
