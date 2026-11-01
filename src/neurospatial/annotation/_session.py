@@ -95,6 +95,8 @@ def run_annotation_session(
                 discarded.clear()
                 try:
                     with warnings.catch_warnings(record=True) as recorded:
+                        # Record every warning, whatever the caller's filters.
+                        warnings.simplefilter("always")
                         result = prepare_result()
                 except Exception as exc:
                     if _keep_editing(window, exc):

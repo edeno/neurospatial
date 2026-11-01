@@ -99,6 +99,10 @@ video export, and units outside the standard registry.
 - `ReplayMethod` refuses `null_options` for a null it does not run, or that
   is not a mapping of options, when it is created, as `replay_significance`
   would refuse them; such a method used to fail only when it first ran.
+- Closing an annotation window shows every warning about the result,
+  whatever your warning filters. With warnings turned into errors, a warning
+  used to be treated as an unsavable draft, and with warnings ignored it was
+  never shown.
 
 **Development**
 
