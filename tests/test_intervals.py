@@ -570,3 +570,31 @@ def test_spike_counts_of_a_tsgroup_keep_its_labels() -> None:
     assert counts.columns.tolist() == [3, 9]
     assert counts.loc[4].tolist() == [1, 2]
     assert counts.loc[8].tolist() == [2, 0]
+
+
+def test_every_record_needs_finite_ordered_times() -> None:
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class Stay:
+        start_time: float
+        stop_time: float
+
+    assert Intervals([Stay(0.0, 1.0)]).stop.tolist() == [1.0]
+    for start, stop in [(5.0, 1.0), (np.nan, 1.0), (0.0, np.inf)]:
+        with pytest.raises(ValueError, match="start_time <= stop_time"):
+            Intervals([Stay(start, stop)])
+
+
+def test_records_must_be_frozen_dataclasses() -> None:
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Editable:
+        start_time: float
+        stop_time: float
+
+    with pytest.raises(TypeError, match="frozen"):
+        Intervals([Editable(0.0, 1.0)])
+    with pytest.raises(TypeError, match="frozen"):
+        Intervals([], record_type=Editable)

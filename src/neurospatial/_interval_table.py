@@ -205,6 +205,17 @@ def _record_schema(record_type: type) -> tuple[tuple[str, ...], dict[str, np.dty
             f"fields; got {record_type.__name__}."
         )
         raise TypeError(msg)
+    if not record_type.__dataclass_params__.frozen:  # type: ignore[attr-defined]
+        raise TypeError(
+            _format_error(
+                f"Intervals holds immutable records; {record_type.__name__} is a "
+                "dataclass that is not frozen.",
+                why="the container stores each record's times and fields once, "
+                "so a record edited afterwards would disagree with them.",
+                fix="declare it with @dataclass(frozen=True), or build "
+                "Intervals.from_arrays(start, stop, ...).",
+            )
+        )
     names = [f.name for f in dataclasses.fields(record_type)]
     missing = [name for name in _TIME_FIELDS if name not in names]
     if missing:
@@ -335,7 +346,8 @@ class Intervals(Generic[R]):
     ----------
     records : iterable of records
         Records of one type: the detector records (``Trial``) or
-        :class:`Interval`. Each has ``start_time`` and ``stop_time``.
+        :class:`Interval`, or another frozen dataclass. Each has finite
+        ``start_time <= stop_time`` in seconds.
     record_type : type, optional
         The record class. Inferred from the records; required when there are
         none.
@@ -465,8 +477,12 @@ class Intervals(Generic[R]):
             len(rows),
             owner="Intervals",
         )
-        start = np.array([r.start_time for r in rows], dtype=np.float64)  # type: ignore[attr-defined]
-        stop = np.array([r.stop_time for r in rows], dtype=np.float64)  # type: ignore[attr-defined]
+        times = [
+            _checked_times(kind.__name__, r.start_time, r.stop_time)  # type: ignore[attr-defined]
+            for r in rows
+        ]
+        start = np.array([t[0] for t in times], dtype=np.float64)
+        stop = np.array([t[1] for t in times], dtype=np.float64)
         order = np.lexsort((ids, stop, start))
         self._init_parts(
             records=tuple(rows[i] for i in order),
