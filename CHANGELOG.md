@@ -4,6 +4,15 @@
 
 ### Tuning curves over a behavioral variable
 
+**Changed**
+
+- Workflow 9 and the `compute_tuning_curve(s)` Notes now say only what
+  simulations measured: correct trials alone cannot separate goal from
+  choice coding (error trials can, given enough of them); a matching peak in
+  slower and faster trials does not show speed independence; the odd/even
+  correlation is inflated by firing at stops or with speed, with a
+  circular-shift reference for chance.
+
 **Added**
 
 - `compute_tuning_curve(spike_times, times, values, *, ...)` and

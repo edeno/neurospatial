@@ -1543,13 +1543,20 @@ print(task_log.head(4).round(2).to_string(index=False))
       21.57      25.90       well_3          well_2 correct
 ```
 
-**Why the instructed goal, not the well reached.** The conditions compare
-firing *before* the animal reaches a well, so they must be defined by what was
-known before: the instructed goal. Grouping by the well reached would put each
-error trial with the trials to the other well, and let the animal's eventual
-choice decide which group its earlier firing belongs to. A difference between
-such groups could then reflect the choice rather than the goal. Keep the
-reached well as an outcome (`outcome` here) and select on it explicitly.
+**Goal or choice?** Define each condition by what was known when the trial
+began, the instructed goal, and compute progress toward that same goal, so a
+bin means the same stretch of route on every trial in the condition. On correct
+trials the instructed goal and the well reached are the same, so conditions A
+and B below cannot tell a cell that codes the goal it was given from one that
+codes the turn it is about to make. Grouping all trials by either field does
+not settle it: errors only shrink the other kind of difference. Error trials
+do: on an error trial, a goal cell fires as on correct trials with the same
+instruction, and a choice cell as on correct trials to the well it reached. In
+simulation, a 15 versus 5 Hz difference on the centre arm needed about 6 error
+trials per instructed goal for a reliable call; this session has 2 and 3, too
+few. When the task defines the goal as the arm opposite the last one visited,
+firing that depends on the previous trial cannot be told apart from goal
+coding.
 
 ### Selecting trials
 
@@ -1706,10 +1713,14 @@ print(f"odd vs even trials: r = {r:.2f} over {both.sum()} bins")
 odd vs even trials: r = 0.95 over 20 bins
 ```
 
-The two halves agree closely (r = 0.95). This is a description of
-consistency, not a statistical test: with few trials, a high correlation can
-come from one strong bin, and bins are not independent observations. For a
-test, shuffle trial labels or compare per-trial curves.
+The two halves agree closely (r = 0.95). This describes how reproducible the
+curve's shape is, whatever drives it; it is not a test of route tuning. In
+simulation, a cell that fires only when the animal stops reached r ≈ 0.8 from
+the one pause bin, and a cell that follows only running speed r ≈ 0.7. Compute
+r on the running curve (`min_speed`, below) to remove stops. To judge r against
+chance, recompute it after shifting the spike train in time relative to the
+behavior (a circular shift): for an untuned cell with 13 trials, r exceeded 0.4
+in about 5% of simulated sessions.
 
 ### Pauses and running speed
 
@@ -1761,10 +1772,17 @@ as movement. Report which curve you used: the all-time curve answers "where alon
 the cell fire", the running curve "where does it fire while running".
 
 Neither curve shows that the tuning is independent of speed: a pooled curve
-averages over whatever speeds the animal ran. The slower and faster halves of
-the trials, binned with the same edges, peak in the same place here. In your
-data, a shift between them would mean the cell's firing depends on more than
-progress alone.
+averages over whatever speeds the animal ran. Where speed changes along the
+route, as it does when the animal slows into the choice point and the goal, a
+cell that follows only speed gives a curve that rises and falls with progress,
+and `min_speed` does not remove that. The figure compares the slower and faster
+halves of the trials with the same edges. Compare them bin by bin against their
+Poisson error, not by where they peak: a cell whose rate scales with speed keeps
+its peak in place, and with a dozen trials the peak of a cell that depends only
+on progress moves a bin by chance in a quarter to two thirds of sessions. A
+clear difference means firing depends on more than progress; no difference,
+with six or seven trials per half, rules out only large effects. Separating
+speed from progress needs a model with both.
 
 ### Trials from NWB give the same curves
 
