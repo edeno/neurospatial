@@ -7,6 +7,7 @@ import pickle
 import numpy as np
 import pytest
 
+from neurospatial import Intervals
 from neurospatial._observation import validated_observations
 from neurospatial.behavior import (
     LabelEpochsResult,
@@ -83,7 +84,9 @@ def test_missing_labels_are_excluded():
 def test_direction_labels_need_no_missing_label():
     """Lap labels feed labels_to_epochs directly: None outside laps is left out."""
     times = np.arange(0, 10, 0.5)
-    laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
+    laps = Intervals(
+        [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
+    )
     conditions = labels_to_epochs(times, laps_to_direction_labels(laps, times))
     assert list(conditions) == ["clockwise", "counter-clockwise"]
     assert conditions["clockwise"].tolist() == [[0.0, 4.0]]

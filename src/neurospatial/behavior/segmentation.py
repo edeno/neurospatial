@@ -67,6 +67,7 @@ from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
+from neurospatial._interval_table import Intervals
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
@@ -171,12 +172,11 @@ def _interval_labels(
     """Build a per-timepoint object label array from labeled time intervals.
 
     Allocates an object array of length ``len(times)`` filled with ``None``
-    and, for each ``(start_time, end_time, label)`` interval, assigns ``label``
-    to every sample with ``start_time <= times < end_time``. This is the shared
-    primitive behind the trial/lap/run direction-label helpers (so the
-    half-open, last-writer-wins semantics live in one place). A sample's label
-    describes the interval that starts at it, so the last sample of a lap or
-    run, whose interval leaves it, is not given its label. Later intervals
+    and, for each ``(start_time, stop_time, label)`` interval, assigns ``label``
+    to every sample with ``start_time <= times < stop_time``: the half-open,
+    last-writer-wins rule of :func:`laps_to_direction_labels`. A sample's label
+    describes the interval that starts at it, so the last sample of a lap,
+    whose interval leaves it, is not given its label. Later intervals
     overwrite earlier ones on any overlap.
 
     Parameters
@@ -184,8 +184,8 @@ def _interval_labels(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds).
     intervals : iterable of (float, float, object)
-        ``(start_time, end_time, label)`` tuples, half-open
-        ``[start_time, end_time)``.
+        ``(start_time, stop_time, label)`` tuples, half-open
+        ``[start_time, stop_time)``.
 
     Returns
     -------
@@ -199,8 +199,8 @@ def _interval_labels(
     # last and lies in no interval), so each costs only its own samples.
     order = np.argsort(times, kind="stable")
     sorted_times = times[order]
-    for start_time, end_time, label in intervals:
-        lo, hi = np.searchsorted(sorted_times, [start_time, end_time], side="left")
+    for start_time, stop_time, label in intervals:
+        lo, hi = np.searchsorted(sorted_times, [start_time, stop_time], side="left")
         # In sample order, as a Boolean mask would assign them.
         labels[np.sort(order[lo:hi])] = label
 
@@ -224,16 +224,14 @@ unknown.
 _OUTCOMES: tuple[str, ...] = ("reached", "returned", "censored")
 
 
-def _checked_interval(
-    record: str, start: object, end: object, *, end_name: str = "end_time"
-) -> tuple[float, float]:
+def _checked_interval(record: str, start: object, end: object) -> tuple[float, float]:
     """Return ``(start, end)`` as finite Python floats with ``start <= end``."""
     start_f, end_f = float(start), float(end)  # type: ignore[arg-type]
     if not (np.isfinite(start_f) and np.isfinite(end_f)) or start_f > end_f:
         raise ValueError(
             _format_error(
-                f"{record} needs finite start_time <= {end_name}; got "
-                f"start_time={start_f!r}, {end_name}={end_f!r}.",
+                f"{record} needs finite start_time <= stop_time; got "
+                f"start_time={start_f!r}, stop_time={end_f!r}.",
                 why="an event interval runs forward in time on one clock.",
                 fix="pass the interval's start and end times in seconds, start first.",
             )
@@ -284,8 +282,9 @@ class Lap:
     ----------
     start_time : float
         Start time of lap (seconds).
-    end_time : float
-        End time of lap (seconds).
+    stop_time : float
+        End time of lap (seconds); the lap is the half-open window
+        ``[start_time, stop_time)``.
     direction : str
         Direction of lap: 'clockwise', 'counter-clockwise', or 'unknown'.
     overlap_score : float
@@ -296,15 +295,15 @@ class Lap:
     """
 
     start_time: float
-    end_time: float
+    stop_time: float
     direction: Literal["clockwise", "counter-clockwise", "unknown"]
     overlap_score: float
 
     def __post_init__(self) -> None:
         """Check the record and store plain Python floats."""
-        start, end = _checked_interval("Lap", self.start_time, self.end_time)
+        start, stop = _checked_interval("Lap", self.start_time, self.stop_time)
         object.__setattr__(self, "start_time", start)
-        object.__setattr__(self, "end_time", end)
+        object.__setattr__(self, "stop_time", stop)
         validate_choice(
             self.direction,
             ("clockwise", "counter-clockwise", "unknown"),
@@ -362,9 +361,7 @@ class Trial:
 
     def __post_init__(self) -> None:
         """Check the record and store plain Python floats."""
-        start, stop = _checked_interval(
-            "Trial", self.start_time, self.stop_time, end_name="stop_time"
-        )
+        start, stop = _checked_interval("Trial", self.start_time, self.stop_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "stop_time", stop)
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
@@ -874,7 +871,7 @@ def detect_laps(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> list[Lap]:
+) -> Intervals[Lap]:
     """Detect laps in a circular track trajectory.
 
     Identifies repeating traversals of a circular track using spatial overlap
@@ -937,9 +934,11 @@ def detect_laps(
 
     Returns
     -------
-    list[Lap]
-        List of detected laps, each with start_time, end_time, direction,
-        and overlap_score. Sorted by start_time in ascending order.
+    Intervals of Lap
+        One row per lap in time order, ids ``0`` to ``n - 1``, with the
+        fields ``direction`` and ``overlap_score``; each lap is the
+        half-open window ``[start_time, stop_time)``. ``analysis_settings``
+        records the method, its options, ``max_gap`` and ``epochs``.
 
     Raises
     ------
@@ -1197,6 +1196,15 @@ def detect_laps(
         epochs=epochs,
         break_before=breaks,
     )
+    windows = as_intervals(epochs, name="epochs")
+    settings = {
+        "method": method,
+        "min_overlap": None if method == "region" else float(min_overlap),
+        "direction": direction,
+        "start_region": start_region,
+        "max_gap": None if max_gap is None else float(max_gap),
+        "epochs": None if windows is None else windows.tolist(),
+    }
     laps: list[Lap] = []
     if method == "region":
         sides = _region_sides(env, start_mask)
@@ -1227,7 +1235,7 @@ def detect_laps(
                     direction=direction,
                 )
             )
-        return laps
+        return Intervals(laps, record_type=Lap, analysis_settings=settings)
     if method == "reference":
         assert reference_lap is not None
         from neurospatial.environment import _validate_target_bins
@@ -1248,7 +1256,7 @@ def detect_laps(
     else:
         found = _first_circuit(position_bins, runs, env)
         if found is None:
-            return []
+            return Intervals(laps, record_type=Lap, analysis_settings=settings)
         template = found
     anchor = int(template[0])
     zone = _start_zone(env, anchor)
@@ -1269,7 +1277,7 @@ def detect_laps(
                 direction=direction,
             )
         )
-    return laps
+    return Intervals(laps, record_type=Lap, analysis_settings=settings)
 
 
 def _detect_laps_region_contiguous(
@@ -1302,7 +1310,7 @@ def _detect_laps_region_contiguous(
                 laps.append(
                     Lap(
                         start_time=float(times[lap_start]),
-                        end_time=float(times[back]),
+                        stop_time=float(times[back]),
                         direction=lap_direction,
                         overlap_score=np.nan,  # no template to overlap
                     )
@@ -1576,7 +1584,7 @@ def _detect_laps_search_contiguous(
             laps.append(
                 Lap(
                     start_time=float(times[lap_start]),
-                    end_time=float(times[candidate]),
+                    stop_time=float(times[candidate]),
                     direction=lap_direction,
                     overlap_score=float(overlap),
                 )
@@ -1593,7 +1601,7 @@ def _detect_laps_search_contiguous(
 
 @reads_pynapple_samples
 def laps_to_direction_labels(
-    laps: list[Lap],
+    laps: Intervals[Any],
     times: NDArray[np.float64],
 ) -> NDArray[np.object_]:
     """Convert detected laps into per-timepoint direction labels.
@@ -1607,9 +1615,10 @@ def laps_to_direction_labels(
 
     Parameters
     ----------
-    laps : list[Lap]
-        Laps from :func:`detect_laps`. Each contributes its ``[start_time,
-        end_time)`` interval (half-open) and ``direction``.
+    laps : Intervals
+        Laps from :func:`detect_laps`, or read back with ``read_intervals``,
+        with a ``direction`` field. Each contributes its half-open
+        ``[start_time, stop_time)`` window and ``direction``.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
 
@@ -1620,6 +1629,13 @@ def laps_to_direction_labels(
         lap, or in a lap of unknown direction (not resolved, e.g. in non-2D
         environments), are ``None``.
 
+    Raises
+    ------
+    TypeError
+        If ``laps`` is not an Intervals.
+    AttributeError
+        If ``laps`` has no ``direction`` field.
+
     See Also
     --------
     detect_laps : Detect laps in a circular-track trajectory.
@@ -1627,33 +1643,35 @@ def laps_to_direction_labels(
 
     Notes
     -----
-    Laps later in the list overwrite earlier ones wherever their time intervals
-    overlap (last-writer-wins). ``detect_laps`` emits non-overlapping laps, so
-    this matters only for hand-constructed or merged lap lists.
+    Later laps overwrite earlier ones wherever their windows overlap
+    (last-writer-wins). ``detect_laps`` emits non-overlapping laps, so this
+    matters only for hand-built or merged laps.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Intervals
     >>> from neurospatial.behavior.segmentation import (
     ...     Lap,
     ...     laps_to_direction_labels,
     ... )
     >>> times = np.linspace(0.0, 10.0, 11)
-    >>> laps = [
-    ...     Lap(0.0, 4.0, "clockwise", 1.0),
-    ...     Lap(6.0, 10.0, "counter-clockwise", 1.0),
-    ... ]
+    >>> laps = Intervals(
+    ...     [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 10.0, "counter-clockwise", 1.0)]
+    ... )
     >>> labels = laps_to_direction_labels(laps, times)
     >>> labels[0], labels[5], labels[9], labels[-1]
     ('clockwise', None, 'counter-clockwise', None)
     """
+    from neurospatial._interval_table import require_intervals
+
+    laps = require_intervals(laps, name="laps", owner="laps_to_direction_labels()")
+    directions = laps._field_array("direction")
     intervals = [
-        (
-            lap.start_time,
-            lap.end_time,
-            None if lap.direction == "unknown" else lap.direction,
+        (start, stop, None if direction == "unknown" else direction)
+        for start, stop, direction in zip(
+            laps.start.tolist(), laps.stop.tolist(), directions.tolist(), strict=True
         )
-        for lap in laps
     ]
     return _interval_labels(times, intervals)
 

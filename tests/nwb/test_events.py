@@ -331,7 +331,7 @@ class TestReadIntervals:
 
         write_trials(nwbfile, Intervals.from_arrays([0.0], [1.0]))
         nwbfile.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
-        write_laps(nwbfile, start_times=[0.0], stop_times=[1.0])
+        write_laps(nwbfile, Intervals.from_arrays([0.0], [1.0]))
         with NWBHDF5IO(str(tmp_path / "intervals.nwb"), "w") as io:
             io.write(nwbfile)
 

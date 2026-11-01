@@ -91,7 +91,7 @@ def _plain(value: Any) -> Any:
     return value
 
 
-_TIME_FIELDS = ("time", "start_time", "stop_time", "end_time")
+_TIME_FIELDS = ("time", "start_time", "stop_time")
 
 
 def _shift_reported_times(value: Any, *, after: float) -> Any:
@@ -263,10 +263,10 @@ def test_lap_spanning_break_is_dropped(laps):
     split = detect_laps(
         r.env, r.times, r.positions, break_before=r.break_before, **kwargs
     )
-    spans = [lap for lap in joined if lap.start_time < r.times[BREAK] <= lap.end_time]
+    spans = [lap for lap in joined if lap.start_time < r.times[BREAK] <= lap.stop_time]
     assert len(spans) == 1
     assert all(
-        lap.end_time < r.times[BREAK] or lap.start_time >= r.times[BREAK]
+        lap.stop_time < r.times[BREAK] or lap.start_time >= r.times[BREAK]
         for lap in split
     )
     # Laps before the break are unaffected by declaring it.
@@ -274,7 +274,7 @@ def test_lap_spanning_break_is_dropped(laps):
 
     def bounds(found):
         return [
-            (lap.start_time, lap.end_time) for lap in found if lap.end_time < before
+            (lap.start_time, lap.stop_time) for lap in found if lap.stop_time < before
         ]
 
     assert bounds(split) == bounds(joined)

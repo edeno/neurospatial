@@ -74,13 +74,13 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Should detect ~3 laps
         assert len(laps) >= 2, "Should detect at least 2 complete laps"
         assert all(isinstance(lap, Lap) for lap in laps)
-        assert all(lap.start_time < lap.end_time for lap in laps)
+        assert all(lap.start_time < lap.stop_time for lap in laps)
 
         # Step 2: Compute trajectory metrics for each lap
         lap_metrics = []
         for lap in laps[:2]:  # Analyze first 2 complete laps
             # Get lap segment
-            lap_mask = (times >= lap.start_time) & (times <= lap.end_time)
+            lap_mask = (times >= lap.start_time) & (times <= lap.stop_time)
             lap_bins = position_bins[lap_mask]
             lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
@@ -90,7 +90,7 @@ class TestFullTrajectoryAnalysisWorkflow:
 
             lap_metrics.append(
                 {
-                    "duration": lap.end_time - lap.start_time,
+                    "duration": lap.stop_time - lap.start_time,
                     "mean_turn_angle": np.abs(np.nanmean(turn_angles)),
                     "mean_step_length": np.mean(step_lengths),
                     "bins": lap_bins,

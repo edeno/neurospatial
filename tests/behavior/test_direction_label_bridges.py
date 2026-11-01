@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from neurospatial import Intervals
 from neurospatial.behavior import detect_trials
 from neurospatial.behavior.segmentation import (
     Lap,
@@ -21,15 +22,14 @@ from neurospatial.encoding.spatial import compute_directional_place_fields
 def test_laps_to_direction_labels_shape():
     """Output length matches times; unlabeled samples are None."""
     times = np.linspace(0.0, 10.0, 11)
-    laps = [
-        Lap(start_time=0.0, end_time=3.0, direction="clockwise", overlap_score=1.0),
-        Lap(
-            start_time=7.0,
-            end_time=10.0,
-            direction="counter-clockwise",
-            overlap_score=1.0,
-        ),
-    ]
+    laps = Intervals(
+        [
+            Lap(
+                start_time=0.0, stop_time=3.0, direction="clockwise", overlap_score=1.0
+            ),
+            Lap(7.0, 10.0, direction="counter-clockwise", overlap_score=1.0),
+        ]
+    )
 
     labels = laps_to_direction_labels(laps, times)
 
@@ -52,10 +52,9 @@ def test_laps_to_direction_labels_shape():
 def test_laps_between_and_after_are_none():
     """Samples between laps and the last sample are None, not a string."""
     times = np.linspace(0.0, 10.0, 11)
-    laps = [
-        Lap(0.0, 4.0, "clockwise", 1.0),
-        Lap(6.0, 10.0, "counter-clockwise", 1.0),
-    ]
+    laps = Intervals(
+        [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 10.0, "counter-clockwise", 1.0)]
+    )
 
     labels = laps_to_direction_labels(laps, times)
 
@@ -67,10 +66,14 @@ def test_laps_between_and_after_are_none():
 def test_laps_unknown_direction_are_none():
     """Laps whose direction is unknown leave their samples None."""
     times = np.linspace(0.0, 10.0, 11)
-    laps = [Lap(start_time=0.0, end_time=4.0, direction="unknown", overlap_score=1.0)]
+    laps = Intervals([Lap(0.0, 4.0, direction="unknown", overlap_score=1.0)])
 
     labels = laps_to_direction_labels(laps, times)
     assert all(label is None for label in labels)
+
+    # A list of records is refused: laps are an Intervals.
+    with pytest.raises(TypeError, match="laps must be an Intervals"):
+        laps_to_direction_labels(list(laps), times)
 
     # There is no producer-side marker for unknown laps.
     with pytest.raises(TypeError):

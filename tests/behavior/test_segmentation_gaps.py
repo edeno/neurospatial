@@ -91,7 +91,7 @@ def test_region_laps_do_not_pair_entries_across_pause(lap_track):
         r.env, r.times, r.positions, method="region", start_region="start"
     )
     assert len(laps) == 4
-    assert all(lap.end_time < 100 or lap.start_time >= 1100 for lap in laps)
+    assert all(lap.stop_time < 100 or lap.start_time >= 1100 for lap in laps)
     assert sum(lap.start_time < 100 for lap in laps) == 2
     assert sum(lap.start_time >= 1100 for lap in laps) == 2
 
@@ -106,7 +106,7 @@ def test_reference_laps_do_not_span_pause(lap_track):
         reference_lap=r.position_bins[100:501],
     )
     assert laps
-    assert all(lap.end_time < 100 or lap.start_time >= 1100 for lap in laps)
+    assert all(lap.stop_time < 100 or lap.start_time >= 1100 for lap in laps)
     assert any(lap.start_time < 100 for lap in laps)
     assert any(lap.start_time >= 1100 for lap in laps)
 
@@ -116,7 +116,7 @@ def test_auto_laps_keep_one_global_template(lap_track):
     r = lap_track
     actual = detect_laps(r.env, r.times, r.positions, method="auto")
     first = actual[0]
-    in_first = (r.times >= first.start_time) & (r.times < first.end_time)
+    in_first = (r.times >= first.start_time) & (r.times < first.stop_time)
     expected = detect_laps(
         r.env,
         r.times,
@@ -124,11 +124,11 @@ def test_auto_laps_keep_one_global_template(lap_track):
         method="reference",
         reference_lap=r.position_bins[in_first],
     )
-    assert actual == expected
+    assert list(actual) == list(expected)
     assert first.start_time == r.times[0]
     # One 40 s lap; the boundary is the first sample in the start bin, which
     # the animal takes 1 s to cross.
-    assert first.end_time - first.start_time == pytest.approx(40.0, abs=1.0)
+    assert first.stop_time - first.start_time == pytest.approx(40.0, abs=1.0)
     assert any(lap.start_time >= 1100 for lap in actual)
 
 
@@ -342,7 +342,7 @@ def test_auto_laps_with_missing_template_rows_equal_deleted_rows_with_breaks():
         break_before=breaks[kept],
     )
     assert expected
-    assert detect_laps(env, times, positions, method="auto") == expected
+    assert list(detect_laps(env, times, positions, method="auto")) == list(expected)
 
 
 def _corridor_with_wells():
@@ -396,7 +396,7 @@ def test_region_lap_does_not_end_at_an_epoch_stop_sample():
     env = env.with_regions(regions)
     times = np.arange(theta.size, dtype=float)
     laps = detect_laps(env, times, positions, method="region", start_region="start")
-    entries = sorted({lap.start_time for lap in laps} | {lap.end_time for lap in laps})
+    entries = sorted({lap.start_time for lap in laps} | {lap.stop_time for lap in laps})
     second_entry = entries[1]
 
     clipped = detect_laps(
@@ -408,4 +408,4 @@ def test_region_lap_does_not_end_at_an_epoch_stop_sample():
         epochs=(0.0, second_entry),
     )
 
-    assert clipped == []
+    assert len(clipped) == 0

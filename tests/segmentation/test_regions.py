@@ -490,7 +490,7 @@ class TestCrossingAndLapRecords:
     @pytest.mark.parametrize(
         ("args", "match"),
         [
-            ((4.0, 1.0, "clockwise", 0.9), "start_time <= end_time"),
+            ((4.0, 1.0, "clockwise", 0.9), "start_time <= stop_time"),
             ((0.0, 1.0, "cw", 0.9), "direction must be one of"),
             ((0.0, 1.0, "clockwise", 1.5), r"overlap_score must be in \[0, 1\]"),
         ],
@@ -505,5 +505,5 @@ class TestCrossingAndLapRecords:
         from neurospatial.behavior.segmentation import Lap
 
         lap = Lap(np.int64(0), np.float32(2.5), "unknown", np.nan)
-        assert (type(lap.start_time), type(lap.end_time)) == (float, float)
+        assert (type(lap.start_time), type(lap.stop_time)) == (float, float)
         assert np.isnan(lap.overlap_score)

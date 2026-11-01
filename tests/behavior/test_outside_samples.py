@@ -262,9 +262,9 @@ def test_an_outside_sample_ends_a_lap():
     breaks[k] = True
     laps = detect_laps(env, times, outside, method="auto")
     assert laps
-    assert repr(laps) == repr(
+    assert list(laps) == list(
         detect_laps(
             env, times[kept], positions[kept], method="auto", break_before=breaks
         )
     )
-    assert not any(lap.start_time < times[k] < lap.end_time for lap in laps)
+    assert not any(lap.start_time < times[k] < lap.stop_time for lap in laps)

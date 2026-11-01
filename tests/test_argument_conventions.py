@@ -135,7 +135,6 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # Values sampled at the times being converted.
     ("to_pynapple", "values"),
     # Records written to the file.
-    ("write_laps", "laps"),
     ("write_region_crossings", "crossings"),
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),

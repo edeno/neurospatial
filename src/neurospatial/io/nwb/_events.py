@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from pynwb import NWBFile
 
     from neurospatial._interval_table import Interval, Intervals
-    from neurospatial.behavior.segmentation import Crossing, Lap
+    from neurospatial.behavior.segmentation import Crossing
 
 # =============================================================================
 # Constants for NWB events
@@ -381,20 +381,6 @@ def _checked_event_times(values: object, argument: str) -> NDArray[np.float64]:
     return times
 
 
-def _refuse_reversed_intervals(
-    start: NDArray[np.float64], stop: NDArray[np.float64], *, record: str
-) -> None:
-    """Refuse an interval that stops before it starts."""
-    backwards = np.flatnonzero(stop < start)
-    if backwards.size:
-        i = backwards[0]
-        msg = (
-            f"stop_time must be >= start_time for every {record}. "
-            f"{record.capitalize()} {i}: start_time={start[i]}, stop_time={stop[i]}"
-        )
-        raise ValueError(msg)
-
-
 @dataclass(frozen=True)
 class _Column:
     """A per-record column, read from record objects or from an array argument.
@@ -414,20 +400,13 @@ class _Column:
     """Whether the writer needs the array when it is given no records."""
 
 
-_INTERVAL_TIMES = {"start_times": "start_time", "stop_times": "end_time"}
-_LAP_COLUMNS = (
-    _Column(
-        "direction",
-        "Direction of the lap: clockwise, counter-clockwise or unknown",
-        "directions",
-    ),
-    _Column(
-        "overlap_score",
-        "Jaccard overlap of the lap's bins with the template lap's bins, in "
-        "[0, 1]; NaN for a lap without a template score; the column is left out "
-        "when no lap has one (laps detected with method='region')",
-    ),
-)
+# Column descriptions of the Lap fields; any other field gets a generic one.
+_LAP_FIELD_DESCRIPTIONS = {
+    "direction": "Direction of the lap: clockwise, counter-clockwise or unknown",
+    "overlap_score": "Jaccard overlap of the lap's bins with the template lap's "
+    "bins, in [0, 1]; NaN for a lap without a template score; the column is left "
+    "out when no lap has one (laps detected with method='region')",
+}
 _CROSSING_COLUMNS = (
     _Column("region", "Name of the region crossed", "regions", required=True),
     _Column(
@@ -461,14 +440,14 @@ def _record_columns(
     Parameters
     ----------
     record_class : type
-        The record type: ``Lap`` or ``Crossing``.
+        The record type, for example ``Crossing``.
     records : sequence of record_class or None
         The writer's records argument; None to read ``arrays`` instead.
     arrays : dict of str to array-like or None
         Every array argument of the writer, by keyword.
     times : dict of str to str
         Array keyword of each time to the record attribute that holds it,
-        e.g. ``{"start_times": "start_time", "stop_times": "end_time"}``.
+        e.g. ``{"times": "time"}``.
     columns : tuple of _Column
         The other columns, in table order.
     needs : str
@@ -581,6 +560,61 @@ def _column_values(
     return array.astype(str)
 
 
+def _interval_columns(
+    intervals: object,
+    descriptions: dict[str, str],
+    *,
+    call: str,
+    what: str,
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    dict[str, tuple[str, NDArray[np.generic]]],
+]:
+    """Checked NWB times and one column per field of an Intervals.
+
+    Parameters
+    ----------
+    intervals : Intervals
+        The rows to write; anything else raises ``TypeError``.
+    descriptions : dict of str to str
+        Column description of known fields; any other field gets a generic one.
+    call : str
+        Public writer name, used in messages.
+    what : str
+        What one row is (``"trial"``, ``"lap"``), used in descriptions.
+
+    Returns
+    -------
+    start, stop : NDArray[np.float64], shape (n,)
+    columns : dict of str to (str, NDArray), values shape (n,)
+    """
+    from neurospatial._interval_table import require_intervals
+
+    intervals = require_intervals(intervals, name=f"{what}s", owner=f"{call}()")
+    if "id" in intervals.fields:
+        raise ValueError(
+            _format_error(
+                f"{call}: the {what}s have a field 'id'.",
+                why="NWB tables reserve id for the row ids, which hold the "
+                "interval_ids, so the field would overwrite them.",
+                fix="pass the ids as interval_ids (for a task log, "
+                "Intervals.from_dataframe(log, id_column='id')), or rename "
+                "the field.",
+            )
+        )
+    start = _checked_event_times(intervals.start, "start_time")
+    stop = _checked_event_times(intervals.stop, "stop_time")
+    columns = {
+        name: (
+            descriptions.get(name, f"Field {name!r} of each {what}"),
+            _field_column(intervals._field_array(name), name),
+        )
+        for name in intervals.fields
+    }
+    return start, stop, columns
+
+
 def _build_time_intervals(
     name: str,
     description: str,
@@ -637,14 +671,10 @@ def _build_time_intervals(
 
 
 @keyword_hint("description")
-@reads_pynapple_samples
 def write_laps(
     nwbfile: NWBFile,
-    laps: Sequence[Lap] | None = None,
+    laps: Intervals[Any],
     *,
-    start_times: NDArray[np.float64] | None = None,
-    stop_times: NDArray[np.float64] | None = None,
-    directions: Sequence[str] | None = None,
     name: str = DEFAULT_LAPS_NAME,
     description: str = "Detected laps",
     overwrite: bool = False,
@@ -654,7 +684,8 @@ def write_laps(
 
     Each lap is an interval with a start and stop time, so laps are stored
     as a ``TimeIntervals`` table under ``/intervals/<name>``, next to the
-    trials table. Read them back with ``read_intervals(nwbfile,
+    trials table. The laps' ``interval_ids`` are the table's ``id`` and each
+    field a column. Read them back with ``read_intervals(nwbfile,
     interval_name="laps")``; pynapple loads the table as an ``IntervalSet``.
     Zero laps write nothing, without a warning: NWB files should not hold empty tables
     (nwbinspector ``check_empty_table``). Reading the table back then raises
@@ -665,21 +696,12 @@ def write_laps(
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    laps : Sequence[Lap], optional
-        Laps from :func:`~neurospatial.behavior.segmentation.detect_laps`.
-        Writes the ``direction`` and ``overlap_score`` of every lap. Laps
-        detected without a template (``method="region"``) have no overlap
-        score, so when every score is NaN the ``overlap_score`` column is left
-        out. Cannot be combined with the array arguments.
-    start_times : NDArray[np.float64], shape (n_laps,), optional
-        Lap start times in seconds. Required if ``laps`` is not given.
-    stop_times : NDArray[np.float64], shape (n_laps,), optional
-        Lap end times in seconds, each at or after its start time. Required if
-        ``laps`` is not given.
-    directions : Sequence[str], shape (n_laps,), optional
-        Direction of each lap: ``"clockwise"``, ``"counter-clockwise"`` or
-        ``"unknown"``, as in :class:`~neurospatial.behavior.segmentation.Lap`.
-        Stored as the ``direction`` column.
+    laps : Intervals
+        Laps from :func:`~neurospatial.behavior.detect_laps`, or a selection
+        of them. Writes every field, such as ``direction`` and
+        ``overlap_score``. Laps detected without a template
+        (``method="region"``) have no overlap score, so when every score is
+        NaN the ``overlap_score`` column is left out.
     name : str, default "laps"
         Name of the table. ``"trials"``, ``"epochs"`` and ``"invalid_times"``
         are reserved by NWB.
@@ -692,16 +714,15 @@ def write_laps(
 
     Raises
     ------
-    ValueError
-        If ``laps`` is combined with array arguments, or neither is given.
-        If the arrays are not 1-D, their lengths differ, or a direction is
-        not a lap direction.
-        If times are non-finite or negative, or a lap stops before it starts.
-        If ``name`` is reserved by NWB, or a table with that name exists and
-        ``overwrite=False``.
     TypeError
-        If ``laps`` is not a list of ``Lap`` objects, or ``directions`` is a
-        single string.
+        If ``laps`` is not an Intervals (wrap a list of records with
+        ``Intervals(laps)``), or a field holds values other than numbers,
+        Booleans or text.
+    ValueError
+        If a field is named ``id``, which NWB reserves for the row ids. If
+        times are non-finite or negative (NWB times are seconds from the
+        session start). If ``name`` is reserved by NWB, or a table with that
+        name exists and ``overwrite=False``.
     NotImplementedError
         If ``overwrite=True`` would replace a table in a file opened with
         ``"r+"`` or ``"a"``.
@@ -740,8 +761,6 @@ def write_laps(
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     laps_table = read_intervals(io.read(), interval_name="laps")
     """
-    from neurospatial.behavior.segmentation import Lap
-
     _require_pynwb()
     if name in _PREDEFINED_INTERVALS:
         msg = (
@@ -749,27 +768,17 @@ def write_laps(
             "predefined table of that name. Use another name, such as 'laps'."
         )
         raise ValueError(msg)
-
-    (start, stop), columns = _record_columns(
-        Lap,
-        laps,
-        {
-            "start_times": start_times,
-            "stop_times": stop_times,
-            "directions": directions,
-        },
-        times=_INTERVAL_TIMES,
-        columns=_LAP_COLUMNS,
-        needs="write_laps needs either 'laps' (from detect_laps) or both "
-        "'start_times' and 'stop_times'.",
+    start, stop, columns = _interval_columns(
+        laps, _LAP_FIELD_DESCRIPTIONS, call="write_laps", what="lap"
     )
-    _refuse_reversed_intervals(start, stop, record="lap")
     # Laps detected without a template (method="region") have no score;
     # an all-NaN column breaks NWB best practice, so it is left out.
     if "overlap_score" in columns and np.all(np.isnan(columns["overlap_score"][1])):
         del columns["overlap_score"]
 
-    table = _build_time_intervals(name, description, start, stop, columns)
+    table = _build_time_intervals(
+        name, description, start, stop, columns, ids=laps.interval_ids
+    )
 
     _clear_for_write(
         nwbfile,
@@ -992,30 +1001,10 @@ def write_trials(
     read_intervals : Read generic TimeIntervals.
     detect_trials : Trials between visits to named regions.
     """
-    from neurospatial._interval_table import require_intervals
-
     _require_pynwb()
-    trials = require_intervals(trials, name="trials", owner="write_trials()")
-    if "id" in trials.fields:
-        raise ValueError(
-            _format_error(
-                "write_trials: the trials have a field 'id'.",
-                why="NWB tables reserve id for the row ids, which hold the "
-                "interval_ids, so the field would overwrite them.",
-                fix="pass the ids as interval_ids (for a task log, "
-                "Intervals.from_dataframe(log, id_column='id')), or rename "
-                "the field.",
-            )
-        )
-    start = _checked_event_times(trials.start, "start_time")
-    stop = _checked_event_times(trials.stop, "stop_time")
-    columns = {
-        name: (
-            _TRIAL_FIELD_DESCRIPTIONS.get(name, f"Field {name!r} of each trial"),
-            _field_column(trials._field_array(name), name),
-        )
-        for name in trials.fields
-    }
+    start, stop, columns = _interval_columns(
+        trials, _TRIAL_FIELD_DESCRIPTIONS, call="write_trials", what="trial"
+    )
 
     table = _build_time_intervals(
         PREDEFINED_TRIALS, description, start, stop, columns, ids=trials.interval_ids

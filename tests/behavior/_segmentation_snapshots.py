@@ -112,6 +112,10 @@ def capture_segmentation_outputs(pause, laps):
 
 def structural_snapshot(value):
     """Keep array types/shapes and sparse indices without pickled objects."""
+    from neurospatial import Intervals
+
+    if isinstance(value, Intervals):
+        return [structural_snapshot(record) for record in value]
     if dataclasses.is_dataclass(value):
         return {
             "dataclass": type(value).__name__,

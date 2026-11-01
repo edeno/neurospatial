@@ -48,10 +48,10 @@ class TestDetectLaps:
         # Verify lap structure
         for lap in laps:
             assert hasattr(lap, "start_time")
-            assert hasattr(lap, "end_time")
+            assert hasattr(lap, "stop_time")
             assert hasattr(lap, "direction")
             assert hasattr(lap, "overlap_score")
-            assert lap.end_time > lap.start_time
+            assert lap.stop_time > lap.start_time
             assert 0.0 <= lap.overlap_score <= 1.0
 
     def test_detect_laps_direction_clockwise(self):
@@ -164,7 +164,7 @@ class TestDetectLaps:
         assert len(laps) == 2
         assert laps[0].start_time == times[0]
         for lap in laps:
-            assert lap.end_time > lap.start_time
+            assert lap.stop_time > lap.start_time
 
     def test_detect_laps_overlap_threshold(self):
         """Test that min_overlap filters low-quality laps."""
@@ -299,7 +299,7 @@ class TestDetectLaps:
         # Verify temporal ordering
         for laps in [laps_auto, laps_ref, laps_region]:
             for i in range(len(laps) - 1):
-                assert laps[i].end_time <= laps[i + 1].start_time
+                assert laps[i].stop_time <= laps[i + 1].start_time
 
 
 class TestLapRoundTrip:
@@ -338,7 +338,7 @@ class TestLapRoundTrip:
         # Each circuit starts and ends at the start of the corridor.
         start_x = positions[0, 0]
         for lap in laps:
-            for time in (lap.start_time, lap.end_time):
+            for time in (lap.start_time, lap.stop_time):
                 x = positions[np.searchsorted(times, time), 0]
                 assert abs(x - start_x) <= 2 * 4.0  # within the start zone
 
@@ -414,7 +414,7 @@ class TestRegionLaps:
 
         # The recording starts in the region (samples 0-1), so the first lap
         # runs from the first sample to the entry at 79.
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (times[0], times[79]),
             (times[79], times[161]),
             (times[161], times[243]),
@@ -453,11 +453,11 @@ class TestTemplateLaps:
             assert lap.start_time == pytest.approx(bounds[k], abs=tolerance)
             end_tolerance = self.BIN / speeds[min(k + 1, 4)] + 1.0 / self.FS
             if k + 1 < len(self.DURATIONS):
-                assert lap.end_time == pytest.approx(bounds[k + 1], abs=end_tolerance)
+                assert lap.stop_time == pytest.approx(bounds[k + 1], abs=end_tolerance)
             assert lap.direction == "counter-clockwise"
         assert laps[0].start_time == 0.0
         # Laps tile the recording: each ends where the next begins.
-        assert all(a.end_time == b.start_time for a, b in itertools.pairwise(laps))
+        assert all(a.stop_time == b.start_time for a, b in itertools.pairwise(laps))
 
     def test_auto_laps_at_varying_speed(self):
         from neurospatial.behavior.segmentation import detect_laps
@@ -502,7 +502,7 @@ class TestTemplateLaps:
             method="reference",
             reference_lap=bins[times < 10.0],
         )
-        assert laps == []
+        assert len(laps) == 0
 
     @pytest.mark.parametrize("min_overlap", [0.0, -0.5, 1.5, np.nan])
     def test_min_overlap_outside_unit_interval_raises(self, min_overlap):
@@ -572,7 +572,7 @@ class TestRegionLapsGoRoundTheLoop:
         assert end_lap1 < 301 <= end_excursion < 301 + 240 <= end_lap2
         # The recording starts in the start region, so the first lap starts at
         # the first sample; the second lap starts when the excursion returns.
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[end_lap1]),
             (times[end_excursion], times[end_lap2]),
         ]
@@ -591,7 +591,7 @@ class TestRegionLapsGoRoundTheLoop:
         ]
         laps, _ = self._detect(env, positions)
         assert len(self._entries(env, positions)) == 2
-        assert laps == []
+        assert len(laps) == 0
 
     def test_laps_at_varying_speeds_in_both_directions(self):
         """Two counter-clockwise laps (10 s, 4 s), then a clockwise one (6 s)."""
@@ -604,7 +604,7 @@ class TestRegionLapsGoRoundTheLoop:
         laps, times = self._detect(env, positions)
         entries = self._entries(env, positions)
         assert len(entries) == 3
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[entries[0]]),
             (times[entries[0]], times[entries[1]]),
             (times[entries[1]], times[entries[2]]),
@@ -622,7 +622,7 @@ class TestRegionLapsGoRoundTheLoop:
         positions = _ring_arc(np.pi, 6.5 * np.pi, 826)
         laps, times = self._detect(env, positions)
         first, second, third = self._entries(env, positions)
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (times[first], times[second]),
             (times[second], times[third]),
         ]
@@ -688,7 +688,7 @@ class TestRegionLapsGoRoundTheLoop:
         ]
         laps, times = self._detect(env, positions)
         end_lap1, end_excursion, end_lap2 = self._entries(env, positions)
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[end_lap1]),
             (times[end_excursion], times[end_lap2]),
         ]
@@ -718,7 +718,7 @@ class TestTemplateLapsSkipTurnBacks:
         for lap, (start, stop, duration) in zip(laps, expected, strict=True):
             tolerance = self.BIN / (circumference / duration) + 1.0 / self.FS
             assert lap.start_time == pytest.approx(start, abs=tolerance)
-            assert lap.end_time == pytest.approx(stop, abs=tolerance)
+            assert lap.stop_time == pytest.approx(stop, abs=tolerance)
             assert lap.direction == "counter-clockwise"
 
     @pytest.mark.parametrize("method", ["auto", "reference"])
