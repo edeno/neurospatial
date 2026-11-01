@@ -783,3 +783,10 @@ def test_add_with_radius_covers_the_bins_within_it():
 def test_add_with_bad_radius_is_refused(kwargs, match):
     with pytest.raises(ValueError, match=match):
         Regions().add("well", **kwargs)
+
+
+def test_add_with_radius_refuses_metadata_it_sets():
+    with pytest.raises(ValueError, match=r"\['center', 'radius'\] are set by radius="):
+        Regions().add(
+            "well", point=(0.0, 0.0), radius=1.0, metadata={"center": 1, "radius": 2}
+        )
