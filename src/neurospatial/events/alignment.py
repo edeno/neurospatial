@@ -11,7 +11,7 @@ This module provides functions for aligning neural data to events:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,21 +33,26 @@ from neurospatial.events._core import (
     _inner_bounds,
     _psth_bins,
     _validate_window,
+    _window_bounds,
     empty_selection_names,
+    interval_events,
     warn_empty_selection,
 )
 
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Intervals
     from neurospatial._typing import SpikeTrainsLike
 
 
 @reads_pynapple_samples
 def align_spikes_to_events(
     spike_times: NDArray[np.float64],
-    event_times: NDArray[np.float64],
+    event_times: NDArray[np.float64] | Intervals[Any],
     window: tuple[float, float],
+    *,
+    align: str = "start",
 ) -> list[NDArray[np.float64]]:
     """
     Get spike times relative to each event for raster plots.
@@ -60,25 +65,40 @@ def align_spikes_to_events(
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Spike times in seconds. Does not need to be sorted.
-    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+    event_times : NDArray[np.float64], shape (n_events,), pynapple Ts/Tsd, or Intervals
         Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+        An :class:`~neurospatial.Intervals` (trials) gives one event per row,
+        aligned by ``align``; see Notes.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, half-open
         ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
         For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
         event.
+    align : {"start", "stop"}, default="start"
+        For an ``Intervals``, align each row at its start or at its stop.
+        Plain event times are the alignment points; only the default is
+        allowed with them.
 
     Returns
     -------
     list[NDArray[np.float64]]
-        List of arrays, one per event, containing spike times relative to
-        that event (spike_time - event_time). Arrays are sorted by relative
+        List of arrays, one per event (one per row of an ``Intervals``, in
+        row order, matching ``interval_ids``), containing spike times relative
+        to that event (spike_time - event_time). Arrays are sorted by relative
         time. Empty arrays are returned for events with no spikes in window.
 
     Raises
     ------
     ValueError
-        If window start >= stop, or if spike/event times contain NaN or Inf.
+        If window start >= stop, spike/event times contain NaN or Inf, or
+        ``align`` is invalid or given with plain event times.
+
+    Notes
+    -----
+    For intervals, each row's window ends where the row does on the side away
+    from the alignment point: aligned at the start, no spike at or after the
+    trial's stop (it belongs to the next trial); aligned at the stop, no spike
+    before the trial's start.
 
     See Also
     --------
@@ -108,14 +128,18 @@ def align_spikes_to_events(
     ...     # Plot each trial's spikes at y=trial_idx
     ...     pass  # plt.scatter(trial_spikes, [trial_idx]*len(trial_spikes))
     """
-    _validate_window(window, context="align_spikes_to_events")
+    call = "align_spikes_to_events"
+    _validate_window(window, context=call)
     spike_times = _finite_times(spike_times, "spike_times")
+    event_times, _, limits = interval_events(event_times, align, call=call)
     event_times = _finite_times(event_times, "event_times")
 
     spikes = _sorted_times(spike_times)
-    # Spikes in each half-open window [event + start, event + stop).
-    first = np.searchsorted(spikes, event_times + window[0], side="left")
-    stop = np.searchsorted(spikes, event_times + window[1], side="left")
+    # Spikes in each half-open window [event + start, event + stop), cut to
+    # each interval's limits.
+    starts, stops = _window_bounds(event_times, window, limits)
+    first = np.searchsorted(spikes, starts, side="left")
+    stop = np.maximum(first, np.searchsorted(spikes, stops, side="left"))
     return [
         spikes[i:j] - event
         for i, j, event in zip(first, stop, event_times, strict=True)
@@ -132,17 +156,19 @@ def _keep_observed_events(
     window: tuple[float, float],
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    limits: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Keep events with observed windows and return their original input indices.
 
     An empty selection (``epochs`` or ``spike_window`` without rows) keeps no
     event; the caller warns. Non-empty windows that keep no event raise:
-    that usually means another clock.
+    that usually means another clock. With ``limits`` (intervals), each
+    window is first cut to its row's limits.
     """
     if empty_selection_names(epochs, spike_window):
         return event_times[:0], np.empty(0, dtype=np.intp)
     keep = np.ones(event_times.shape, dtype=bool)
-    starts, stops = _inner_bounds(event_times + window[0], event_times + window[1])
+    starts, stops = _inner_bounds(*_window_bounds(event_times, window, limits))
     for windows in (epochs, spike_window):
         if windows is not None:
             keep &= intervals_contain(windows, starts, stops)
@@ -190,6 +216,17 @@ def _peri_event_bin_edges(
     return edges
 
 
+class _PeriEventCounts(NamedTuple):
+    """What :func:`_peri_event_histograms` returns."""
+
+    histograms: NDArray[np.float64]
+    sem: NDArray[np.float64]
+    mean_sem: NDArray[np.float64]
+    event_indices: NDArray[np.intp]
+    n_dropped: int
+    events_per_bin: NDArray[np.int64] | None
+
+
 def _peri_event_histograms(
     trains: Sequence[NDArray[np.float64]],
     event_times: Any,
@@ -199,13 +236,14 @@ def _peri_event_histograms(
     spike_window: Any,
     *,
     context: str,
-) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.intp], int
-]:
+    align: str = "start",
+) -> _PeriEventCounts:
     """Per-unit PSTHs of finite 1-D spike trains, one unit in memory at a time.
 
     ``window`` is already validated, so its wide-window warning points at the
-    public caller.
+    public caller. For an ``Intervals``, a bin counts for a row only when it
+    lies inside the row's cut window (:func:`interval_events`), so each bin
+    is averaged over the rows still under way.
 
     Returns
     -------
@@ -216,63 +254,114 @@ def _peri_event_histograms(
     event_indices : NDArray[np.intp], shape (n_events,)
         Input positions of the retained events.
     n_dropped : int
-        Events whose windows leave ``epochs`` or ``spike_window``.
+        Events whose windows leave ``epochs`` or ``spike_window``, or, for
+        intervals, hold no whole bin.
+    events_per_bin : NDArray[np.int64], shape (n_bins,), or None
+        Retained rows covering each bin, for intervals; None for times.
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
+    event_times, _, limits = interval_events(event_times, align, call=context)
     event_times = _finite_times(event_times, "event_times", non_empty=True)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     n_input_events = event_times.size
     event_times, event_indices = _keep_observed_events(
-        event_times, window, resolved_epochs, resolved_spike_window
+        event_times, window, resolved_epochs, resolved_spike_window, limits
     )
-    n_events = event_times.size
     n_bins = bin_edges.size - 1
-    if n_events == 0:
-        warn_empty_selection(
-            empty_selection_names(resolved_epochs, resolved_spike_window),
-            n_events=n_input_events,
-            result="the histogram",
+    # Count on the absolute clock, not on relative times: subtraction can move
+    # an exact boundary spike across a bin edge.
+    edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
+    covered = np.ones((event_times.size, n_bins), dtype=bool)
+    if limits is not None:
+        lefts, rights = _inner_bounds(edges[:, :-1], edges[:, 1:])
+        covered = (lefts >= limits[0][event_indices, None]) & (
+            rights <= limits[1][event_indices, None]
         )
+        has_bin = covered.any(axis=1)
+        event_times, event_indices = event_times[has_bin], event_indices[has_bin]
+        edges, covered = edges[has_bin], covered[has_bin]
+    n_events = event_times.size
+    events_per_bin = None if limits is None else covered.sum(axis=0)
+    if n_events == 0:
+        names = empty_selection_names(resolved_epochs, resolved_spike_window)
+        if not names:
+            msg = (
+                f"{context}: no interval holds a whole bin of the window "
+                f"[{window[0]:g}, {window[1]:g}) s aligned at its {align}.\n"
+                "Why: each trial's window is cut where the trial ends, on the "
+                "side away from the alignment point.\n"
+                "Fix: use a window on the trial's side of the alignment point "
+                "(window=(0, 2) with align='start'), or a smaller bin_size."
+            )
+            raise ValueError(msg)
+        warn_empty_selection(names, n_events=n_input_events, result="the histogram")
         missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
-        return (
+        return _PeriEventCounts(
             missing,
             missing.copy(),
             np.full(n_bins, np.nan, dtype=np.float64),
             event_indices,
             n_input_events,
+            events_per_bin,
         )
 
-    # Count on the absolute clock, not on relative times: subtraction can move
-    # an exact boundary spike across a bin edge.
-    edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
-    sem = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
+    sem = np.empty((len(trains), n_bins), dtype=np.float64)
     count_sum = np.zeros((n_events, n_bins), dtype=np.float64)
     for unit, train in enumerate(trains):
         counts = np.diff(np.searchsorted(_sorted_times(train), edges), axis=1).astype(
             np.float64
         )
-        histograms[unit] = counts.mean(axis=0)
-        if n_events > 1:
-            sem[unit] = counts.std(axis=0, ddof=1) / np.sqrt(n_events)
+        histograms[unit], sem[unit] = _mean_and_sem(counts, covered)
         count_sum += counts
 
     # The population mean's SEM is across events of each event's mean over
     # units, the same estimand as each unit's SEM.
-    mean_sem = np.full(n_bins, np.nan, dtype=np.float64)
-    if n_events > 1:
-        per_event_mean = count_sum / len(trains)
-        mean_sem = per_event_mean.std(axis=0, ddof=1) / np.sqrt(n_events)
-    return histograms, sem, mean_sem, event_indices, n_input_events - n_events
+    _, mean_sem = _mean_and_sem(count_sum / len(trains), covered)
+    return _PeriEventCounts(
+        histograms,
+        sem,
+        mean_sem,
+        event_indices,
+        n_input_events - n_events,
+        events_per_bin,
+    )
+
+
+def _mean_and_sem(
+    counts: NDArray[np.float64], covered: NDArray[np.bool_]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Mean across events of each bin's counts and its SEM, covered cells only.
+
+    Parameters
+    ----------
+    counts : ndarray of float64, shape (n_events, n_bins)
+    covered : ndarray of bool, shape (n_events, n_bins)
+        Cells that count; at least one per event.
+
+    Returns
+    -------
+    mean, sem : ndarray of float64, shape (n_bins,)
+        NaN where no event covers the bin; the SEM is NaN with fewer than two.
+    """
+    n = covered.sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.where(covered, counts, 0.0).sum(axis=0) / n
+        squares = np.where(covered, (counts - mean) ** 2, 0.0).sum(axis=0)
+        sem = np.sqrt(squares / (n - 1)) / np.sqrt(n)
+    mean[n == 0] = np.nan
+    sem[n < 2] = np.nan
+    return mean, sem
 
 
 @reads_pynapple_samples
 def peri_event_histogram(
     spike_times: NDArray[np.float64],
-    event_times: NDArray[np.float64],
+    event_times: NDArray[np.float64] | Intervals[Any],
     window: tuple[float, float],
     *,
     bin_size: float = 0.025,
+    align: str = "start",
     epochs: Any = None,
     spike_window: Any = None,
 ) -> PeriEventResult:
@@ -287,8 +376,10 @@ def peri_event_histogram(
     ----------
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Spike times in seconds.
-    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+    event_times : NDArray[np.float64], shape (n_events,), pynapple Ts/Tsd, or Intervals
         Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+        An :class:`~neurospatial.Intervals` (trials) gives one event per row,
+        aligned by ``align``; see Notes.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, half-open
         ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
@@ -296,6 +387,10 @@ def peri_event_histogram(
         event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
+    align : {"start", "stop"}, default="start"
+        For an ``Intervals``, align each row at its start or at its stop.
+        Plain event times are the alignment points; only the default is
+        allowed with them.
     epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
 or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
@@ -345,6 +440,17 @@ or None
     -----
     With a single retained event the SEM is undefined and is NaN.
 
+    For intervals, each row's window ends where the row does on the side away
+    from the alignment point: aligned at the start, no bin at or after the
+    trial's stop counts (it would be the next trial); aligned at the stop, no
+    bin before the trial's start. The other side counts as for any event, so
+    the time at the well before a departure or after an arrival stays in. A
+    bin counts for a trial only when it lies wholly inside the trial's
+    window, so each bin is the mean over the trials under way for all of it
+    (``events_per_bin``), NaN where there are none. ``n_events_dropped`` also
+    counts trials holding no whole bin. To keep only events whose whole
+    window lies inside one trial, pass plain times with ``epochs=trials``.
+
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
     the window stop are not counted.
@@ -376,7 +482,7 @@ or None
     """
     window = _validate_window(window, context="peri_event_histogram")
     spike_times = _finite_times(spike_times, "spike_times")
-    histograms, sem, _, event_indices, n_dropped = _peri_event_histograms(
+    psth = _peri_event_histograms(
         [spike_times],
         event_times,
         window,
@@ -384,25 +490,29 @@ or None
         epochs,
         spike_window,
         context="peri_event_histogram",
+        align=align,
     )
     return PeriEventResult(
-        histogram=histograms[0],
-        sem=sem[0],
-        n_events=event_indices.size,
+        histogram=psth.histograms[0],
+        sem=psth.sem[0],
+        n_events=psth.event_indices.size,
         window=window,
         bin_size=bin_size,
-        n_events_dropped=n_dropped,
-        event_indices=event_indices,
+        n_events_dropped=psth.n_dropped,
+        event_indices=psth.event_indices,
+        events_per_bin=psth.events_per_bin,
+        align=None if psth.events_per_bin is None else align,
     )
 
 
 @reads_pynapple_samples
 def population_peri_event_histogram(
     spike_times: SpikeTrainsLike,
-    event_times: NDArray[np.float64],
+    event_times: NDArray[np.float64] | Intervals[Any],
     window: tuple[float, float],
     *,
     bin_size: float = 0.025,
+    align: str = "start",
     epochs: Any = None,
     spike_window: Any = None,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -419,14 +529,20 @@ def population_peri_event_histogram(
         Spike times in seconds, one 1-D array of shape (n_spikes_for_unit,)
         per unit, or a labelled spike group such as a pynapple ``TsGroup``.
         A group's index becomes the result's ``unit_ids``.
-    event_times : NDArray[np.float64], shape (n_events,), or pynapple Ts/Tsd
+    event_times : NDArray[np.float64], shape (n_events,), pynapple Ts/Tsd, or Intervals
         Event times (e.g., stimulus onset) in seconds. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+        An :class:`~neurospatial.Intervals` (trials) gives one event per row,
+        aligned by ``align``; see Notes.
     window : tuple[float, float]
         Time window (start, stop) relative to each event, in seconds,
         half-open ``[start, stop)``: a spike exactly at ``event + stop`` is
         left out.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
+    align : {"start", "stop"}, default="start"
+        For an ``Intervals``, align each row at its start or at its stop.
+        Plain event times are the alignment points; only the default is
+        allowed with them.
     epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
 or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
@@ -489,6 +605,17 @@ or None
     -----
     With a single retained event the SEM is undefined and is NaN.
 
+    For intervals, each row's window ends where the row does on the side away
+    from the alignment point: aligned at the start, no bin at or after the
+    trial's stop counts (it would be the next trial); aligned at the stop, no
+    bin before the trial's start. The other side counts as for any event, so
+    the time at the well before a departure or after an arrival stays in. A
+    bin counts for a trial only when it lies wholly inside the trial's
+    window, so each bin is the mean over the trials under way for all of it
+    (``events_per_bin``), NaN where there are none. ``n_events_dropped`` also
+    counts trials holding no whole bin. To keep only events whose whole
+    window lies inside one trial, pass plain times with ``epochs=trials``.
+
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
     the window stop are not counted.
@@ -533,24 +660,33 @@ or None
         raise ValueError(msg)
     context = "population_peri_event_histogram"
     window = _validate_window(window, context=context)
-    histograms, sem, mean_sem, event_indices, n_dropped = _peri_event_histograms(
-        trains, event_times, window, bin_size, epochs, spike_window, context=context
+    psth = _peri_event_histograms(
+        trains,
+        event_times,
+        window,
+        bin_size,
+        epochs,
+        spike_window,
+        context=context,
+        align=align,
     )
     # A labelled input keeps its own labels; a differing unit_ids= raises.
     resolved_unit_ids = resolve_unit_ids(
         unit_ids, len(trains), context=context, input_ids=extracted_ids
     )
     return PopulationPeriEventResult(
-        histograms=histograms,
-        sem=sem,
-        mean_sem=mean_sem,
-        n_events=event_indices.size,
+        histograms=psth.histograms,
+        sem=psth.sem,
+        mean_sem=psth.mean_sem,
+        n_events=psth.event_indices.size,
         window=window,
         bin_size=bin_size,
         unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
-        n_events_dropped=n_dropped,
-        event_indices=event_indices,
+        n_events_dropped=psth.n_dropped,
+        event_indices=psth.event_indices,
+        events_per_bin=psth.events_per_bin,
+        align=None if psth.events_per_bin is None else align,
     )
 
 

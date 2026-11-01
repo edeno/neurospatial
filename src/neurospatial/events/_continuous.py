@@ -27,7 +27,7 @@ from neurospatial._results import (
     read_only_copy,
     require_label_sequence,
 )
-from neurospatial.events._core import _inner_bounds
+from neurospatial.events._core import _inner_bounds, _window_bounds
 
 if TYPE_CHECKING:
     from neurospatial._observation import ObservationSupport
@@ -389,6 +389,7 @@ def _window_status(
     supports: Sequence[ObservationSupport],
     epochs: NDArray[np.float64] | None,
     window_coverage: str,
+    limits: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> NDArray[np.str_]:
     """Decide from each event's window interval whether the event is kept.
 
@@ -414,6 +415,9 @@ def _window_status(
         inside one run's ``[t_first, t_last]``. ``"partial"``: kept unless the
         window misses ``[times[0], times[-1]]`` entirely; whether any cell is
         supported is decided after sampling.
+    limits : tuple of ndarray of float64, each shape (n_events,), optional
+        Each event's own ``[start, stop)`` (a trial's bounds); its window is
+        cut to them before it is tested.
 
     Returns
     -------
@@ -421,8 +425,7 @@ def _window_status(
         ``"retained"`` or the first failing reason, in the order
         ``"outside_recording"``, ``"outside_epochs"``, ``"incomplete_support"``.
     """
-    starts = event_times + window[0]
-    stops = event_times + window[1]
+    starts, stops = _window_bounds(event_times, window, limits)
     width = max(len(name) for name in _EVENT_STATUSES)
     status = np.full(event_times.shape, "retained", dtype=f"<U{width}")
     if window_coverage == "partial":
@@ -445,6 +448,7 @@ def _overlapping(
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     retained: NDArray[np.bool_],
+    limits: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> NDArray[np.bool_]:
     """Flag retained events whose window intersects another retained window.
 
@@ -456,6 +460,8 @@ def _overlapping(
         ``(start, stop)`` in seconds relative to each event; half-open.
     retained : ndarray of bool, shape (n_events,)
         Events kept by :func:`_window_status`.
+    limits : tuple of ndarray of float64, each shape (n_events,), optional
+        Each event's own ``[start, stop)``; windows are cut to them first.
 
     Returns
     -------
@@ -472,10 +478,10 @@ def _overlapping(
     of ``0.1 + 0.1 == 0.2`` and a start of ``0.3 - 0.1 == 0.19999999999999998``.
     """
     kept = np.flatnonzero(retained)
-    starts = event_times[kept] + window[0]
-    order = np.argsort(starts, kind="stable")
-    starts = starts[order]
-    stops = event_times[kept][order] + window[1]
+    starts, stops = _window_bounds(event_times, window, limits)
+    order = np.argsort(starts[kept], kind="stable")
+    starts = starts[kept][order]
+    stops = stops[kept][order]
     # Sorted by start: a window overlaps an earlier one iff it starts before
     # the latest earlier stop, and a later one iff the next window starts
     # before it stops.

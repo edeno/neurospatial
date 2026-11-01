@@ -43,15 +43,19 @@ from neurospatial.events._continuous import (
     _window_status,
 )
 from neurospatial.events._core import (
+    ALIGNS,
     _finite_times,
     _is_real_number,
     _validate_window,
     empty_selection_names,
+    interval_events,
 )
 
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+
+    from neurospatial._interval_table import Intervals
 
 __all__ = ["ContinuousEventResult", "align_continuous_to_events"]
 
@@ -141,7 +145,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
     support : NDArray[np.bool_] or None, shape (n_events, n_times, n_features)
         True where ``values`` was observed. None with ``values``.
     event_ids : NDArray or None, shape (n_input_events,)
-        Caller labels of the input events, when given.
+        Caller labels of the input events, when given; the ``interval_id`` of
+        each row for intervals.
+    align : {"start", "stop"} or None, default=None
+        For intervals, the bound each row was aligned at; the window was cut
+        at the row's other bound. None for plain event times.
     """
 
     feature_ids: NDArray[Any]
@@ -167,6 +175,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
     values: NDArray[np.float64] | None
     support: NDArray[np.bool_] | None
     event_ids: NDArray[Any] | None
+    align: str | None = None
 
     def __post_init__(self) -> None:
         """Check that the fields describe one alignment, then own the arrays."""
@@ -313,6 +322,8 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
 
         if self.window_coverage not in _WINDOW_COVERAGES:
             problems.append(f"window_coverage must be in {list(_WINDOW_COVERAGES)}")
+        if self.align is not None and self.align not in ALIGNS:
+            problems.append(f"align must be None or in {list(ALIGNS)}")
         threshold = self.resultant_threshold
         if not (
             _is_real_number(threshold)
@@ -413,6 +424,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             "window": (float(self.window[0]), float(self.window[1])),
             "dt": float(self.dt),
             "window_coverage": self.window_coverage,
+            "align": self.align,
             "max_gap": self.max_gap,
             "resultant_threshold": float(self.resultant_threshold),
             "feature_units": dict(
@@ -744,10 +756,11 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
 def align_continuous_to_events(
     times: ArrayLike,
     signals: ArrayLike,
-    event_times: ArrayLike,
+    event_times: ArrayLike | Intervals[Any],
     window: tuple[float, float],
     *,
     dt: float,
+    align: str = "start",
     feature_ids: Sequence[Any] | NDArray[Any] | None = None,
     feature_units: Mapping[Any, str | None] | None = None,
     event_ids: Sequence[Any] | NDArray[Any] | None = None,
@@ -765,7 +778,9 @@ def align_continuous_to_events(
     """
     Sample continuous signals at fixed times around each event.
 
-    For each event, every signal column (feature) is sampled at
+    Events are time points, or the rows of an :class:`~neurospatial.Intervals`
+    (trials, visits, laps) aligned at their start or stop. For each event,
+    every signal column (feature) is sampled at
     ``event + relative_times``, with ``relative_times = start + dt * j`` for
     every ``j >= 0`` before ``stop``. A value is taken only where the feature
     was observed: at a valid sample's exact time, or between two valid
@@ -782,6 +797,15 @@ def align_continuous_to_events(
     with at least one supported cell, and each cell is summarized over the
     events observed there (``counts``).
 
+    For intervals, each row's window ends where the row does on the side away
+    from the alignment point: aligned at the start, nothing after the trial's
+    stop is sampled (it would be the next trial); aligned at the stop, nothing
+    before the trial's start. The other side is sampled as for any event, so
+    the time at the well before a departure, or after an arrival, stays in the
+    window. "complete" asks only that the cut window was observed, each cell
+    is averaged over the trials still under way at that time (``counts``),
+    and the rows are labelled by ``interval_id``.
+
     Parameters
     ----------
     times : ArrayLike, shape (n_samples,)
@@ -790,9 +814,11 @@ def align_continuous_to_events(
         One column per feature, on the clock of ``times``. NaN or infinity
         marks a missing sample of that feature; a finite zero is an
         observation.
-    event_times : ArrayLike, shape (n_input_events,)
+    event_times : ArrayLike, shape (n_input_events,), or Intervals
         Event times in seconds, on the same clock. Input order is kept and
         duplicate times are separate events. A pynapple ``Ts`` or ``Tsd`` is read by its timestamps.
+        An :class:`~neurospatial.Intervals` gives one event per row, at the
+        bound chosen by ``align``, labelled by its ``interval_id``.
     window : tuple of float
         ``(start, stop)`` in seconds relative to each event, half-open,
         ``start < stop``. For example ``(-1.0, 2.0)``.
@@ -800,6 +826,10 @@ def align_continuous_to_events(
         Spacing of the query times in seconds. No default: choose the time
         resolution of your analysis, usually no finer than the sampling
         interval.
+    align : {"start", "stop"}, default="start"
+        For an ``Intervals``, align each row at its start or at its stop.
+        Plain event times are the alignment points; only the default is
+        allowed with them.
     feature_ids : sequence, shape (n_features,), optional
         Unique feature labels; default ``0 .. n_features - 1``. The mappings
         below are keyed by these ids.
@@ -808,7 +838,8 @@ def align_continuous_to_events(
         radians: their unit must be ``"rad"`` (the default) or omitted.
     event_ids : sequence, shape (n_input_events,), optional
         Your labels for the events (trial numbers, reward ids), kept for every
-        input event.
+        input event. Not with an ``Intervals``, whose ``interval_id`` labels
+        the rows.
     value_kinds : mapping of feature id to str, optional
         ``"linear"`` (default), ``"circular"`` (angles in radians, such as
         head direction) or ``"categorical"`` (integer codes, such as the
@@ -865,9 +896,10 @@ def align_continuous_to_events(
         If ``window`` is not ``start < stop`` in seconds or holds no query
         time, ``dt`` is not a positive finite number, ``window_coverage``,
         ``resultant_threshold`` or ``retain_aligned`` is invalid, the signals,
-        feature metadata, ``event_times`` or ``event_ids`` are malformed, or
-        every event is excluded by windows with duration (usually another
-        clock).
+        feature metadata, ``event_times`` or ``event_ids`` are malformed,
+        ``align`` is invalid or given with plain event times, ``event_ids`` is
+        given with an ``Intervals``, or every event is excluded by windows
+        with duration (usually another clock).
 
     Notes
     -----
@@ -880,8 +912,9 @@ def align_continuous_to_events(
       window is not inside one epoch.
     - ``"incomplete_support"``: complete coverage, some feature has no single
       run of observation covering the window.
-    - ``"no_support"``: partial coverage, no feature was observed at any
-      query time of the window.
+    - ``"no_support"``: no feature was observed at any query time of the
+      window (partial coverage, or an interval that leaves no query time of
+      the window, such as ``align="start"`` with a window ending before 0).
 
     Overlapping windows reuse the same samples; ``overlapping`` flags those
     events so you can decide whether to keep them.
@@ -997,11 +1030,25 @@ def align_continuous_to_events(
     )
     sample_valid = np.column_stack([support.sample_valid for support in supports])
     _check_category_codes(sig, sample_valid, spec, call=call)
-    events = _finite_times(event_times, "event_times", non_empty=True)
-    ids = _validated_event_ids(event_ids, events.size, call=call)
+    events, interval_ids, limits = interval_events(event_times, align, call=call)
+    if interval_ids is not None and event_ids is not None:
+        raise ValueError(
+            _format_error(
+                f"{call}: event_ids was given with an Intervals.",
+                why="Each row is labelled by its interval_id.",
+                fix="drop event_ids; select or relabel the rows of the "
+                "Intervals instead",
+            )
+        )
+    events = _finite_times(events, "event_times", non_empty=True)
+    ids = (
+        interval_ids
+        if interval_ids is not None
+        else _validated_event_ids(event_ids, events.size, call=call)
+    )
 
     status = _window_status(
-        events, (start, stop), t, supports, normalized_epochs, window_coverage
+        events, (start, stop), t, supports, normalized_epochs, window_coverage, limits
     )
     provisional = np.flatnonzero(status == "retained")
     summaries = _Summaries.empty(relative_times.size, spec)
@@ -1012,6 +1059,13 @@ def align_continuous_to_events(
         values, support = _sample_events(
             events[rows], relative_times, t, sig, supports, spec, normalized_epochs
         )
+        if limits is not None:
+            queries = events[rows, None] + relative_times[None, :]
+            outside = (queries < limits[0][rows, None]) | (
+                queries >= limits[1][rows, None]
+            )
+            values[outside] = np.nan
+            support[outside] = False
         observed = support.any(axis=(1, 2))
         status[rows[~observed]] = "no_support"
         summaries.add(values, support)
@@ -1045,7 +1099,7 @@ def align_continuous_to_events(
         interpolation=spec.interpolation,
         feature_units=spec.units,
         event_status=status,
-        overlapping=_overlapping(events, (start, stop), retained),
+        overlapping=_overlapping(events, (start, stop), retained, limits),
         counts=summaries.counts,
         sums=summaries.sums,
         sin_sums=summaries.sin_sums,
@@ -1067,6 +1121,7 @@ def align_continuous_to_events(
         if retain_aligned
         else None,
         event_ids=ids,
+        align=None if limits is None else align,
     )
 
 

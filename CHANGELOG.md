@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Trials aligned by time
+
+Trials, visits or laps can be laid out by time since their start or until
+their stop, with exact timing when frames are dropped and each row labelled
+by its trial.
+
+**Added**
+
+- `align_continuous_to_events`, `peri_event_histogram`,
+  `population_peri_event_histogram` and `align_spikes_to_events` take an
+  `Intervals` as `event_times`, with `align="start"` (default) or
+  `align="stop"`. Each trial's window ends at its other bound, so the next
+  trial's data never enters it, while the side of the alignment point is
+  kept (the time at the well before a departure, or after an arrival).
+  Values are sampled by time, not by sample index, so dropped frames do not
+  shift later values.
+- Continuous results label their rows by `interval_id` (`event_ids`) and
+  record `align`. Each cell is averaged over the trials under way at that
+  time (`counts`).
+- PSTH results have `events_per_bin`, the trials under way for the whole of
+  each bin (the bin's mean is over them; NaN where none is), and `align`.
+  A bin that a trial covers only in part does not count for that trial.
+  PSTH tables gain an `n_events` column per bin, and every PSTH and
+  continuous table records `align` in `df.attrs`.
+
 ### Trials from positions or port visits
 
 **Added**
