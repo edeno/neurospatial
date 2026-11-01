@@ -171,6 +171,7 @@ def interval_events(
     or stop, and its window is limited on the other side: aligned at the
     start, nothing at or after the row's stop; aligned at the stop, nothing
     before the row's start.
+    Rows with ``outcome == "censored"`` are refused at their stop.
 
     Returns
     -------
@@ -213,6 +214,20 @@ def interval_events(
                 fix="check the selection that produced it",
             )
         )
+    if align == "stop" and "outcome" in event_times.fields:
+        n_censored = int(np.count_nonzero(event_times.outcome.to_numpy() == "censored"))
+        if n_censored:
+            raise ValueError(
+                _format_error(
+                    f"{call}: align='stop' was given with {n_censored} censored "
+                    "trial(s) (outcome == 'censored').",
+                    why="A censored trial's stop is where observation ended, "
+                    "not an arrival, so aligning at it would mix the end of "
+                    "observation with arrivals.",
+                    fix="leave the censored trials out: "
+                    'trials[trials.outcome != "censored"]',
+                )
+            )
     starts = np.asarray(event_times.start, dtype=np.float64)
     stops = np.asarray(event_times.stop, dtype=np.float64)
     unbounded = np.full(starts.shape, np.inf)

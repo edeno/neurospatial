@@ -273,3 +273,52 @@ def test_spikes_at_trial_bounds_count_once_in_counts_psth_and_raster(align):
     # no trial).
     total = np.nansum(result.histogram * result.events_per_bin)
     assert total == pytest.approx(per_trial.sum(), rel=1e-12)
+
+
+CENSORED = Intervals.from_arrays(
+    [1.0, 5.0, 9.0], [3.0, 8.5, 12.0], outcome=["reached", "censored", "reached"]
+)
+ALIGN_CALLS = {
+    "peri_event_histogram": lambda trials, align: peri_event_histogram(
+        SPIKES, trials, (-1.0, 0.0), bin_size=0.5, align=align
+    ),
+    "population_peri_event_histogram": lambda trials, align: (
+        population_peri_event_histogram(
+            [SPIKES], trials, (-1.0, 0.0), bin_size=0.5, align=align
+        )
+    ),
+    "align_spikes_to_events": lambda trials, align: align_spikes_to_events(
+        SPIKES, trials, (-1.0, 0.0), align=align
+    ),
+    "align_continuous_to_events": lambda trials, align: align_continuous_to_events(
+        np.arange(150) / 10,
+        np.arange(150) / 10,
+        trials,
+        (-1.0, 0.0),
+        dt=0.5,
+        align=align,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(ALIGN_CALLS))
+def test_aligning_censored_trials_at_their_stop_is_refused(name):
+    call = ALIGN_CALLS[name]
+    # A censored trial's stop is where observation ended, not an arrival.
+    with pytest.raises(
+        ValueError, match=r"(?s)1 censored.*trials\.outcome != \"censored\""
+    ):
+        call(CENSORED, "stop")
+    call(CENSORED, "start")
+    call(CENSORED[CENSORED.outcome != "censored"], "stop")
+
+
+def test_response_plot_refuses_censored_trials_aligned_at_their_stop():
+    from neurospatial.events import plot_peri_event_response
+
+    reached = CENSORED[CENSORED.outcome != "censored"]
+    result = peri_event_histogram(
+        SPIKES, reached, (-1.0, 0.0), bin_size=0.5, align="stop"
+    )
+    with pytest.raises(ValueError, match="censored"):
+        plot_peri_event_response(SPIKES, CENSORED, result)
