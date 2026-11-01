@@ -134,3 +134,43 @@ def test_documented_trials_round_trip(tmp_path, monkeypatch):
         assert getattr(loaded, name).tolist() == getattr(trials, name).tolist()
     assert loaded.sel(interval_id=2).end_region is None
     assert namespace["left"].interval_ids.tolist() == [1, 3]
+
+
+WORKFLOWS = GUIDE.parent / "workflows.md"
+
+
+def test_route_workflow_curves_survive_an_nwb_round_trip():
+    """Workflow 9's NWB block runs after the blocks it continues from."""
+    text = WORKFLOWS.read_text()
+    blocks = re.findall(r"```python\n(.*?)\n```", text, re.DOTALL)
+
+    def block(marker: str) -> str:
+        matching = [code for code in blocks if marker in code]
+        assert len(matching) == 1, f"{len(matching)} workflow blocks contain {marker!r}"
+        return matching[0]
+
+    namespace = {"__name__": "__main__"}
+    for marker in (
+        "make_w_maze().env_track",
+        "conditions = {",
+        "progress = path_progress(",
+        "curves = {}",
+        "write_trials(nwbfile, trials)",
+    ):
+        exec(compile(block(marker), str(WORKFLOWS), "exec"), namespace)
+    plt.close("all")
+    assert namespace["again"].analysis_settings["epoch_interval_ids"] == [
+        0,
+        4,
+        8,
+        12,
+        16,
+        20,
+        28,
+        36,
+        40,
+        44,
+        48,
+        52,
+        56,
+    ]

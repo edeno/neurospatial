@@ -55,6 +55,7 @@ References
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -120,6 +121,65 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             stacklevel=_external_stacklevel(),
         )
     return float(bandwidth)
+
+
+def kernel_ratio_rates(
+    occupancy: NDArray[np.float64],
+    *,
+    bandwidth: float | None,
+    bin_size: float,
+    mode: Literal["wrap", "constant"],
+    min_occupancy: float = 0.0,
+) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
+    """Rates from spike counts on 1-D bins, counts and occupancy smoothed apart.
+
+    Parameters
+    ----------
+    occupancy : ndarray of shape (n_bins,)
+        Unsmoothed occupancy, seconds.
+    bandwidth : float or None
+        Gaussian standard deviation in the units of ``bin_size``; None for no
+        smoothing.
+    bin_size : float
+        Bin width; every bin must have this width.
+    mode : {"wrap", "constant"}
+        ``"wrap"`` for a circular variable (angles); ``"constant"`` for a
+        linear one, where the kernel's mass beyond the end bins is lost from
+        counts and occupancy alike, so their ratio stays a kernel-weighted
+        rate.
+    min_occupancy : float, default=0.0
+        Seconds below which a bin is unsupported.
+
+    Returns
+    -------
+    callable
+        Maps unsmoothed spike counts of shape (..., n_bins) to rates in Hz of
+        the same shape: the smoothed counts over the smoothed occupancy, NaN in
+        bins with no occupancy or less than ``min_occupancy``, even where
+        smoothing reaches them.
+    """
+    unsupported = (occupancy == 0) | (occupancy < min_occupancy)
+    sigma_bins = None if bandwidth is None else bandwidth / bin_size
+
+    def smooth(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        if sigma_bins is None:
+            return values
+        from scipy.ndimage import gaussian_filter1d
+
+        smoothed: NDArray[np.float64] = gaussian_filter1d(
+            values, sigma_bins, axis=-1, mode=mode, cval=0.0
+        )
+        return smoothed
+
+    smoothed_occupancy = smooth(occupancy)
+
+    def rates(spike_counts: NDArray[np.float64]) -> NDArray[np.float64]:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result: NDArray[np.float64] = smooth(spike_counts) / smoothed_occupancy
+        result[..., unsupported] = np.nan
+        return result
+
+    return rates
 
 
 def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:

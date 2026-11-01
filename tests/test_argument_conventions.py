@@ -246,6 +246,9 @@ REQUIRED_DATA_ARGUMENTS = {
     ("marchenko_pastur_threshold", "n_time_bins"),
     # The session's mean posterior that each shuffled peak is drawn from.
     ("shuffle_posterior_weighted_circular", "peak_weights"),
+    # The variable sampled with the trajectory that the rates are binned by.
+    ("compute_tuning_curve", "values"),
+    ("compute_tuning_curves", "values"),
 }
 
 

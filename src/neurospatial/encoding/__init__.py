@@ -16,6 +16,7 @@ boundary_vector : Boundary-vector and egocentric boundary cell rate maps
 egocentric : Object-vector and egocentric-rate analysis
 view : Spatial view cell analysis
 phase_precession : Theta phase precession analysis
+tuning : Firing rate as a function of one behavioral variable
 population : Population-level metrics
 """
 
@@ -142,6 +143,13 @@ from neurospatial.encoding.spatial import (
 from neurospatial.encoding.spike_trains import SpikeTrains
 
 # View rate (spatial view cells)
+# Tuning curves (firing rate against one behavioral variable)
+from neurospatial.encoding.tuning import (
+    TuningCurveResult,
+    TuningCurvesResult,
+    compute_tuning_curve,
+    compute_tuning_curves,
+)
 from neurospatial.encoding.view import (
     ViewRateResult,
     ViewRatesResult,
@@ -179,6 +187,11 @@ __all__ = [  # noqa: RUF022 - organized by category
     "DirectionalRatesResult",
     "compute_directional_rate",
     "compute_directional_rates",
+    # Tuning curves (firing rate against one behavioral variable)
+    "TuningCurveResult",
+    "TuningCurvesResult",
+    "compute_tuning_curve",
+    "compute_tuning_curves",
     # Egocentric rate (object vector cells)
     "ObjectVectorRateResult",
     "ObjectVectorRatesResult",

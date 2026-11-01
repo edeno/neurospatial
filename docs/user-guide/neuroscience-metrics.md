@@ -606,6 +606,7 @@ measurement of where the head or eyes point.
 | Is firing associated with a vector to a wall? | Wall distance and allocentric or egocentric direction | `compute_boundary_vector_rate` |
 | Is firing associated with a viewed location? | Projected gaze location in the arena | `compute_view_rate` |
 | Does spike theta phase advance across a place field? | Distance travelled into one field, per spike | `compute_phase_precession` |
+| Is firing associated with progress or distance to a goal, speed, or another behavioral variable? | Bins of that variable, with the same edges for every condition | `compute_tuning_curve`, `compute_tuning_curves` ([Workflow 9](workflows.md#workflow-9-firing-along-the-route-to-a-goal)) |
 
 Keep the same analysis epochs and known spike-recording window across related
 maps. Each snippet assumes spikes were recorded throughout the tracked span;

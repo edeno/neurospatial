@@ -1552,6 +1552,10 @@ Read 2-D and 3-D progress as commitment to the goal rather than distance:
 The `path_progress` docstring lists the guarantees and the measured sizes of
 these effects.
 
+To ask where along the route a cell fires, bin its spikes by progress with
+`compute_tuning_curves`, using the same bin edges for every condition: see
+[Workflow 9: Firing Along the Route to a Goal](workflows.md#workflow-9-firing-along-the-route-to-a-goal).
+
 ### Directedness Score
 
 Finds each approach to a goal and keeps the efficient ones. An approach runs

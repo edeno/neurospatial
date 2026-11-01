@@ -967,7 +967,10 @@ def path_progress(
       progress than its length. For a fraction proportional to distance on
       a corridor maze, pass its linearized track (for example
       ``MazeEnvironments.env_track``). For centimetres, use
-      :func:`distance_to_goal`.
+      :func:`distance_to_goal`. The effect can be large: on the Sungod
+      maze, whose home port sits in an open 40 x 57 cm box, 2-D progress
+      from the home port to an arm port is up to 0.33 off the route
+      fraction (0.01 on its track).
     - *Start and goal size, bin size.* A larger goal raises values. On 2-D
       grids, how many bins wide a narrow corridor is changes values (up to
       0.08 between 2 and 1 cm bins on a 7 cm wide W-maze; the track is
