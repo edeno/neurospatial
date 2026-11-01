@@ -438,6 +438,47 @@ def test_per_interval_targets_and_unknown(t_track_trials, monkeypatch):
     np.testing.assert_array_equal(filled[10:20], left[10:20])
 
 
+def test_samples_outside_every_interval_are_nan(t_track_trials):
+    """Progress is defined only inside an interval; the gap between is NaN."""
+    track, times, positions, _ = t_track_trials
+    trials = Intervals.from_arrays([0.0, 12.0], [8.0, 20.0])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        progress = path_progress(
+            track, times, positions, trials, start="start", goal="well_left"
+        )
+    alone = path_progress(track, times, positions, start="start", goal="well_left")
+    assert np.all(np.isnan(progress[8:12]))
+    assert np.all(np.isnan(progress[20:]))
+    np.testing.assert_array_equal(progress[:8], alone[:8])
+    np.testing.assert_array_equal(progress[12:20], alone[12:20])
+    assert np.all(np.isfinite(progress[:8]))
+    assert np.all(np.isfinite(progress[12:20]))
+
+
+def test_mostly_nan_warning_counts_only_analyzed_samples(t_track_trials):
+    """Samples outside every interval are not analyzed, so they never warn.
+
+    Twenty of the thirty samples are outside both trials; counted, they would
+    make two thirds of the result NaN.
+    """
+    track, times, positions, _ = t_track_trials
+    trials = Intervals.from_arrays([0.0, 12.0], [8.0, 14.0])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        progress = path_progress(
+            track, times, positions, trials, start="start", goal="well_left"
+        )
+    assert np.count_nonzero(np.isnan(progress)) == 20
+    # Inside a trial, NaN does count: an unknown goal in the longer trial
+    # makes 8 of the 10 analyzed samples NaN.
+    unknown = trials.with_fields(goal=[None, "well_left"])
+    with pytest.warns(UserWarning, match=r"8 of 10 analyzed samples \(80%\)"):
+        path_progress(
+            track, times, positions, unknown, start="start", goal=unknown.goal
+        )
+
+
 def test_overlapping_intervals_refused(t_track_trials):
     track, times, positions, _ = t_track_trials
     overlapping = Intervals.from_arrays([0.0, 5.0], [10.0, 15.0])
