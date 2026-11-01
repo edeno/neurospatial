@@ -633,7 +633,9 @@ def _rows_and_targets(
     ``None`` in row order, or a ``pandas.Series`` indexed by
     ``interval_id``.
     """
-    point = _as_point(target)
+    # A Series is one value per interval_id, whatever its values are.
+    by_id = hasattr(target, "reindex") and hasattr(target, "index")
+    point = None if by_id else _as_point(target)
     single = isinstance(target, str) or point is not None
     one = target if point is None else point
     if intervals is None:
@@ -652,10 +654,7 @@ def _rows_and_targets(
         rows = intervals._sample_positions(times, call)
     if single:
         return rows, [one] * len(intervals), True
-    if hasattr(target, "reindex"):  # a Series indexed by interval_id
-        values = list(intervals._per_row(target, name=name))
-    else:
-        values = list(target)
+    values = list(intervals._per_row(target, name=name)) if by_id else list(target)
     if len(values) != len(intervals):
         msg = (
             f"{call}: {name}= has {len(values)} entries; give one per interval "

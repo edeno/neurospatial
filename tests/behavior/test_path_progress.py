@@ -560,3 +560,25 @@ def test_single_shared_target_raises_with_intervals(t_track_trials):
         path_progress(
             track, times, positions, trials, start="well_left", goal="well_left"
         )
+
+
+def test_numeric_series_aligns_by_interval_id():
+    """On a 1-D track a goal per trial is a number; a Series aligns it by id."""
+    import pandas as pd
+
+    line = np.arange(0.0, 100.0, 0.5)[:, None]
+    env = Environment.from_samples(line, bin_size=2.0)
+    times = np.arange(4.0)
+    positions = np.array([[50.0], [50.0], [50.0], [50.0]])
+    trials = Intervals.from_arrays([0.0, 2.0], [2.0, 4.0], interval_ids=[7, 3])
+    # Rows are in time order: id 7 first, then id 3.
+    goals = pd.Series([90.0, 10.0], index=[3, 7])
+    progress = path_progress(env, times, positions, trials, start=[49.0], goal=goals)
+    toward_10 = path_progress(env, times, positions, start=[49.0], goal=[10.0])
+    toward_90 = path_progress(env, times, positions, start=[49.0], goal=[90.0])
+    np.testing.assert_array_equal(progress[:2], toward_10[:2])
+    np.testing.assert_array_equal(progress[2:], toward_90[2:])
+    remaining = distance_to_goal(env, times, positions, trials, goal=goals)
+    np.testing.assert_allclose(remaining, [40.0, 40.0, 40.0, 40.0], atol=1.0)
+    with pytest.raises(ValueError, match="one value per interval"):
+        path_progress(env, times, positions, start=[49.0], goal=goals)
