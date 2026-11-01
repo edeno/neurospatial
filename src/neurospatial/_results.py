@@ -891,6 +891,7 @@ def build_population_dataset(
     *,
     env: Any = None,
     bin_centers: NDArray[np.float64] | None = None,
+    bin_center_name: str = "bin_center_angle",
     occupancy: NDArray[np.float64] | None = None,
     attrs: dict[str, Any] | None = None,
 ) -> Any:
@@ -913,8 +914,10 @@ def build_population_dataset(
         Pass either ``env`` or ``bin_centers``, not both. ``None`` adds no
         environment coords.
     bin_centers : ndarray, optional
-        Explicit angular bin centers (radians) for results without an ``env``
-        (directional). When given, a ``bin_center_angle`` coord is attached.
+        Explicit bin centers for results without an ``env``: angles in
+        radians (directional) or values of a variable (tuning curves).
+    bin_center_name : str, default="bin_center_angle"
+        Name of the coordinate holding ``bin_centers``.
     occupancy : ndarray, shape (n_bins,), optional
         Per-bin occupancy (seconds); attached as an ``occupancy`` data var on
         ``("bin",)`` when provided.
@@ -964,7 +967,7 @@ def build_population_dataset(
                     fix="pass a 1-D bin_centers array of length n_bins.",
                 )
             )
-        coords["bin_center_angle"] = ("bin", bc)
+        coords[bin_center_name] = ("bin", bc)
 
     data_vars: dict[str, Any] = {
         "firing_rate": (("unit_id", "bin"), rates),

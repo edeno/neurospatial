@@ -1325,7 +1325,7 @@ def observed_interval_mask(
 def warn_excluded_intervals(
     gates: IntervalGates,
     *,
-    samples: Literal["positions", "headings"] = "positions",
+    samples: Literal["positions", "headings", "values"] = "positions",
     result: str = EMPTY_RESULT,
     suppress_hint: str = "",
 ) -> None:
@@ -1355,8 +1355,9 @@ def warn_excluded_intervals(
         headings for ``"headings"``) are named; when every interval is
         excluded only because the gaps across missing samples
         (``sample_valid``) exceed ``max_gap``, the message says so.
-    samples : {"positions", "headings"}, default="positions"
-        What the start-bin gate bins, so the message names the right input.
+    samples : {"positions", "headings", "values"}, default="positions"
+        What the start-bin gate bins, so the message names the right input:
+        ``"values"`` for the variable of a tuning curve.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
     suppress_hint : str, optional
@@ -1471,7 +1472,7 @@ def _all_excluded_message(
     gates: IntervalGates,
     dt: NDArray[np.float64],
     *,
-    samples: Literal["positions", "headings"],
+    samples: Literal["positions", "headings", "values"],
     result: str,
 ) -> str:
     """The warning for a selection that excludes every interval."""
@@ -1564,6 +1565,12 @@ def _all_excluded_message(
     if gates.start_bin_gate and samples == "headings":
         named.append("samples at NaN headings")
         fixes.append(_HEADINGS_FIX)
+    elif gates.start_bin_gate and samples == "values":
+        named.append("samples at NaN values or outside the bin edges")
+        fixes.append(
+            "check that values are defined (not NaN) in the analyzed time and "
+            "that the bin edges cover them"
+        )
     elif gates.start_bin_gate:
         named.append("samples out of bounds or at NaN positions")
         fixes.append("check that positions use the environment's coordinates")

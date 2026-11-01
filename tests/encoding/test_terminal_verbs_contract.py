@@ -20,6 +20,7 @@ from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
 from neurospatial.encoding.egocentric import compute_egocentric_rates
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
+from neurospatial.encoding.tuning import compute_tuning_curves
 from neurospatial.encoding.view import compute_view_rates
 
 
@@ -104,12 +105,24 @@ def boundary_batch():
     )
 
 
+@pytest.fixture
+def tuning_batch():
+    rng = np.random.default_rng(0)
+    times = np.linspace(0, 100, 1000)
+    progress = (times % 10) / 10
+    spike_times = [np.sort(rng.uniform(0, 100, k)) for k in (100, 150, 50)]
+    return compute_tuning_curves(
+        spike_times, times, progress, bin_edges=np.linspace(0, 1, 11)
+    )
+
+
 BATCH_FIXTURES = [
     "spatial_batch",
     "directional_batch",
     "view_batch",
     "egocentric_batch",
     "boundary_batch",
+    "tuning_batch",
 ]
 
 
@@ -154,7 +167,12 @@ def test_batch_summary_table_custom_unit_ids(fixture_name, request):
 
 
 def test_to_dataframe_bin_center_vocabulary_is_consistent(
-    spatial_batch, directional_batch, view_batch, egocentric_batch, boundary_batch
+    spatial_batch,
+    directional_batch,
+    view_batch,
+    egocentric_batch,
+    boundary_batch,
+    tuning_batch,
 ):
     """Bin-center columns use the shared vocabulary per coordinate space."""
     # Cartesian results -> bin_center_x / bin_center_y.
@@ -164,6 +182,9 @@ def test_to_dataframe_bin_center_vocabulary_is_consistent(
 
     # Directional result (no env, angular) -> bin_center_angle.
     assert "bin_center_angle" in set(directional_batch.to_dataframe().columns)
+
+    # Tuning curves (no env, values of a variable) -> bin_center.
+    assert "bin_center" in set(tuning_batch.to_dataframe().columns)
 
     # Egocentric polar results -> bin_center_distance / bin_center_angle.
     for result in (egocentric_batch, boundary_batch):

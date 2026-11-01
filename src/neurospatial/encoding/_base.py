@@ -588,6 +588,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             self._row_unit_ids(),
             env=env,
             bin_centers=None if env is not None else self._bin_centers,
+            bin_center_name=next(iter(self._bin_center_columns()), "bin_center"),
             occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),
             attrs={**rate_xarray_attrs(self), **self._xarray_attrs()},
         )

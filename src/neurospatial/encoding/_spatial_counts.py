@@ -616,7 +616,7 @@ class FrameBinning:
     n_bins: int
     support: TimeSupport
     gates: IntervalGates
-    samples: Literal["positions", "headings"] = "positions"
+    samples: Literal["positions", "headings", "values"] = "positions"
 
     def count(
         self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
@@ -630,7 +630,7 @@ def prepare_frame_binning(
     frame_bins: NDArray[np.intp],
     n_bins: int,
     *,
-    samples: Literal["positions", "headings"] = "positions",
+    samples: Literal["positions", "headings", "values"] = "positions",
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
@@ -667,7 +667,11 @@ def count_frames_and_occupancy(
     support = prepared.support
     mask = support.mask
     warn_excluded_intervals(
-        prepared.gates, samples=prepared.samples, result="the rate map is empty"
+        prepared.gates,
+        samples=prepared.samples,
+        result="the tuning curve is empty"
+        if prepared.samples == "values"
+        else "the rate map is empty",
     )
     if len(times):
         all_spikes = (

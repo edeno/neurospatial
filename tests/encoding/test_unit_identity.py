@@ -27,6 +27,7 @@ from neurospatial.encoding.directional import (
 )
 from neurospatial.encoding.egocentric import compute_egocentric_rates
 from neurospatial.encoding.spatial import SpatialRatesResult, compute_spatial_rates
+from neurospatial.encoding.tuning import TuningCurvesResult, compute_tuning_curves
 from neurospatial.encoding.view import compute_view_rates
 
 
@@ -57,6 +58,10 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
         return compute_spatial_rates(env, trains, times, positions, **kwargs)
     if name == "directional":
         return compute_directional_rates(trains, times, headings, **kwargs)
+    if name == "tuning":
+        return compute_tuning_curves(
+            trains, times, positions[:, 0], bin_size=5.0, value_range=(0, 50), **kwargs
+        )
     if name == "view":
         return compute_view_rates(
             env,
@@ -85,7 +90,7 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
     raise ValueError(name)
 
 
-ALL = ["spatial", "directional", "view", "egocentric"]
+ALL = ["spatial", "directional", "view", "egocentric", "tuning"]
 
 
 @pytest.mark.parametrize("name", ALL)
@@ -295,7 +300,9 @@ def test_indexed_str_unit_id_is_python_str(name, trajectory, spike_trains):
         assert type(result[i].unit_id) is str
 
 
-@pytest.mark.parametrize("cls", [SpatialRatesResult, DirectionalRatesResult])
+@pytest.mark.parametrize(
+    "cls", [SpatialRatesResult, DirectionalRatesResult, TuningCurvesResult]
+)
 def test_unit_ids_field_is_compare_false(cls):
     """unit_ids/unit_table must not participate in __eq__ (declared compare=False).
 
