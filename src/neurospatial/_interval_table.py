@@ -1079,14 +1079,20 @@ class Intervals(Generic[R]):
         Intervals of Interval
             The same ``interval_ids``, bounds and ``analysis_settings``, with
             the existing fields followed by the new ones. Consumers read
-            fields by name, so the record class does not matter.
+            fields by name, so the record class does not matter. A replaced
+            field that the record class defines (a ``Trial``'s ``outcome``)
+            keeps that class's rules: each row is rebuilt as the record class
+            with the new values, so ``outcome="reached"`` without an
+            ``end_region`` is refused as it is for a ``Trial``.
 
         Raises
         ------
         ValueError
             If a column does not have one value per interval, a name is
             reserved (``interval_id``, ``start_time``, ``stop_time``, a method
-            name or one starting with ``_``), or a value is ``""``.
+            name or one starting with ``_``), a value is ``""``, or a replaced
+            field breaks the record class's rules (``TypeError`` when the
+            class raises one).
 
         Examples
         --------
@@ -1114,9 +1120,40 @@ class Intervals(Generic[R]):
                 # A task log's missing label (NaN, pd.NA) is a missing value.
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
+        self._check_owned_fields(data, replaced=columns.keys())
         labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
         labelled._settings = deepcopy(self._settings)
         return labelled
+
+    def _check_owned_fields(
+        self, data: Mapping[str, NDArray[Any]], *, replaced: Iterable[str]
+    ) -> None:
+        """Rebuild each record with the replaced fields its class owns.
+
+        The record class's own checks (for example ``Trial``: ``end_region``
+        is set exactly when ``outcome == "reached"``) then apply to the new
+        values, so a relabelled row is never one the class forbids.
+        """
+        if self._record_type is Interval:
+            return
+        owned = [
+            name
+            for name in replaced
+            if name in {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
+        ]
+        if not owned:
+            return
+        for i, record in enumerate(self._records):
+            new = {name: _plain(data[name][i]) for name in owned}
+            try:
+                dataclasses.replace(record, **new)  # type: ignore[type-var]
+            except (TypeError, ValueError) as exc:
+                msg = (
+                    f"with_fields: interval {self._ids[i]} would not be a valid "
+                    f"{self._record_type.__name__}: {exc}"
+                )
+                error = TypeError if isinstance(exc, TypeError) else ValueError
+                raise error(msg) from exc
 
     @classmethod
     def from_arrays(

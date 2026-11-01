@@ -598,3 +598,17 @@ def test_records_must_be_frozen_dataclasses() -> None:
         Intervals([Editable(0.0, 1.0)])
     with pytest.raises(TypeError, match="frozen"):
         Intervals([], record_type=Editable)
+
+
+def test_with_fields_keeps_the_record_class_rules(trials: Intervals[Trial]) -> None:
+    # Rows in time order: reached (right), returned, reached (left), censored.
+    with pytest.raises(ValueError, match="end_region=None does not match"):
+        trials.with_fields(outcome=["reached", "reached", "reached", "censored"])
+    with pytest.raises(ValueError, match="outcome"):
+        trials.with_fields(outcome=["won", "returned", "reached", "censored"])
+    # A valid replacement and a new label are kept.
+    relabelled = trials.with_fields(
+        end_region=["left", None, "right", None], goal=["a", "b", "a", "b"]
+    )
+    assert relabelled.end_region.tolist() == ["left", None, "right", None]
+    assert relabelled.goal.tolist() == ["a", "b", "a", "b"]
