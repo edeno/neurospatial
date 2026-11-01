@@ -369,3 +369,49 @@ def test_psth_result_refuses_inconsistent_event_ids(changes, match):
     PeriEventResult(**fields)
     with pytest.raises(ValueError, match=match):
         PeriEventResult(**(fields | changes))
+
+
+@pytest.mark.parametrize("align", ["start", "stop"])
+@pytest.mark.parametrize("seed", range(10))
+def test_psth_of_random_overlapping_trials_passes_the_result_checks(align, seed):
+    # Constructing the result checks NaN where events_per_bin is too small,
+    # its direction for align, and that it reaches n_events; check them here
+    # again from the arrays.
+    rng = np.random.default_rng(seed)
+    starts = np.sort(rng.uniform(0.0, 30.0, 20))
+    trials = Intervals.from_arrays(starts, starts + rng.uniform(0.0, 3.0, 20))
+    spikes = [np.sort(rng.uniform(-3.0, 36.0, 300)) for _ in range(2)]
+    window = (-1.0, 2.0) if align == "start" else (-2.0, 1.0)
+    result = population_peri_event_histogram(
+        spikes, trials, window, bin_size=0.25, align=align
+    )
+    per_bin = result.events_per_bin
+    assert per_bin.max() == result.n_events
+    steps = np.diff(per_bin)
+    assert (steps <= 0).all() if align == "start" else (steps >= 0).all()
+    np.testing.assert_array_equal(
+        np.isnan(result.histograms), np.broadcast_to(per_bin == 0, (2, per_bin.size))
+    )
+    np.testing.assert_array_equal(np.isnan(result.mean_sem), per_bin < 2)
+
+
+@pytest.mark.parametrize(
+    ("align", "events_per_bin"),
+    [("start", [1, 2]), ("stop", [2, 1]), ("start", [1, 1])],
+)
+def test_psth_result_refuses_events_per_bin_its_align_cannot_give(
+    align, events_per_bin
+):
+    from neurospatial.events import PeriEventResult
+
+    with pytest.raises(ValueError, match="is not what"):
+        PeriEventResult(
+            histogram=np.array([0.0, 1.0]),
+            sem=np.where(np.array(events_per_bin) < 2, np.nan, 0.0),
+            n_events=2,
+            window=(0.0, 1.0),
+            bin_size=0.5,
+            events_per_bin=np.array(events_per_bin),
+            align=align,
+            event_ids=np.array([0, 1]),
+        )

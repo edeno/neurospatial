@@ -426,12 +426,15 @@ def _psth_bins(
 
 
 def _validated_psth_fields(
-    result: Any, arrays: dict[str, tuple[int, ...]], *, context: str
+    result: Any, arrays: dict[str, tuple[tuple[int, ...], int]], *, context: str
 ) -> None:
     """Check and normalize the fields shared by the PSTH results in place.
 
     ``arrays`` maps each array field to its expected shape, with ``-1``
-    standing for the number of bins implied by ``window`` and ``bin_size``.
+    standing for the number of bins implied by ``window`` and ``bin_size``,
+    and to the events a bin needs for a value: 1 for a mean, 2 for an SEM.
+    Each array is NaN exactly in the bins with fewer events
+    (``events_per_bin``, or ``n_events`` in every bin for plain times).
     """
     window = _validate_window(result.window, context=context, warn_wide=False)
     n_bins = _psth_bins(window, result.bin_size, context=context).size - 1
@@ -452,7 +455,11 @@ def _validated_psth_fields(
             f"{result.n_events} and {result.n_events_dropped}."
         )
         raise ValueError(msg)
-    for name, shape in arrays.items():
+    _validate_event_indices(
+        result.event_indices, result.n_events, result.n_events_dropped
+    )
+    per_bin = _validated_interval_fields(result, n_bins, context=context)
+    for name, (shape, min_events) in arrays.items():
         array = np.asarray(getattr(result, name), dtype=np.float64)
         expected = tuple(n_bins if n == -1 else n for n in shape)
         if array.shape != expected:
@@ -468,16 +475,29 @@ def _validated_psth_fields(
                 "standard errors are never negative."
             )
             raise ValueError(msg)
-        if result.n_events == 0 and not np.isnan(array).all():
+        undefined = np.broadcast_to(per_bin < min_events, array.shape)
+        if not np.array_equal(np.isnan(array), undefined):
+            what = "a mean" if min_events == 1 else "an SEM"
             msg = (
-                f"{context}: n_events is 0 (an empty selection), but {name} has "
-                "values; with no event analyzed every value is NaN."
+                f"{context}: {name} must be NaN exactly in the bins averaged over "
+                f"fewer than {min_events} event(s): {what} needs "
+                f"{min_events}. Events per bin: {per_bin.tolist()}."
             )
             raise ValueError(msg)
         object.__setattr__(result, name, array)
-    _validate_event_indices(
-        result.event_indices, result.n_events, result.n_events_dropped
-    )
+
+
+def _validated_interval_fields(
+    result: Any, n_bins: int, *, context: str
+) -> NDArray[np.int64]:
+    """Check ``align``, ``event_ids`` and ``events_per_bin`` in place.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_bins,)
+        Events averaged in each bin: ``events_per_bin``, or ``n_events`` in
+        every bin for plain event times.
+    """
     if result.align not in (None, *ALIGNS):
         msg = f"{context}: align must be None, 'start' or 'stop', got {result.align!r}."
         raise ValueError(msg)
@@ -491,35 +511,50 @@ def _validated_psth_fields(
             "are set for intervals and all None for plain event times."
         )
         raise ValueError(msg)
-    if result.event_ids is not None:
-        ids = np.asarray(result.event_ids)
-        if (
-            ids.shape != (result.n_events,)
-            or ids.dtype.kind not in "iu"
-            or np.any(ids < 0)
-            or np.unique(ids).size != ids.size
-        ):
-            msg = (
-                f"{context}: event_ids must hold one unique non-negative integer "
-                f"interval_id per retained event ({result.n_events}), got "
-                f"{ids!r}."
-            )
-            raise ValueError(msg)
-        object.__setattr__(result, "event_ids", ids.astype(np.int64))
-    if result.events_per_bin is not None:
-        per_bin = np.asarray(result.events_per_bin)
-        if (
-            per_bin.shape != (n_bins,)
-            or per_bin.dtype.kind not in "iu"
-            or np.any(per_bin < 0)
-            or np.any(per_bin > result.n_events)
-        ):
-            msg = (
-                f"{context}: events_per_bin must hold one integer per bin "
-                f"({n_bins}), each between 0 and n_events ({result.n_events})."
-            )
-            raise ValueError(msg)
-        object.__setattr__(result, "events_per_bin", per_bin.astype(np.int64))
+    if result.events_per_bin is None:
+        return np.full(n_bins, result.n_events, dtype=np.int64)
+    ids = np.asarray(result.event_ids)
+    if (
+        ids.shape != (result.n_events,)
+        or ids.dtype.kind not in "iu"
+        or np.any(ids < 0)
+        or np.unique(ids).size != ids.size
+    ):
+        msg = (
+            f"{context}: event_ids must hold one unique non-negative integer "
+            f"interval_id per retained event ({result.n_events}), got {ids!r}."
+        )
+        raise ValueError(msg)
+    object.__setattr__(result, "event_ids", ids.astype(np.int64))
+    per_bin = np.asarray(result.events_per_bin)
+    if (
+        per_bin.shape != (n_bins,)
+        or per_bin.dtype.kind not in "iu"
+        or np.any(per_bin < 0)
+        or np.any(per_bin > result.n_events)
+    ):
+        msg = (
+            f"{context}: events_per_bin must hold one integer per bin "
+            f"({n_bins}), each between 0 and n_events ({result.n_events})."
+        )
+        raise ValueError(msg)
+    # A trial counts in the bins from the alignment point's side up to its
+    # other bound, so fewer trials remain further from that point, and every
+    # retained trial holds the bin nearest it.
+    steps = np.diff(per_bin) * (1 if result.align == "stop" else -1)
+    if np.any(steps < 0) or (result.n_events > 0 and per_bin.max() != result.n_events):
+        trend = "increase" if result.align == "start" else "decrease"
+        msg = (
+            f"{context}: events_per_bin {per_bin.tolist()} is not what "
+            f"align={result.align!r} gives: it must never {trend} across the "
+            f"bins and reach n_events ({result.n_events}), because each "
+            "trial is counted from the alignment point's side up to its "
+            "other bound and holds at least one bin."
+        )
+        raise ValueError(msg)
+    per_bin = per_bin.astype(np.int64)
+    object.__setattr__(result, "events_per_bin", per_bin)
+    return per_bin
 
 
 def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
@@ -704,8 +739,12 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
     ------
     ValueError
         On construction, if ``window`` or ``bin_size`` is invalid, no complete
-        bin fits, an array has the wrong shape or negative values, or the
-        event counts are not non-negative integers with ``n_events >= 1``.
+        bin fits, an array has the wrong shape or negative values, the event
+        counts are not non-negative integers, ``histogram`` is not NaN
+        exactly in the bins with no event or ``sem`` exactly in those with
+        fewer than two, or ``align``, ``events_per_bin`` and ``event_ids``
+        disagree (``events_per_bin`` must never grow away from the alignment
+        point and must reach ``n_events``).
 
     See Also
     --------
@@ -740,7 +779,9 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
 
     def __post_init__(self) -> None:
         _validated_psth_fields(
-            self, {"histogram": (-1,), "sem": (-1,)}, context="PeriEventResult"
+            self,
+            {"histogram": ((-1,), 1), "sem": ((-1,), 2)},
+            context="PeriEventResult",
         )
         self._own_arrays()
 
@@ -1001,7 +1042,11 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         n_units = histograms.shape[0]
         _validated_psth_fields(
             self,
-            {"histograms": (n_units, -1), "sem": (n_units, -1), "mean_sem": (-1,)},
+            {
+                "histograms": ((n_units, -1), 1),
+                "sem": ((n_units, -1), 2),
+                "mean_sem": ((-1,), 2),
+            },
             context=context,
         )
         object.__setattr__(self, "unit_ids", resolve_unit_ids(self.unit_ids, n_units))

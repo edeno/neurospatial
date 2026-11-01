@@ -214,16 +214,35 @@ def test_silent_unit_has_no_peak_latency():
 
 
 def test_all_nan_histogram_has_no_peak():
-    hist = np.array([[np.nan, np.nan, np.nan], [0.0, 0.1, 0.5]])
-    result = PopulationPeriEventResult(
-        histograms=hist,
-        sem=np.zeros_like(hist),
-        mean_sem=np.zeros(3),
-        n_events=10,
+    # An empty selection (n_events == 0) leaves every bin NaN: no peak.
+    nan = np.full((2, 3), np.nan)
+    empty = PopulationPeriEventResult(
+        histograms=nan,
+        sem=nan,
+        mean_sem=np.full(3, np.nan),
+        n_events=0,
         window=(-0.75, 0.75),
         bin_size=0.5,
     )
-    table = result.summary_table()
-    assert np.isnan(table["peak_rate"].iloc[0])
-    assert np.isnan(table["peak_latency"].iloc[0])
-    assert table["peak_latency"].iloc[1] == 0.5
+    table = empty.summary_table()
+    assert np.isnan(table["peak_rate"]).all()
+    assert np.isnan(table["peak_latency"]).all()
+
+    # Trials: the last bin has no trial under way, and the peak is found among
+    # the bins that have one.
+    hist = np.array([[0.5, 1.0, np.nan], [0.0, 0.0, np.nan]])
+    trials = PopulationPeriEventResult(
+        histograms=hist,
+        sem=np.array([[0.5, np.nan, np.nan], [0.0, np.nan, np.nan]]),
+        mean_sem=np.array([0.25, np.nan, np.nan]),
+        n_events=2,
+        window=(-0.75, 0.75),
+        bin_size=0.5,
+        events_per_bin=np.array([2, 1, 0]),
+        align="start",
+        event_ids=np.array([0, 1]),
+    )
+    table = trials.summary_table()
+    assert table["peak_rate"].tolist()[0] == 2.0
+    assert table["peak_latency"].tolist()[0] == 0.0
+    assert np.isnan(table["peak_latency"].iloc[1])

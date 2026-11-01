@@ -92,7 +92,9 @@ class TestPeriEventResult:
             ({"bin_size": np.nan}, "bin_size must be positive"),
             ({"bin_size": 2.0}, "no complete bin"),
             ({"window": (1.0, -0.5)}, "before its stop"),
-            ({"n_events": 0}, "with no event analyzed every value is NaN"),
+            ({"n_events": 0}, "must be NaN exactly in the bins"),
+            ({"n_events": 1}, "sem must be NaN exactly in the bins"),
+            ({"histogram": np.full(100, np.nan)}, "histogram must be NaN exactly"),
             ({"n_events": -1}, "at least 0"),
             ({"n_events_dropped": -2}, "at least 0"),
             ({"n_events": 2.5}, "integer"),
@@ -114,7 +116,7 @@ class TestPeriEventResult:
 
     def test_list_window_is_stored_as_a_tuple(self):
         result = PeriEventResult(
-            histogram=[1.0], sem=[0.0], n_events=1, window=[-0.5, 0.5], bin_size=1.0
+            histogram=[1.0], sem=[np.nan], n_events=1, window=[-0.5, 0.5], bin_size=1.0
         )
         assert result.window == (-0.5, 0.5)
         assert isinstance(result.histogram, np.ndarray)
