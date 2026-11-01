@@ -24,6 +24,7 @@ from neurospatial._intervals import (
     as_intervals,
     intersect_intervals,
     linear_allocated_occupancy,
+    value_frame_bins,
 )
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -470,11 +471,10 @@ or None
         # Half-open [first, last) sample times: the last sample ends the path.
         in_run = spikes[(spikes >= t[0]) & (spikes < t[-1])]
         # Half-open bins [left, right): a spike at the window stop is left out.
-        spike_bin = (
-            np.searchsorted(edges, np.interp(in_run, t, distance), side="right") - 1
+        spike_bin = value_frame_bins(
+            np.interp(in_run, t, distance), edges, closed_last=False
         )
-        spike_bin = spike_bin[(spike_bin >= 0) & (spike_bin < n_bins)]
-        counts.append(np.bincount(spike_bin, minlength=n_bins))
+        counts.append(np.bincount(spike_bin[spike_bin >= 0], minlength=n_bins))
         kept.append(index)
     if not kept:
         raise ValueError(
