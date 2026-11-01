@@ -140,13 +140,19 @@ def test_trials_are_the_gaps_between_detected_visits(w_track_session):
     assert from_visits.end_region.tolist() == detected.end_region.tolist()
 
 
-def test_no_trial_across_tracking_loss(w_track_session):
+def test_short_dropouts_are_bridged_and_long_ones_censor(w_track_session):
     env, times, positions, sequence, wells = w_track_session
     trials = detect_trials(env, times, positions, regions=list(wells))
-    lost = positions.copy()
     middle = 0.5 * (trials.start[1] + trials.stop[1])  # during the second run
-    gap = (times >= middle) & (times < middle + 0.2)
-    lost[gap] = np.nan
+
+    dropped = positions.copy()
+    dropped[(times >= middle) & (times < middle + 0.2)] = np.nan
+    bridged = detect_trials(env, times, dropped, regions=list(wells))
+    np.testing.assert_array_equal(bridged.start, trials.start)
+    np.testing.assert_array_equal(bridged.stop, trials.stop)
+
+    lost = positions.copy()
+    lost[(times >= middle) & (times < middle + 1.5)] = np.nan  # > max_gap
     broken = detect_trials(env, times, lost, regions=list(wells))
     assert broken.outcome.tolist().count("censored") == 1
     censored = broken[broken.outcome == "censored"]
@@ -154,6 +160,21 @@ def test_no_trial_across_tracking_loss(w_track_session):
     assert censored.stop[0] <= middle
     # The arrival after the loss starts no trial back to before it.
     assert len(broken) == len(trials)
+
+
+def test_tracked_visits_give_no_trial_across_a_break(w_track_session):
+    """trials_between_visits on tracked visits respects their runs."""
+    env, times, positions, _, wells = w_track_session
+    trials = detect_trials(env, times, positions, regions=list(wells))
+    middle = 0.5 * (trials.start[1] + trials.stop[1])
+    lost = positions.copy()
+    lost[(times >= middle) & (times < middle + 1.5)] = np.nan
+    visits = detect_region_visits(env, times, lost, regions=list(wells))
+    from_visits = trials_between_visits(visits)
+    detected = detect_trials(env, times, lost, regions=list(wells))
+    reached = detected[detected.outcome != "censored"]
+    np.testing.assert_array_equal(from_visits.start, reached.start)
+    np.testing.assert_array_equal(from_visits.stop, reached.stop)
 
 
 def test_returned_trial(w_track_session):

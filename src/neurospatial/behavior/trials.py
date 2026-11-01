@@ -70,7 +70,11 @@ def trials_between_visits(
         ``start_region`` the first visit's region and ``outcome`` either
         ``"reached"`` (a different region, named in ``end_region``) or
         ``"returned"`` (back to the same region; ``end_region`` is None).
-        Fewer than two visits give no trials.
+        Fewer than two visits give no trials. Visits from
+        :func:`~neurospatial.behavior.detect_region_visits` (with ``run_id``,
+        ``exit_observed`` and ``entry_observed`` fields) give no trial across
+        a break in observation; :func:`detect_trials` also keeps a trial cut
+        short by a break, as ``"censored"``.
 
     Raises
     ------
@@ -141,9 +145,18 @@ def trials_between_visits(
                 "of one port, before building trials.",
             )
         )
+    pairs = np.ones(max(len(visits) - 1, 0), dtype=bool)
+    tracked = {"run_id", "exit_observed", "entry_observed"} <= set(visits.fields)
+    if tracked:
+        # Visits from tracking: no trial across a break in observation, or
+        # from a departure or to an arrival that was not observed.
+        run = visits._field_array("run_id")
+        exited = visits._field_array("exit_observed").astype(bool)
+        entered = visits._field_array("entry_observed").astype(bool)
+        pairs &= (run[:-1] == run[1:]) & exited[:-1] & entered[1:]
     trials = [
         _trial(float(stop[i]), float(start[i + 1]), names[i], names[i + 1])
-        for i in range(len(visits) - 1)
+        for i in np.flatnonzero(pairs)
     ]
     return Intervals(
         trials,
@@ -182,11 +195,11 @@ def detect_trials(
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
     positions : ndarray, shape (n_samples, n_dims)
-        Positions in the environment's coordinates. A NaN position (lost
-        tracking) or one outside the environment is not observed: it ends the
-        run, and a trial under way is censored. To bridge short dropouts,
-        delete their rows; a deleted row is bridged when the samples around
-        it are no more than ``max_gap`` apart.
+        Positions in the environment's coordinates. A NaN position is a
+        missing sample (lost tracking, a low-confidence frame), the same as
+        a deleted row: it is bridged when the samples around it are no more
+        than ``max_gap`` apart. A longer gap, or a position outside the
+        environment, ends observation, and a trial under way is censored.
     regions : sequence of str
         The regions trials start and end in, for example
         ``["well_1", "well_2", "well_3"]``. They must not share bins; point
@@ -221,7 +234,16 @@ def detect_trials(
           ``end_region`` is None. Leave these out of success rates.
 
         No trial spans a break in observation. Time before the first visit
-        and after a departure into a break is in no trial.
+        is in no trial, and neither is an arrival after a break whose
+        departure was not observed.
+
+        Tracking jitter at a region's edge (a resting animal whose position
+        crosses the boundary for a frame or two) gives very short
+        ``"returned"`` trials, and splits the visit around them. The fix is
+        the region's size: make it cover where the animal rests (a larger
+        ``radius``). To drop the ones left, look at
+        ``trials[trials.outcome == "returned"].durations`` and choose a
+        threshold well below your shortest real run.
         ``analysis_settings`` records the regions, ``max_gap`` and
         ``epochs``.
 
@@ -271,6 +293,7 @@ def detect_trials(
         epochs=epochs,
         break_before=break_before,
         call="detect_trials",
+        result="no trial can be observed",
     )
     visits = observed.visits
     trials: list[Trial] = []
@@ -289,7 +312,7 @@ def detect_trials(
             )
             continue
         run_end = observed.run_end_times[visit.run_id]
-        if run_end > visit.stop_time:
+        if run_end >= visit.stop_time:
             trials.append(
                 Trial(
                     start_time=visit.stop_time,
