@@ -40,6 +40,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     times_in_intervals,
     validate_speed_gate,
+    value_frame_bins,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import interval_rows, reads_pynapple_samples
@@ -230,37 +231,6 @@ def _checked_range(value_range: Any, *, owner: str) -> tuple[float, float]:
             )
         )
     return lo, hi
-
-
-def value_frame_bins(
-    values: NDArray[np.float64], edges: NDArray[np.float64], *, closed_last: bool
-) -> NDArray[np.intp]:
-    """Bin index of each value, ``-1`` outside the edges or not finite.
-
-    Parameters
-    ----------
-    values : ndarray, shape (n,)
-    edges : ndarray, shape (n_bins + 1,)
-        Strictly increasing.
-    closed_last : bool
-        Include ``edges[-1]`` in the last bin (as ``numpy.histogram`` does);
-        otherwise every bin is half-open.
-
-    Returns
-    -------
-    ndarray of intp, shape (n,)
-    """
-    values = np.asarray(values, dtype=np.float64).ravel()
-    n_bins = len(edges) - 1
-    with np.errstate(invalid="ignore"):
-        upper = values <= edges[-1] if closed_last else values < edges[-1]
-        inside = np.isfinite(values) & (values >= edges[0]) & upper
-    bins = np.full(values.shape, -1, dtype=np.intp)
-    found = np.searchsorted(edges, values[inside], side="right") - 1
-    if closed_last:
-        found[found == n_bins] = n_bins - 1
-    bins[inside] = found
-    return bins
 
 
 def _axis_label(variable: str, units: str | None) -> str:

@@ -19,7 +19,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals, intersect_intervals
+from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    as_intervals,
+    intersect_intervals,
+    linear_allocated_occupancy,
+    value_frame_bins,
+)
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.events._core import (
@@ -457,15 +463,18 @@ or None
             )
         t, s = paths[run]
         distance = s - np.interp(event, t, s)
-        occupancy.append(_time_per_bin(t, distance, edges))
+        occupancy.append(
+            linear_allocated_occupancy(
+                distance, np.diff(t), edges, np.ones(t.size - 1, dtype=bool)
+            )
+        )
         # Half-open [first, last) sample times: the last sample ends the path.
         in_run = spikes[(spikes >= t[0]) & (spikes < t[-1])]
         # Half-open bins [left, right): a spike at the window stop is left out.
-        spike_bin = (
-            np.searchsorted(edges, np.interp(in_run, t, distance), side="right") - 1
+        spike_bin = value_frame_bins(
+            np.interp(in_run, t, distance), edges, closed_last=False
         )
-        spike_bin = spike_bin[(spike_bin >= 0) & (spike_bin < n_bins)]
-        counts.append(np.bincount(spike_bin, minlength=n_bins))
+        counts.append(np.bincount(spike_bin[spike_bin >= 0], minlength=n_bins))
         kept.append(index)
     if not kept:
         raise ValueError(
@@ -495,37 +504,6 @@ def _run_at(run_time_bounds: NDArray[np.float64], time: float) -> int:
         (run_time_bounds[:, 0] <= time) & (time <= run_time_bounds[:, 1])
     )
     return int(inside[0]) if inside.size else -1
-
-
-def _time_per_bin(
-    t: NDArray[np.float64], distance: NDArray[np.float64], edges: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Seconds the path spends in each distance bin, shape ``(n_bins,)``.
-
-    Each interval ``[t[k], t[k + 1]]`` covers the distances between its ends at
-    constant speed, so its time is split over bins by the distance covered in
-    each; an interval without movement puts all its time in the bin of its
-    distance.
-    """
-    dt = np.diff(t)
-    start, stop = distance[:-1], distance[1:]
-    low, high = np.minimum(start, stop), np.maximum(start, stop)
-    covered = high - low
-    moving = covered > 0
-    overlap = np.clip(
-        np.minimum(high[:, None], edges[None, 1:])
-        - np.maximum(low[:, None], edges[None, :-1]),
-        0.0,
-        None,
-    )
-    seconds = np.zeros(edges.size - 1)
-    seconds += (dt[moving, None] * overlap[moving] / covered[moving, None]).sum(axis=0)
-    still = ~moving
-    if still.any():
-        bins = np.searchsorted(edges, low[still], side="right") - 1
-        inside = (bins >= 0) & (bins < edges.size - 1)
-        np.add.at(seconds, bins[inside], dt[still][inside])
-    return seconds
 
 
 def _run_path_length(

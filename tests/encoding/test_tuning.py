@@ -6,13 +6,14 @@ import numpy as np
 import pytest
 
 from neurospatial import Intervals
+from neurospatial._intervals import value_frame_bins
 from neurospatial.encoding import (
     TuningCurveResult,
     TuningCurvesResult,
     compute_tuning_curve,
     compute_tuning_curves,
 )
-from neurospatial.encoding.tuning import tuning_bin_edges, value_frame_bins
+from neurospatial.encoding.tuning import tuning_bin_edges
 from neurospatial.simulation import generate_poisson_spikes
 
 EDGES = np.arange(11) / 10.0  # the same rounding as progress k / 20
