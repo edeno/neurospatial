@@ -17,12 +17,11 @@ All navigation functions are importable from ``behavior.navigation``::
     from neurospatial.behavior.navigation import (
         # Path progress and distance
         path_progress,
-        distance_to_region,
+        distance_to_goal,
         distance_to_boundary,
         distance_to_reward,
         cost_to_goal,
         time_to_goal,
-        trials_to_region_arrays,
         graph_turn_sequence,
         goal_pair_direction_labels,
         heading_direction_labels,
@@ -54,8 +53,8 @@ Typical Workflows
 -----------------
 **Multi-trial analysis** (T-maze, Y-maze, spatial bandit):
     1. Segment trajectory into trials with ``segment_trials()``
-    2. Convert trials to bin arrays with ``trials_to_region_arrays()``
-    3. Compute metrics: ``path_progress()``, ``distance_to_region()``, etc.
+    2. Compute per-sample metrics with the trials as ``intervals``:
+       ``path_progress()``, ``distance_to_goal()``, ``time_to_goal()``
 
 **Path efficiency analysis**:
     1. Compute efficiency: ``result = compute_path_efficiency(env, times, positions, goal)``
@@ -72,7 +71,6 @@ Complete analysis pipeline for a spatial navigation task::
 
     from neurospatial.behavior import (
         segment_trials,
-        trials_to_region_arrays,
         path_progress,
         compute_path_efficiency,
         compute_goal_directed_metrics,
@@ -87,10 +85,9 @@ Complete analysis pipeline for a spatial navigation task::
         end_regions=["goal_left", "goal_right"],
     )
 
-    # 2. Extract trial-based regressors
-    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
+    # 2. Per-sample progress toward each trial's destination
     progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+        env, times, positions, trials, start="home", goal=trials.end_region
     )
 
     # 3. Compute efficiency
@@ -111,6 +108,7 @@ References
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -126,9 +124,9 @@ from neurospatial._intervals import (
 )
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._position_bins import validated_position_bins
-from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -145,7 +143,7 @@ __all__ = [  # noqa: RUF022
     # Path progress and distance
     "cost_to_goal",
     "distance_to_boundary",
-    "distance_to_region",
+    "distance_to_goal",
     "distance_to_reward",
     "goal_pair_direction_labels",
     "graph_turn_sequence",
@@ -153,7 +151,6 @@ __all__ = [  # noqa: RUF022
     "headings_to_direction_labels",
     "path_progress",
     "time_to_goal",
-    "trials_to_region_arrays",
     # Path efficiency
     "PathEfficiencyResult",
     "SubgoalEfficiencyResult",
@@ -559,418 +556,727 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
-@reads_pynapple_samples
-def trials_to_region_arrays(
-    trials: Intervals[Trial],
-    times: NDArray[np.float64],
-    env: Environment,
-) -> tuple[NDArray[np.int_], NDArray[np.int_]]:
-    """Convert trial list to per-timepoint start/goal bin arrays.
+def _harmonic_progress(
+    conductances: Any, start_bins: NDArray[np.intp], goal_bins: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Harmonic (committor) coordinate between start and goal bins.
 
-    Helper function to construct arrays for path_progress() and similar
-    functions. Encapsulates the trial-to-timepoint mapping logic.
+    ``u`` is 0 on every start bin, 1 on every goal bin, and on every other bin
+    the conductance-weighted mean of its neighbours: ``(Deg - W) u = 0``.
 
     Parameters
     ----------
-    trials : Intervals
-        Trials from segment_trials(), read_trials() or a task log, with
-        ``start_region`` and ``end_region`` fields.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for entire session, strictly increasing (seconds).
-    env : Environment
-        Spatial environment (for region lookups).
+    conductances : scipy sparse matrix, shape (n_bins, n_bins)
+        Symmetric non-negative conductances ``W``
+        (``env.get_diffusion_geometry().W``).
+    start_bins, goal_bins : ndarray of intp
+        Disjoint, non-empty sets of bins.
 
     Returns
     -------
-    start_bins : NDArray[np.int_], shape (n_samples,)
-        Start bin index at each timepoint, for samples in a trial's
-        ``[start, stop)`` (-1 outside trials).
-    goal_bins : NDArray[np.int_], shape (n_samples,)
-        Goal bin index at each timepoint (-1 outside trials).
+    ndarray of float64, shape (n_bins,)
+        In ``[0, 1]``; NaN on bins in a component (by positive conductance)
+        that does not touch both a start and a goal bin.
+    """
+    from scipy import sparse
+    from scipy.sparse import csgraph
+    from scipy.sparse.linalg import spsolve
+
+    u = np.full(conductances.shape[0], np.nan)
+    _, component = csgraph.connected_components(conductances, directed=False)
+    shared = np.intersect1d(component[start_bins], component[goal_bins])
+    usable = np.isin(component, shared)
+    u[start_bins] = 0.0
+    u[goal_bins] = 1.0
+    fixed = np.union1d(start_bins, goal_bins)
+    free = np.setdiff1d(np.flatnonzero(usable), fixed)
+    if free.size:
+        degree = sparse.diags(np.asarray(conductances.sum(axis=1)).ravel())
+        laplacian = (degree - conductances).tocsr()
+        rhs = -(laplacian[free][:, fixed] @ u[fixed])
+        u[free] = spsolve(laplacian[free][:, free].tocsc(), rhs)
+    # Start and goal bins in a component without the other stay undefined.
+    u[~usable] = np.nan
+    # The solve stays within [0, 1] up to rounding (maximum principle).
+    np.clip(u, 0.0, 1.0, out=u)
+    return u
+
+
+def _as_point(target: object) -> NDArray[np.float64] | None:
+    """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
+    if isinstance(target, str) or target is None:
+        return None
+    try:
+        raw = np.asarray(target)
+    except ValueError:  # ragged: points mixed with None, one per interval
+        return None
+    if raw.dtype.kind not in "iuf" or raw.ndim > 1:
+        return None  # names, None entries or one point per interval
+    return raw.astype(np.float64).reshape(-1)
+
+
+def _rows_and_targets(
+    intervals: Intervals[Any] | None,
+    times: NDArray[np.float64],
+    target: Any,
+    *,
+    name: str,
+    call: str,
+    rows: NDArray[np.intp] | None = None,
+) -> tuple[NDArray[np.intp], list[Any], bool]:
+    """Row of each sample, the target of each row, and whether it is one target.
+
+    Without ``intervals`` every sample is row 0 and ``target`` is one target.
+    With them, each sample's row comes from the intervals (``-1`` outside
+    every row; overlapping rows are refused), and ``target`` is one target
+    for every row or one per row: a sequence of region names, points or
+    ``None`` in row order, or a ``pandas.Series`` indexed by
+    ``interval_id``.
+    """
+    # A Series is one value per interval_id, whatever its values are.
+    by_id = hasattr(target, "reindex") and hasattr(target, "index")
+    point = None if by_id else _as_point(target)
+    single = isinstance(target, str) or point is not None
+    one = target if point is None else point
+    if intervals is None:
+        if not single:
+            raise ValueError(
+                _format_error(
+                    f"{call}: {name}= has one value per interval, but no "
+                    "intervals were given.",
+                    why="per-interval targets need the intervals they belong to.",
+                    fix=f"pass intervals=trials, or one {name} for every sample "
+                    "(a region name or a point).",
+                )
+            )
+        return np.zeros(times.size, dtype=np.intp), [one], True
+    if rows is None:
+        rows = intervals._sample_positions(times, call)
+    if single:
+        return rows, [one] * len(intervals), True
+    values = list(intervals._per_row(target, name=name)) if by_id else list(target)
+    if len(values) != len(intervals):
+        msg = (
+            f"{call}: {name}= has {len(values)} entries; give one per interval "
+            f"({len(intervals)}), in row order, or one {name} for all."
+        )
+        raise ValueError(msg)
+    targets: list[Any] = []
+    for value in values:
+        entry = _as_point(value)
+        if entry is None and value is not None and not isinstance(value, str):
+            msg = (
+                f"{call}: {name}= entries must be region names, points or None; "
+                f"got {value!r}."
+            )
+            raise TypeError(msg)
+        targets.append(value if entry is None else entry)
+    return rows, targets, False
+
+
+def _target_key(target: Any) -> tuple[Any, ...]:
+    """A hashable key for one target (region name or point)."""
+    if isinstance(target, str):
+        return ("region", target)
+    return ("point", tuple(np.asarray(target, dtype=np.float64).tolist()))
+
+
+def _point_target_bins(
+    env: Environment, point: Any, *, name: str, call: str
+) -> NDArray[np.intp]:
+    """The bin containing a point target; refuse a point outside the environment."""
+    coordinates = np.asarray(point, dtype=np.float64).reshape(1, -1)
+    if coordinates.shape[1] != env.n_dims:
+        msg = (
+            f"{call}: {name}= point {coordinates[0].tolist()} has "
+            f"{coordinates.shape[1]} coordinates; the environment has {env.n_dims}."
+        )
+        raise ValueError(msg)
+    bins = env.bin_at(coordinates)
+    if bins[0] < 0:
+        raise ValueError(
+            _format_error(
+                f"{call}: {name}= point {coordinates[0].tolist()} is outside the "
+                "environment.",
+                fix="pass a point inside the environment, in the coordinates and "
+                "units of env.bin_centers, or a region name.",
+            )
+        )
+    return np.asarray(bins, dtype=np.intp)
+
+
+def _target_bins(
+    env: Environment,
+    target: Any,
+    *,
+    name: str,
+    call: str,
+    point_radius: float | None,
+    sized: bool,
+) -> NDArray[np.intp]:
+    """The bins of one start or goal target.
+
+    A polygon region gives the bins whose centres lie in it. A point region
+    or a point gives the bin containing it, or, when ``sized`` (path progress
+    off a linearized track), the bins whose centres lie within
+    ``point_radius`` of it.
+    """
+    point: NDArray[np.float64] | None
+    if isinstance(target, str):
+        from neurospatial.ops.mapping import _require_region_mask
+
+        _require_region_mask(env, target, operation=call, argument=name)
+        region = env.regions[target]
+        point = (
+            np.asarray(region.data, dtype=np.float64)
+            if region.kind == "point"
+            else None
+        )
+        if point is None or not sized:
+            bins = np.asarray(env.bins_in_region(target), dtype=np.intp)
+            if bins.size == 0:
+                raise ValueError(
+                    _format_error(
+                        f"{call}: {name}= region {target!r} covers no bin.",
+                        fix="enlarge the region, or use smaller bins.",
+                    )
+                )
+            return bins
+    else:
+        point = np.asarray(target, dtype=np.float64)
+        if not sized:
+            return _point_target_bins(env, point, name=name, call=call)
+    # A point start or goal off a linearized track needs a physical size.
+    described = repr(target) if isinstance(target, str) else str(point.tolist())
+    why = (
+        "harmonic progress toward a single bin changes with the bin size and "
+        "does not settle as bins shrink, so the start and goal need a physical "
+        "size"
+    )
+    if point_radius is None:
+        raise ValueError(
+            _format_error(
+                f"{call}: {name}={described} is a point in a "
+                f"{env.n_dims}-D environment, but point_radius was not given.",
+                why=why,
+                fix="pass point_radius= the size of the reward site or start "
+                "zone (environment units), or define the region as a polygon.",
+            )
+        )
+    _point_target_bins(env, point, name=name, call=call)
+    distances = np.linalg.norm(env.bin_centers - point, axis=1)
+    bins = np.flatnonzero(distances <= point_radius).astype(np.intp)
+    if bins.size < 2:
+        raise ValueError(
+            _format_error(
+                f"{call}: {name}={described} with point_radius={point_radius} "
+                f"covers {bins.size} bin(s).",
+                why=why,
+                fix="increase point_radius to the size of the site, or use "
+                "smaller bins.",
+            )
+        )
+    return bins
+
+
+def _validated_point_radius(point_radius: object) -> float | None:
+    from neurospatial._validation import validate_finite_scalar
+
+    if point_radius is None:
+        return None
+    validate_finite_scalar(point_radius, name="point_radius", positive=True)
+    return float(point_radius)  # type: ignore[arg-type]  # checked finite real above
+
+
+def _warn_if_mostly_nan(
+    values: NDArray[np.float64],
+    analyzed: NDArray[np.bool_],
+    causes: dict[str, NDArray[np.bool_]],
+    *,
+    call: str,
+) -> None:
+    """Warn once when at least half of the analyzed samples are NaN."""
+    n_analyzed = int(np.count_nonzero(analyzed))
+    missing = analyzed & np.isnan(values)
+    n_missing = int(np.count_nonzero(missing))
+    if n_analyzed == 0 or 2 * n_missing < n_analyzed:
+        return
+    counts = {
+        cause: int(np.count_nonzero(mask & missing)) for cause, mask in causes.items()
+    }
+    main = max(counts, key=counts.__getitem__)
+    warnings.warn(
+        f"{call}: {n_missing} of {n_analyzed} analyzed samples "
+        f"({n_missing / n_analyzed:.0%}) are NaN, mostly because {main} "
+        f"({counts[main]} samples), so the result is probably misleading. Fix: "
+        "check the start and goal, the environment and the positions' "
+        "coordinates.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def _validated_route_samples(
+    env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None,
+    *,
+    call: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    from neurospatial._interval_table import require_intervals
+    from neurospatial._validation import validate_times_positions
+
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+    if intervals is not None:
+        require_intervals(intervals, name="intervals", owner=f"{call}()")
+    t, p = validate_times_positions(times, positions, call=call)
+    p = p.reshape(len(p), -1)
+    if p.shape[1] != env.n_dims:
+        msg = (
+            f"{call}(): positions have {p.shape[1]} coordinate(s) per sample; "
+            f"the environment has {env.n_dims}."
+        )
+        raise ValueError(msg)
+    return t, p
+
+
+@reads_pynapple_samples
+def path_progress(
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
+    *,
+    start: Any,
+    goal: Any,
+    point_radius: float | None = None,
+) -> NDArray[np.float64]:
+    """Progress from start to goal at each sample, between 0 and 1.
+
+    Progress at a place is the probability that an animal moving at random
+    from there reaches the goal before the start: 0 on the start, 1 on the
+    goal. Equivalently, each bin's progress is the average of its
+    neighbours' progress, weighted by how strongly they connect (the
+    conductances ``env.smooth`` uses: the shared face area over the distance
+    between bin centres). On a straight track from start to goal it is the
+    fraction of the track covered: 0, 0.25, 0.5, 0.75, 1 at the start, a
+    quarter, half and three quarters of the way, and the goal. This is the
+    harmonic, or committor, coordinate of start and goal. It works in
+    1-D, 2-D and 3-D, uses the environment's own connectivity and walls, and
+    has no threshold to choose.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the positions were recorded in. A linearized track
+        (``Environment.from_graph`` or ``linear_track`` with ``track_width``)
+        gives the route fraction on corridor mazes; see Notes.
+    times : array-like, shape (n_samples,)
+        Sample times in seconds, finite and strictly increasing.
+    positions : array-like, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row or a position
+        outside the environment gives NaN.
+    intervals : Intervals, optional
+        Trials or other intervals. Samples outside every interval are NaN;
+        overlapping intervals are refused. Without ``intervals`` every
+        sample uses the one ``start`` and ``goal`` (to plot a trial that
+        lands on the goal, see Notes).
+    start, goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name (the region's bins: those whose centres lie in a
+        polygon region; for a point region, see ``point_radius``), a point
+        in environment coordinates, or, with ``intervals``, one region name
+        or point per interval in row order (a ``pandas.Series`` indexed by
+        ``interval_id`` is aligned by id), for example
+        ``goal=trials.end_region``. ``None`` marks an unknown start or goal:
+        that interval's samples are NaN.
+    point_radius : float, optional
+        Size, in environment units, of point starts and goals (point regions
+        and points) off a linearized track: each becomes the bins whose
+        centres lie within ``point_radius`` of the point, for example the
+        radius of a reward well. Required for point targets in 2-D and 3-D
+        environments that are not linearized tracks (see Notes); ignored in
+        1-D and on a linearized track.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_samples,)
+        Progress in ``[0, 1]``: 0 on start bins, 1 on goal bins. NaN for a
+        sample outside the environment or outside every interval, in a part
+        of the environment that does not connect to both start and goal, or
+        in an interval whose start or goal is unknown (``None``) or whose
+        start and goal share a bin.
 
     Raises
     ------
     ValueError
-        If ``times`` is empty, not 1-D, holds a non-finite value or is not
-        strictly increasing.
+        If a single ``start`` and ``goal`` share a bin; if a point start or
+        goal off a linearized track has no ``point_radius`` or one that
+        covers fewer than two bins; if a point is outside the environment, a
+        region covers no bin, ``times`` or ``positions`` are invalid, or
+        intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    MissingCellGeometryError
+        If the environment has no cell faces, from which the conductances
+        come.
 
     Warns
     -----
     UserWarning
-        If there are trials but none contains a sample of ``times`` (usually
-        trials on a different clock).
+        If at least half of the analyzed samples are NaN, with the fraction
+        and the main cause.
 
     Notes
     -----
-    This function has a small loop over trials (typically 10-100), but
-    avoids looping over timepoints (typically 100k+). The returned arrays
-    can be passed to vectorized functions like path_progress().
+    **Guarantees.**
 
-    **Region Handling**:
+    - Values lie in ``[0, 1]``, and no bin other than the start and goal bins
+      is higher or lower than all its neighbours: progress has no false peaks
+      or dips.
+    - In a dead end (a side branch that rejoins nothing) no value exceeds the
+      highest value at its entrance. On a linearized track the whole dead end
+      has exactly the junction's value, so running into a wrong arm never
+      raises progress. In 2-D it is close to flat but not exact.
+    - On a linearized track whose start-to-goal connection is a single path
+      with side branches (a tree-shaped maze), progress along the route is
+      exactly the fraction of the route's length covered.
+    - Across the width of a uniform corridor it is constant.
 
-    - If a region has no bins (e.g., polygon doesn't overlap environment), that
-      trial's bins remain -1
-    - If a region has multiple bins (polygon region), the region is represented
-      by its centroid bin: the region bin whose center is closest to the
-      centroid of the region's bin centers. This representative always lies
-      inside the region (robust for non-convex regions); among equally near
-      bins the lowest index is chosen.
-    - Failed trials (`trial.end_region is None`) have goal_bins = -1
-    - Timepoints outside all trials have both arrays = -1
+    **Caveats.**
 
-    Examples
-    --------
-    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
-    >>> start_bins, goal_bins = trials_to_region_arrays(
-    ...     trials, times, env
-    ... )  # doctest: +SKIP
-    >>> progress = path_progress(
-    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    ... )  # doctest: +SKIP
-    >>> dist = distance_to_region(
-    ...     position_bins, env, target_bins=goal_bins
-    ... )  # doctest: +SKIP
+    - *Alternative routes.* When start and goal are joined by more than one
+      path (a loop), progress depends on the whole layout, not only on the
+      path the animal took: opening or closing a barrier elsewhere changes
+      progress along an unchanged path, and progress is not the route
+      fraction (0.10 to 0.18 off it on the crossword, Hamlet, honeycomb,
+      Hampton Court and rat HexMaze tracks). Compare sessions only with the
+      same maze configuration.
+    - *Commitment, not distance.* Where the width of the corridor or open
+      space changes along the way, a wide section takes a smaller share of
+      progress than its length. For a fraction proportional to distance on
+      a corridor maze, pass its linearized track (for example
+      ``MazeEnvironments.env_track``). For centimetres, use
+      :func:`distance_to_goal`.
+    - *Start and goal size, bin size.* A larger goal raises values. On 2-D
+      grids, how many bins wide a narrow corridor is changes values (up to
+      0.08 between 2 and 1 cm bins on a 7 cm wide W-maze; the track is
+      exact). In 2-D and 3-D a start or goal of a single bin gives values
+      that change with bin size and do not settle, so point targets need
+      ``point_radius``; with a physical size they converge (5 cm discs on a
+      T-maze: within 0.001 between 0.5 and 0.25 cm bins). Compare conditions
+      with the same regions and environment.
+    - *Environment coverage.* Values depend on the whole environment. An
+      environment built from tracked samples (``Environment.from_samples``)
+      has holes where the animal never went, and they shift progress near
+      them (a 30 cm unvisited patch in a 1 m box: median change 0.007, up to
+      0.16 at the patch). Use an environment built from the apparatus (maze
+      factories, polygons, tracks) to compare sessions.
+    - *Corners.* Bins that touch only at a corner share no face, so they are
+      not connected here: progress can be NaN where
+      :func:`distance_to_goal`, which follows the bin graph, is finite.
+    - *Pauses.* Progress stays constant while the animal stops; exclude
+      pauses with a speed threshold when you relate firing to progress.
+    - *Retrospective goals.* ``goal=trials.end_region`` is where the animal
+      went, known only after the trial. For a predictive model, use the
+      instructed goal from the task log (a field read with
+      ``Intervals.from_dataframe``).
+    - *Cost.* One sparse direct solve per distinct start and goal pair,
+      reused within a call. Its time grows about linearly with the number of
+      bins on tracks and in 2-D (about 5 ms for 15,000 bins) and faster in
+      3-D, where the matrix fills in more (20 ms for 6,500 bins, 2 s for
+      33,000).
 
-    See Also
-    --------
-    path_progress : Compute normalized path progress
-    distance_to_region : Distance to target region
-    """
-    from neurospatial._interval_table import require_intervals
-    from neurospatial._observation import _validated_signal_times
-
-    require_intervals(trials, name="trials", owner="trials_to_region_arrays()")
-    times = _validated_signal_times(times, call="trials_to_region_arrays")
-    start_bins = np.full(len(times), -1, dtype=np.int_)
-    goal_bins = np.full(len(times), -1, dtype=np.int_)
-
-    # Represent each region by its centroid bin (the region bin nearest the
-    # centroid of the region's bins), not an arbitrary first bin. A region
-    # covering no bin, and the goal of a failed trial (end_region None), write
-    # nothing, so those samples stay -1.
-    representative: dict[str, int | None] = {}
-
-    def region_bin(name: str | None) -> int | None:
-        if name is None:
-            return None
-        if name not in representative:
-            representative[name] = region_representative_bin(env, name)
-        return representative[name]
-
-    # Each trial's samples, start <= t < stop; a later trial overwrites an
-    # overlapping earlier one.
-    for trial, samples in zip(trials, trials.sample_slices(times), strict=True):
-        start_bin = region_bin(trial.start_region)
-        if start_bin is not None:
-            start_bins[samples] = start_bin
-        goal_bin = region_bin(trial.end_region)
-        if goal_bin is not None:
-            goal_bins[samples] = goal_bin
-
-    return start_bins, goal_bins
-
-
-def _bin_distances(
-    env: Environment,
-    bins: NDArray[np.intp],
-    targets: NDArray[np.intp],
-    *,
-    paths: EnvironmentPaths | None,
-    call: str,
-) -> NDArray[np.float64]:
-    """Distance from each bin center to its target bin center.
-
-    Parameters
-    ----------
-    env : Environment
-    bins, targets : ndarray of int, shape (n,)
-        Bin indices; a pair with a ``-1`` gives NaN.
-    paths : EnvironmentPaths or None
-        Geodesic engine (``metric_paths``), or None for straight lines.
-    call : str
-        Public function name, used in messages.
-
-    Returns
-    -------
-    ndarray, shape (n,)
-        ``inf`` (geodesic) where the target cannot be reached.
-
-    Raises
-    ------
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment.
-    """
-    if paths is not None:
-        return paths.between_bins(bins, targets)
-    require_cartesian(
-        env.coordinate_system,
-        f"{call}(metric='euclidean')",
-        why=(
-            "The straight-line distance between bin centers treats them as "
-            "Cartesian positions."
-        ),
-        fix="use the allocentric environment the positions were recorded in",
-    )
-    centers = env.bin_centers
-    distances: NDArray[np.float64] = np.linalg.norm(
-        centers[np.maximum(targets, 0)] - centers[np.maximum(bins, 0)], axis=1
-    )
-    distances[(bins < 0) | (targets < 0)] = np.nan
-    return distances
-
-
-def path_progress(
-    position_bins: NDArray[np.int_],
-    env: Environment[CartesianSystem],
-    *,
-    start_bins: NDArray[np.int_],
-    goal_bins: NDArray[np.int_],
-    metric: DistanceMetric = "geodesic",
-) -> NDArray[np.float64]:
-    """Compute normalized path progress from start to goal (0 -> 1).
-
-    Fully vectorized computation over entire session. For each timepoint t,
-    with ``d_start = distance(start_bins[t], position_bins[t])`` and
-    ``d_goal = distance(position_bins[t], goal_bins[t])``::
-
-        progress[t] = d_start / (d_start + d_goal)
-
-    Parameters
-    ----------
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Current bin index at each timepoint, as from ``env.bin_at``; ``-1``
-        marks a sample outside the environment (NaN).
-    env : Environment
-        Spatial environment.
-    start_bins : int or NDArray[np.int_], shape (n_samples,)
-        Start bin for each timepoint, or one start bin for every timepoint.
-        In a per-sample array ``-1`` marks a sample with no start (NaN); a
-        single start must be a bin.
-    goal_bins : int or NDArray[np.int_], shape (n_samples,)
-        Goal bin for each timepoint, or one goal bin for every timepoint,
-        with the same ``-1`` rule.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
-        length of the shortest path between two positions that stays inside the
-        environment: it goes around walls and never leaves the environment, and
-        on a track it runs along the track's centerline. Each bin is measured
-        from its center.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples,)
-        Path progress at each timepoint: 0 at the start, 1 only at the goal.
-        NaN for invalid bins (-1), when no path exists between bins, or when
-        start and goal are the same bin and the sample is elsewhere.
-
-    Raises
-    ------
-    TypeError
-        If ``position_bins`` (or a start or goal) is not integer bin indices.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
-    ValueError
-        If ``start_bins`` or ``goal_bins`` has neither one nor ``n_samples``
-        entries, or ``metric`` is not recognized.
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment, whose bins are
-        (distance, angle), not positions.
-
-    Notes
-    -----
-    The geodesic distance from a start or goal is grown once per distinct
-    start or goal bin and kept on the environment, so per-trial start and
-    goal arrays cost one field per distinct bin.
-
-    **What progress measures**: the distance already covered from the start
-    as a fraction of the shortest route from the start through the current
-    position to the goal. On the shortest start-to-goal path this is the
-    fraction of that path covered. Off it (a wrong arm of a branched maze, or
-    a detour) the distance still left to the goal keeps progress below 1, so
-    1.0 means the animal is at the goal. The ratio lies in ``[0, 1]`` by
-    construction and needs no clipping.
-
-    **Edge cases**:
-
-    - start_bin == goal_bin: 1.0 on the goal bin; NaN elsewhere, since the
-      ratio is 0/0 and there is no path to make progress along
-    - No path exists (graph disconnected): Returns NaN (distance = inf)
-    - Invalid bins (-1): Returns NaN
-    - Wrong arm or detour: below 1.0 by the share of the route still left
-      to the goal; use :func:`distance_to_region` to the goal for the
-      distance itself
+    **Plotting a trial that lands on the goal.** Intervals are half-open, so a
+    trial's arrival sample is just outside it. Compute progress without
+    ``intervals`` for one start and goal, and plot
+    ``progress[s.start : s.stop + 1]`` for each ``s`` in
+    ``trials.sample_slices(times)``.
 
     Examples
     --------
-    >>> # Single trial - constant start/goal
-    >>> progress = path_progress(  # doctest: +SKIP
-    ...     position_bins,
-    ...     env,
-    ...     start_bins=np.full(len(position_bins), 10),
-    ...     goal_bins=np.full(len(position_bins), 50),
+    Progress from the start of a T-maze to its left well, on the linearized
+    track (95 cm of stem, then 45 cm of arm):
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import path_progress
+    >>> from neurospatial.simulation.mazes import make_t_maze
+    >>> track = make_t_maze().env_track
+    >>> positions = np.array(
+    ...     [
+    ...         track.regions["start"].data,
+    ...         [0.0, 2.5],  # halfway up the stem
+    ...         track.regions["well_left"].data,
+    ...         track.regions["well_right"].data,  # the wrong arm's end
+    ...     ]
     ... )
-
-    >>> # Multiple trials - construct arrays once, compute once
-    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
-    >>> start_bins, goal_bins = trials_to_region_arrays(
-    ...     trials, times, env
-    ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    ... )  # doctest: +SKIP
+    ...     track, np.arange(4.0), positions, start="start", goal="well_left"
+    ... )
+    >>> progress.round(2).tolist()
+    [0.0, 0.34, 1.0, 0.68]
+
+    The wrong arm keeps the junction's value, 95 / 140 = 0.68: running into
+    it is no progress.
 
     See Also
     --------
-    trials_to_region_arrays : Helper to construct start/goal arrays from trials
-    distance_to_region : Distance to target region over time
+    distance_to_goal : Remaining distance to the goal, in environment units.
+    time_to_goal : Time until the goal is reached.
     """
-    from neurospatial.environment import _validate_sample_targets
-
-    position_bins = validated_position_bins(position_bins, env, call="path_progress")
-    n_samples = len(position_bins)
-    # A single start or goal applies to every sample.
-    start_bins, goal_bins = (
-        np.broadcast_to(
-            _validate_sample_targets(
-                bins,
-                n_samples=n_samples,
-                n_bins=env.n_bins,
-                coordinates=env.coordinate_system,
-                operation="path_progress()",
-                argument=argument,
-            )[0],
-            (n_samples,),
-        )
-        for bins, argument in ((start_bins, "start_bins"), (goal_bins, "goal_bins"))
+    call = "path_progress"
+    times, positions = _validated_route_samples(
+        env, times, positions, intervals, call=call
     )
-    paths = metric_paths(metric, env, call="path_progress")
-
-    # Distance from the start, grown from each start bin, and to the goal,
-    # grown from each goal bin.
-    distances_from_start = _bin_distances(
-        env, position_bins, start_bins, paths=paths, call="path_progress"
+    radius = _validated_point_radius(point_radius)
+    # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
+    sized = env.n_dims > 1 and not env.is_linearized_track
+    rows, starts, single_start = _rows_and_targets(
+        intervals, times, start, name="start", call=f"{call}()"
     )
-    distances_to_goal = _bin_distances(
-        env, position_bins, goal_bins, paths=paths, call="path_progress"
+    _, goals, single_goal = _rows_and_targets(
+        intervals, times, goal, name="goal", call=f"{call}()", rows=rows
     )
+    bins = env.bin_at(positions)
+    from neurospatial.geometry import MissingCellGeometryError
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        progress = distances_from_start / (distances_from_start + distances_to_goal)
+    try:
+        conductances = env.get_diffusion_geometry().W
+    except MissingCellGeometryError as exc:
+        raise MissingCellGeometryError(
+            _format_error(
+                f"{call}() needs the cell faces of the environment's bins: "
+                "progress is computed from the conductances between bins.",
+                why=str(exc).splitlines()[0],
+                fix="build the environment with a layout that has cell geometry "
+                "(a grid, polygon, mesh or track), or use distance_to_goal.",
+            )
+        ) from exc
 
-    # With start == goal the ratio is 0/0. A sample on the goal has arrived
-    # (1.0); any other sample has no defined progress (NaN), not "arrived".
-    same_start_goal = start_bins == goal_bins
-    progress[same_start_goal] = np.where(
-        position_bins[same_start_goal] == goal_bins[same_start_goal], 1.0, np.nan
+    progress = np.full(times.size, np.nan)
+    unknown = np.zeros(times.size, dtype=bool)
+    shared_bin = np.zeros(times.size, dtype=bool)
+    fields: dict[tuple[Any, ...], NDArray[np.float64] | None] = {}
+    target_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
+
+    def bins_of(target: Any, name: str) -> NDArray[np.intp]:
+        key = (name, *_target_key(target))
+        if key not in target_bins:
+            target_bins[key] = _target_bins(
+                env,
+                target,
+                name=name,
+                call=f"{call}()",
+                point_radius=radius,
+                sized=sized,
+            )
+        return target_bins[key]
+
+    for row in np.unique(rows[rows >= 0]):
+        samples = np.flatnonzero(rows == row)
+        st, gl = starts[row], goals[row]
+        if st is None or gl is None:
+            unknown[samples] = True
+            continue
+        key = (*_target_key(st), *_target_key(gl))
+        if key not in fields:
+            start_bins, goal_bins = bins_of(st, "start"), bins_of(gl, "goal")
+            overlap = np.intersect1d(start_bins, goal_bins)
+            if overlap.size and single_start and single_goal:
+                raise ValueError(
+                    _format_error(
+                        f"{call}(): start and goal share {overlap.size} bin(s), so "
+                        "progress between them is undefined.",
+                        fix="pass a start and goal that do not overlap.",
+                    )
+                )
+            fields[key] = (
+                None
+                if overlap.size
+                else _harmonic_progress(conductances, start_bins, goal_bins)
+            )
+        field_values = fields[key]
+        if field_values is None:
+            shared_bin[samples] = True
+            continue
+        located = samples[bins[samples] >= 0]
+        progress[located] = field_values[bins[located]]
+
+    analyzed = rows >= 0
+    _warn_if_mostly_nan(
+        progress,
+        analyzed,
+        {
+            "the position is outside the environment": analyzed & (bins < 0),
+            "the start or goal is unknown (None)": unknown,
+            "the start and goal share a bin": shared_bin,
+            "the position does not connect to both start and goal": analyzed
+            & (bins >= 0)
+            & ~unknown
+            & ~shared_bin,
+        },
+        call=f"{call}()",
     )
-
-    # NaN where either distance is undefined (a -1 position, start or goal
-    # bin) or infinite (disconnected).
-    disconnected = ~np.isfinite(distances_to_goal) | ~np.isfinite(distances_from_start)
-    progress[disconnected] = np.nan
-
     return progress
 
 
-def distance_to_region(
-    position_bins: NDArray[np.int_],
+@reads_pynapple_samples
+def distance_to_goal(
     env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
-    target_bins: NDArray[np.int_] | int,
+    goal: Any,
     metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
-    """Compute distance from each trajectory point to target region.
+    """Distance from each sample's position to the nearest goal bin.
 
-    Measures instantaneous distance to a goal region over time. Useful
-    for analyzing approach behavior, goal-directed navigation, and
-    spatial value functions.
+    Answers "how far is the goal from here": the length of the shortest path
+    inside the environment (``metric="geodesic"``, around walls) or the
+    straight-line distance, in environment units, from the position to the
+    nearest bin of the goal. It needs no start. For progress as a fraction of
+    the route, use :func:`path_progress`; for distance to the reward
+    actually delivered, :func:`distance_to_reward`; for distance weighted by
+    terrain or learned costs, :func:`cost_to_goal`.
 
     Parameters
     ----------
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
-        outside the environment (NaN).
     env : Environment
-        Spatial environment.
-    target_bins : NDArray[np.int_] or int
-        Target bin specification:
-        - int, or a one-element array such as ``env.bin_at([[x, y]])``: one
-          target bin for every sample, in ``[0, n_bins)``; ``-1`` (the outside
-          marker of ``bin_at``) is refused.
-        - NDArray[np.int_], shape (n_samples,): Target bin at each timepoint;
-          ``-1`` marks a sample with no target, which gives NaN.
-          This allows dynamic goals.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
-        length of the shortest path between two positions that stays inside the
-        environment: it goes around walls and never leaves the environment, and
-        on a track it runs along the track's centerline. Each bin is measured
-        from its center.
+        The environment the positions were recorded in.
+    times : array-like, shape (n_samples,)
+        Sample times in seconds, finite and strictly increasing.
+    positions : array-like, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row or a position
+        outside the environment gives NaN.
+    intervals : Intervals, optional
+        Trials or other intervals. Samples outside every interval are NaN;
+        overlapping intervals are refused.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name (its bins: the bin containing a point region, the bins
+        whose centres lie in a polygon region), a point in environment
+        coordinates (the bin containing it), or, with ``intervals``, one per
+        interval in row order (a ``pandas.Series`` indexed by
+        ``interval_id`` is aligned by id), for example
+        ``goal=trials.end_region``. ``None`` marks an unknown goal: that
+        interval's samples are NaN.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"`` is the length of the shortest path that stays inside
+        the environment, measured from the position itself; ``"euclidean"``
+        is the straight line to the nearest goal bin centre.
 
     Returns
     -------
-    NDArray[np.float64], shape (n_samples,)
-        Distance from current position to target at each timepoint.
-        Units match environment coordinates (e.g., cm). NaN where the
-        position or the target is ``-1``; ``inf`` (geodesic) where the
-        target cannot be reached.
+    ndarray of float64, shape (n_samples,)
+        Distance in environment units; 0 at a goal bin centre. NaN outside
+        the environment, outside every interval, or with an unknown goal;
+        ``inf`` (geodesic) where the goal cannot be reached.
 
     Raises
     ------
-    TypeError
-        If ``position_bins`` or ``target_bins`` is not integer bin indices.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
     ValueError
-        If ``metric`` is not recognized.
+        If a point goal is outside the environment, a region covers no bin,
+        ``metric`` is not recognized, ``times`` or ``positions`` are
+        invalid, or intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
     CartesianOnlyError
-        If ``env`` is an egocentric polar environment, whose bins are
-        (distance, angle), not positions.
+        If ``env`` is an egocentric polar environment.
+
+    Warns
+    -----
+    UserWarning
+        If at least half of the analyzed samples are NaN, with the fraction
+        and the main cause.
 
     Notes
     -----
-    The geodesic distance is grown once per distinct target bin and kept on
-    the environment. ``env.distance_to`` and ``env.distance_between``
-    measure along the bin graph instead (bin center to bin center through
-    neighboring bins), which reads an oblique straight run as a staircase.
+    ``goal=trials.end_region`` is where the animal went, known only after the
+    trial; for a predictive model use the instructed goal from the task log.
 
     Examples
     --------
-    >>> goal_bins = env.bins_in_region("reward_zone")  # doctest: +SKIP
-    >>> dist = distance_to_region(
-    ...     position_bins, env, target_bins=goal_bins[0]
-    ... )  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial.behavior import distance_to_goal
+    >>> line = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
+    >>> env = Environment.from_samples(line, bin_size=10.0)
+    >>> regions = Regions()
+    >>> _ = regions.add("reward", point=(100.0, 0.0))
+    >>> env = env.with_regions(regions)
+    >>> positions = np.array([[5.0, 0.0], [55.0, 0.0], [100.0, 0.0]])
+    >>> distance_to_goal(env, np.arange(3.0), positions, goal="reward").tolist()
+    [95.0, 45.0, 0.0]
 
     See Also
     --------
-    path_progress : Normalized progress along path
-    cost_to_goal : Distance with terrain/learned cost
-    distance_to_boundary : Distance to the environment's edge or a region's
-        boundary
-    distance_to_reward : Distance to the reward location at each sample
-    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
+    path_progress : Progress from start to goal, between 0 and 1.
+    distance_to_reward : Distance to the reward location at each sample.
+    cost_to_goal : Distance with terrain or learned costs.
     """
-    from neurospatial.environment import _validate_sample_targets
+    call = "distance_to_goal"
+    paths = metric_paths(metric, env, call=call)
+    times, positions = _validated_route_samples(
+        env, times, positions, intervals, call=call
+    )
+    rows, goals, _ = _rows_and_targets(
+        intervals, times, goal, name="goal", call=f"{call}()"
+    )
+    distances = np.full(times.size, np.nan)
+    unknown = np.zeros(times.size, dtype=bool)
+    goal_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
+    for row in np.unique(rows[rows >= 0]):
+        samples = np.flatnonzero(rows == row)
+        target = goals[row]
+        if target is None:
+            unknown[samples] = True
+            continue
+        key = _target_key(target)
+        if key not in goal_bins:
+            goal_bins[key] = np.unique(
+                _target_bins(
+                    env,
+                    target,
+                    name="goal",
+                    call=f"{call}()",
+                    point_radius=None,
+                    sized=False,
+                )
+            )
+        targets = goal_bins[key]
+        if paths is not None:
+            distances[samples] = paths.from_bins_at(targets, positions[samples])
+            continue
+        from scipy.spatial import cKDTree
 
-    position_bins = validated_position_bins(
-        position_bins, env, call="distance_to_region"
+        inside = samples[env.bin_at(positions[samples]) >= 0]
+        distances[inside] = cKDTree(env.bin_centers[targets]).query(positions[inside])[
+            0
+        ]
+
+    analyzed = rows >= 0
+    _warn_if_mostly_nan(
+        distances,
+        analyzed,
+        {
+            "the position is outside the environment": analyzed & ~unknown,
+            "the goal is unknown (None)": unknown,
+        },
+        call=f"{call}()",
     )
-    targets, per_sample = _validate_sample_targets(
-        target_bins,
-        n_samples=len(position_bins),
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation="distance_to_region()",
-        argument="target_bins",
-    )
-    paths = metric_paths(metric, env, call="distance_to_region")
-    return _bin_distances(
-        env,
-        position_bins,
-        np.broadcast_to(targets if per_sample else targets[0], position_bins.shape),
-        paths=paths,
-        call="distance_to_region",
-    )
+    return distances
 
 
 @reads_pynapple_samples
@@ -1168,7 +1474,7 @@ def distance_to_reward(
     --------
     neurospatial.events.time_to_nearest_event : Temporal distance to events
     distance_to_boundary : Distance to environment boundaries
-    distance_to_region : Distance to a target bin or region
+    distance_to_goal : Distance from each position to a goal
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
     from neurospatial._intervals import as_intervals, validate_max_gap
@@ -1627,7 +1933,7 @@ def distance_to_boundary(
     See Also
     --------
     distance_to_reward : Distance to reward locations
-    distance_to_region : Distance to a target bin or region
+    distance_to_goal : Distance from each position to a goal
     neurospatial.events.time_to_nearest_event : Temporal distance to events
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     neurospatial.ops.compute_boundary_distances : Distance to walls along
@@ -1781,9 +2087,10 @@ def cost_to_goal(
         Cost of the cheapest path inside the environment from the current
         bin's center to the goal bin's center, in the environment's length
         units (e.g. cm) weighted by the cost rate. With neither ``cost_map``
-        nor ``terrain_difficulty`` it is the geodesic distance of
-        :func:`distance_to_region`: the length of the shortest path between
-        the two bin centers that stays inside the environment. Lower cost =
+        nor ``terrain_difficulty`` it is the geodesic distance between the
+        two bin centers (as :func:`distance_to_goal` measures from a
+        position): the length of the shortest path that stays inside the
+        environment. Lower cost =
         preferred path. NaN where the position or the goal is ``-1``;
         ``inf`` where no path exists.
 
@@ -1834,7 +2141,7 @@ def cost_to_goal(
 
     See Also
     --------
-    distance_to_region : Simple geometric distance
+    distance_to_goal : Distance from each position to a goal, without costs
     """
     from neurospatial.environment import _validate_sample_targets
 
@@ -1848,13 +2155,14 @@ def cost_to_goal(
         argument="goal_bins",
     )
 
-    # Case 1: No cost modifications
+    from neurospatial.behavior._environment_paths import environment_paths
+
+    paths = environment_paths(env, call="cost_to_goal")
+    # Case 1: No cost modifications: the geodesic distance between bin centres.
     if cost_map is None and terrain_difficulty is None:
-        return distance_to_region(
+        return paths.between_bins(
             position_bins,
-            env,
-            target_bins=goals if per_sample else goals[0],
-            metric="geodesic",
+            np.broadcast_to(goals if per_sample else goals[0], position_bins.shape),
         )
 
     # Case 2: per-bin cost rate per unit length, integrated along the
@@ -1866,9 +2174,6 @@ def cost_to_goal(
         terrain_difficulty, env, name="terrain_difficulty", default=1.0, positive=True
     )
     rate = difficulty * (1.0 + extra)
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call="cost_to_goal")
     if not per_sample:
         goal_costs = paths.costs_from_bins(goals, rate)
         costs = np.full(len(position_bins), np.nan)

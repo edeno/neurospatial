@@ -53,7 +53,7 @@ from neurospatial.behavior.navigation import (
     compute_path_efficiency,
     cost_to_goal,
     distance_to_boundary,
-    distance_to_region,
+    distance_to_goal,
     distance_to_reward,
     goal_bias,
     goal_direction,
@@ -69,7 +69,6 @@ from neurospatial.behavior.navigation import (
     time_efficiency,
     time_to_goal,
     traveled_path_length,
-    trials_to_region_arrays,
 )
 from neurospatial.behavior.resampling import (
     ResampledPathResult,
@@ -168,7 +167,7 @@ __all__ = [  # noqa: RUF022
     "compute_path_efficiency",
     "cost_to_goal",
     "distance_to_boundary",
-    "distance_to_region",
+    "distance_to_goal",
     "distance_to_reward",
     "goal_bias",
     "goal_direction",
@@ -184,7 +183,6 @@ __all__ = [  # noqa: RUF022
     "time_efficiency",
     "time_to_goal",
     "traveled_path_length",
-    "trials_to_region_arrays",
     # segmentation module
     "Crossing",
     "Lap",

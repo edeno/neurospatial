@@ -245,47 +245,33 @@ class TestPathEfficiencyPathProgressConsistency:
         assert 0.95 <= efficiency <= 1.0
 
     def test_path_progress_reaches_one_at_goal(self) -> None:
-        """Path progress should reach 1.0 when at goal."""
+        """Progress runs from 0 to 1 along a straight run to the goal.
+
+        The 100 cm square is symmetric about x = 50, which swaps the start and
+        goal discs, so the midpoint of the run reads 1/2.
+        """
         from neurospatial.behavior.navigation import path_progress
 
-        # Create dense environment to ensure trajectory bins exist
-        # Note: rng not used here since we use linspace grid, but kept for consistency
-        # Create grid positions to ensure full coverage
         x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        # Trajectory ending at goal
-        trajectory = np.column_stack(
-            [
-                np.linspace(10, 90, 50),
-                np.full(50, 50.0),
-            ]
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
-
-        position_bins = env.bin_at(trajectory)
-        start_bin = position_bins[0]
-        goal_bin = position_bins[-1]
-
-        # Skip if bins are invalid
-        if start_bin < 0 or goal_bin < 0:
-            pytest.skip("Trajectory bins not in environment")
+        trajectory = np.column_stack([np.linspace(10, 90, 49), np.full(49, 50.0)])
 
         progress = path_progress(
-            position_bins,
             env,
-            start_bins=np.full(len(position_bins), start_bin),
-            goal_bins=np.full(len(position_bins), goal_bin),
-            metric="geodesic",  # Use geodesic for connected environment
+            np.linspace(0.0, 1.0, len(trajectory)),
+            trajectory,
+            start=trajectory[0],
+            goal=trajectory[-1],
+            point_radius=5.0,
         )
 
-        # Progress at end should be 1.0 (or close, since bins are discrete)
-        # Filter out NaN values first
-        valid_progress = progress[~np.isnan(progress)]
-        if len(valid_progress) > 0:
-            assert valid_progress[-1] >= 0.8
+        assert progress[0] == 0.0
+        assert progress[-1] == 1.0
+        np.testing.assert_allclose(progress[24], 0.5, atol=1e-12)
+        assert np.all(np.diff(progress) >= 0.0)
 
     def test_efficiency_and_progress_both_handle_detours(self) -> None:
         """Both metrics should handle detours reasonably."""

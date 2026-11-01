@@ -269,37 +269,38 @@ plt.show()
 # %% [markdown]
 # ## 4. Compare position over the course of complete traversals
 #
-# Put each complete traversal on a common scale: zero marks its observed start,
-# and one marks entry into the right zone. `path_progress()` divides the track
-# distance already covered from that start by that distance plus the track
-# distance still left to the arrival bin, so it reaches one only at arrival.
-# It follows the bend and uses the first arrival bin as the endpoint.
+# Put each complete traversal on a common scale with `path_progress()`: 0 in
+# the left end zone, 1 in the right end zone. It is computed once for the
+# whole session, from the left zone to the right zone. On a track like this
+# one, with a single route between the zones, progress is the fraction of
+# the route's length covered: 0.5 is halfway along the track. (On a maze
+# with side arms, a wrong arm keeps the value of the junction where it
+# leaves the route.)
 #
-# Scale elapsed time by each traversal's duration as well. This lets us compare
-# the shape of the movement time course across traversals of different lengths
-# in seconds. The 2 cm spatial bins create small steps in the curves.
+# A run is the half-open window `[start, stop)`: it stops at the first sample
+# inside the right zone, the arrival, which is just outside the run. To draw
+# curves that land on 1, plot each run's samples plus that arrival sample.
+# Scale elapsed time by each traversal's duration as well, to compare the
+# shape of the movement across traversals of different lengths in seconds.
+# The 2 cm spatial bins create small steps in the curves.
 
 # %%
+progress = path_progress(track, times, positions, start="left", goal="right")
+
 fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
 for number, run in enumerate(complete_runs, start=1):
-    inside = (times >= run.start_time) & (times <= run.end_time)
-    run_bins = position_bins[inside]
-    run_times = times[inside]
-    progress = path_progress(
-        run_bins,
-        track,
-        start_bins=np.full(len(run_bins), run_bins[0]),
-        goal_bins=np.full(len(run_bins), run_bins[-1]),
-    )
+    first, arrival = np.searchsorted(times, [run.start_time, run.end_time])
+    shown = slice(first, arrival + 1)  # the run's samples and its arrival
+    run_times = times[shown]
     relative_time = (run_times - run_times[0]) / (run_times[-1] - run_times[0])
     ax.plot(
         relative_time,
-        progress,
+        progress[shown],
         label=f"Traversal {number}: {run_times[-1] - run_times[0]:.2f} s",
     )
 ax.set(
     xlabel="Fraction of traversal duration",
-    ylabel="Fraction of start-to-arrival track distance",
+    ylabel="Progress from left zone to right zone",
     title="Position during complete left-to-right traversals",
     xlim=(0, 1),
     ylim=(-0.03, 1.03),
@@ -310,10 +311,12 @@ plt.show()
 # %% [markdown]
 # The curves mostly overlap because the simulated traversals have approximately
 # constant speed. Their durations differ, as shown in the legend; scaling time
-# removes those duration differences from the horizontal axis. Use the earlier
-# time trace when comparing absolute running times.
+# removes those duration differences from the horizontal axis. Each curve
+# starts just above 0, at the first sample outside the left zone, and ends at
+# 1, the arrival. Use the earlier time trace when comparing absolute running
+# times.
 #
-# This distance fraction describes position along the route. It decreases with
+# Progress describes position along the route. It decreases with
 # backtracking, unlike cumulative distance traveled. The track fixes the route
 # in this example. Interpreting goal-directed choices would require a task with
 # alternatives and evidence about the animal's choices.

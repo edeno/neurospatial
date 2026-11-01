@@ -14,10 +14,8 @@ from neurospatial import BinIndexOutOfRangeError, Environment
 from neurospatial.behavior import (
     cost_to_goal,
     distance_to_decision_boundary,
-    distance_to_region,
     geodesic_voronoi_labels,
     goal_reward_field,
-    path_progress,
     shortest_path_length,
 )
 
@@ -35,20 +33,10 @@ def position_bins(env) -> np.ndarray:
 
 def _calls(env, position_bins, target):
     """Each analysis function with ``target`` as its bin target."""
-    per_sample = np.full(len(position_bins), target)
     return {
-        "distance_to_region": lambda: distance_to_region(
-            position_bins, env, target_bins=target
-        ),
         "cost_to_goal": lambda: cost_to_goal(position_bins, env, goal_bins=target),
         "cost_to_goal_weighted": lambda: cost_to_goal(
             position_bins, env, goal_bins=target, cost_map=np.ones(env.n_bins)
-        ),
-        "path_progress": lambda: path_progress(
-            position_bins, env, start_bins=per_sample, goal_bins=per_sample
-        ),
-        "path_progress_single": lambda: path_progress(
-            position_bins, env, start_bins=target, goal_bins=target
         ),
         "geodesic_voronoi_labels": lambda: geodesic_voronoi_labels(
             env, np.r_[target, target]
@@ -61,8 +49,6 @@ def _calls(env, position_bins, target):
 
 
 _NAMES = sorted(_calls(None, np.zeros(1), 0))
-# Every call whose target is one bin, not a per-sample array.
-_SINGLE_TARGET_NAMES = [name for name in _NAMES if name != "path_progress"]
 
 
 @pytest.mark.parametrize("name", _NAMES)
@@ -79,7 +65,7 @@ def test_out_of_range_target_raises(env, position_bins, name):
         call()
 
 
-@pytest.mark.parametrize("name", ["distance_to_region", "cost_to_goal"])
+@pytest.mark.parametrize("name", ["cost_to_goal", "cost_to_goal_weighted"])
 def test_boolean_target_is_refused(env, position_bins, name):
     with pytest.raises(TypeError, match="booleans"):
         _calls(env, position_bins, True)[name]()
@@ -92,25 +78,18 @@ def test_integer_targets_give_the_query_answer(env, position_bins):
     centers = env.bin_centers
     expected = np.linalg.norm(centers[position_bins] - centers[goal], axis=1)
     np.testing.assert_array_equal(
-        distance_to_region(position_bins, env, target_bins=np.int64(goal)), expected
-    )
-    np.testing.assert_array_equal(
-        cost_to_goal(position_bins, env, goal_bins=goal), expected
+        cost_to_goal(position_bins, env, goal_bins=np.int64(goal)), expected
     )
 
 
 def test_minus_one_still_marks_samples_without_a_target(env, position_bins):
     targets = np.where(np.arange(len(position_bins)) < 5, 40, -1)
-    distances = distance_to_region(position_bins, env, target_bins=targets)
-    assert np.all(np.isnan(distances[5:]))
-    assert np.all(np.isfinite(distances[:5]))
-    progress = path_progress(
-        position_bins, env, start_bins=targets, goal_bins=targets[::-1]
-    )
-    assert np.all(np.isnan(progress))  # every sample lacks a start or a goal
+    costs = cost_to_goal(position_bins, env, goal_bins=targets)
+    assert np.all(np.isnan(costs[5:]))
+    assert np.all(np.isfinite(costs[:5]))
 
 
-@pytest.mark.parametrize("name", _SINGLE_TARGET_NAMES)
+@pytest.mark.parametrize("name", _NAMES)
 @pytest.mark.parametrize("shape", ["scalar", "one_element"])
 def test_minus_one_is_never_a_single_target(env, position_bins, name, shape):
     """-1 is bin_at's outside marker; as one target it is refused, not NaN.
@@ -128,8 +107,6 @@ def test_bin_at_output_of_an_outside_goal_is_refused(env, position_bins, weighte
     goal = env.bin_at(np.array([[500.0, 500.0]]))  # shape (1,), value -1
     cost_map = np.ones(env.n_bins) if weighted else None
     with pytest.raises(BinIndexOutOfRangeError):
-        distance_to_region(position_bins, env, target_bins=goal)
-    with pytest.raises(BinIndexOutOfRangeError):
         cost_to_goal(position_bins, env, goal_bins=goal, cost_map=cost_map)
 
 
@@ -140,15 +117,11 @@ def test_one_element_target_equals_the_scalar_target(env, position_bins, weighte
         cost_to_goal(position_bins, env, goal_bins=np.array([40]), cost_map=cost_map),
         cost_to_goal(position_bins, env, goal_bins=40, cost_map=cost_map),
     )
-    np.testing.assert_array_equal(
-        distance_to_region(position_bins, env, target_bins=np.array([40])),
-        distance_to_region(position_bins, env, target_bins=40),
-    )
 
 
 def test_per_sample_targets_of_the_wrong_length_raise(env, position_bins):
     with pytest.raises(ValueError, match=r"shape \(3,\), but there are 10 samples"):
-        distance_to_region(position_bins, env, target_bins=np.array([1, 2, 3]))
+        cost_to_goal(position_bins, env, goal_bins=np.array([1, 2, 3]))
 
 
 def test_approach_rate_refuses_a_goal_outside(env):
@@ -176,7 +149,7 @@ def test_polar_hint_names_a_polar_lookup():
         angle_bin_size=np.pi / 6,
     )
     with pytest.raises(TypeError) as caught:
-        distance_to_region(np.arange(3), polar, target_bins=1.5)
+        cost_to_goal(np.arange(3), polar, goal_bins=1.5)
     assert "(distance, angle) rows, use env.bin_at(points)" in str(caught.value)
 
 

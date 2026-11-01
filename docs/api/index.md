@@ -352,7 +352,9 @@ Behavioral analysis built on trajectory + environment.
 - `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences
-- `distance_to_region()`, `distance_to_boundary()`, `distance_to_reward()`:
+- `path_progress()`: Per-sample progress from a start to a goal, 0 to 1, in
+  1-D, 2-D and 3-D, per trial with `intervals=`
+- `distance_to_goal()`, `distance_to_boundary()`, `distance_to_reward()`:
   Per-sample distance to a goal, the environment's edge or the reward
   location (GLM covariates)
 - `behavior.segmentation`: Laps, trials, region crossings,

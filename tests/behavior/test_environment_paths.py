@@ -221,27 +221,44 @@ class TestBinInputsUseBinCenters:
     def _bins(self, env, *points):
         return env.bin_at(np.array(points, dtype=float))
 
-    def test_distance_to_region_goes_around_the_wall(self, divider_arena):
-        from neurospatial.behavior import distance_to_region
+    def test_distance_to_goal_goes_around_the_wall(self, divider_arena):
+        from neurospatial.behavior import distance_to_goal
 
-        left, right = self._bins(divider_arena, self.LEFT, self.RIGHT)
-        distances = distance_to_region(
-            np.array([left, right]), divider_arena, target_bins=int(right)
+        distances = distance_to_goal(
+            divider_arena,
+            np.arange(2.0),
+            np.array([self.LEFT, self.RIGHT]),
+            goal=self.RIGHT,
         )
         np.testing.assert_allclose(distances, [2 * self.CLIMB + 5.0, 0.0], atol=1e-9)
 
-    def test_path_progress_above_the_wall_end(self, divider_arena):
+    def test_path_progress_goes_around_the_wall(self, divider_arena):
+        """Mirror images across the wall sum to 1; the wall lowers the near side.
+
+        Reflecting the arena in x = 50 keeps the wall and swaps the start and
+        goal discs, so progress p becomes 1 - p. Beside the wall, the goal is
+        only reachable over the wall's end, so progress there is lower than in
+        the same arena without the wall.
+        """
         from neurospatial.behavior import path_progress
 
-        left, right, above = self._bins(
-            divider_arena, self.LEFT, self.RIGHT, self.ABOVE
+        centers = divider_arena.bin_centers
+        times = np.arange(divider_arena.n_bins, dtype=float)
+        targets = {"start": self.LEFT, "goal": self.RIGHT, "point_radius": BIN}
+        progress = path_progress(divider_arena, times, centers, **targets)
+        mirrored = path_progress(
+            divider_arena, times, np.c_[100.0 - centers[:, 0], centers[:, 1]], **targets
         )
-        progress = path_progress(
-            np.array([above]), divider_arena, start_bins=left, goal_bins=right
+        np.testing.assert_allclose(progress + mirrored, 1.0, atol=1e-12)
+
+        edges = np.arange(0.0, 101.0, BIN)
+        no_wall = Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool), grid_edges=(edges, edges), units="cm"
         )
-        # Covered: straight up the left side; left: across and down.
-        expected = self.CLIMB / (self.CLIMB + 5.0 + self.CLIMB)
-        np.testing.assert_allclose(progress, [expected], atol=1e-12)
+        beside_the_wall = np.array([[47.5, 32.5]])
+        with_wall = path_progress(divider_arena, [0.0], beside_the_wall, **targets)
+        without = path_progress(no_wall, [0.0], beside_the_wall, **targets)
+        assert with_wall[0] < without[0] - 0.2
 
     def test_uniform_cost_is_a_multiple_of_the_geodesic_distance(self, divider_arena):
         from neurospatial.behavior import cost_to_goal
@@ -279,8 +296,11 @@ class TestBinInputsUseBinCenters:
             distance_bin_size=5.0,
             angle_bin_size=np.pi / 6,
         )
+        positions = np.array([[10.0, 0.0], [20.0, 0.5]])
         with pytest.raises(CartesianOnlyError, match="path_progress"):
-            path_progress(np.array([0, 1]), polar, start_bins=0, goal_bins=5)
+            path_progress(
+                polar, [0.0, 1.0], positions, start=[10.0, 0.0], goal=[20.0, 0.5]
+            )
 
 
 class TestPositionInputsUseThePositionItself:
@@ -354,24 +374,23 @@ class TestMirrorSymmetry:
         return Environment.from_samples(samples, bin_size=5.0)
 
     def test_mirror_image_bins_are_equally_far_from_mirror_image_goals(self, t_maze):
-        from neurospatial.behavior import distance_to_region
+        from neurospatial.behavior import distance_to_goal
 
         centers = t_maze.bin_centers
-        left, right = t_maze.bin_at(np.array([[10.0, 55.0], [90.0, 55.0]]))
-        bins = np.arange(t_maze.n_bins)
-        mirror = t_maze.bin_at(np.c_[100.0 - centers[:, 0], centers[:, 1]])
-        to_left = distance_to_region(bins, t_maze, target_bins=int(left))
-        to_right = distance_to_region(mirror, t_maze, target_bins=int(right))
+        times = np.arange(t_maze.n_bins, dtype=float)
+        mirror = np.c_[100.0 - centers[:, 0], centers[:, 1]]
+        to_left = distance_to_goal(t_maze, times, centers, goal=[10.0, 55.0])
+        to_right = distance_to_goal(t_maze, times, mirror, goal=[90.0, 55.0])
+        assert np.isfinite(to_left).all()
         np.testing.assert_allclose(to_left, to_right, rtol=1e-12)
 
     def test_a_line_cutting_a_corner_is_not_straight(self, t_maze):
-        from neurospatial.behavior import distance_to_region
+        from neurospatial.behavior import distance_to_goal
 
         # From (50, 35) in the stem to (40, 50) in the crossbar the straight
         # line clips the missing cell left of the stem below the bar, so the
         # path must turn at the stem's corner (42.5, 47.5) or later.
-        start, goal = t_maze.bin_at(np.array([[50.0, 35.0], [40.0, 50.0]]))
-        distance = distance_to_region(np.array([start]), t_maze, target_bins=int(goal))
+        distance = distance_to_goal(t_maze, [0.0], [[50.0, 35.0]], goal=[40.0, 50.0])
         around_corner = np.hypot(7.5, 12.5) + np.hypot(2.5, 2.5)
         assert distance[0] >= around_corner - 1e-9
 
