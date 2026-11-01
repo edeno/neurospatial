@@ -290,7 +290,8 @@ class ReactivationWindows:
             edges = np.concatenate([[0.0], np.cumsum(stops - starts)])
             total = float(edges[-1])
         else:
-            total = float(stops[-1] - starts[0])
+            # No rows (an empty selection) cover no time.
+            total = float(stops[-1] - starts[0]) if rows.size else 0.0
         step = self.length if self.step is None else self.step
         # Whole windows only; a window ending within rounding of the period's
         # end is whole.

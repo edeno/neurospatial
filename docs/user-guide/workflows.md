@@ -32,7 +32,7 @@ blocks in this section continue from it.
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.behavior import labels_to_epochs
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.simulation import generate_poisson_spikes
@@ -404,7 +404,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     PlaceCellModel,
@@ -545,7 +545,7 @@ decoder for you. The whole encode → bin → decode pipeline fits in one line.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.decoding import decode_session, decoding_error
 from neurospatial.simulation import (
     PlaceCellModel,
@@ -638,7 +638,7 @@ gapped example contains no decoder rows between 10.15 and 20.05 seconds.
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.decoding import DecodingResult, median_decoding_error
 
 env = Environment.from_samples(
@@ -830,7 +830,7 @@ Analyzing behavior across experimentally-defined spatial zones.
 ```python
 from neurospatial import Regions
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from shapely.geometry import Point
 import numpy as np
 
@@ -1054,7 +1054,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Polygon
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.behavior import goal_pair_direction_labels, segment_trials
 from neurospatial.encoding import compute_directional_place_fields
 from neurospatial.simulation import generate_poisson_spikes
@@ -1090,7 +1090,8 @@ env = env.with_regions(region_builder)
 position_bins = env.bin_sequence(times, positions, dedup=False)
 outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
 inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
-labels = goal_pair_direction_labels(times, outbound + inbound)
+# One table of both directions; the combined rows get new ids 0 to n-1.
+labels = goal_pair_direction_labels(times, Intervals([*outbound, *inbound]))
 fields = compute_directional_place_fields(env, spikes, times, positions, labels)
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)

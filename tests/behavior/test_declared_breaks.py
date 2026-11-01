@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.behavior import (
     compute_goal_directed_metrics,
     compute_home_range,
@@ -80,6 +80,8 @@ def laps(continuous_lap_track) -> Joined:
 
 def _plain(value: Any) -> Any:
     """Comparable form of a result: dataclasses become dicts, arrays lists."""
+    if isinstance(value, Intervals):
+        return _plain(list(value))
     if isinstance(value, list):
         return [_plain(item) for item in value]
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -91,11 +93,13 @@ def _plain(value: Any) -> Any:
     return value
 
 
-_TIME_FIELDS = ("time", "start_time", "end_time")
+_TIME_FIELDS = ("time", "start_time", "stop_time", "end_time")
 
 
 def _shift_reported_times(value: Any, *, after: float) -> Any:
     """Shift reported times at or after the break, as the reference reports them."""
+    if isinstance(value, Intervals):
+        value = list(value)
     if isinstance(value, list):
         return [_shift_reported_times(item, after=after) for item in value]
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -254,7 +258,7 @@ def test_trial_spanning_break_ends_failed_at_recording_end(pause):
     )
     assert not split.success
     assert split.end_region is None
-    assert split.end_time == r.times[BREAK - 1]
+    assert split.stop_time == r.times[BREAK - 1]
 
 
 def test_visit_after_break_is_left_censored(pause):

@@ -134,7 +134,6 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # Records written to the file.
     ("write_laps", "laps"),
     ("write_region_crossings", "crossings"),
-    ("write_trials", "trials"),
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
     ("validate_annotations", "boundary"),

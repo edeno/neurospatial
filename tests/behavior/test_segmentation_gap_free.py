@@ -48,6 +48,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from shapely.geometry import box
+
+from neurospatial import Environment, Intervals, Regions
+from neurospatial.behavior import Trial, segment_trials
 
 from ._segmentation_snapshots import capture_segmentation_outputs, structural_snapshot
 
@@ -68,6 +72,13 @@ def gap_free_goldens():
         "goal_labels"
     ]
     labels["array"] = str(np.dtype(np.int_))
+    # Trial renamed end_time to stop_time; the values are unchanged.
+    for trial in goldens["segment_trials"]:
+        fields = trial["fields"]
+        trial["fields"] = {
+            ("stop_time" if key == "end_time" else key): value
+            for key, value in fields.items()
+        }
     running = goldens["running_direction_labels"]
     running["values"] = [
         None if label == "other" else label for label in running["values"]
@@ -144,3 +155,33 @@ def test_gap_free_outputs_unchanged(name, gap_free_outputs, gap_free_goldens):
     assert_snapshot_equal(
         structural_snapshot(gap_free_outputs[name]), gap_free_goldens[name]
     )
+
+
+def test_trials_default_no_timeout():
+    """A slow trial reaches its goal unless the task's timeout is passed."""
+    # About 45 s from home (x < 10) to goal (x > 90) on a 100 cm track, at 10 Hz.
+    x = np.r_[np.full(10, 5.0), np.linspace(5.0, 95.0, 501)]
+    times = np.arange(x.size) / 10.0
+    positions = np.column_stack([x, np.zeros_like(x)])
+    env = Environment.from_samples(positions, bin_size=5.0)
+    regions = Regions(env.regions.values())
+    regions.add("home", polygon=box(-1, -5, 10, 5))
+    regions.add("goal", polygon=box(90, -5, 101, 5))
+    env = env.with_regions(regions)
+    bins = env.bin_at(positions)
+    options = {"start_region": "home", "end_regions": "goal"}
+
+    trials = segment_trials(bins, times, env, **options)
+    assert isinstance(trials, Intervals)
+    assert trials.record_type is Trial
+    assert trials.outcome.tolist() == ["reached"]
+    assert trials.durations[0] > 40.0
+    assert trials.interval_ids.tolist() == [0]
+    settings = trials.analysis_settings
+    assert settings["max_duration"] is None
+    assert settings["end_regions"] == ["goal"]
+    assert settings["break_before"] is False
+
+    timed = segment_trials(bins, times, env, max_duration=15.0, **options)
+    assert timed.outcome.tolist() == ["timeout"]
+    assert timed.analysis_settings["max_duration"] == 15.0

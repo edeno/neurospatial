@@ -20,13 +20,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._results import EMPTY_SELECTION, ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 _ACCEPTED_FORMS = (
     "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
-    "or an object with 1-D .start and .end arrays (for example a pynapple "
-    "IntervalSet)"
+    "an object with an (n, 2) .windows array (for example "
+    "neurospatial.Intervals), or an object with 1-D .start and .end arrays "
+    "(for example a pynapple IntervalSet)"
 )
 
 
@@ -252,6 +253,8 @@ def _parse_intervals(
     Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
     are unusable; ``problems`` is empty when ``rows`` is valid.
     """
+    if value is EMPTY_SELECTION:
+        return EMPTY_SELECTION, []
     kind = type(value).__name__
     if _is_pynapple_object(value) and kind != "IntervalSet":
         # A Ts/Tsd/TsdFrame has scalar .start/.end (its first and last
@@ -261,7 +264,20 @@ def _parse_intervals(
             f"intervals; pass the windows it was recorded in, "
             f"{name}={kind.lower()}.time_support"
         ]
-    if hasattr(value, "start") and hasattr(value, "end"):
+    if not _is_pynapple_object(value) and hasattr(value, "windows"):
+        # An interval container (neurospatial.Intervals, or any object with
+        # an (n, 2) ``windows`` array of [start, stop) rows with duration).
+        # Rows without duration are not in ``windows``; no rows is an empty
+        # selection, not an error.
+        try:
+            rows = np.asarray(value.windows, dtype=np.float64)
+        except (TypeError, ValueError) as exc:
+            return None, [f"{name}.windows could not be read as numbers ({exc})"]
+        if rows.ndim != 2 or rows.shape[1] != 2:
+            return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
+        if rows.shape[0] == 0:
+            return EMPTY_SELECTION, []
+    elif hasattr(value, "start") and hasattr(value, "end"):
         try:
             starts = np.asarray(value.start, dtype=np.float64)
             stops = np.asarray(value.end, dtype=np.float64)
@@ -336,6 +352,8 @@ def _parse_intervals(
 
 def _merge(rows: NDArray[np.float64]) -> NDArray[np.float64]:
     """Sort rows by start and merge overlapping or touching rows (vectorized)."""
+    if rows.shape[0] == 0:
+        return EMPTY_SELECTION
     rows = rows[np.argsort(rows[:, 0], kind="stable")]
     running_stop = np.maximum.accumulate(rows[:, 1])
     opens_new = np.ones(rows.shape[0], dtype=bool)
@@ -373,8 +391,13 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
 
     Parameters
     ----------
-    value : None, (start, stop), array-like of shape (n, 2), or IntervalSet-like
-        The window(s). An object exposing 1-D ``.start`` and ``.end`` arrays
+    value : None, (start, stop), array-like of shape (n, 2), Intervals, or \
+IntervalSet-like
+        The window(s). An object with a ``windows`` attribute, an ``(n, 2)``
+        array of ``[start, stop)`` rows (for example
+        :class:`~neurospatial.Intervals`), is read through it; its rows
+        without duration are not windows, and no windows is a valid, empty
+        selection. An object exposing 1-D ``.start`` and ``.end`` arrays
         (for example a pynapple ``IntervalSet``) is accepted by duck typing;
         pynapple is never imported. A pynapple interval includes its end, so
         its stop becomes the next float above ``end``: a sample exactly at
@@ -386,12 +409,14 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     -------
     ndarray of float64, shape (n_windows, 2), or None
         Rows sorted by start, with overlapping or touching rows merged.
-        ``None`` when ``value`` is ``None``.
+        ``None`` when ``value`` is ``None``; zero rows only for an object
+        with empty ``windows``.
 
     Raises
     ------
     ValueError
-        On a wrong shape, zero rows, non-finite values or ``stop <= start``.
+        On a wrong shape, zero rows (except empty ``windows``), non-finite
+        values or ``stop <= start``.
         Non-finite and inverted rows are all listed in one message; a value
         that is unreadable or wrongly shaped is reported on its own. A
         pynapple time series (``Ts``, ``Tsd``, ``TsdFrame``) is refused with
@@ -1449,6 +1474,23 @@ def _all_excluded_message(
     result: str,
 ) -> str:
     """The warning for a selection that excludes every interval."""
+    empty = [
+        name
+        for name, value in (
+            ("epochs", gates.epochs),
+            ("spike_window", gates.spike_window),
+        )
+        if value is not None and value.shape[0] == 0
+    ]
+    if empty:
+        # A deliberate empty selection, such as a condition with no trials:
+        # nothing is wrong with the clock, so say what happened.
+        verb = "select" if len(empty) > 1 else "selects"
+        return (
+            f"{' and '.join(empty)} {verb} no time (an Intervals with no windows, "
+            f"such as a condition with no trials), so {result}. Fix: select "
+            "intervals with duration, or leave this condition out."
+        )
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():

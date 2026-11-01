@@ -436,3 +436,45 @@ def test_merge_covers_exactly_the_union_of_its_rows(seed):
     np.testing.assert_array_equal(inside_merged, inside_input)
     assert (merged[:, 0] < merged[:, 1]).all()
     assert (merged[:-1, 1] < merged[1:, 0]).all()
+
+
+def test_windows_protocol():
+    from neurospatial import Interval, Intervals
+    from neurospatial._intervals import as_intervals
+
+    intervals = Intervals(
+        [
+            Interval(20.0, 30.0),
+            Interval(0.0, 10.0),
+            Interval(12.0, 12.0),  # observed, no time
+        ]
+    )
+    np.testing.assert_array_equal(
+        as_intervals(intervals, name="epochs"),
+        as_intervals(intervals.windows, name="epochs"),
+    )
+    np.testing.assert_array_equal(
+        as_intervals(intervals, name="epochs"), [[0.0, 10.0], [20.0, 30.0]]
+    )
+
+    # No windows is an empty selection; it stays empty when normalized again.
+    empty = as_intervals(intervals[[]], name="epochs")
+    assert empty.shape == (0, 2)
+    assert as_intervals(empty, name="epochs").shape == (0, 2)
+    assert as_intervals(intervals[[1]], name="epochs").shape == (0, 2)
+
+    # A plain array without rows is still refused as a probable bug.
+    with pytest.raises(ValueError, match="no rows"):
+        as_intervals(np.empty((0, 2)), name="epochs")
+
+
+@pytest.mark.pynapple
+def test_windows_protocol_keeps_pynapple_inclusive_end():
+    nap = pytest.importorskip("pynapple")
+    from neurospatial._intervals import as_intervals, pynapple_end_to_stop
+
+    iset = nap.IntervalSet(start=[0.0, 5.0], end=[2.0, 7.0])
+    np.testing.assert_array_equal(
+        as_intervals(iset, name="epochs")[:, 1],
+        pynapple_end_to_stop(np.array([2.0, 7.0])),
+    )

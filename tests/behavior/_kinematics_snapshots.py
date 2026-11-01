@@ -23,6 +23,7 @@ def load_kinematic_recording(recording):
 
 def capture_kinematics_outputs(recording, *, legacy_heading=False):
     """Exercise all kinematic entry points using the same recording inputs."""
+    from neurospatial import Intervals
     from neurospatial.behavior import Trial, heading_from_velocity
     from neurospatial.behavior.decisions import (
         compute_pre_decision_metrics,
@@ -59,10 +60,12 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[4000]]))
     env = env.with_regions(region_builder)
-    trials = [
-        Trial(0.0, 99.98, "source", "target", "reached"),
-        Trial(100.0, r.times[-1], "source", "target", "reached"),
-    ]
+    trials = Intervals(
+        [
+            Trial(0.0, 99.98, "source", "target", "reached"),
+            Trial(100.0, r.times[-1], "source", "target", "reached"),
+        ]
+    )
     session = compute_vte_session(
         env, r.times, r.positions, decision_region="decision", trials=trials
     )

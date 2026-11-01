@@ -77,6 +77,7 @@ from numpy.typing import ArrayLike, NDArray
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Intervals
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
@@ -173,8 +174,8 @@ class VTETrialResult(ResultMixin):
     status : {"ok", "no_samples", "no_entry", "too_few_samples"}
         Why the trial was or was not measured. ``"ok"``: the window was
         analyzed (its metrics can still be NaN, for example a slow animal
-        with no observed heading). ``"no_samples"``: no sample lies between
-        the trial's start and end times. ``"no_entry"``: the trial never
+        with no observed heading). ``"no_samples"``: no sample lies in
+        the trial's ``[start_time, stop_time)``. ``"no_entry"``: the trial never
         enters the decision region inside ``epochs``. ``"too_few_samples"``:
         fewer than three observed samples lie in the window. Every metric of
         a trial that is not ``"ok"`` is NaN and it is not classified.
@@ -1235,7 +1236,7 @@ def compute_vte_session(
     positions: NDArray[np.float64],
     *,
     decision_region: str,
-    trials: list[Trial],
+    trials: Intervals[Trial],
     window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
@@ -1260,8 +1261,10 @@ def compute_vte_session(
         a non-finite coordinate (NaN, for a lost frame) is a missing sample.
     decision_region : str
         Name of decision region in env.regions.
-    trials : list[Trial]
-        Trial segmentation from segment_trials().
+    trials : Intervals
+        Trials from segment_trials(), read_trials() or a task log. Each
+        trial's samples are those in ``[start_time, stop_time)``; the sample
+        at ``stop_time`` (the arrival) is outside it.
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds; finite and positive.
         Typical values: 0.5-2.0s depending on maze size and task.
@@ -1316,8 +1319,8 @@ def compute_vte_session(
     Returns
     -------
     VTESessionResult
-        Session-level VTE analysis with one :class:`VTETrialResult` per input
-        trial, in input order (``result.trial_results[i]`` is ``trials[i]``;
+        Session-level VTE analysis with one :class:`VTETrialResult` per
+        trial, in row order (``result.trial_results[i]`` is ``trials[i]``;
         ``result.trials_table()`` tabulates them). A trial that could not be
         measured keeps its place with NaN metrics, ``is_vte=None`` and a
         ``status`` saying why; a measured trial without an observed head
@@ -1338,8 +1341,8 @@ def compute_vte_session(
     Warns
     -----
     UserWarning
-        For each trial with no samples between its start and end times
-        (often trial times on another clock). Also when two or more trials
+        For each trial with duration but no sample in its
+        ``[start_time, stop_time)`` (often trial times on another clock). Also when two or more trials
         all have the same head sweep or speed (z-scores of 0).
 
     Notes
@@ -1370,7 +1373,7 @@ def compute_vte_session(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial import Environment, Intervals, Regions
     >>> from neurospatial.behavior import Trial, compute_vte_session
 
     A T-maze stem rising to a crossbar, with the choice point at its center:
@@ -1401,7 +1404,7 @@ def compute_vte_session(
     ...     np.concatenate(times),
     ...     np.vstack(positions),
     ...     decision_region="center",
-    ...     trials=trials,
+    ...     trials=Intervals(trials),
     ...     window_duration=0.5,
     ...     min_speed=5.0,
     ...     vte_threshold=0.0,
@@ -1417,11 +1420,14 @@ def compute_vte_session(
     >>> result.n_vte_trials, round(result.vte_fraction, 3)
     (1, 0.333)
 
-    One row per trial, in input order:
+    One row per trial, in row order:
 
     >>> result.trials_table()[["status", "is_vte"]].values.tolist()
     [['ok', False], ['ok', False], ['ok', True], ['ok', None]]
     """
+    from neurospatial._interval_table import require_intervals
+
+    require_intervals(trials, name="trials", owner="compute_vte_session()")
     require_cartesian(
         env.coordinate_system,
         "compute_vte_session()",
@@ -1553,13 +1559,16 @@ def _measure_trial(
     """Unscored metrics of one trial, or the status saying why it has none."""
     from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
 
-    span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.end_time:.3f}] s"
-    # The trial's samples, start_time <= t <= end_time, are contiguous.
+    span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.stop_time:.3f}] s"
+    # The trial's samples, start_time <= t < stop_time, are contiguous.
     first = int(np.searchsorted(times, trial.start_time, side="left"))
-    stop = int(np.searchsorted(times, trial.end_time, side="right"))
+    stop = int(np.searchsorted(times, trial.stop_time, side="left"))
     if stop <= first:
+        if trial.stop_time <= trial.start_time:
+            # A trial without duration holds no sample; that is no clock error.
+            return _unscored_trial(status="no_samples")
         warnings.warn(
-            f"{span} has no samples between its start and end times, so its VTE "
+            f"{span} has no samples in [start_time, stop_time), so its VTE "
             f"metrics are NaN. The recording spans [{times[0]:.3f}, "
             f"{times[-1]:.3f}] s; check that trial times are in seconds on the "
             "same clock as times.",

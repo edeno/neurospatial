@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import (
     compute_path_efficiency,
@@ -79,10 +79,12 @@ def _vte_session(env, times, positions, **kwargs):
 
     With every interval excluded, both trials are unmeasured, with a warning.
     """
-    trials = [
-        Trial(0.0, 39.0, "start", "mid_area", "reached"),
-        Trial(35.0, 79.0, "start", "mid_area", "reached"),
-    ]
+    trials = Intervals(
+        [
+            Trial(0.0, 39.0, "start", "mid_area", "reached"),
+            Trial(35.0, 79.0, "start", "mid_area", "reached"),
+        ]
+    )
     options = {
         "decision_region": "mid_area",
         "trials": trials,

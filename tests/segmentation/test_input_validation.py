@@ -176,8 +176,8 @@ def test_one_end_region_name_is_one_region(env):
     listed = segment_trials(
         bins, times, env, start_region="start", end_regions=["goal"]
     )
-    assert one == listed
-    assert [t.outcome for t in one] == ["reached"]
+    assert list(one) == list(listed)
+    assert one.outcome.tolist() == ["reached"]
 
 
 class TestMinProgressUnits:

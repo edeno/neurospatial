@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 
 # =============================================================================
 # Test: VTE uses decision_analysis functions correctly
@@ -84,15 +84,17 @@ class TestVTEDecisionAnalysisIntegration:
         )
 
         # Create a trial
-        trials = [
-            Trial(
-                start_time=0.0,
-                end_time=4.0,
-                start_region="start",
-                end_region="end",
-                outcome="reached",
-            )
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=0.0,
+                    stop_time=4.0,
+                    start_region="start",
+                    end_region="end",
+                    outcome="reached",
+                )
+            ]
+        )
 
         # Find entry time using decision_analysis
         position_bins = env.bin_at(trajectory)
@@ -179,16 +181,18 @@ class TestVTERoundTrip:
         times_array = np.concatenate(all_times)
 
         # Create trials
-        trials = [
-            Trial(
-                start_time=i * 3.0,
-                end_time=i * 3.0 + 2.5,
-                start_region="start",
-                end_region="end",
-                outcome="reached",
-            )
-            for i in range(n_trials)
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=i * 3.0,
+                    stop_time=i * 3.0 + 2.5,
+                    start_region="start",
+                    end_region="end",
+                    outcome="reached",
+                )
+                for i in range(n_trials)
+            ]
+        )
 
         # Run VTE session; the trial that never reaches the decision region
         # is reported as NaN.

@@ -11,7 +11,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Intervals
 from neurospatial.behavior.navigation import (
     approach_rate,
     compute_goal_directed_metrics,
@@ -20,6 +20,7 @@ from neurospatial.behavior.navigation import (
     headings_to_direction_labels,
     instantaneous_goal_alignment,
 )
+from neurospatial.behavior.segmentation import Trial
 
 EAST = "0\u00b0"  # the sector centred on East
 
@@ -248,7 +249,7 @@ def _calls_with(times, positions, goal):
             times,
             positions,
             decision_region="center",
-            trials=[],
+            trials=Intervals([], record_type=Trial),
             min_speed=1.0,
         ),
         "goal_vector": lambda: goal_vector(positions, goal),

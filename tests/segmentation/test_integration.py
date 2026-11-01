@@ -202,7 +202,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Step 3: Analyze goal-directed runs for first trial
         if len(trials) > 0:
             trial = trials[0]
-            trial_mask = (times >= trial.start_time) & (times <= trial.end_time)
+            trial_mask = (times >= trial.start_time) & (times <= trial.stop_time)
             trial_bins = position_bins[trial_mask]
             trial_times = times[trial_mask]
 
@@ -228,8 +228,8 @@ class TestFullTrajectoryAnalysisWorkflow:
             trial1 = trials[0]
             trial2 = trials[1]
 
-            mask1 = (times >= trial1.start_time) & (times <= trial1.end_time)
-            mask2 = (times >= trial2.start_time) & (times <= trial2.end_time)
+            mask1 = (times >= trial1.start_time) & (times <= trial1.stop_time)
+            mask2 = (times >= trial2.start_time) & (times <= trial2.stop_time)
 
             bins1 = position_bins[mask1]
             bins2 = position_bins[mask2]

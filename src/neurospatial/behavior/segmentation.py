@@ -59,7 +59,7 @@ running_direction_labels
 Classes
 -------
 Trial
-    One trial: start_time, end_time, start_region, end_region (None unless
+    One trial: start_time, stop_time, start_region, end_region (None unless
     reached) and outcome ('reached', 'timeout', 'returned' or 'censored')
 Crossing
     One region entry or exit
@@ -82,6 +82,7 @@ from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
+from neurospatial._interval_table import Intervals
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
@@ -124,9 +125,16 @@ def _validated_samples(
     return bins, _validated_signal_times(times, call=call)
 
 
-def _validate_durations(min_duration: float, max_duration: float, *, call: str) -> None:
-    """Require finite ``0 <= min_duration < max_duration`` (seconds)."""
+def _validate_durations(
+    min_duration: float, max_duration: float | None, *, call: str
+) -> None:
+    """Require finite ``0 <= min_duration < max_duration`` (seconds).
+
+    ``max_duration=None`` sets no limit.
+    """
     validate_finite_scalar(min_duration, name="min_duration", positive=False)
+    if max_duration is None:
+        return
     validate_finite_scalar(max_duration, name="max_duration", positive=True)
     if max_duration <= min_duration:
         raise ValueError(
@@ -275,14 +283,16 @@ unknown.
 _OUTCOMES: tuple[str, ...] = ("reached", "timeout", "returned", "censored")
 
 
-def _checked_interval(record: str, start: object, end: object) -> tuple[float, float]:
+def _checked_interval(
+    record: str, start: object, end: object, *, end_name: str = "end_time"
+) -> tuple[float, float]:
     """Return ``(start, end)`` as finite Python floats with ``start <= end``."""
     start_f, end_f = float(start), float(end)  # type: ignore[arg-type]
     if not (np.isfinite(start_f) and np.isfinite(end_f)) or start_f > end_f:
         raise ValueError(
             _format_error(
-                f"{record} needs finite start_time <= end_time; got "
-                f"start_time={start_f!r}, end_time={end_f!r}.",
+                f"{record} needs finite start_time <= {end_name}; got "
+                f"start_time={start_f!r}, {end_name}={end_f!r}.",
                 why="an event interval runs forward in time on one clock.",
                 fix="pass the interval's start and end times in seconds, start first.",
             )
@@ -445,8 +455,10 @@ class Trial:
     start_time : float
         Time when trial started: the last sample in the start region before
         the animal left it (seconds).
-    end_time : float
-        Time when the trial ended (seconds); see ``outcome``.
+    stop_time : float
+        Time when the trial ended (seconds); see ``outcome``. The trial is
+        the half-open window ``[start_time, stop_time)``, so the sample at
+        ``stop_time`` (for example the arrival) is outside it.
     start_region : str
         Name of the region where trial started.
     end_region : str or None
@@ -455,14 +467,14 @@ class Trial:
         How the trial ended:
 
         - ``'reached'``: entered an end region within ``max_duration``;
-          ``end_time`` is the first sample inside it.
-        - ``'timeout'``: ``max_duration`` elapsed first; ``end_time`` is the
+          ``stop_time`` is the first sample inside it.
+        - ``'timeout'``: ``max_duration`` elapsed first; ``stop_time`` is the
           last sample at or before ``start_time + max_duration``.
         - ``'returned'``: re-entered the start region first (an aborted
-          trial); ``end_time`` is the first sample back inside it.
+          trial); ``stop_time`` is the first sample back inside it.
         - ``'censored'``: observation stopped first (a tracking gap longer
           than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
-          of the recording); ``end_time`` is the last observed sample, and
+          of the recording); ``stop_time`` is the last observed sample, and
           the trial's result is unknown. Leave censored trials out of
           success rates rather than counting them as errors.
     success : bool
@@ -470,16 +482,18 @@ class Trial:
     """
 
     start_time: float
-    end_time: float
+    stop_time: float
     start_region: str
     end_region: str | None
     outcome: Outcome
 
     def __post_init__(self) -> None:
         """Check the record and store plain Python floats."""
-        start, end = _checked_interval("Trial", self.start_time, self.end_time)
+        start, stop = _checked_interval(
+            "Trial", self.start_time, self.stop_time, end_name="stop_time"
+        )
         object.__setattr__(self, "start_time", start)
-        object.__setattr__(self, "end_time", end)
+        object.__setattr__(self, "stop_time", stop)
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
@@ -929,7 +943,7 @@ def _attempts(
     *,
     clock_starts_inside: bool,
     min_duration: float,
-    max_duration: float,
+    max_duration: float | None,
 ) -> list[tuple[int, int, Outcome, int | None]]:
     """Attempts to get from a start region to an end region in one recording.
 
@@ -959,9 +973,11 @@ def _attempts(
     clock_starts_inside : bool
         Whether an attempt starts at the last sample inside the start region
         rather than at the first sample outside it.
-    min_duration, max_duration : float
-        Attempts shorter than ``min_duration`` seconds are dropped; none
-        lasts longer than ``max_duration``.
+    min_duration : float
+        Attempts shorter than ``min_duration`` seconds are dropped.
+    max_duration : float or None
+        No attempt lasts longer than ``max_duration`` seconds; None sets no
+        limit, so no attempt times out.
 
     Returns
     -------
@@ -982,12 +998,16 @@ def _attempts(
         stop = int(stops[k]) if k < stops.size else n_samples
         # Elapsed time at each sample up to the arrival or return.
         elapsed = times[exit_idx : stop + 1] - times[first]
-        late = np.flatnonzero(elapsed >= max_duration)
+        late = (
+            np.flatnonzero(elapsed >= max_duration)
+            if max_duration is not None
+            else np.empty(0, dtype=np.intp)
+        )
         # First sample at or past the deadline; it is at most ``stop``.
         deadline = exit_idx + int(late[0]) if late.size else n_samples
         outcome: Outcome
         end_region: int | None = None
-        if late.size and elapsed[late[0]] > max_duration:
+        if late.size and max_duration is not None and elapsed[late[0]] > max_duration:
             last, outcome = deadline - 1, "timeout"
         elif deadline < stop:
             last, outcome = deadline, "timeout"
@@ -2497,11 +2517,11 @@ def segment_trials(
     start_region: str,
     end_regions: str | Sequence[str],
     min_duration: float = 1.0,
-    max_duration: float = 15.0,
+    max_duration: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> list[Trial]:
+) -> Intervals[Trial]:
     """Segment trajectory into behavioral trials.
 
     Identifies discrete behavioral trials defined by departures from a start
@@ -2545,11 +2565,12 @@ def segment_trials(
     min_duration : float, optional
         Minimum trial duration in seconds. Default: 1.0.
         Trials shorter than this are excluded.
-    max_duration : float, optional
-        Maximum trial duration in seconds. Default: 15.0.
-        A trial that has not reached an end region by ``start_time +
-        max_duration`` times out at the last sample within that deadline,
-        even when the next sample is inside an end region.
+    max_duration : float or None, optional
+        Maximum trial duration in seconds. Default ``None``: no limit, since
+        a timeout is a rule of the task, not of the behavior. A trial that
+        has not reached an end region by ``start_time + max_duration`` times
+        out at the last sample within that deadline, even when the next
+        sample is inside an end region.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -2557,7 +2578,7 @@ def segment_trials(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window, and a sample at a
@@ -2570,13 +2591,17 @@ def segment_trials(
 
     Returns
     -------
-    list[Trial]
-        Detected trials in time order. Each records ``start_time`` (the last
-        sample in the start region before departure), ``end_time``,
-        ``start_region``, ``end_region`` (the end region reached, or None),
-        ``outcome`` (``'reached'``, ``'timeout'``, ``'returned'`` or
-        ``'censored'``, see :class:`Trial`) and the derived ``success``
-        (``outcome == 'reached'``).
+    Intervals of Trial
+        Detected trials in time order, with ``interval_ids`` ``0`` to
+        ``n - 1`` in detection order. Each row is ``[start_time, stop_time)``:
+        ``start_time`` is the last sample in the start region before
+        departure, and ``stop_time`` the sample that ends the trial, which is
+        outside it. Fields: ``start_region``, ``end_region`` (the end region
+        reached, or None) and ``outcome`` (``'reached'``, ``'timeout'``,
+        ``'returned'`` or ``'censored'``, see :class:`Trial`); select the
+        successful ones with ``trials[trials.outcome == "reached"]``.
+        ``analysis_settings`` records the detector's arguments. Pass the
+        trials as ``epochs=`` to restrict an analysis to them.
 
     Raises
     ------
@@ -2638,7 +2663,7 @@ def segment_trials(
 
     Trials are filtered by duration to exclude:
     - Very brief entries/exits (min_duration filter)
-    - Stuck or disengaged periods (max_duration timeout)
+    - Stuck or disengaged periods (with a max_duration timeout)
 
     If an animal re-enters the start region before reaching an end region,
     the previous (aborted) trial is emitted with ``outcome='returned'`` and
@@ -2692,16 +2717,13 @@ def segment_trials(
     ...     start_region="start",
     ...     end_regions=["left", "right"],
     ...     min_duration=5.0,
-    ...     max_duration=50.0,
     ...     max_gap=None,
     ... )
-    >>> len(trials) >= 1  # Should detect at least one trial
-    True
-    >>> [t.outcome for t in trials]  # Both reached an end region
+    >>> trials.outcome.tolist()  # Both reached an end region
     ['reached', 'reached']
-    >>> end_regions = [t.end_region for t in trials]
-    >>> "left" in end_regions and "right" in end_regions  # Both choices present
-    True
+    >>> trials.end_region.tolist()
+    ['left', 'right']
+    >>> left = trials[trials.end_region == "left"]  # a condition, as epochs=
 
     References
     ----------
@@ -2744,6 +2766,7 @@ def segment_trials(
     _validate_durations(min_duration, max_duration, call="segment_trials")
 
     breaks = validate_break_before(break_before, len(times), call="segment_trials")
+    windows = as_intervals(epochs, name="epochs")
     results: list[Trial] = []
     for run in _event_runs(
         times,
@@ -2763,7 +2786,20 @@ def segment_trials(
                 max_duration=max_duration,
             )
         )
-    return results
+    return Intervals(
+        results,
+        record_type=Trial,
+        analysis_settings={
+            "detector": "segment_trials",
+            "start_region": start_region,
+            "end_regions": list(end_regions),
+            "min_duration": float(min_duration),
+            "max_duration": None if max_duration is None else float(max_duration),
+            "max_gap": max_gap,
+            "epochs": None if windows is None else windows.tolist(),
+            "break_before": break_before is not None,
+        },
+    )
 
 
 def _segment_trials_contiguous(
@@ -2774,7 +2810,7 @@ def _segment_trials_contiguous(
     start_mask: NDArray[np.bool_],
     end_masks: dict[str, NDArray[np.bool_]],
     min_duration: float = 1.0,
-    max_duration: float = 15.0,
+    max_duration: float | None = None,
 ) -> list[Trial]:
     """Analyze one recording after the public input validation.
 
@@ -2788,7 +2824,7 @@ def _segment_trials_contiguous(
     return [
         Trial(
             start_time=float(times[first]),
-            end_time=float(times[last]),
+            stop_time=float(times[last]),
             start_region=start_region,
             end_region=None if end_region is None else names[end_region],
             outcome=outcome,

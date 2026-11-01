@@ -138,11 +138,13 @@ def bin_spikes_in_time(
         train is empty), so the last spike always lands inside the final bin
         and a single-spike train produces a valid result. When passed
         explicitly, must be strictly greater than ``t_start``.
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
+or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as the spike times). Time bins are tiled inside each
         window, so no bin spans two windows. ``None`` (default) means
-        unrestricted.
+        unrestricted. An ``Intervals`` with no windows (an empty selection)
+        has no time to bin and raises.
         Cannot be combined with ``t_start`` or ``t_stop``.
     orient : {"time_x_neuron", "neuron_x_time"}, optional
         Axis order of the returned ``counts`` matrix. ``"time_x_neuron"``
@@ -167,7 +169,8 @@ def bin_spikes_in_time(
         If ``dt`` is not finite or not strictly positive, if an explicitly
         passed ``t_stop`` is not strictly greater than ``t_start``, if
         ``t_start`` is after the last spike and ``t_stop`` is omitted, if the
-        windows contain no whole bin, if ``epochs`` is combined with explicit
+        windows contain no whole bin, if ``epochs`` is an empty selection,
+        if ``epochs`` is combined with explicit
         bounds, or if ``orient`` is not one of the allowed values.
 
     Notes
@@ -231,6 +234,15 @@ def bin_spikes_in_time(
             raise ValueError(msg)
         windows = as_intervals(epochs, name="epochs")
         assert windows is not None
+        if windows.shape[0] == 0:
+            raise ValueError(
+                _format_error(
+                    "bin_spikes_in_time got epochs with no windows (an empty "
+                    "selection), so there is no time to bin.",
+                    fix="select at least one interval with duration, or skip "
+                    "this condition.",
+                )
+            )
     else:
         start_from_spikes = t_start is None
         if t_start is None:

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial.behavior import (
     detect_goal_directed_runs,
     detect_laps,
@@ -98,7 +98,7 @@ def test_trials_do_not_span_pause(pause_track):
     in_source = r.env.region_mask("source")[r.position_bins]
     departure = r.times[np.flatnonzero(in_source & (r.times < 100))[-1]]
     assert trials[0].start_time == departure
-    assert trials[0].end_time <= 99.9
+    assert trials[0].stop_time <= 99.9
     assert not trials[0].success
 
 
@@ -323,7 +323,7 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
         r.times,
         positions,
         decision_region="target",
-        trials=[trial],
+        trials=Intervals([trial]),
         window_duration=1001,
     )
     assert len(result.trial_results) == 1
@@ -425,7 +425,7 @@ def test_no_event_at_an_epoch_stop_sample():
     (trial,) = segment_trials(
         bins, times, env, start_region="start", end_regions=["goal"], **common
     )
-    assert (trial.start_time, trial.end_time, trial.outcome) == (1.0, 4.0, "censored")
+    assert (trial.start_time, trial.stop_time, trial.outcome) == (1.0, 4.0, "censored")
 
     # Without the epoch the same arrival is observed at 5 s.
     (entry,) = detect_region_crossings(

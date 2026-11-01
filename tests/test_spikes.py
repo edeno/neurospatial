@@ -587,6 +587,14 @@ class TestSpikeInputBoundaries:
         with pytest.raises(ValueError, match="finite t_start and t_stop"):
             bin_spikes_in_time([np.array([0.05])], dt=0.25, t_stop=np.inf)
 
+    def test_decoding_counts_refuse_an_empty_selection(self) -> None:
+        from neurospatial import Intervals
+        from neurospatial.decoding import bin_spikes_in_time
+
+        none = Intervals.from_arrays([0.0], [1.0])[[]]
+        with pytest.raises(ValueError, match="no windows"):
+            bin_spikes_in_time([np.array([0.05])], dt=0.25, epochs=none)
+
 
 class TestRastersAndZeroPadding:
     """Raster values and zero padding must never be read as spike times."""

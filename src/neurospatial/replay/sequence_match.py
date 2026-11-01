@@ -195,7 +195,7 @@ def spike_words(
     max_isi: float,
     word_gap: float,
     cells: NDArray[np.bool_] | None = None,
-    epochs: NDArray[np.float64] | None = None,
+    epochs: Any = None,
 ) -> SpikeWordsResult:
     """Parse spike trains into words of letters (Lee & Wilson 2002).
 
@@ -220,9 +220,10 @@ def spike_words(
     cells : NDArray[np.bool_] of shape (n_cells,), optional
         The cells whose letters form the words, such as one template's
         cells. None uses every cell.
-    epochs : NDArray[np.float64] of shape (n_epochs, 2), optional
+    epochs : NDArray[np.float64] of shape (n_epochs, 2), Intervals, optional
         Sorted, non-overlapping ``(start, stop)`` intervals in seconds, such
-        as slow-wave sleep; letters at ``start <= t < stop`` are kept and
+        as slow-wave sleep, or an :class:`~neurospatial.Intervals` (its
+        ``windows``; no windows keeps no letter); letters at ``start <= t < stop`` are kept and
         words do not cross an epoch boundary. Bursts are found on the whole
         trains, so a burst that began before an epoch adds no letter in it.
         None keeps every letter.
@@ -295,7 +296,10 @@ def spike_words(
     if epochs is not None:
         bounds = _validated_epochs(epochs, operation)
         index = np.searchsorted(bounds[:, 0], times, side="right") - 1
-        inside = (index >= 0) & (times < bounds[np.maximum(index, 0), 1])
+        # No epochs (an empty selection) keep no letter.
+        inside = (index >= 0) & (
+            times < bounds[np.maximum(index, 0), 1] if bounds.size else False
+        )
         times, letter_units, index = times[inside], letter_units[inside], index[inside]
         epoch_id = index
         epoch_stop = bounds[index, 1]
@@ -866,7 +870,7 @@ def _onsets(train: NDArray[np.float64], max_isi: float) -> NDArray[np.float64]:
 
 
 def _validated_epochs(epochs: Any, operation: str) -> NDArray[np.float64]:
-    bounds = np.asarray(epochs, dtype=np.float64)
+    bounds = np.asarray(getattr(epochs, "windows", epochs), dtype=np.float64)
     if (
         bounds.ndim != 2
         or bounds.shape[1] != 2

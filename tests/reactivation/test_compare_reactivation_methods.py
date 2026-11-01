@@ -107,6 +107,13 @@ class TestReactivationWindows:
             [[600.0, 900.0]],
         ]
 
+    @pytest.mark.parametrize("clock", ["concatenated", "wall"])
+    def test_empty_selection_has_no_windows(self, clock) -> None:
+        from neurospatial import Intervals
+
+        none = Intervals.from_arrays([0.0], [400.0])[[]]
+        assert ReactivationWindows(length=300.0, clock=clock).split(none) == []
+
     def test_last_window_from_the_end(self) -> None:
         concatenated = ReactivationWindows(length=300.0, anchor="end", count=1)
         assert [w.tolist() for w in concatenated.split(self.epochs)] == [

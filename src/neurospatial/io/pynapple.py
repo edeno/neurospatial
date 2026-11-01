@@ -170,9 +170,12 @@ def to_pynapple(
       (2-D values).
     - a decode result: a ``TsdFrame`` of ``quantity``, the MAP track by
       default.
-    - a list of ``Lap``, ``Trial``, ``Run``, ``RegionVisit`` or
-      ``RegionTransition`` records: an ``IntervalSet``, one interval per
-      record, with the record fields as metadata columns.
+    - an :class:`~neurospatial.Intervals` (for example trials): an
+      ``IntervalSet``, one interval per row, with ``interval_id`` and the
+      fields as metadata columns.
+    - a list of ``Lap``, ``Run``, ``RegionVisit`` or ``RegionTransition``
+      records: an ``IntervalSet``, one interval per record, with the record
+      fields as metadata columns.
     - a ``LabelEpochsResult``: an ``IntervalSet`` with a ``label`` column.
     - a list of ``Crossing`` records: a ``TsGroup`` with one ``Tsd`` of
       ``bin_index`` per region and direction.
@@ -184,12 +187,12 @@ def to_pynapple(
 
     Parameters
     ----------
-    data : array-like, decode result, behavior records or LabelEpochsResult
+    data : array-like, decode result, Intervals, behavior records or LabelEpochsResult
         Finite, strictly increasing timestamps in seconds (with ``values``);
         a :class:`~neurospatial.decoding.DecodingResult` or
         :class:`~neurospatial.decoding.DecodingSummary` (any object with
-        ``.times`` and ``.map_position``); a non-empty list of one kind of
-        behavior record; or a
+        ``.times`` and ``.map_position``); an :class:`~neurospatial.Intervals`;
+        a non-empty list of one kind of behavior record; or a
         :class:`~neurospatial.behavior.LabelEpochsResult`. Timestamps are
         never sorted here: pynapple would sort them without reordering
         ``values``.
@@ -212,7 +215,8 @@ or None, optional
         interval from the first to the last timestamp (or crossing). For
         region crossings, pass the ``epochs`` they were detected in, or the
         recording span.
-        Not accepted for interval records, which have no time support.
+        Not accepted for intervals or interval records, which have no time
+        support.
     quantity : {"map_position", "mean_position", "posterior"}, \
 default="map_position"
         Which estimate of a decode result to export: the MAP or posterior
@@ -232,7 +236,7 @@ default="map_position"
         If pynapple is not installed.
     TypeError
         If ``data`` is none of the accepted inputs, a list mixes record
-        types, or an argument does not apply to ``data`` (``values`` with a
+        types or holds ``Trial`` records (pass an ``Intervals``), or an argument does not apply to ``data`` (``values`` with a
         decode result or records, ``columns`` with a posterior or records,
         ``epochs`` with interval records, ``quantity`` with anything but a
         decode result).
@@ -282,10 +286,13 @@ default="map_position"
     over space. neurospatial gives a bin where any rate is missing zero
     probability, and its default prior is proportional to bin size.
 
-    **Behavior records.** Each record ``[start_time, end_time)`` becomes one
-    interval, sorted by start; every scalar field becomes a metadata column
-    (``Run.bins``, one bin per sample, is not exported). A record without
-    duration (``end_time == start_time``, such as a visit seen in one sample
+    **Intervals and behavior records.** Each row of an ``Intervals``
+    becomes one interval with its ``interval_id`` and fields as metadata, so
+    selecting by field in pynapple (``iset[iset.outcome == "reached"]``)
+    keeps the ids. Each record of a list ``[start_time, end_time)`` becomes
+    one interval, sorted by start; every scalar field becomes a metadata
+    column (``Run.bins``, one bin per sample, is not exported). A row
+    without duration (``stop == start``, such as a visit seen in one sample
     before a tracking loss) holds no half-open time and cannot be a pynapple
     interval, so it is dropped with a warning. pynapple merges overlapping
     intervals and then drops all metadata, so overlapping records are
@@ -540,6 +547,7 @@ def _records_to_pynapple(
     region crossings a ``TsGroup``. An empty list or tuple is refused, unless
     ``values`` are given: then it is an empty time series, not records.
     """
+    from neurospatial._interval_table import Intervals
     from neurospatial.behavior import (
         Crossing,
         LabelEpochsResult,
@@ -550,6 +558,13 @@ def _records_to_pynapple(
         Trial,
     )
 
+    if isinstance(data, Intervals):
+        _refuse_record_arguments(values, columns, quantity, epochs)
+        metadata = {"interval_id": np.array(data.interval_ids)}
+        metadata.update({name: np.array(getattr(data, name)) for name in data.fields})
+        return _intervals_to_pynapple(
+            np.array(data.start), np.array(data.stop), metadata, "interval"
+        )
     if isinstance(data, LabelEpochsResult):
         _refuse_record_arguments(values, columns, quantity, epochs)
         labels = np.empty(len(data.labels), dtype=object)
@@ -571,8 +586,18 @@ def _records_to_pynapple(
                 "empty object directly, e.g. nap.IntervalSet(start=[], end=[]).",
             )
         )
-    kinds = (Lap, Trial, Run, RegionVisit, RegionTransition, Crossing)
     first = type(data[0])
+    if first is Trial:
+        raise TypeError(
+            _format_error(
+                "to_pynapple got a list of Trial records.",
+                why="trials are an Intervals, which carries their interval_ids "
+                "and fields to the IntervalSet metadata.",
+                fix="pass the Intervals from segment_trials() or read_trials(), "
+                "or wrap the records with neurospatial.Intervals(trials).",
+            )
+        )
+    kinds = (Lap, Run, RegionVisit, RegionTransition, Crossing)
     if first not in kinds:
         return None
     mixed = sorted({type(r).__name__ for r in data} - {first.__name__})
@@ -648,9 +673,9 @@ def _intervals_to_pynapple(
         n_empty = int(np.count_nonzero(~timed))
         warnings.warn(
             f"to_pynapple dropped {n_empty} of {starts.size} {kind} record(s) "
-            "without duration (end_time == start_time), such as a visit seen "
+            "without duration (stop == start), such as a visit seen "
             "in one sample before a tracking loss. A half-open "
-            "[start_time, end_time) window then holds no time, and a pynapple "
+            "[start, stop) window then holds no time, and a pynapple "
             "IntervalSet cannot hold an interval without duration.",
             UserWarning,
             stacklevel=_external_stacklevel(),

@@ -18,6 +18,9 @@ Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
+Intervals, Interval : Trials and other time intervals
+    Half-open [start, stop) intervals with stable ids and named fields, from
+    a detector, a task log or an NWB trials table; usable as ``epochs=``.
 Landmark, Landmarks : Named cues, monitors and objects
     Geometry an animal sees or approaches, stored with an environment and
     usable by name as ``object_positions``.
@@ -299,6 +302,8 @@ from neurospatial._exceptions import (
 
 if TYPE_CHECKING:
     # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
+    from neurospatial._interval_table import Interval as Interval
+    from neurospatial._interval_table import Intervals as Intervals
     from neurospatial.decoding import DecodingResult as DecodingResult
     from neurospatial.decoding.posterior import decode_position as decode_position
     from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
@@ -358,6 +363,8 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "Environment": ("environment", "Environment"),
+    "Interval": ("_interval_table", "Interval"),
+    "Intervals": ("_interval_table", "Intervals"),
     "Landmark": ("landmarks", "Landmark"),
     "Landmarks": ("landmarks", "Landmarks"),
     "Region": ("regions", "Region"),
@@ -400,6 +407,8 @@ __all__ = [
     "DecodingResult",
     "Environment",
     "IncompatibleEnvironmentError",
+    "Interval",
+    "Intervals",
     "Landmark",
     "Landmarks",
     "LayoutNotBuiltError",

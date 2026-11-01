@@ -46,6 +46,7 @@ from neurospatial.events._core import (
     _finite_times,
     _is_real_number,
     _validate_window,
+    empty_selection_names,
 )
 
 if TYPE_CHECKING:
@@ -831,9 +832,12 @@ def align_continuous_to_events(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
-    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+    epochs : None, (start, stop), array-like of shape (n_epochs, 2), or Intervals, optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
-        ``times``. An interval must lie inside one window to be used.
+        ``times``. An interval must lie inside one window to be used. An
+        :class:`~neurospatial.Intervals` with no windows (a condition with no
+        trials) is an empty selection: every event is ``"outside_epochs"``,
+        the summaries are NaN, and a warning says so.
     valid : ArrayLike of bool, shape (n_samples,) or (n_samples, n_features), optional
         Extra sample validity, for all features (1-D) or per feature (2-D),
         for example False where tracking confidence is low.
@@ -862,7 +866,8 @@ def align_continuous_to_events(
         time, ``dt`` is not a positive finite number, ``window_coverage``,
         ``resultant_threshold`` or ``retain_aligned`` is invalid, the signals,
         feature metadata, ``event_times`` or ``event_ids`` are malformed, or
-        every event is excluded.
+        every event is excluded by windows with duration (usually another
+        clock).
 
     Notes
     -----
@@ -1015,7 +1020,9 @@ def align_continuous_to_events(
             kept_support.append(support[observed])
 
     retained = status == "retained"
-    if not retained.any():
+    # An empty selection (an Intervals with no windows) leaves no event by
+    # design; validated_signals has warned, and the summaries stay NaN.
+    if not retained.any() and not empty_selection_names(normalized_epochs, None):
         reasons = ", ".join(
             f"{np.count_nonzero(status == reason)} {reason}"
             for reason in _EVENT_STATUSES[1:]
@@ -1053,10 +1060,23 @@ def align_continuous_to_events(
         resultant_threshold=float(resultant_threshold),
         max_gap=None if max_gap is None else float(max_gap),
         epochs=normalized_epochs,
-        values=np.concatenate(kept_values) if retain_aligned else None,
-        support=np.concatenate(kept_support) if retain_aligned else None,
+        values=_stacked(kept_values, (relative_times.size, n_features), np.float64)
+        if retain_aligned
+        else None,
+        support=_stacked(kept_support, (relative_times.size, n_features), np.bool_)
+        if retain_aligned
+        else None,
         event_ids=ids,
     )
+
+
+def _stacked(
+    chunks: list[NDArray[Any]], cell_shape: tuple[int, int], dtype: type
+) -> NDArray[Any]:
+    """Concatenate per-chunk event arrays; shape ``(0, *cell_shape)`` for none."""
+    if not chunks:
+        return np.empty((0, *cell_shape), dtype=dtype)
+    return np.concatenate(chunks)
 
 
 def _positive_number(value: Any, name: str, *, call: str) -> float:

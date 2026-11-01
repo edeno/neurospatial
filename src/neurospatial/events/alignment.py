@@ -33,6 +33,8 @@ from neurospatial.events._core import (
     _inner_bounds,
     _psth_bins,
     _validate_window,
+    empty_selection_names,
+    warn_empty_selection,
 )
 
 if TYPE_CHECKING:
@@ -131,7 +133,14 @@ def _keep_observed_events(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
-    """Keep events with observed windows and return their original input indices."""
+    """Keep events with observed windows and return their original input indices.
+
+    An empty selection (``epochs`` or ``spike_window`` without rows) keeps no
+    event; the caller warns. Non-empty windows that keep no event raise:
+    that usually means another clock.
+    """
+    if empty_selection_names(epochs, spike_window):
+        return event_times[:0], np.empty(0, dtype=np.intp)
     keep = np.ones(event_times.shape, dtype=bool)
     starts, stops = _inner_bounds(event_times + window[0], event_times + window[1])
     for windows in (epochs, spike_window):
@@ -217,11 +226,25 @@ def _peri_event_histograms(
         event_times, window, resolved_epochs, resolved_spike_window
     )
     n_events = event_times.size
+    n_bins = bin_edges.size - 1
+    if n_events == 0:
+        warn_empty_selection(
+            empty_selection_names(resolved_epochs, resolved_spike_window),
+            n_events=n_input_events,
+            result="the histogram",
+        )
+        missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
+        return (
+            missing,
+            missing.copy(),
+            np.full(n_bins, np.nan, dtype=np.float64),
+            event_indices,
+            n_input_events,
+        )
 
     # Count on the absolute clock, not on relative times: subtraction can move
     # an exact boundary spike across a bin edge.
     edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
-    n_bins = bin_edges.size - 1
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
     sem = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
     count_sum = np.zeros((n_events, n_bins), dtype=np.float64)
@@ -273,11 +296,14 @@ def peri_event_histogram(
         event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
+or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``event_times``). An event is kept only if its entire
         analysis window lies inside one recording window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. An :class:`~neurospatial.Intervals` with no windows
+        (a condition with no trials) is an empty selection: the result is NaN
+        with ``n_events == 0``, and a warning says so.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording, on the same clock as
         ``event_times``. Events are kept only if their entire analysis window
@@ -306,12 +332,14 @@ def peri_event_histogram(
         If window is invalid or inverted, bin_size is not a finite positive
         number or leaves no complete bin in the window, spike_times or
         event_times is not 1-D or holds NaN or Inf, event_times is empty,
-        time windows are invalid, or all events are dropped.
+        time windows are invalid, or windows with duration keep no event
+        (usually event times on another clock).
 
     Warns
     -----
     UserWarning
-        When the window spans more than 60 s (it may be in milliseconds).
+        When the window spans more than 60 s (it may be in milliseconds), or
+        when ``epochs`` or ``spike_window`` is an empty selection.
 
     Notes
     -----
@@ -399,11 +427,14 @@ def population_peri_event_histogram(
         left out.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
+or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``event_times``). An event is kept only if its entire
         analysis window lies inside one recording window. ``None`` (default)
-        means unrestricted.
+        means unrestricted. An :class:`~neurospatial.Intervals` with no windows
+        (a condition with no trials) is an empty selection: the result is NaN
+        with ``n_events == 0``, and a warning says so.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording, on the same clock as
         ``event_times``. Events are kept only if their entire analysis window
@@ -445,12 +476,14 @@ def population_peri_event_histogram(
         If spike_times is empty, a spike train or event_times is not 1-D or
         holds NaN or Inf, event_times is empty, window is invalid or
         inverted, bin_size is not a finite positive number or leaves no
-        complete bin, time windows are invalid, or all events are dropped.
+        complete bin, time windows are invalid, or windows with duration keep
+        no event (usually event times on another clock).
 
     Warns
     -----
     UserWarning
-        When the window spans more than 60 s (it may be in milliseconds).
+        When the window spans more than 60 s (it may be in milliseconds), or
+        when ``epochs`` or ``spike_window`` is an empty selection.
 
     Notes
     -----
