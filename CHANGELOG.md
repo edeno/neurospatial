@@ -154,11 +154,12 @@
   `occupancy`, `spike_counts`, `bin_edges`, `variable` and `units`;
   `to_dataframe()` has a `bin_center` column, `peak_location()` is in the
   variable's units and `plot()` labels the axis with the variable's name.
-- Workflow 9 in the workflows guide, "Firing Along the Route to a Goal":
-  trials from a task log, progress to each trial's instructed goal, curves
-  with shared edges per condition, an empty condition, odd/even consistency,
-  pauses and running speed, and the same curves from trials read back from
-  NWB.
+- Workflow 9 in the workflows guide, "Firing Along the Route to a Goal", in
+  four steps: the environment (wells with a size), the trials (one
+  `detect_trials` call for an alternation task, labelled with the task's
+  rule), progress to each trial's instructed goal, and tuning curves with
+  shared edges per condition, including an empty condition and running time
+  only; then what the curves can and cannot show.
 
 **Changed**
 

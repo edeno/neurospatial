@@ -210,18 +210,16 @@ def _workflows_block(marker: str) -> str:
     return matching[0]
 
 
-# Workflow 9 continues block by block: the session, then the selected trials
-# and progress, then the tuning curves.
-SETUPS["workflows_route_session"] = _workflows_block("make_w_maze().env_track")
-SETUPS["workflows_route_progress"] = "\n".join(
-    [
-        SETUPS["workflows_route_session"],
-        _workflows_block("conditions = {"),
-        _workflows_block("progress = path_progress("),
-    ]
+# Workflow 9 continues block by block: each setup is the blocks before it.
+SETUPS["workflows_route_environment"] = _workflows_block("make_w_maze().env_track")
+SETUPS["workflows_route_recording"] = "\n".join(
+    [SETUPS["workflows_route_environment"], _workflows_block("def run(start, goal")]
 )
-SETUPS["workflows_route_curves"] = "\n".join(
-    [SETUPS["workflows_route_progress"], _workflows_block("curves = {}")]
+SETUPS["workflows_route_trials"] = "\n".join(
+    [SETUPS["workflows_route_recording"], _workflows_block("trials = detect_trials(track")]
+)
+SETUPS["workflows_route_progress"] = "\n".join(
+    [SETUPS["workflows_route_trials"], _workflows_block("progress = path_progress(")]
 )
 
 

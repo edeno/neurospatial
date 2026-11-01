@@ -141,7 +141,14 @@ WORKFLOWS = GUIDE.parent / "workflows.md"
 
 
 def test_route_workflow_curves_survive_an_nwb_round_trip():
-    """Workflow 9's NWB block runs after the blocks it continues from."""
+    """Workflow 9's trials, written to NWB and read back, give the same curves."""
+    from datetime import datetime, timezone
+
+    from pynwb import NWBFile
+
+    from neurospatial.encoding import compute_tuning_curves
+    from neurospatial.io.nwb import read_trials, write_trials
+
     text = WORKFLOWS.read_text()
     blocks = re.findall(r"```python\n(.*?)\n```", text, re.DOTALL)
 
@@ -153,25 +160,33 @@ def test_route_workflow_curves_survive_an_nwb_round_trip():
     namespace = {"__name__": "__main__"}
     for marker in (
         "make_w_maze().env_track",
-        "conditions = {",
+        "def run(start, goal",
+        "trials = detect_trials(track",
         "progress = path_progress(",
         "curves = {}",
-        "write_trials(nwbfile, trials)",
     ):
         exec(compile(block(marker), str(WORKFLOWS), "exec"), namespace)
     plt.close("all")
-    assert namespace["again"].analysis_settings["epoch_interval_ids"] == [
-        0,
-        4,
-        8,
-        12,
-        16,
-        20,
-        28,
-        36,
-        40,
-        44,
-        48,
-        52,
-        56,
-    ]
+
+    nwbfile = NWBFile(
+        session_description="W-track alternation",
+        identifier="w-track-session",
+        session_start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    write_trials(nwbfile, namespace["trials"])
+    reloaded = read_trials(nwbfile)
+    chosen = reloaded[(reloaded.instructed_goal == "well_1") & reloaded.correct]
+    again = compute_tuning_curves(
+        namespace["spike_times"],
+        namespace["times"],
+        namespace["progress"],
+        bin_edges=namespace["bin_edges"],
+        variable="progress",
+        epochs=chosen,
+    )
+    expected = namespace["curves"]["A: left, correct"]
+    np.testing.assert_array_equal(again.firing_rates, expected.firing_rates)
+    assert (
+        again.analysis_settings["epoch_interval_ids"]
+        == expected.analysis_settings["epoch_interval_ids"]
+    )
