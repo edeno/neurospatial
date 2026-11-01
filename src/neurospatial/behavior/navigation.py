@@ -2108,9 +2108,8 @@ def graph_turn_sequence(
 
     Examples
     --------
-    >>> for trial in trials:  # doctest: +SKIP
-    ...     mask = (times >= trial.start_time) & (times <= trial.stop_time)
-    ...     turn_seq = graph_turn_sequence(env, position_bins[mask])
+    >>> for samples in trials.sample_slices(times):  # doctest: +SKIP
+    ...     turn_seq = graph_turn_sequence(env, position_bins[samples])
     ...     print(f"Trial: {turn_seq}")  # "left" or "right"
 
     See Also

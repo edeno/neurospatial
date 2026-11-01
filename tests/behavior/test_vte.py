@@ -1451,7 +1451,7 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
     trials = Intervals([trials[0], ms_trial, trials[1], trials[2]])
     with pytest.warns(
         UserWarning,
-        match=r"has no samples between its start and end times",
+        match=r"has no samples in \[start_time, stop_time\)",
     ) as record:
         result = compute_vte_session(
             t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS

@@ -1568,7 +1568,7 @@ def _measure_trial(
             # A trial without duration holds no sample; that is no clock error.
             return _unscored_trial(status="no_samples")
         warnings.warn(
-            f"{span} has no samples between its start and end times, so its VTE "
+            f"{span} has no samples in [start_time, stop_time), so its VTE "
             f"metrics are NaN. The recording spans [{times[0]:.3f}, "
             f"{times[-1]:.3f}] s; check that trial times are in seconds on the "
             "same clock as times.",
