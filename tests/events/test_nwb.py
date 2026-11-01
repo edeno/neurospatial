@@ -364,6 +364,7 @@ class TestIntegrationWithEventsModule:
 
     def test_write_events_from_filter_by_intervals(self, nwbfile):
         """Test writing filtered events."""
+        from neurospatial import Intervals
         from neurospatial.events import filter_by_intervals
         from neurospatial.io.nwb import read_events, write_events
 
@@ -371,7 +372,7 @@ class TestIntegrationWithEventsModule:
         events = pd.DataFrame({"timestamp": [1.0, 2.0, 5.0, 8.0, 10.0]})
 
         # Create intervals
-        intervals = pd.DataFrame({"start_time": [0.0, 4.0], "stop_time": [3.0, 9.0]})
+        intervals = Intervals.from_arrays([0.0, 4.0], [3.0, 9.0])
 
         # Filter
         filtered = filter_by_intervals(events, intervals)

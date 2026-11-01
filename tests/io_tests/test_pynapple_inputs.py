@@ -392,7 +392,7 @@ def test_filter_by_intervals_accepts_an_intervalset(nap, trials):
 def test_intervals_to_events_accepts_an_intervalset(trials):
     from neurospatial.events import intervals_to_events
 
-    starts = intervals_to_events(trials, preserve_columns=["kind"])
+    starts = intervals_to_events(trials, preserve_fields=["kind"])
     both = intervals_to_events(trials, which="both")
 
     assert starts["timestamp"].tolist() == [5.0, 50.0]
