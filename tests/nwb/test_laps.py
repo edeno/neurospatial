@@ -36,7 +36,7 @@ def _read_laps(path, name="laps"):
     from neurospatial.io.nwb import read_intervals
 
     with NWBHDF5IO(str(path), "r") as io:
-        return read_intervals(io.read(), interval_name=name)
+        return read_intervals(io.read(), interval_name=name).intervals_table()
 
 
 class TestWriteLaps:
@@ -67,9 +67,9 @@ class TestWriteLaps:
         selected = LAPS[LAPS.direction != "clockwise"]
         write_laps(empty_nwb, selected)
 
-        table = read_intervals(empty_nwb, interval_name="laps")
-        assert table.index.tolist() == [1, 2]
-        assert table["direction"].tolist() == ["counter-clockwise", "unknown"]
+        laps = read_intervals(empty_nwb, interval_name="laps")
+        assert laps.interval_ids.tolist() == [1, 2]
+        assert laps.direction.tolist() == ["counter-clockwise", "unknown"]
 
     def test_laps_are_a_time_intervals_table(self, empty_nwb):
         from pynwb.epoch import TimeIntervals
@@ -149,7 +149,9 @@ class TestWriteLaps:
         write_laps(nwbfile, LAPS)
         _save(nwbfile, tmp_path / "laps.nwb")
         table = _read_laps(tmp_path / "laps.nwb")
-        read_back = Intervals.from_dataframe(table.reset_index(), id_column="id")
+        read_back = Intervals.from_dataframe(
+            table.reset_index(), id_column="interval_id"
+        )
 
         again = create_roundtrip_nwb()
         write_laps(again, read_back)
@@ -182,7 +184,7 @@ class TestWriteLapsOverwrite:
         write_laps(empty_nwb, LAPS)
         write_laps(empty_nwb, LAPS[:1], overwrite=True)
 
-        table = read_intervals(empty_nwb, interval_name="laps")
+        table = read_intervals(empty_nwb, interval_name="laps").intervals_table()
         np.testing.assert_array_equal(table["start_time"], [1.0])
 
     def test_overwrite_with_zero_laps_removes_the_table(self, empty_nwb):
@@ -211,7 +213,7 @@ class TestWriteLapsOverwrite:
             write_laps(empty_nwb, negative, overwrite=True)
 
         kept = read_intervals(empty_nwb, interval_name="laps")
-        assert list(kept["direction"]) == [lap.direction for lap in LAPS]
+        assert list(kept.direction) == [lap.direction for lap in LAPS]
 
     @pytest.mark.parametrize("mode", ["r+", "a"])
     def test_in_place_overwrite_is_refused(self, tmp_path, mode):

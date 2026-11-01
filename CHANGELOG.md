@@ -59,6 +59,52 @@
   trials' regions:
   `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
 
+### Events and readers return Intervals
+
+**Changed**
+
+- Reading NWB interval tables and pynapple `IntervalSet` metadata: list
+  cells (NWB `tags`) become tuples and `""` becomes None; columns that cannot
+  be fields (references to other tables, nested arrays, names `Intervals`
+  uses such as `start`) are left out with a warning naming them.
+- Replay per-event functions read a pynapple `IntervalSet` with its
+  inclusive `end` (the stop is the next float above it), so a spike at `end`
+  belongs to the event, as in pynapple; an `Intervals` event with no duration
+  is refused, naming its id.
+- `events_to_intervals` returns an `Intervals` instead of a DataFrame: the
+  other columns of the start events (including `match_by`) become fields,
+  `durations` replaces the `duration` column, and an `interval_id` column
+  gives the ids, so `intervals_to_events` and back keeps them.
+- `intervals_to_events` and `filter_by_intervals` take an `Intervals` or a
+  pynapple `IntervalSet` (its metadata as fields). A DataFrame raises
+  `TypeError` naming `Intervals.from_dataframe`, which states the columns
+  and which column holds the ids. `intervals_to_events` adds the
+  `interval_id` of each event's interval and copies fields with
+  `preserve_fields=`.
+- `read_intervals(nwbfile, interval_name=...)` returns an `Intervals` for
+  any NWB TimeIntervals table: the table `id` gives the `interval_ids`, the
+  other columns become fields, `""` reads as `None` and NWB `tags` as a
+  tuple. Select rows by field, for example
+  `epochs[epochs.tags.map(lambda tags: "run" in tags)]`. `read_trials` is
+  `read_intervals(nwbfile, interval_name="trials")`.
+- `from_pynapple(IntervalSet)` returns an `Intervals` instead of an
+  `(n, 2)` array: metadata columns become fields (text `""` as `None`) and
+  an `interval_id` column gives the ids, so
+  `from_pynapple(to_pynapple(trials))` keeps ids and fields.
+- The per-event replay functions (`null_events`, `decode_intervals`,
+  `relative_rank_template`, `dataset_values` with intervals,
+  `template_match_dataset_test`, `mean_pairwise_bias`) take an `Intervals`
+  of events, read row by row in time order, so `source_events` and other
+  per-event results index its rows (`events.interval_ids[...]` gives the
+  ids). A zero-duration event is refused, not dropped.
+
+**Removed**
+
+- The `start_column` and `stop_column` arguments of `intervals_to_events`
+  and `filter_by_intervals`, and `preserve_columns` of
+  `intervals_to_events` (now `preserve_fields`). Build the intervals with
+  `Intervals.from_dataframe(table, start_column=..., stop_column=...)`.
+
 ### Trial fields, labels and wells with a size
 
 **Changed**

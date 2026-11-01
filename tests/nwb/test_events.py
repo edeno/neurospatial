@@ -2,7 +2,8 @@
 Tests for NWB events and intervals reading functions.
 
 Tests the read_events() function for reading EventsTable data from NWB files,
-and the read_intervals() function for reading TimeIntervals (trials, epochs, etc.).
+and the read_intervals() function for reading TimeIntervals (trials, epochs,
+etc.) as Intervals.
 """
 
 from __future__ import annotations
@@ -215,99 +216,89 @@ class TestReadEvents:
 
 
 class TestReadIntervals:
-    """Tests for read_intervals() function (built-in NWB TimeIntervals)."""
+    """read_intervals() reads any NWB TimeIntervals table as Intervals."""
 
     def test_read_trials(self, empty_nwb):
-        """Test reading trials table from NWB file."""
-        from neurospatial.io.nwb import read_intervals
+        from neurospatial import Intervals
+        from neurospatial.io.nwb import read_intervals, read_trials
 
-        nwbfile = empty_nwb
+        empty_nwb.add_trial_column(name="trial_type", description="Type of trial")
+        empty_nwb.add_trial(start_time=0.0, stop_time=1.0, trial_type="go")
+        empty_nwb.add_trial(start_time=2.0, stop_time=3.5, trial_type="nogo")
+        empty_nwb.add_trial(start_time=5.0, stop_time=6.0, trial_type="go")
 
-        # Add trials to NWB file
-        nwbfile.add_trial_column(name="trial_type", description="Type of trial")
-        nwbfile.add_trial(start_time=0.0, stop_time=1.0, trial_type="go")
-        nwbfile.add_trial(start_time=2.0, stop_time=3.5, trial_type="nogo")
-        nwbfile.add_trial(start_time=5.0, stop_time=6.0, trial_type="go")
+        trials = read_intervals(empty_nwb, interval_name="trials")
 
-        # Read trials
-        trials = read_intervals(nwbfile, interval_name="trials")
-
-        assert isinstance(trials, pd.DataFrame)
-        assert len(trials) == 3
-        assert "start_time" in trials.columns
-        assert "stop_time" in trials.columns
-        assert "trial_type" in trials.columns
+        assert isinstance(trials, Intervals)
+        np.testing.assert_array_equal(trials.start, [0.0, 2.0, 5.0])
+        np.testing.assert_array_equal(trials.stop, [1.0, 3.5, 6.0])
+        assert trials.fields == ("trial_type",)
+        assert trials.interval_ids.tolist() == [0, 1, 2]
+        pd.testing.assert_frame_equal(
+            read_trials(empty_nwb).intervals_table(), trials.intervals_table()
+        )
 
     def test_read_epochs(self, empty_nwb):
-        """Test reading epochs table from NWB file."""
         from pynwb.epoch import TimeIntervals
 
         from neurospatial.io.nwb import read_intervals
 
-        nwbfile = empty_nwb
-
-        # Create epochs table
         epochs = TimeIntervals(name="epochs", description="Experimental epochs")
         epochs.add_column(name="epoch_type", description="Type of epoch")
         epochs.add_row(start_time=0.0, stop_time=60.0, epoch_type="baseline")
         epochs.add_row(start_time=60.0, stop_time=180.0, epoch_type="stimulus")
         epochs.add_row(start_time=180.0, stop_time=240.0, epoch_type="recovery")
-        nwbfile.add_time_intervals(epochs)
+        empty_nwb.add_time_intervals(epochs)
 
-        # Read epochs
-        result = read_intervals(nwbfile, interval_name="epochs")
+        result = read_intervals(empty_nwb, interval_name="epochs")
 
-        assert isinstance(result, pd.DataFrame)
         assert len(result) == 3
-        assert "start_time" in result.columns
-        assert "stop_time" in result.columns
-        assert "epoch_type" in result.columns
-        assert list(result["epoch_type"]) == ["baseline", "stimulus", "recovery"]
+        assert result.epoch_type.tolist() == ["baseline", "stimulus", "recovery"]
+        stimulus = result[result.epoch_type == "stimulus"]
+        np.testing.assert_array_equal(stimulus.windows, [[60.0, 180.0]])
 
-    def test_read_custom_intervals(self, empty_nwb):
-        """Test reading custom intervals table from NWB file."""
+    def test_ids_come_from_the_table_id(self, empty_nwb):
+        """Rows are sorted by time; each keeps the id it has in the file."""
         from pynwb.epoch import TimeIntervals
 
         from neurospatial.io.nwb import read_intervals
 
-        nwbfile = empty_nwb
-
-        # Create custom intervals
         laps = TimeIntervals(name="laps", description="Lap intervals")
         laps.add_column(name="direction", description="Lap direction")
-        laps.add_row(start_time=10.0, stop_time=25.0, direction="outbound")
-        laps.add_row(start_time=30.0, stop_time=42.0, direction="inbound")
-        nwbfile.add_time_intervals(laps)
+        laps.add_row(start_time=30.0, stop_time=42.0, direction="inbound", id=7)
+        laps.add_row(start_time=10.0, stop_time=25.0, direction="outbound", id=12)
+        empty_nwb.add_time_intervals(laps)
 
-        # Read custom intervals
-        result = read_intervals(nwbfile, interval_name="laps")
+        result = read_intervals(empty_nwb, interval_name="laps")
 
-        assert len(result) == 2
-        assert result["start_time"].iloc[0] == pytest.approx(10.0)
-        assert result["stop_time"].iloc[0] == pytest.approx(25.0)
-        assert result["direction"].iloc[0] == "outbound"
+        np.testing.assert_array_equal(result.start, [10.0, 30.0])
+        assert result.interval_ids.tolist() == [12, 7]
+        assert result.sel(interval_id=7).direction == "inbound"
+        assert result.direction.to_dict() == {12: "outbound", 7: "inbound"}
 
-    def test_start_stop_time_columns(self, empty_nwb):
-        """Test that start_time and stop_time columns are present."""
+    def test_text_and_list_cells_become_field_values(self, empty_nwb):
+        """``""`` is a missing value; NWB tags (a list per row) become tuples."""
         from neurospatial.io.nwb import read_intervals
 
-        nwbfile = empty_nwb
+        empty_nwb.add_epoch_column(name="goal", description="Goal well")
+        empty_nwb.add_epoch(0.0, 3.0, tags=["run"], goal="left")
+        empty_nwb.add_epoch(4.0, 8.0, tags=["sleep", "rest"], goal="")
 
-        # Add minimal trials
-        nwbfile.add_trial(start_time=0.0, stop_time=1.0)
+        result = read_intervals(empty_nwb, interval_name="epochs")
 
-        trials = read_intervals(nwbfile, interval_name="trials")
+        assert result.tags.tolist() == [("run",), ("sleep", "rest")]
+        assert result.goal.tolist() == ["left", None]
 
-        # Required columns must be present
-        assert "start_time" in trials.columns
-        assert "stop_time" in trials.columns
+    def test_start_and_stop_are_float_seconds(self, empty_nwb):
+        from neurospatial.io.nwb import read_intervals
 
-        # Check types
-        assert trials["start_time"].dtype == np.float64
-        assert trials["stop_time"].dtype == np.float64
+        empty_nwb.add_trial(start_time=0.0, stop_time=1.0)
 
-        # Check stop > start
-        assert all(trials["stop_time"] > trials["start_time"])
+        trials = read_intervals(empty_nwb, interval_name="trials")
+
+        assert trials.start.dtype == np.float64
+        assert trials.stop.dtype == np.float64
+        assert trials.fields == ()
 
     def test_error_when_interval_not_found(self, empty_nwb):
         """Test KeyError when interval table not found."""
@@ -353,18 +344,14 @@ class TestReadIntervals:
         empty_nwb.add_invalid_time_interval(start_time=7.5, stop_time=8.0)
 
         invalid = read_intervals(empty_nwb, interval_name="invalid_times")
-        np.testing.assert_array_equal(invalid["start_time"], [2.0, 7.5])
-        np.testing.assert_array_equal(invalid["stop_time"], [3.0, 8.0])
+        np.testing.assert_array_equal(invalid.start, [2.0, 7.5])
+        np.testing.assert_array_equal(invalid.stop, [3.0, 8.0])
 
-    def test_additional_columns_preserved(self, empty_nwb):
-        """Test that additional columns from TimeIntervals are preserved."""
+    def test_additional_columns_become_fields(self, empty_nwb):
         from pynwb.epoch import TimeIntervals
 
         from neurospatial.io.nwb import read_intervals
 
-        nwbfile = empty_nwb
-
-        # Create intervals with multiple custom columns
         intervals = TimeIntervals(
             name="behavioral_states", description="Behavioral states"
         )
@@ -372,56 +359,55 @@ class TestReadIntervals:
         intervals.add_column(name="confidence", description="State confidence score")
         intervals.add_row(start_time=0.0, stop_time=10.0, state="rest", confidence=0.95)
         intervals.add_row(start_time=10.0, stop_time=30.0, state="run", confidence=0.88)
-        nwbfile.add_time_intervals(intervals)
+        empty_nwb.add_time_intervals(intervals)
 
-        result = read_intervals(nwbfile, interval_name="behavioral_states")
+        result = read_intervals(empty_nwb, interval_name="behavioral_states")
 
-        assert "state" in result.columns
-        assert "confidence" in result.columns
-        assert list(result["state"]) == ["rest", "run"]
-        assert result["confidence"].iloc[0] == pytest.approx(0.95)
+        assert result.fields == ("state", "confidence")
+        assert result.state.tolist() == ["rest", "run"]
+        assert result.confidence.dtype == np.float64
+        np.testing.assert_array_equal(result.confidence, [0.95, 0.88])
 
     def test_empty_intervals_table(self, empty_nwb):
-        """Test reading an empty TimeIntervals table."""
         from pynwb.epoch import TimeIntervals
 
+        from neurospatial import Intervals
         from neurospatial.io.nwb import read_intervals
 
-        nwbfile = empty_nwb
-
-        # Create empty intervals table
-        empty_intervals = TimeIntervals(
-            name="empty_table", description="Empty intervals"
+        empty_nwb.add_time_intervals(
+            TimeIntervals(name="empty_table", description="Empty intervals")
         )
-        nwbfile.add_time_intervals(empty_intervals)
 
-        result = read_intervals(nwbfile, interval_name="empty_table")
+        result = read_intervals(empty_nwb, interval_name="empty_table")
 
-        assert isinstance(result, pd.DataFrame)
+        assert isinstance(result, Intervals)
         assert len(result) == 0
-        assert "start_time" in result.columns
-        assert "stop_time" in result.columns
+        assert result.windows.shape == (0, 2)
 
-    def test_intervals_data_matches_original(self, empty_nwb):
-        """Test that read data matches the original data in the NWB file."""
-        from neurospatial.io.nwb import read_intervals
+    def test_written_intervals_read_back_from_a_file(self, tmp_path):
+        """Times, ids and fields survive a file, as for trials."""
+        from pynwb import NWBHDF5IO
 
-        nwbfile = empty_nwb
+        from neurospatial import Intervals
+        from neurospatial.io.nwb import read_intervals, write_trials
 
-        # Add trials with specific values
-        nwbfile.add_trial(start_time=1.5, stop_time=3.5)
-        nwbfile.add_trial(start_time=5.0, stop_time=8.0)
-
-        result = read_intervals(nwbfile, interval_name="trials")
-
-        # Get original data
-        original = nwbfile.trials
-
-        np.testing.assert_array_almost_equal(
-            result["start_time"].values, original["start_time"][:]
+        trials = Intervals.from_arrays(
+            [5.0, 1.0],
+            [6.0, 2.5],
+            interval_ids=[4, 9],
+            outcome=["reached", None],
+            speed=[30.0, 12.0],
         )
-        np.testing.assert_array_almost_equal(
-            result["stop_time"].values, original["stop_time"][:]
+        nwbfile = create_roundtrip_nwb()
+        write_trials(nwbfile, trials)
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(tmp_path / "trials.nwb"), "r") as io:
+            recovered = read_intervals(io.read(), interval_name="trials")
+
+        pd.testing.assert_frame_equal(
+            recovered.intervals_table(), trials.intervals_table()
         )
 
 
@@ -863,3 +849,19 @@ class TestEventTablesOnDisk:
         np.testing.assert_array_equal(recovered["rewarded"], [True, False, True])
         assert np.issubdtype(recovered["count"].dtype, np.integer)
         np.testing.assert_array_equal(recovered["count"], [1, 2, 3])
+
+
+def test_read_intervals_leaves_out_columns_that_cannot_be_fields(empty_nwb):
+    """Reference and reserved-name columns are left out with a warning."""
+    from neurospatial.io.nwb import read_intervals
+
+    empty_nwb.add_trial_column("goal", "instructed goal")
+    empty_nwb.add_trial_column("start", "a column named like an Intervals member")
+    empty_nwb.add_trial_column("xy", "2-D ragged values", index=True)
+    empty_nwb.add_trial(start_time=0.0, stop_time=1.0, goal="a", start=1, xy=[[1, 2]])
+    empty_nwb.add_trial(start_time=2.0, stop_time=3.0, goal="b", start=2, xy=[[3, 4]])
+    with pytest.warns(UserWarning, match=r"\['start'\].*left out"):
+        trials = read_intervals(empty_nwb, interval_name="trials")
+    assert trials.goal.tolist() == ["a", "b"]
+    assert trials.xy.tolist() == [((1, 2),), ((3, 4),)]
+    assert "start" not in trials.fields

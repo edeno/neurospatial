@@ -1310,3 +1310,67 @@ def _from_columns(
         settings={},
     )
     return intervals
+
+
+def _hashable_cell(value: Any) -> Any:
+    """A table cell as a field value: ``""`` and NaN missing, lists as tuples."""
+    value = _missing_as_none(value)
+    if isinstance(value, str) and value == "":
+        return None
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return tuple(_hashable_cell(v) for v in value)
+    return value
+
+
+def readable_fields(
+    table: pd.DataFrame, *, keep: Iterable[str] = ()
+) -> tuple[pd.DataFrame, list[str]]:
+    """The columns of a stored table that can be fields, and the others' names.
+
+    For readers of files written elsewhere (NWB tables, pynapple metadata):
+    text cells keep ``""`` as missing (``None``) and list cells become
+    tuples. A column that still cannot be a field (references to other
+    tables, a name that is not an identifier or is taken by ``Intervals``)
+    is left out, so the rest still reads; the caller warns with its names.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+    keep : iterable of str
+        Columns kept as they are (the bounds and ids).
+
+    Returns
+    -------
+    table : pandas.DataFrame
+        The kept columns, converted.
+    dropped : list of str
+        Columns left out.
+    """
+    import pandas as pd
+
+    kept = set(keep)
+    out = {}
+    dropped: list[str] = []
+    for column in table.columns:
+        name = str(column)
+        values = table[column]
+        if name in kept:
+            out[name] = values
+            continue
+        try:
+            _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
+        except ValueError:
+            dropped.append(name)
+            continue
+        if pd.api.types.is_numeric_dtype(values.dtype):
+            out[name] = values
+            continue
+        cells = [_hashable_cell(v) for v in values]
+        try:
+            for cell in cells:
+                hash(cell)
+        except TypeError:
+            dropped.append(name)
+            continue
+        out[name] = pd.Series(cells, index=table.index, dtype=object)
+    return pd.DataFrame(out, index=table.index), dropped

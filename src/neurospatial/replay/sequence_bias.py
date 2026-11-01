@@ -29,11 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._pynapple import (
-    interval_rows,
-    is_pynapple_type,
-    reads_pynapple_samples,
-)
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._validation import (
@@ -41,6 +37,7 @@ from neurospatial._validation import (
     validate_choice,
     validate_integer_at_least,
 )
+from neurospatial.replay._inputs import _event_rows
 from neurospatial.replay.rank_order import (
     _BLOCK_VALUES,
     _pooled_spikes,
@@ -371,7 +368,7 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
     ----------
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per unit.
-    intervals : NDArray[np.float64], shape (n_events, 2), or IntervalSet
+    intervals : NDArray[np.float64] of shape (n_events, 2), Intervals, or IntervalSet
         Each event's (start, stop), in seconds; spikes at ``start <= t <
         stop`` belong to it. Rows are not merged, so touching theta cycles
         stay separate events. A pynapple ``IntervalSet``'s inclusive ends
@@ -417,11 +414,7 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
     """
     operation = "mean_pairwise_bias()"
     times, labels, n_units = _sorted_spikes(spike_times)
-    bounds = (
-        interval_rows(intervals)
-        if is_pynapple_type(intervals, "IntervalSet")
-        else np.asarray(intervals, dtype=np.float64)
-    )
+    bounds = _event_rows(intervals)
     if (
         bounds.ndim != 2
         or bounds.shape[1] != 2
@@ -436,7 +429,9 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
                 f"{bounds.shape}.",
                 why="each row is one event, such as a theta cycle, whose spikes "
                 "give one skew-bias matrix",
-                fix="pass np.column_stack([starts, stops]) in seconds",
+                fix="pass an Intervals of the events (with duration: "
+                "intervals[intervals.durations > 0]) or "
+                "np.column_stack([starts, stops]) in seconds",
             )
         )
     total = np.zeros((n_units, n_units))

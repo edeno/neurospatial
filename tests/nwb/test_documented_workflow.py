@@ -61,6 +61,7 @@ def component_file(empty_nwb, tmp_path):
             id=label, spike_times=times[mask][::2], obs_intervals=coverage
         )
     empty_nwb.add_epoch(start_time=0.0, stop_time=10.0, tags=["run"])
+    empty_nwb.add_epoch(start_time=10.0, stop_time=20.0, tags=["sleep"])
     empty_nwb.add_epoch(start_time=20.0, stop_time=30.0, tags=["run"])
     path = tmp_path / "session.nwb"
     with pynwb.NWBHDF5IO(str(path), "w") as io:
@@ -81,7 +82,7 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
         assert pos.units == namespace["env"].units == "cm"
         np.testing.assert_array_equal(pos.positions, expected_positions)
         np.testing.assert_array_equal(pos.times, expected_times)
-        np.testing.assert_array_equal(namespace["epochs"], [[0, 10], [20, 30]])
+        np.testing.assert_array_equal(namespace["epochs"].windows, [[0, 10], [20, 30]])
         np.testing.assert_array_equal(units.spike_window, [[1, 9], [20, 29]])
         np.testing.assert_array_equal(rates.unit_ids, [7, 11])
         np.testing.assert_array_equal(namespace["rate_table"].index, [7, 11])

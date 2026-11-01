@@ -286,11 +286,15 @@ def test_from_pynapple_reordered_frame_returns_x_then_y() -> None:
 
 
 @_pynapple_test
-def test_from_pynapple_intervalset_returns_epoch_rows() -> None:
+def test_from_pynapple_intervalset_returns_intervals() -> None:
+    from neurospatial import Intervals
+
     epochs = from_pynapple(_gapped_support())
 
-    assert epochs.shape == (2, 2)
-    np.testing.assert_array_equal(epochs, HALF_OPEN_GAPPED)
+    assert isinstance(epochs, Intervals)
+    assert epochs.interval_ids.tolist() == [0, 1]
+    assert epochs.fields == ()
+    np.testing.assert_array_equal(epochs.windows, HALF_OPEN_GAPPED)
 
 
 @_pynapple_test
