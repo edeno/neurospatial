@@ -219,6 +219,9 @@ jobs:
           uv venv --python 3.10
           uv pip install --resolution lowest-direct -r pyproject.toml --group dev
           uv pip install --no-deps -e .
+          # As in the test job: the notebook widget view, Qt imports in the
+          # animation tests, and the ffmpeg that video export encodes with.
+          uv pip install "ipywidgets>=8.0,<9.0" qtpy "imageio-ffmpeg>=0.5.1"
           uv pip list
 
       - name: Run tests

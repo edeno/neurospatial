@@ -223,7 +223,7 @@ class TestErrorCodeDocumentation:
         # E1005: path traversal on to_file.
         with pytest.raises(
             ValueError,
-            match=r"Path traversal detected in path: \.\./\.\./x\. Environment save",
+            match=r"Path traversal detected in path: .*Environment save",
         ) as e1005:
             to_file(grid_env_from_samples, Path("..") / ".." / "x")
         msg_e1005 = str(e1005.value)

@@ -694,6 +694,7 @@ class TestEstimateColormapRangeFromSubset:
         assert isinstance(vmax, float)
         assert vmin < vmax
 
+    @pytest.mark.wallclock
     def test_fast_for_large_dataset(self):
         """Test that function completes quickly for large datasets."""
         import time
