@@ -96,6 +96,7 @@ from neurospatial.encoding._significance import (
     check_mode_keywords,
     resolve_shuffle_settings,
 )
+from neurospatial.encoding._smoothing import kernel_ratio_rates
 from neurospatial.encoding._spatial_counts import (
     FrameBinning,
     _warn_if_population_silent,
@@ -2243,54 +2244,6 @@ def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
         )
 
 
-def _directional_rate_estimator(
-    occupancy: NDArray[np.float64],
-    bandwidth: float | None,
-    bin_size: float,
-) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
-    """Rates from spike counts, with occupancy smoothed once around the circle.
-
-    Parameters
-    ----------
-    occupancy : ndarray of shape (n_bins,)
-        Unsmoothed occupancy, seconds.
-    bandwidth : float or None
-        Circular Gaussian bandwidth in radians; None for no smoothing.
-    bin_size : float
-        Angular bin width in radians.
-
-    Returns
-    -------
-    callable
-        Maps unsmoothed spike counts of shape (n_units, n_bins) to rates in
-        Hz of the same shape, counts and occupancy each smoothed around the
-        circle; NaN at headings the animal never faced, even where smoothing
-        reaches them.
-    """
-    unvisited = occupancy == 0
-    sigma_bins = None if bandwidth is None else bandwidth / bin_size
-
-    def smooth(values: NDArray[np.float64]) -> NDArray[np.float64]:
-        if sigma_bins is None:
-            return values
-        from scipy.ndimage import gaussian_filter1d
-
-        smoothed: NDArray[np.float64] = gaussian_filter1d(
-            values, sigma_bins, axis=-1, mode="wrap"
-        )
-        return smoothed
-
-    smoothed_occupancy = smooth(occupancy)
-
-    def rates(spike_counts: NDArray[np.float64]) -> NDArray[np.float64]:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            result: NDArray[np.float64] = smooth(spike_counts) / smoothed_occupancy
-        result[:, unvisited] = np.nan
-        return result
-
-    return rates
-
-
 def _count_directional(
     spike_trains: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
@@ -2917,8 +2870,11 @@ def _directional_rates(
     )
     # Rates from the unsmoothed counts; the counts stay unsmoothed for the
     # tuning test.
-    firing_rates = _directional_rate_estimator(
-        counts.occupancy, counts.bandwidth, counts.bin_size
+    firing_rates = kernel_ratio_rates(
+        counts.occupancy,
+        bandwidth=counts.bandwidth,
+        bin_size=counts.bin_size,
+        mode="wrap",
     )(counts.spike_counts)
     return DirectionalRatesResult(
         firing_rates=_to_backend(firing_rates, resolved_backend),
@@ -3582,8 +3538,11 @@ def head_direction_cell_significance(
             )
             null_binning = (
                 counts.binning,
-                _directional_rate_estimator(
-                    counts.occupancy, counts.bandwidth, counts.bin_size
+                kernel_ratio_rates(
+                    counts.occupancy,
+                    bandwidth=counts.bandwidth,
+                    bin_size=counts.bin_size,
+                    mode="wrap",
                 ),
                 counts.bin_centers,
             )
