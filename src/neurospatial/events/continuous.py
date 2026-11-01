@@ -805,7 +805,9 @@ def align_continuous_to_events(
     the time at the well before a departure, or after an arrival, stays in the
     window. "complete" asks only that the cut window was observed, each cell
     is averaged over the trials still under way at that time (``counts``),
-    and the rows are labelled by ``interval_id``.
+    and the rows are labelled by ``interval_id``. Late cells therefore
+    describe only the longer trials; to compare the same trials throughout,
+    use progress along the route (:func:`neurospatial.behavior.path_progress`).
 
     Parameters
     ----------

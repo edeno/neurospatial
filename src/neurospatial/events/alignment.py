@@ -452,9 +452,13 @@ or None
     the time at the well before a departure or after an arrival stays in. A
     bin counts for a trial only when it lies wholly inside the trial's
     window, so each bin is the mean over the trials under way for all of it
-    (``events_per_bin``), NaN where there are none. ``n_events_dropped`` also
-    counts trials holding no whole bin. To keep only events whose whole
-    window lies inside one trial, pass plain times with ``epochs=trials``.
+    (``events_per_bin``), NaN where there are none. Late bins therefore
+    describe only the longer trials, so a change late in the curve can come
+    from which trials remain rather than from time in the trial.
+    ``n_events_dropped`` also counts trials holding no whole bin. To average
+    the same trials in every bin, pass plain times with ``epochs=trials``
+    (only events whose whole window lies inside one trial), or compare trials
+    by progress along the route (:func:`neurospatial.behavior.path_progress`).
 
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
@@ -617,9 +621,13 @@ or None
     the time at the well before a departure or after an arrival stays in. A
     bin counts for a trial only when it lies wholly inside the trial's
     window, so each bin is the mean over the trials under way for all of it
-    (``events_per_bin``), NaN where there are none. ``n_events_dropped`` also
-    counts trials holding no whole bin. To keep only events whose whole
-    window lies inside one trial, pass plain times with ``epochs=trials``.
+    (``events_per_bin``), NaN where there are none. Late bins therefore
+    describe only the longer trials, so a change late in the curve can come
+    from which trials remain rather than from time in the trial.
+    ``n_events_dropped`` also counts trials holding no whole bin. To average
+    the same trials in every bin, pass plain times with ``epochs=trials``
+    (only events whose whole window lies inside one trial), or compare trials
+    by progress along the route (:func:`neurospatial.behavior.path_progress`).
 
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or

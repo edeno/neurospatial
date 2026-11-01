@@ -143,12 +143,16 @@ Read the counts with the means. Runs last about 1.3 s, so 1.5 s after
 departure only 4 of 16 trials are still under way, and the speed there is
 their mean. The PSTH counts a bin for a trial only when the trial lasts
 through all of it (`psth.events_per_bin`); no trial lasts through 1.5-1.6 s,
-so that bin is NaN, not zero. The rows of `behavior.values` (trial × time ×
+so that bin is NaN, not zero. Late points therefore describe a different
+set of trials, the slowest runs, so a rise or drop there can come from which
+trials remain rather than from time in the run. Check the counts before
+reading the end of the curve; to compare the same trials at every point, use
+progress along the route (section 3). The rows of `behavior.values` (trial × time ×
 feature) are labelled by `event_ids`, the trials' `interval_id`. Values are sampled by
 time, so the lost frames shift nothing; a gap longer than `max_gap` is NaN.
 
 To keep only trials whose whole window lies inside the trial instead,
-align plain times and restrict: `peri_event_histogram(spikes, east.start,
+so every bin averages the same trials, align plain times and restrict: `peri_event_histogram(spikes, east.start,
 (0, 1), epochs=east)`.
 
 **The same with pynapple.** `build_tensor` makes a trial × sample array.
