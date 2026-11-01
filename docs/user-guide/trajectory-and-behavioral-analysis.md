@@ -1260,7 +1260,10 @@ the trials came from.
   `trials.outcome` is a pandas Series indexed by `interval_id`, one value per
   trial, so a condition is a comparison: `trials[trials.outcome ==
   "reached"]`, and a value always stays with its trial, even in a selection
-  made in another order. A missing value is `None`, never `""`.
+  made in another order. Because the Series is labelled by trial id,
+  `left.outcome[4]` is trial 4's outcome, not the fifth row's; use
+  `left.outcome.iloc[0]` for the first row of a selection. A missing value is
+  `None`, never `""`.
 - **Your labels.** `trials.with_fields(instructed_goal=goals,
   outcome=outcomes)` adds fields from your task log or rule, one value per
   trial (a Series by `interval_id`, or an array in time order), keeping the

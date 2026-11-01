@@ -68,11 +68,13 @@
   trial wherever it is passed. Selecting with a Boolean Series
   (`trials[trials.outcome == "correct"]`) matches rows by id; a plain
   Boolean array still selects by position. The Series is a copy: editing it
-  never changes the trials.
-- `path_progress` and `distance_to_goal` refuse a number per interval in 2-D
-  and 3-D environments (a well number read as a coordinate gave wrong
-  progress without an error); the message says to map numbers to region
-  names. In 1-D a number is still a position.
+  never changes the trials. Indexing a field with a number now looks up a
+  trial id (`left.outcome[4]` is trial 4); use `.iloc[k]` for the k-th row.
+- `path_progress` and `distance_to_goal` refuse well numbers as per-trial
+  targets in 2-D and 3-D environments: a field of numbers, or integers with
+  one per trial (read as one coordinate, they gave wrong progress without an
+  error). The message says to map numbers to region names. In 1-D a number is
+  still a position.
 
 **Added**
 

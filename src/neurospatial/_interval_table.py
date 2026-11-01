@@ -324,7 +324,9 @@ class Intervals(Generic[R]):
     containers. Fields are read by name (``trials.outcome``) as a
     ``pandas.Series`` indexed by ``interval_id`` and select conditions with
     ``trials[trials.outcome == "reached"]``; :meth:`with_fields` adds your
-    own labels. The
+    own labels. Because a field is labelled by id, ``trials.outcome[4]`` is
+    the outcome of trial id 4; for the first row use
+    ``trials.outcome.iloc[0]``. The
     container passes as ``epochs=`` (its :attr:`windows`) to any analysis.
 
     Parameters
@@ -633,7 +635,17 @@ class Intervals(Generic[R]):
             msg = "Select Intervals with a Boolean mask of length n, not one bool."
             raise TypeError(msg)
         if hasattr(key, "reindex") and hasattr(key, "index"):
-            key = self._per_row(key, name="the selection")
+            aligned = self._per_row(key, name="the selection")
+            if aligned.dtype != bool:
+                raise TypeError(
+                    _format_error(
+                        "A pandas Series selects Intervals only as a Boolean mask "
+                        f"indexed by interval_id; got dtype {aligned.dtype}.",
+                        fix="select by id with sel(interval_id=...), or by "
+                        "position with series.to_numpy().",
+                    )
+                )
+            key = aligned
         if isinstance(key, (numbers.Integral, np.integer)):
             return self._records[int(key)]
         if isinstance(key, slice):
@@ -858,6 +870,13 @@ class Intervals(Generic[R]):
             return _object_array(list(zip(*columns, strict=True)))
         index = getattr(values, "index", None)
         if index is not None and hasattr(values, "reindex"):
+            if not index.is_unique:
+                repeated = index[index.duplicated()].unique()[:5].tolist()
+                msg = (
+                    f"{name} is a Series indexed by interval_id, but ids "
+                    f"{repeated} repeat; give one value per interval_id."
+                )
+                raise ValueError(msg)
             unknown = np.setdiff1d(np.asarray(index), self._ids)
             absent = np.setdiff1d(self._ids, np.asarray(index))
             if unknown.size or absent.size:
@@ -980,7 +999,17 @@ class Intervals(Generic[R]):
         data = {name: self._field_array(name) for name in self._fields}
         for name, values in columns.items():
             _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
-            data[name] = self._per_row(values, name=name)
+            if isinstance(values, str):
+                msg = (
+                    f"with_fields({name}={values!r}) needs one value per "
+                    f"interval; to copy a field, pass it: {name}=intervals.<field>."
+                )
+                raise TypeError(msg)
+            column = self._per_row(values, name=name)
+            if column.dtype.kind == "O":
+                # A task log's missing label (NaN, pd.NA) is a missing value.
+                column = _object_array([_missing_as_none(v) for v in column])
+            data[name] = column
         labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
         labelled._settings = deepcopy(self._settings)
         return labelled

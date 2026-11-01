@@ -891,6 +891,15 @@ class Regions(MutableMapping[str, Region]):
 
         if radius is not None:
             center, size = _disc_center_and_radius(point, radius)
+            taken = sorted({"center", "radius"} & set(metadata or {}))
+            if taken:
+                raise ValueError(
+                    _format_error(
+                        f"metadata keys {taken} are set by radius=.",
+                        why="a disc region records its centre and radius in metadata.",
+                        fix="rename those metadata keys.",
+                    )
+                )
             region = Region(
                 name,
                 "polygon",
