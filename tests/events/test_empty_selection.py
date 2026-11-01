@@ -59,5 +59,21 @@ def test_event_aligned_empty_selection(name):
 
     # Windows with duration that contain no event usually mean another clock.
     elsewhere = Intervals.from_arrays([40.0], [45.0])
-    with pytest.raises(ValueError, match="events"):
+    with pytest.raises(
+        ValueError, match=r"All 3 events were dropped|none of the 3 events falls"
+    ):
         call(elsewhere)
+
+
+def test_empty_selection_still_validates_the_recording():
+    none = TRIALS[TRIALS.cue == "up"]
+    with pytest.raises(ValueError, match="times"):
+        peri_event_distance_histogram(
+            SPIKES,
+            EVENTS,
+            TIMES[::-1],
+            POSITIONS,
+            (-10.0, 10.0),
+            bin_size=2.0,
+            epochs=none,
+        )

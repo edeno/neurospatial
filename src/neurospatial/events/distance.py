@@ -416,6 +416,11 @@ or None
     recorded = as_intervals(spike_window, name="spike_window")
     empty = empty_selection_names(analyzed, recorded)
     if empty:
+        # Validate the recording as any call does, so the result never
+        # depends on the selection being empty.
+        compute_cumulative_distance(
+            times, positions, max_gap=max_gap, break_before=break_before
+        )
         warn_empty_selection(empty, n_events=events.size, result="the rate")
         no_events = np.zeros((0, edges.size - 1), dtype=np.float64)
         return PeriEventDistanceResult(

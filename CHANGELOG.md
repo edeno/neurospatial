@@ -31,7 +31,9 @@ trial in one call.
   `peri_event_distance_histogram` return NaN results with `n_events == 0`
   and a warning instead of raising. Windows with duration that keep no
   event still raise (usually another clock), and a plain array without rows
-  is still refused. `spike_words` reads `epochs=` the same way.
+  is still refused. `spike_words` reads `epochs=` the same way, and
+  `bin_spikes_in_time` says the selection is empty instead of reporting a
+  zero window span.
 
 **Changed**
 
