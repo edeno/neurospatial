@@ -634,7 +634,8 @@ def _rows_and_targets(
     for every row or one per row: a sequence of region names, points or
     ``None`` in row order, or a ``pandas.Series`` indexed by
     ``interval_id``. In an environment of more than one dimension a number
-    per interval (a well number) is refused: it cannot be a point there.
+    per interval (a well number) is refused: a field (a Series) of numbers,
+    or integers with one per interval, cannot be a point there.
     """
     # A Series is one value per interval_id, whatever its values are.
     by_id = hasattr(target, "reindex") and hasattr(target, "index")
@@ -653,6 +654,23 @@ def _rows_and_targets(
                 )
             )
         return np.zeros(times.size, dtype=np.intp), [one], True
+    if (
+        point is not None
+        and n_dims > 1
+        and np.asarray(target).dtype.kind in "iu"
+        and point.size == len(intervals)
+    ):
+        raise TypeError(
+            _format_error(
+                f"{call}: {name}={list(np.asarray(target).tolist())} has one "
+                f"integer per interval ({len(intervals)}), like well numbers.",
+                why="well numbers are not region names, and integers read as one "
+                "point would silently move the target.",
+                fix=f"map the numbers to the environment's region names, e.g. "
+                f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}); for "
+                "one point, give float coordinates.",
+            )
+        )
     if rows is None:
         rows = intervals._sample_positions(times, call)
     if single:
@@ -776,8 +794,9 @@ def _target_bins(
                 f"{call}: {name}={described} is a point in a "
                 f"{env.n_dims}-D environment, but point_radius was not given.",
                 why=why,
-                fix="pass point_radius= the size of the reward site or start "
-                "zone (environment units), or define the region as a polygon.",
+                fix="give the region a size when you define it, "
+                "regions.add(name, point=..., radius=...), or pass point_radius= "
+                "the size of the reward site or start zone (environment units).",
             )
         )
     _point_target_bins(env, point, name=name, call=call)
@@ -914,16 +933,18 @@ def path_progress(
         ``goal=trials.end_region``. ``None`` marks an unknown start or goal:
         that interval's samples are NaN. Well or port numbers are not region
         names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
-        In 2-D and 3-D a number per interval is refused; in 1-D it is a
-        position, so a well number there would be read as that many units
-        along the track without an error.
+        In 2-D and 3-D a field of numbers or integers with one per interval
+        are refused; in 1-D a number is a position, so a well number there
+        would be read as that many units along the track without an error.
     point_radius : float, optional
         Size, in environment units, of point starts and goals (point regions
         and points) off a linearized track: each becomes the bins whose
         centres lie within ``point_radius`` of the point, for example the
         radius of a reward well. Required for point targets in 2-D and 3-D
         environments that are not linearized tracks (see Notes); ignored in
-        1-D and on a linearized track.
+        1-D and on a linearized track. For a well used across analyses, give
+        the region its size once instead: ``regions.add(name, point=...,
+        radius=...)``.
 
     Returns
     -------
@@ -1201,9 +1222,9 @@ def distance_to_goal(
         ``goal=trials.end_region``. ``None`` marks an unknown goal: that
         interval's samples are NaN. Well or port numbers are not region
         names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
-        In 2-D and 3-D a number per interval is refused; in 1-D it is a
-        position, so a well number there would be read as that many units
-        along the track without an error.
+        In 2-D and 3-D a field of numbers or integers with one per interval
+        are refused; in 1-D a number is a position, so a well number there
+        would be read as that many units along the track without an error.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         ``"geodesic"`` is the length of the shortest path that stays inside
         the environment, measured from the position itself; ``"euclidean"``
