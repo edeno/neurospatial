@@ -65,17 +65,17 @@ from shapely.geometry import Point
 
 from neurospatial import Environment
 
-positions = np.column_stack([
+track = np.column_stack([
     np.linspace(0.0, 100.0, 80),
     np.full(80, 50.0),
 ])
-env = Environment.from_samples(positions, bin_size=5.0)
+env = Environment.from_samples(track, bin_size=5.0)
 from neurospatial import Regions
 region_builder = Regions()
 region_builder.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
 env = env.with_regions(region_builder)
 
-trajectory = np.array([
+positions = np.array([
     [10.0, 50.0],
     [30.0, 50.0],
     [50.0, 50.0],
@@ -83,8 +83,7 @@ trajectory = np.array([
     [50.0, 50.0],
     [30.0, 50.0],
 ])
-position_bins = env.bin_at(trajectory)
-times = np.arange(len(trajectory)) * 0.1  # 10 Hz tracking
+times = np.arange(len(positions)) * 0.1  # 10 Hz tracking
 """,
     "workflows_decode_session_summary_streaming": """import os
 os.environ["MPLBACKEND"] = "Agg"
@@ -186,6 +185,17 @@ _ANIMATION_GUIDE = "docs/user-guide/animation.md"
 SETUPS["docs_animation_quick_start"] = collect_blocks(
     (ROOT / _ANIMATION_GUIDE).read_text(encoding="utf-8"), _ANIMATION_GUIDE
 )[0].code
+_TRAJECTORY_GUIDE = "docs/user-guide/trajectory-and-behavioral-analysis.md"
+# The labels and lost-tracking examples continue from the trials detected
+# from positions.
+SETUPS["docs_trials_from_positions"] = next(
+    block.code
+    for block in collect_blocks(
+        (ROOT / _TRAJECTORY_GUIDE).read_text(encoding="utf-8"), _TRAJECTORY_GUIDE
+    )
+    if "trials = detect_trials(env, times, positions, regions=list(wells))"
+    in block.code
+)
 _WORKFLOWS_GUIDE = "docs/user-guide/workflows.md"
 _WORKFLOWS_BLOCKS = collect_blocks(
     (ROOT / _WORKFLOWS_GUIDE).read_text(encoding="utf-8"), _WORKFLOWS_GUIDE

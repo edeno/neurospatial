@@ -369,7 +369,7 @@ comparison.summary_table()
   sorting; they must name the same cells in every condition.
 - Labels come from your task: a trial table converted to one label per frame,
   `laps_to_direction_labels` on detected laps,
-  `goal_pair_direction_labels` on segmented trials, or door-state intervals.
+  `goal_pair_direction_labels` on detected trials, or door-state intervals.
   Samples labeled `None` or `NaN` are left out; the direction-label
   functions give `None` to frames outside any lap or trial; pass
   `missing_label=` if your own labels use another value.
@@ -1054,8 +1054,8 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, Intervals
-from neurospatial.behavior import goal_pair_direction_labels, segment_trials
+from neurospatial import Environment
+from neurospatial.behavior import detect_trials, goal_pair_direction_labels
 from neurospatial.encoding import compute_directional_place_fields
 from neurospatial.simulation import generate_poisson_spikes
 
@@ -1087,11 +1087,9 @@ region_builder = Regions(env.regions.values())
 region_builder.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
 region_builder.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
 env = env.with_regions(region_builder)
-position_bins = env.bin_sequence(times, positions, dedup=False)
-outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
-inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
-# One table of both directions; the combined rows get new ids 0 to n-1.
-labels = goal_pair_direction_labels(times, Intervals([*outbound, *inbound]))
+# Trials run from leaving one zone to arriving at the other, in both directions.
+trials = detect_trials(env, times, positions, regions=["home", "goal"])
+labels = goal_pair_direction_labels(times, trials)
 fields = compute_directional_place_fields(env, spikes, times, positions, labels)
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
@@ -1459,7 +1457,7 @@ apart.
 The task software writes a log with one row per trial: when the trial started
 and stopped, where the animal started, the instructed goal and the outcome.
 `Intervals.from_dataframe` reads it into the same trial table that
-`segment_trials` returns, so everything below works the same way on trials you
+`detect_trials` returns, so everything below works the same way on trials you
 detected yourself.
 
 <!-- docs-test: run -->
@@ -1833,7 +1831,7 @@ used, so the selection can be reported and reproduced.
   clock of your tracking and spikes, the start well, the instructed goal and
   the outcome, one row per trial. `Intervals.from_dataframe(log)` reads it;
   pass `id_column=` if the log numbers its trials. Trials from
-  `read_trials(nwbfile)` or from `segment_trials` work the same way. Region
+  `read_trials(nwbfile)` or from `detect_trials` work the same way. Region
   names in the log must match the names of your environment's regions.
 - **Progress.** `path_progress(env, times, positions, trials, start=...,
   goal=...)` on your maze's linearized track (`env_track` for the simulated

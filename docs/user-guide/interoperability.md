@@ -478,24 +478,24 @@ likelihood instead of excluding the bin, and its uniform prior is flat over
 bins rather than over space. neurospatial gives a bin where any rate is missing
 zero probability, and its default prior is proportional to bin size.
 
-**Trials, laps, runs and region visits.** Trials and any other
-[`Intervals`](trajectory-and-behavioral-analysis.md#intervals) become an
-`IntervalSet` with one interval per row, with `interval_id` and every field as
-metadata columns. A list of `Lap`, `Run`, `RegionVisit` or `RegionTransition`
-records becomes an `IntervalSet` with one interval per record and every field
-as a metadata column (`direction` for laps; `outcome` and the region names for
-runs; `region_name`, `entry_observed` and `exit_observed` for visits). Select
-rows the way you would in pynapple:
+**Trials, laps, region visits and movement epochs.** The detectors return
+[`Intervals`](trajectory-and-behavioral-analysis.md#intervals), and any
+`Intervals` becomes an `IntervalSet` with one interval per row, with
+`interval_id` and every field as metadata columns (`start_region`,
+`end_region` and `outcome` for trials; `direction` for laps; `region`,
+`entry_observed` and `exit_observed` for visits). A list of records is
+refused: pass the `Intervals` the detector returned. Select rows the way you
+would in pynapple:
 
 ```python
-from neurospatial.behavior import detect_laps, labels_to_epochs, segment_trials
+from neurospatial.behavior import detect_laps, detect_trials, labels_to_epochs
 
-trials = segment_trials(position_bins, times, env, start_region="home", end_regions=["left", "right"])
+trials = detect_trials(env, times, positions, regions=["home", "left", "right"])
 iset = to_pynapple(trials)
 left = iset[iset.end_region == "left"]  # interval_id stays with each trial
 spikes_on_left_trials = tsgroup.restrict(left)
 
-laps = to_pynapple(detect_laps(position_bins, times, env))
+laps = to_pynapple(detect_laps(env, times, positions))
 clockwise = laps[laps.direction == "clockwise"]
 
 conditions = to_pynapple(labels_to_epochs(times, task_phase))  # label column
@@ -509,9 +509,7 @@ before a tracking loss longer than `max_gap`, holds no time and cannot be a
 pynapple interval, so it is dropped with a warning. Overlapping rows, such as
 visits to overlapping regions, are refused: pynapple merges overlapping
 intervals and drops all their metadata, so export them in separate calls. An
-empty list is also refused, because it does not say what kind of record it
-would hold; an empty `Intervals` exports as an empty `IntervalSet` with its
-columns.
+empty `Intervals` exports as an empty `IntervalSet` with its columns.
 
 **Region crossings.** pynapple time series carry no per-event labels, so
 crossings become a `TsGroup` with one `Tsd` per region and direction. Its
@@ -524,7 +522,7 @@ recording span, instead:
 from neurospatial.behavior import detect_region_crossings
 
 crossings = to_pynapple(
-    detect_region_crossings(position_bins, times, env, region_name="reward"),
+    detect_region_crossings(env, times, positions, region_name="reward"),
     epochs=(times[0], times[-1] + 1 / 30),  # through the last 30 Hz frame
 )
 reward_entries = crossings[crossings.direction == "entry"]
@@ -1030,12 +1028,13 @@ print(f"left trials: {left.interval_ids.tolist()}")
 `loaded` has the trial numbers of the log as `interval_ids`, the same fields
 in the same order, and `None` where the log had no end region. Select a
 condition by field and pass it as `epochs=`, exactly as with trials from
-`segment_trials`.
+`detect_trials`.
 
 ### Trials, laps, crossings and events
 
 `write_trials`, `write_laps`, `write_region_crossings` and `write_events` store
-behavioral records as NWB tables. A session with zero records writes no table:
+behavioral records as NWB tables. `write_trials` and `write_laps` take an
+`Intervals` and write its `interval_ids` as the table's `id`. A session with zero records writes no table:
 NWB best practice is not to write empty tables (nwbinspector reports them, and
 some of its checks crash on them, so `dandi validate` exits with an error). The
 writer writes nothing, without a warning, and reading that table back raises

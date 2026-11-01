@@ -56,7 +56,7 @@ Build one ordinary environment from disjoint component environments.
 
 `Intervals` and `Interval`, imported from the top level
 (`from neurospatial import Intervals`): half-open time windows with stable
-ids and named fields, from `segment_trials`, a task log or an NWB trials
+ids and named fields, from `detect_trials`, a task log or an NWB trials
 table, usable as `epochs=` in any analysis. See the
 [tutorial](../user-guide/trajectory-and-behavioral-analysis.md#intervals).
 
@@ -360,10 +360,12 @@ Behavioral analysis built on trajectory + environment.
 - `distance_to_goal()`, `distance_to_boundary()`, `distance_to_reward()`:
   Per-sample distance to a goal, the environment's edge or the reward
   location (GLM covariates)
-- `behavior.segmentation`: Laps, trials, region crossings,
-  velocity-based segmentation
-- `detect_region_visits()`, `region_transitions()`: Observed visits and
-  entry-to-entry transitions with original sample indices and gap censoring
+- `behavior.segmentation`: Laps, region crossings, movement epochs
+  (`segment_by_velocity`) and goal-directed runs, each as `Intervals`
+- `detect_region_visits()`: Observed visits to named regions with original
+  sample indices and gap censoring
+- `detect_trials()`, `trials_between_visits()`: Trials, the runs between
+  consecutive visits, from tracked positions or from port visits you bring
 - `behavior.decisions` / `behavior.vte`: Decision-point analysis,
   vicarious trial-and-error
 - `behavior.reward`: Reward-field construction
