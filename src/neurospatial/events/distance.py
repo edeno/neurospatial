@@ -13,7 +13,7 @@ the animal ran.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -317,6 +317,7 @@ def peri_event_distance_histogram(
         One unit's spike times, in seconds.
     event_times : NDArray[np.float64], shape (n_events,)
         Event times, in seconds (for example cue passes or zone entries).
+        For trials, pass ``trials.start`` or ``trials.stop``.
     times : NDArray[np.float64], shape (n_samples,)
         Position sample times, in seconds, strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
@@ -402,6 +403,7 @@ or None
     >>> result.firing_rate.round(2).tolist()  # two spikes 2 and 4 cm after it
     [0.0, 0.0, 2.0, 0.0]
     """
+    from neurospatial._interval_table import Intervals
     from neurospatial.behavior.trajectory import compute_cumulative_distance
 
     window = _validated_distance_window(window, bin_size)
@@ -413,6 +415,17 @@ or None
                 why="min_speed is the speed, in position units per second, below "
                 "which a step adds no distance.",
                 fix="pass min_speed=None, or a speed such as min_speed=2.0 for 2 cm/s.",
+            )
+        )
+    if isinstance(cast("object", event_times), Intervals):
+        raise ValueError(
+            _format_error(
+                "peri_event_distance_histogram: event_times is an Intervals; it "
+                "takes event times in seconds.",
+                why="distance is measured from one time per event, and an "
+                "interval has two (its start and its stop).",
+                fix="pass trials.start to measure from each start, or "
+                "trials.stop to measure from each stop",
             )
         )
     edges = _make_bin_edges(window, bin_size)

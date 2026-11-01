@@ -236,3 +236,18 @@ def test_refuses_a_negative_or_undefined_min_speed(option, value):
             bin_size=10.0,
             **{option: value},
         )
+
+
+def test_intervals_as_event_times_are_refused_with_start_or_stop_fix():
+    from neurospatial import Intervals
+
+    times = np.arange(0.0, 10.0, 0.1)
+    with pytest.raises(ValueError, match=r"(?s)Intervals.*trials\.start.*trials\.stop"):
+        peri_event_distance_histogram(
+            np.array([5.2]),
+            Intervals.from_arrays([1.0], [3.0]),
+            times,
+            (times * 10.0)[:, None],
+            (-20.0, 20.0),
+            bin_size=10.0,
+        )
