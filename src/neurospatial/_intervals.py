@@ -1336,10 +1336,7 @@ def linear_allocated_occupancy(
     )
     n_crossed = np.maximum(last_bin - first_bin + 1, 0)
     crossing = np.repeat(np.flatnonzero(moving), n_crossed)
-    group_start = np.repeat(np.cumsum(n_crossed) - n_crossed, n_crossed)
-    crossed_bin = np.repeat(first_bin, n_crossed) + (
-        np.arange(crossing.size) - group_start
-    )
+    crossed_bin = np.repeat(first_bin, n_crossed) + ragged_arange(n_crossed)
     overlap = np.minimum(high[crossing], edges[crossed_bin + 1]) - np.maximum(
         low[crossing], edges[crossed_bin]
     )
