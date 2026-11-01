@@ -8,7 +8,6 @@ events, and laps found without a template, then check the file read back.
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -41,12 +40,10 @@ def edge_case_file(tmp_path: Path) -> Path:
     )
 
     nwbfile = create_roundtrip_nwb()
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "write_.* wrote nothing", UserWarning)
-        write_trials(nwbfile, [])
-        write_laps(nwbfile, [])
-        write_region_crossings(nwbfile, [])
-        write_events(nwbfile, pd.DataFrame({"timestamp": []}), name="rewards")
+    write_trials(nwbfile, [])
+    write_laps(nwbfile, [])
+    write_region_crossings(nwbfile, [])
+    write_events(nwbfile, pd.DataFrame({"timestamp": []}), name="rewards")
     write_laps(nwbfile, REGION_LAPS, name="region_laps")
     path = tmp_path / "edge_cases.nwb"
     with NWBHDF5IO(str(path), "w") as io:

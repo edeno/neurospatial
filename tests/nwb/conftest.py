@@ -59,7 +59,7 @@ def create_empty_nwb():
     _get_pynwb()  # Ensure pynwb is available
     from pynwb import NWBFile
 
-    nwbfile = NWBFile(
+    return NWBFile(
         session_description="Test session for neurospatial NWB integration",
         identifier=str(uuid4()),
         session_start_time=datetime.now().astimezone(),
@@ -67,7 +67,6 @@ def create_empty_nwb():
         lab="Test Lab",
         institution="Test Institution",
     )
-    return nwbfile
 
 
 @pytest.fixture
@@ -422,7 +421,6 @@ def sample_nwb_with_events():
     events.add_column(
         name="direction", description="Lap direction (0=outbound, 1=inbound)"
     )
-    events.add_column(name="duration", description="Lap duration in seconds")
 
     # Add sample lap events
     rng = np.random.default_rng(42)
@@ -469,9 +467,7 @@ def sample_environment():
     region_builder = Regions(env.regions.values())
     region_builder.add("start", point=(10.0, 10.0))
     region_builder.add("goal", point=(90.0, 90.0))
-    env = env.with_regions(region_builder)
-
-    return env
+    return env.with_regions(region_builder)
 
 
 @pytest.fixture
@@ -493,8 +489,7 @@ def sample_polar_environment():
         angle_bin_size=np.pi / 6,
     )
     env = env.with_metadata(units="cm")
-    env = env.with_metadata(frame="egocentric")
-    return env
+    return env.with_metadata(frame="egocentric")
 
 
 @pytest.fixture

@@ -24,6 +24,7 @@ from shapely.geometry import Polygon
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
+from neurospatial._validation import is_integer_at_least
 from neurospatial.geometry._affine import AffineMap, _check_homogeneous
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
@@ -364,7 +365,10 @@ class RectilinearLocator(ReadOnlyState):
         object.__setattr__(self, "flat_to_active", mask_active_map(mask))
 
     def locate(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside the grid or active cells.
 
@@ -384,7 +388,8 @@ class RectilinearLocator(ReadOnlyState):
         self,
         points: NDArray[np.float64],
         error: NDArray[np.float64],
-        indexes: LookupIndexes | None = None,
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
         *,
         half_open: bool = False,
     ) -> NDArray[np.intp]:
@@ -399,16 +404,16 @@ class RectilinearLocator(ReadOnlyState):
     def _checked(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         query_points = np.atleast_2d(points)
         if query_points.ndim != 2:
-            raise ValueError(
-                f"Expected a 2D points array, got shape {query_points.shape}."
-            )
+            msg = f"Expected a 2D points array, got shape {query_points.shape}."
+            raise ValueError(msg)
         n_dims = query_points.shape[1]
         if n_dims != len(self.edges) or n_dims != len(self.shape):
-            raise ValueError(
+            msg = (
                 f"Dimensionality mismatch: points have {n_dims} dimension(s), but "
                 f"grid_edges has {len(self.edges)} and grid_shape has "
                 f"{len(self.shape)}. Points must match the grid's dimensionality."
             )
+            raise ValueError(msg)
         return query_points
 
     def locate_half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -462,7 +467,8 @@ class RectilinearLocator(ReadOnlyState):
         keep = np.asarray(keep)
         active = np.flatnonzero(mask)
         if keep.dtype.kind != "b" or keep.shape != (len(active),):
-            raise ValueError(f"keep must be a boolean array of shape ({len(active)},).")
+            msg = f"keep must be a boolean array of shape ({len(active)},)."
+            raise ValueError(msg)
         mask.ravel()[active] = keep
         return RectilinearLocator(self.edges, self.shape, mask)
 
@@ -471,7 +477,8 @@ class RectilinearLocator(ReadOnlyState):
         matrix = np.asarray(transform.A, dtype=np.float64)
         _check_homogeneous(matrix)
         if matrix.shape != (len(self.edges) + 1, len(self.edges) + 1):
-            raise ValueError("affine matrix dimensionality must match grid edges.")
+            msg = "affine matrix dimensionality must match grid edges."
+            raise ValueError(msg)
         linear = matrix[:-1, :-1]
         diagonal = np.diag(linear)
         if not np.array_equal(linear, np.diag(diagonal)) or np.any(diagonal <= 0):
@@ -619,9 +626,8 @@ class TransformedLocator(ReadOnlyState):
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         n_dims = self.affine.n_dims
         if query.ndim != 2 or query.shape[1] != n_dims:
-            raise ValueError(
-                f"Expected points of shape (M, {n_dims}), got {query.shape}."
-            )
+            msg = f"Expected points of shape (M, {n_dims}), got {query.shape}."
+            raise ValueError(msg)
         return query
 
 
@@ -655,22 +661,19 @@ class HexLocator(ReadOnlyState):
             float(self.radius),
         )
         if not np.all(np.isfinite([offset_x, offset_y, radius])) or radius <= 0:
-            raise ValueError(
+            msg = (
                 "HexLocator offsets must be finite and its radius finite and "
                 f"positive, got offset=({self.offset_x!r}, {self.offset_y!r}), "
                 f"radius={self.radius!r}."
             )
+            raise ValueError(msg)
         shape = tuple(self.centers_shape)
-        if len(shape) != 2 or any(
-            not isinstance(count, (int, np.integer))
-            or isinstance(count, (bool, np.bool_))
-            or count < 1
-            for count in shape
-        ):
-            raise ValueError(
+        if len(shape) != 2 or any(not is_integer_at_least(count, 1) for count in shape):
+            msg = (
                 "HexLocator centers_shape must be two positive row and column "
                 f"counts, got {self.centers_shape!r}."
             )
+            raise ValueError(msg)
         rows, columns = int(shape[0]), int(shape[1])
         object.__setattr__(self, "offset_x", offset_x)
         object.__setattr__(self, "offset_y", offset_y)
@@ -685,7 +688,10 @@ class HexLocator(ReadOnlyState):
         )
 
     def locate(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside active hexagonal cells.
 
@@ -696,18 +702,18 @@ class HexLocator(ReadOnlyState):
         """
         query_points = np.asarray(points, dtype=np.float64)
         if query_points.ndim != 2 or query_points.shape[1] != 2:
-            raise ValueError(
-                f"Expected points of shape (M, 2), got {query_points.shape}."
-            )
+            msg = f"Expected points of shape (M, 2), got {query_points.shape}."
+            raise ValueError(msg)
         return self.locate_within(query_points, np.zeros(query_points.shape))
 
     def locate_within(
         self,
         points: NDArray[np.float64],
         error: NDArray[np.float64],
-        indexes: LookupIndexes | None = None,
+        indexes: LookupIndexes  # noqa: ARG002  # Locator protocol signature
+        | None = None,  # Locator protocol signature  # Locator protocol signature
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active-bin indices of points known to within ``error``.
 
@@ -718,7 +724,8 @@ class HexLocator(ReadOnlyState):
         """
         query = np.asarray(points, dtype=np.float64)
         if query.ndim != 2 or query.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {query.shape}.")
+            msg = f"Expected points of shape (M, 2), got {query.shape}."
+            raise ValueError(msg)
         indices = np.full(len(query), -1, dtype=np.intp)
         finite = np.flatnonzero(np.all(np.isfinite(query), axis=1))
         if not len(finite):
@@ -845,30 +852,31 @@ def _triangle_index(
         overlapping triangles.
     """
     if points.ndim != 2 or points.shape[1] != 2:
-        raise ValueError(
-            f"Mesh points must have shape (n_points, 2), got {points.shape}."
-        )
+        msg = f"Mesh points must have shape (n_points, 2), got {points.shape}."
+        raise ValueError(msg)
     if not np.all(np.isfinite(points)):
-        raise ValueError("Mesh points must be finite.")
+        msg = "Mesh points must be finite."
+        raise ValueError(msg)
     if simplices.ndim != 2 or simplices.shape[1] != 3:
-        raise ValueError(
-            f"Mesh simplices must have shape (n_simplices, 3), got {simplices.shape}."
-        )
+        msg = f"Mesh simplices must have shape (n_simplices, 3), got {simplices.shape}."
+        raise ValueError(msg)
     out_of_range = np.flatnonzero(
         np.any((simplices < 0) | (simplices >= len(points)), axis=1)
     )
     if out_of_range.size:
-        raise ValueError(
+        msg = (
             f"Mesh triangles {out_of_range[:5].tolist()} use a vertex index "
             f"outside 0..{len(points) - 1}; the stored mesh is corrupt."
         )
+        raise ValueError(msg)
     ordered = np.sort(simplices, axis=1)
     repeated = np.flatnonzero(np.any(ordered[:, 1:] == ordered[:, :-1], axis=1))
     if repeated.size:
-        raise ValueError(
+        msg = (
             f"Mesh triangles {repeated[:5].tolist()} repeat a vertex; the stored "
             "mesh is corrupt."
         )
+        raise ValueError(msg)
 
     vertices = points[simplices]
     # Columns of the 2x2 transform scipy inverts: v0 - v2 and v1 - v2.
@@ -918,11 +926,12 @@ def _triangle_index(
     )
     if np.any(overlap):
         pairs = np.column_stack((triangles[left], triangles[right]))[overlap]
-        raise ValueError(
+        msg = (
             f"Mesh triangles overlap (stored triangle pairs {pairs[:5].tolist()}); "
             "a point could belong to more than one bin, so the stored mesh is "
             "corrupt."
         )
+        raise ValueError(msg)
     return _TriangleIndex(tree, triangles, inverse, vertices[triangles, 2])
 
 
@@ -1031,7 +1040,8 @@ class MeshLocator(ReadOnlyState):
         """Return active triangle indices for points inside the boundary."""
         pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
+            msg = f"Expected points of shape (M, 2), got {pts2d.shape}."
+            raise ValueError(msg)
         return self.locate_within(pts2d, np.zeros(pts2d.shape), indexes)
 
     def locate_within(
@@ -1040,7 +1050,7 @@ class MeshLocator(ReadOnlyState):
         error: NDArray[np.float64],
         indexes: LookupIndexes | None = None,
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return active triangle indices of points known to within ``error``.
 
@@ -1049,7 +1059,8 @@ class MeshLocator(ReadOnlyState):
         """
         pts2d = np.atleast_2d(np.asarray(points, dtype=np.float64))
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
-            raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
+            msg = f"Expected points of shape (M, 2), got {pts2d.shape}."
+            raise ValueError(msg)
         radius = _error_radius(error)
         orig_simplices = self._find_triangles(pts2d, indexes, radius)
         active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=np.intp)
@@ -1154,19 +1165,19 @@ class NearestBinLocator(ReadOnlyState):
             object.__setattr__(self, "max_distance", _lookup_radius(self.max_distance))
         centers = read_only_copy(self.centers, np.float64)
         if centers.ndim != 2:
-            raise ValueError(
-                "centers must be a 2D array with shape (n_centers, n_dims)."
-            )
+            msg = "centers must be a 2D array with shape (n_centers, n_dims)."
+            raise ValueError(msg)
         bin_indices = (
             np.arange(len(centers), dtype=np.intp)
             if self.bin_indices is None
             else read_only_copy(self.bin_indices, np.intp)
         )
         if bin_indices.shape != (len(centers),):
-            raise ValueError(
+            msg = (
                 f"bin_indices must have shape ({len(centers)},), "
                 f"got {bin_indices.shape}."
             )
+            raise ValueError(msg)
         bin_indices.setflags(write=False)
         object.__setattr__(self, "centers", centers)
         object.__setattr__(self, "bin_indices", bin_indices)
@@ -1195,7 +1206,7 @@ class NearestBinLocator(ReadOnlyState):
         error: NDArray[np.float64],
         indexes: LookupIndexes | None = None,
         *,
-        half_open: bool = False,
+        half_open: bool = False,  # noqa: ARG002  # Locator protocol signature
     ) -> NDArray[np.intp]:
         """Return nearest bin indices of points known to within ``error``.
 
@@ -1206,18 +1217,18 @@ class NearestBinLocator(ReadOnlyState):
         query_points = np.atleast_2d(points)
         n_query_points = query_points.shape[0]
         if query_points.ndim != 2:
-            raise ValueError(
-                f"Expected a 2D points array, got shape {query_points.shape}."
-            )
+            msg = f"Expected a 2D points array, got shape {query_points.shape}."
+            raise ValueError(msg)
         expected_dims = int(self.centers.shape[1])
         if query_points.shape[1] != expected_dims:
-            raise ValueError(
+            msg = (
                 f"Query points have {query_points.shape[1]} dimension(s) but this "
                 f"environment bins in {expected_dims}-D; pass points of shape "
                 f"(n_points, {expected_dims}). Note: ``to_linear()`` output and "
                 f"other 1-D linearized positions are NOT bin coordinates -- bin "
                 f"with the original {expected_dims}-D positions instead."
             )
+            raise ValueError(msg)
         final_bin_indices = np.full(n_query_points, -1, dtype=np.intp)
         if len(self.centers) == 0:
             return final_bin_indices

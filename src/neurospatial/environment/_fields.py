@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial import _constants
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._cache import (
@@ -85,25 +84,28 @@ def _interpolate(
 
     # Check field dimensionality
     if field.ndim != 1:
-        raise ValueError(
+        msg = (
             f"Field must be 1-D array (got {field.ndim}-D array). "
             f"Expected shape (n_bins,) = ({n_bins},), got shape {field.shape}."
         )
+        raise ValueError(msg)
 
     # Check field shape matches n_bins
     if field.shape[0] != n_bins:
-        raise ValueError(
+        msg = (
             f"Field shape {field.shape} must match n_bins={n_bins}. "
             f"Expected shape (n_bins,) = ({n_bins},), got ({field.shape[0]},)."
         )
+        raise ValueError(msg)
 
     # NaN marks a missing bin value; infinity has no interpolation meaning.
     if np.any(np.isinf(field)):
-        raise ValueError(
+        msg = (
             "Field contains infinite values. "
             f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
             "Infinite values are not supported in interpolation operations."
         )
+        raise ValueError(msg)
 
     # Before interpolating, which reads the coordinates before the lookup.
     points = np.asarray(points, dtype=np.float64)
@@ -114,11 +116,12 @@ def _interpolate(
     # Validate mode
     valid_modes = {"nearest", "linear"}
     if mode not in valid_modes:
-        raise ValueError(
+        msg = (
             f"mode must be one of {valid_modes} (got '{mode}'). "
             "Use 'nearest' for nearest-neighbor interpolation or 'linear' "
             "for bilinear/trilinear interpolation (grids only)."
         )
+        raise ValueError(msg)
 
     # Handle empty points array
     if points.shape[0] == 0:
@@ -406,13 +409,14 @@ def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
 def _check_kernel_mode(mode: str) -> None:
     """Refuse a diffusion-kernel mode other than the three defined ones."""
     if mode not in get_args(KernelMode):
-        raise ValueError(
+        msg = (
             f"mode must be one of 'transition', 'density' or 'average' "
             f"(got {mode!r}). Use 'transition' for mass-conserving smoothing of "
             "extensive quantities, 'density' for count-to-density (KDE), or "
             "'average' for volume-unbiased averaging of an intensive field "
             "(rate map)."
         )
+        raise ValueError(msg)
 
 
 def _compute_kernel(
@@ -535,12 +539,13 @@ def _smooth(
 
     # NaN marks a missing bin and is handled by _diffuse; infinity is invalid.
     if np.any(np.isinf(field)):
-        raise ValueError(
+        msg = (
             "Field contains infinite values. "
             f"Found {np.sum(np.isinf(field))} infinite values out of {field.size} "
             "field values. Infinite values are not supported in smoothing "
             "operations."
         )
+        raise ValueError(msg)
 
     # _diffuse checks mode and bandwidth. Apply the diffusion smoothing via the matrix-free apply-path. On a
     # NaN-free field this is a pure linear operator -- no clip / renorm -- so
@@ -563,13 +568,15 @@ def _diffuse(
     """Validate a field batch and apply the cached truncated heat operator."""
     _check_kernel_mode(mode)
     if backend not in ("numpy", "jax"):
-        raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
+        msg = f"backend must be 'numpy' or 'jax' (got '{backend}')."
+        raise ValueError(msg)
     if not (np.isfinite(bandwidth) and bandwidth > 0):
-        raise ValueError(
+        msg = (
             f"bandwidth must be finite and positive (got {bandwidth}). "
             "Bandwidth controls the spatial scale of smoothing; an infinite "
             "bandwidth has no heat kernel."
         )
+        raise ValueError(msg)
 
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on
     # return. np.ndim / np.shape avoid forcing a JAX array to NumPy.
@@ -725,29 +732,16 @@ def _compute_gaussian_kernel(
     coordinates: CartesianSystem | EgocentricPolarSystem,
     bandwidth: float,
 ) -> NDArray[np.float64]:
-    """Build/cache Gaussian weights privately and export an immutable header."""
+    """Build/cache Gaussian weights privately and export an immutable header.
+
+    The dense weight matrix ``exp(-d^2/2sigma^2)`` costs ``n_bins**2 * 8``
+    bytes of float64 memory and is built whatever the size, without a warning.
+    """
     if not np.isfinite(bandwidth) or bandwidth <= 0:
-        raise ValueError(f"bandwidth must be finite and positive (got {bandwidth}).")
+        msg = f"bandwidth must be finite and positive (got {bandwidth})."
+        raise ValueError(msg)
 
     def build() -> NDArray[np.float64]:
-        n_bins = bin_centers.shape[0]
-        # Warn (never raise) for large environments. The dense weight matrix
-        # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
-        # estimate that and proceed. Mirrors the diffusion-kernel warning and
-        # shares its threshold. It fires once per build, not per call.
-        if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
-            estimated_gb = n_bins * n_bins * 8 / 1e9
-            warnings.warn(
-                f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
-                f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
-                f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
-                f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
-                f"may be slow and memory-intensive. To avoid a dense kernel, use "
-                f"method='diffusion_kde' (matrix-free, boundary-aware, "
-                f"O(n * rank)) or increase bin_size (fewer bins).",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         kernel = _gaussian_kernel(bin_centers, coordinates, bandwidth)
         kernel.setflags(write=False)
         return kernel

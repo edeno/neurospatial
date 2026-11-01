@@ -308,8 +308,7 @@ class TestApplyTransformToEnvironment:
         data = rng.standard_normal((200, 2)) * 5
         env = Environment.from_samples(data, bin_size=2.0, name="test")
         env = env.with_metadata(units="cm")
-        env = env.with_metadata(frame="session1")
-        return env
+        return env.with_metadata(frame="session1")
 
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""
@@ -352,9 +351,13 @@ class TestApplyTransformToEnvironment:
         np.testing.assert_array_equal(transformed.contains(mapped), expected >= 0)
 
         times = np.arange(len(points)) / 10
-        np.testing.assert_allclose(
-            transformed.occupancy(times, mapped), env.occupancy(times, points)
-        )
+        # No interval joins two samples inside the arena, so occupancy is
+        # zero everywhere, and both environments say so.
+        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+            transformed_occupancy = transformed.occupancy(times, mapped)
+        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+            original_occupancy = env.occupancy(times, points)
+        np.testing.assert_allclose(transformed_occupancy, original_occupancy)
         # Applying another transform must preserve the same containment rules.
         again = transformed.apply_transform(translate(-3, 4))
         np.testing.assert_array_equal(

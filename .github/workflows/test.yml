@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - main
-      - feat/researcher-first
   # Run checks for stacked PRs as well as PRs targeting main.
   pull_request:
+  # The release workflow runs this suite before it publishes.
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+permissions:
+  contents: read
 
 # Only the latest commit of each PR needs to finish its checks.
 concurrency:
@@ -14,26 +21,49 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  quality:
+    name: Lockfile and workflow checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+
+      - name: Check uv.lock against pyproject.toml
+        run: uv lock --check
+
+      - name: Lint the workflows
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482  # v0.6.4
+        with:
+          persona: regular
+          # Report as annotations; uploading to code scanning would need
+          # security-events: write.
+          advanced-security: false
+          annotations: true
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
 
       - name: Install dependencies
         # ipywidgets is needed by the notebook widget view and qtpy by Qt
@@ -43,7 +73,7 @@ jobs:
         # cleanly on Windows runners; napari itself is exercised by the
         # dedicated "napari" job below.
         run: |
-          uv sync --extra dev --extra xarray
+          uv sync --locked --extra xarray
           uv pip install "ipywidgets>=8.0,<9.0" qtpy "imageio-ffmpeg>=0.5.1"
         env:
           UV_PYTHON: python${{ matrix.python-version }}
@@ -87,37 +117,36 @@ jobs:
           UV_PYTHON: python${{ matrix.python-version }}
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # pytest.ini deselects slow-marked tests by default, so they run only here.
+  # The default pytest options deselect slow-marked tests by default, so they run only here.
   slow-tests:
     name: Slow tests
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
 
       # The parallel video-export tests are slow-marked and skip without
       # imageio-ffmpeg, which bundles the ffmpeg that export encodes with.
       - name: Install dependencies
         run: |
-          uv sync --extra dev
+          uv sync --locked
           uv pip install "imageio-ffmpeg>=0.5.1"
 
       # Wall-clock bounds depend on the runner's hardware, so wallclock-marked
@@ -131,19 +160,21 @@ jobs:
   napari:
     name: Napari tests
     runs-on: ubuntu-latest
+    # About 10 minutes normally; a modal dialog under xvfb hangs until cancelled.
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
 
       - name: Install system dependencies
         run: |
@@ -162,10 +193,45 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --extra dev --extra animation
+          uv sync --locked --extra animation
 
       - name: Run napari tests
         run: |
           xvfb-run -a uv run pytest -n 0 -m "(napari or gui) and not slow and not wallclock"
+        env:
+          MPLBACKEND: Agg
+
+  # The dependency floors in pyproject.toml are only true if the suite passes
+  # on them: install the lowest version each declared requirement allows, on
+  # the oldest supported Python, and run the suite.
+  min-deps:
+    name: Tests at the dependency floors (Python 3.10)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+
+      - name: Install the declared floors
+        run: |
+          uv venv --python 3.10
+          uv pip install --resolution lowest-direct -r pyproject.toml --group dev
+          uv pip install --no-deps -e .
+          # As in the test job: the notebook widget view, Qt imports in the
+          # animation tests, and the ffmpeg that video export encodes with.
+          uv pip install "ipywidgets>=8.0,<9.0" qtpy "imageio-ffmpeg>=0.5.1"
+          uv pip list
+
+      - name: Run tests
+        # The oldest allowed releases deprecate APIs of their newest
+        # dependencies (matplotlib 3.10.0 and pyparsing); those warnings are
+        # not this package's, so only DeprecationWarning is let through.
+        run: >-
+          uv run --no-sync pytest -m "not slow and not napari and not gui and not wallclock"
+          -n 4 -W ignore::DeprecationWarning
         env:
           MPLBACKEND: Agg

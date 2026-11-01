@@ -55,7 +55,8 @@ def test_straight_line_interior_zero_endpoints_nan(function):
     times = np.arange(10) / 30
     positions = np.c_[np.linspace(0, 9, 10), np.linspace(0, 4.5, 10)]
     values = function(times, positions)
-    assert values.shape == (10,) and values.dtype == np.float64
+    assert values.shape == (10,)
+    assert values.dtype == np.float64
     assert np.isnan(values[[0, -1]]).all()
     np.testing.assert_allclose(values[1:-1], 0.0, atol=1e-12)
 
@@ -63,7 +64,8 @@ def test_straight_line_interior_zero_endpoints_nan(function):
 @pytest.mark.parametrize("function", PLANAR)
 def test_fewer_than_three_samples_are_all_nan(function):
     values = function([0.0, 0.1], [[0.0, 0.0], [1.0, 0.0]])
-    assert values.shape == (2,) and np.isnan(values).all()
+    assert values.shape == (2,)
+    assert np.isnan(values).all()
 
 
 def test_circle_curvature_exact_under_irregular_sampling():
@@ -255,7 +257,8 @@ def test_angular_velocity_recovers_rate_under_irregular_sampling():
     times = np.sort(np.random.default_rng(0).uniform(0, 5, 60))
     positions = circle(times)
     omega = compute_movement_angular_velocity(times, positions, max_gap=None)
-    assert omega.shape == (60,) and omega.dtype == np.float64
+    assert omega.shape == (60,)
+    assert omega.dtype == np.float64
     assert np.isnan(omega[[0, -1]]).all()
     np.testing.assert_allclose(omega[1:-1], ANGULAR_RATE, rtol=1e-9)
 
@@ -434,7 +437,8 @@ def test_smoothed_break_equals_separate_calls(uniform_circle):
     ]
     np.testing.assert_array_equal(values, separate)
     # Left turns before the break, right turns after: nothing mixes across it.
-    assert (values[1:29] > 0).all() and (values[31:59] < 0).all()
+    assert (values[1:29] > 0).all()
+    assert (values[31:59] < 0).all()
 
 
 @pytest.mark.parametrize(
@@ -506,4 +510,5 @@ def test_smoothed_stationary_path_has_no_turn():
     turns = compute_planar_turn_angles(
         times, np.zeros((3, 2)), smooth_window=0.2, max_gap=None
     )
-    assert turns.shape == (3,) and np.isnan(turns).all()
+    assert turns.shape == (3,)
+    assert np.isnan(turns).all()

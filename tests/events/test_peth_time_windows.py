@@ -22,7 +22,7 @@ def event_recording():
 
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize(
-    "keyword, kept, dropped", [("epochs", 3, 2), ("spike_window", 2, 3)]
+    ("keyword", "kept", "dropped"), [("epochs", 3, 2), ("spike_window", 2, 3)]
 )
 def test_drops_events_whose_window_leaves_recording(
     event_recording, population, keyword, kept, dropped
@@ -65,7 +65,9 @@ def test_flat_rate_recovered_at_recording_edges(event_recording, population):
 def test_all_events_dropped_error(event_recording, population):
     spikes, events, _ = event_recording
     function = population_peri_event_histogram if population else peri_event_histogram
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"events were dropped from the peri-event histogram: no event"
+    ) as error:
         function(
             [spikes] if population else spikes, events, (-0.5, 1), epochs=(5000, 6000)
         )
@@ -108,7 +110,7 @@ def test_defaults_keep_all_events(event_recording):
 
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize(
-    "window,bin_size,spikes,expected",
+    ("window", "bin_size", "spikes", "expected"),
     [
         ((0.1, 0.3), 0.1, [0.1, 0.2, 0.3], [1, 1]),
         ((0.0, 1.05), 0.25, [0.99, 1.0, 1.04], [0, 0, 0, 1]),

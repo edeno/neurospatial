@@ -29,9 +29,8 @@ def transform_normals(
     scales = np.max(np.abs(vectors), axis=1)
     active = np.any(normals.values != 0, axis=1)
     if np.any(active & (scales == 0)) or not np.all(np.isfinite(vectors)):
-        raise ValueError(
-            "Transformed face directions are not representable; rescale coordinates."
-        )
+        msg = "Transformed face directions are not representable; rescale coordinates."
+        raise ValueError(msg)
     scaled = np.divide(
         vectors, scales[:, None], out=np.zeros_like(vectors), where=scales[:, None] > 0
     )
@@ -50,9 +49,8 @@ def _center_vectors(binning: Binning) -> NDArray[np.float64]:
         if retained is not None:
             retained_pairs, vectors = retained
             if not np.array_equal(retained_pairs, pairs):
-                raise ValueError(
-                    "Combined physical vectors must follow retained pair order."
-                )
+                msg = "Combined physical vectors must follow retained pair order."
+                raise ValueError(msg)
             return vectors
         return bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]]
     centers = frame._source_locator().active_centers()
@@ -212,9 +210,8 @@ def certify_transformed_faces(
     distances = old.distance * (lengths_after / lengths_before)
     distances[positive] = lengths_after[positive]
     if np.any(positive & ((areas <= 0) | ~np.isfinite(areas))):
-        raise ValueError(
-            "Transformed positive face areas are not representable; rescale coordinates."
-        )
+        msg = "Transformed positive face areas are not representable; rescale coordinates."
+        raise ValueError(msg)
     with np.errstate(over="ignore", divide="ignore", invalid="ignore", under="ignore"):
         conductance = areas / distances
         rates = conductance / np.minimum(

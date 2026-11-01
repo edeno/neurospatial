@@ -638,14 +638,14 @@ class TestWriteEnvironment:
 
         # Modify environment
         modified_env = sample_environment
-        modified_env = modified_env.with_metadata(units="meters")
+        modified_env = modified_env.with_metadata(units="m")
 
         # Should succeed with overwrite=True
         write_environment(empty_nwb, modified_env, overwrite=True)
 
         # Check new data is present
         record = empty_nwb.analysis["spatial_environment"]
-        assert "meters" in record.description
+        assert '"units": "m"' in record.description
 
     def test_overwrite_in_a_file_opened_for_writing_is_refused(
         self, empty_nwb, sample_environment, tmp_path
@@ -657,7 +657,8 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         with pynwb.NWBHDF5IO(str(path), "w") as io:
             io.write(empty_nwb)
-        replacement = sample_environment.rebin(2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            replacement = sample_environment.rebin(2)
         with pynwb.NWBHDF5IO(str(path), "r+") as io:
             nwbfile = io.read()
             with pytest.raises(NotImplementedError, match="mode='r\\+'"):
@@ -679,7 +680,8 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         with pynwb.NWBHDF5IO(str(source), "w") as io:
             io.write(empty_nwb)
-        replacement = sample_environment.rebin(2)
+        with pytest.warns(UserWarning, match="not evenly divisible"):
+            replacement = sample_environment.rebin(2)
         assert replacement.n_bins != sample_environment.n_bins
         with pynwb.NWBHDF5IO(str(source), "r") as io:
             nwbfile = io.read()
@@ -1660,20 +1662,18 @@ def _create_regular_grid_env():
 
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 100, (1000, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
-    return env
+    return Environment.from_samples(positions, bin_size=5.0)
 
 
 def _create_hexagonal_env():
     """Create a Hexagonal layout environment for testing."""
     from neurospatial import Environment
 
-    env = Environment.from_layout(
+    return Environment.from_layout(
         create_layout(
             "Hexagonal", hexagon_width=5.0, dimension_ranges=[(0, 50), (0, 50)]
         )
     )
-    return env
 
 
 def _create_graph_env():
@@ -1689,10 +1689,9 @@ def _create_graph_env():
         graph.add_edge(i, i + 1, distance=20.0)
 
     edge_order = [(i, i + 1) for i in range(4)]
-    env = Environment.from_graph(
+    return Environment.from_graph(
         graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0, track_width=5.0
     )
-    return env
 
 
 def _create_masked_grid_env():
@@ -1703,8 +1702,7 @@ def _create_masked_grid_env():
     mask[2:8, 2:8] = True
     x_edges = np.linspace(0, 50, 11)
     y_edges = np.linspace(0, 50, 11)
-    env = Environment.from_grid_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
-    return env
+    return Environment.from_grid_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
 
 
 def _create_image_mask_env():
@@ -1715,8 +1713,7 @@ def _create_image_mask_env():
     center = (25, 25)
     radius = 20
     mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
-    env = Environment.from_pixel_mask(image_mask=mask, pixel_size=2.0)
-    return env
+    return Environment.from_pixel_mask(image_mask=mask, pixel_size=2.0)
 
 
 def _create_polygon_env():
@@ -1726,8 +1723,7 @@ def _create_polygon_env():
     from neurospatial import Environment
 
     boundary = Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)])
-    env = Environment.from_polygon(boundary, bin_size=5.0)
-    return env
+    return Environment.from_polygon(boundary, bin_size=5.0)
 
 
 def _create_triangular_mesh_env():
@@ -1737,10 +1733,9 @@ def _create_triangular_mesh_env():
     from neurospatial import Environment
 
     boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
-    env = Environment.from_layout(
+    return Environment.from_layout(
         create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=5.0)
     )
-    return env
 
 
 def _create_3d_grid_env():
@@ -1749,8 +1744,7 @@ def _create_3d_grid_env():
 
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 50, (500, 3))
-    env = Environment.from_samples(positions, bin_size=5.0)
-    return env
+    return Environment.from_samples(positions, bin_size=5.0)
 
 
 # Layout factory registry for parametrized tests
@@ -1959,11 +1953,15 @@ class TestEnvironmentFromNwb:
         for module in [m for m in sys.modules if m.split(".")[0] == "pynwb"]:
             monkeypatch.delitem(sys.modules, module)
         monkeypatch.setitem(sys.modules, "hdmf", None)
-        with pytest.raises(ModuleNotFoundError) as caught:
+
+        def attempt():
             if direction == "from_nwb":
                 Environment.from_nwb(empty_nwb)
             else:
                 sample_environment.to_nwb(empty_nwb)
+
+        with pytest.raises(ModuleNotFoundError) as caught:
+            attempt()
         assert caught.value.name == "hdmf"
         assert "pynwb is required" not in str(caught.value)
 
@@ -2003,10 +2001,10 @@ class TestEnvironmentToNwb:
             sample_environment.to_nwb(empty_nwb)
 
         # Should succeed with overwrite=True
-        sample_environment = sample_environment.with_metadata(units="meters")
+        sample_environment = sample_environment.with_metadata(units="m")
         sample_environment.to_nwb(empty_nwb, overwrite=True)
 
-        assert "meters" in empty_nwb.analysis["spatial_environment"].description
+        assert '"units": "m"' in empty_nwb.analysis["spatial_environment"].description
 
     def test_to_nwb_roundtrip(self, tmp_path, sample_environment):
         """Test that to_nwb and from_nwb work together."""

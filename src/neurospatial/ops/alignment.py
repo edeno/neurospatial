@@ -19,7 +19,6 @@ with :func:`~neurospatial.ops.resample_field`.
 from __future__ import annotations
 
 import numbers
-import warnings
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -59,18 +58,20 @@ def _validated_probabilities(
         ``source_probs`` as a float array.
     """
     if source_env.n_dims != target_env.n_dims:
-        raise ValueError(
+        msg = (
             f"Source and target environments must have the same number of dimensions: "
             f"{source_env.n_dims} != {target_env.n_dims}."
         )
+        raise ValueError(msg)
 
     probs = np.asarray(source_probs, dtype=np.float64)
     n_src = source_env.n_bins
     if probs.ndim != 1 or probs.shape[0] != n_src:
-        raise ValueError(
+        msg = (
             f"source_probs must be a 1D array of length {n_src}, got shape "
             f"{probs.shape}."
         )
+        raise ValueError(msg)
     bad = np.flatnonzero(~np.isfinite(probs))
     if bad.size:
         raise ValueError(
@@ -84,18 +85,21 @@ def _validated_probabilities(
             )
         )
     if np.any(probs < 0):
-        raise ValueError("source_probs must be nonnegative.")
+        msg = "source_probs must be nonnegative."
+        raise ValueError(msg)
 
     if mode not in ("nearest", "inverse-distance-weighted"):
-        raise ValueError(
+        msg = (
             f"Unrecognized mode '{mode}'. "
             "Supported: 'nearest' or 'inverse-distance-weighted'."
         )
+        raise ValueError(msg)
     if mode == "inverse-distance-weighted" and not is_integer_at_least(n_neighbors, 1):
-        raise ValueError(
+        msg = (
             f"In 'inverse-distance-weighted' mode, n_neighbors must be "
             f"an integer >= 1 (got n_neighbors={n_neighbors!r})."
         )
+        raise ValueError(msg)
     if not (np.isfinite(eps) and eps > 0):
         raise ValueError(
             _format_error(
@@ -186,10 +190,11 @@ def _check_source_transform(source_transform: object, n_dims: int) -> None:
             )
         )
     if source_transform.n_dims != n_dims:
-        raise ValueError(
+        msg = (
             f"source_transform is {source_transform.n_dims}-D but the "
             f"environments are {n_dims}-D."
         )
+        raise ValueError(msg)
 
 
 def _check_max_distance(max_distance: object) -> None:
@@ -199,11 +204,11 @@ def _check_max_distance(max_distance: object) -> None:
     if isinstance(max_distance, (bool, np.bool_)) or not isinstance(
         max_distance, (numbers.Real, np.floating, np.integer)
     ):
-        raise TypeError(
-            f"max_distance must be a distance or None, got {max_distance!r}."
-        )
+        msg = f"max_distance must be a distance or None, got {max_distance!r}."
+        raise TypeError(msg)
     if np.isnan(float(max_distance)) or float(max_distance) < 0:
-        raise ValueError(f"max_distance must be zero or more, got {max_distance!r}.")
+        msg = f"max_distance must be zero or more, got {max_distance!r}."
+        raise ValueError(msg)
 
 
 def _check_max_outside_fraction(max_outside_fraction: object) -> None:
@@ -211,15 +216,17 @@ def _check_max_outside_fraction(max_outside_fraction: object) -> None:
     if isinstance(max_outside_fraction, (bool, np.bool_)) or not isinstance(
         max_outside_fraction, (numbers.Real, np.floating, np.integer)
     ):
-        raise TypeError(
+        msg = (
             "max_outside_fraction must be a number from 0 to 1, got "
             f"{max_outside_fraction!r}."
         )
+        raise TypeError(msg)
     if not 0.0 <= float(max_outside_fraction) <= 1.0:
-        raise ValueError(
+        msg = (
             "max_outside_fraction must be from 0 to 1 (a share of the total "
             f"probability), got {max_outside_fraction!r}."
         )
+        raise ValueError(msg)
 
 
 def _outside_target(
@@ -365,8 +372,8 @@ def map_probabilities(
     Raises
     ------
     ValueError
-        If `source_probs` has incorrect shape or NaN, infinite or negative
-        values; if dims mismatch, `source_transform` included; if `mode` is
+        If either environment has zero bins; if `source_probs` has incorrect
+        shape or NaN, infinite or negative values; if dims mismatch, `source_transform` included; if `mode` is
         unknown; if `n_neighbors`, `eps`, `max_distance` or
         `max_outside_fraction` is invalid; or if more than
         `max_outside_fraction` of the probability lies outside the target
@@ -458,14 +465,18 @@ def map_probabilities(
     n_src = source_env.n_bins
     n_tgt = target_env.n_bins
 
-    # Handle empty environments
     if n_src == 0 or n_tgt == 0:
-        warnings.warn(
-            "One of the environments has zero bins; returning zeros.",
-            category=UserWarning,
-            stacklevel=2,
+        empty = "source_env" if n_src == 0 else "target_env"
+        raise ValueError(
+            _format_error(
+                f"map_probabilities() got {empty} with zero bins.",
+                why="Why: with no bins there is no place to take probability "
+                "from or put it, and zeros would read as zero probability "
+                "instead of missing data.",
+                fix="build both environments from positions that cover the "
+                "space, so each has at least one bin",
+            )
         )
-        return np.zeros(n_tgt, dtype=float)
 
     src_centers = (
         source_env.bin_centers

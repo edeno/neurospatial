@@ -551,9 +551,9 @@ class TestPlotBasisFunctions:
 
     def test_returns_figure(self, simple_2d_env):
         """Should return a matplotlib Figure."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")  # Non-interactive backend
+        mpl.use("Agg")  # Non-interactive backend
 
         basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, n_examples=4)
@@ -565,9 +565,9 @@ class TestPlotBasisFunctions:
 
     def test_respects_indices(self, simple_2d_env):
         """Should plot specified indices."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
 
         basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, indices=[0, 1, 2])
@@ -602,17 +602,18 @@ class TestEstimateSpectralRadius:
         laplacian = self._laplacian(simple_2d_env)
 
         def _raise_value_error(*args, **kwargs):
-            raise ValueError("malformed input")
+            msg = "malformed input"
+            raise ValueError(msg)
 
         monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_value_error)
 
         with pytest.raises(ValueError, match="malformed input"):
             _estimate_spectral_radius(laplacian)
 
-    def test_estimate_spectral_radius_arpack_failure_warns_and_bounds(
+    def test_estimate_spectral_radius_arpack_failure_returns_bound(
         self, monkeypatch, simple_2d_env
     ):
-        """An ARPACK convergence failure warns and returns the max-degree bound."""
+        """An ARPACK convergence failure returns the max-degree bound, silently."""
         import scipy.sparse.linalg
         from scipy.sparse.linalg import ArpackNoConvergence
 
@@ -621,12 +622,12 @@ class TestEstimateSpectralRadius:
         laplacian = self._laplacian(simple_2d_env)
 
         def _raise_arpack(*args, **kwargs):
-            raise ArpackNoConvergence("did not converge", np.array([]), np.array([]))
+            msg = "did not converge"
+            raise ArpackNoConvergence(msg, np.array([]), np.array([]))
 
         monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
 
-        with pytest.warns(UserWarning, match="did not converge"):
-            radius = _estimate_spectral_radius(laplacian)
+        radius = _estimate_spectral_radius(laplacian)
 
         expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
         assert radius == pytest.approx(expected_bound)

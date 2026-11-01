@@ -508,8 +508,7 @@ class TestPeriEventHistogram:
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(spike_times, event_times, window)
+        result = peri_event_histogram(spike_times, event_times, window)
 
         assert np.all(np.isnan(result.sem))
 

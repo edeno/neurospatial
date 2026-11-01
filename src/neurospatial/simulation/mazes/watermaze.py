@@ -219,13 +219,14 @@ def make_watermaze(
     platform_x, platform_y = (float(v) for v in platform_position)
     distance = np.hypot(platform_x, platform_y)
     if not np.isfinite(distance) or distance + dims.platform_radius > radius:
-        raise ValueError(
+        msg = (
             f"platform_position={platform_position!r} puts the "
             f"{dims.platform_radius} cm-radius platform where it does not fit in "
             f"the pool, {radius} cm in radius around (0, 0): its centre must be at "
             f"most {radius - dims.platform_radius:.4g} cm from the pool centre. "
             "Move the platform toward the centre or use a smaller platform_radius."
         )
+        raise ValueError(msg)
 
     # Create circular pool polygon
     pool_polygon = make_circular_arena(

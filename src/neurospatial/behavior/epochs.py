@@ -298,7 +298,7 @@ def restrict(
     >>> from neurospatial.behavior import restrict
     >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> positions = np.column_stack([times, times])
-    >>> t, pos = restrict(times, positions, epochs=(1.0, 3.0))
+    >>> t, pos = restrict(times, positions, epochs=(1.0, 2.5))
     >>> t
     array([1., 2.])
     """
@@ -309,11 +309,12 @@ def restrict(
     for i, arr in enumerate(arrays):
         arr_np = np.asarray(arr)
         if len(arr_np) != n:
-            raise ValueError(
+            msg = (
                 f"array at position {i} has len {len(arr_np)} but must be "
                 f"aligned to times (len {n}); every *arrays entry must have the "
                 "same first-axis length as times."
             )
+            raise ValueError(msg)
         coerced.append(arr_np)
 
     mask = in_epochs(times_arr, epochs, closed=closed)

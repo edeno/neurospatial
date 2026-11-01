@@ -177,6 +177,9 @@ _FREE_PREDICATES = {
 }
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*no time was spent with the nearest object:UserWarning"
+)
 def test_shuffle_predicates_forward_time_windows(
     significance_family, significance_recording, monkeypatch
 ):

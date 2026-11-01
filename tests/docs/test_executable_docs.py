@@ -51,10 +51,11 @@ from types import SimpleNamespace
 
 from neurospatial import Environment
 
-positions = np.array(
-    [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    dtype=float,
-)
+side = np.linspace(0.0, 10.0, 25, endpoint=False)
+corners = np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]])
+positions = np.concatenate(
+    [a + (b - a) * side[:, None] / 10.0 for a, b in zip(corners, np.roll(corners, -1, axis=0))]
+)  # one lap around a 10 x 10 arena
 times = np.arange(len(positions), dtype=float) / 30.0  # 30 Hz tracking
 env = Environment.from_samples(positions, bin_size=1.0)
 result = SimpleNamespace(environment=env, regions={})
@@ -141,7 +142,7 @@ def load_all_neurons():
 }
 _FENCE = re.compile(
     r"^(?P<indent>[ \t]*)```python[ \t]*\n(?P<body>.*?)^(?P=indent)```[ \t]*$",
-    re.M | re.S,
+    re.MULTILINE | re.DOTALL,
 )
 _MARKER = re.compile(
     r"<!--\s*docs-test:\s*(?P<kind>run|skip|raises)\b(?P<arg>[^>]*?)\s*-->"

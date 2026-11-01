@@ -38,7 +38,7 @@ def fitted(recording):
 
 
 @pytest.mark.parametrize(
-    "method, name, value",
+    ("method", "name", "value"),
     [
         ("binned", "method", "gaussian_kde"),
         ("binned", "bandwidth", 2.0),

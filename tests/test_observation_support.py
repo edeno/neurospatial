@@ -128,7 +128,8 @@ def test_infinite_position_is_refused_not_missing(bad):
         )
     message = str(caught.value)
     assert "row 2, column 1" in message
-    assert "\nWhy: " in message and "\nFix: " in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message
 
 
 def test_infinite_position_is_refused_by_a_public_analysis():
@@ -146,7 +147,8 @@ def test_infinite_signal_is_refused_in_any_feature():
 
 
 def test_isolated_finite_sample():
-    s = _support([0, 0.1, 5, 10, 10.1])
+    with pytest.warns(UserWarning, match="longer than max_gap"):
+        s = _support([0, 0.1, 5, 10, 10.1])
     assert s.run_ids[2] == -1
     assert s.sample_valid[2]
     np.testing.assert_array_equal(s.run_ids, [0, 0, -1, 1, 1])
@@ -167,7 +169,9 @@ def test_sample_in_epochs_excludes_the_stop_instant():
     """The interval ending at an epoch's stop is inside; that sample is not."""
     s = _support([0, 0.5, 1.0, 1.5, 2.0], epochs=[(0, 1.0), (1.5, 3.0)])
     np.testing.assert_array_equal(s.sample_in_epochs, [True, True, False, True, True])
-    np.testing.assert_array_equal(_support([0, 1.0]).sample_in_epochs, [True, True])
+    with pytest.warns(UserWarning, match="excluded ALL"):
+        one_interval = _support([0, 1.0])
+    np.testing.assert_array_equal(one_interval.sample_in_epochs, [True, True])
 
 
 def test_max_gap_none_keeps_long_interval():
@@ -208,7 +212,8 @@ def test_invalid_break_before_raises(bad):
 def test_validate_break_before_none_and_valid():
     assert validate_break_before(None, 3, call="f") is None
     out = validate_break_before([True, False, True], 3, call="f")
-    assert out is not None and out.dtype == bool
+    assert out is not None
+    assert out.dtype == bool
 
 
 @pytest.mark.parametrize("n", [0, 1])
@@ -269,7 +274,9 @@ def test_arrays_are_read_only():
     ],
 )
 def test_empty_input_raises_actionable_error(name, kwargs):
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError, match=r"got no samples: times and positions are empty"
+    ) as excinfo:
         getattr(behavior, name)(np.array([]), np.zeros((0, 2)), **kwargs)
     what, why, fix = str(excinfo.value).split("\n")
     assert what == f"{name}() got no samples: times and positions are empty."
@@ -350,7 +357,9 @@ def test_signals_one_dimensional_signal_is_one_feature():
 
 def test_signals_shared_gate_warns_once_for_many_features():
     times = [0.0, 0.1, 0.2, 1.0, 1.1]
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ) as record:
         _signals(times, np.ones((5, 3)), max_gap=0.05)
     assert len(record) == 1
 

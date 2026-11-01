@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
@@ -11,7 +10,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._targets import validate_bin_indices
 from neurospatial.geometry import (
     Binning,
@@ -141,7 +139,10 @@ def _bin_center_of(
 
 
 def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int]:
-    """Shortest distance-weighted path between two resolved active bins."""
+    """Shortest distance-weighted path between two resolved active bins.
+
+    Returns an empty list when the bins are in disconnected components.
+    """
     if source_idx == target_idx:
         return [source_idx]
 
@@ -154,11 +155,6 @@ def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int
         )
         return list(path)
     except nx.NetworkXNoPath:
-        warnings.warn(
-            f"No path found between active bin {source_idx} and {target_idx}.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return []
 
 
@@ -172,7 +168,8 @@ def _distance_to(
 ) -> NDArray[np.float64]:
     """Distance from every bin to the nearest of the resolved target bins."""
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+        msg = f"metric must be 'euclidean' or 'geodesic', got '{metric}'"
+        raise ValueError(msg)
     if metric == "euclidean":
         require_cartesian(
             coordinates,
@@ -197,10 +194,12 @@ def _reachable_from(
 ) -> NDArray[np.bool_]:
     """Bins reachable from a resolved active bin, optionally within a radius."""
     if radius is not None and radius < 0:
-        raise ValueError(f"radius must be non-negative or None. Got radius={radius}")
+        msg = f"radius must be non-negative or None. Got radius={radius}"
+        raise ValueError(msg)
 
     if metric not in ("hops", "geodesic"):
-        raise ValueError(f"metric must be 'hops' or 'geodesic'. Got metric='{metric}'")
+        msg = f"metric must be 'hops' or 'geodesic'. Got metric='{metric}'"
+        raise ValueError(msg)
 
     # Initialize result mask
     reachable = np.zeros(graph.number_of_nodes(), dtype=bool)
@@ -236,15 +235,19 @@ def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.intp]
     return components
 
 
-def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.intp]]:
-    """Bins grouped by hop distance from ``center_bin``, up to ``hops``."""
-    # Type validation for hops
+def _rings(graph: nx.Graph, center_bin: int, *, hops: object) -> list[NDArray[np.intp]]:
+    """Bins grouped by hop distance from ``center_bin``, up to ``hops``.
+
+    ``hops`` is the caller's argument as given, checked here.
+    """
     if not isinstance(hops, (int, np.integer)):
-        raise TypeError(f"hops must be an integer, got {type(hops).__name__}")
+        msg = f"hops must be an integer, got {type(hops).__name__}"
+        raise TypeError(msg)
 
     # Validate hops is non-negative
     if hops < 0:
-        raise ValueError(f"hops must be non-negative (>= 0), got {hops}")
+        msg = f"hops must be non-negative (>= 0), got {hops}"
+        raise ValueError(msg)
 
     # {node: hop distance}; an isolated center yields only ring 0.
     distances = nx.single_source_shortest_path_length(graph, center_bin, cutoff=hops)

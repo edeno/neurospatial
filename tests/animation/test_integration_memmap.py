@@ -32,7 +32,8 @@ def test_a_lazy_session_is_read_only_at_the_shown_time(env):
             return n_rows
 
         def __array__(self, *args):
-            raise AssertionError("animate_fields must not materialize the session")
+            msg = "animate_fields must not materialize the session"
+            raise AssertionError(msg)
 
         def __getitem__(self, index):
             self.reads.append(index)

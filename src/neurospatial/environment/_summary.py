@@ -72,8 +72,7 @@ def _repr(
     if len(name) > 40:
         name = name[:37] + "..."
 
-    if layout_type.endswith("Layout"):
-        layout_type = layout_type[:-6]  # Remove 'Layout' suffix
+    layout_type = layout_type.removesuffix("Layout")  # Remove 'Layout' suffix
 
     return f"{class_name}(name={name!r}, {n_dims}D, {n_bins} bins, {layout_type})"
 
@@ -241,8 +240,7 @@ def _info(
         lines.append(f"Regions: {n_regions} defined")
         # Show region names if not too many
         if n_regions <= 5:
-            for region_name in region_names:
-                lines.append(f"  - {region_name}")
+            lines.extend(f"  - {region_name}" for region_name in region_names)
         else:
             lines.append("  (use env.regions to inspect all regions)")
     else:

@@ -56,10 +56,11 @@ def add_polygons(
     # Invalid geometry still loads, so it can be repaired; saving validates it.
     for polygon, name, _, _ in polygons:
         if polygon.geom_type != "Polygon":
-            raise TypeError(
+            msg = (
                 f"Initial polygon '{name}' must be a shapely Polygon, "
                 f"not {polygon.geom_type}."
             )
+            raise TypeError(msg)
     if not polygons:
         return
     vertices: list[NDArray[np.float64]] = []
@@ -102,11 +103,17 @@ def guard_identity_defaults(layer: Any) -> None:
     # Mutate defaults only: current_properties' setter can overwrite the
     # selected shapes themselves in select mode.
     layer.events.current_properties.connect(
-        lambda event: reset_identity_defaults(layer)
+        lambda event: reset_identity_defaults(  # noqa: ARG005  # napari event callback signature
+            layer
+        )  # napari event callback signature  # napari event callback signature
     )
-    layer.events.highlight.connect(lambda event: reset_identity_defaults(layer))
+    layer.events.highlight.connect(
+        lambda event: reset_identity_defaults(layer)  # noqa: ARG005  # napari event callback signature
+    )  # napari event callback signature
     # Every features assignment, paste and removal emits this event.
-    layer.events.features.connect(lambda event: _on_features_changed(layer))
+    layer.events.features.connect(
+        lambda event: _on_features_changed(layer)  # noqa: ARG005  # napari event callback signature
+    )  # napari event callback signature
     layer.metadata["_polygon_defaults_guard"] = True
 
 

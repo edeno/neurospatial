@@ -22,14 +22,14 @@ Examples
 
 from __future__ import annotations
 
-import warnings
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 # Re-export TrackGraphResult from helpers module for public API
+from neurospatial._exceptions import _format_error
 from neurospatial.annotation._track_helpers import (
     TrackGraphResult,
     prepare_track_graph_result,
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from napari.utils.events import Event
     from numpy.typing import NDArray
 
+    from neurospatial.annotation._track_types import TrackGraphMode
     from neurospatial.ops.transforms import VideoCalibration
 
 __all__ = [
@@ -61,12 +62,11 @@ def _apply_initial_edges(
     state: TrackBuilderState,
     initial_edges: list[tuple[int, int]],
 ) -> None:
-    """Add caller-supplied ``initial_edges`` to ``state``, warning on invalid ones.
+    """Add caller-supplied ``initial_edges`` to ``state``.
 
     ``TrackBuilderState.add_edge`` returns ``False`` when an edge references a
-    non-existent node, is a self-loop, or duplicates an existing edge. Rather
-    than silently discarding such entries, emit a ``UserWarning`` naming the
-    offending edge so the caller knows it was ignored.
+    non-existent node, is a self-loop, or duplicates an existing edge. Such an
+    entry raises rather than being dropped.
 
     Parameters
     ----------
@@ -74,20 +74,27 @@ def _apply_initial_edges(
         The builder state to add edges to.
     initial_edges : list of tuple of int
         Edge connections as ``(node_i, node_j)`` tuples.
+
+    Raises
+    ------
+    ValueError
+        If an edge references a non-existent node, is a self-loop, or
+        duplicates an existing edge.
     """
     for node1, node2 in initial_edges:
         if not state.add_edge(node1, node2):
-            warnings.warn(
-                f"Ignoring invalid initial edge ({node1}, {node2}): "
-                f"edges must reference existing nodes "
-                f"(0..{len(state.nodes) - 1}), must not be self-loops, "
-                f"and must not duplicate an existing edge.",
-                UserWarning,
-                stacklevel=2,
+            msg = _format_error(
+                f"Invalid initial edge ({node1}, {node2}).",
+                why=f"edges must reference existing nodes (0..{len(state.nodes) - 1}), "
+                "must not be self-loops, and must not duplicate an existing edge.",
+                fix="remove or correct that entry in initial_edges.",
             )
+            raise ValueError(msg)
 
 
-def _same_paths(actual: list[NDArray], reference: list[NDArray]) -> bool:
+def _same_paths(
+    actual: list[NDArray[np.float64]], reference: list[NDArray[np.float64]]
+) -> bool:
     """Whether layer paths equal the reference paths at layer precision.
 
     Shapes stores coordinates in its display dtype (currently float32).
@@ -139,8 +146,7 @@ def annotate_track_graph(
     initial_edges : list of tuple, optional
         Pre-existing edge connections as (node_i, node_j) tuples. Any entry
         that references a non-existent node, is a self-loop, or duplicates
-        another edge is invalid and is ignored with a ``UserWarning`` rather
-        than silently discarded.
+        another edge is invalid and raises ``ValueError``.
     initial_node_labels : list of str, optional
         Labels for initial nodes (e.g., ["start", "junction", "goal"]).
 
@@ -153,7 +159,8 @@ def annotate_track_graph(
     Raises
     ------
     ValueError
-        If neither video_path nor image is provided.
+        If neither video_path nor image is provided, or if an entry of
+        ``initial_edges`` is invalid.
     IndexError
         If frame_index is out of range for the video.
     ImportError
@@ -212,18 +219,24 @@ def annotate_track_graph(
     """
     # 1. Validate inputs
     if video_path is None and image is None:
-        raise ValueError(
+        msg = (
             "Either video_path or image must be provided. "
-            "Provide a video path to extract a frame, or pass an image array directly.",
+            "Provide a video path to extract a frame, or pass an image array directly."
+        )
+        raise ValueError(
+            msg,
         )
 
     # 2. Import napari (lazy to allow module to work without it)
     try:
         import napari
     except ImportError as e:
-        raise ImportError(
+        msg = (
             "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]",
+            "Install with: pip install napari[all]"
+        )
+        raise ImportError(
+            msg,
         ) from e
 
     # 3. Load background image
@@ -232,13 +245,17 @@ def annotate_track_graph(
 
         video_path = Path(video_path)
         if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+            msg = f"Video file not found: {video_path}"
+            raise FileNotFoundError(msg)
 
         reader = _VideoReader(str(video_path))
         if frame_index >= reader.n_frames:
-            raise IndexError(
+            msg = (
                 f"Frame index {frame_index} is out of range for video '{video_path.name}'. "
-                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1}).",
+                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
+            )
+            raise IndexError(
+                msg,
             )
         frame = reader[frame_index]  # (H, W, 3) RGB uint8
     else:
@@ -282,7 +299,7 @@ def annotate_track_graph(
 
     pending_removal: tuple[int, ...] = ()
 
-    def _sync_layer_to_state(event=None):
+    def _sync_layer_to_state(event: Event | None = None) -> None:
         """Apply completed native napari edits; ignore before-action events."""
         nonlocal pending_removal
         action = str(getattr(event, "action", ""))
@@ -330,11 +347,12 @@ def annotate_track_graph(
                 if len(earliest) != len(new_nodes) or earliest != latest[::-1]:
                     pending_removal = ()
                     widget.sync_from_state()
-                    raise ValueError(
+                    msg = (
                         "Cannot identify surviving nodes in this data assignment. "
                         "Select nodes and use remove_selected() for deletion, or "
                         "move and delete nodes in separate edits."
                     )
+                    raise ValueError(msg)
                 surviving = set(earliest)
                 removed = tuple(
                     i for i in range(len(state.nodes)) if i not in surviving
@@ -384,17 +402,18 @@ def annotate_track_graph(
                 "was restored."
             )
             viewer.status = message
-            warnings.warn(message, UserWarning, stacklevel=2)
         widget.sync_from_state()
 
     edges_layer.events.data.connect(_sync_edges_to_state)
 
     # Sync napari layer mode changes back to state
-    def _sync_mode_to_state(event=None):
+    def _sync_mode_to_state(
+        event: Event | None = None,  # noqa: ARG001  # napari callback signature
+    ) -> None:  # napari callback signature
         """Sync napari layer mode changes to TrackBuilderState."""
         layer_mode = nodes_layer.mode
         # Map napari modes to our state modes
-        mode_map = {
+        mode_map: dict[str, TrackGraphMode] = {
             "add": "add_node",
             "select": "delete",  # Select mode is used for delete
             "pan_zoom": state.mode,  # Keep current mode when pan/zoom
@@ -418,8 +437,11 @@ def annotate_track_graph(
     #   - Escape = Cancel edge creation
 
     # Mouse click handler for edge mode
-    @nodes_layer.mouse_drag_callbacks.append
-    def on_click(layer, event):
+    @nodes_layer.mouse_drag_callbacks.append  # type: ignore[misc, unused-ignore]
+    def on_click(
+        layer: Any,  # noqa: ARG001  # napari callback signature
+        event: Any,  # napari callback signature
+    ) -> None:  # napari callback signature  # napari callback signature
         """Handle mouse clicks for edge creation mode."""
         # Only handle single clicks (not drags) in add_edge mode
         if state.mode != "add_edge":
@@ -439,8 +461,10 @@ def annotate_track_graph(
         else:
             viewer.status = "Mode: Edge - click two nodes to connect (Escape to cancel)"
 
-    @nodes_layer.bind_key("e", overwrite=True)
-    def set_add_edge_mode(layer):
+    @nodes_layer.bind_key("e", overwrite=True)  # type: ignore[misc, unused-ignore]
+    def set_add_edge_mode(
+        layer: Any,  # noqa: ARG001  # napari callback signature
+    ) -> None:  # napari callback signature  # napari callback signature
         """Switch to edge mode - click two nodes to connect them."""
         _handle_key(state, "E")
         # Switch napari layer to pan_zoom mode so clicking doesn't add points
@@ -448,8 +472,8 @@ def annotate_track_graph(
         widget.sync_from_state()
         viewer.status = "Mode: Edge - click a node to start, then another to connect"
 
-    @viewer.bind_key("Control-z")
-    def undo_action(viewer):
+    @viewer.bind_key("Control-z")  # type: ignore[misc, unused-ignore]
+    def undo_action(viewer: Any) -> None:
         """Undo last action."""
         result = _handle_key(state, "Z", modifiers=["Control"])
         if result == "undo":
@@ -457,8 +481,8 @@ def annotate_track_graph(
             widget.sync_from_state()
             viewer.status = "Undo"
 
-    @viewer.bind_key("Control-Shift-z")
-    def redo_action(viewer):
+    @viewer.bind_key("Control-Shift-z")  # type: ignore[misc, unused-ignore]
+    def redo_action(viewer: Any) -> None:
         """Redo last undone action."""
         result = _handle_key(state, "Z", modifiers=["Control", "Shift"])
         if result == "redo":
@@ -466,8 +490,8 @@ def annotate_track_graph(
             widget.sync_from_state()
             viewer.status = "Redo"
 
-    @viewer.bind_key("Shift-s")
-    def set_start_node(viewer):
+    @viewer.bind_key("Shift-s")  # type: ignore[misc, unused-ignore]
+    def set_start_node(viewer: Any) -> None:
         """Set selected node as start."""
         # Get selected node from layer
         if len(nodes_layer.selected_data) == 1:
@@ -485,8 +509,8 @@ def annotate_track_graph(
         else:
             viewer.status = "Select exactly one node first (press 3), then Shift+S"
 
-    @viewer.bind_key("Escape")
-    def cancel_edge(viewer):
+    @viewer.bind_key("Escape")  # type: ignore[misc, unused-ignore]
+    def cancel_edge(viewer: Any) -> None:
         """Cancel edge creation in progress."""
         result = _handle_key(state, "Escape")
         if result == "cancel":

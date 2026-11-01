@@ -305,7 +305,8 @@ def test_reml_parity(open_field_env, simulate_place_fields):
     lam_jax, _, boundary_jax = select_penalty_by_reml_jax(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
-    assert lam_np is not None and lam_jax is not None
+    assert lam_np is not None
+    assert lam_jax is not None
     # Both selectors agree on the interior/boundary verdict too (drop-in dispatch).
     assert boundary_np == boundary_jax
     # |d log lambda| ~ a few * _REML_XATOL (0.001); 0.02 is a robust bound on the
@@ -401,8 +402,7 @@ def test_jax_all_zero_spike_effectively_floors(open_field_env):
     basis = env.get_mrf_basis(occ, rank=20)
     c, o = _restrict(counts.T, occ, basis)
 
-    with pytest.warns(UserWarning, match="no unit has any spikes"):
-        fit = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
+    fit = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
     rate = np.maximum(np.exp(fit.log_rate), _RATE_FLOOR)
     assert np.all(rate >= _RATE_FLOOR)  # the contract: a floor (minimum), not a target
     assert np.all(rate < 1e-6)  # scientifically zero for a silent unit
@@ -445,6 +445,7 @@ def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
     pytest.importorskip("jax")
     basis, c, o = _rank_deficient_case(open_field_env)
 
+    # The flat over-smoothed regime puts lambda at the REML upper search bound.
     fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
     fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
     assert fit_jax.penalty == fit_np.penalty  # same lambda (both float64 REML)

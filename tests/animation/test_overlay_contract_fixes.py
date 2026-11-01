@@ -1,6 +1,7 @@
 """Raster identity, canonical calibration, and custom adapter clock contracts."""
 
 import warnings
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,15 +53,18 @@ def test_raster_mixed_identity_selects_correct_rate_rows(env, order):
 
 
 @pytest.mark.parametrize(
-    "units, scale",
+    ("units", "scale"),
     [(None, 1.0), ("cm", 1.0), ("m", 0.01), ("millimeters", 10.0), ("um", 10000.0)],
 )
 def test_canonical_video_calibration_converts_to_environment_units(units, scale):
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool),
-        (np.arange(3.0), np.arange(3.0)),
-        units=units,
-    )
+    # Spelled-out unit names convert, but are not in the standard registry.
+    registered = units in (None, "cm", "m", "mm")
+    with nullcontext() if registered else pytest.warns(UserWarning, match="registry"):
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            (np.arange(3.0), np.arange(3.0)),
+            units=units,
+        )
     calibration = VideoCalibration(
         AffineND(np.array([[10.0, 0, 20.0], [0, 10.0, 30.0], [0, 0, 1.0]])), (2, 2)
     )
@@ -76,17 +80,21 @@ def test_canonical_video_calibration_converts_to_environment_units(units, scale)
 
 @pytest.mark.parametrize("units", ["pixels", "px", "custom"])
 def test_calibrated_video_refuses_units_without_cm_conversion(env, units):
-    env = env.with_metadata(units=units)
+    with (
+        nullcontext()
+        if units != "custom"
+        else pytest.warns(UserWarning, match="registry")
+    ):
+        env = env.with_metadata(units=units)
     source = np.zeros((2, 2, 2, 3), dtype=np.uint8)
     calibration = VideoCalibration(AffineND(np.eye(3)), (2, 2))
     with pytest.raises(ValueError, match="conversion from centimeters"):
         VideoOverlay(source, calibration).convert_to_data(np.array([0.0, 0.1]), 2, env)
-    with pytest.warns(UserWarning, match="no calibration"):
-        VideoOverlay(source).convert_to_data(np.array([0.0, 0.1]), 2, env)
+    VideoOverlay(source).convert_to_data(np.array([0.0, 0.1]), 2, env)
 
 
 @pytest.mark.parametrize(
-    "units, scale", [(None, 1.0), ("cm", 1.0), ("m", 0.01), ("mm", 10.0)]
+    ("units", "scale"), [(None, 1.0), ("cm", 1.0), ("m", 0.01), ("mm", 10.0)]
 )
 @pytest.mark.parametrize("method", ["landmarks", "scale_bar", "cm_per_px"])
 def test_calibrate_video_wrapper_keeps_canonical_cm_and_fits_env_units(

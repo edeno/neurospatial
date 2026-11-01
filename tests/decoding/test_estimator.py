@@ -251,9 +251,10 @@ def test_predict_forwards_max_gap_and_windows(two_epoch_recording):
     r = two_epoch_recording
     trains = [r.spike_times + 0.04 * u for u in range(5)]
     default = BayesianDecoder(r.env, method="binned").fit(trains, r.times, r.positions)
-    wide = BayesianDecoder(r.env, method="binned", max_gap=2000.0).fit(
-        trains, r.times, r.positions
-    )
+    with pytest.warns(UserWarning, match=r"units are silent from"):
+        wide = BayesianDecoder(r.env, method="binned", max_gap=2000.0).fit(
+            trains, r.times, r.positions
+        )
     assert len(default.predict(trains, r.times).times) == 7998
     assert len(wide.predict(trains, r.times).times) == 47999
     predicted = default.predict(trains, r.times, epochs=[(1100, 1200)])
@@ -634,7 +635,8 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
 
         def _spy(self, *a, **k):
-            raise AssertionError("predict must not run when metric is invalid")
+            msg = "predict must not run when metric is invalid"
+            raise AssertionError(msg)
 
         monkeypatch.setattr(BayesianDecoder, "predict", _spy)
         with pytest.raises(ValueError, match="metric"):
@@ -646,7 +648,8 @@ class TestScoreUndecodable:
         dec = _fitted_minimal()
 
         def _spy(self, *a, **k):
-            raise AssertionError("predict must not run when distance is invalid")
+            msg = "predict must not run when distance is invalid"
+            raise AssertionError(msg)
 
         monkeypatch.setattr(BayesianDecoder, "predict", _spy)
         with pytest.raises(ValueError, match="distance"):
@@ -869,7 +872,9 @@ class TestUnitAlignment:
         decoder, spikes, times = labelled_fit
         shifted = make_spike_group(spikes, _FIT_IDS + 1)
         args = (shifted, times, positions) if call == "score" else (shifted, times)
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError, match=r"Spike input unit labels do not match the decoder"
+        ) as excinfo:
             getattr(decoder, call)(*args)
         message = str(excinfo.value)
         assert "missing: [10]" in message
@@ -1011,7 +1016,9 @@ def test_fit_unit_ids_enable_label_alignment(sim, make_spike_group):
         decoder.predict(reordered, times).posterior,
         decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Spike input unit labels do not match the decoder"
+    ) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)
@@ -1045,7 +1052,9 @@ def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
     env, spikes, times, positions = sim
     group = make_spike_group(spikes[:2], index=[10, 20])
     decoder = BayesianDecoder(env, dt=0.5)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"BayesianDecoder\.fit got unit_ids"
+    ) as caught:
         decoder.fit(group, times, positions, unit_ids=[20, 10])
     for text in ["[20, 10]", "[10, 20]", "Fix:"]:
         assert text in str(caught.value)
@@ -1055,6 +1064,13 @@ def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
     np.testing.assert_array_equal(supplied.unit_ids, [20, 10])
     with pytest.raises(ValueError, match="unique"):
         decoder.fit(spikes[:3], times, positions, unit_ids=[3, 3, 7])
+
+
+def test_from_rates_refuses_a_bare_rate_array():
+    from neurospatial.decoding import BayesianDecoder
+
+    with pytest.raises(TypeError, match=r"rates must be a SpatialRatesResult"):
+        BayesianDecoder.from_rates(np.ones((3, 4)))
 
 
 def test_from_rates_matches_fit(two_epoch_recording):
@@ -1105,7 +1121,9 @@ def test_from_rates_label_alignment(sim, make_spike_group):
         ).posterior,
         decoder.predict(make_spike_group(trains, index=[10, 11, 12]), times).posterior,
     )
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Spike input unit labels do not match the decoder"
+    ) as caught:
         decoder.predict(make_spike_group(trains, index=[10, 11, 13]), times)
     assert "missing: [12]" in str(caught.value)
     assert "unexpected: [13]" in str(caught.value)
@@ -1139,7 +1157,7 @@ def test_from_rates_constructor_labels(sim, make_spike_group):
 
 
 @pytest.mark.parametrize(
-    "method, options",
+    ("method", "options"),
     [
         ("binned", {"bandwidth": 5}),
         ("diffusion_kde", {"bandwidth": 5}),
@@ -1156,8 +1174,10 @@ def test_spatial_unit_identity_provenance_all_methods(sim, method, options):
     labelled = compute_spatial_rates(
         env, spikes[:2], times, positions, method=method, unit_ids=[7, 9], **options
     )
-    assert unlabelled._unit_ids_generated and unlabelled[0]._unit_ids_generated
-    assert not labelled._unit_ids_generated and not labelled[0]._unit_ids_generated
+    assert unlabelled._unit_ids_generated
+    assert unlabelled[0]._unit_ids_generated
+    assert not labelled._unit_ids_generated
+    assert not labelled[0]._unit_ids_generated
 
 
 def test_from_rates_rejects_other_types():
@@ -1197,27 +1217,23 @@ def test_from_rates_nan_bins_are_excluded_from_spatial_support(sim):
 def test_fit_without_surviving_data_raises(sim, fit_kwargs) -> None:
     """A model fit on no data would decode every time bin as uniform."""
     env, spike_times, times, positions = sim
-    with (
-        warnings.catch_warnings(),
-        pytest.raises(ValueError, match=r"no occupied bin") as exc,
-    ):
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
-            spike_times, times, positions, **fit_kwargs
-        )
+        with pytest.raises(ValueError, match=r"no occupied bin") as exc:
+            BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
+                spike_times, times, positions, **fit_kwargs
+            )
     assert "Fix:" in str(exc.value)
 
 
 def test_min_occupancy_masking_every_bin_raises(sim) -> None:
     env, spike_times, times, positions = sim
-    with (
-        warnings.catch_warnings(),
-        pytest.raises(ValueError, match=r"min_occupancy"),
-    ):
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
-            spike_times, times, positions
-        )
+        with pytest.raises(ValueError, match=r"min_occupancy"):
+            BayesianDecoder(env, dt=0.5, bandwidth=7.0, min_occupancy=1e6).fit(
+                spike_times, times, positions
+            )
 
 
 def test_fitted_decoder_refuses_a_different_environment(sim):

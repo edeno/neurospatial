@@ -71,7 +71,7 @@ def position(interp="linear", *, break_interval=False):
 
 
 @pytest.mark.parametrize(
-    "interp, expected", [("linear", [2.5, 2.5]), ("nearest", [0.0, 2.0])]
+    ("interp", "expected"), [("linear", [2.5, 2.5]), ("nearest", [0.0, 2.0])]
 )
 def test_position_uses_actual_time_on_observation_clock(env, interp, expected):
     with drawn(env, backend._Position, [position(interp)], "positions") as (

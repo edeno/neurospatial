@@ -231,7 +231,9 @@ def test_heading_from_velocity_rejects_bad_times(times):
     from neurospatial.behavior import heading_from_velocity
 
     positions = np.c_[[0.0, 1.0, 2.0], np.zeros(3)]
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to heading_from_velocity"
+    ) as caught:
         heading_from_velocity(times, positions)
     message = str(caught.value)
     assert "times" in message
@@ -240,13 +242,21 @@ def test_heading_from_velocity_rejects_bad_times(times):
 
 
 @pytest.mark.parametrize(
-    "positions",
-    [np.arange(4.0), np.arange(4.0)[:, None], np.array(0.0), np.zeros((4, 2, 2))],
+    ("positions", "match"),
+    [
+        (np.arange(4.0), "needs positions with x and y columns"),
+        (np.arange(4.0)[:, None], "needs positions with x and y columns"),
+        (np.array(0.0), r"positions must be \(n_samples,\) or \(n_samples, n_dims\)"),
+        (
+            np.zeros((4, 2, 2)),
+            r"positions must be \(n_samples,\) or \(n_samples, n_dims\)",
+        ),
+    ],
 )
-def test_heading_rejects_position_shapes_before_broadcast(positions):
+def test_heading_rejects_position_shapes_before_broadcast(positions, match):
     from neurospatial.behavior import heading_from_velocity
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=match) as caught:
         heading_from_velocity(np.arange(4) * 0.1, positions)
     message = str(caught.value)
     assert "positions" in message
@@ -333,14 +343,13 @@ class TestHeadingFromVelocity:
                 min_speed=10.0,
             )
 
-        # Opt-in escape hatch: warns and returns the all-NaN array.
-        with pytest.warns(UserWarning, match="speed"):
-            headings = heading_from_velocity(
-                positions=positions,
-                times=np.arange(len(positions)) * 0.1,
-                min_speed=10.0,
-                allow_all_nan=True,
-            )
+        # Opt-in escape hatch: returns the all-NaN array.
+        headings = heading_from_velocity(
+            positions=positions,
+            times=np.arange(len(positions)) * 0.1,
+            min_speed=10.0,
+            allow_all_nan=True,
+        )
         assert np.all(np.isnan(headings))
 
     def test_still_recording_fix_does_not_suggest_lowering_zero_min_speed(self):
@@ -356,7 +365,9 @@ class TestHeadingFromVelocity:
         assert "allow_all_nan=True" in fix
         assert "heading_from_body_orientation" in fix
 
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(
+            ValueError, match=r"Cannot compute heading: every observed sample"
+        ) as caught:
             heading_from_velocity(times, positions, min_speed=2.0)
         assert "lower min_speed" in str(caught.value).split("Fix:")[1]
 
@@ -544,7 +555,9 @@ class TestHeadingFromBodyOrientation:
         from neurospatial.behavior import heading_from_body_orientation
 
         nose, tail = _facing(np.linspace(-1.0, 1.0, 10))
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(
+            UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+        ) as record:
             headings = heading_from_body_orientation(2 * np.arange(10.0), nose, tail)
         message = str(record[0].message)
         assert "so no missing frame is filled" in message
@@ -563,7 +576,9 @@ class TestHeadingFromBodyOrientation:
         nose, tail = _facing(np.zeros(5))
         nose[:] = np.nan
         nose[2] = tail[2]  # a coincident pair is not observed either
-        with pytest.raises(ValueError) as error:
+        with pytest.raises(
+            ValueError, match=r"found no frame with both keypoints at distinct points"
+        ) as error:
             heading_from_body_orientation(np.arange(5) * 0.1, nose, tail)
         message = str(error.value)
         assert message.startswith("heading_from_body_orientation()")
@@ -838,10 +853,13 @@ def test_body_orientation_length_mismatch_names_the_keypoint(short):
     nose, tail = _facing(np.zeros(6))
     keypoints = {"nose": nose, "tail": tail}
     keypoints[short] = keypoints[short][:4]
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError, match=r"Why: the heading at each frame is the direction of that"
+    ) as excinfo:
         heading_from_body_orientation(np.arange(6) * 0.1, **keypoints)
     message = str(excinfo.value)
     assert f"{short} has 4" in message
     assert "times has 6" in message
     assert "positions" not in message
-    assert "Why:" in message and "Fix:" in message
+    assert "Why:" in message
+    assert "Fix:" in message

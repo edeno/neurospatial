@@ -420,7 +420,9 @@ def test_unit_ids_must_match_group_labels(
     trains = spike_trains[:2]
     group = make_spike_group(trains, [10, 20])
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError, match=r"but the spike input is already labelled"
+    ) as excinfo:
         _compute(name, env, times, positions, headings, group, unit_ids=[20, 10])
     message = str(excinfo.value)
     assert "[20, 10]" in message
@@ -470,7 +472,8 @@ def test_resolve_unit_ids_rejects_duplicates():
 def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trains):
     env, times, positions, headings = trajectory
     trains = spike_trains[:2]
-    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+
+    def run() -> None:
         if name == "peri_event":
             from neurospatial.events import population_peri_event_histogram
 
@@ -479,6 +482,9 @@ def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trai
             )
         else:
             _compute(name, env, times, positions, headings, trains, unit_ids=[5, 5])
+
+    with pytest.raises(ValueError, match=r"unique.*\[5\]"):
+        run()
 
 
 @pytest.mark.parametrize("name", ALL)
@@ -613,7 +619,7 @@ def test_missing_unit_labels_are_refused(labels):
 
 
 @pytest.mark.parametrize(
-    "given,carried",
+    ("given", "carried"),
     [([1.0, 2.0], np.array([1, 2])), ([True, False], np.array([1, 0]))],
 )
 def test_unit_ids_must_match_the_input_labels_in_kind(given, carried):

@@ -515,9 +515,10 @@ class TestMeanSquareDisplacement:
         times = np.arange(4) * 0.1
         positions = np.full((4, 1), np.nan)
 
-        result = mean_square_displacement(
-            times, positions, metric=metric, env=env, max_tau=0.1
-        )
+        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+            result = mean_square_displacement(
+                times, positions, metric=metric, env=env, max_tau=0.1
+            )
 
         assert np.isnan(result.msd).all()
 

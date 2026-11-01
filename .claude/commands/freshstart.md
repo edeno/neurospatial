@@ -29,7 +29,7 @@ Your workflow MUST be:
 
 ## Remember
 
-- **Read before you code** - Use Read tool to understand context (funcion signatures, existing tests, etc)
+- **Read before you code** - Use Read tool to understand context (function signatures, existing tests, etc)
 - **Test before you implement** - TDD is mandatory
 - **Ask when uncertain** - Better to ask than assume
 - **Document as you go** - Update the relevant SCRATCHPAD.md with decisions/blockers when one exists

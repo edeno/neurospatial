@@ -79,8 +79,9 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         ).polygons
     if isinstance(locator, RectilinearLocator):
         if len(locator.shape) != 2:
+            msg = "Cell materialization requires a Cartesian 2-D locator."
             raise _error(
-                "Cell materialization requires a Cartesian 2-D locator.",
+                msg,
                 "retain planar area-measured geometry",
             )
         i, j = np.unravel_index(np.flatnonzero(locator.active_mask), locator.shape)
@@ -89,8 +90,9 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         order = active_order(locator.simplex_to_active)
         return tuple(shapely.polygons(locator.points[locator.simplices[order]]))
     if not isinstance(locator, HexLocator):
+        msg = "The locator does not publish exact planar cell geometry."
         raise _error(
-            "The locator does not publish exact planar cell geometry.",
+            msg,
             "retain a native grid, hexagonal, mesh or clipped locator and supported wrappers",
         )
     # Corners on the lattice of half-widths and half-radii: integer keys, so
@@ -124,8 +126,9 @@ def materialize_cells(binning: Binning) -> tuple[Polygon, ...]:
     and area-measured.
     """
     if binning.bins.n_dims != 2 or not binning.bins.has_measure_dim(2):
+        msg = "Polygon clipping requires planar area-measured cells."
         raise _error(
-            "Polygon clipping requires planar area-measured cells.",
+            msg,
             "use a Cartesian 2-D grid, hexagonal layout or triangular mesh",
         )
     return PolygonCells(cell_polygons(binning)).polygons
@@ -154,8 +157,9 @@ def cell_polygons(binning: Binning) -> tuple[Polygon, ...]:
         If the bins are not two-dimensional or carry no cell geometry.
     """
     if binning.bins.n_dims != 2:
+        msg = "Cell polygons require two-dimensional bins."
         raise _error(
-            "Cell polygons require two-dimensional bins.",
+            msg,
             "use a planar grid, hexagonal layout, triangular mesh or clipped cells",
         )
     shapes = binning.shapes
@@ -173,7 +177,8 @@ def cell_polygons(binning: Binning) -> tuple[Polygon, ...]:
     else:
         polygons = cells_from_locator(binning.locator)
     if len(polygons) != binning.bins.n_bins:
-        raise ValueError("cell geometry count does not match bins.n_bins.")
+        msg = "cell geometry count does not match bins.n_bins."
+        raise ValueError(msg)
     return polygons
 
 
@@ -231,8 +236,9 @@ def _representative(polygon: Polygon) -> tuple[float, float]:
     if not polygon.contains(point):
         point = shapely.normalize(polygon).representative_point()
     if not polygon.contains(point) or not np.all(np.isfinite(point.coords[0])):
+        msg = "A clipped cell has no certifiable finite interior representative."
         raise _error(
-            "A clipped cell has no certifiable finite interior representative.",
+            msg,
             "rescale coordinates or provide resolvable polygon geometry",
         )
     return point.x, point.y
@@ -256,8 +262,9 @@ def _overlay(
         (parent, piece) for parent, group in enumerate(pieces) for piece in group
     ]
     if not records:
+        msg = "Polygon clip retained no positive-area cells."
         raise _error(
-            "Polygon clip retained no positive-area cells.",
+            msg,
             "choose a polygon overlapping represented active cells",
         )
     cells = PolygonCells(tuple(piece for _, piece in records))
@@ -277,8 +284,9 @@ def _overlay(
             min(positive) / 4, 256 * np.finfo(float).eps * scale * source[parent].length
         )
         if actual.symmetric_difference(expected).area > bound:
+            msg = f"Polygon overlay failed coverage for parent bin {parent}."
             raise _error(
-                f"Polygon overlay failed coverage for parent bin {parent}.",
+                msg,
                 "rescale coordinates or simplify unresolvable geometry explicitly",
             )
     return cells, mapping
@@ -472,8 +480,9 @@ def clip_binning(
     else:
         effective = polygon
     if effective.is_empty or effective.area <= 0:
+        msg = "Clip and arena domain have no positive-area intersection."
         raise _error(
-            "Clip and arena domain have no positive-area intersection.",
+            msg,
             "choose a clip overlapping the known domain",
         )
     # Polygon intersections can contain line/point-only contacts alongside
@@ -621,9 +630,12 @@ def _pieces_binning(
         if not np.array_equal(
             centers[[u, v]], binning.bins.centers[[parent_u, parent_v]]
         ):
-            raise _error(
+            msg = (
                 "Clipping moved an endpoint of declared navigation "
-                f"path ({parent_u}, {parent_v}).",
+                f"path ({parent_u}, {parent_v})."
+            )
+            raise _error(
+                msg,
                 "use subset() to retain whole bins, or construct "
                 "clipped bins with updated navigation path lengths "
                 "using Environment.from_bins()",
@@ -680,17 +692,21 @@ def _pieces_binning(
                     records.append(record(u, v, row, is_open=False))
     for parent in np.flatnonzero(~links.is_open):
         parent_u, parent_v = links.all_pairs[parent]
-        for u in by_parent[int(parent_u)]:
-            for v in by_parent[int(parent_v)]:
-                # Corner contact counts: a diagonal across a wall stays closed.
-                if not contact(u, v).is_empty:
-                    records.append(record(u, v, int(parent), is_open=False))
+        # Corner contact counts: a diagonal across a wall stays closed.
+        records.extend(
+            record(u, v, int(parent), is_open=False)
+            for u in by_parent[int(parent_u)]
+            for v in by_parent[int(parent_v)]
+            if not contact(u, v).is_empty
+        )
     for children in by_parent.values():
         # Pieces of one cell that meet on the wall that divided it.
-        for position, u in enumerate(children):
-            for v in children[position + 1 :]:
-                if divided(contact(u, v)):
-                    records.append(record(u, v, None, is_open=False))
+        records.extend(
+            record(u, v, None, is_open=False)
+            for position, u in enumerate(children)
+            for v in children[position + 1 :]
+            if divided(contact(u, v))
+        )
     records.sort(key=lambda item: (item.u, item.v))
     all_pairs = np.array([(r.u, r.v) for r in records], dtype=np.intp).reshape(-1, 2)
     is_open = np.array([r.is_open for r in records], dtype=bool)

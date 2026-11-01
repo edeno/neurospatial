@@ -100,7 +100,7 @@ def test_another_backends_option_is_ignored_with_one_warning(
 ):
     _available(backend)
     (name,) = option
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(UserWarning, match=r"To use it, pass backend") as record:
         _run(animation, backend, dpi=20, **option)
     (warning,) = _ignore_warnings(record)
     message = str(warning.message)
@@ -133,7 +133,9 @@ def test_the_suggested_call_uses_the_option(animation, tmp_path, option, owner):
 
 
 def test_several_ignored_options_share_one_warning(animation):
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"crf is used by the video backend; the html backend ignores"
+    ) as record:
         _run(animation, "html", crf=15, preset="slow", dpi=20)
     (warning,) = _ignore_warnings(record)
     assert "crf is used by the video backend" in str(warning.message)
@@ -162,17 +164,13 @@ def test_options_left_out_raise_no_warning(animation):
     assert _ignore_warnings(record) == []
 
 
-def test_video_crf_with_bitrate_warns_once_at_the_call_site(animation):
-    """With both, the encoder uses the bitrate; the caller is told crf is lost."""
+def test_video_crf_with_bitrate_uses_the_bitrate_without_warning(animation):
+    """With both, the encoder uses the bitrate; crf is documented as ignored."""
     _available("video")
-    with pytest.warns(UserWarning, match="crf is ignored") as record:
-        _run(animation, "video", crf=15, bitrate=800, dpi=20)
-    (warning,) = [w for w in record if "crf is ignored" in str(w.message)]
-    assert warning.filename == __file__
-    with warnings.catch_warnings(record=True) as alone:
+    with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        _run(animation, "video", crf=15, dpi=20, overwrite=True)
-    assert not [w for w in alone if "crf is ignored" in str(w.message)]
+        _run(animation, "video", crf=15, bitrate=800, dpi=20)
+    assert not [w for w in record if "crf" in str(w.message)]
 
 
 def test_widget_dpi_and_figsize_set_the_displayed_image(animation):

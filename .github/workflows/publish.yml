@@ -1,91 +1,186 @@
 name: Publish to PyPI
 
+# Pushing a version tag (`git tag v0.7.0 && git push origin v0.7.0`) runs the
+# full test suite, builds and checks the distributions, installs each one and
+# runs a smoke test, publishes to PyPI with trusted publishing, and creates the
+# GitHub release from that version's CHANGELOG.md section. The version comes
+# from the tag (hatch-vcs). Re-run a failed release from the Actions tab with
+# "Run workflow" on the tag.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Release tag to publish (e.g., v0.1.0)'
-        required: true
-        type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
+  test:
+    uses: $/.github/workflows/test.yml
+    permissions:
+      contents: read
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   build:
     name: Build distribution
+    needs: [test]
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.inputs.release_tag || github.ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
+          fetch-depth: 0  # hatch-vcs reads the version from the tag
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
-          version: "latest"
+          enable-cache: false  # no cache in a release job
 
-      - name: Install dependencies
-        run: |
-          uv sync --extra dev
+      - name: Build sdist and wheel
+        run: uv build
 
-      - name: Build package
+      - name: Check distribution metadata
+        run: uvx twine check --strict dist/*
+
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          uv build
+          ls dist/
+          test -f "dist/neurospatial-${TAG#v}.tar.gz"
 
       - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: python-package-distributions
           path: dist/
 
-  publish-to-pypi:
-    name: Publish to PyPI
+  test-package:
+    name: Test ${{ matrix.package }} install
     needs: [build]
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      matrix:
+        package: [wheel, sdist]
+    steps:
+      - name: Download the distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the wheel
+        if: matrix.package == 'wheel'
+        run: pip install dist/*.whl
+
+      - name: Install the sdist
+        if: matrix.package == 'sdist'
+        run: pip install dist/*.tar.gz
+
+      - name: Check dependency consistency
+        run: pip check
+
+      - name: Smoke-test the installed package
+        # No checkout in this job, so the import resolves to the installed
+        # distribution. Recover a simulated place field end to end.
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+
+          import numpy as np
+          from neurospatial import Environment, compute_spatial_rate
+          from neurospatial.simulation import generate_population_spikes
+          from neurospatial.simulation.models import PlaceCellModel
+          from neurospatial.simulation.trajectory import simulate_trajectory_ou
+
+          print("neurospatial", version("neurospatial"))
+          xx, yy = np.meshgrid(np.linspace(0, 60, 31), np.linspace(0, 60, 31))
+          env = Environment.from_samples(
+              np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+          ).with_metadata(units="cm")
+          positions, times = simulate_trajectory_ou(
+              env, duration=300.0, speed_units="cm", seed=42
+          )
+          cell = PlaceCellModel(
+              env, center=np.array([30.0, 30.0]), width=8.0, max_rate=15.0, seed=42
+          )
+          spikes = generate_population_spikes(
+              [cell], times, positions, seed=42, show_progress=False
+          )[0]
+          result = compute_spatial_rate(env, spikes, times, positions, bandwidth=5.0)
+          peak = np.asarray(result.peak_location()).ravel()
+          assert np.linalg.norm(peak - 30.0) < 6.0, peak
+          print("peak at", peak, "- smoke test passed")
+          PY
+
+  publish:
+    name: Publish to PyPI
+    needs: [test-package]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/neurospatial
     permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
-
+      id-token: write  # trusted publishing and attestation signing
+      attestations: write
     steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
+      - name: Download the distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: python-package-distributions
           path: dist/
 
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: "dist/*"
 
-  publish-to-testpypi:
-    name: Publish to TestPyPI (for testing)
-    needs: [build]
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          attestations: true
+
+  create-release:
+    name: Create GitHub release
+    needs: [publish]
     runs-on: ubuntu-latest
-    if: github.event.release.prerelease
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/neurospatial
     permissions:
-      id-token: write
-
+      contents: write
     steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          name: python-package-distributions
-          path: dist/
+          persist-credentials: false
 
-      - name: Publish distribution to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
+      - name: Take the release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          # The section between this version's heading and the next one.
+          sed -n "/^## \[v\{0,1\}${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '1d;$d' > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "CHANGELOG.md has no '## [${VERSION}]' section" >&2
+            exit 1
+          fi
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=()
+          if [[ "$TAG" =~ (a|b|rc)[0-9]+$ ]]; then prerelease=(--prerelease); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+            --notes-file release_notes.md "${prerelease[@]}"

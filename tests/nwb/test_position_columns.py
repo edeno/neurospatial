@@ -67,7 +67,9 @@ def test_compound_unit_with_extra_column_is_refused(xy_speed_file):
         lambda: read_position(xy_speed_file, lazy=True),
         lambda: environment_from_position(xy_speed_file, bin_size=5.0, units="cm"),
     ):
-        with pytest.raises(ValueError) as info:
+        with pytest.raises(
+            ValueError, match="pass columns= with the spatial columns"
+        ) as info:
             read()
         message = str(info.value)
         assert (
@@ -102,7 +104,8 @@ def test_environment_from_selected_columns_is_planar(xy_speed_file):
     xy = _xy_speed()[:, :2]
     np.testing.assert_array_equal(env.contains(xy), np.ones(_N, dtype=bool))
     lo, hi = env.bin_centers.min(axis=0), env.bin_centers.max(axis=0)
-    assert np.all(lo >= xy.min(axis=0) - 5.0) and np.all(hi <= xy.max(axis=0) + 5.0)
+    assert np.all(lo >= xy.min(axis=0) - 5.0)
+    assert np.all(hi <= xy.max(axis=0) + 5.0)
 
 
 def test_environment_from_selected_columns_needs_units(xy_speed_file):

@@ -732,7 +732,7 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
 
 
 @pytest.mark.parametrize(
-    "endpoints,fraction",
+    ("endpoints", "fraction"),
     [([[-3.0, -2.0], [1.0, 0.2]], 0.75), ([[-1.0, -0.3], [1.0, 0.7]], 0.5)],
 )
 def test_slanted_wall_cues_with_cancelled_coordinates_remain_visible(
@@ -755,7 +755,7 @@ def test_cue_rounding_does_not_borrow_precision_from_an_unrelated_wall_axis():
     )[0]
 
 
-@pytest.mark.parametrize("extent,gap", [(1e12, 1e-5), (1e6, 1e-10)])
+@pytest.mark.parametrize(("extent", "gap"), [(1e12, 1e-5), (1e6, 1e-10)])
 def test_cue_rounding_does_not_inherit_distant_wall_endpoint_precision(extent, gap):
     from neurospatial.geometry._boundaries import clear_segments
 
@@ -764,7 +764,7 @@ def test_cue_rounding_does_not_inherit_distant_wall_endpoint_precision(extent, g
 
 
 @pytest.mark.parametrize(
-    "endpoints,fraction",
+    ("endpoints", "fraction"),
     [
         (
             [

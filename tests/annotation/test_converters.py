@@ -121,7 +121,8 @@ class TestShapesToRegions:
         names = ["line", "triangle"]
         roles = ["region", "region"]
 
-        regions, _, _ = shapes_to_regions(shapes_data, names, roles)
+        with pytest.warns(UserWarning, match="Skipping shape 'line'"):
+            regions, _, _ = shapes_to_regions(shapes_data, names, roles)
 
         assert len(regions) == 1
         assert "triangle" in regions
@@ -465,10 +466,9 @@ class TestMultipleBoundaryStrategies:
         names = ["boundary1", "boundary2"]
         roles = ["environment", "environment"]
 
-        with pytest.warns(UserWarning, match="first"):
-            _, env_boundary, _ = shapes_to_regions(
-                shapes_data, names, roles, multiple_boundaries="first"
-            )
+        _, env_boundary, _ = shapes_to_regions(
+            shapes_data, names, roles, multiple_boundaries="first"
+        )
 
         assert env_boundary is not None
         assert env_boundary.name == "boundary1"
@@ -597,6 +597,9 @@ def calibration_transform(draw, scale_range=(0.01, 10.0)):
 class TestHypothesisShapesToRegions:
     """Property-based tests for shapes_to_regions using Hypothesis."""
 
+    # Generated polygons can be tiny enough to trip the degenerate-area warning;
+    # these tests check that the region is still built.
+    @pytest.mark.filterwarnings("ignore:Polygon .* has very small area:UserWarning")
     @given(vertices=polygon_vertices())
     @settings(max_examples=50, suppress_health_check=[HealthCheck.filter_too_much])
     def test_valid_polygon_creates_region(self, vertices):
@@ -615,6 +618,9 @@ class TestHypothesisShapesToRegions:
         assert env_boundary is None
         assert len(holes) == 0
 
+    # Generated polygons can be tiny enough to trip the degenerate-area warning;
+    # these tests check that the region is still built.
+    @pytest.mark.filterwarnings("ignore:Polygon .* has very small area:UserWarning")
     @given(vertices=tiny_polygon_vertices())
     @settings(max_examples=50)
     def test_tiny_polygons_preserved(self, vertices):
@@ -628,6 +634,9 @@ class TestHypothesisShapesToRegions:
         assert "tiny" in regions
         assert regions["tiny"].data.area > 0
 
+    # Generated polygons can be tiny enough to trip the degenerate-area warning;
+    # these tests check that the region is still built.
+    @pytest.mark.filterwarnings("ignore:Polygon .* has very small area:UserWarning")
     @given(vertices=near_collinear_polygon())
     @settings(
         max_examples=30,
@@ -876,7 +885,10 @@ class TestShapesToWallsAndLandmarks:
         np.testing.assert_allclose(landmarks["port"].data, [5.0, 5.0])
 
     def test_unusable_shapes_are_skipped_with_a_warning(self):
-        with pytest.warns(UserWarning, match="Skipping wall 'round'"):
+        with (
+            pytest.warns(UserWarning, match="Skipping wall 'round'"),
+            pytest.warns(UserWarning, match="Skipping landmark 'dot'"),
+        ):
             walls, landmarks = shapes_to_walls_and_landmarks(
                 [_rc([(0, 0), (2, 0), (2, 2), (0, 2)]), _rc([(1, 1), (1, 1)])],
                 ["round", "dot"],
@@ -940,7 +952,8 @@ class TestEnvFromBoundaryWithWalls:
                     # A clipped wall that cuts off a corner of the arena with
                     # no bin center behind it cannot be snapped, wherever the
                     # corner is; splitting the bins keeps it.
-                    assert "separates no two bin centers" in str(error)
+                    if "separates no two bin centers" not in str(error):
+                        raise
                     env_from_boundary_region(
                         boundary, bin_size=1.0, walls=walls, wall_fit="split"
                     )

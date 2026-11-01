@@ -11,14 +11,17 @@ from neurospatial._validation import validate_finite, validate_lengths
 def test_swapped_times_positions_names_swap():
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions(np.zeros((3, 2)), np.arange(2.0), call="f")
     message = str(caught.value)
     assert "did you pass positions before times" in message
     assert "f(..., times, positions, ...)" in message
     assert "same length" in message
     assert "got shape (3, 2)" in message
-    assert "Why:" in message and "Fix:" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
@@ -32,7 +35,7 @@ def test_swapped_one_dimensional_arguments_name_swap():
 
 
 @pytest.mark.parametrize(
-    "times, positions",
+    ("times", "positions"),
     [
         ([0.0, np.nan, 0.2], [0.0, 1.0, 2.0]),
         ([0.0, 0.1, 0.2], [0.0, 1.0, 2.0, 3.0]),
@@ -50,7 +53,9 @@ def test_swap_is_not_suggested_without_evidence(times, positions):
     """Positions that never decrease are normal on a linear track."""
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions(times, positions, call="f")
     message = str(caught.value)
     assert "positions before times" not in message
@@ -60,7 +65,9 @@ def test_swap_is_not_suggested_without_evidence(times, positions):
 def test_unsorted_times_reports_first_decrease():
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions([0, 1, 0.5, 2], np.zeros((4, 2)), call="f")
     assert "index 1" in str(caught.value)
     assert "1.0 -> 0.5" in str(caught.value)
@@ -87,7 +94,9 @@ def test_repeated_timestamps_are_refused_with_a_fix():
     """A repeated timestamp gives one instant two samples: refuse it, say how to drop it."""
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions([0, 1, 1, 2, 2], [[0], [1], [1], [2], [2]], call="f")
     message = str(caught.value)
     assert (
@@ -134,17 +143,22 @@ def test_infinite_samples_are_refused_everywhere(call):
 def test_numeric_conversion_errors_are_named_together():
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions(["bad-time"], [["bad-position"]], call="f")
     message = str(caught.value)
-    assert "times" in message and "positions" in message
-    assert "bad-time" in message and "bad-position" in message
-    assert "Why:" in message and "Fix:" in message
+    assert "times" in message
+    assert "positions" in message
+    assert "bad-time" in message
+    assert "bad-position" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
 @pytest.mark.parametrize(
-    "times, positions, other_problem",
+    ("times", "positions", "other_problem"),
     [
         ([1, 0], [["bad"], ["bad"]], "strictly increasing; it decreases"),
         (["bad"], np.zeros((1, 2, 1)), "got shape (1, 2, 1)"),
@@ -155,7 +169,9 @@ def test_conversion_errors_keep_other_argument_problems(
 ):
     from neurospatial._validation import validate_times_positions
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Invalid times/positions passed to f"
+    ) as caught:
         validate_times_positions(times, positions, call="f")
     assert other_problem in str(caught.value)
     assert "numeric" in str(caught.value)
@@ -192,15 +208,15 @@ class TestValidateFinite:
         np.testing.assert_array_equal(result, np.array([0.0, 1.0, 2.0]))
 
     def test_raises_on_positive_inf(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"non-finite value"):
             validate_finite([1.0, np.inf, 3.0], name="x")
 
     def test_raises_on_negative_inf(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"non-finite value"):
             validate_finite([1.0, -np.inf, 3.0], name="x")
 
     def test_raises_on_nan_by_default(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"non-finite value"):
             validate_finite([1.0, np.nan, 3.0], name="x")
 
     def test_allows_nan_when_requested(self) -> None:
@@ -211,15 +227,19 @@ class TestValidateFinite:
         assert result[2] == 3.0
 
     def test_still_raises_on_inf_even_when_allow_nan(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"NaN marks a missing value; replace infinities with NaN"
+        ):
             validate_finite([1.0, np.inf, np.nan], name="x", allow_nan=True)
 
     def test_still_raises_on_neg_inf_even_when_allow_nan(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"NaN marks a missing value; replace infinities with NaN"
+        ):
             validate_finite([np.nan, -np.inf], name="x", allow_nan=True)
 
     def test_error_message_contains_name_count_and_first_index(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"velocity contains") as exc_info:
             validate_finite([1.0, 2.0, np.inf, np.inf], name="velocity")
         message = str(exc_info.value)
         assert "velocity" in message
@@ -229,7 +249,7 @@ class TestValidateFinite:
         assert "index 2" in message
 
     def test_error_message_reports_first_nan_index(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"signal contains") as exc_info:
             validate_finite([0.0, 0.0, np.nan], name="signal")
         message = str(exc_info.value)
         assert "signal" in message
@@ -238,7 +258,7 @@ class TestValidateFinite:
 
     def test_works_on_2d_array_first_offending_index_via_flat(self) -> None:
         arr = np.array([[1.0, 2.0], [3.0, np.inf]])
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"non-finite value") as exc_info:
             validate_finite(arr, name="grid")
         message = str(exc_info.value)
         assert "grid" in message
@@ -257,7 +277,7 @@ class TestValidateFinite:
 
     def test_raises_valueerror_exact_type(self) -> None:
         # Ensure the raised exception is exactly ValueError, not a subclass.
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"non-finite value"):
             validate_finite([np.nan], name="x")
 
 
@@ -280,7 +300,9 @@ class TestValidateLengths:
         validate_lengths({})
 
     def test_raises_on_length_mismatch_with_message(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"Length mismatch: spike_times"
+        ) as exc_info:
             validate_lengths(
                 {
                     "spike_times": np.array([0.1, 0.2, 0.3]),
@@ -293,7 +315,9 @@ class TestValidateLengths:
         assert "times=2" in message
 
     def test_length_one_among_longer_is_mismatch_not_broadcastable(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"Length mismatch: scalar_like"
+        ) as exc_info:
             validate_lengths(
                 {
                     "scalar_like": np.array([5.0]),
@@ -306,7 +330,7 @@ class TestValidateLengths:
         assert "times=3" in message
 
     def test_message_lists_each_name_and_length(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"Length mismatch: a") as exc_info:
             validate_lengths(
                 {
                     "a": np.array([0.0, 1.0]),
@@ -320,7 +344,7 @@ class TestValidateLengths:
         assert "c=1" in message
 
     def test_message_says_why_and_how_to_fix(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"Length mismatch: angles") as exc_info:
             validate_lengths({"angles": np.zeros(4), "weights": np.zeros(3)})
         lines = str(exc_info.value).splitlines()
         assert lines[0] == "Length mismatch: angles=4, weights=3."
@@ -332,7 +356,7 @@ class TestValidateLengths:
             validate_lengths({"times": np.zeros(3), "positions": np.zeros((2, 3))})
 
     def test_raises_valueerror_exact_type(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Length mismatch: a"):
             validate_lengths({"a": np.array([1.0]), "b": np.array([1.0, 2.0])})
 
 

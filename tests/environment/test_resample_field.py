@@ -339,7 +339,8 @@ class TestResampleFieldCorrectness:
         """Test nearest method with offset grids (known nearest neighbors)."""
         # Source: 2x2 grid with bin centers at (0, 2) x (0, 2)
         src_data = np.array([[0, 0], [0, 2], [2, 0], [2, 2]])
-        src_env = Environment.from_samples(src_data, bin_size=2.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         # Destination: points near each source bin
         # (0.5, 0.5) nearest to (0, 0)
@@ -347,7 +348,8 @@ class TestResampleFieldCorrectness:
         # (1.5, 0.5) nearest to (2, 0)
         # (1.5, 1.5) nearest to (2, 2)
         dst_data = np.array([[0.5, 0.5], [0.5, 1.5], [1.5, 0.5], [1.5, 1.5]])
-        dst_env = Environment.from_samples(dst_data, bin_size=1.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
         # Field with distinct values: [10, 20, 30, 40]
         field = np.array([10.0, 20.0, 30.0, 40.0])
@@ -379,7 +381,8 @@ class TestResampleFieldCorrectness:
         """Test nearest method downsampling (coarse grid from fine)."""
         # Source: 4 bins in 2x2 grid at (0, 1) x (0, 1)
         src_data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
-        src_env = Environment.from_samples(src_data, bin_size=1.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            src_env = Environment.from_samples(src_data, bin_size=1.0)
 
         # Destination: single point at center
         dst_data = np.array([[0.5, 0.5]])
@@ -504,7 +507,8 @@ class TestResampleFieldOutsideSource:
         # distance allowance gave x = 22..40 cm the edge value 20.
         x_edge = src.dimension_ranges[0][1]
         beyond = dst.bin_centers[:, 0] > x_edge
-        assert beyond.any() and (~beyond).any()
+        assert beyond.any()
+        assert (~beyond).any()
         assert np.isnan(result[beyond]).all()
         assert np.isfinite(result[~beyond]).all()
 

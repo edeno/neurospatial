@@ -78,6 +78,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+from typing_extensions import override
 
 from neurospatial._intervals import ragged_arange
 from neurospatial.environment._cache import CacheKey
@@ -1589,7 +1590,13 @@ class _OpenPaths(EnvironmentPaths):
         settled = is_source.copy()
         flat = graph.ravel()
         # Layers of graph distance, one shortest edge thick (inf unreached).
-        layer_of = np.floor(flat / (self._spacing / _PROBE_FRACTION))
+        # Without connections every reached bin is a source, in layer 0.
+        thickness = self._spacing / _PROBE_FRACTION
+        layer_of = (
+            np.floor(flat / thickness)
+            if np.isfinite(thickness)
+            else np.where(np.isfinite(flat), 0.0, np.inf)
+        )
         needed = None
         if stop_bins is None:
             grown = np.flatnonzero(np.isfinite(flat))
@@ -2259,7 +2266,9 @@ class _HexCells(_BoxCells):
         return spacing * (1 + 1e-6) < self._locator.radius
 
     @staticmethod
-    def neighbor_offsets(n_dims: int) -> list[tuple[int, ...]]:
+    def neighbor_offsets(
+        n_dims: int,  # noqa: ARG004  # _BoxCells signature
+    ) -> list[tuple[int, ...]]:  # _BoxCells signature  # _BoxCells signature
         return [(0, 1), (1, -1), (1, 0)]
 
     def point_cells(
@@ -2463,7 +2472,11 @@ class _MeshCores:
         other = left != right
         left, right = left[other], right[other]
 
-        def inside(rows, points, row_scale):
+        def inside(
+            rows: NDArray[np.intp],
+            points: NDArray[np.float64],
+            row_scale: NDArray[np.float64],
+        ) -> NDArray[np.float64]:
             # Signed distance inside each edge of triangle ``rows``,
             # shape (n, n_points, 3).
             flat = points.reshape(-1, 2)
@@ -3048,6 +3061,7 @@ class _TrackPaths(EnvironmentPaths):
         )
         return cost
 
+    @override
     def _to_point(
         self,
         points: NDArray[np.float64],
@@ -3057,6 +3071,7 @@ class _TrackPaths(EnvironmentPaths):
     ) -> NDArray[np.float64]:
         return self._along(points, np.broadcast_to(target, points.shape))
 
+    @override
     def _between(
         self,
         starts: NDArray[np.float64],
@@ -3066,6 +3081,7 @@ class _TrackPaths(EnvironmentPaths):
     ) -> NDArray[np.float64]:
         return self._along(starts, ends)
 
+    @override
     def _directions(
         self,
         points: NDArray[np.float64],
@@ -3104,6 +3120,7 @@ class _TrackPaths(EnvironmentPaths):
         out[defined] = sign[defined, None] * unit[defined]
         return out
 
+    @override
     def _from_bins_at(
         self,
         source_bins: NDArray[np.intp],

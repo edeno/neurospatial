@@ -145,9 +145,10 @@ def _checked_surrogate_kinds(
 ) -> None:
     unknown = [kind for kind in kinds if kind not in _SURROGATES]
     if unknown:
-        raise ValueError(
+        msg = (
             f"{operation}: surrogates must be among {list(_SURROGATES)}, got {unknown}."
         )
+        raise ValueError(msg)
     _check_seconds(max_jitter, "max_jitter", operation, allow_zero=False)
 
 
@@ -177,15 +178,17 @@ def _checked_surrogate_options(
         timestamps_of(theta_peak_times, name="theta_peak_times"), dtype=np.float64
     )
     if peaks.ndim != 1 or peaks.size < 2 or not np.isfinite(peaks).all():
-        raise ValueError(
+        msg = (
             f"{operation}: theta_peak_times must be a 1-D array of at least two "
             f"finite times, got shape {peaks.shape}."
         )
+        raise ValueError(msg)
     if np.any(np.diff(peaks) <= 0):
-        raise ValueError(
+        msg = (
             f"{operation}: theta_peak_times must be strictly increasing; sort them "
             "and drop repeated peaks."
         )
+        raise ValueError(msg)
     return peaks
 
 
@@ -455,10 +458,11 @@ def _check_search_options(
     min_complexity: Any,
 ) -> None:
     if not (is_integer_at_least(reference_unit, 0) and reference_unit < n_cells):
-        raise ValueError(
+        msg = (
             f"{operation}: reference_unit must be the index of a cell, from 0 to "
             f"{n_cells - 1}, got {reference_unit!r}."
         )
+        raise ValueError(msg)
     _check_seconds(window, "window", operation, allow_zero=False)
     _check_seconds(tolerance, "tolerance", operation, allow_zero=False)
     _check_seconds(burst_isi, "burst_isi", operation, allow_zero=True)
@@ -595,10 +599,11 @@ class RecurringSequenceMethod:
         object.__setattr__(self, "notes", tuple(self.notes))
         prefix = f"RecurringSequenceMethod {self.name!r}"
         if not self.surrogates or len(set(self.surrogates)) != len(self.surrogates):
-            raise ValueError(
+            msg = (
                 f"{prefix}: surrogates must name each surrogate kind once, got "
                 f"{self.surrogates!r}."
             )
+            raise ValueError(msg)
         _checked_surrogate_kinds(prefix, self.surrogates, self.max_jitter)
         _check_seconds(self.window, "window", prefix, allow_zero=False)
         _check_seconds(self.tolerance, "tolerance", prefix, allow_zero=False)

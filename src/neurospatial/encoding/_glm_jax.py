@@ -26,7 +26,7 @@ Requires JAX (Linux/macOS only).
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import numpy as np
@@ -93,8 +93,7 @@ def _penalized_hessian_jax(basis: Array, mu: Array, penalty_diag: Array) -> Arra
     """
     r = basis.shape[1]
     hessian = jnp.einsum("ir,ik,is->krs", basis, mu, basis)
-    hessian = hessian + (penalty_diag + _HESSIAN_JITTER) * jnp.eye(r, dtype=basis.dtype)
-    return hessian
+    return hessian + (penalty_diag + _HESSIAN_JITTER) * jnp.eye(r, dtype=basis.dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +183,7 @@ def _step_halve_jax(
 # ---------------------------------------------------------------------------
 # Batched Newton/IRLS loop (mirror _glm_numpy._newton_fit_numpy)
 # ---------------------------------------------------------------------------
-@jax.jit
+@jax.jit  # type: ignore[misc, unused-ignore]
 def _warm_start_jax(
     counts: Array, occupancy: Array, basis: Array, constant_base: Array
 ) -> Array:
@@ -239,11 +238,11 @@ def _newton_loop_jax(
     coeffs = warm_coeffs
     prev_obj = _penalized_obj_jax(coeffs, basis, counts, occupancy, penalty_diag)
 
-    def cond(state):
+    def cond(state: tuple[Any, ...]) -> Any:
         _coeffs, _prev, iteration, _max_step, _converged, done = state
         return (iteration < max_iter) & jnp.logical_not(done)
 
-    def body(state):
+    def body(state: tuple[Any, ...]) -> tuple[Any, ...]:
         coeffs, prev_obj, iteration, _max_step, _converged, _done = state
         eta = jnp.clip(basis @ coeffs, -_ETA_CLIP, _ETA_CLIP)
         mu = occupancy[:, None] * jnp.exp(eta)
@@ -448,12 +447,13 @@ def select_penalty_by_reml_jax(
         options={"xatol": _REML_XATOL},
     )
     if not np.isfinite(result.fun):
-        raise ValueError(
+        msg = (
             "REML found no finite objective in the log-penalty interval "
             f"{_LOG_PENALTY_BOUNDS}: no lambda yielded a converged inner fit with "
             "a positive-definite Hessian. Reduce the basis rank, improve "
             "occupancy coverage, or supply a fixed penalty."
         )
+        raise ValueError(msg)
     lower, upper = _LOG_PENALTY_BOUNDS
     at_boundary = bool(min(result.x - lower, upper - result.x) <= _REML_BOUNDARY_TOL)
     return float(np.exp(result.x)), float(result.fun), at_boundary

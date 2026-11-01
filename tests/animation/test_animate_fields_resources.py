@@ -5,8 +5,6 @@ release them when the view closes. Readers a custom adapter returns are
 borrowed and stay open.
 """
 
-import warnings
-
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
@@ -43,13 +41,15 @@ class Reader:
     def __getitem__(self, index):
         assert self.close_count == 0
         if self.fail_read:
-            raise ValueError("decode failed")
+            msg = "decode failed"
+            raise ValueError(msg)
         return np.full((2, 2, 3), 100, dtype=np.uint8)
 
     def close(self):
         self.close_count += 1
         if self.fail:
-            raise RuntimeError("decoder close failed")
+            msg = "decoder close failed"
+            raise RuntimeError(msg)
 
 
 class VideoAdapter:
@@ -85,7 +85,6 @@ def file_video(monkeypatch):
         monkeypatch.setattr("neurospatial._video_io._VideoReader", open_reader)
         return VideoOverlay("video.mp4"), opened
 
-    warnings.filterwarnings("ignore", "VideoOverlay has no calibration")
     return make
 
 
@@ -214,7 +213,9 @@ def test_closing_the_napari_window_releases_owned_readers(env, file_video):
 def test_owner_deduplicates_and_completes_cleanup_after_one_reader_fails():
     first, second = Reader(fail=True), Reader()
     owner = _OwnedReaders([first, first, second])
-    with pytest.raises(BaseException) as caught:
+    with pytest.raises(
+        BaseException, match=r"Failed to close owned animation video readers"
+    ) as caught:
         owner.close()
     assert len(caught.value.exceptions) == 1
     assert first.close_count == second.close_count == 1

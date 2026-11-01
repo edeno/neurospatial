@@ -24,8 +24,10 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
+    is_finite_real,
     is_integer_at_least,
     validate_alpha,
+    validate_finite_scalar,
     validate_integer_at_least,
 )
 from neurospatial.replay._inputs import _checked_intervals
@@ -209,10 +211,11 @@ class TemplateMatchMethod:
         }
         for field_name, allowed in choices.items():
             if getattr(self, field_name) not in allowed:
-                raise ValueError(
+                msg = (
                     f"{prefix}: {field_name} must be one of {list(allowed)}, got "
                     f"{getattr(self, field_name)!r}."
                 )
+                raise ValueError(msg)
         own = {
             "best_match": ("max_isi", "word_gap", "trial_probability"),
             "matching_index": ("bandwidth",),
@@ -248,29 +251,26 @@ class TemplateMatchMethod:
             )
         letters = self.exact_max_letters
         if not (is_integer_at_least(letters, 1) and letters <= _MAX_EXACT_LETTERS):
-            raise ValueError(
+            msg = (
                 f"{prefix}: exact_max_letters must be an integer from 1 to "
                 f"{_MAX_EXACT_LETTERS}, got {letters!r}."
             )
+            raise ValueError(msg)
         if self.min_template_cells is not None and not is_integer_at_least(
             self.min_template_cells, 2
         ):
-            raise ValueError(
+            msg = (
                 f"{prefix}: min_template_cells must be an integer of at least 2 or "
                 f"None, got {self.min_template_cells!r}."
             )
+            raise ValueError(msg)
         validate_alpha(self.alpha, owner=prefix)
-        rate = self.min_peak_rate
-        if rate is not None and (
-            isinstance(rate, bool)
-            or not isinstance(rate, (int, float, np.integer, np.floating))
-            or not np.isfinite(rate)
-            or rate <= 0
-        ):
-            raise ValueError(
-                f"{prefix}: min_peak_rate must be a positive rate in Hz or None, "
-                f"got {rate!r}."
-            )
+        validate_finite_scalar(
+            self.min_peak_rate,
+            name=f"{prefix}: min_peak_rate",
+            positive=True,
+            none_allowed=True,
+        )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -326,21 +326,18 @@ def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
     """Refuse Lee & Wilson's burst and word gaps or trial probability out of range."""
     _check_seconds(method.max_isi, "max_isi", prefix, allow_zero=True)
     _check_seconds(method.word_gap, "word_gap", prefix, allow_zero=False)
-    assert method.max_isi is not None and method.word_gap is not None
+    assert method.max_isi is not None
+    assert method.word_gap is not None
     if method.max_isi > method.word_gap:
-        raise ValueError(
+        msg = (
             f"{prefix}: max_isi ({method.max_isi:g} s) must be at most "
             f"word_gap ({method.word_gap:g} s), as in Lee & Wilson (2002)."
         )
+        raise ValueError(msg)
     probability = method.trial_probability
-    if (
-        isinstance(probability, bool)
-        or not isinstance(probability, (int, float, np.integer, np.floating))
-        or not 0 < probability < 1
-    ):
-        raise ValueError(
-            f"{prefix}: trial_probability must be in (0, 1), got {probability!r}."
-        )
+    if not (is_finite_real(probability, positive=True) and probability < 1):
+        msg = f"{prefix}: trial_probability must be in (0, 1), got {probability!r}."
+        raise ValueError(msg)
 
 
 @reads_pynapple_samples
@@ -503,7 +500,8 @@ def _verdict(
     from neurospatial.replay.methods import ReplayDetectionResult
 
     if method.statistic == "best_match":
-        assert method.max_isi is not None and method.trial_probability is not None
+        assert method.max_isi is not None
+        assert method.trial_probability is not None
         match = _sequence_match(
             ranks,
             trains,
@@ -560,7 +558,10 @@ def _chosen(
     if scored:
         return max(scored, key=lambda result: (result.score, -result.p_value))
     label = method.criteria[0].label
-    return max(results, key=lambda result: result.values[label])
+    return max(
+        results,
+        key=lambda result: result.values[label],  # noqa: PD011  # a dataclass field holding a mapping, not a DataFrame
+    )  # a dataclass field holding a mapping, not a DataFrame
 
 
 # --------------------------------------------------------------------------
@@ -893,10 +894,11 @@ def _template_intervals(
 ) -> dict[str | None, NDArray[np.float64]]:
     if names == [None]:
         if isinstance(intervals, Mapping):
-            raise ValueError(
+            msg = (
                 f"{operation}: intervals is a mapping but encoding_models is one "
                 "set of rate maps; pass an array of shape (n_events, 2)."
             )
+            raise ValueError(msg)
         return {
             None: _checked_intervals(
                 intervals, operation, allow_empty=True, example=_INTERVALS_EXAMPLE
@@ -1039,7 +1041,8 @@ def _word_groups_test(
     rng: np.random.Generator,
 ) -> TemplateMatchDatasetResult:
     """Lee & Wilson's binomial tests of pairs, triplets and low-probability words."""
-    assert method.max_isi is not None and method.trial_probability is not None
+    assert method.max_isi is not None
+    assert method.trial_probability is not None
     probability = method.trial_probability
     words = []
     for name, rows in events.items():

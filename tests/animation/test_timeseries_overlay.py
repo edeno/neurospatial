@@ -634,7 +634,8 @@ class TestTimeSeriesIntegration:
             for line in grouped.lines:
                 y = np.asarray(line.get_ydata(), dtype=float)
                 if line.get_label() in ("Speed", "Accel"):
-                    assert y.min() >= 0.0 and y.max() <= 1.0
+                    assert y.min() >= 0.0
+                    assert y.max() <= 1.0
             # Each panel shows the scene's window around the current time.
             for ax in panels:
                 np.testing.assert_allclose(ax.get_xlim(), (0.3, 0.7))

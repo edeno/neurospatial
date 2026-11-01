@@ -53,4 +53,8 @@ TRACK_MAZES = sorted(
 
 @pytest.mark.parametrize("name", TRACK_MAZES)
 def test_include_track_false_leaves_the_track_out(name):
-    assert getattr(mazes, name)(bin_size=4.0, include_track=False).env_track is None
+    # Hamlet's slanted agora wall is only kept below 2.1 cm bins.
+    bin_size = 2.0 if name == "make_hamlet_maze" else 4.0
+    assert (
+        getattr(mazes, name)(bin_size=bin_size, include_track=False).env_track is None
+    )

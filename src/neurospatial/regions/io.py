@@ -144,7 +144,7 @@ def regions_from_json(path: str | Path) -> Regions:
     for index, entry in enumerate(entries):
         try:
             regions.append(Region.from_dict(entry))
-        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:  # noqa: PERF203  # names the malformed entry
             raise ValueError(
                 _format_error(
                     f"Region entry {index} in {path} is malformed: {exc!r}.",
@@ -193,13 +193,15 @@ def _simplify_together(
     """
     geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
     if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
-        raise ValueError("Simplification did not preserve valid outline geometry.")
+        msg = "Simplification did not preserve valid outline geometry."
+        raise ValueError(msg)
     # GEOS may unwrap a one-component MultiPolygon into a Polygon.
     simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
     if len(simplified) != len(polygons) or sorted(
         len(polygon.interiors) for polygon in simplified
     ) != sorted(len(polygon.interiors) for polygon in polygons):
-        raise ValueError("Simplification did not preserve every component and hole.")
+        msg = "Simplification did not preserve every component and hole."
+        raise ValueError(msg)
     return simplified
 
 
@@ -272,7 +274,7 @@ def _labelled_regions(
     metadata: Mapping[str, Any],
     *,
     pixel_to_world: SpatialTransform | None,
-    label_metadata: Callable[[str], Mapping[str, Any]] = lambda label: {},
+    label_metadata: Callable[[str], Mapping[str, Any]] = lambda label: {},  # noqa: ARG005  # default callback signature
 ) -> Regions:
     """Build an annotation file's regions, named by label, in file order.
 
@@ -944,7 +946,8 @@ def load_cvat_xml(
     try:
         root = ET.parse(path).getroot()
     except ET.ParseError as e:
-        raise ET.ParseError(f"Error parsing XML file {xml_path}: {e}") from e
+        msg = f"Error parsing XML file {xml_path}: {e}"
+        raise ET.ParseError(msg) from e
     if root.tag != "annotations":
         raise ValueError(
             _format_error(

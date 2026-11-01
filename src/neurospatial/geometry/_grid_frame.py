@@ -46,15 +46,19 @@ class FramedGrid(ReadOnlyState):
 
     def __post_init__(self) -> None:
         if type(self.source) is not RectilinearGrid:
-            raise TypeError("FramedGrid.source must be a RectilinearGrid.")
+            msg = "FramedGrid.source must be a RectilinearGrid."
+            raise TypeError(msg)
         grid = self.source
         if len(grid.shape) not in (2, 3):
-            raise ValueError("FramedGrid needs a 2-D or 3-D source grid.")
+            msg = "FramedGrid needs a 2-D or 3-D source grid."
+            raise ValueError(msg)
         if np.asarray(self.forward).dtype.kind not in "iuf":
-            raise ValueError("FramedGrid.forward must be real numeric data.")
+            msg = "FramedGrid.forward must be real numeric data."
+            raise ValueError(msg)
         affine = AffineMap(self.forward)
         if affine.n_dims != len(grid.shape):
-            raise ValueError("FramedGrid dimensions must match its source grid.")
+            msg = "FramedGrid dimensions must match its source grid."
+            raise ValueError(msg)
         object.__setattr__(self, "forward", affine.forward)
         object.__setattr__(self, "affine", affine)
         object.__setattr__(
@@ -72,9 +76,8 @@ class FramedGrid(ReadOnlyState):
         values = np.asarray(points, dtype=np.float64)
         n_dims = len(self.source.shape)
         if values.ndim != 2 or values.shape[1] != n_dims:
-            raise ValueError(
-                f"Expected points of shape (n_points, {n_dims}), got {values.shape}."
-            )
+            msg = f"Expected points of shape (n_points, {n_dims}), got {values.shape}."
+            raise ValueError(msg)
         return values
 
     def to_source(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -111,9 +114,8 @@ class FramedGrid(ReadOnlyState):
                 original[:, axis] <= edges[-1]
             )
             if np.any(relevant & (errors[:, axis] >= cap)):
-                raise ValueError(
-                    f"{operation} cannot resolve source coordinate planes; recenter or rescale coordinates."
-                )
+                msg = f"{operation} cannot resolve source coordinate planes; recenter or rescale coordinates."
+                raise ValueError(msg)
             insertion = np.searchsorted(coordinates, original[:, axis])
             lower = coordinates[np.clip(insertion - 1, 0, len(coordinates) - 1)]
             upper = coordinates[np.clip(insertion, 0, len(coordinates) - 1)]
@@ -237,14 +239,16 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
         selected = active_order(locator.parent_to_child)
         indices = indices[selected]
         if np.any(np.diff(indices) <= 0):
-            raise ValueError("FramedGrid requires row-major bin ordering.")
+            msg = "FramedGrid requires row-major bin ordering."
+            raise ValueError(msg)
         mask = np.zeros(base.source.shape, dtype=bool)
         mask.flat[indices] = True
         return FramedGrid(
             RectilinearGrid(base.source.edges, base.source.shape, mask), base.forward
         ), error
     if not isinstance(locator, RectilinearLocator):
-        raise ValueError("FramedGrid requires a matching rectangular locator.")
+        msg = "FramedGrid requires a matching rectangular locator."
+        raise ValueError(msg)
     return FramedGrid(
         RectilinearGrid(locator.edges, locator.shape, locator.active_mask),
         np.eye(len(locator.shape) + 1),

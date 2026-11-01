@@ -70,15 +70,12 @@ def test_partial_report_preserves_requested_labels_and_spike_counts():
             19: {"center": session.env.bin_centers[0]},
         },
     )
-    with pytest.warns(
-        UserWarning, match=r"Units \[19\]: ground truth has no place field"
-    ):
-        result = validate_simulation(
-            session,
-            unit_ids=[19, 7, 11],
-            method="binned",
-            bandwidth=0.0,
-        )
+    result = validate_simulation(
+        session,
+        unit_ids=[19, 7, 11],
+        method="binned",
+        bandwidth=0.0,
+    )
     np.testing.assert_array_equal(result.unit_ids, [19, 7, 11])
     np.testing.assert_array_equal(result.spike_counts, [len(train), 0, len(train)])
     assert result.unit_status == ("not_evaluable", "not_evaluable", "passed")
@@ -210,8 +207,7 @@ def _with_border_unit(session):
 
 def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
     session = _with_border_unit(_session())
-    with pytest.warns(UserWarning, match="not place fields"):
-        result = validate_simulation(session, method="binned", bandwidth=0.0)
+    result = validate_simulation(session, method="binned", bandwidth=0.0)
     assert result.unit_status == ("passed", "excluded")
     assert result.skip_reasons == (None, "not_a_place_field")
     assert (result.n_evaluated, result.n_excluded) == (1, 1)

@@ -61,7 +61,8 @@ class TestPublishedValueOwnership:
         restored = Environment.from_dict(expected.to_dict())
 
         assert env._geometry is geometry
-        assert env._cache is cache and len(cache) == n_cached
+        assert env._cache is cache
+        assert len(cache) == n_cached
         assert env._diffusion_geometry is old_geometry
         assert diffusion_eigenbasis(env._cache) is old_diffusion_cache
         assert _mrf_holder(env) is old_mrf_cache
@@ -134,13 +135,16 @@ class TestPublishedGeometryIsReadOnly:
         else:
             attrs, key, value = env.connectivity.graph, "test", "changed"
 
-        with pytest.raises(TypeError, match="read-only"):
+        def attempt():
             if method == "assignment":
                 attrs[key] = value
             elif method == "update":
                 attrs.update({key: value})
             else:
                 attrs.pop(key, None)
+
+        with pytest.raises(TypeError, match="read-only"):
+            attempt()
         assert env.distance_between(points=[np.array([0.5]), np.array([2.5])]) == 2.0
 
     @pytest.mark.parametrize("how", ["deepcopy", "pickle"])
@@ -238,7 +242,8 @@ class TestPublishedGeometryIsReadOnly:
         point = np.array([[0.5, 0.5]])
         before = env.bin_at(point)
 
-        assert base.flags.writeable and edges[0].flags.writeable
+        assert base.flags.writeable
+        assert edges[0].flags.writeable
         base[0, 0] = False  # through the base of the view the caller passed
         edges[0][:] += 100.0
 

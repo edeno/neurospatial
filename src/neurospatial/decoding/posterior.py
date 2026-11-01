@@ -61,9 +61,12 @@ def _validate_encoding_environment(
     bins, topology = _environment_differences(source, env)
     mismatch = bins or topology
     if mismatch is not None:
-        raise IncompatibleEnvironmentError(
+        msg = (
             f"{context}: the encoding result's environment differs from the "
-            f"decoding environment in {mismatch}.",
+            f"decoding environment in {mismatch}."
+        )
+        raise IncompatibleEnvironmentError(
+            msg,
             fix="decode on the result's env, or recompute rates on the decoding environment.",
             first=source,
             second=env,
@@ -81,23 +84,25 @@ def _validate_time_chunk(time_chunk: Any, *, allow_none: bool) -> Any:
     if time_chunk is None and allow_none:
         return None
     if not is_integer_at_least(time_chunk, 1):
-        raise ValueError(
+        msg = (
             f"time_chunk must be a positive integer{' or None' if allow_none else ''}, "
             f"got {time_chunk!r} (type {type(time_chunk).__name__})."
         )
+        raise ValueError(msg)
     return int(time_chunk)
 
 
 def _summary_time_chunk(time_chunk: Any, *, caller: str, full_decoder: str) -> int:
     """Validate the block size of a streamed summary decoder; ``None`` is refused."""
     if time_chunk is None:
-        raise ValueError(
+        msg = (
             f"time_chunk=None is not allowed for {caller}: this streamed summary "
             "decoder reduces the posterior one time-block at a time, and None "
             "would materialize the full (n_time, n_bins) posterior, defeating its "
             f"purpose. Use {full_decoder} if you want the full posterior, or pass "
             "a positive time_chunk (default 1024) here."
         )
+        raise ValueError(msg)
     return cast("int", _validate_time_chunk(time_chunk, allow_none=False))
 
 
@@ -306,19 +311,21 @@ def normalize_to_posterior(
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
     ll = np.asarray(log_likelihood, dtype=np.float64)
     if ll.ndim != 2:
-        raise ValueError(
+        msg = (
             f"log_likelihood must be 2-D with shape (n_time_bins, n_bins), got "
             f"shape {ll.shape}. For a single time bin pass ll[np.newaxis, :]."
         )
+        raise ValueError(msg)
     n_time, n_bins = ll.shape
     fill: NDArray[np.bool_] | None = None
     if prior is not None:
         prior_arr = np.asarray(prior, dtype=np.float64)
         if prior_arr.shape not in ((n_bins,), (n_time, n_bins)):
-            raise ValueError(
+            msg = (
                 f"prior must have shape ({n_bins},) or ({n_time}, {n_bins}) to "
                 f"match log_likelihood, got shape {prior_arr.shape}."
             )
+            raise ValueError(msg)
         if np.isfinite(prior_arr).all():
             prior_arr = _zero_smoothing_noise(prior_arr)
         if not np.isfinite(prior_arr).all() or np.any(prior_arr < 0):
@@ -606,9 +613,8 @@ def _prepare_decode_inputs(
 
     _validate_encoding_environment(env, encoding_models, context=context)
     if method != "poisson":
-        raise ValueError(
-            f"Unknown method '{method}'. Currently only 'poisson' is supported."
-        )
+        msg = f"Unknown method '{method}'. Currently only 'poisson' is supported."
+        raise ValueError(msg)
     rate_maps: Any = encoding_models
     if isinstance(encoding_models, SpatialRatesResult):
         spatial_support = encoding_models.spatial_support
@@ -627,16 +633,20 @@ def _prepare_decode_inputs(
     prior = resolve_prior(env, prior, spatial_support, n_time, context=context)
     models = np.asarray(models_on_support(np.asarray(rate_maps), spatial_support))
     if models.ndim != 2:
-        raise ValueError(
+        msg = (
             f"encoding_models must be 2-D (n_neurons, n_bins), got shape "
             f"{models.shape}."
         )
+        raise ValueError(msg)
     # A wrong bin count yields a well-formed posterior over the wrong
     # positions, so this check does not depend on ``validate``.
     if models.shape[1] != env.n_bins:
-        raise IncompatibleEnvironmentError(
+        msg = (
             f"{context}: encoding_models has {models.shape[1]} bins "
-            f"(axis 1) but env has {env.n_bins} active bins.",
+            f"(axis 1) but env has {env.n_bins} active bins."
+        )
+        raise IncompatibleEnvironmentError(
+            msg,
             fix="compute the rate maps on the decoding environment.",
         )
     if validate:
@@ -652,12 +662,13 @@ def _prepare_decode_inputs(
             )
     n_negative = int(np.sum(models < 0))
     if n_negative:
-        raise ValueError(
+        msg = (
             f"encoding_models contains {n_negative} negative entr"
             f"{'y' if n_negative == 1 else 'ies'} "
             f"(min: {float(np.nanmin(models)):.6g} Hz). "
             "Firing rates must be non-negative."
         )
+        raise ValueError(msg)
 
     if models.dtype.kind == "f" and not np.isfinite(models).all():
         excluded = np.asarray(~np.isfinite(models).all(axis=0))
@@ -712,19 +723,21 @@ def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
     # value, which a 100k-row array needs to be actionable.
     if not np.isfinite(spike_counts).all():
         n_bad = int(np.sum(~np.isfinite(spike_counts)))
-        raise ValueError(
+        msg = (
             f"spike_counts contains {n_bad} NaN or Inf entries. "
             "All spike counts must be finite non-negative integers."
         )
+        raise ValueError(msg)
     if (spike_counts < 0).any():
         n_negative = int(np.sum(spike_counts < 0))
         worst_count = float(spike_counts.min())
-        raise ValueError(
+        msg = (
             f"spike_counts contains {n_negative} negative entr"
             f"{'y' if n_negative == 1 else 'ies'} (min: {worst_count:g}). "
             "Spike counts represent spike events per time bin and must "
             "be non-negative integers."
         )
+        raise ValueError(msg)
 
     # Float counts must hold exact integers (a common shape after histogramming
     # into a float64 column). A fractional value like 0.5 is meaningless under
@@ -737,13 +750,14 @@ def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
             # The entry with the largest fractional part, to find in the input.
             fractional_part = np.abs(spike_counts - rounded)
             worst_value = float(spike_counts.flat[int(fractional_part.argmax())])
-            raise ValueError(
+            msg = (
                 f"spike_counts contains {n_fractional} fractional entr"
                 f"{'y' if n_fractional == 1 else 'ies'} (e.g., {worst_value:g}). "
                 "Spike counts must be integer-valued. Cast with "
                 "`spike_counts.astype(np.int64)` after confirming the "
                 "non-integer values are not a binning bug upstream."
             )
+            raise ValueError(msg)
 
 
 def _posterior_blocks(
@@ -891,11 +905,12 @@ def _decode_summary(
         if validate:
             problems = _posterior_value_problems(block)
             if problems:
-                raise ValueError(
+                msg = (
                     f"{context}: the decoded posterior of time bins {start} to "
                     f"{stop} is invalid: {'; '.join(problems)}. This indicates "
                     "numerical instability."
                 )
+                raise ValueError(msg)
         # The reductions accumulate in float64 whatever the block dtype.
         map_bin[start:stop] = _density_mode(block, measures)
         weighted[start:stop] = block @ mean_basis
@@ -1039,11 +1054,12 @@ def decode_position_summary(
     if times is not None:
         times_arr = np.asarray(times, dtype=np.float64)
         if times_arr.ndim != 1 or len(times_arr) != n_time:
-            raise ValueError(
+            msg = (
                 f"Length mismatch: times has {times_arr.shape} but there are "
                 f"{n_time} time bins. `times` must be a 1-D array of bin "
                 f"centers, one per row of spike_counts."
             )
+            raise ValueError(msg)
 
     return _decode_summary(
         env,

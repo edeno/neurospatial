@@ -330,7 +330,7 @@ ALL_FUNCTIONS = [
 
 def _call(function, r, break_before):
     """Call a public encoding function on the recording with ``break_before``."""
-    plural = function.endswith("rates") or function.endswith("significance")
+    plural = function.endswith(("rates", "significance"))
     if function in PREDICATES:
         family, _, _, extra = PREDICATES[function]
     elif function in SIGNIFICANCE:

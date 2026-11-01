@@ -50,6 +50,5 @@ def test_unrecognized_unit_label_does_not_become_a_physical_scale():
     viewer = SimpleNamespace(
         canvas=SimpleNamespace(overlays=SimpleNamespace(scale_bar=bar))
     )
-    with pytest.warns(UserWarning, match="scale bar is hidden"):
-        configure_napari_scale_bar(viewer, units="arena units")
+    configure_napari_scale_bar(viewer, units="arena units")
     assert not bar.visible

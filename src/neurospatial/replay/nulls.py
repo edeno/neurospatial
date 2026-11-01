@@ -27,7 +27,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._validation import validate_draw_count
+from neurospatial._validation import (
+    validate_bool,
+    validate_draw_count,
+    validate_finite_scalar,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -134,7 +138,7 @@ def shuffle_cell_identity(
     n_neurons = spike_counts.shape[1]
 
     if encoding_models.shape[0] != n_neurons:
-        raise ValueError(
+        msg = (
             f"spike_counts has {n_neurons} neuron(s) (columns) but "
             f"encoding_models has {encoding_models.shape[0]} (rows). These must "
             f"match: row i of encoding_models is the place field for neuron i "
@@ -142,6 +146,7 @@ def shuffle_cell_identity(
             f"Fix: pass spike_counts shaped (n_time_bins, n_neurons) and "
             f"encoding_models shaped (n_neurons, n_bins)."
         )
+        raise ValueError(msg)
 
     active = (
         np.flatnonzero(np.asarray(spike_counts).sum(axis=0) > 0)
@@ -446,17 +451,11 @@ def shuffle_place_fields_circular_2d(
     )
     # Validate 2D environment
     if env.n_dims != 2:
-        raise ValueError(
+        msg = (
             f"shuffle_place_fields_circular_2d requires a 2D environment, "
             f"got {env.n_dims}D"
         )
-
-    # Get grid shape from environment
-    if env.grid_shape is None:
-        raise ValueError(
-            "shuffle_place_fields_circular_2d requires environment with grid layout "
-            "(grid_shape attribute)"
-        )
+        raise ValueError(msg)
 
     grid_shape = env.grid_shape
     if len(grid_shape) != 2:
@@ -633,17 +632,17 @@ def shuffle_posterior_circular(
     order = _track_order(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
     )
-    if not isinstance(exclude_zero_shift, (bool, np.bool_)):
-        raise TypeError(
-            "shuffle_posterior_circular() needs exclude_zero_shift=True or "
-            f"False, got {exclude_zero_shift!r}."
-        )
+    exclude_zero_shift = validate_bool(
+        exclude_zero_shift,
+        name="exclude_zero_shift",
+        owner="shuffle_posterior_circular()",
+    )
     return _roll_rows_along_track(
         posterior,
         order,
         n_shuffles,
         np.random.default_rng(rng),
-        exclude_zero_shift=bool(exclude_zero_shift),
+        exclude_zero_shift=exclude_zero_shift,
     )
 
 
@@ -810,16 +809,9 @@ def _peak_probabilities(
                 "events, np.vstack(posteriors).mean(axis=0)",
             )
         )
-    if (
-        isinstance(edge_exclusion, bool)
-        or not isinstance(edge_exclusion, (int, float, np.integer, np.floating))
-        or not np.isfinite(edge_exclusion)
-        or edge_exclusion < 0
-    ):
-        raise ValueError(
-            f"{operation}: edge_exclusion must be a finite distance >= 0 in "
-            f"the environment's units, got {edge_exclusion!r}."
-        )
+    validate_finite_scalar(
+        edge_exclusion, name=f"{operation}: edge_exclusion", positive=False
+    )
     starts, stops = _require_track_extents(
         env, operation, alternative=_POSTERIOR_SHUFFLE_ALTERNATIVE
     )
@@ -936,10 +928,11 @@ def shuffle_spike_counts_circular(
     )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2:
-        raise ValueError(
+        msg = (
             f"spike_counts must be 2-D (n_time_bins, n_neurons), got shape "
             f"{counts.shape}."
         )
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     n_time, n_neurons = counts.shape
     rows = np.arange(n_time)[:, np.newaxis]
@@ -1031,11 +1024,12 @@ def shuffle_spike_counts_uniform(
     )
     counts = np.asarray(spike_counts)
     if counts.ndim != 2 or np.any(counts < 0):
-        raise ValueError(
+        msg = (
             "shuffle_spike_counts_uniform(): spike_counts must be 2-D "
             "(n_time_bins, n_neurons) non-negative counts, got shape "
             f"{counts.shape}."
         )
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     n_time = len(counts)
     totals = counts.sum(axis=0)

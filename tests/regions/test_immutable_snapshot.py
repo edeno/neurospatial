@@ -44,7 +44,7 @@ def test_point_data_is_an_independent_read_only_copy(method, source_kind):
     assert not np.shares_memory(restored.data, source)
     assert restored.data.dtype == np.float64
     assert not restored.data.flags.writeable
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"assignment destination is read-only"):
         restored.data[0] = 123
 
 

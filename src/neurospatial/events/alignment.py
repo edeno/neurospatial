@@ -10,7 +10,6 @@ This module provides functions for aligning neural data to events:
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +24,6 @@ from neurospatial._intervals import (
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import resolve_unit_ids
 from neurospatial._spikes import _as_spike_trains_with_ids, spike_unit_table
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
@@ -140,7 +138,7 @@ def _keep_observed_events(
         if windows is not None:
             keep &= intervals_contain(windows, starts, stops)
     if not keep.any():
-        raise ValueError(
+        msg = (
             f"All {event_times.size} events were dropped from the peri-event "
             f"histogram: no event's window [event{window[0]:+g} s, "
             f"event{window[1]:+g} s) lies entirely inside epochs ∩ spike_window. "
@@ -148,6 +146,7 @@ def _keep_observed_events(
             f"if no spikes occurred there.\nFix: check that event_times, epochs "
             f"and spike_window share one clock (seconds), or narrow `window`."
         )
+        raise ValueError(msg)
     return event_times[keep], np.flatnonzero(keep)
 
 
@@ -218,12 +217,6 @@ def _peri_event_histograms(
         event_times, window, resolved_epochs, resolved_spike_window
     )
     n_events = event_times.size
-    if n_events == 1:
-        warnings.warn(
-            "Computing PSTH with single event - SEM is undefined (will be NaN).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
 
     # Count on the absolute clock, not on relative times: subtraction can move
     # an exact boundary spike across a bin edge.
@@ -318,11 +311,12 @@ def peri_event_histogram(
     Warns
     -----
     UserWarning
-        When computing PSTH with a single event (SEM is undefined), and when
-        the window spans more than 60 s (it may be in milliseconds).
+        When the window spans more than 60 s (it may be in milliseconds).
 
     Notes
     -----
+    With a single retained event the SEM is undefined and is NaN.
+
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
     the window stop are not counted.
@@ -456,11 +450,12 @@ def population_peri_event_histogram(
     Warns
     -----
     UserWarning
-        With a single event (SEM is undefined), and when the window spans
-        more than 60 s (it may be in milliseconds).
+        When the window spans more than 60 s (it may be in milliseconds).
 
     Notes
     -----
+    With a single retained event the SEM is undefined and is NaN.
+
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
     the window stop are not counted.
@@ -497,11 +492,12 @@ def population_peri_event_histogram(
     trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
 
     if len(trains) == 0:
-        raise ValueError(
+        msg = (
             "spike_times is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
             "  Fix: Provide at least one spike train."
         )
+        raise ValueError(msg)
     context = "population_peri_event_histogram"
     window = _validate_window(window, context=context)
     histograms, sem, mean_sem, event_indices, n_dropped = _peri_event_histograms(

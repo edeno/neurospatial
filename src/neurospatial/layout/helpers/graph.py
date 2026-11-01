@@ -96,7 +96,8 @@ def _get_graph_bins(
         node for edge in edge_order for node in edge if node not in graph.nodes
     }
     if missing_nodes:
-        raise ValueError(f"Nodes {missing_nodes} in edge_order not found in graph.")
+        msg = f"Nodes {missing_nodes} in edge_order not found in graph."
+        raise ValueError(msg)
     not_edges = [edge for edge in edge_order if not graph.has_edge(*edge)]
     if not_edges:
         raise ValueError(
@@ -124,11 +125,12 @@ def _get_graph_bins(
 
     node_positions = nx.get_node_attributes(graph, "pos")
     if len(node_positions) < len(graph.nodes):
-        raise ValueError("All nodes must have a 'pos' attribute (x,y,…).")
+        msg = "All nodes must have a 'pos' attribute (x,y,…)."
+        raise ValueError(msg)
     refuse_coincident_nodes(graph, edge_order)
 
     # (u, v) and (v, u) map to the same edge ID.
-    edge_id_map: dict[frozenset, int] = {
+    edge_id_map: dict[frozenset[Any], int] = {
         frozenset(edge): idx for idx, edge in enumerate(graph.edges())
     }
 
@@ -206,7 +208,7 @@ def set_straight_distances(graph: nx.Graph) -> None:
             )
         data["distance"] = length
     if mismatched:
-        raise ValueError(
+        msg = (
             f"{len(mismatched)} track-graph edge(s) have a 'distance' that is not "
             f"the distance between their nodes' 'pos': {'; '.join(mismatched[:3])}"
             f"{'; ...' if len(mismatched) > 3 else ''}. Why: an edge is the "
@@ -216,6 +218,7 @@ def set_straight_distances(graph: nx.Graph) -> None:
             "are computed from 'pos'), or move the nodes; a curved track needs "
             "more nodes along the curve."
         )
+        raise ValueError(msg)
 
 
 def track_pairs(
@@ -341,8 +344,9 @@ def _find_bin_for_linear_position(
         return -1 if was_scalar else np.full(linear_positions.shape, -1, dtype=int)
 
     if active_mask is not None and len(active_mask) != n_bins:
+        msg = f"active_mask length ({len(active_mask)}) must match number of bins ({n_bins})."
         raise ValueError(
-            f"active_mask length ({len(active_mask)}) must match number of bins ({n_bins}).",
+            msg,
         )
 
     bin_ind = np.digitize(linear_positions, bin_edges, right=False) - 1

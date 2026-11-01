@@ -455,7 +455,8 @@ def sample_feature(
         elif interpolation == "linear":
             sampled[between] = x0 + weight * step
         else:
-            raise ValueError(f"unknown interpolation {interpolation!r}")
+            msg = f"unknown interpolation {interpolation!r}"
+            raise ValueError(msg)
 
     supported: NDArray[np.bool_] = at_sample | between
     if kind == "circular":

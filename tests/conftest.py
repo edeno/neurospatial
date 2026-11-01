@@ -132,8 +132,7 @@ def analysis_invariant_env(request):
             mask[1, 1] = False
         env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
     env = env.with_metadata(units="cm")
-    env = env.with_metadata(frame="arena")
-    return env
+    return env.with_metadata(frame="arena")
 
 
 @pytest.fixture
@@ -701,8 +700,7 @@ def simple_3d_env() -> Environment:
         connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)
     )
     env = env.with_metadata(units="cm")
-    env = env.with_metadata(frame="session1")
-    return env
+    return env.with_metadata(frame="session1")
 
 
 # =============================================================================
@@ -1098,7 +1096,8 @@ def forbid_layout_builds(monkeypatch):
     from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 
     def refuse(*args, **kwargs):
-        raise AssertionError("Loading geometry must not run a layout builder")
+        msg = "Loading geometry must not run a layout builder"
+        raise AssertionError(msg)
 
     for cls in (
         _PolarGridLayout,

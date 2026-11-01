@@ -69,7 +69,8 @@ def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
     write_spatial_rates(empty_nwb, result)
     table = empty_nwb.analysis[DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
-    assert "method" in meta and "smoothing_method" not in meta
+    assert "method" in meta
+    assert "smoothing_method" not in meta
     assert meta["schema_version"] == "3.0"
 
     back = read_spatial_rates(empty_nwb, env=env)

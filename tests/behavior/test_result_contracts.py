@@ -152,7 +152,7 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize("result, keys, kv, str_sub", _CASES)
+@pytest.mark.parametrize(("result", "keys", "kv", "str_sub"), _CASES)
 def test_summary_is_scalar_dict_with_matching_values(result, keys, kv, str_sub):
     summary = result.summary()
     assert isinstance(summary, dict)
@@ -168,10 +168,11 @@ def test_summary_is_scalar_dict_with_matching_values(result, keys, kv, str_sub):
     assert summary[key] == expected
 
 
-@pytest.mark.parametrize("result, keys, kv, str_sub", _CASES)
+@pytest.mark.parametrize(("result", "keys", "kv", "str_sub"), _CASES)
 def test_str_renders_human_readable(result, keys, kv, str_sub):
     text = str(result)
-    assert isinstance(text, str) and text.strip()
+    assert isinstance(text, str)
+    assert text.strip()
     assert str_sub in text
 
 

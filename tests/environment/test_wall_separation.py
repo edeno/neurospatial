@@ -351,7 +351,8 @@ def _thin_wall_floor(bin_size, offset, *, hole=False):
 def _across(env, left, bin_size, y):
     """The bins on either side of the wall at height ``y``."""
     a, b = (int(i) for i in env.bin_at([[left - bin_size, y], [left + bin_size, y]]))
-    assert a >= 0 and b >= 0
+    assert a >= 0
+    assert b >= 0
     return a, b
 
 

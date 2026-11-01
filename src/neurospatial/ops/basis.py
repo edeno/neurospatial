@@ -116,6 +116,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_choice
 from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
@@ -214,11 +215,18 @@ def select_basis_centers(
     True
     """
     # Input validation
+    method = validate_choice(
+        method,
+        ("kmeans", "farthest_point", "random"),
+        name="method",
+        owner="select_basis_centers()",
+    )
     if n_centers < 1:
-        raise ValueError(f"n_centers must be at least 1, got {n_centers}.")
+        msg = f"n_centers must be at least 1, got {n_centers}."
+        raise ValueError(msg)
 
     if n_centers > env.n_bins:
-        raise ValueError(
+        msg = (
             f"Cannot select {n_centers} centers from environment "
             f"with only {env.n_bins} bins.\n"
             f"\n"
@@ -229,6 +237,7 @@ def select_basis_centers(
             f"Your environment has {env.n_bins} bins covering "
             f"{env.n_dims}D space."
         )
+        raise ValueError(msg)
 
     # Handle random state
     generator = np.random.default_rng(rng)  # a Generator is returned as is
@@ -246,17 +255,11 @@ def select_basis_centers(
         return _select_centers_kmeans(
             env.bin_centers, env.bin_center_tree(), n_centers, generator
         )
-    elif method == "farthest_point":
+    if method == "farthest_point":
         return _select_centers_farthest_point(
             env.connectivity, env.n_bins, n_centers, generator
         )
-    elif method == "random":
-        return _select_centers_random(env.n_bins, n_centers, generator)
-    else:
-        raise ValueError(
-            f"Unknown method: {method!r}. "
-            f"Expected one of: 'kmeans', 'farthest_point', 'random'."
-        )
+    return _select_centers_random(env.n_bins, n_centers, generator)
 
 
 def _select_centers_kmeans(
@@ -411,7 +414,7 @@ def _resolve_centers(
     """
     if centers is None:
         if n_centers is None:
-            raise ValueError(
+            msg = (
                 "Must specify basis function locations.\n"
                 "\n"
                 "Two options:\n"
@@ -423,6 +426,7 @@ def _resolve_centers(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
+            raise ValueError(msg)
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
@@ -486,6 +490,9 @@ def _normalize_basis(
     NDArray, shape (n_basis, n_bins)
         Normalized basis.
     """
+    mode = validate_choice(
+        mode, ("unit", "max", "none"), name="normalize", owner="the basis functions"
+    )
     if mode == "none":
         return basis
 
@@ -495,13 +502,10 @@ def _normalize_basis(
         result: NDArray[np.float64] = basis / norms
         return result
 
-    if mode == "max":
-        maxes = np.max(np.abs(basis), axis=1, keepdims=True)
-        maxes = np.where(maxes == 0, 1.0, maxes)
-        result_max: NDArray[np.float64] = basis / maxes
-        return result_max
-
-    raise ValueError(f"Unknown normalization mode: {mode!r}")
+    maxes = np.max(np.abs(basis), axis=1, keepdims=True)
+    maxes = np.where(maxes == 0, 1.0, maxes)
+    result_max: NDArray[np.float64] = basis / maxes
+    return result_max
 
 
 def geodesic_rbf_basis(
@@ -660,7 +664,7 @@ def geodesic_rbf_basis(
     invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
     if np.any(invalid_mask):
         invalid = bandwidths[invalid_mask]
-        raise ValueError(
+        msg = (
             f"bandwidth values must be positive and finite, got: {invalid}.\n"
             "\n"
             "bandwidth controls spatial spread of basis functions:\n"
@@ -669,6 +673,7 @@ def geodesic_rbf_basis(
             "\n"
             "Rule of thumb: bandwidth ≈ (desired coverage diameter) / 2"
         )
+        raise ValueError(msg)
 
     n_centers_actual = len(centers)
     n_bandwidths = len(bandwidths)
@@ -691,7 +696,7 @@ def geodesic_rbf_basis(
     if np.any(np.isinf(distances)):
         n_inf = np.sum(np.isinf(distances))
         n_affected_centers = np.sum(np.any(np.isinf(distances), axis=1))
-        raise ValueError(
+        msg = (
             f"Found {n_inf} unreachable (center, bin) pairs.\n"
             f"{n_affected_centers} of {n_centers_actual} centers have unreachable bins.\n"
             "\n"
@@ -704,6 +709,7 @@ def geodesic_rbf_basis(
             "\n"
             "To fix, ensure all bins are reachable when creating the environment."
         )
+        raise ValueError(msg)
 
     # Compute RBF for each (center, bandwidth) combination
     # Rows ordered by (center, bandwidth): all bandwidths for center 0, then center 1, etc.
@@ -724,9 +730,7 @@ def geodesic_rbf_basis(
     basis = basis_3d.reshape(n_centers_actual * n_bandwidths, n_bins)
 
     # Normalize
-    basis = _normalize_basis(basis, normalize)
-
-    return basis
+    return _normalize_basis(basis, normalize)
 
 
 def _diffusion_generator(
@@ -865,7 +869,7 @@ def heat_kernel_wavelet_basis(
     invalid_mask = ~(np.isfinite(scales_arr) & (scales_arr > 0))
     if np.any(invalid_mask):
         invalid = scales_arr[invalid_mask]
-        raise ValueError(
+        msg = (
             f"scales values must be positive and finite, got: {invalid}.\n"
             "\n"
             "scales controls diffusion time (spatial spread):\n"
@@ -875,6 +879,7 @@ def heat_kernel_wavelet_basis(
             "\n"
             "Fix: pass positive scales, e.g. scales=[0.5, 1.0, 2.0, 4.0]."
         )
+        raise ValueError(msg)
 
     _require_faces(env, "heat_kernel_wavelet_basis")
     laplacian = _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing)
@@ -1021,7 +1026,7 @@ def chebyshev_filter_basis(
 
     # Validate max_degree
     if max_degree < 0:
-        raise ValueError(
+        msg = (
             f"max_degree must be non-negative, got {max_degree}.\n"
             "\n"
             "max_degree controls spatial extent (in hops):\n"
@@ -1029,6 +1034,7 @@ def chebyshev_filter_basis(
             "  - max_degree=3: ~3 bins radius\n"
             "  - max_degree=5: ~5 bins radius (typical choice)\n"
         )
+        raise ValueError(msg)
 
     _require_faces(env, "chebyshev_filter_basis")
     geometry = env.get_diffusion_geometry()
@@ -1068,8 +1074,11 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
     """
     Estimate largest eigenvalue of a symmetric positive semi-definite Laplacian.
 
-    Uses scipy.sparse.linalg.eigsh for efficiency. Falls back to
-    max-degree bound if eigsh fails.
+    Uses scipy.sparse.linalg.eigsh for efficiency. When ``eigsh`` does not
+    converge, returns the Gershgorin upper bound ``2 * max(diagonal)``, an
+    exact upper bound that may be loose for highly irregular graphs (it only
+    makes the Chebyshev scaling less efficient, not wrong); no warning is
+    issued.
 
     Parameters
     ----------
@@ -1081,8 +1090,6 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
     float
         Estimated largest eigenvalue.
     """
-    import warnings
-
     from scipy.sparse.linalg import eigsh
 
     n = laplacian.shape[0]
@@ -1096,21 +1103,13 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
     try:
         eigenvalues = eigsh(laplacian, k=1, which="LM", return_eigenvectors=False)
         return float(eigenvalues[0])
-    except (ArpackNoConvergence, ArpackError) as e:
+    except (ArpackNoConvergence, ArpackError):
         # ARPACK failed to converge on the largest eigenvalue. Fall back to the
         # Gershgorin upper bound lambda_max <= 2 * max(diagonal): the diagonal
         # Deg_i / M_i equals the off-diagonal row sum of M^-1 (Deg - W), which
         # has the same eigenvalues. Any *other* exception (malformed matrix,
         # wrong dtype) is a real bug and propagates.
-        max_degree_bound = 2.0 * float(np.max(laplacian.diagonal()))
-        warnings.warn(
-            f"eigsh did not converge ({e}); using max-degree bound "
-            f"{max_degree_bound:.2f}. This is an exact upper bound but may be "
-            f"loose for highly irregular graphs.",
-            stacklevel=3,
-            category=UserWarning,
-        )
-        return max_degree_bound
+        return 2.0 * float(np.max(laplacian.diagonal()))
 
 
 def spatial_basis(
@@ -1201,10 +1200,11 @@ def spatial_basis(
     # dimension_ranges is a sequence of tuples: [(min1, max1), (min2, max2), ...]
     dim_ranges = env.dimension_ranges
     if dim_ranges is None:
-        raise ValueError(
+        msg = (
             "Environment has no dimension_ranges. "
             "Ensure the environment was created with valid data."
         )
+        raise ValueError(msg)
 
     if env.is_linearized_track:
         # A track's size is the length of centerline its bins cover; the

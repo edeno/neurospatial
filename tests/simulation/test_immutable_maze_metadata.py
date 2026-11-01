@@ -1,5 +1,7 @@
 """Simulated mazes publish labels and complete immutable region snapshots."""
 
+import warnings
+
 import pytest
 
 from neurospatial.simulation.mazes import (
@@ -17,7 +19,12 @@ from neurospatial.simulation.mazes import (
     [make_linear_track, make_radial_arm_maze, make_repeated_y_maze, make_rat_hexmaze],
 )
 def test_maze_snapshots_keep_units_and_named_regions_in_both_representations(factory):
-    maze = factory(bin_size=10.0)
+    # At 10 cm bins some radial-arm food cups cover no bin and the factory warns.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message=".*cover no bin", category=UserWarning
+        )
+        maze = factory(bin_size=10.0)
     assert maze.env_2d.units == "cm"
     assert maze.env_2d.regions
     assert maze.env_track.units == "cm"
@@ -37,7 +44,8 @@ def test_open_field_maze_publishes_all_reward_locations():
 
 
 def test_barnes_escape_hole_uses_the_complete_region_builder():
-    maze = make_barnes_maze(bin_size=10.0, escape_hole_index=9)
+    with pytest.warns(UserWarning, match="cover no bin"):
+        maze = make_barnes_maze(bin_size=10.0, escape_hole_index=9)
     names = list(maze.env_2d.regions)
     assert names[9] == "escape_hole"
     assert names[-1] == "start_box"

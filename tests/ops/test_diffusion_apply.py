@@ -364,12 +364,10 @@ def test_support_gate_nans_component_with_no_valid_input():
     rates[0, comp0] = 3.0
     rates[1, comp1] = 5.0
     gated_batch = _binned_gate(env, rates, bandwidth=6.0)
-    assert np.all(np.isfinite(gated_batch[0, comp0])) and np.all(
-        np.isnan(gated_batch[0, comp1])
-    )
-    assert np.all(np.isfinite(gated_batch[1, comp1])) and np.all(
-        np.isnan(gated_batch[1, comp0])
-    )
+    assert np.all(np.isfinite(gated_batch[0, comp0]))
+    assert np.all(np.isnan(gated_batch[0, comp1]))
+    assert np.all(np.isfinite(gated_batch[1, comp1]))
+    assert np.all(np.isnan(gated_batch[1, comp0]))
     assert np.all(np.isnan(gated_batch[2])), "fully-NaN neuron -> all-NaN row"
 
 
@@ -575,7 +573,8 @@ def test_eigenbasis_single_basis_and_invalidated():
     holder = diffusion_eigenbasis(env._cache)
     # Exactly one persistent basis -- a single (Q, Lam) tuple, not a
     # {rank -> basis} accumulating dict.
-    assert isinstance(holder.basis, tuple) and len(holder.basis) == 2
+    assert isinstance(holder.basis, tuple)
+    assert len(holder.basis) == 2
     basis_id = id(holder.basis[0])
 
     # Explicit cache clearing drops the holder without changing geometry.
@@ -583,7 +582,9 @@ def test_eigenbasis_single_basis_and_invalidated():
     env.clear_cache()
     assert env._geometry is geometry
     holder2 = diffusion_eigenbasis(env._cache)
-    assert holder2.basis is None and not holder2.resolved and holder2 is not holder
+    assert holder2.basis is None
+    assert not holder2.resolved
+    assert holder2 is not holder
     env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
     assert id(diffusion_eigenbasis(env._cache).basis[0]) != basis_id
 
@@ -627,8 +628,7 @@ def test_near_full_rank_diffuse_solves_once(monkeypatch):
     env, source_coord = _build_env("grid_2d")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    # Tiny sigma -> near-full rank -> dense basis (the large-matrix note is
-    # suppressed; this small env is below the warn threshold anyway).
+    # Tiny sigma -> near-full rank -> dense basis.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
@@ -782,7 +782,8 @@ def test_shift_invert_fallback_warning_points_at_the_caller(monkeypatch):
 
     def eigsh_without_shift_invert(*args, **kwargs):
         if "sigma" in kwargs:
-            raise RuntimeError("factorization failed")
+            msg = "factorization failed"
+            raise RuntimeError(msg)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(scipy.sparse.linalg, "eigsh", eigsh_without_shift_invert)

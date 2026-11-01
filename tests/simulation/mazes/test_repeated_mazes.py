@@ -30,7 +30,7 @@ REPEATED_MAZES = [
 class TestRepeatedMazesStart:
     """Each repeated maze names where the animal enters."""
 
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
+    @pytest.mark.parametrize(("name", "factory", "dims_cls"), REPEATED_MAZES)
     def test_has_start_region(self, name, factory, dims_cls):
         """All repeated mazes name where the animal enters, as their source does."""
         start = {
@@ -107,7 +107,7 @@ class TestRepeatedMazesComplexity:
 class TestTrackMatchesTheFloor:
     """The track graph runs along the 2-D maze's corridors, and walls hold."""
 
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
+    @pytest.mark.parametrize(("name", "factory", "dims_cls"), REPEATED_MAZES)
     def test_every_track_edge_lies_on_the_floor(self, name, factory, dims_cls):
         maze = factory()
         floor = maze.env_2d.arena.polygonal_domain()
@@ -117,7 +117,7 @@ class TestTrackMatchesTheFloor:
             assert shapely.covers(floor, shapely.points(points)).all(), (start, end)
             assert (maze.env_2d.bin_at(points) >= 0).all(), (start, end)
 
-    @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
+    @pytest.mark.parametrize(("name", "factory", "dims_cls"), REPEATED_MAZES)
     def test_walls_separate_corridors(self, name, factory, dims_cls):
         """Places close in the plane but far apart along the track are separated
         by a wall, so walking between them in 2-D goes round it."""

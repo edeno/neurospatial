@@ -38,7 +38,7 @@ def _run_all(actions: Iterable[Callable[[], object]], message: str) -> None:
     for action in actions:
         try:
             action()
-        except BaseException as error:
+        except BaseException as error:  # noqa: PERF203  # every cleanup action runs even if one fails
             failures.append(error)
     if failures:
         raise _cleanup_error(message, failures)
@@ -82,7 +82,8 @@ class _OwnedReaders:
 
     def add(self, reader: Any) -> None:
         if self._closed:
-            raise RuntimeError("Cannot add readers to a closed resource owner.")
+            msg = "Cannot add readers to a closed resource owner."
+            raise RuntimeError(msg)
         if callable(getattr(reader, "close", None)):
             self._readers.setdefault(id(reader), reader)
 

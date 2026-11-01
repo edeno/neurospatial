@@ -224,30 +224,34 @@ class Skeleton:
 
         # Validate nodes
         if len(self.nodes) == 0:
-            raise ValueError(
+            msg = (
                 "WHAT: Skeleton must have at least one node.\n"
                 "WHY: A skeleton with no nodes cannot represent any body parts.\n"
                 "Fix: Provide at least one node name in the 'nodes' parameter."
             )
+            raise ValueError(msg)
 
         # Check for duplicate nodes
         if len(self.nodes) != len(set(self.nodes)):
             duplicates = [n for n in self.nodes if self.nodes.count(n) > 1]
-            raise ValueError(
+            msg = (
                 f"WHAT: Duplicate node names found: {sorted(set(duplicates))}\n"
                 "WHY: Each node name must be unique to identify body parts.\n"
                 "Fix: Remove duplicate names or rename body parts."
             )
+            raise ValueError(msg)
 
         # Validate edges reference existing nodes
         node_set = set(self.nodes)
-        for edge in self.edges:
+        for given in self.edges:
+            edge = tuple(given)
             if len(edge) != 2:
-                raise ValueError(
+                msg = (
                     f"WHAT: Invalid edge format: {edge}\n"
                     "WHY: Edges must be (source, target) pairs.\n"
                     "Fix: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"
                 )
+                raise ValueError(msg)
             src, dst = edge
             missing = []
             if src not in node_set:
@@ -255,23 +259,25 @@ class Skeleton:
             if dst not in node_set:
                 missing.append(dst)
             if missing:
-                raise ValueError(
+                msg = (
                     f"WHAT: Edge {edge} references unknown node(s): {missing}\n"
                     f"WHY: All edge endpoints must be defined in 'nodes'.\n"
                     f"Fix: Add missing nodes to 'nodes' parameter or fix edge names.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
+                raise ValueError(msg)
 
         # Validate node_colors keys match nodes
         if self.node_colors is not None:
             unknown_colors = set(self.node_colors.keys()) - node_set
             if unknown_colors:
-                raise ValueError(
+                msg = (
                     f"WHAT: node_colors references unknown nodes: {sorted(unknown_colors)}\n"
                     f"WHY: Colors can only be assigned to existing nodes.\n"
                     f"Fix: Remove unknown keys or add corresponding nodes.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
+                raise ValueError(msg)
 
         # Precompute adjacency for graph traversal
         adjacency = _build_adjacency(self.nodes, self.edges)
@@ -392,11 +398,12 @@ class Skeleton:
             order_set = set(node_order)
             missing = inferred_nodes - order_set
             if missing:
-                raise ValueError(
+                msg = (
                     f"WHAT: node_order is missing nodes from edges: {sorted(missing)}\n"
                     "WHY: All nodes in edges must appear in node_order.\n"
                     "Fix: Add missing nodes to node_order or remove edges referencing them."
                 )
+                raise ValueError(msg)
             nodes = tuple(node_order)
         else:
             # Default: alphabetical order
@@ -513,11 +520,12 @@ class Skeleton:
         """
         # Get keypoint names from coordinates
         if "keypoints" not in dataset.coords:
-            raise ValueError(
+            msg = (
                 "WHAT: Dataset missing 'keypoints' coordinate.\n"
                 "WHY: Cannot extract skeleton nodes without keypoint names.\n"
                 "Fix: Ensure dataset has 'keypoints' coordinate from movement.io loaders."
             )
+            raise ValueError(msg)
 
         nodes = tuple(str(k) for k in dataset.coords["keypoints"].values)
 

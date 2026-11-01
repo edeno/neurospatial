@@ -33,7 +33,8 @@ def test_rebin_new_resolution_keeps_the_selection_after_an_analysis_crop():
     expected = np.array([[1, y] for y in [1, 3, 5]])
     np.testing.assert_array_equal(coarse.bin_centers, expected)
     np.testing.assert_allclose(coarse.bin_sizes, 4.0)
-    assert coarse.units == "cm" and coarse.frame == "lab"
+    assert coarse.units == "cm"
+    assert coarse.frame == "lab"
     np.testing.assert_array_equal(coarse.rebin(bin_size=1).bin_centers, env.bin_centers)
 
 
@@ -51,7 +52,8 @@ def test_rebin_reports_original_area_left_without_a_new_bin():
     assert (env.bin_centers[lost, 0] > 8).all()
     (message,) = [str(item.message) for item in record]
     assert re.search(r"8 of 28 original bins \(28\.6% of their area\)", message)
-    assert "divisor" in message and "-1" in message
+    assert "divisor" in message
+    assert "-1" in message
 
 
 @pytest.mark.parametrize("size", [1.0, 2.0, 3.0, 0.5])
@@ -223,7 +225,8 @@ def test_grid_spec_owns_inputs_and_survives_copy_restore():
     for owned in (spec, copy.deepcopy(spec), pickle.loads(pickle.dumps(spec))):
         np.testing.assert_array_equal(owned.origin, [0, 0])
         np.testing.assert_array_equal(owned.forward, np.eye(3))
-        assert not owned.origin.flags.writeable and not owned.forward.flags.writeable
+        assert not owned.origin.flags.writeable
+        assert not owned.forward.flags.writeable
 
 
 def test_payload_without_spec_does_not_infer_one_from_provenance():

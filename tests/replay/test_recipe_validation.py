@@ -349,7 +349,7 @@ class TestMethodValidation:
         assert method.criteria[0].quantity == quantity
 
     def test_score_must_be_callable(self):
-        with pytest.raises(TypeError, match="score must be a function"):
+        with pytest.raises(TypeError, match="score must be callable"):
             ReplayMethod("x", "y", score="radon", nulls=("column_cycle",))
 
     def test_score_options_must_fit_the_score(self):

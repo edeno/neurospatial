@@ -26,7 +26,9 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -258,6 +260,9 @@ def rate_map_centroid(
     ...     env, firing_rate, field_bins, method="geodesic"
     ... )
     """
+    method = validate_choice(
+        method, ("euclidean", "geodesic"), name="method", owner="rate_map_centroid()"
+    )
     if method == "euclidean":
         require_cartesian(
             env.coordinate_system,
@@ -292,7 +297,7 @@ def rate_map_centroid(
                 np.sum(field_positions * field_mass[:, None], axis=0) / total_mass
             )
 
-    elif method == "geodesic":
+    else:  # geodesic
         # Weighted medoid: the field bin that minimizes the sum of
         # (rate x measure x graph distance) to all field bins.
 
@@ -308,11 +313,6 @@ def rate_map_centroid(
         finite = costs < np.inf
         best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
         centroid = field_positions[best]
-
-    else:  # pragma: no cover
-        # Runtime safety check (type system enforces at compile time)
-        msg = f"Unknown method: {method}. Must be 'euclidean' or 'geodesic'."  # type: ignore[unreachable]
-        raise ValueError(msg)
 
     return centroid
 
@@ -375,6 +375,11 @@ def field_stability(
         ("uncorrelated"); skip such cells with ``np.nanmean`` or
         ``np.isfinite`` when averaging across cells.
 
+    Raises
+    ------
+    ValueError
+        If ``method`` is not ``"pearson"`` or ``"spearman"``.
+
     Notes
     -----
     **Interpretation**:
@@ -413,6 +418,9 @@ def field_stability(
     .. [1] Wilson & McNaughton (1993). Dynamics of hippocampal ensemble code.
            Science 261(5124).
     """
+    method = validate_choice(
+        method, ("pearson", "spearman"), name="method", owner="field_stability()"
+    )
     # Remove NaN values
     valid_mask = np.isfinite(rate_map_1) & np.isfinite(rate_map_2)
     map1_clean = rate_map_1[valid_mask]
@@ -433,10 +441,8 @@ def field_stability(
     # Compute correlation
     if method == "pearson":
         correlation, _ = stats.pearsonr(map1_clean, map2_clean)
-    elif method == "spearman":
-        correlation, _ = stats.spearmanr(map1_clean, map2_clean)
     else:
-        raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
+        correlation, _ = stats.spearmanr(map1_clean, map2_clean)
 
     return float(correlation)
 
@@ -536,9 +542,8 @@ def rate_map_coherence(
     """
     # Validate inputs
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
-        )
+        msg = f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        raise ValueError(msg)
 
     # Remove NaN values for computing neighbor means
     # But track which bins are valid for final correlation
@@ -672,12 +677,13 @@ def in_out_field_ratio(
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"firing_rate has shape {firing_rate.shape}, but env has "
             f"{env.n_bins} bins.\nWhy: each rate is weighted by its bin's "
             "measure, so the map must be estimated on env.\nFix: pass the "
             "environment the rate map was computed on (rates.env)."
         )
+        raise ValueError(msg)
 
     # Validate field_bins
     if len(field_bins) == 0:
@@ -712,8 +718,7 @@ def in_out_field_ratio(
     if out_field_rate == 0:
         if in_field_rate > 0:
             return np.inf
-        else:
-            return np.nan
+        return np.nan
 
     ratio = in_field_rate / out_field_rate
 
@@ -755,10 +760,12 @@ def field_shape_metrics(
         - 'area': float, physical area of the field bins (e.g. cm^2), the
           same as :func:`field_size`
 
-        Returns dict with NaN values if field is empty or environment is not 2D.
+        Returns dict with NaN values if the field is empty.
 
     Raises
     ------
+    ValueError
+        If ``env`` is not 2-D: eccentricity and orientation need a plane.
     CartesianOnlyError
         If ``env`` is polar: eccentricity and orientation come from the
         covariance of Cartesian bin centers.
@@ -841,6 +848,16 @@ def field_shape_metrics(
             "Environment.from_samples(positions, bin_size=...)"
         ),
     )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"field_shape_metrics() needs a 2-D environment, got {env.n_dims}-D.",
+                why="Why: eccentricity and orientation come from the 2 x 2 "
+                "covariance of bin positions",
+                fix="use a 2-D environment, or field_size() for the field's "
+                "extent on a 1-D or 3-D environment",
+            )
+        )
     # Initialize with NaN defaults
     result = {
         "eccentricity": np.nan,
@@ -852,15 +869,6 @@ def field_shape_metrics(
 
     # Validate inputs
     if len(field_bins) == 0:
-        return result
-
-    if env.n_dims != 2:
-        warnings.warn(
-            f"field_shape_metrics currently only supports 2D environments, got {env.n_dims}D. "
-            "Returning NaN values.",
-            category=UserWarning,
-            stacklevel=2,
-        )
         return result
 
     # Get bin positions for field
@@ -970,8 +978,10 @@ def field_shift_distance(
     float
         Distance between field centroids in the environments' spatial units.
         NaN if either field has no finite, positive-rate bins (no centroid),
-        or, for ``"geodesic"``, if a centroid falls outside every bin (a
-        warning says which). ``inf`` for ``"geodesic"`` when the two
+        or, for ``"geodesic"``, if a centroid falls outside every bin (for
+        example the centroid of a curved field lies in a wall; use
+        ``metric="euclidean"`` for such a field). No warning is raised for
+        either case. ``inf`` for ``"geodesic"`` when the two
         centroids lie in parts of the environment with no path between them.
 
     Raises
@@ -1065,11 +1075,12 @@ def field_shift_distance(
            Trends Neurosci 31(9).
     """
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
+        msg = (
             f"metric must be 'euclidean' or 'geodesic', got {metric!r}.\n"
             "Fix: pass metric='euclidean' for straight-line distance or "
             "metric='geodesic' for the path through the environment."
         )
+        raise ValueError(msg)
     for argument, env in (("env_1", env_1), ("env_2", env_2)):
         require_cartesian(
             env.coordinate_system,
@@ -1090,11 +1101,14 @@ def field_shift_distance(
         bins, topology = _environment_differences(env_1, env_2)
         mismatch = bins or topology
         if mismatch is not None:
-            raise IncompatibleEnvironmentError(
+            msg = (
                 "field_shift_distance(metric='geodesic') needs env_1 and env_2 "
                 f"to have the same bins and connectivity; they differ in "
                 f"{mismatch}. A path is measured on one environment's graph, "
-                "and the other session's bins are not on it.",
+                "and the other session's bins are not on it."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix=(
                     "use metric='euclidean' to compare centroids across "
                     "environments in one coordinate frame, or compute both rate "
@@ -1118,14 +1132,6 @@ def field_shift_distance(
     # Same bins and connectivity: measure the path on env_1's graph.
     centroid_bins = env_1.bin_at(np.stack([centroid_1, centroid_2]))
     if np.any(centroid_bins < 0):
-        warnings.warn(
-            "A field centroid falls outside every bin of the environment (for "
-            "example the centroid of a curved field lies in a wall), so it has "
-            "no geodesic position. Returning NaN; use metric='euclidean' for "
-            "this field.",
-            category=UserWarning,
-            stacklevel=2,
-        )
         return np.nan
     return float(env_1.distance_between(bins=centroid_bins))
 
@@ -1182,7 +1188,8 @@ def compute_field_emd(
           whole field 10 cm gives 10.0.
         - With ``normalize=False``: cost in units of (rate x bin measure x
           distance), e.g. Hz x cm^2 x cm in a 2-D environment.
-        - NaN if either distribution has zero total mass (with a warning).
+        - NaN if either distribution has zero total mass on the bins finite
+          in both maps (no warning; NaN is the contract).
         - ``inf`` with ``metric="geodesic"`` when the maps put different
           mass in parts of the environment with no path between them, so
           no transport plan exists.
@@ -1198,11 +1205,6 @@ def compute_field_emd(
         If ``metric="euclidean"`` and ``env`` is polar: the ground distance
         would treat ``(distance, angle)`` bin centers as ``(x, y)``. Use
         ``metric="geodesic"``.
-
-    Warns
-    -----
-    UserWarning
-        If normalized distributions have no mass (all zeros or NaN).
 
     See Also
     --------
@@ -1250,10 +1252,9 @@ def compute_field_emd(
       sampled or not. About 0.5 s at 3,600 bins and 3 s at 10,000.
       On an open grid the graph path can exceed the straight line by up
       to about 8% (8-connected neighbors).
-    - Euclidean: a transport plan over every pair of bins with mass, which
-      grows with the square of their number; over about a thousand bins it
-      can take minutes, or fail. Use ``metric="geodesic"`` for finely binned
-      maps.
+    - Euclidean: the exact transport plan over every pair of bins with mass,
+      by network simplex (POT [3]_). Memory grows with the square of the
+      number of bins (a 2,500-bin map holds a 50 MB distance matrix).
 
     References
     ----------
@@ -1261,6 +1262,8 @@ def compute_field_emd(
            Distance as a Metric for Image Retrieval. International Journal of
            Computer Vision, 40(2), 99-121.
     .. [2] Villani, C. (2009). Optimal Transport: Old and New. Springer.
+    .. [3] Flamary, R., et al. (2021). POT: Python Optimal Transport. Journal
+           of Machine Learning Research, 22(78), 1-8.
 
     Examples
     --------
@@ -1268,39 +1271,35 @@ def compute_field_emd(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import compute_field_emd
     >>>
-    >>> # Create environment
-    >>> data = np.random.randn(1000, 2) * 20
-    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> from shapely.geometry import box
     >>>
-    >>> # Create two similar firing rate distributions
+    >>> # A 60 x 60 cm open field with 2 cm bins
+    >>> env = Environment.from_polygon(box(-30, -30, 30, 30), bin_size=2.0, units="cm")
+    >>>
+    >>> # The same field, its center moved 4 cm
     >>> field1 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [0, 0], axis=1) ** 2)
-    >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [5, 0], axis=1) ** 2)
+    >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [4, 0], axis=1) ** 2)
     >>>
-    >>> # Compute EMD with Euclidean distance (skipped in the doctest run: the
-    >>> # transport plan over every pair of bins can take minutes on a full
-    >>> # environment -- see "Computation")
-    >>> emd_euclidean = compute_field_emd(  # doctest: +SKIP
-    ...     env, field1, field2, metric="euclidean"
-    ... )
-    >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
+    >>> # The EMD is the distance the field moved, by either metric here
+    >>> emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+    >>> print(f"Euclidean EMD: {emd_euclidean:.1f} cm")
+    Euclidean EMD: 4.0 cm
     """
-    from scipy import sparse
-    from scipy.optimize import linprog
+    import ot
     from scipy.spatial.distance import pdist, squareform
 
     # Validate inputs
     if len(firing_rate_1) != len(firing_rate_2):
-        raise ValueError(
-            f"firing_rate arrays must have same length, got {len(firing_rate_1)} and {len(firing_rate_2)}"
-        )
+        msg = f"firing_rate arrays must have same length, got {len(firing_rate_1)} and {len(firing_rate_2)}"
+        raise ValueError(msg)
 
     if len(firing_rate_1) != env.n_bins:
-        raise ValueError(
-            f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_1)}"
-        )
+        msg = f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_1)}"
+        raise ValueError(msg)
 
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+        msg = f"metric must be 'euclidean' or 'geodesic', got '{metric}'"
+        raise ValueError(msg)
     if metric == "euclidean":
         require_cartesian(
             env.coordinate_system,
@@ -1336,12 +1335,6 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
 
         if sum1 == 0 or sum2 == 0:
-            warnings.warn(
-                "One or both distributions have zero total mass on the bins "
-                "finite in both maps. Returning NaN.",
-                category=UserWarning,
-                stacklevel=2,
-            )
             return np.nan
 
         firing_rate_1 = firing_rate_1 / sum1
@@ -1351,11 +1344,12 @@ def compute_field_emd(
         sum1 = np.sum(firing_rate_1)
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
-            raise ValueError(
+            msg = (
                 f"Unnormalized distributions must have equal total mass (rate x "
                 f"bin measure) on the bins finite in both maps. Got {sum1:.6f} "
                 f"and {sum2:.6f}. Set normalize=True to auto-normalize."
             )
+            raise ValueError(msg)
 
     # Filter to bins with non-zero mass in either distribution
     # This reduces problem size significantly for sparse fields
@@ -1379,40 +1373,28 @@ def compute_field_emd(
     if metric == "geodesic":
         return _graph_transport_cost(env, active_bins, p - q)
 
-    # Euclidean: a transport plan over every pair of bins with mass.
-    # Variables: T[i,j] = mass moved from bin i (first map) to bin j (second)
-    # Objective: minimize sum(T[i,j] * dist[i,j])
-    # Constraints: sum_j T[i,j] = p[i], sum_i T[i,j] = q[j], T >= 0.
+    # Euclidean: the exact transport plan over every pair of bins with mass,
+    # solved by network simplex (POT). The two maps' totals agree to roundoff
+    # (or to the 1e-6 checked above); the solver needs them equal, so each is
+    # moved as a distribution and the cost scaled back by the total mass.
     dist_matrix = squareform(pdist(env.bin_centers[active_bins], metric="euclidean"))
-    n = len(p)
-    # Sparse construction using Kronecker products (2n^2 nonzeros of a
-    # (2n, n^2) matrix): row i of the first block sums T[i, :], column j of
-    # the second sums T[:, j].
-    ones_row = np.ones((1, n))
-    identity = sparse.eye(n)
-    a_eq = sparse.vstack(
-        [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
-        format="csr",
+    total = float(p.sum())
+    cost, log = ot.emd2(
+        p / total, q / q.sum(), dist_matrix, numItermax=_EMD_MAX_ITERATIONS, log=True
     )
-    b_eq = np.concatenate([p, q])
-    # The row sums and column sums both total the mass, so one constraint is
-    # implied by the others. Keeping it makes the problem infeasible whenever
-    # the two totals differ by roundoff, as normalized maps do; drop it.
-    result = linprog(
-        dist_matrix.ravel(),
-        A_eq=a_eq[:-1],
-        b_eq=b_eq[:-1],
-        bounds=(0, None),
-        method="highs",
-    )
-    if not result.success:
-        warnings.warn(
-            f"Optimal transport optimization failed: {result.message}. Returning NaN.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
+    if log["result_code"] != 1:  # 1: optimal
+        msg = (
+            f"compute_field_emd(metric='euclidean'): the transport solver stopped "
+            f"before the optimum ({log['warning']}).\n"
+            "Fix: use metric='geodesic', or coarser bins."
         )
-        return np.nan
-    return float(result.fun)
+        raise RuntimeError(msg)
+    return float(cost) * total
+
+
+# Network-simplex iterations before POT gives up; its default (100,000) stops
+# short of the optimum on maps of a few thousand bins.
+_EMD_MAX_ITERATIONS = 100_000_000
 
 
 def _graph_transport_cost(

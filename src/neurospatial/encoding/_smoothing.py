@@ -36,13 +36,12 @@ not ``n_bins²``, so these methods scale to large/fine grids. The eigenbasis is
 geometry-only, so it is built once per environment and reused across every
 bandwidth, mode, and neuron. (A near-full-rank request — a light bandwidth on a
 large grid — genuinely needs most modes, so ``env.diffuse`` solves the full
-dense basis once there, with the same large-matrix ``UserWarning`` as
-``compute_kernel``, and reuses it for later calls.)
+dense basis once there and reuses it for later calls.)
 
 ``gaussian_kde`` still builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix
 (Euclidean, boundary-ignoring), costing O(n_bins²) memory and time; it is cached
 per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``) and reused across
-neurons, and warns above ``LARGE_KERNEL_THRESHOLD`` bins. For very large
+neurons. For very large
 environments prefer ``diffusion_kde`` (matrix-free and boundary-aware).
 
 References
@@ -228,8 +227,7 @@ def smooth_rate_map(
     ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
     eigenbasis is geometry-only, so it is built once per environment and reused
     across bandwidths, modes, and neurons. ``gaussian_kde`` still builds a dense
-    ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²), warns above
-    ``LARGE_KERNEL_THRESHOLD`` bins).
+    ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²) memory).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
     (default) -- it is boundary-aware and matrix-free, so it scales to large/fine
@@ -375,20 +373,27 @@ def smooth_rate_maps_batch(
     occ_shape = np.shape(occupancy)
 
     if len(sc_shape) != 2:
-        raise ValueError(
-            f"spike_counts must be 2D (n_neurons, n_bins), got shape {sc_shape}"
-        )
+        msg = f"spike_counts must be 2D (n_neurons, n_bins), got shape {sc_shape}"
+        raise ValueError(msg)
 
     if sc_shape[1] != occ_shape[0]:
-        raise ValueError(
+        msg = (
             f"spike_counts has {sc_shape[1]} bins but occupancy has {occ_shape[0]} bins"
         )
+        raise ValueError(msg)
 
     if sc_shape[1] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"spike_counts has {sc_shape[1]} bins but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
+        raise ValueError(msg)
+    method = validate_choice(
+        method,
+        ("diffusion_kde", "gaussian_kde", "binned"),
+        name="method",
+        owner="smooth_rate_maps_batch()",
+    )
     if backend == "jax":
         from neurospatial.encoding._backend import _enable_jax_float64
 
@@ -419,16 +424,13 @@ def smooth_rate_maps_batch(
         return _diffusion_kde_batch(
             env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
-    elif method == "gaussian_kde":
+    if method == "gaussian_kde":
         return _gaussian_kde_batch(
             env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
-    elif method == "binned":
-        return _binned_batch(
-            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
-        )
-    else:
-        raise ValueError(f"Unknown method: {method}")
+    return _binned_batch(
+        env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
+    )
 
 
 # =============================================================================
@@ -454,16 +456,18 @@ def _validate_smoothing_inputs(
 
     # Check shapes match
     if sc_shape != occ_shape:
-        raise ValueError(
+        msg = (
             f"spike_counts shape {sc_shape} does not match occupancy shape {occ_shape}"
         )
+        raise ValueError(msg)
 
     # Check matches environment
     if sc_shape[0] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"spike_counts has {sc_shape[0]} elements but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
+        raise ValueError(msg)
 
 
 _SPATIAL_METHODS: tuple[str, ...] = (
@@ -482,30 +486,34 @@ def _validate_glm_penalty(penalty: Any) -> float:
     silently accept them as ``lambda`` values.
     """
     if isinstance(penalty, bool):
-        raise ValueError(
+        msg = (
             f"penalty must be a real number (a smoothing weight lambda), not bool; "
             f"got {penalty!r}."
         )
+        raise ValueError(msg)
     try:
         value = float(penalty)
     except (TypeError, ValueError) as exc:
-        raise ValueError(
+        msg = (
             f"penalty must be a real number (a smoothing weight lambda); got "
             f"{penalty!r}."
-        ) from exc
+        )
+        raise ValueError(msg) from exc
     except OverflowError as exc:
         # A Python int too large to represent as a finite float (e.g. 10**1000):
         # penalty is NOT clamped, so an unrepresentable value is rejected cleanly
         # rather than leaking a raw OverflowError.
-        raise ValueError(
+        msg = (
             f"penalty must be finite and >= 0 (a smoothing weight lambda); got "
             f"{penalty!r}, which is too large to represent as a finite float."
-        ) from exc
+        )
+        raise ValueError(msg) from exc
     if not np.isfinite(value) or value < 0.0:
-        raise ValueError(
+        msg = (
             f"penalty must be finite and >= 0 (a smoothing weight lambda; 0 = no "
             f"penalty, None = choose by REML); got {value}."
         )
+        raise ValueError(msg)
     return value
 
 
@@ -517,10 +525,11 @@ def _validate_glm_rank(rank: Any) -> int:
     the basis is built, and the clamp is reported via ``result.rank``.
     """
     if isinstance(rank, bool):
-        raise ValueError(
+        msg = (
             f"rank must be an integer (the requested basis rank), not bool; got "
             f"{rank!r}."
         )
+        raise ValueError(msg)
     # Any integral value is accepted WITHOUT a float round-trip: magnitude is
     # clamped (never rejected) to the effective rank when the basis is built, and
     # a huge Python int (e.g. 10**1000) overflows float64 -- coercing it would
@@ -531,16 +540,15 @@ def _validate_glm_rank(rank: Any) -> int:
         try:
             as_float = float(rank)
         except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(
-                f"rank must be an integer (the requested basis rank); got {rank!r}."
-            ) from exc
+            msg = f"rank must be an integer (the requested basis rank); got {rank!r}."
+            raise ValueError(msg) from exc
         if not np.isfinite(as_float) or as_float != int(as_float):
-            raise ValueError(
-                f"rank must be an integer (the requested basis rank); got {rank!r}."
-            )
+            msg = f"rank must be an integer (the requested basis rank); got {rank!r}."
+            raise ValueError(msg)
         value = int(as_float)
     if value < 1:
-        raise ValueError(f"rank must be >= 1 (the requested basis rank); got {value}.")
+        msg = f"rank must be >= 1 (the requested basis rank); got {value}."
+        raise ValueError(msg)
     return value
 
 
@@ -572,18 +580,20 @@ def validate_pooled(pooled: Any, method: str) -> None:
         with a ratio method.
     """
     if not isinstance(pooled, bool):
-        raise ValueError(
+        msg = (
             "pooled must be a bool (True = one shared smoothing penalty lambda, "
             "False = an independent per-unit lambda_k); got "
             f"{pooled!r} of type {type(pooled).__name__}."
         )
+        raise ValueError(msg)
     if method != "glm" and pooled is False:
-        raise ValueError(
+        msg = (
             "pooled is a method='glm' parameter (it selects shared vs per-unit "
             f"lambda) and pooled=False cannot be combined with method={method!r}. "
             "Ratio methods have no smoothing penalty; use method='glm' for "
             "per-unit smoothing."
         )
+        raise ValueError(msg)
 
 
 def _validate_spatial_method_params(
@@ -638,9 +648,8 @@ def _validate_spatial_method_params(
         ``penalty`` / ``rank``.
     """
     if method not in _SPATIAL_METHODS:
-        raise ValueError(
-            f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
-        )
+        msg = f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
+        raise ValueError(msg)
 
     if method == "glm":
         ratio_values = {
@@ -649,19 +658,21 @@ def _validate_spatial_method_params(
         }
         for name, value in ratio_values.items():
             if value is not None:
-                raise ValueError(
+                msg = (
                     f"{name} is a ratio-method (diffusion_kde/gaussian_kde/binned) "
                     f"parameter and cannot be combined with method='glm'. The glm "
                     f"estimator is configured with penalty= and rank=."
                 )
+                raise ValueError(msg)
     else:
         for name, value in {"penalty": penalty, "rank": rank}.items():
             if value is not None:
-                raise ValueError(
+                msg = (
                     f"{name} is a method='glm' parameter and cannot be combined with "
                     f"method={method!r}. Ratio methods use bandwidth= and "
                     f"min_occupancy=."
                 )
+                raise ValueError(msg)
 
     validated_penalty = None if penalty is None else _validate_glm_penalty(penalty)
     validated_rank = None if rank is None else _validate_glm_rank(rank)
@@ -681,16 +692,18 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
     # (e.g. cm); the tuning curves and rate maps inherit those units.
     if method == "binned":
         if bandwidth < 0:
-            raise ValueError(
+            msg = (
                 "bandwidth must be non-negative (in environment units, e.g., cm), "
                 f"got {bandwidth}"
             )
+            raise ValueError(msg)
     else:
         if bandwidth <= 0:
-            raise ValueError(
+            msg = (
                 "bandwidth must be positive (in environment units, e.g., cm), "
                 f"got {bandwidth}"
             )
+            raise ValueError(msg)
 
 
 def _is_jax_tracer(value: Any) -> bool:

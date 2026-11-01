@@ -164,7 +164,7 @@ def open_field_session(
     env = _square_arena(arena_size, bin_size)
 
     # Simulate session with place cells and OU trajectory
-    session = simulate_session(
+    return simulate_session(
         env,
         duration=duration,
         n_cells=n_place_cells,
@@ -175,8 +175,6 @@ def open_field_session(
         show_progress=False,  # Disable progress bar for convenience function
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
-
-    return session
 
 
 def linear_track_session(
@@ -334,7 +332,7 @@ def linear_track_session(
     # place fields unless the caller chose others.
     kwargs.setdefault("width", TRACK_PLACE_FIELD_WIDTH_CM)
     kwargs.setdefault("max_rate", TRACK_PLACE_FIELD_PEAK_HZ)
-    session = simulate_session(
+    return simulate_session(
         env,
         duration=duration,
         n_cells=n_place_cells,
@@ -346,8 +344,6 @@ def linear_track_session(
         show_progress=False,  # Disable progress bar for convenience function
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
-
-    return session
 
 
 def tmaze_alternation_session(

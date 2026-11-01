@@ -41,7 +41,7 @@ def uniform_log_likelihood() -> np.ndarray:
 @pytest.fixture
 def degenerate_log_likelihood() -> np.ndarray:
     """Log-likelihood with degenerate row (all -inf)."""
-    ll = np.array(
+    return np.array(
         [
             [-1.0, -2.0, -3.0],
             [-np.inf, -np.inf, -np.inf],  # Degenerate row
@@ -49,7 +49,6 @@ def degenerate_log_likelihood() -> np.ndarray:
         ],
         dtype=np.float64,
     )
-    return ll
 
 
 @pytest.fixture
@@ -259,7 +258,7 @@ class TestNormalizeToPosterior:
         """Invalid handle_degenerate value should raise ValueError."""
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"got handle_degenerate"):
             normalize_to_posterior(simple_log_likelihood, handle_degenerate="invalid")
 
     @pytest.mark.parametrize("handle_degenerate", ["uniform", "nan", "raise"])
@@ -1206,7 +1205,8 @@ class TestDecodePositionTimeChunkHybrid:
                 if spec.startswith(name):
                     offset = spec[len(name) :]
                     return value + (int(offset) if offset else 0)
-            raise AssertionError(f"unrecognized dim spec: {spec}")
+            msg = f"unrecognized dim spec: {spec}"
+            raise AssertionError(msg)
 
         shape = tuple(_resolve(s) for s in prior_shape)
         prior = np.random.default_rng(0).uniform(0.1, 1.0, shape)

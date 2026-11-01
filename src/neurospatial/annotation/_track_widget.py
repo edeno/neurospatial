@@ -162,7 +162,8 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
         b = int(hex_color[4:6], 16) / 255.0
         a = int(hex_color[6:8], 16) / 255.0
     else:
-        raise ValueError(f"Invalid hex color: {hex_color}")
+        msg = f"Invalid hex color: {hex_color}"
+        raise ValueError(msg)
     return np.array([r, g, b, a], dtype=np.float64)
 
 
@@ -496,7 +497,7 @@ def _show_1d_preview(
         return ax
 
     # Create the 1D preview plot
-    ax = plot_graph_as_1D(
+    return plot_graph_as_1D(
         track_graph,
         edge_order=edge_order,
         edge_spacing=edge_spacing,
@@ -504,8 +505,6 @@ def _show_1d_preview(
         figsize=(10, 2),
         show=show,
     )
-
-    return ax
 
 
 def _can_preview(state: TrackBuilderState) -> bool:
@@ -1002,11 +1001,11 @@ class TrackGraphWidget:
     # QWidget compatibility
     # -------------------------------------------------------------------------
 
-    def findChildren(self, type_: type, name: str | None = None):  # noqa: N802
+    def findChildren(self, type_: type, name: str | None = None) -> Any:  # noqa: N802
         """Proxy to underlying widget's findChildren."""
         return self._widget.findChildren(type_, name)
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         """Proxy attribute access to underlying widget."""
         return getattr(self._widget, name)
 
@@ -1311,7 +1310,7 @@ class TrackGraphWidget:
 class _ModeSelector:
     """Accessor for mode selector in tests."""
 
-    def __init__(self, combo) -> None:
+    def __init__(self, combo: Any) -> None:
         self._combo = combo
 
     @property
@@ -1326,12 +1325,12 @@ class _ModeSelector:
 class _NodeList:
     """Accessor for node list in tests."""
 
-    def __init__(self, combo, state) -> None:
+    def __init__(self, combo: Any, state: TrackBuilderState) -> None:
         self._combo = combo
         self._state = state
 
     @property
-    def choices(self) -> list:
+    def choices(self) -> list[str]:
         return [self._combo.itemText(i) for i in range(self._combo.count())]
 
     @property
@@ -1347,12 +1346,12 @@ class _NodeList:
 class _EdgeList:
     """Accessor for edge list in tests."""
 
-    def __init__(self, combo, state) -> None:
+    def __init__(self, combo: Any, state: TrackBuilderState) -> None:
         self._combo = combo
         self._state = state
 
     @property
-    def choices(self) -> list:
+    def choices(self) -> list[str]:
         return [self._combo.itemText(i) for i in range(self._combo.count())]
 
     @property
@@ -1368,7 +1367,7 @@ class _EdgeList:
 class _StatusLabel:
     """Accessor for status label in tests."""
 
-    def __init__(self, label) -> None:
+    def __init__(self, label: Any) -> None:
         self._label = label
 
     def text(self) -> str:
@@ -1378,7 +1377,7 @@ class _StatusLabel:
 class _Button:
     """Accessor for buttons in tests."""
 
-    def __init__(self, btn) -> None:
+    def __init__(self, btn: Any) -> None:
         self._btn = btn
 
     def click(self) -> None:
@@ -1390,7 +1389,7 @@ class _Button:
 class _LineEdit:
     """Accessor for line edit in tests."""
 
-    def __init__(self, edit) -> None:
+    def __init__(self, edit: Any) -> None:
         self._edit = edit
 
     @property
@@ -1433,11 +1432,15 @@ class _EdgeOrderList:
 class _EdgeSpacingInput:
     """Accessor for edge spacing input in tests."""
 
-    def __init__(self, spin, state) -> None:
+    def __init__(self, spin: Any, state: TrackBuilderState) -> None:
         self._spin = spin
         self._state = state
 
-    def set_value(self, spacing_idx: int, value: float) -> None:
+    def set_value(
+        self,
+        spacing_idx: int,  # noqa: ARG002  # mirrors the napari widget accessor
+        value: float,  # mirrors the napari widget accessor
+    ) -> None:  # mirrors the napari widget accessor
         """Set spacing value for a specific gap between edges."""
         # Set the spin box value
         self._spin.setValue(value)
@@ -1446,7 +1449,7 @@ class _EdgeSpacingInput:
 class _PreviewButton:
     """Accessor for preview button in tests."""
 
-    def __init__(self, btn, state: TrackBuilderState) -> None:
+    def __init__(self, btn: Any, state: TrackBuilderState) -> None:
         self._btn = btn
         self._state = state
 

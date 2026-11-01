@@ -46,7 +46,7 @@ class TestScaleBarConfig:
     )
     def test_refuses_invalid_options(self, options, named):
         """A bad option is refused when the config is made, naming the option."""
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(ValueError, match=named) as excinfo:
             ScaleBarConfig(**options)
         message = str(excinfo.value)
         assert named in message

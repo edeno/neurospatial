@@ -85,14 +85,16 @@ def test_native_fields_sample_independent_clocks_and_keep_native_edits():
         label="Rate (Hz)",
         max_gap=0.5,  # the 0.8 s interval is unsupported
     )
-    second = AnimationField(
-        np.array([np.full(env.n_bins, 10.0), np.full(env.n_bins, 20.0)]),
-        [100.1, 100.3],
-        vmin=10,
-        vmax=20,
-        cmap="viridis",
-        break_before=[False, True],
-    )
+    # The break leaves the second field no interval to interpolate.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        second = AnimationField(
+            np.array([np.full(env.n_bins, 10.0), np.full(env.n_bins, 20.0)]),
+            [100.1, 100.3],
+            vmin=10,
+            vmax=20,
+            cmap="viridis",
+            break_before=[False, True],
+        )
     scene = Animation(env, {"first": first, "second": second})
     handle = model_handle(scene)
     layer = handle.field_layers["first"]
@@ -105,7 +107,8 @@ def test_native_fields_sample_independent_clocks_and_keep_native_edits():
     assert np.isnan(layer.data).all()  # long unsupported sampling interval
     handle.seek(101.0)
     assert np.all(layer.data[np.isfinite(layer.data)] == 2)
-    assert handle.field_layers["first"] is layer and layer.opacity == 0.37
+    assert handle.field_layers["first"] is layer
+    assert layer.opacity == 0.37
     np.testing.assert_allclose(layer.contrast_limits, [0, 2])
     assert layer.colormap.name == "magma"
     assert layer.name == "first (Rate (Hz))"
@@ -183,7 +186,8 @@ def test_native_qt_capture_restores_time_camera_and_custom_graphics():
     try:
         with handle.capture_session() as capture:
             frame = capture(10.2)
-            assert frame.dtype == np.uint8 and frame.shape[2] == 3
+            assert frame.dtype == np.uint8
+            assert frame.shape[2] == 3
         assert handle.time == 10.1
         assert tuple(camera.angles) == angles
         assert "User annotation" in handle.viewer.layers
@@ -216,7 +220,8 @@ def test_gui_thread_only_assigns_layer_data_prepared_on_the_worker(monkeypatch):
     prepared = handle._prepare(0.15)
 
     def refuse(*args, **kwargs):
-        raise AssertionError("sampled on the GUI thread")
+        msg = "sampled on the GUI thread"
+        raise AssertionError(msg)
 
     for name in ("sample", "trail", "pose", "heading_arrow", "events", "field_sample"):
         monkeypatch.setattr(handle._helper, name, refuse)
@@ -510,7 +515,8 @@ def test_async_scrubs_coalesce_and_playback_does_not_starve(monkeypatch):
         handle._request_seek(0.1)
         handle._request_seek(0.15)
         handle._request_seek(0.2)
-        assert len(calls) == 1 and handle._pending[1] == 0.2
+        assert len(calls) == 1
+        assert handle._pending[1] == 0.2
         release.set()
         first.result(timeout=5)
         handle._prepared_ready((1, 0.05, first))
@@ -518,7 +524,8 @@ def test_async_scrubs_coalesce_and_playback_does_not_starve(monkeypatch):
         second = handle._inflight
         second.result(timeout=5)
         handle._prepared_ready((handle._generation, 0.2, second))
-        assert handle.time == 0.2 and len(calls) == 2
+        assert handle.time == 0.2
+        assert len(calls) == 2
         handle._request_seek(0.25, playback=True)
         third = handle._inflight
         handle._request_seek(0.3, playback=True)
@@ -598,7 +605,8 @@ def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
         responsive = []
         QTimer.singleShot(0, lambda: responsive.append(True))
         QApplication.processEvents()
-        assert responsive and handle.time == 0.0
+        assert responsive
+        assert handle.time == 0.0
         assert handle._pending[1] == 0.6
         rows.release.set()
         deadline = monotonic() + 5
@@ -616,13 +624,15 @@ def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
         Timer(0.02, rows.release.set).start()
         with handle.capture_session() as capture:
             image = capture(1.0)
-            assert handle.time == 1.0 and image.ndim == 3
+            assert handle.time == 1.0
+            assert image.ndim == 3
         QApplication.processEvents()
         assert handle.time == 0.6
 
         # Native worker errors become inspectable and never escape Qt slots.
         def fail(time):
-            raise OSError("decoder read failed")
+            msg = "decoder read failed"
+            raise OSError(msg)
 
         monkeypatch.setattr(handle, "_prepare", fail)
         handle.time_control.setValue(0.2)
@@ -745,11 +755,12 @@ def test_legacy_spatial_units_leave_frame_axes_dimensionless():
 
 
 def test_freeform_environment_unit_labels_do_not_break_native_layers():
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool),
-        (np.arange(3.0), np.arange(3.0)),
-        units="arena units",
-    )
+    with pytest.warns(UserWarning, match="not in the standard registry"):
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            (np.arange(3.0), np.arange(3.0)),
+            units="arena units",
+        )
     scene = Animation(env, np.ones((2, 4)), frame_times=[0.0, 0.1])
     handle = model_handle(scene)
     handle.seek(0.05)
@@ -811,7 +822,9 @@ def test_layout_draws_overlays_and_regions_in_every_field_panel():
         layers = list(handle.viewer.layers)
         grid = canvas_grid(handle.viewer)
         stride = len(overlay_names) + 1
-        assert grid.enabled and grid.shape == (1, 2) and grid.stride == stride
+        assert grid.enabled
+        assert grid.shape == (1, 2)
+        assert grid.stride == stride
         assert len(layers) == 2 * stride
         panels = {}
         for index, name in enumerate(scene.fields):
@@ -862,9 +875,12 @@ def test_layout_draws_overlays_and_regions_in_every_field_panel():
         greens = (green > 30) & (green > 2 * red) & (green > blue)
         markers = (blue > 150) & (red < 80) & (green < 80)
         half = frame.shape[1] // 2
-        assert reds[:, :half].any() and not reds[:, half:].any()
-        assert greens[:, half:].any() and not greens[:, :half].any()
-        assert markers[:, :half].any() and markers[:, half:].any()
+        assert reds[:, :half].any()
+        assert not reds[:, half:].any()
+        assert greens[:, half:].any()
+        assert not greens[:, :half].any()
+        assert markers[:, :half].any()
+        assert markers[:, half:].any()
     finally:
         handle.close()
         scene.close()
@@ -936,7 +952,8 @@ def test_vertical_layout_keeps_video_below_each_panel_field():
     handle = NapariScene(scene, layout="vertical", show=True)
     try:
         grid = canvas_grid(handle.viewer)
-        assert grid.shape == (2, 1) and grid.stride == 3
+        assert grid.shape == (2, 1)
+        assert grid.stride == 3
         assert [layer.name for layer in handle.viewer.layers] == [
             "first: Video 1",
             "first",
@@ -972,6 +989,7 @@ def test_close_disconnects_slots_a_profiler_wrapped_after_connecting(monkeypatch
         )
     try:
         handle.close()
-        assert handle._closed and not handle._connections
+        assert handle._closed
+        assert not handle._connections
     finally:
         scene.close()

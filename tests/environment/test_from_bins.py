@@ -229,7 +229,7 @@ def test_transform_preserves_pair_alignment_with_unequal_edge_lengths(transform_
 
 @pytest.mark.parametrize("source_factory", [_nearest, _rectilinear])
 @pytest.mark.parametrize(
-    "matrix,scale",
+    ("matrix", "scale"),
     [
         ([[1, 0, 1.25], [0, 1, -2.5], [0, 0, 1]], 1.0),
         ([[0, -1, 0], [1, 0, 0], [0, 0, 1]], 1.0),
@@ -1226,7 +1226,7 @@ def _cell_descriptions():
 
 
 @pytest.mark.parametrize(
-    "base,component,source",
+    ("base", "component", "source"),
     [
         ("grid", "linearization", "track"),
         ("track", "grid", "grid"),

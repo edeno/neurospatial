@@ -601,7 +601,8 @@ def test_track_window_without_a_shown_interval_is_empty_and_defined():
     )
     values = np.ones((3, track.n_bins))
     # The 4.9 s interval is longer than max_gap, so it holds no sample.
-    field = AnimationField(values, [0.0, 0.1, 5.0], max_gap=0.5)
+    with pytest.warns(UserWarning, match="excluded as recording gaps"):
+        field = AnimationField(values, [0.0, 0.1, 5.0], max_gap=0.5)
     scene = Animation(track, field, window_seconds=1.0)
     window = PreparedScene(scene).track_window(scene.fields["field"], 2.5)
     np.testing.assert_array_equal(window.time_edges, [2.0])  # the window's start

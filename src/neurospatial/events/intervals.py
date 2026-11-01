@@ -137,11 +137,12 @@ def intervals_to_events(
     # Validate which parameter
     valid_which = {"start", "stop", "both"}
     if which not in valid_which:
-        raise ValueError(
+        msg = (
             f"'which' must be one of {valid_which}, got '{which}'.\n"
             "  WHY: Only 'start', 'stop', or 'both' are valid options.\n"
             "  Fix: Use which='start' to extract start times only."
         )
+        raise ValueError(msg)
 
     used = [start_column] if which == "start" else [stop_column]
     if which == "both":
@@ -159,11 +160,12 @@ def intervals_to_events(
             col for col in preserve_columns if col not in intervals.columns
         ]
         if missing_preserve:
-            raise ValueError(
+            msg = (
                 f"Columns to preserve not found: {missing_preserve}.\n"
                 "  WHY: Cannot preserve columns that don't exist in intervals.\n"
                 f"  Fix: Check column names. Available: {list(intervals.columns)}"
             )
+            raise ValueError(msg)
 
     times = {
         col: _event_times(intervals, col, name="intervals", call="intervals_to_events")
@@ -200,7 +202,7 @@ def _refuse_inverted(
     if inverted.size:
         labels = inverted if rows is None else rows[inverted]
         k = inverted[0]
-        raise ValueError(
+        msg = (
             f"{call}: interval row(s) {_format_rows(labels)} stop before they "
             f"start (e.g. start {starts[k]:g} s, stop {stops[k]:g} s).\n"
             "  WHY: an interval [start, stop) needs stop >= start; a negative "
@@ -208,6 +210,7 @@ def _refuse_inverted(
             "  Fix: repair those rows, or pair starts and stops by an id with "
             "match_by=."
         )
+        raise ValueError(msg)
 
 
 def events_to_intervals(
@@ -316,12 +319,13 @@ def events_to_intervals(
     if match_by is None:
         # Sequential pairing: require matching counts
         if n_start != n_stop:
-            raise ValueError(
+            msg = (
                 f"Event counts don't match: {n_start} starts, {n_stop} stops.\n"
                 "  WHY: Sequential pairing requires equal numbers of start/stop events.\n"
                 "  Fix: Use match_by='column_name' for non-sequential pairing,\n"
                 "       or ensure equal numbers of start and stop events."
             )
+            raise ValueError(msg)
         start_order = np.argsort(start_times, kind="stable")
         starts = start_times[start_order]
         stops = np.sort(stop_times, kind="stable")
@@ -334,17 +338,19 @@ def events_to_intervals(
             (stop_events, "stop_events"),
         ):
             if match_by not in frame.columns:
-                raise ValueError(
+                msg = (
                     f"Column '{match_by}' not found in {name}.\n"
                     f"  WHY: Cannot match by a column that doesn't exist.\n"
                     f"  Available columns: {list(frame.columns)}"
                 )
+                raise ValueError(msg)
             if frame[match_by].isna().any():
-                raise ValueError(
+                msg = (
                     f"{call}: {name}[{match_by!r}] has missing values.\n"
                     "  WHY: a row without an id cannot be paired.\n"
                     f"  Fix: drop or label those rows before pairing by {match_by!r}."
                 )
+                raise ValueError(msg)
 
         # Check for unmatched values
         start_values = set(start_events[match_by])
@@ -353,13 +359,14 @@ def events_to_intervals(
         unmatched_stop = stop_values - start_values
 
         if unmatched_start or unmatched_stop:
-            raise ValueError(
+            msg = (
                 f"Found unmatched values in '{match_by}' column.\n"
                 f"  Start events with no matching stop: {unmatched_start}\n"
                 f"  Stop events with no matching start: {unmatched_stop}\n"
                 "  WHY: Each start event needs a matching stop event.\n"
                 f"  Fix: Ensure all values in '{match_by}' column have both start and stop."
             )
+            raise ValueError(msg)
 
         # Each match_by value must appear at most once on each side. Without
         # this, DataFrame.merge(how="inner") forms a Cartesian product for any
@@ -372,7 +379,7 @@ def events_to_intervals(
             stop_events[match_by].duplicated(keep=False)
         ].unique()
         if len(start_dups) > 0 or len(stop_dups) > 0:
-            raise ValueError(
+            msg = (
                 f"Duplicate values in '{match_by}' column prevent one-to-one "
                 f"start/stop pairing.\n"
                 f"  Duplicated in start_events: {start_dups.tolist()}\n"
@@ -384,6 +391,7 @@ def events_to_intervals(
                 f"'{match_by}' appears once per side, or use match_by=None "
                 "for sequential pairing of equal-length start/stop events."
             )
+            raise ValueError(msg)
 
         stop_df = stop_events[["timestamp", match_by]].rename(
             columns={"timestamp": "stop_time"}
@@ -426,7 +434,7 @@ def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
             f"start {starts[k + 1]:g} s comes before stop {stops[k]:g} s of the "
             f"start at {starts[k]:g} s"
         )
-    raise ValueError(
+    msg = (
         f"events_to_intervals: start and stop events do not alternate in time: "
         f"{problem} (pair {k} in time order).\n"
         "  WHY: sequential pairing takes the k-th start with the k-th stop, so a "
@@ -434,6 +442,7 @@ def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
         "  Fix: repair the missing or extra event near that time, or pair by an "
         "id column with match_by=."
     )
+    raise ValueError(msg)
 
 
 def filter_by_intervals(

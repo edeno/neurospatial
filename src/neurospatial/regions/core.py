@@ -85,7 +85,8 @@ def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
     active = set() if _active is None else _active
     identity = id(value)
     if identity in active:
-        raise ValueError("Circular reference detected in Region metadata.")
+        msg = "Circular reference detected in Region metadata."
+        raise ValueError(msg)
     active.add(identity)
     try:
         if isinstance(value, Mapping):
@@ -626,10 +627,11 @@ class Regions(MutableMapping[str, Region]):
         """Refuse a non-Region, a name mismatch, or a dimension mismatch."""
         region = _require_region(value, key=key)
         if key != region.name:
-            raise ValueError(
+            msg = (
                 f"Key {key!r} must match Region.name {region.name!r}. "
                 f"Cannot assign region with name {region.name!r} to key {key!r}."
             )
+            raise ValueError(msg)
         other = next((r for name, r in self._store.items() if name != key), None)
         if other is not None and other.n_dims != region.n_dims:
             raise ValueError(
@@ -646,10 +648,11 @@ class Regions(MutableMapping[str, Region]):
     def _mutable_store(self) -> dict[str, Region]:
         """Return the builder's store, refusing edits to a published snapshot."""
         if not isinstance(self._store, dict):
-            raise TypeError(
+            msg = (
                 "Published regions are read-only. Create a mutable builder with "
                 "Regions(regions.values()), then call env.with_regions(builder)."
             )
+            raise TypeError(msg)
         return self._store
 
     @classmethod
@@ -735,12 +738,13 @@ class Regions(MutableMapping[str, Region]):
         store = self._mutable_store()
         self._check_insert(key, value)
         if key in self._store:
-            raise KeyError(
+            msg = (
                 f"Region {key!r} already exists. "
                 "Use Regions.update_region(...) to change its geometry or "
                 "metadata, or "
                 "Regions.set(name, region) for the idempotent replace path."
             )
+            raise KeyError(msg)
         store[key] = value
 
     def __delitem__(self, key: str) -> None:
@@ -829,9 +833,11 @@ class Regions(MutableMapping[str, Region]):
         """
         self._mutable_store()
         if (point is None) == (polygon is None):
-            raise ValueError("Specify **one** of 'point' or 'polygon'.")
+            msg = "Specify **one** of 'point' or 'polygon'."
+            raise ValueError(msg)
         if name in self:
-            raise KeyError(f"Duplicate region name {name!r}.")
+            msg = f"Duplicate region name {name!r}."
+            raise KeyError(msg)
 
         if point is not None:
             region = Region(name, "point", point, metadata or {})
@@ -904,7 +910,8 @@ class Regions(MutableMapping[str, Region]):
         """
         store = self._mutable_store()
         if point is not None and polygon is not None:
-            raise ValueError("Specify **one** of 'point' or 'polygon', not both.")
+            msg = "Specify **one** of 'point' or 'polygon', not both."
+            raise ValueError(msg)
         if point is None and polygon is None and metadata is None:
             raise ValueError(
                 _format_error(
@@ -1046,7 +1053,7 @@ class Regions(MutableMapping[str, Region]):
             if src.kind == "polygon":
                 assert isinstance(src.data, Polygon)
                 geom: Point | Polygon = src.data
-            elif src.kind == "point" and src.n_dims == 2:
+            elif src.n_dims == 2:  # a 2-D point region
                 assert isinstance(src.data, np.ndarray)
                 geom = Point(src.data)
             else:

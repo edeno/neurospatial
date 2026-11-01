@@ -142,9 +142,9 @@ def main() -> None:
     with BASELINE_PATH.open("wb") as f:
         pickle.dump(baseline, f, protocol=pickle.HIGHEST_PROTOCOL)
     perf = baseline["perf"]
-    print(f"Wrote baseline -> {BASELINE_PATH}")
-    print(f"  {len(baseline['cases'])} (geom x sigma x mode) cases")
-    print(
+    print(f"Wrote baseline -> {BASELINE_PATH}")  # noqa: T201  # command-line script
+    print(f"  {len(baseline['cases'])} (geom x sigma x mode) cases")  # noqa: T201  # command-line script
+    print(  # noqa: T201  # command-line script
         f"  perf grid: {perf['n_bins']} bins, dense expm "
         f"{perf['dense_expm_time_s']:.1f}s, peak "
         f"{perf['dense_peak_mem_bytes'] / 1e6:.0f} MB"

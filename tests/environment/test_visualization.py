@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -273,7 +273,7 @@ class TestPlotField:
         result_ax = env.plot_field(field, ax=None, colorbar=False)
 
         # Check that axes were created
-        assert isinstance(result_ax, matplotlib.axes.Axes)
+        assert isinstance(result_ax, mpl.axes.Axes)
 
         plt.close(result_ax.figure)
 

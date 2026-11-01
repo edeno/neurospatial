@@ -52,7 +52,9 @@ class TestVideoOverlayCacheSize:
 
     def test_cache_size_zero_raises_error(self, sample_video_array: np.ndarray):
         """Test that cache_size=0 raises ValueError."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"cache_size must be a positive integer"
+        ) as exc_info:
             VideoOverlay(source=sample_video_array, cache_size=0)
 
         error_msg = str(exc_info.value)
@@ -61,7 +63,9 @@ class TestVideoOverlayCacheSize:
 
     def test_cache_size_negative_raises_error(self, sample_video_array: np.ndarray):
         """Test that negative cache_size raises ValueError."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"cache_size must be a positive integer"
+        ) as exc_info:
             VideoOverlay(source=sample_video_array, cache_size=-10)
 
         error_msg = str(exc_info.value)
@@ -321,7 +325,9 @@ class TestVideoPrefetching:
         """Test that negative prefetch_ahead raises ValueError."""
         from neurospatial._video_io import _VideoReader
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match="prefetch_ahead must be non-negative"
+        ) as exc_info:
             _VideoReader(video_path_30_frames, prefetch_ahead=-1)
 
         assert "prefetch_ahead" in str(exc_info.value).lower()
@@ -511,7 +517,10 @@ class TestVideoOverlayPrefetching:
         """Test that negative prefetch_ahead raises ValueError."""
         video_array = np.zeros((10, 16, 16, 3), dtype=np.uint8)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError,
+            match=r"prefetch_ahead must be an integer of at least 0",
+        ) as exc_info:
             VideoOverlay(source=video_array, prefetch_ahead=-5)
 
         assert "prefetch_ahead" in str(exc_info.value).lower()

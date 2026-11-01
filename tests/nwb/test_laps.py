@@ -90,15 +90,12 @@ class TestWriteLapsFromLaps:
         [{"laps": []}, {"start_times": [], "stop_times": []}],
         ids=["records", "arrays"],
     )
-    def test_zero_laps_write_nothing_and_warn(self, tmp_path, kwargs):
+    def test_zero_laps_write_nothing(self, tmp_path, kwargs):
         """NWB files should not hold empty tables, so no table is added."""
         from neurospatial.io.nwb import write_laps
 
         nwbfile = create_roundtrip_nwb()
-        with pytest.warns(
-            UserWarning, match="write_laps wrote nothing: there are no laps"
-        ):
-            write_laps(nwbfile, **kwargs)
+        write_laps(nwbfile, **kwargs)
         assert "laps" not in nwbfile.intervals
         _save(nwbfile, tmp_path / "laps.nwb")
 
@@ -275,8 +272,7 @@ class TestWriteLapsOverwrite:
         from neurospatial.io.nwb import write_laps
 
         write_laps(empty_nwb, LAPS)
-        with pytest.warns(UserWarning, match="existing table 'laps' was removed"):
-            write_laps(empty_nwb, [], overwrite=True)
+        write_laps(empty_nwb, [], overwrite=True)
 
         assert "laps" not in empty_nwb.intervals
 

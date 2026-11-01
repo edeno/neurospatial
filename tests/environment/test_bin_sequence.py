@@ -170,7 +170,8 @@ class TestBinSequenceRuns:
         """The returned record is the type exported by neurospatial.environment."""
         from neurospatial.environment import BinSequenceWithRuns
 
-        env = Environment.from_samples(np.array([[0.0], [5.0]]), bin_size=5.0)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(np.array([[0.0], [5.0]]), bin_size=5.0)
         result = env.bin_sequence_with_runs(
             np.arange(3.0), np.array([[0.5], [1.0], [5.5]]), max_gap=None
         )
@@ -300,10 +301,11 @@ class TestBinSequenceRuns:
 
     def test_single_sample_run(self):
         """Test run encoding with single sample."""
-        env = Environment.from_samples(
-            np.array([[0.0], [5.0]]),
-            bin_size=5.0,
-        )
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(
+                np.array([[0.0], [5.0]]),
+                bin_size=5.0,
+            )
 
         times = np.array([0.0])
         positions = np.array([[2.5]])
@@ -577,7 +579,10 @@ class TestBinSequenceNonFiniteTimes:
         times = np.array([0.0, 1.0, 2.0], dtype=np.float64)
         times[1] = bad_value
 
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid times/positions passed to Environment\.bin_sequence",
+        ) as excinfo:
             env.bin_sequence(times, positions)
 
         message = str(excinfo.value)

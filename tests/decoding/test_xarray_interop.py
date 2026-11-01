@@ -192,7 +192,8 @@ class TestToXarrayDims:
 
         def _fake_import(name, *args, **kwargs):
             if name == "xarray":
-                raise ModuleNotFoundError("No module named 'xarray'", name="xarray")
+                msg = "No module named 'xarray'"
+                raise ModuleNotFoundError(msg, name="xarray")
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", _fake_import)

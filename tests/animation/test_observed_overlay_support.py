@@ -88,18 +88,21 @@ def test_pose_and_heading_missingness_are_independent(env):
     nose = np.array([[1.0, 1.0], [np.nan, np.nan], [2.0, 2.0]])
     body = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
     query = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
-    data = (
-        BodypartOverlay({"nose": nose, "body": body}, times, max_gap=0.3)
-        .convert_to_data(query, 5, env)
-        .on_clock(query)
-    )
+    # The nose gap leaves no interval to interpolate across.
+    with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+        data = (
+            BodypartOverlay({"nose": nose, "body": body}, times, max_gap=0.3)
+            .convert_to_data(query, 5, env)
+            .on_clock(query)
+        )
     assert np.isnan(data.bodyparts["nose"][1:4]).all()
     assert np.isfinite(data.bodyparts["body"]).all()
-    headings = (
-        HeadDirectionOverlay(np.array([3.0, np.nan, -3.0]), times, max_gap=0.3)
-        .convert_to_data(query, 5, env)
-        .on_clock(query)
-    )
+    with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+        headings = (
+            HeadDirectionOverlay(np.array([3.0, np.nan, -3.0]), times, max_gap=0.3)
+            .convert_to_data(query, 5, env)
+            .on_clock(query)
+        )
     assert np.isnan(headings.data[1:4]).all()
     exact = HeadDirectionOverlay(np.array([3 * np.pi, -3.0]), np.array([0.0, 0.2]))
     clock = np.array([0.0, 0.1, 0.2])
@@ -116,7 +119,9 @@ def test_object_vectors_follow_missing_position_and_declared_break(env):
         break_before=np.array([False, True, False]),
     )
     clock = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
-    positions = overlay.convert_to_data(clock, 5, env).on_clock(clock).animal_positions
+    with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+        data = overlay.convert_to_data(clock, 5, env)
+    positions = data.on_clock(clock).animal_positions
     np.testing.assert_array_equal(
         np.isfinite(positions).all(axis=1), [True, False, True, False, False]
     )

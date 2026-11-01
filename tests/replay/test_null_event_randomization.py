@@ -42,7 +42,8 @@ def _circular_shift(original, shifted):
     for candidate in np.mod(shifted[0] - original, DURATION):
         if np.allclose(np.sort(np.mod(original + candidate, DURATION)), shifted):
             return candidate
-    raise AssertionError("the copy is not a circular shift of the original")
+    msg = "the copy is not a circular shift of the original"
+    raise AssertionError(msg)
 
 
 def test_spike_shift_draws_its_own_shift_for_each_cell(recording):

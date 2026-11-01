@@ -24,8 +24,7 @@ def simple_grid_env():
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
 
-    env = Environment.from_samples(positions, bin_size=1.0)
-    return env
+    return Environment.from_samples(positions, bin_size=1.0)
 
 
 class TestDistanceToReward:
@@ -952,7 +951,7 @@ class TestDistanceToBoundary:
         with pytest.raises(ValueError, match=r"boundary_type"):
             distance_to_boundary(env, positions, boundary_type="invalid")
         # Regions carry no obstacle marker, so there is no obstacle boundary.
-        with pytest.raises(ValueError, match=r"'edge' or 'region'"):
+        with pytest.raises(ValueError, match=r"must be one of 'edge', 'region'"):
             distance_to_boundary(env, positions, boundary_type="obstacle")
 
     def test_position_outside_env_returns_nan(self, simple_grid_env):

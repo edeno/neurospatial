@@ -17,6 +17,7 @@ from magicgui.widgets import (
     Widget,
 )
 from numpy.typing import NDArray
+from typing_extensions import override
 
 from neurospatial.annotation._controller import ShapesLayerController
 from neurospatial.annotation._draft import annotation_roles, guard_identity_defaults
@@ -55,7 +56,7 @@ _MODE_STATUS: dict[str, str] = {
 }
 
 
-class _AnnotationWidget(Container):
+class _AnnotationWidget(Container):  # type: ignore[misc, unused-ignore]
     """Annotation controls with an explicit pending-edit save boundary."""
 
     def __init__(
@@ -188,7 +189,7 @@ def create_annotation_widget(
     )
     shortcuts.native.setWordWrap(True)
 
-    @shortcuts_toggle.clicked.connect
+    @shortcuts_toggle.clicked.connect  # type: ignore[misc, unused-ignore]
     def _toggle_shortcuts() -> None:
         """Expand or collapse the detailed workflow/shortcuts section."""
         shortcuts.visible = not shortcuts.visible
@@ -227,7 +228,9 @@ def create_annotation_widget(
     # Set placeholder text (magicgui uses native widget underneath)
     name_input.native.setPlaceholderText("Type name, press Enter to apply")
 
-    def annotation_choices(widget: Any = None) -> tuple[tuple[str, int], ...]:
+    def annotation_choices(
+        widget: Any = None,  # noqa: ARG001  # napari callback signature
+    ) -> tuple[tuple[str, int], ...]:  # napari callback signature
         """Derive choices from domain data when napari refreshes magicgui."""
         shapes = get_shapes()
         if shapes is None:
@@ -337,7 +340,7 @@ def create_annotation_widget(
         name_input.value = state.default_name()
 
     # --- Event Handlers ---
-    @role_selector.changed.connect
+    @role_selector.changed.connect  # type: ignore[misc, unused-ignore]
     def on_role_changed(region_type_str: str) -> None:
         """Update feature_defaults and state when region type selector changes."""
         # Sync state with UI (handles both programmatic and user changes)
@@ -351,14 +354,14 @@ def create_annotation_widget(
         update_mode_indicator(region_type_str)
         name_input.value = state.default_name()
 
-    @name_input.changed.connect
+    @name_input.changed.connect  # type: ignore[misc, unused-ignore]
     def on_name_changed(name: str) -> None:
         """Update feature_defaults when name changes."""
         shapes = get_shapes()
         if shapes is not None:
             shapes.feature_defaults["name"] = name
 
-    @shapes_list.changed.connect
+    @shapes_list.changed.connect  # type: ignore[misc, unused-ignore]
     def on_shapes_list_selection(selection: Any) -> None:
         """Select shape in layer when selected in list."""
         if selection is None:
@@ -378,7 +381,7 @@ def create_annotation_widget(
         if shapes is not None and idx < len(shapes.features):
             name_input.value = shapes.features["name"].iloc[idx]
 
-    @apply_btn.clicked.connect
+    @apply_btn.clicked.connect  # type: ignore[misc, unused-ignore]
     def apply_to_selected() -> None:
         """Apply current name to selected shapes using controller."""
         shapes = get_shapes()
@@ -426,10 +429,11 @@ def create_annotation_widget(
 
     qt_core: Any = QtCore
 
-    class EnterKeyFilter(qt_core.QObject):
+    class EnterKeyFilter(qt_core.QObject):  # type: ignore[misc, unused-ignore]
         """Event filter to handle Enter key in name input without propagating to napari."""
 
-        def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802 - Qt override
+        @override
+        def eventFilter(self, obj: Any, event: Any) -> bool:
             """
             Filter Qt events to intercept Enter key presses.
 
@@ -456,7 +460,7 @@ def create_annotation_widget(
     _enter_filter = EnterKeyFilter(name_input.native)
     name_input.native.installEventFilter(_enter_filter)
 
-    @delete_btn.clicked.connect
+    @delete_btn.clicked.connect  # type: ignore[misc, unused-ignore]
     def delete_selected() -> None:
         """Delete selected shapes using controller."""
         shapes = get_shapes()
@@ -475,7 +479,7 @@ def create_annotation_widget(
         update_annotation_status()
         viewer.status = f"Deleted {delete_count} shape(s)"
 
-    @save_btn.clicked.connect
+    @save_btn.clicked.connect  # type: ignore[misc, unused-ignore]
     def save_and_close() -> None:
         """Close viewer to return control to Python, with confirmation if empty."""
         shapes = get_shapes()
@@ -498,19 +502,19 @@ def create_annotation_widget(
         viewer.window._qt_window.close()
 
     # --- Keyboard Shortcuts ---
-    @viewer.bind_key("m")
+    @viewer.bind_key("m")  # type: ignore[misc, unused-ignore]
     def toggle_mode(viewer: napari.Viewer) -> None:
         """Cycle between environment, hole, region, wall and landmark modes."""
         cycle_annotation_mode()
         viewer.status = _MODE_STATUS[role_selector.value]
 
-    @viewer.bind_key("e")
+    @viewer.bind_key("e")  # type: ignore[misc, unused-ignore]
     def set_environment_mode(viewer: napari.Viewer) -> None:
         """Switch directly to environment (boundary) mode."""
         role_selector.value = "environment"
         viewer.status = _MODE_STATUS["environment"]
 
-    @viewer.bind_key("r")
+    @viewer.bind_key("r")  # type: ignore[misc, unused-ignore]
     def set_region_mode(viewer: napari.Viewer) -> None:
         """Switch directly to region mode."""
         role_selector.value = "region"
@@ -725,7 +729,9 @@ def create_annotation_widget(
             _pending_update[0] = True
             qt_core.QTimer.singleShot(0, flush_pending)
 
-    def on_features_changed(event: Any) -> None:
+    def on_features_changed(
+        event: Any,  # noqa: ARG001  # napari callback signature
+    ) -> None:  # napari callback signature  # napari callback signature
         """Process pasted shapes, which napari announces with features only.
 
         Pasted rows arrive with identities; a drawing's row has none until it
@@ -754,8 +760,10 @@ def create_annotation_widget(
 
         # Note: shapes.events.selected_data doesn't exist in napari
         # (see napari issue #6886). Use highlight event as proxy for selection.
-        @shapes.events.highlight.connect
-        def on_highlight_changed(event: Any) -> None:
+        @shapes.events.highlight.connect  # type: ignore[misc, unused-ignore]
+        def on_highlight_changed(
+            event: Any,  # noqa: ARG001  # napari callback signature
+        ) -> None:  # napari callback signature  # napari callback signature
             """Enable/disable buttons when selection highlight changes."""
             update_button_states()
 

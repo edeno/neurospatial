@@ -14,10 +14,12 @@ from neurospatial.environment._cache import DIFFUSION_KERNELS
 
 class _TransientWork:
     def __deepcopy__(self, memo):
-        raise AssertionError("Transient work must not be copied")
+        msg = "Transient work must not be copied"
+        raise AssertionError(msg)
 
     def __reduce__(self):
-        raise AssertionError("Transient work must not be pickled")
+        msg = "Transient work must not be pickled"
+        raise AssertionError(msg)
 
 
 def _environment():
@@ -27,7 +29,8 @@ def _environment():
 
 
 def _refuse_build():
-    raise AssertionError("the source cache was cleared")
+    msg = "the source cache was cleared"
+    raise AssertionError(msg)
 
 
 def _derive_or_pickle(env, method):

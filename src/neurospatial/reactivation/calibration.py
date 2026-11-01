@@ -125,9 +125,8 @@ def null_reactivation_data(
     [[1.0, 5.0, 15.0], [2.0, 12.0]]
     """
     if kind not in _KINDS:
-        raise ValueError(
-            f"null_reactivation_data(): kind must be one of {_KINDS}, got {kind!r}."
-        )
+        msg = f"null_reactivation_data(): kind must be one of {_KINDS}, got {kind!r}."
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     trains = as_spike_trains(spike_times)
     epochs = as_intervals(match_epochs, name="match_epochs")
@@ -314,7 +313,8 @@ def simulated_reactivation_session(
         ("burst_gain", burst_gain),
     ):
         if not (np.isfinite(value) and value >= 0):
-            raise ValueError(f"{call}: {name} must be finite and >= 0, got {value!r}.")
+            msg = f"{call}: {name} must be finite and >= 0, got {value!r}."
+            raise ValueError(msg)
     generator = np.random.default_rng(rng)
     control = np.array([[0.0, duration]])
     template = np.array([[duration, 2 * duration]])
@@ -493,11 +493,12 @@ def equalize_firing_rates(
     }
     control, match = periods["control_counts"], periods["match_counts"]
     if control.shape[1] != match.shape[1]:
-        raise ValueError(
+        msg = (
             f"{call}: control_counts has {control.shape[1]} units and "
             f"match_counts {match.shape[1]}; pass the same units in the same "
             "column order."
         )
+        raise ValueError(msg)
     for name, counts in periods.items():
         if np.any(counts != np.round(counts)):
             raise ValueError(
@@ -510,7 +511,8 @@ def equalize_firing_rates(
                 )
             )
     if control.shape[0] == 0 or match.shape[0] == 0:
-        raise ValueError(f"{call}: each period needs at least one time bin.")
+        msg = f"{call}: each period needs at least one time bin."
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     rate = np.minimum(control.mean(axis=0), match.mean(axis=0))
     return (
@@ -627,7 +629,8 @@ def reactivation_detection_rates(
 
     call = "reactivation_detection_rates()"
     if not 0 < confidence < 1:
-        raise ValueError(f"{call}: confidence must be in (0, 1), got {confidence}.")
+        msg = f"{call}: confidence must be in (0, 1), got {confidence}."
+        raise ValueError(msg)
     needed = ["method", "value", "is_reactivated", "error", *groups]
     missing = [name for name in needed if name not in table]
     if missing:

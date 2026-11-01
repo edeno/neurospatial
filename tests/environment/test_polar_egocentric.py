@@ -877,7 +877,8 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     def test_path_between_works_on_polar_env(self, polar_env):
         path = polar_env.path_between(bins=[0, polar_env.n_bins - 1])
         assert isinstance(path, list)
-        assert path[0] == 0 and path[-1] == polar_env.n_bins - 1
+        assert path[0] == 0
+        assert path[-1] == polar_env.n_bins - 1
 
     def test_reachable_from_works_on_polar_env(self, polar_env):
         reachable = polar_env.reachable_from(bins=0)
@@ -918,7 +919,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         assert caught.value.obj is polar_env
 
     @pytest.mark.parametrize(
-        "call, operation",
+        ("call", "operation"),
         [
             (
                 lambda env: env.occupancy(
@@ -1076,9 +1077,9 @@ class TestPolarBoundaryGuardsExtended:
 
     def test_plot_field_relabels_polar_axes(self, polar_env):
         """plot_field on a polar env labels axes Distance / Angle (rad), not X/Y."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         field = np.zeros(polar_env.n_bins)
@@ -1149,7 +1150,8 @@ class TestSubsetPreservesGraphLayout:
 
     def test_graph_subset_keeps_is_1d_and_n_dims(self):
         env = self._build_graph_env()
-        assert env.is_linearized_track is True and env.n_dims == 2
+        assert env.is_linearized_track is True
+        assert env.n_dims == 2
 
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:5] = True
@@ -1449,7 +1451,8 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
     ).with_regions(regions)
     assert isinstance(changed, Environment)
     assert (changed.name, changed.units, changed.frame) == ("polar", "cm", "egocentric")
-    assert len(env.regions) == 0 and "goal" in changed.regions
+    assert len(env.regions) == 0
+    assert "goal" in changed.regions
     np.testing.assert_array_equal(changed.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(changed.edge_pairs, env.edge_pairs)
     graph = changed.to_networkx()
@@ -1617,9 +1620,9 @@ def test_combine_refuses_polar_components_with_the_shared_error():
 )
 def test_layout_plot_names_axes_by_coordinate_meaning(coordinate_kind, labels, aspect):
     """env.plot() labels and scales the axes as plot_field does."""
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     if coordinate_kind == "polar":

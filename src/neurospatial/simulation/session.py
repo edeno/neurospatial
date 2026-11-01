@@ -173,11 +173,12 @@ class SimulationSession:
     def __post_init__(self) -> None:
         n = len(self.spike_times)
         if not (len(self.unit_ids) == len(self.models) == n):
-            raise ValueError(
+            msg = (
                 f"spike_times has {n} units, unit_ids {len(self.unit_ids)}, models "
                 f"{len(self.models)}; these must match one-to-one.\n"
                 "Fix: build unit_ids as np.arange(len(spike_times))."
             )
+            raise ValueError(msg)
         unit_ids = np.asarray(self.unit_ids)
         if unit_ids.ndim != 1 or (
             unit_ids.size and not np.issubdtype(unit_ids.dtype, np.integer)
@@ -193,28 +194,31 @@ class SimulationSession:
             )
         labels = {int(label) for label in unit_ids}
         if len(labels) != len(unit_ids):
-            raise ValueError(
+            msg = (
                 f"unit_ids {unit_ids.tolist()} are not unique; each unit needs "
                 "its own label.\n"
                 "Fix: build unit_ids as np.arange(len(spike_times)), or give "
                 "every unit a distinct label."
             )
+            raise ValueError(msg)
         if set(self.ground_truth) != labels:
-            raise ValueError(
+            msg = (
                 f"ground_truth is keyed by {sorted(self.ground_truth)} but "
                 f"unit_ids are {sorted(labels)}; they must match one-to-one.\n"
                 "Fix: key ground_truth by each unit's label, "
                 "{label: model.ground_truth}."
             )
+            raise ValueError(msg)
 
         times = read_only_copy(self.times, np.float64)
         positions = read_only_copy(self.positions, np.float64)
         if times.ndim != 1 or len(times) != len(positions):
-            raise ValueError(
+            msg = (
                 f"times has shape {times.shape} but positions has "
                 f"{len(positions)} samples; they must match one-to-one.\n"
                 "Fix: pass one position row per timestamp."
             )
+            raise ValueError(msg)
         if positions.ndim != 2 or positions.shape[1] != self.env.n_dims:
             raise ValueError(
                 _format_error(
@@ -853,9 +857,8 @@ def simulate_session(
 
     # Check for grid cells in non-2D environments
     if cell_type in ("grid", "mixed") and env.n_dims != 2:
-        raise ValueError(
-            f"Grid cells require 2D environment, but environment has {env.n_dims} dimensions"
-        )
+        msg = f"Grid cells require 2D environment, but environment has {env.n_dims} dimensions"
+        raise ValueError(msg)
 
     _require_positive("n_cells", n_cells, count=True)
     _require_positive("duration", duration, units=" (seconds)")

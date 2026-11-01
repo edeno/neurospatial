@@ -61,7 +61,7 @@ def simple_trajectory() -> dict:
         - times: array of timestamps (10 seconds at 100 Hz)
         - headings: array of head directions (random walk in radians)
     """
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 1000
     times = np.linspace(0, 10.0, n_samples)  # 10 seconds, 100 samples/s
 
@@ -69,7 +69,7 @@ def simple_trajectory() -> dict:
     headings = np.zeros(n_samples)
     headings[0] = np.pi  # Start facing south
     for i in range(1, n_samples):
-        step = np.random.randn() * 0.1  # Random angular step
+        step = rng.standard_normal() * 0.1  # Random angular step
         headings[i] = (headings[i - 1] + step) % (2 * np.pi)
 
     return {"times": times, "headings": headings}
@@ -202,9 +202,9 @@ class TestDirectionalAngleUnit:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Should handle headings in degrees."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         times = np.linspace(0, 10.0, 100)
-        headings_deg = np.random.uniform(0, 360, 100)  # Degrees
+        headings_deg = rng.uniform(0, 360, 100)  # Degrees
 
         spike_counts = _counts(
             single_neuron_spikes,
@@ -222,9 +222,9 @@ class TestDirectionalAngleUnit:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Same data in rad/deg should give same spike counts and occupancy."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         times = np.linspace(0, 10.0, 100)
-        headings_rad = np.random.uniform(0, 2 * np.pi, 100)
+        headings_rad = rng.uniform(0, 2 * np.pi, 100)
         headings_deg = np.degrees(headings_rad)
 
         counts_rad, occupancy_rad, centers_rad = _bin(
@@ -326,7 +326,8 @@ class TestDirectionalOccupancy:
     def test_angle_unit_deg(self) -> None:
         """Should handle headings in degrees with angle_unit='deg'."""
         times = np.linspace(0, 10.0, 100)
-        headings_deg = np.random.uniform(0, 360, 100)
+        rng = np.random.default_rng(0)
+        headings_deg = rng.uniform(0, 360, 100)
 
         occupancy, bin_centers = _occupancy(
             times,
@@ -496,7 +497,8 @@ class TestDirectionalBinningInputValidation:
     def test_mismatched_times_headings_length(self) -> None:
         """Should raise error if times and headings have different lengths."""
         times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 50)  # Different length
+        rng = np.random.default_rng(0)
+        headings = rng.uniform(0, 2 * np.pi, 50)  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
             prepare_directional_binning(times, headings, np.pi / 30)
@@ -512,7 +514,8 @@ class TestDirectionalBinningInputValidation:
     def test_non_monotonic_times(self) -> None:
         """Should raise error if times are not monotonically increasing."""
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
-        headings = np.random.uniform(0, 2 * np.pi, 4)
+        rng = np.random.default_rng(0)
+        headings = rng.uniform(0, 2 * np.pi, 4)
 
         with pytest.raises(ValueError, match=r"monotonic|increasing"):
             prepare_directional_binning(times, headings, np.pi / 30)
@@ -520,7 +523,8 @@ class TestDirectionalBinningInputValidation:
     def test_invalid_angle_unit(self) -> None:
         """Should raise error for an invalid angle_unit."""
         times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
+        rng = np.random.default_rng(0)
+        headings = rng.uniform(0, 2 * np.pi, 100)
 
         with pytest.raises(ValueError, match=r"angle_unit"):
             prepare_directional_binning(

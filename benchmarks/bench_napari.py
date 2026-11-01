@@ -44,7 +44,10 @@ def check_napari_available() -> bool:
 
 
 def benchmark_napari_init(
-    env, fields, overlays, config
+    env,
+    fields,
+    overlays,
+    config,  # noqa: ARG001  # shared benchmark signature
 ) -> tuple[float, float, float, Any]:
     """Benchmark napari viewer initialization.
 
@@ -115,9 +118,7 @@ def benchmark_random_seek(viewer, n_frames: int, n_seeks: int = 100) -> float:
     end_time = time.perf_counter()
 
     total_ms = (end_time - start_time) * 1000
-    avg_seek_ms = total_ms / n_seeks
-
-    return avg_seek_ms
+    return total_ms / n_seeks
 
 
 def run_napari_benchmark(config_name: str) -> BenchmarkResult:
@@ -231,7 +232,7 @@ Examples:
         try:
             result = run_napari_benchmark(config_name)
             results.append(result)
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 

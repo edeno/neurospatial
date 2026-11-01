@@ -66,6 +66,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
+    is_finite_real,
     is_integer_at_least,
     validate_choice,
     validate_draw_count,
@@ -109,11 +110,7 @@ def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None
     problems = []
     if not is_integer_at_least(n_shuffles, 1):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
-    if (
-        not isinstance(min_shift, (int, float, np.integer, np.floating))
-        or not np.isfinite(min_shift)
-        or min_shift < 0
-    ):
+    if not is_finite_real(min_shift, positive=False):
         problems.append(f"min_shift={min_shift!r} must be finite and non-negative")
     if problems:
         raise ValueError(
@@ -525,8 +522,9 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             The score of the original (non-shuffled) data.
         null_scores : NDArray[np.float64], shape (n_shuffles,)
             The score of each shuffle. NaN scores (shuffles whose score is
-            undefined) are left out of the p-value and z-score, with a
-            warning; ``n_shuffles_used`` counts the rest.
+            undefined) are left out of the p-value and z-score;
+            ``n_shuffles_used`` counts the rest, so a value below
+            ``n_shuffles`` means some shuffles were undefined.
         shuffle_type : str
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
         alternative : {"greater", "less", "two-sided"}, default="greater"
@@ -557,14 +555,6 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         null = np.asarray(null_scores, dtype=np.float64)
         undefined = np.isnan(null)
         defined = null[~undefined]
-        if undefined.any() and defined.size:
-            warnings.warn(
-                f"{shuffle_type}: {int(undefined.sum())} of {null.size} shuffles "
-                f"have an undefined (NaN) score and are left out; the p-value "
-                f"counts the other {defined.size} (n_shuffles_used).",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         p_value = compute_shuffle_pvalue(
             observed_score, defined, alternative=alternative
         )
@@ -620,7 +610,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             "n_shuffles_used": self.n_shuffles_used,
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs) -> Axes:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the null distribution with observed score.
 
         Creates a histogram of the finite null scores with a vertical line
@@ -779,11 +769,12 @@ def compute_shuffle_pvalue(
     ShuffleTestResult : Container for shuffle test results.
     """
     if not np.isfinite(observed):
-        raise ValueError(
+        msg = (
             f"observed must be a finite value, got {observed!r}. A non-finite "
             "observed score makes all comparisons against the null False, which "
             "would silently return the floor p-value 1/(n+1)."
         )
+        raise ValueError(msg)
     validate_choice(
         alternative, _ALTERNATIVES, name="alternative", owner="compute_shuffle_pvalue()"
     )
@@ -791,10 +782,11 @@ def compute_shuffle_pvalue(
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     undefined = np.isnan(null_scores)
     if undefined.all():
-        raise ValueError(
+        msg = (
             "null_scores contains no defined (non-NaN) values; cannot compute a "
             "shuffle p-value. Check that the shuffle produced valid scores."
         )
+        raise ValueError(msg)
     if undefined.any():
         warnings.warn(
             f"Dropped {int(undefined.sum())} undefined (NaN) null score(s) out "

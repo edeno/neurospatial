@@ -37,7 +37,9 @@ class TestErrorCodeE1001NoActiveBins:
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((100, 2)) * 10
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             Environment.from_samples(
                 positions,
                 bin_size=5.0,
@@ -127,7 +129,9 @@ class TestErrorCodeE1003DimensionMismatch:
         positions_3d = rng.standard_normal((100, 3)) * 10
         env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"Components must share coordinate dimensions: first has"
+        ) as exc_info:
             Environment.combine({"first": env_2d, "second": env_3d})
 
         error_msg = str(exc_info.value)
@@ -155,7 +159,9 @@ class TestErrorCodeE1005PathTraversal:
         """Test that E1005 error explains the security risk."""
         malicious_path = tmp_path / ".." / ".." / "etc" / "passwd"
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"Path traversal detected in path"
+        ) as exc_info:
             to_file(grid_env_from_samples, malicious_path)
 
         error_msg = str(exc_info.value)
@@ -215,7 +221,10 @@ class TestErrorCodeDocumentation:
         from neurospatial.io import to_file
 
         # E1005: path traversal on to_file.
-        with pytest.raises(ValueError) as e1005:
+        with pytest.raises(
+            ValueError,
+            match=r"Path traversal detected in path: .*Environment save",
+        ) as e1005:
             to_file(grid_env_from_samples, Path("..") / ".." / "x")
         msg_e1005 = str(e1005.value)
         assert "edeno.github.io/neurospatial/errors/" in msg_e1005

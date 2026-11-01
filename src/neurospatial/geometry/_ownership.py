@@ -50,13 +50,14 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 
 def _migration(provider: object) -> NoReturn:
-    raise TypeError(
+    msg = (
         f"{type(provider).__name__} cannot be published as an owned immutable "
         "snapshot: an environment holds only the geometry records of "
         "neurospatial.binning and neurospatial.arena. Convert it to those "
         "records, or install a snapshot adapter for it, before constructing "
         "the environment."
     )
+    raise TypeError(msg)
 
 
 def _check_locator(locator: Locator) -> None:
@@ -163,7 +164,7 @@ def _snapshot_arena(value: Arena) -> Arena:
     if type(value) is _TransformedArena:
         base = _snapshot_arena(value.base)
         return value if base is value.base else replace(value, base=base)
-    elif type(value) not in (
+    if type(value) not in (
         UnknownArena,
         OpenArena,
         MaskArena,

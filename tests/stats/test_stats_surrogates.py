@@ -55,11 +55,12 @@ class TestGeneratePoissonSurrogates:
         original_mean_per_neuron = spike_counts.mean(axis=0)
 
         # Collect mean rates from many surrogates
-        surrogate_means = []
-        for surrogate in generate_poisson_surrogates(
-            spike_counts, n_surrogates=500, rng=42
-        ):
-            surrogate_means.append(surrogate.mean(axis=0))
+        surrogate_means = [
+            surrogate.mean(axis=0)
+            for surrogate in generate_poisson_surrogates(
+                spike_counts, n_surrogates=500, rng=42
+            )
+        ]
 
         # Average across surrogates
         avg_surrogate_mean = np.mean(surrogate_means, axis=0)
@@ -186,11 +187,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         )
 
         # Collect rates from many surrogates
-        surrogate_rates = []
-        for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, smoothing_window=3, n_surrogates=500, rng=42
-        ):
-            surrogate_rates.append(surrogate.mean(axis=1))  # Mean across neurons
+        surrogate_rates = [
+            surrogate.mean(axis=1)  # Mean across neurons
+            for surrogate in generate_inhomogeneous_poisson_surrogates(
+                spike_counts, smoothing_window=3, n_surrogates=500, rng=42
+            )
+        ]
 
         # Average across surrogates
         avg_surrogate_rate = np.mean(surrogate_rates, axis=0)

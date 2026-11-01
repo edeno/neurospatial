@@ -126,7 +126,8 @@ def test_diba_prefers_the_template_with_more_cells(place_code):
         )
         for name in templates
     }
-    assert each["all"].is_replay and each["few"].is_replay
+    assert each["all"].is_replay
+    assert each["few"].is_replay
     assert each["all"].score == pytest.approx(stats.spearmanr(range(20), order)[0])
     assert each["few"].score == pytest.approx(1.0)
     chosen = detect_rank_order_replay(

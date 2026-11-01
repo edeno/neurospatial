@@ -37,7 +37,8 @@ def test_lazy_source_is_not_materialized_and_metadata_is_owned(scene_env):
             return 1000
 
         def __array__(self, *args):
-            raise AssertionError("Must not materialize the source")
+            msg = "Must not materialize the source"
+            raise AssertionError(msg)
 
         def __getitem__(self, index):
             self.reads.append(index)
@@ -108,19 +109,18 @@ def test_selected_export_matches_same_complete_scene_frame(
         EpochOverlay([(0.05, 0.25)], label="Run"),
         VideoOverlay(np.zeros((5, 3, 3, 3), dtype=np.uint8), times=times),
     ]
-    with pytest.warns(UserWarning, match="no calibration"):
-        scene = Animation(
-            scene_env,
-            {
-                "rate": AnimationField(
-                    np.arange(5 * scene_env.n_bins).reshape(5, -1), times
-                ),
-                "posterior": AnimationField(
-                    np.ones((5, scene_env.n_bins)), times, cmap="magma"
-                ),
-            },
-            overlays=overlays,
-        )
+    scene = Animation(
+        scene_env,
+        {
+            "rate": AnimationField(
+                np.arange(5 * scene_env.n_bins).reshape(5, -1), times
+            ),
+            "posterior": AnimationField(
+                np.ones((5, scene_env.n_bins)), times, cmap="magma"
+            ),
+        },
+        overlays=overlays,
+    )
     expected = scene.render_frame(0.2, dpi=30)
     captured = []
 
@@ -280,10 +280,9 @@ def test_video_below_field_is_visible_through_zero_values(scene_env):
         frames, times=np.array([0.0, 0.1, 0.2]), z_order="below", alpha=1
     )
     values = np.zeros((3, scene_env.n_bins))
-    with pytest.warns(UserWarning, match="no calibration"):
-        scene = Animation(
-            scene_env, values, frame_times=[0.0, 0.1, 0.2], overlays=[overlay]
-        )
+    scene = Animation(
+        scene_env, values, frame_times=[0.0, 0.1, 0.2], overlays=[overlay]
+    )
     rgb = scene.render_frame(0.1, dpi=30)
     assert (
         np.count_nonzero((rgb[..., 0] > 240) & (rgb[..., 1] < 10) & (rgb[..., 2] < 10))
@@ -451,4 +450,5 @@ def test_object_vectors_without_object_markers_render_their_lines(scene_env):
             for artist in scene._renderer.figure.axes[0].collections
             if isinstance(artist, LineCollection) and len(artist.get_segments())
         ]
-        assert len(lines) == 1 and len(lines[0]) == 2
+        assert len(lines) == 1
+        assert len(lines[0]) == 2

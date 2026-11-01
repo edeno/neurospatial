@@ -698,7 +698,8 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
                 [5.0, 5.0],  # inside
             ]
         )
-        occ = env.occupancy(times, positions, max_gap=None)
+        with pytest.warns(UserWarning, match="excluded ALL"):
+            occ = env.occupancy(times, positions, max_gap=None)
 
         # bin_sequence agrees: the middle sample is -1.
         bin_seq = env.bin_sequence(
@@ -743,7 +744,10 @@ class TestOccupancyNonFiniteTimes:
         times = np.array([0.0, 1.0, 2.0], dtype=np.float64)
         times[1] = bad_value
 
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid times/positions passed to Environment\.occupancy",
+        ) as excinfo:
             env.occupancy(times, positions)
 
         message = str(excinfo.value)

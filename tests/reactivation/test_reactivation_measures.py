@@ -146,11 +146,11 @@ class TestAssemblyReactivation:
         counts = np.random.default_rng(0).poisson(1.0, (300, 3)).astype(float)
         silent = counts.copy()
         silent[:, :2] = 0.0
-        with pytest.warns(UserWarning) as caught:
+        with (
+            pytest.warns(UserWarning, match="excluded from both periods"),
+            pytest.warns(UserWarning, match="comparison is undefined"),
+        ):
             result = assembly_reactivation(silent, counts, pattern)
-        messages = [str(warning.message) for warning in caught]
-        assert any("excluded from both periods" in m for m in messages)
-        assert any("comparison is undefined" in m for m in messages)
         assert np.isnan(result.mean_activation_difference)
         assert np.isnan(result.fraction_above_control_threshold)
 
@@ -298,7 +298,8 @@ class TestPairSelection:
                 corr, corr, pair_mask=np.arange(120) < 2
             )
         assert result.n_pairs == 2
-        assert np.isnan(result.explained_variance) and np.isnan(result.p_value)
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.p_value)
 
 
 # =============================================================================
@@ -366,11 +367,11 @@ class TestSeveralControls:
 
     def test_collinear_controls_are_undefined(self, correlation_vectors) -> None:
         v = correlation_vectors
-        with pytest.warns(UserWarning, match="EV is undefined"):
-            result = explained_variance_reactivation(
-                v["novel"], v["post"], control_correlations=[v["pre"], 2 * v["pre"]]
-            )
-        assert np.isnan(result.explained_variance) and np.isnan(result.p_value)
+        result = explained_variance_reactivation(
+            v["novel"], v["post"], control_correlations=[v["pre"], 2 * v["pre"]]
+        )
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.p_value)
 
     def test_several_controls_need_one_label_array_each(self) -> None:
         rng = np.random.default_rng(4)

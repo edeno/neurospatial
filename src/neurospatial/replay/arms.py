@@ -141,16 +141,18 @@ class ArmReplayMethod:
             validate_choice(getattr(self, name), allowed, name=name, owner=prefix)
         for name in ("joint_same_sign", "arm_fallback"):
             if not isinstance(getattr(self, name), bool):
-                raise ValueError(
+                msg = (
                     f"{prefix}: {name} must be True or False, got "
                     f"{getattr(self, name)!r}."
                 )
+                raise ValueError(msg)
         gap = self.merge_max_gap
         if gap is not None and (self.subregions != "runs" or not gap >= 0):
-            raise ValueError(
+            msg = (
                 f"{prefix}: merge_max_gap must be a time >= 0 in seconds, and "
                 f"only with subregions='runs'; got {gap!r}."
             )
+            raise ValueError(msg)
 
     def __hash__(self) -> int:
         """Hash by name and reference; the decoding mapping is not hashable."""
@@ -180,13 +182,16 @@ class ArmReplayMethod:
         return "no_test"
 
     def _compare(
-        self, event: _CompareEvent, rng: np.random.Generator
+        self,
+        event: _CompareEvent,
+        rng: np.random.Generator,  # noqa: ARG002  # shared by every method's _compare
     ) -> ReplayDetectionResult:
         """This method's verdict on one event of ``compare_replay_methods``."""
         from neurospatial.decoding import JointDecodingResult
         from neurospatial.replay.methods import _no_verdict
 
-        assert event.arms is not None and not isinstance(event.env, Mapping)
+        assert event.arms is not None
+        assert not isinstance(event.env, Mapping)
         assert not isinstance(event.event, (JointDecodingResult, Mapping))
         if np.unique(event.times).size < 2:
             # The checks are named by the arms the event visits: none here.
@@ -217,11 +222,13 @@ def _check_arm_numbers(method: ArmReplayMethod, prefix: str) -> None:
         if isinstance(value, bool) or not isinstance(
             value, (int, float, np.integer, np.floating)
         ):
-            raise ValueError(f"{prefix}: {name} must be a number, got {value!r}.")
+            msg = f"{prefix}: {name} must be a number, got {value!r}."
+            raise ValueError(msg)
     for name in ("peak_threshold", "smoothing_sigma", "min_duration"):
         value = getattr(method, name)
         if not (np.isfinite(value) and value >= 0):
-            raise ValueError(f"{prefix}: {name} must be >= 0, got {value!r}.")
+            msg = f"{prefix}: {name} must be >= 0, got {value!r}."
+            raise ValueError(msg)
     for name in (
         "min_coverage",
         "min_abs_correlation",
@@ -229,7 +236,8 @@ def _check_arm_numbers(method: ArmReplayMethod, prefix: str) -> None:
     ):
         value = getattr(method, name)
         if not 0 <= value < 1:
-            raise ValueError(f"{prefix}: {name} must be in [0, 1), got {value!r}.")
+            msg = f"{prefix}: {name} must be in [0, 1), got {value!r}."
+            raise ValueError(msg)
 
 
 @reads_pynapple_samples
@@ -410,10 +418,11 @@ def _checked_event(
     posterior = np.asarray(posterior, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     if posterior.ndim != 2 or posterior.shape[1] != n_bins:
-        raise ValueError(
+        msg = (
             f"{_OPERATION}: posterior must have shape (n_time_bins, {n_bins}), "
             f"one column per bin of env, got {posterior.shape}."
         )
+        raise ValueError(msg)
     if not np.all(np.isfinite(posterior)) or np.any(posterior < 0):
         raise ValueError(
             _format_error(
@@ -759,10 +768,11 @@ def _validated_arms(arms: Any, env: Environment) -> dict[str, NDArray[np.intp]]:
     for raw_name, bins in arms.items():
         name = str(raw_name)
         if name in checked or "+" in name or "," in name:
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: arm name {raw_name!r} repeats another or "
                 "contains '+' or ','; results join arm names with them."
             )
+            raise ValueError(msg)
         array = np.asarray(bins)
         if (
             array.ndim != 1
@@ -771,16 +781,18 @@ def _validated_arms(arms: Any, env: Environment) -> dict[str, NDArray[np.intp]]:
             or np.any(array < 0)
             or np.any(array >= n_bins)
         ):
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: arm {name!r} must be at least two bin indices "
                 f"in [0, {n_bins}), got {bins!r}."
             )
+            raise ValueError(msg)
         shared = seen & set(array.tolist())
         if shared or len(set(array.tolist())) != array.size:
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: arm {name!r} repeats or shares bins "
                 f"{sorted(shared) or 'within itself'}; each bin belongs to one arm."
             )
+            raise ValueError(msg)
         gaps = [
             (int(a), int(b))
             for a, b in pairwise(array)

@@ -280,17 +280,19 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
         """
         threshold = float(threshold)
         if not np.isfinite(threshold) or threshold <= 0:
-            raise ValueError(
+            msg = (
                 f"well_decoded_fraction(): threshold must be a positive finite "
                 f"multiple of chance, such as 5.0, got {threshold}."
             )
+            raise ValueError(msg)
         if chance_bins is None:
             chance_bins = len(self.max_posterior)
         elif not is_integer_at_least(chance_bins, 1):
-            raise ValueError(
+            msg = (
                 "well_decoded_fraction(): chance_bins must be a positive "
                 f"number of bins, such as 2 * env.n_bins, got {chance_bins!r}."
             )
+            raise ValueError(msg)
         covered = self.max_posterior > threshold / chance_bins
         return float(np.sum(self.space_fractions[covered]))
 
@@ -640,7 +642,8 @@ def _empty_time_bins(
             )
         )
     if not np.isfinite(counts).all() or np.any(counts < 0):
-        raise ValueError(f"{operation}: spike_counts must be finite and non-negative.")
+        msg = f"{operation}: spike_counts must be finite and non-negative."
+        raise ValueError(msg)
     empty: NDArray[np.bool_] = counts.sum(axis=1) == 0
     return empty
 
@@ -786,10 +789,11 @@ def template_fractions(
         )
     distance = float(exclude_end_distance)
     if not np.isfinite(distance) or distance < 0:
-        raise ValueError(
+        msg = (
             f"{operation}: exclude_end_distance must be a finite distance >= 0 "
             f"in environment units, got {exclude_end_distance}."
         )
+        raise ValueError(msg)
     masses = []
     for name in result.template_names:
         joint = result.joint(name)

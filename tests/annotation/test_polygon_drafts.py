@@ -130,7 +130,8 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
                 window.close()
 
         close()
-        assert errors and "invalid" in errors[-1]
+        assert errors
+        assert "invalid" in errors[-1]
         assert len(viewer.layers) == 2
         assert len(shapes.data) == 1
         shapes.data = [valid]
@@ -184,7 +185,8 @@ def test_polygon_links_survive_append_and_controller_delete():
         assert shapes.features.loc[1, "_parent_id"] == identity
         # A drawing is a new exterior with its own identity.
         drawn = shapes.features.loc[2, "_polygon_id"]
-        assert drawn and drawn not in set(shapes.features.loc[:1, "_polygon_id"])
+        assert drawn
+        assert drawn not in set(shapes.features.loc[:1, "_polygon_id"])
         assert shapes.features.loc[2, "_parent_id"] == ""
         assert controller.delete_shapes_by_indices({0}) == 2
         assert list(shapes.features["name"]) == ["new"]

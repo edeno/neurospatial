@@ -27,7 +27,8 @@ def test_reader_errors_teach(site, nwbfile):
         nwbfile.create_processing_module("behavior", "Behavior data")
     elif site == "unit_missing":
         nwbfile.add_unit(id=7, spike_times=[0.1, 0.5])
-    with pytest.raises((KeyError, ValueError)) as caught:
+
+    def attempt():
         if site == "unit_missing":
             read_units(nwbfile, unit_ids=[99])
         else:
@@ -37,6 +38,9 @@ def test_reader_errors_teach(site, nwbfile):
                 "position_missing": None,
             }[site]
             read_position(nwbfile, processing_module=module)
+
+    with pytest.raises((KeyError, ValueError)) as caught:
+        attempt()
     message = str(caught.value)
     assert "Fix:" in message
     if site == "unit_missing":

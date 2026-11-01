@@ -56,16 +56,14 @@ class TestSerialization:
         data = rng.standard_normal((500, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
         env = env.with_metadata(units="cm")
-        env = env.with_metadata(frame="world")
-        return env
+        return env.with_metadata(frame="world")
 
     @pytest.fixture
     def env_with_regions(self, simple_env):
         """Add regions to environment."""
         region_builder = Regions(simple_env.regions.values())
         region_builder.add("goal", point=np.array([5.0, 5.0]))
-        simple_env = simple_env.with_regions(region_builder)
-        return simple_env
+        return simple_env.with_regions(region_builder)
 
     def test_to_file_creates_both_files(self, simple_env, tmp_path):
         """Test that to_file creates both JSON and npz files."""
@@ -252,8 +250,7 @@ class TestPathlibSupport:
         rng = np.random.default_rng(42)
         data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
-        env = env.with_metadata(units="cm")
-        return env
+        return env.with_metadata(units="cm")
 
     @pytest.mark.parametrize("save_as_str", [True, False])
     @pytest.mark.parametrize("load_as_str", [True, False])
@@ -287,8 +284,7 @@ class TestAtomicWriteAndDtypes:
         data = rng.standard_normal((300, 2)) * 8
         env = Environment.from_samples(data, bin_size=3.0, name="atomic_env")
         env = env.with_metadata(units="cm")
-        env = env.with_metadata(frame="world")
-        return env
+        return env.with_metadata(frame="world")
 
     def test_npz_write_failure_leaves_no_partial_json(
         self, simple_env, tmp_path, monkeypatch
@@ -304,7 +300,8 @@ class TestAtomicWriteAndDtypes:
         output_path = tmp_path / "atomic_env"
 
         def _boom(*_args, **_kwargs):
-            raise OSError("simulated npz write failure")
+            msg = "simulated npz write failure"
+            raise OSError(msg)
 
         monkeypatch.setattr(files_mod.np, "savez_compressed", _boom)
 

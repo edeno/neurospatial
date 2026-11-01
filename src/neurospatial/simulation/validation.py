@@ -32,15 +32,18 @@ def _select_unit_indices(
     session: SimulationSession, unit_ids: list[int] | None, operation: str
 ) -> list[int]:
     """Resolve unit labels to aligned spike/model rows of an allocentric session."""
+    from neurospatial._validation import validate_instance
     from neurospatial.geometry import require_cartesian
     from neurospatial.simulation.session import SimulationSession
 
-    if not isinstance(session, SimulationSession):
-        raise TypeError(
-            f"session must be a SimulationSession instance, got {type(session).__name__}.\n"
-            "Why: validation and plotting need the simulator's ground truth.\n"
-            "Fix: pass the holder returned by simulate_session() or open_field_session()."
-        )
+    session = validate_instance(
+        session,
+        SimulationSession,
+        name="session",
+        owner=operation,
+        hint="validation and plotting need the simulator's ground truth; pass "
+        "the holder returned by simulate_session() or open_field_session()",
+    )
     require_cartesian(
         session.env.coordinate_system,
         operation,
@@ -54,11 +57,12 @@ def _select_unit_indices(
     valid_ids = session.unit_ids.tolist()
     unknown = [label for label in unit_ids if label not in valid_ids]
     if unknown:
-        raise ValueError(
+        msg = (
             f"unit_ids contains unknown labels {unknown}. Valid labels: {valid_ids}.\n"
             "Why: unit_ids selects labels, not row indices.\n"
             "Fix: choose unit_ids from session.unit_ids."
         )
+        raise ValueError(msg)
     return [valid_ids.index(label) for label in unit_ids]
 
 
@@ -373,11 +377,13 @@ def validate_simulation(
     Warns
     -----
     UserWarning
-        If no selected unit could be evaluated, if a selected unit is not a
-        place cell (its ground truth ``cell_type`` is not ``'place'``;
-        excluded as ``'not_a_place_field'``), or if a place unit's ground
-        truth has no ``'center'`` or ``'width'``
-        (``'unsupported_ground_truth'``).
+        If no selected unit could be evaluated. Units excluded from the
+        verdict do not warn; their reason is in ``skip_reasons`` and their
+        ``unit_status``: a selected unit that is not a place cell (its ground
+        truth ``cell_type`` is not ``'place'``) is ``'excluded'`` with
+        ``'not_a_place_field'``, and a place unit whose ground truth has no
+        ``'center'`` or ``'width'`` is ``'not_evaluable'`` with
+        ``'unsupported_ground_truth'``.
 
     Examples
     --------
@@ -601,24 +607,6 @@ def validate_simulation(
 
     import warnings
 
-    if not_place:
-        warnings.warn(
-            f"Units {sorted(not_place)} are not place fields (cell types "
-            f"{sorted(set(not_place.values()))}); validate_simulation compares "
-            "place fields only, so they are excluded from the verdict "
-            "('not_a_place_field').",
-            UserWarning,
-            stacklevel=2,
-        )
-    if unsupported:
-        warnings.warn(
-            f"Units {unsupported}: ground truth has no place field 'center' and "
-            "'width' to compare with, so they are marked not evaluable "
-            "('unsupported_ground_truth').",
-            UserWarning,
-            stacklevel=2,
-        )
-
     evaluated = np.isfinite(center_errors) & np.isfinite(correlations)
     meets_thresholds = (center_errors <= center_error_limits) & (
         correlations >= min_correlation
@@ -667,7 +655,7 @@ def plot_session_summary(
     *,
     unit_ids: list[int] | None = None,
     figsize: tuple[float, float] = (15, 10),
-) -> tuple[Figure, NDArray]:
+) -> tuple[Figure, NDArray[np.object_]]:
     """Create comprehensive visualization of simulation session.
 
     Generates a multi-panel figure showing trajectory, spatial rate maps,
@@ -679,8 +667,10 @@ def plot_session_summary(
     session : SimulationSession
         Complete simulation session from simulate_session().
     unit_ids : list[int] | None, optional
-        Unit labels from session.unit_ids to plot. If None, plots first 6 units
-        (or fewer if session has < 6 cells). Default: None.
+        Unit labels from session.unit_ids to plot. At most 6 units are
+        drawn: the first 6 of the requested units, in the requested order
+        (the first 6 of the session if None, or fewer if the session has
+        fewer cells); any further units are not plotted. Default: None.
     figsize : tuple[float, float], optional
         Figure size in inches (width, height). Default: (15, 10).
 
@@ -766,17 +756,7 @@ def plot_session_summary(
     from neurospatial.encoding import compute_spatial_rates
 
     cell_indices = _select_unit_indices(session, unit_ids, "plot_session_summary()")
-    if unit_ids is None:
-        cell_indices = cell_indices[:6]
-    elif len(cell_indices) > 6:
-        import warnings
-
-        warnings.warn(
-            f"unit_ids has {len(cell_indices)} units. Only first 6 will be plotted.",
-            UserWarning,
-            stacklevel=2,
-        )
-        cell_indices = cell_indices[:6]
+    cell_indices = cell_indices[:6]
 
     env = session.env
     if env.n_dims > 2:
@@ -809,10 +789,7 @@ def plot_session_summary(
     ax_info = fig.add_subplot(gs[0, 2])
 
     # Rows 1-2: Rate maps (2x3 grid for up to 6 cells)
-    axes_rates = []
-    for i in range(2):
-        for j in range(3):
-            axes_rates.append(fig.add_subplot(gs[i + 1, j]))
+    axes_rates = [fig.add_subplot(gs[i + 1, j]) for i in range(2) for j in range(3)]
 
     # Row 3: Raster plot (spans all columns)
     ax_raster = fig.add_subplot(gs[3, :])

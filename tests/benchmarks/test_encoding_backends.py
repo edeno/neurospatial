@@ -16,9 +16,11 @@ import pytest
 BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "benchmarks"
 BENCHMARK_MODULE_PATH = BENCHMARKS_DIR / "bench_encoding_backends.py"
 if not BENCHMARKS_DIR.exists():
-    raise RuntimeError(f"Benchmarks directory not found: {BENCHMARKS_DIR}")
+    msg = f"Benchmarks directory not found: {BENCHMARKS_DIR}"
+    raise RuntimeError(msg)
 if not BENCHMARK_MODULE_PATH.exists():
-    raise RuntimeError(f"Benchmark module not found: {BENCHMARK_MODULE_PATH}")
+    msg = f"Benchmark module not found: {BENCHMARK_MODULE_PATH}"
+    raise RuntimeError(msg)
 
 from neurospatial.encoding._backend import is_jax_available  # noqa: E402
 
@@ -31,9 +33,8 @@ def benchmark_module() -> ModuleType:
     module_name = "_neurospatial_test_bench_encoding_backends"
     spec = importlib.util.spec_from_file_location(module_name, BENCHMARK_MODULE_PATH)
     if spec is None or spec.loader is None:
-        raise RuntimeError(
-            f"Could not load benchmark module from {BENCHMARK_MODULE_PATH}"
-        )
+        msg = f"Could not load benchmark module from {BENCHMARK_MODULE_PATH}"
+        raise RuntimeError(msg)
 
     module = importlib.util.module_from_spec(spec)
     previous_module = sys.modules.get(module_name)

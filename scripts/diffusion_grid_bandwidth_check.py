@@ -26,7 +26,7 @@ import scipy.sparse.linalg
 from neurospatial import Environment
 
 
-def measure_std_along_axis0(kernel, centers, bin_sizes, center_bin):
+def measure_std_along_axis0(kernel, centers, bin_sizes, center_bin):  # noqa: ARG001  # kept in helper signature shared with callers
     """Physical std of the smoothed point source along axis 0 (the x axis).
 
     kernel[:, center_bin] is the smoothed unit mass at `center_bin`. Normalize that

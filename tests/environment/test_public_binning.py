@@ -61,7 +61,8 @@ def test_public_binning_read_does_not_build_native_faces(monkeypatch):
     )
 
     def refuse_build(self):
-        raise AssertionError("Reading binning must not materialize native faces")
+        msg = "Reading binning must not materialize native faces"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(NativeFaces, "build", refuse_build)
     exported = env.binning

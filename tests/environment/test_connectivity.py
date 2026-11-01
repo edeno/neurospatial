@@ -276,7 +276,8 @@ class TestReachableFromRadius:
     def test_reachable_from_radius_zero(self):
         """Test reachable_from() with radius=0 (only source bin)."""
         data = np.array([[0, 0], [0, 1], [1, 0]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=1.5)
 
         source_bin = 0
         mask = env.reachable_from(bins=source_bin, radius=0, metric="hops")
@@ -302,7 +303,8 @@ class TestReachableFromRadius:
     def test_reachable_from_radius_none(self):
         """Test that radius=None reaches all bins in component."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=1.5)
 
         source_bin = 0
         mask = env.reachable_from(bins=source_bin, radius=None, metric="hops")
@@ -332,7 +334,8 @@ class TestReachableFromEdgeCases:
     def test_reachable_from_invalid_source_bin(self):
         """Test reachable_from() with invalid source bin raises error."""
         data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=1.5)
 
         # Test negative bin index
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range.*\[0, "):
@@ -345,7 +348,8 @@ class TestReachableFromEdgeCases:
     def test_reachable_from_negative_radius(self):
         """Test reachable_from() with negative radius raises error."""
         data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=1.5)
 
         with pytest.raises(ValueError, match=r"radius must be non-negative"):
             env.reachable_from(bins=0, radius=-1.0)
@@ -353,7 +357,8 @@ class TestReachableFromEdgeCases:
     def test_reachable_from_invalid_metric(self):
         """Test reachable_from() with invalid metric raises error."""
         data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env = Environment.from_samples(data, bin_size=1.5)
 
         with pytest.raises(ValueError, match=r"metric must be"):
             env.reachable_from(bins=0, metric="invalid")

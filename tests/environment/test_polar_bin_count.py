@@ -22,7 +22,7 @@ def test_exact_angular_division_keeps_the_requested_count(n_angle):
     np.testing.assert_array_equal(env.bin_centers[:, 1], (edges[:-1] + edges[1:]) / 2)
 
 
-@pytest.mark.parametrize("span,n_distance", [(1.0, 49), (10.0, 61), (100.0, 29)])
+@pytest.mark.parametrize(("span", "n_distance"), [(1.0, 49), (10.0, 61), (100.0, 29)])
 def test_exact_radial_division_keeps_the_requested_count(span, n_distance):
     env = Environment.from_polar_egocentric(
         distance_range=(0.0, span),
@@ -78,6 +78,8 @@ def test_sixty_one_direction_occupancy_matches_the_published_bin_centers():
 
 
 def test_sixty_one_direction_rate_peak_matches_the_firing_object_bearing():
+    # The animal sits at the origin facing the object, so only one direction
+    # is ever sampled.
     result = compute_egocentric_rate(
         None,
         np.array([0.05]),

@@ -900,7 +900,8 @@ class TestWarnOnDrop:
         assert "spike_times.min()=" in msg
         assert "spike_times.max()=" in msg
         # Must contain the position time window (format: "[t_min, t_max]")
-        assert "[" in msg and "]" in msg
+        assert "[" in msg
+        assert "]" in msg
         # Must mention units (seconds)
         assert "second" in msg.lower() or "units" in msg.lower()
         # Must include the escape-hatch hint
@@ -1156,7 +1157,7 @@ class TestBinSpikeTrainWithStatsSharedMask:
     @pytest.mark.parametrize(
         # The jump to -50 slows the smoothed speed at sample 2 to about
         # 1 cm/s, so a gate of 0.5 cm/s keeps both spikes in the field.
-        "min_speed,expected_count",
+        ("min_speed", "expected_count"),
         [(None, 2), (0.5, 2), (50.0, 0)],
     )
     def test_kernel_matches_public_binner(self, min_speed, expected_count):

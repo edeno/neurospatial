@@ -34,11 +34,11 @@ def _slow_independent(seed: int, n_bins: int = 2000, n_neurons: int = 20) -> np.
 def test_tracy_widom_adds_n_to_the_minus_two_thirds() -> None:
     counts = _independent(0)
     counts[:, 5] = 2.0  # constant: excluded, so n is the 19 varying neurons
-    with pytest.warns(UserWarning, match="same count"):
-        result = detect_assemblies(
-            counts, method="pca", n_components=1, component_threshold="tracy_widom"
-        )
+    result = detect_assemblies(
+        counts, method="pca", n_components=1, component_threshold="tracy_widom"
+    )
     expected = marchenko_pastur_threshold(19, 2000) + 19 ** (-2 / 3)
+    assert result.excluded_unit_ids.tolist() == [5]
     assert result.threshold == pytest.approx(expected, rel=1e-12)
     assert result.component_threshold == "tracy_widom"
     assert result.surrogate_max_eigenvalues.shape == (0,)

@@ -313,18 +313,20 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         crossing_times = np.asarray(self.crossing_times, dtype=np.float64)
         directions = np.asarray(self.crossing_directions, dtype=np.intp).reshape(-1, 2)
         if goal_labels.ndim != 1 or distances.shape != goal_labels.shape:
-            raise ValueError(
+            msg = (
                 "DecisionBoundaryMetrics needs goal_labels and "
                 "distance_to_decision_boundary of the same shape (n_samples,); "
                 f"got {goal_labels.shape} and {distances.shape}."
             )
+            raise ValueError(msg)
         if crossing_times.ndim != 1 or len(directions) != len(crossing_times):
-            raise ValueError(
+            msg = (
                 "DecisionBoundaryMetrics needs one (from, to) row of "
                 "crossing_directions per crossing time; got crossing_times of "
                 f"shape {crossing_times.shape} and crossing_directions of shape "
                 f"{directions.shape}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "goal_labels", goal_labels)
         object.__setattr__(self, "distance_to_decision_boundary", distances)
         object.__setattr__(self, "crossing_times", crossing_times)
@@ -392,10 +394,11 @@ class DecisionAnalysisResult(ResultMixin):
         if self.chosen_goal is not None and not (
             0 <= self.chosen_goal < len(self.goal_regions)
         ):
-            raise ValueError(
+            msg = (
                 f"chosen_goal={self.chosen_goal} does not index the "
                 f"{len(self.goal_regions)} goal_regions {self.goal_regions}."
             )
+            raise ValueError(msg)
 
     @property
     def chosen_goal_region(self) -> str | None:

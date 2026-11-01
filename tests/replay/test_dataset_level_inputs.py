@@ -175,7 +175,8 @@ def test_matched_alpha_takes_a_pairwise_order_method(track):
         warnings.simplefilter("ignore", UserWarning)
         matched = matched_alpha(null_table, replay_methods=[method], target=0.1)
     row = matched.iloc[0]
-    assert row["n_events"] == 20 and row["rate"] <= 0.1
+    assert row["n_events"] == 20
+    assert row["rate"] <= 0.1
     passing = null_table["passes[n_active_cells >= 3]"].to_numpy(dtype=bool)
     assert row["rate"] == np.mean(passing & (null_table["p_value"] < row["alpha"]))
     # Rethresholding the table equals running the method at the new alpha.

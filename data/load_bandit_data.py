@@ -40,10 +40,11 @@ def _file_sha256(path: Path) -> str:
 
 def _verified_existing(path: Path) -> Path:
     if _file_sha256(path) != BANDIT_DATA_SHA256:
-        raise FileExistsError(
+        msg = (
             f"{path} exists with a different SHA-256 from the published recording. "
             "Move it aside before downloading; it will not be overwritten."
         )
+        raise FileExistsError(msg)
     return path
 
 
@@ -91,15 +92,17 @@ def fetch_bandit_data(data_path: str | Path) -> Path:
                     received += len(block)
                 announced = response.headers.get("Content-Length")
             if announced is not None and received != int(announced):
-                raise ConnectionError(
+                msg = (
                     f"Download stopped after {received} of {announced} bytes. "
                     "Run the download again."
                 )
+                raise ConnectionError(msg)
             if digest.hexdigest() != BANDIT_DATA_SHA256:
-                raise ValueError(
+                msg = (
                     f"Downloaded recording has SHA-256 {digest.hexdigest()}; "
                     f"expected {BANDIT_DATA_SHA256}. Run the download again."
                 )
+                raise ValueError(msg)
         # A hard link publishes the complete file atomically without replacing a
         # file that another process created while the transfer was in progress.
         try:
@@ -145,11 +148,12 @@ def load_neural_recording_from_files(
     """
     path = Path(data_path) / f"{animal_date_epoch}_figure04_inputs.npz"
     if not path.is_file():
-        raise FileNotFoundError(
+        msg = (
             f"Recording not found: {path}. Download the published J16 recording "
             "with `uv run python data/load_bandit_data.py --data-path <directory>`, "
             "or point data_path at a directory containing the NPZ."
         )
+        raise FileNotFoundError(msg)
     with np.load(path, allow_pickle=False) as arrays:
         version = arrays["format_version"]
         if (
@@ -157,9 +161,8 @@ def load_neural_recording_from_files(
             or not np.issubdtype(version.dtype, np.integer)
             or version.item() != 1
         ):
-            raise ValueError(
-                "Unsupported recording format_version; expected scalar integer 1."
-            )
+            msg = "Unsupported recording format_version; expected scalar integer 1."
+            raise ValueError(msg)
 
         times = arrays["position_time"]
         if (
@@ -168,19 +171,16 @@ def load_neural_recording_from_files(
             or not np.isfinite(times).all()
             or np.any(np.diff(times) <= 0)
         ):
-            raise ValueError(
-                "position_time must be nonempty, finite and strictly increasing."
-            )
+            msg = "position_time must be nonempty, finite and strictly increasing."
+            raise ValueError(msg)
         columns = arrays["position_columns"].tolist()
         if not isinstance(columns, list) or len(columns) != len(set(columns)):
-            raise ValueError(
-                "position_columns must be a vector of unique column names."
-            )
+            msg = "position_columns must be a vector of unique column names."
+            raise ValueError(msg)
         required = {"head_position_x", "head_position_y", "linear_position"}
         if not required.issubset(columns):
-            raise ValueError(
-                f"position_columns is missing {sorted(required - set(columns))}."
-            )
+            msg = f"position_columns is missing {sorted(required - set(columns))}."
+            raise ValueError(msg)
         position_info = pd.DataFrame(
             {column: arrays[f"position/{column}"] for column in columns},
             index=pd.Index(times, name=str(arrays["position_index_name"]) or None),
@@ -197,10 +197,11 @@ def load_neural_recording_from_files(
             or offsets[-1] != len(concatenated)
             or np.any(offsets[1:] < offsets[:-1])
         ):
-            raise ValueError(
+            msg = (
                 "spike_offsets must be a nondecreasing integer vector starting at 0 "
                 "and ending at the length of the one-dimensional spike_times array."
             )
+            raise ValueError(msg)
         spike_times = [
             concatenated[start:stop].copy() for start, stop in pairwise(offsets)
         ]
@@ -222,7 +223,8 @@ def load_neural_recording_from_files(
             or edge_order.ndim != 2
             or edge_order.shape[1] != 2
         ):
-            raise ValueError("Track graph arrays have incompatible shapes.")
+            msg = "Track graph arrays have incompatible shapes."
+            raise ValueError(msg)
         graph = nx.Graph()
         for node, position in zip(nodes, positions, strict=True):
             graph.add_node(int(node), pos=tuple(position))
@@ -230,20 +232,19 @@ def load_neural_recording_from_files(
             edges, distances, edge_ids, strict=True
         ):
             if int(start) not in graph or int(stop) not in graph:
-                raise ValueError(
-                    "track_edges refers to a node absent from track_nodes."
-                )
+                msg = "track_edges refers to a node absent from track_nodes."
+                raise ValueError(msg)
             graph.add_edge(
                 int(start), int(stop), distance=float(distance), edge_id=int(edge_id)
             )
         linear_edge_order = [(int(start), int(stop)) for start, stop in edge_order]
         if any(not graph.has_edge(*edge) for edge in linear_edge_order):
-            raise ValueError(
-                "linear_edge_order refers to an edge absent from track_edges."
-            )
+            msg = "linear_edge_order refers to an edge absent from track_edges."
+            raise ValueError(msg)
         spacing = float(arrays["linear_edge_spacing"])
         if not np.isfinite(spacing) or spacing < 0:
-            raise ValueError("linear_edge_spacing must be finite and nonnegative.")
+            msg = "linear_edge_spacing must be finite and nonnegative."
+            raise ValueError(msg)
 
     return {
         "position_info": position_info,

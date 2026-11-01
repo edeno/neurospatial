@@ -54,7 +54,9 @@ def test_3d_frame_preserves_z_for_positions_skeletons_and_vectors(env3d):
         ],
     )
     image = scene.render_frame(10.2, dpi=35)
-    assert image.ndim == 3 and image.shape[-1] == 3 and image.dtype == np.uint8
+    assert image.ndim == 3
+    assert image.shape[-1] == 3
+    assert image.dtype == np.uint8
     ax = scene._renderer.figure.axes[0]
     assert ax.name == "3d"
     assert ax.get_zlabel() == "z (cm)"
@@ -89,7 +91,7 @@ def test_3d_grid_draws_only_active_cells_and_distinguishes_missing(env3d):
 
 
 @pytest.mark.parametrize(
-    "overlay,match",
+    ("overlay", "match"),
     [
         (
             HeadDirectionOverlay(np.array([0.0, 1.0]), np.array([0.0, 0.2])),
@@ -126,7 +128,7 @@ class _HeadingAdapter:
 
 
 @pytest.mark.parametrize(
-    "headings,match",
+    ("headings", "match"),
     [
         (np.array([0.0, 1.0]), "unit vectors"),
         (np.array([[1.0, 0.0], [0.0, 1.0]]), "Shape mismatch"),

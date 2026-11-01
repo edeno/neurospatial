@@ -39,7 +39,8 @@ def _choice(value: Any) -> Any:
         items = tuple(_choice(item) for item in value)
         if all(isinstance(item, _SCALAR_CHOICES) for item in items):
             return items
-    raise TypeError(f"{type(value).__name__} is not a scalar or a flat sequence")
+    msg = f"{type(value).__name__} is not a scalar or a flat sequence"
+    raise TypeError(msg)
 
 
 _DECLARE_DATA = (
@@ -82,7 +83,7 @@ def build_choices(
     for name, value in params.items():
         try:
             choices[name] = _choice(value)
-        except TypeError as error:
+        except TypeError as error:  # noqa: PERF203  # names the offending argument
             raise TypeError(
                 _format_error(
                     f"{owner} argument {name!r} is not a build choice: {error}.",

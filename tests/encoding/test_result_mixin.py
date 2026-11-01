@@ -7,9 +7,9 @@ guarantee that pre-existing spatial-result accessors keep working.
 
 from __future__ import annotations
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")  # non-interactive backend for headless test runs
+mpl.use("Agg")  # non-interactive backend for headless test runs
 
 import numpy as np
 import pandas as pd
@@ -129,7 +129,8 @@ def test_directional_summary_includes_correlation(linear_env: Environment) -> No
     assert s["n_directions"] == 2
     assert s["n_bins"] == n
     assert np.isclose(s["correlation"], -1.0)
-    assert "peak_fwd" in s and "peak_rev" in s
+    assert "peak_fwd" in s
+    assert "peak_rev" in s
 
 
 def test_result_to_dataframe_tidy(
@@ -211,7 +212,8 @@ def test_result_mixin_requires_summary_and_offers_no_other_verb_stubs() -> None:
 def test_repr_names_a_failing_summary_instead_of_hiding_it() -> None:
     class Broken(ResultMixin):
         def summary(self) -> dict:
-            raise IndexError("bin 7")
+            msg = "bin 7"
+            raise IndexError(msg)
 
     assert repr(Broken()) == "Broken(<summary() failed: IndexError: bin 7>)"
     assert "IndexError" in Broken()._repr_html_()

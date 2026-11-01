@@ -549,10 +549,13 @@ def _refuse_labels(child: Environment, parent: Environment) -> None:
             "with_metadata(units=..., frame=...)"
         )
     note = _transform_note(child, parent)
-    raise IncompatibleEnvironmentError(
+    msg = (
         f"{_OPERATION}: this environment and parent differ in {named}, so the "
         "same coordinates are different places and no bin can be matched to a "
-        "bin of parent.",
+        "bin of parent."
+    )
+    raise IncompatibleEnvironmentError(
+        msg,
         fix=f"{note} Otherwise, {remedy}" if note else remedy,
         first=parent,
         second=child,
@@ -597,9 +600,12 @@ def _refuse_dimensions(child: Environment, parent: Environment) -> None:
     """Refuse environments whose coordinates have different widths."""
     if child.n_dims == parent.n_dims:
         return
-    raise IncompatibleEnvironmentError(
+    msg = (
         f"{_OPERATION}: parent has {parent.n_dims}-D coordinates and this "
-        f"environment {child.n_dims}-D, so no bin of one is a place in the other.",
+        f"environment {child.n_dims}-D, so no bin of one is a place in the other."
+    )
+    raise IncompatibleEnvironmentError(
+        msg,
         fix="build both environments from positions with the same number of "
         "coordinates",
         first=parent,

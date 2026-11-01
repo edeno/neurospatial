@@ -92,7 +92,8 @@ def _other_platform_triangulation(sample_points):
                 simplices=triangulation.simplices,
                 neighbors=triangulation.neighbors,
             )
-    raise AssertionError("both diagonal choices match this platform's Delaunay")
+    msg = "both diagonal choices match this platform's Delaunay"
+    raise AssertionError(msg)
 
 
 @pytest.mark.parametrize("storage", ["dict", "file", "nwb"])

@@ -100,9 +100,11 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         """
         self._begin_build()
         if not isinstance(boundary_polygon, Polygon):
-            raise TypeError("boundary_polygon must be a Shapely Polygon.")
+            msg = "boundary_polygon must be a Shapely Polygon."
+            raise TypeError(msg)
         if boundary_polygon.is_empty:
-            raise ValueError("boundary_polygon cannot be empty.")
+            msg = "boundary_polygon cannot be empty."
+            raise ValueError(msg)
         point_spacing = float(
             validate_cell_size(point_spacing, name="point_spacing", scalar_only=True)[0]
         )
@@ -115,10 +117,13 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             point_spacing,
         )
         if sample_points.shape[0] < 3:  # Delaunay needs at least N+1 points in N-D
-            raise ValueError(
+            msg = (
                 f"Not enough interior sample points ({sample_points.shape[0]}) generated "
                 "to form any triangle. Try decreasing point_spacing or ensuring "
-                "the polygon is large enough relative to the spacing.",
+                "the polygon is large enough relative to the spacing."
+            )
+            raise ValueError(
+                msg,
             )
         # 2. Triangulate the lattice with every ring of the polygon as sides;
         # lattice points crowding the outline's samples would make slivers.
@@ -137,9 +142,12 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         n_total_delaunay_triangles = self._full_delaunay_tri.simplices.shape[0]
 
         if active_original_indices.size == 0:
-            raise ValueError(
+            msg = (
                 "No triangles found with centroids inside the boundary polygon. "
-                "Check boundary_polygon shape, point_spacing, or point generation strategy.",
+                "Check boundary_polygon shape, point_spacing, or point generation strategy."
+            )
+            raise ValueError(
+                msg,
             )
 
         self._active_original_simplex_indices = active_original_indices

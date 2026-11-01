@@ -41,27 +41,27 @@ def trajectory_data() -> tuple[
     np.ndarray, np.ndarray, np.ndarray
 ]:  # times, positions, headings
     """Create sample trajectory data with positions and headings."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 1000
     times = np.linspace(0, 10, n_samples)
     # Random walk within environment
     positions = np.column_stack(
         [
-            20 + np.cumsum(np.random.randn(n_samples) * 0.5),  # x
-            20 + np.cumsum(np.random.randn(n_samples) * 0.5),  # y
+            20 + np.cumsum(rng.standard_normal(n_samples) * 0.5),  # x
+            20 + np.cumsum(rng.standard_normal(n_samples) * 0.5),  # y
         ]
     )
     positions = np.clip(positions, 5, 35)  # Keep within bounds
     # Random headings (0 to 2*pi)
-    headings = np.random.uniform(0, 2 * np.pi, n_samples)
+    headings = rng.uniform(0, 2 * np.pi, n_samples)
     return times, positions, headings
 
 
 @pytest.fixture
 def spike_times() -> np.ndarray:
     """Spike times within the trajectory time range."""
-    np.random.seed(123)
-    return np.sort(np.random.uniform(0.1, 9.9, 50))  # 50 spikes
+    rng = np.random.default_rng(123)
+    return np.sort(rng.uniform(0.1, 9.9, 50))  # 50 spikes
 
 
 @pytest.fixture
@@ -400,7 +400,7 @@ class TestComputeViewRateSmoothing:
         )
         assert result.bandwidth == 8.0
 
-    @pytest.mark.parametrize("units, expected", [(None, 25.0), ("cm", 5.0)])
+    @pytest.mark.parametrize(("units", "expected"), [(None, 25.0), ("cm", 5.0)])
     def test_default_bandwidth_uses_units_or_bin_spacing(
         self,
         simple_env: Environment,
@@ -686,7 +686,8 @@ class TestComputeViewRateMinOccupancy:
         threshold = float(np.median(occupancy[occupancy > 0]))
         result = compute_view_rate(*args, min_occupancy=threshold, **settings)
         unsupported = (occupancy == 0) | (occupancy < threshold)
-        assert unsupported.any() and not unsupported.all()
+        assert unsupported.any()
+        assert not unsupported.all()
         np.testing.assert_array_equal(
             np.isnan(np.asarray(result.firing_rate)), unsupported
         )
@@ -731,8 +732,9 @@ class TestComputeViewRateInputValidation:
         from neurospatial.encoding.view import compute_view_rate
 
         times = np.linspace(0, 10, 1000)
-        positions = np.random.rand(500, 2) * 100  # Wrong length
-        headings = np.random.uniform(0, 2 * np.pi, 1000)
+        rng = np.random.default_rng(0)
+        positions = rng.random((500, 2)) * 100  # Wrong length
+        headings = rng.uniform(0, 2 * np.pi, 1000)
 
         with pytest.raises(ValueError, match=r"times has.*positions has"):
             compute_view_rate(
@@ -753,8 +755,9 @@ class TestComputeViewRateInputValidation:
         from neurospatial.encoding.view import compute_view_rate
 
         times = np.linspace(0, 10, 1000)
-        positions = np.random.rand(1000, 2) * 100
-        headings = np.random.uniform(0, 2 * np.pi, 500)  # Wrong length
+        rng = np.random.default_rng(0)
+        positions = rng.random((1000, 2)) * 100
+        headings = rng.uniform(0, 2 * np.pi, 500)  # Wrong length
 
         with pytest.raises(ValueError, match=r"times length.*headings length"):
             compute_view_rate(
@@ -1317,8 +1320,9 @@ class TestComputeViewRatesInputValidation:
         from neurospatial.encoding.view import compute_view_rates
 
         times = np.linspace(0, 10, 1000)
-        positions = np.random.rand(500, 2) * 100  # Wrong length
-        headings = np.random.uniform(0, 2 * np.pi, 1000)
+        rng = np.random.default_rng(0)
+        positions = rng.random((500, 2)) * 100  # Wrong length
+        headings = rng.uniform(0, 2 * np.pi, 1000)
         spike_times_list = [np.array([1.0, 2.5])]
 
         with pytest.raises(ValueError, match=r"times has.*positions has"):
@@ -1339,8 +1343,9 @@ class TestComputeViewRatesInputValidation:
         from neurospatial.encoding.view import compute_view_rates
 
         times = np.linspace(0, 10, 1000)
-        positions = np.random.rand(1000, 2) * 100
-        headings = np.random.uniform(0, 2 * np.pi, 500)  # Wrong length
+        rng = np.random.default_rng(0)
+        positions = rng.random((1000, 2)) * 100
+        headings = rng.uniform(0, 2 * np.pi, 500)  # Wrong length
         spike_times_list = [np.array([1.0, 2.5])]
 
         with pytest.raises(ValueError, match=r"times length.*headings length"):

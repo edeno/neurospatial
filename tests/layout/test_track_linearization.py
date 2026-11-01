@@ -43,7 +43,10 @@ def _assert_previous_projection(component, layout, prefix, recorded):
         for target in (component, layout):
             if f"{key}/error_type" in recorded:
                 assert recorded[f"{key}/error_type"].item() == "ValueError"
-                with pytest.raises(ValueError) as exc:
+                with pytest.raises(
+                    ValueError,
+                    match=r"linear_position must be convertible to a 1D array",
+                ) as exc:
                     getattr(target, method)(points)
                 assert str(exc.value) == recorded[f"{key}/error_message"].item()
             else:

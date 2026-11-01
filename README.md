@@ -91,7 +91,7 @@ cd neurospatial
 uv sync
 
 # Or with pip
-pip install -e ".[dev]"
+pip install -e . --group dev  # pip >= 25.1
 ```
 
 **Note**: This project uses `uv` for package management. If you have `uv` installed, all commands should be prefixed with `uv run` (e.g., `uv run pytest`).
@@ -111,7 +111,6 @@ neurospatial v0.8.0 has been tested with the following dependency versions:
 | scikit-learn | 1.7.2 |
 | scikit-image | 0.25.2 |
 | shapely | 2.1.2 |
-| alphashape | 1.3.1 |
 | joblib | 1.5.2 |
 | track-linearization | 2.4.0 |
 | tqdm | 4.67.1 |
@@ -644,17 +643,22 @@ docs/                  # User guides, API reference, examples, and contributor d
 
 ## Requirements
 
-- Python 3.10+
-- numpy >= 1.24.0
-- pandas >= 2.0.0
-- matplotlib >= 3.7.0
-- networkx >= 3.0
-- scipy >= 1.10.0
-- scikit-learn >= 1.2.0
-- joblib >= 1.1.1
-- shapely >= 2.0.0
-- track-linearization >= 2.4.0
-- typing_extensions >= 4.0.0
+Python 3.10+. The core scientific libraries follow the Scientific Python
+[SPEC 0](https://scientific-python.org/specs/spec-0000/) support window, and
+CI tests the lowest version of each:
+
+- numpy >= 2.2
+- scipy >= 1.15.3
+- pandas >= 2.3
+- matplotlib >= 3.10
+- scikit-image >= 0.25
+- scikit-learn >= 1.6
+- networkx >= 3.4
+- shapely >= 2.1
+- joblib >= 1.2, track-linearization >= 2.4,
+  tqdm >= 4.67.1, typing_extensions >= 4.4
+
+`pyproject.toml` is the authoritative list.
 
 ## Contributing
 

@@ -51,11 +51,12 @@ def track_position(
 def _checked_track(env: Environment, track: Environment) -> Environment:
     """``track``, if a 2-D environment's fields can be drawn along it."""
     if not track.is_linearized_track:
-        raise ValueError(
+        msg = (
             "track must be a linearized track (Environment.from_graph or "
             "linear_track): its bins give position along the maze. Why: the "
             "2-D fields are drawn against position along it."
         )
+        raise ValueError(msg)
     if env.is_linearized_track or env.n_dims != 2 or track.n_dims != 2:
         raise ValueError(
             _format_error(

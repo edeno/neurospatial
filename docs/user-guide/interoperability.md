@@ -194,7 +194,7 @@ rates = compute_spatial_rates(
     sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
 )
 assert set(sim.ground_truth) == set(sim.unit_ids)
-print(rates.summary_table().index.tolist())
+print(rates.unit_ids.tolist())
 validation = validate_simulation(sim, unit_ids=[0, 3, 4])
 print(validation.summary_table()[["center_error", "correlation", "status"]])
 assert validation.unit_status == ("failed", "passed", "failed")
@@ -501,7 +501,8 @@ below `end_time`, so `restrict` selects exactly the samples that
 to the next lap, not to both. A record without duration, such as a region
 visit seen in a single sample just before a tracking loss longer than
 `max_gap`, holds no time and cannot be a pynapple interval, so it is dropped
-with a warning that says how many were dropped. Overlapping records, such as
+without a warning; compare `len(records)` with the number of exported
+intervals to count them. Overlapping records, such as
 visits to overlapping regions, are refused: pynapple merges overlapping
 intervals and drops all their metadata, so export them in separate calls. An
 empty list is also refused, because it does not say what kind of record it

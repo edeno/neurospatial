@@ -57,6 +57,7 @@ def test_summary_plot_breaks_lines_at_recording_gaps(continuous_recording, quant
     for line in ax.get_lines():
         x = np.asarray(line.get_xdata(), dtype=float)
         y = np.asarray(line.get_ydata(), dtype=float)
-        assert np.isnan(x[5]) and np.isnan(y[5])
+        assert np.isnan(x[5])
+        assert np.isnan(y[5])
         np.testing.assert_array_equal(np.delete(x, 5), times)
     plt.close(ax.figure)

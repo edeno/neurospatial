@@ -322,7 +322,9 @@ def test_shear_refuses_smoothing_and_scales_measures(built_environment):
     [np.diag([2.0, 1.0]), np.diag([2e-5, 1e-5]), np.array([[1.0, 0.25], [0.0, 1.0]])],
 )
 def test_track_non_similarity_refused(built_environment, linear):
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"Why: non-similarity maps change bin lengths according to"
+    ) as caught:
         built_environment.apply_transform(_affine(linear))
     assert "Environment.from_graph" in str(caught.value)
     assert "Why:" in str(caught.value)
@@ -516,7 +518,7 @@ def _small_cell_environment(kind):
 # Each chain once failed the cell check of exact polygon cells (clipped cells
 # and reflected hexagons) by floating-point roundoff far below a cell's size.
 @pytest.mark.parametrize(
-    "angle,scale,reflect",
+    ("angle", "scale", "reflect"),
     [
         (-2.0965322377907283, 0.25, True),
         (0.8605556614246863, 0.5, False),
@@ -646,7 +648,9 @@ _ROUND_TRIP_CASES = [
 
 
 @pytest.mark.parametrize(
-    "derivation,built_environment", _ROUND_TRIP_CASES, indirect=["built_environment"]
+    ("derivation", "built_environment"),
+    _ROUND_TRIP_CASES,
+    indirect=["built_environment"],
 )
 def test_derived_round_trip(
     built_environment, derivation, round_trip_environment, forbid_layout_builds
@@ -744,7 +748,7 @@ def test_wrapped_geometry_corruption_is_rejected(
                 for node in metadata["binning"]["linearization"]["graph"]["nodes"]:
                     node["pos"] = (np.asarray(node["pos"]) + 0.01).tolist()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid environment data in"):
         corrupted_environment_round_trip(corrupt, environment=child)
 
 
@@ -824,7 +828,7 @@ def test_retained_affine_triangle_corruption_is_rejected(
 
 
 @pytest.mark.parametrize(
-    "built_environment,derivation,renderer",
+    ("built_environment", "derivation", "renderer"),
     [
         ("grid8", "translation", "QuadMesh"),
         ("grid8", "uniform_scaling", "QuadMesh"),

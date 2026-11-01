@@ -58,7 +58,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._validation import validate_choice
+from neurospatial._validation import (
+    is_finite_real,
+    validate_choice,
+    validate_integer_at_least,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -204,11 +208,7 @@ def _check_angular_bins(result: _DirectionalRateMixin) -> int:
             )
         )
     bin_size = result.bin_size
-    if (
-        isinstance(bin_size, bool)
-        or not isinstance(bin_size, int | float | np.number)
-        or not (np.isfinite(bin_size) and 0 < bin_size <= 2 * np.pi)
-    ):
+    if not is_finite_real(bin_size, positive=True) or bin_size > 2 * np.pi:
         raise ValueError(
             _format_error(
                 f"{kind}: bin_size={bin_size!r} is not an angular bin width.",
@@ -283,23 +283,26 @@ def _check_dispersion(result: _DirectionalRateMixin) -> None:
         )
     if dof is None:
         return
-    if (
-        dispersion is None
-        or isinstance(dof, bool | np.bool_)
-        or not isinstance(dof, int | np.integer)
-        or dof < 1
-    ):
+    if dispersion is None:
         raise ValueError(
             _format_error(
-                f"{kind}: dispersion_dof={dof!r} is not a whole number >= 1 "
-                "of degrees of freedom for a given spike_count_dispersion.",
+                f"{kind}: dispersion_dof={dof!r} was given without "
+                "spike_count_dispersion.",
                 why="Why: it sets the F reference distribution of the tuning "
                 "test with an estimated dispersion.",
                 fix="pass the dispersion_dof of the computation together with "
                 "spike_count_dispersion, or None for a known dispersion.",
             )
         )
-    object.__setattr__(result, "dispersion_dof", int(dof))
+    dof = validate_integer_at_least(
+        dof,
+        1,
+        name="dispersion_dof",
+        owner=kind,
+        hint="it is the degrees of freedom of a given spike_count_dispersion, "
+        "so pass the value of the computation or None for a known dispersion",
+    )
+    object.__setattr__(result, "dispersion_dof", dof)
 
 
 def _resultant(
@@ -365,11 +368,11 @@ _MIN_TUNING_TEST_SPIKES = 50
 
 
 def _tuning_pvalues(
-    rates: NDArray,
-    occupancy: NDArray,
-    centers: NDArray,
-    spike_counts: NDArray | None,
-    dispersion: NDArray | None = None,
+    rates: NDArray[Any],
+    occupancy: NDArray[Any],
+    centers: NDArray[Any],
+    spike_counts: NDArray[Any] | None,
+    dispersion: NDArray[Any] | None = None,
     dispersion_dof: int | None = None,
 ) -> NDArray[np.float64]:
     """Occupancy-corrected test of one preferred direction, one p-value per unit.
@@ -493,7 +496,7 @@ def _tuning_inputs(
     }
 
 
-def _directional_tuning_width(rates: NDArray, bin_size: float) -> float:
+def _directional_tuning_width(rates: NDArray[Any], bin_size: float) -> float:
     """Half-width at half-maximum in radians; NaN for a map with no finite rate."""
     rates = np.asarray(rates, dtype=np.float64)
     if not np.any(np.isfinite(rates)):
@@ -1100,7 +1103,9 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         preferred_direction : Direction of peak firing
         """
         rates = np.asarray(self.firing_rate, dtype=np.float64)
-        return float(np.nanmax(rates))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN -> NaN
+            return float(np.nanmax(rates))
 
     def mean_vector_length(self) -> float:
         """Compute the mean vector length (MVL) of the tuning curve.

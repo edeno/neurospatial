@@ -41,8 +41,10 @@ class TestSurrogates:
         train = np.arange(200) * 0.1
         surrogate = surrogate_spike_trains([train], kind="spike_jitter", rng=0)[0]
         shift = surrogate - train
-        assert shift.min() >= 0.0 and shift.max() < 0.05
-        assert shift.max() > 0.045 and shift.min() < 0.005
+        assert shift.min() >= 0.0
+        assert shift.max() < 0.05
+        assert shift.max() > 0.045
+        assert shift.min() < 0.005
 
     def test_across_train_shuffle_keeps_the_pooled_spikes(self, trains):
         surrogates = surrogate_spike_trains(trains, kind="across_trains", rng=0)
@@ -245,7 +247,8 @@ def test_the_recipe_is_session_level():
         0.01,
         0.006,
     )
-    assert NADASDY_1999.n_surrogates == 100 and NADASDY_1999.alpha == 0.01
+    assert NADASDY_1999.n_surrogates == 100
+    assert NADASDY_1999.alpha == 0.01
     assert NADASDY_1999.max_jitter == 0.05
     assert NADASDY_1999.surrogates == ("across_trains",)
     with pytest.raises(ValueError, match="surrogates"):

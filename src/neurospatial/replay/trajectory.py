@@ -429,13 +429,15 @@ def _track_positions(
     )
     posterior = np.asarray(posterior)
     if posterior.ndim != 2:
-        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
+        msg = f"posterior must be 2D, got shape {posterior.shape}"
+        raise ValueError(msg)
     if posterior.shape[1] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"posterior has {posterior.shape[1]} columns but the environment "
             f"has {env.n_bins} bins. Pass the posterior decoded on this "
             "environment, with one column per bin."
         )
+        raise ValueError(msg)
     posterior = _probability_rows(
         posterior, operation, sums="one_or_zero" if allow_zero_rows else "one"
     )
@@ -634,7 +636,8 @@ def fit_isotonic_trajectory(
     from sklearn.isotonic import IsotonicRegression
 
     if method not in ("map", "expected"):
-        raise ValueError(f"method must be 'map' or 'expected', got {method!r}")
+        msg = f"method must be 'map' or 'expected', got {method!r}"
+        raise ValueError(msg)
 
     posterior, starts, stops = _track_positions(
         env, posterior, "fit_isotonic_trajectory()"
@@ -922,7 +925,8 @@ def fit_linear_trajectory(
     R² = 0.55, slope_std = 3.3 cm/s
     """
     if method not in ("sample", "map"):
-        raise ValueError(f"method must be 'sample' or 'map', got {method!r}")
+        msg = f"method must be 'sample' or 'map', got {method!r}"
+        raise ValueError(msg)
     operation = "fit_linear_trajectory()"
     posterior, starts, stops = _track_positions(env, posterior, operation)
     times = _posterior_times(
@@ -992,10 +996,11 @@ def _check_sampling(
         ("n_resamples", n_resamples, 1),
     ):
         if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-            raise TypeError(
+            msg = (
                 f"{operation}: {name} must be an integer, got {value!r} "
                 f"({type(value).__name__})."
             )
+            raise TypeError(msg)
         if value < least:
             raise ValueError(
                 _format_error(
@@ -1009,9 +1014,10 @@ def _check_sampling(
             )
 
     if allocation not in ("equal", "spikes"):
-        raise ValueError(
+        msg = (
             f"{operation}: allocation must be 'equal' or 'spikes', got {allocation!r}."
         )
+        raise ValueError(msg)
     if allocation == "spikes" and spikes is None:
         raise ValueError(
             _format_error(
@@ -1178,13 +1184,10 @@ def regression_line_score(
     150 cm/s, score 0.9 within 10.5 cm
     """
     from neurospatial._units import default_length
+    from neurospatial._validation import validate_bool
 
     operation = "regression_line_score()"
-    if not isinstance(wrap_band, (bool, np.bool_)):
-        raise TypeError(
-            f"{operation} needs wrap_band=True or wrap_band=False, got "
-            f"{wrap_band!r}; True takes band past a track end from the other end."
-        )
+    wrap_band = validate_bool(wrap_band, name="wrap_band", owner=operation)
     posterior, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=True
     )
@@ -2118,26 +2121,19 @@ def _check_line_options(
     operation: str,
 ) -> None:
     """Refuse line-search options that are invalid or contradict each other."""
-    from neurospatial._validation import validate_choice
+    from neurospatial._validation import (
+        validate_bool,
+        validate_choice,
+        validate_integer_at_least,
+    )
 
-    if not isinstance(wrap, (bool, np.bool_)):
-        raise TypeError(
-            f"{operation} needs wrap=True or wrap=False, got {wrap!r}; True "
-            "treats the track as a closed loop."
-        )
+    wrap = validate_bool(wrap, name="wrap", owner=operation)
     validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
     validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
     validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
     for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
-        if count is not None and (
-            isinstance(count, (bool, np.bool_))
-            or not isinstance(count, (int, np.integer))
-            or count < smallest
-        ):
-            raise ValueError(
-                f"{operation} needs {name} to be an integer >= {smallest}, got "
-                f"{count!r}."
-            )
+        if count is not None:
+            validate_integer_at_least(count, smallest, name=name, owner=operation)
     if off_track == "bin_median" and (wrap or line_ends == "on_track"):
         setting = "wrap=True" if wrap else "line_ends='on_track'"
         raise ValueError(

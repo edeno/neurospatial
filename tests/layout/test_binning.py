@@ -156,7 +156,8 @@ def test_spatial_bins_owns_read_only_arrays(constructor):
     for name, source in inputs.items():
         published = getattr(bins, name)
         assert not np.shares_memory(published, source), name
-        assert source.flags.writeable and bases[name].flags.writeable, name
+        assert source.flags.writeable, name
+        assert bases[name].flags.writeable, name
         source[...] = 0
         np.testing.assert_array_equal(published, expected[name])
         assert not published.flags.writeable, name
@@ -191,7 +192,8 @@ def test_bin_connections_owns_read_only_arrays(constructor):
     for name, source in inputs.items():
         published = getattr(connections, name)
         assert not np.shares_memory(published, source), name
-        assert source.flags.writeable and bases[name].flags.writeable, name
+        assert source.flags.writeable, name
+        assert bases[name].flags.writeable, name
         source[...] = 0
         np.testing.assert_array_equal(published, expected[name])
         assert not published.flags.writeable, name
@@ -303,7 +305,9 @@ def test_rectilinear_component_owns_edges_and_active_mask():
         assert not edge.flags.writeable
     np.testing.assert_array_equal(grid.active_mask, True)
     assert not grid.active_mask.flags.writeable
-    assert x.flags.writeable and y.flags.writeable and active.flags.writeable
+    assert x.flags.writeable
+    assert y.flags.writeable
+    assert active.flags.writeable
 
 
 @pytest.mark.parametrize(

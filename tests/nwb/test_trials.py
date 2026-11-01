@@ -107,17 +107,14 @@ class TestWriteTrialsFromTrialObjects:
         [{"trials": []}, {"start_times": [], "stop_times": []}],
         ids=["records", "arrays"],
     )
-    def test_zero_trials_write_nothing_and_warn(self, tmp_path, kwargs):
+    def test_zero_trials_write_nothing(self, tmp_path, kwargs):
         """NWB files should not hold empty tables, so no trials table is added."""
         from pynwb import NWBHDF5IO
 
         from neurospatial.io.nwb import read_trials, write_trials
 
         nwbfile = create_roundtrip_nwb()
-        with pytest.warns(
-            UserWarning, match="write_trials wrote nothing: there are no trials"
-        ):
-            write_trials(nwbfile, **kwargs)
+        write_trials(nwbfile, **kwargs)
         assert nwbfile.trials is None
         with NWBHDF5IO(str(tmp_path / "trials.nwb"), "w") as io:
             io.write(nwbfile)
@@ -445,8 +442,7 @@ class TestWriteTrialsOverwrite:
         from neurospatial.io.nwb import write_trials
 
         write_trials(empty_nwb, start_times=[0.0, 5.0], stop_times=[4.0, 9.0])
-        with pytest.warns(UserWarning, match="existing table 'trials' was removed"):
-            write_trials(empty_nwb, trials=[], overwrite=True)
+        write_trials(empty_nwb, trials=[], overwrite=True)
 
         assert empty_nwb.trials is None
 

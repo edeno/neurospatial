@@ -448,7 +448,8 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
     assert isinstance(info.value, TypeError)
     what, why, fix = str(info.value).split("\n")
     assert what == f"{operation} does not work on a polar environment."
-    assert why.startswith("Why: ") and "(distance, angle)" in why
+    assert why.startswith("Why: ")
+    assert "(distance, angle)" in why
     assert fix.startswith("Fix: ")
 
 
@@ -526,7 +527,9 @@ def test_planar_vector_maps_refuse_1d_and_3d_environments(n_dims, operation, cal
     """Vectors to objects, walls and gaze targets live in the plane."""
     env = _line_or_volume(n_dims)
     positions = np.full((len(_TIMES), n_dims), 40.0)
-    with pytest.raises(ValueError) as info:
+    with pytest.raises(
+        ValueError, match=r"Fix: build the environment from the animal"
+    ) as info:
         call(env, positions)
     what = str(info.value).split("\n")[0]
     assert what == f"{operation} needs a 2-D environment; got a {n_dims}-D one."

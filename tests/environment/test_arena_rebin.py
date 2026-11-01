@@ -52,7 +52,8 @@ def test_rebin_preserves_walls_in_the_layout_facade(factor):
     parent = parent.with_metadata(units="cm", frame="camera", name="arena")
     child = parent.rebin(factor)
     assert _arena_record(child.arena) == _arena_record(parent.arena)
-    assert child.units == "cm" and child.frame == "camera"
+    assert child.units == "cm"
+    assert child.frame == "camera"
     assert child.name == "arena"
     assert nx.number_connected_components(child.connectivity) == 2
     sides = child.bin_centers[:, 0] < 2
@@ -250,7 +251,8 @@ def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
     child = child.subset(mask=child.bin_centers[:, 1] < 4)
     restored = from_dict(to_dict(child))
     for variant in (child, copy.deepcopy(child), restored):
-        assert variant.arena.domain_known and variant.arena.outline == "wall"
+        assert variant.arena.domain_known
+        assert variant.arena.outline == "wall"
         assert variant.arena.polygonal_domain().equals(box(0, 0, 6, 6))
         assert variant.arena.walls[0].equals(LineString([(2, 0), (2, 6)]))
         np.testing.assert_array_equal(

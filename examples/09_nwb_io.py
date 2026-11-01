@@ -29,7 +29,7 @@
 # **Prerequisites**: [Spatial rate maps](02_spatial_rate_maps.ipynb).
 #
 # Install the optional NWB dependencies before running this notebook:
-# `uv sync --extra notebooks --extra nwb` from the repository root, then select
+# `uv sync --group notebooks --extra nwb` from the repository root, then select
 # that environment's kernel.
 
 # %%
@@ -48,7 +48,7 @@ try:
 except ImportError as error:
     raise ImportError(
         "This notebook requires neurospatial[nwb]. In a checkout run "
-        "`uv sync --extra notebooks --extra nwb`, then restart the kernel."
+        "`uv sync --group notebooks --extra nwb`, then restart the kernel."
     ) from error
 
 from neurospatial import Environment

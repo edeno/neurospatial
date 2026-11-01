@@ -1697,7 +1697,8 @@ class TestRadonMinSpeed:
         fast = detect_trajectory_radon(
             track, posterior, times, band=10.0, min_speed=200.0
         )
-        assert free.speed == 0.0 and free.score == pytest.approx(1.0)
+        assert free.speed == 0.0
+        assert free.score == pytest.approx(1.0)
         assert abs(fast.speed) >= 200.0 - 1e-6
         # A 2 m/s line leaves a 10 cm band around a fixed point in 0.39 s.
         assert fast.score < 1.0

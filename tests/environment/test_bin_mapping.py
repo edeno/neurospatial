@@ -266,7 +266,8 @@ def test_pooled_rates_with_unvisited_fine_bins_use_zero_counts_there():
     env = _grid((12, 12))  # 48 cm: the 40 cm trajectory leaves bins unvisited
     coarse = env.rebin(4)
     fine = _binned(env)
-    assert np.any(fine.occupancy == 0) and np.any(np.isnan(fine.firing_rates))
+    assert np.any(fine.occupancy == 0)
+    assert np.any(np.isnan(fine.firing_rates))
     counts = np.where(fine.occupancy > 0, fine.firing_rates * fine.occupancy, 0.0)
 
     pooled = coarse.bin_mapping_from(env).rates(counts, fine.occupancy)

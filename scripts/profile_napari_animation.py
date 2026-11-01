@@ -146,9 +146,7 @@ def create_environment(positions_2d: np.ndarray) -> Environment:
             bin_size=4.0,
             name="Maze_2D",
         )
-        env = env.with_metadata(units="cm")
-
-    return env
+        return env.with_metadata(units="cm")
 
 
 def compute_place_field(

@@ -30,14 +30,6 @@ IDW_MIN_DISTANCE = 1e-8
 #: 16 is a good balance for typical spatial queries
 KDTREE_LEAF_SIZE = 16
 
-# Dense-operation warnings
-# ------------------------
-
-#: Bin count above which dense O(n_bins**2) kernels and near-full-rank bases
-#: warn (with a GB estimate) and proceed. Shared by diffusion and Gaussian
-#: smoothing; it is a warning threshold, not a limit.
-LARGE_KERNEL_THRESHOLD = 3000
-
 #: Dense smoothing kernels one environment keeps per cache; the least recently
 #: used is dropped first. Each is an (n_bins, n_bins) float64 matrix, so without
 #: a bound a bandwidth sweep would hold one per bandwidth for the environment's

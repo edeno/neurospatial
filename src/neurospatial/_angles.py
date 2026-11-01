@@ -29,10 +29,11 @@ def to_radians(angles: Any, angle_unit: Literal["rad", "deg"]) -> NDArray[np.flo
         If ``angle_unit`` is not ``'rad'`` or ``'deg'``.
     """
     if angle_unit not in ("rad", "deg"):
-        raise ValueError(
+        msg = (
             f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
             "Fix: pass angle_unit='deg' for degrees or 'rad' for radians."
         )
+        raise ValueError(msg)
     radians: NDArray[np.float64] = np.asarray(angles, dtype=np.float64)
     return np.radians(radians) if angle_unit == "deg" else radians
 

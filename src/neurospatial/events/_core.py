@@ -55,11 +55,12 @@ def _validate_event_indices(
         or np.any(indices >= n_events + n_events_dropped)
         or np.any(np.diff(indices.astype(np.intp)) <= 0)
     ):
-        raise ValueError(
+        msg = (
             "event_indices must contain one increasing original input position per "
             "retained event, within n_events + n_events_dropped. "
             "Use None when the original event cohort is unknown."
         )
+        raise ValueError(msg)
 
 
 def _is_real_number(value: Any) -> bool:
@@ -80,35 +81,39 @@ def _finite_times(
     try:
         times = np.asarray(values, dtype=np.float64)
     except (TypeError, ValueError):
-        raise ValueError(
+        msg = (
             f"{name} must be numbers in seconds, got {type(values).__name__}.\n"
             "  WHY: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat numeric array with one time per spike, sample or "
             "event."
-        ) from None
+        )
+        raise ValueError(msg) from None
     if times.ndim != 1:
-        raise ValueError(
+        msg = (
             f"{name} must be a 1-D array of times in seconds, got shape "
             f"{times.shape}.\n"
             "  WHY: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat array with one time per spike, sample or event."
         )
+        raise ValueError(msg)
     if non_empty and times.size == 0:
-        raise ValueError(
+        msg = (
             f"{name} is empty.\n"
             "  WHY: The analysis needs at least one event to align to.\n"
             "  Fix: Provide at least one event time."
         )
+        raise ValueError(msg)
     for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "infinite (Inf)")):
         bad = np.flatnonzero(is_bad(times))
         if bad.size:
-            raise ValueError(
+            msg = (
                 f"{name} contains {bad.size} {what} value(s), first at index "
                 f"{bad[0]}.\n"
                 "  WHY: Times must be finite seconds.\n"
                 f"  Fix: Remove them before calling, e.g. "
                 f"{name}[np.isfinite({name})]."
             )
+            raise ValueError(msg)
     return times
 
 
@@ -136,7 +141,8 @@ def _validate_window(
     """
     try:
         if np.asarray(window).dtype.kind not in "biuf":
-            raise TypeError("window bounds must be real numbers")
+            msg = "window bounds must be real numbers"
+            raise TypeError(msg)
         bounds = np.asarray(window, dtype=np.float64)
     except (TypeError, ValueError) as exc:
         raise ValueError(
@@ -260,27 +266,31 @@ def _validated_psth_fields(
         if isinstance(value, (bool, np.bool_)) or not isinstance(
             value, (int, np.integer)
         ):
-            raise ValueError(f"{context}: {name} must be an integer, got {value!r}.")
+            msg = f"{context}: {name} must be an integer, got {value!r}."
+            raise ValueError(msg)
         object.__setattr__(result, name, int(value))
     if result.n_events < 1 or result.n_events_dropped < 0:
-        raise ValueError(
+        msg = (
             f"{context}: n_events must be at least 1 and n_events_dropped at "
             f"least 0, got {result.n_events} and {result.n_events_dropped}."
         )
+        raise ValueError(msg)
     for name, shape in arrays.items():
         array = np.asarray(getattr(result, name), dtype=np.float64)
         expected = tuple(n_bins if n == -1 else n for n in shape)
         if array.shape != expected:
-            raise ValueError(
+            msg = (
                 f"{context}: {name} has shape {array.shape}; window={window} "
                 f"with bin_size={result.bin_size:g} s gives {n_bins} bins, "
                 f"so it needs shape {expected}."
             )
+            raise ValueError(msg)
         if np.any(array < 0):
-            raise ValueError(
+            msg = (
                 f"{context}: {name} has negative values; spike counts and their "
                 "standard errors are never negative."
             )
+            raise ValueError(msg)
         object.__setattr__(result, name, array)
     _validate_event_indices(
         result.event_indices, result.n_events, result.n_events_dropped
@@ -328,9 +338,12 @@ def _response_metrics(
     """Peak rate, peak latency and baseline rate per row of ``rates`` (Hz)."""
     n_units = rates.shape[0]
     peak_rate, peak_latency = _peak_latencies(rates, bin_centers)
-    baseline = (
-        np.nanmean(rates[:, pre], axis=1) if pre.any() else np.full(n_units, np.nan)
-    )
+    # The mean of each unit's observed pre-event bins; NaN when it has none.
+    pre_rates = rates[:, pre]
+    n_observed = np.sum(~np.isnan(pre_rates), axis=1)
+    baseline = np.full(n_units, np.nan)
+    observed = n_observed > 0
+    baseline[observed] = np.nanmean(pre_rates[observed], axis=1)
     return {
         "peak_rate": peak_rate,
         "peak_latency": peak_latency,
@@ -717,10 +730,11 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         context = "PopulationPeriEventResult"
         histograms = np.asarray(self.histograms)
         if histograms.ndim != 2 or histograms.shape[0] == 0:
-            raise ValueError(
+            msg = (
                 f"{context}: histograms must have shape (n_units, n_bins) with at "
                 f"least one unit, got {histograms.shape}."
             )
+            raise ValueError(msg)
         n_units = histograms.shape[0]
         _validated_psth_fields(
             self,
@@ -1026,32 +1040,35 @@ def _validate_events_dataframe(
 
     # Check type
     if not isinstance(df, pd.DataFrame):
-        raise TypeError(
+        msg = (
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
             "  WHY: Event tables are pandas DataFrames with one row per event.\n"
             "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
+        raise TypeError(msg)
 
     # Check required columns
     all_required = [timestamp_column] + (required_columns or [])
     missing = [col for col in all_required if col not in df.columns]
     if missing:
         context_str = f" for {context}" if context else ""
-        raise ValueError(
+        msg = (
             f"Missing required columns: {missing}.\n"
             f"  WHY: These columns are needed{context_str}.\n"
             f"  Fix: Add missing columns to DataFrame.\n"
             f"  Available columns: {list(df.columns)}"
         )
+        raise ValueError(msg)
 
     # Check timestamp is numeric
     if not np.issubdtype(df[timestamp_column].dtype, np.number):
-        raise ValueError(
+        msg = (
             f"Timestamp column '{timestamp_column}' contains non-numeric values.\n"
             "  WHY: Timestamps must be numeric (seconds from session start).\n"
             f"  Fix: Convert timestamps: df['{timestamp_column}'] = "
             f"df['{timestamp_column}'].astype(float)"
         )
+        raise ValueError(msg)
 
 
 def _event_times(
@@ -1083,7 +1100,7 @@ def _event_times(
     times: NDArray[np.float64] = df[column].to_numpy(dtype=np.float64)
     bad = np.flatnonzero(~np.isfinite(times))
     if bad.size:
-        raise ValueError(
+        msg = (
             f"{call}: {name}[{column!r}] has {bad.size} NaN or inf time(s), "
             f"first at row {int(bad[0])}.\n"
             "  WHY: a row without a time cannot be placed on the clock, and "
@@ -1091,6 +1108,7 @@ def _event_times(
             f"  Fix: drop or repair those rows first, e.g. "
             f"{name}.dropna(subset=[{column!r}])."
         )
+        raise ValueError(msg)
     return times
 
 

@@ -40,6 +40,152 @@
   (about 1.1 instead of 0.8 smoothing widths). A truly stopped animal now
   reads exactly 0 cm/s instead of picking up movement from either side.
 
+### Warnings only for a result that is probably wrong
+
+A warning now means a result is probably wrong or misleading and you can do
+something about it. Facts about a result live on the result, documented
+consequences of an input live in the docstring, and invalid input raises.
+About 40 warnings moved out of the warning stream. Data that is dropped or
+excluded still warns: NaN pairs in circular statistics, zero-duration
+records in `to_pynapple`, constant neurons in reactivation measures, a
+dimension left out of `decoding_correlation`, rows skipped by a capped
+video export, and units outside the standard registry.
+
+**Changed**
+
+- Units with fewer spikes than their rate map has independent bins no
+  longer warn. Their information bias is NaN, as before, and
+  `label_cell_types()` and `summary_table()` now mark them "undetermined"
+  rather than failing the information screen. The boolean predicates
+  (`is_place_cell(criterion="threshold")` and its relatives) still return
+  False for them, as their docstrings now say.
+- Facts recorded on the result instead of a warning: an MRF-GAM penalty at
+  its search bound (`reml_at_boundary`), shuffle draws with no finite score
+  (`ShuffleTestResult.n_shuffles_used`), egocentric directions never
+  sampled (`summary_table().attrs["unsampled_direction_arcs"]`), constant
+  neurons left out of assembly detection
+  (`AssemblyDetectionResult.excluded_unit_ids`, new), VTE trials that never
+  reach the decision region (the session's `status`), and region overlaps
+  (the returned `issues`; `validate_region_overlap(warn_overlap=)` is
+  removed).
+- Documented instead of warned: a single-event PSTH's NaN SEM, dense
+  kernels on very many bins, empty NWB writes, colormap ranges estimated
+  from sampled frames, an empty path between disconnected bins, and others
+  listed in each function's docstring.
+- The VTE "No variation across trials" warning needs at least two trials
+  with metrics.
+
+**Fixed** (errors that used to be warnings)
+
+- `map_probabilities` refuses an environment with no bins instead of
+  returning zeros (missing is not zero).
+- `infer_active_bins` with no finite position, `fit_mrf_gam` with zero total
+  occupancy, `field_shape_metrics` on a non-2-D environment and
+  `plot_1d` on an environment that is not a track raise `ValueError`.
+- `Environment.maze` raises when both `kind` and `track_graph` are given;
+  `kind` is optional with `track_graph` and required with
+  `node_positions`.
+- `VideoOverlay(interp="linear")` raises `NotImplementedError` instead of
+  drawing nearest frames; an unknown fastplotlib marker and an invalid
+  initial track-graph edge raise `ValueError`.
+- An argument of the wrong type raises `TypeError` (a wrong value still
+  raises `ValueError`). Changed from `ValueError`: non-string template
+  names in `decode_jointly`, wall names in `Arena`, composition keys,
+  `Environment.combine` components that are not a mapping, `null_options`
+  that is not a mapping, non-Axes `axes` in `plot_peri_event_response`,
+  `BodypartData` masks that are not a dict, `ReactivationWindows(allow_shorter=)`,
+  `AnnotationProject(video_path=)`, and record fields such as
+  `AnnotationShape.metadata`.
+- `ReplayMethod` refuses `null_options` for a null it does not run, or that
+  is not a mapping of options, when it is created, as `replay_significance`
+  would refuse them; such a method used to fail only when it first ran.
+- Closing an annotation window shows every warning about the result,
+  whatever your warning filters. With warnings turned into errors, a warning
+  used to be treated as an unsavable draft, and with warnings ignored it was
+  never shown.
+
+**Development**
+
+- Argument checks go through validators that return the checked value with
+  its type (`validate_choice`, `validate_integer_at_least`,
+  `validate_bool`, `validate_instance`, `validate_mapping`,
+  `validate_callable`, plus `is_integer` and `is_real_number`), so a type
+  checker accepts the runtime check; 89 of 92 `type: ignore` comments are
+  gone, and the messages of those checks follow one form. The three left
+  re-read state that can change while a generator is suspended or a read
+  is awaited, or mark a dataclass field that accepts a wider input than it
+  stores.
+  A dead check (`shuffle_place_fields_circular_2d` testing a `grid_shape`
+  that is never None) is gone.
+
+### Dependencies, packaging and development tools
+
+**Changed**
+
+- Dependency floors follow Scientific Python SPEC 0 for the core scientific
+  stack, keeping Python 3.10: `numpy>=2.2`, `scipy>=1.15.3`,
+  `matplotlib>=3.10`, `pandas>=2.3`, `scikit-image>=0.25`,
+  `scikit-learn>=1.6`, `networkx>=3.4`, `joblib>=1.2` and
+  `typing_extensions>=4.4`. The old floors were never tested: about 800
+  tests failed at them. A CI job now installs the lowest allowed version of
+  each dependency and runs the suite. SciPy 1.15.0 to 1.15.2 take time
+  quadratic in the number of variables after every `linprog` solve
+  (scipy#22655), which the geodesic `compute_field_emd` uses.
+- New core dependency `pot>=0.9.7` (Python Optimal Transport; MIT; needs
+  only NumPy and SciPy). `compute_field_emd(metric="euclidean")` solves its
+  transport problem by POT's network simplex instead of a dense linear
+  program: 0.46 s instead of 163 s at 2,500 bins (0.6 GB instead of 7.7 GB
+  peak), with the same values to the old solver's tolerance (2.5e-7
+  relative). A solve that stops before the optimum raises instead of
+  returning a suboptimal cost.
+- `alphashape` is no longer a dependency (last release April 2021).
+  `boundary_from_positions(method="alpha_shape")` builds the same alpha
+  shape from SciPy's Delaunay triangulation and shapely: on 240 random,
+  ring and two-cluster point sets the boundaries match the package's
+  exactly, 15 times faster. `alpha` keeps its meaning, and the convex-hull
+  fallback for a missing alphashape is gone.
+- The version comes from the git tag. Pushing a `v*` tag runs the full test
+  suite, builds and checks the sdist and wheel, installs and smoke-tests
+  each, publishes to PyPI with trusted publishing and build attestations,
+  and creates the GitHub release from that version's section of this file.
+- The sdist ships source, tests and documentation only; it was 11.9 MB with
+  agent, CI and coverage files, because the build settings were spelled
+  `tool.hatchling` and so ignored.
+- Development tools are dependency groups: `uv sync` installs them;
+  `pip install -e . --group dev` with pip 25.1 or later. The `docs` and
+  `notebooks` groups replace the extras of the same names
+  (`uv sync --group docs`).
+- Python 3.14 is tested and listed.
+
+**Fixed**
+
+- `Environment.from_file` closes a corrupt `.npz` archive instead of
+  leaving it open.
+- `circular_linear_correlation` and `circular_circular_correlation` refuse
+  infinite values with an error saying to mark missing values as NaN; an
+  infinity used to reach the computation and give a meaningless result.
+  `circular_linear_correlation` also gives the same answer for very large
+  linear values (near the float maximum) as for small ones, instead of
+  overflowing its sums of squares.
+- Summaries, PSTH baselines, decoding error and `plot_field` color limits
+  no longer emit NumPy's "All-NaN slice" or "Mean of empty slice" warning
+  when every value is missing; the result is NaN as before. Geodesic path
+  lengths on an environment without connections no longer warn about an
+  invalid division.
+
+**Development**
+
+- Tests turn every warning into an error unless the test expects it, name
+  the message each `pytest.raises` and `pytest.warns` expects, and use one
+  condition per assert. `pytest.ini` is merged into `pyproject.toml`; its
+  settings used to hide the ones there.
+- mypy runs in strict mode; ruff adds the rules the Scientific Python
+  development guide recommends; pre-commit adds codespell, zizmor,
+  validate-pyproject and workflow schema checks.
+- GitHub Actions are pinned to commit SHAs and updated monthly by
+  Dependabot, run with read-only permissions by default, and are checked by
+  zizmor.
+
 ### Linear track positions name one place
 
 **Fixed**

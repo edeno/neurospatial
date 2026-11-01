@@ -507,7 +507,7 @@ def test_suggested_code_runs_on_the_refused_input(name):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # transposition and rebin-loss warnings
         names = case.names()
-        with pytest.raises(Exception) as caught:
+        with pytest.raises(Exception, match="Fix: ") as caught:
             case.refuse(names)
         fix = str(caught.value).splitlines()[-1]
         assert fix.startswith("Fix: ")

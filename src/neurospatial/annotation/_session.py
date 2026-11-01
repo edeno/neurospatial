@@ -4,6 +4,8 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from typing_extensions import override
+
 if TYPE_CHECKING:
     import napari
 
@@ -79,8 +81,9 @@ def run_annotation_session(
     def close_delivered() -> None:
         closing[0] = False
 
-    class DraftCloseGuard(QObject):
-        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
+    class DraftCloseGuard(QObject):  # type: ignore[misc, unused-ignore]
+        @override
+        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:
             if event is None:
                 return False
             if event.type() == QEvent.Type.Hide and closing[0]:
@@ -92,6 +95,8 @@ def run_annotation_session(
                 discarded.clear()
                 try:
                     with warnings.catch_warnings(record=True) as recorded:
+                        # Record every warning, whatever the caller's filters.
+                        warnings.simplefilter("always")
                         result = prepare_result()
                 except Exception as exc:
                     if _keep_editing(window, exc):
@@ -124,11 +129,11 @@ def run_annotation_session(
         window.removeEventFilter(guard)
         viewer.close()
     if discarded:
-        raise RuntimeError(
-            f"Annotations were discarded without saving: {discarded[0]}"
-        ) from discarded[0]
+        msg = f"Annotations were discarded without saving: {discarded[0]}"
+        raise RuntimeError(msg) from discarded[0]
     if not results:
-        raise RuntimeError("Annotation window closed without a validated result.")
+        msg = "Annotation window closed without a validated result."
+        raise RuntimeError(msg)
     for warning in caught:
         warnings.warn(warning.message, stacklevel=3)
     return results[0]

@@ -38,17 +38,21 @@ class FaceNormals(ReadOnlyState):
     def __post_init__(self) -> None:
         raw = np.asarray(self.values)
         if raw.dtype.kind not in "iuf" or raw.ndim != 2 or raw.shape[1] == 0:
-            raise ValueError("face normals must be a real (n_edges, n_dims) array.")
+            msg = "face normals must be a real (n_edges, n_dims) array."
+            raise ValueError(msg)
         values = np.array(raw, dtype=np.float64, copy=True)
         if not np.all(np.isfinite(values)):
-            raise ValueError("face normals must be finite.")
+            msg = "face normals must be finite."
+            raise ValueError(msg)
         # A unit vector cannot have a component larger than one. Reject first
         # so malformed finite inputs cannot overflow the norm calculation.
         if np.any(np.abs(values) > 1 + 1e-12):
-            raise ValueError("face normals must have unit length or be zero.")
+            msg = "face normals must have unit length or be zero."
+            raise ValueError(msg)
         lengths = np.hypot.reduce(values, axis=1)
         if np.any((lengths != 0) & (np.abs(lengths - 1) > 1e-12)):
-            raise ValueError("face normals must have unit length or be zero.")
+            msg = "face normals must have unit length or be zero."
+            raise ValueError(msg)
         values.setflags(write=False)
         object.__setattr__(self, "values", values)
 
@@ -98,7 +102,8 @@ def geometric_normals(
         active = active_order(locator.flat_to_active)
         ids = locator.locate(centers)
         if np.any(ids < 0):
-            raise ValueError("hex centers must lie in their stored cells.")
+            msg = "hex centers must lie in their stored cells."
+            raise ValueError(msg)
         rows, columns = np.unravel_index(active[ids], locator.centers_shape)
         lattice = np.column_stack((2 * columns + rows % 2, 3 * rows))
         steps = lattice[pairs[:, 1]] - lattice[pairs[:, 0]]
@@ -137,7 +142,8 @@ def geometric_normals(
     elif isinstance(locator, ClippedLocator):
         ids = locator.locate(centers)
         if np.any(ids < 0):
-            raise ValueError("clipped centers must lie in their stored cells.")
+            msg = "clipped centers must lie in their stored cells."
+            raise ValueError(msg)
         normals = np.zeros_like(delta)
         for index, (u, v) in enumerate(pairs):
             opening = locator.cells.polygons[ids[u]].boundary.intersection(

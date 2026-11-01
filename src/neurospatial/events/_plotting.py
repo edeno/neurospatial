@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_instance
 from neurospatial.events._core import (
     PeriEventResult,
     _finite_times,
@@ -121,39 +122,48 @@ def plot_peri_event_response(
     import matplotlib.pyplot as plt
     from matplotlib.axes import Axes
 
-    if not isinstance(result, PeriEventResult):
-        raise TypeError(
-            "result must be a single-unit PeriEventResult. "
-            "Select a population unit with .sel(unit_id=...) and pass that unit's spikes."
-        )
+    result = validate_instance(
+        result,
+        PeriEventResult,
+        name="result",
+        owner="plot_peri_event_response()",
+        hint="pass a single-unit PeriEventResult; select a population unit with "
+        ".sel(unit_id=...) and pass that unit's spikes",
+    )
     if result.event_indices is None:
-        raise ValueError(
+        msg = (
             "result.event_indices is unknown; a matching raster cohort cannot be inferred. "
             "Compute the result with peri_event_histogram or population_peri_event_histogram."
         )
+        raise ValueError(msg)
     spike_times = _finite_times(spike_times, "spike_times")
     event_times = _finite_times(event_times, "event_times")
     n_input_events = result.n_events + result.n_events_dropped
     if event_times.size != n_input_events:
-        raise ValueError(
+        msg = (
             f"event_times has {event_times.size} events; expected {n_input_events} "
             "(n_events + n_events_dropped). Pass the complete original event array, "
             "including excluded events, in its original order."
         )
+        raise ValueError(msg)
     bin_edges = _make_bin_edges(result.window, result.bin_size)
     if axes is not None:
         try:
             raster_ax, histogram_ax = axes
         except (TypeError, ValueError) as error:
-            raise ValueError(
-                "axes must contain two distinct Matplotlib Axes."
-            ) from error
-        if (
-            not isinstance(raster_ax, Axes)
-            or not isinstance(histogram_ax, Axes)
-            or raster_ax is histogram_ax
-        ):
-            raise ValueError("axes must contain two distinct Matplotlib Axes.")
+            msg = "axes must contain two distinct Matplotlib Axes."
+            raise ValueError(msg) from error
+        for ax in (raster_ax, histogram_ax):
+            validate_instance(
+                ax,
+                Axes,
+                name="axes",
+                owner="plot_peri_event_response()",
+                hint="pass two distinct Matplotlib Axes",
+            )
+        if raster_ax is histogram_ax:
+            msg = "axes must contain two distinct Matplotlib Axes."
+            raise ValueError(msg)
 
     selected_events = event_times[result.event_indices]
     spikes = _sorted_times(spike_times)

@@ -191,7 +191,7 @@ def test_significance_uses_only_observed_windows(
 
 
 @pytest.mark.parametrize(
-    "significance_family,argument",
+    ("significance_family", "argument"),
     [
         (family, argument)
         for family in (
@@ -436,11 +436,14 @@ def test_input_group_labels_cannot_be_overridden(
 ):
     f, r = significance_family, significance_recording
     group = encoding.SpikeTrains(r.trains[:2], unit_ids=[10, 20])
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"but the spike input is already labelled"
+    ) as caught:
         f.function(
             *f.args(r, group), unit_ids=[20, 10], n_shuffles=4, rng=0, **f.defaults
         )
-    assert "10" in str(caught.value) and "20" in str(caught.value)
+    assert "10" in str(caught.value)
+    assert "20" in str(caught.value)
     assert "Fix:" in str(caught.value)
 
 
@@ -532,13 +535,16 @@ def test_object_significance_metric_errors_teach(
     f, r = significance_family, significance_recording
     args = list(f.args(r))
     args[0] = None
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match="metric") as exc:
         f.function(*args, metric=metric, n_shuffles=1, rng=0)
     message = str(exc.value)
-    assert f.function.__name__ in message and "metric" in message
-    assert "Why:" in message and "Fix:" in message
+    assert f.function.__name__ in message
+    assert "metric" in message
+    assert "Why:" in message
+    assert "Fix:" in message
     if metric == "typo":
-        assert "typo" in message and "euclidean" in message
+        assert "typo" in message
+        assert "euclidean" in message
     else:
         assert "env" in message
 

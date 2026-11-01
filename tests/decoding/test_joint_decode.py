@@ -323,7 +323,7 @@ class TestMoreRefusals:
 
     def test_template_names_must_be_strings(self, two_directions):
         env, models = two_directions
-        with pytest.raises(ValueError, match="must be strings"):
+        with pytest.raises(TypeError, match="template name must be a str"):
             decode_jointly(
                 env,
                 np.zeros((2, 8)),

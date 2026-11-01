@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+import re
 import warnings
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timezone
@@ -204,9 +205,8 @@ def test_locator_preserves_dimension_behavior(
     try:
         expected = env._binning.locator.locate(query)
     except ValueError as expected_error:
-        with pytest.raises(ValueError) as actual_error:
+        with pytest.raises(ValueError, match=re.escape(str(expected_error))):
             env._binning.locator.locate(query)
-        assert str(actual_error.value) == str(expected_error)
     else:
         np.testing.assert_array_equal(env._binning.locator.locate(query), expected)
 
@@ -310,7 +310,8 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         publish_environment(layout=layout, layout_type_used=layout.layout_type)
     assert env._geometry is geometry
     assert env._binning is published
-    assert env._cache is cache and len(cache) == n_cached
+    assert env._cache is cache
+    assert len(cache) == n_cached
     np.testing.assert_array_equal(
         env.compute_kernel(bandwidth=1.0, mode="density"), kernel
     )

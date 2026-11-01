@@ -70,7 +70,8 @@ def make_corridor_polygon(
     length = np.linalg.norm(direction)
 
     if length == 0:
-        raise ValueError("Start and end points must be different")
+        msg = "Start and end points must be different"
+        raise ValueError(msg)
 
     # Normalize and get perpendicular
     unit_dir = direction / length
@@ -229,7 +230,8 @@ def union_polygons(
     True
     """
     if not polygons:
-        raise ValueError("union_polygons requires at least one polygon")
+        msg = "union_polygons requires at least one polygon"
+        raise ValueError(msg)
 
     result = unary_union(polygons)
 
@@ -269,11 +271,12 @@ def single_floor(geometry: Polygon | MultiPolygon, dims: MazeDims) -> Polygon:
     if isinstance(geometry, Polygon) and not geometry.is_empty:
         return geometry
     n_pieces = len(getattr(geometry, "geoms", ()))
-    raise ValueError(
+    msg = (
         f"{dims!r} builds a maze floor in {n_pieces} separate pieces, so an "
         "animal could not walk between them. Choose dimensions whose "
         "corridors, rooms and boxes meet."
     )
+    raise ValueError(msg)
 
 
 def compass_quadrants(floor: Polygon) -> dict[str, Polygon]:
@@ -339,7 +342,11 @@ def corridor_width(corridor: Polygon) -> float:
     >>> corridor_width(box(0.0, 0.0, 50.0, 8.0))
     8.0
     """
-    corners = np.asarray(corridor.minimum_rotated_rectangle.exterior.coords)[:4]
+    # GEOS leaves floating-point flags set after building the rectangle, which
+    # NumPy reports as spurious "divide by zero"/"invalid value" warnings.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rectangle = corridor.minimum_rotated_rectangle
+    corners = np.asarray(rectangle.exterior.coords)[:4]
     sides = np.hypot(*(np.roll(corners, -1, axis=0) - corners).T)
     return float(sides.min())
 

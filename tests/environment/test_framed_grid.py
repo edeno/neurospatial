@@ -86,7 +86,9 @@ def half_step_lattice(n_dims):
 
 
 @pytest.mark.parametrize("n_dims", [2, 3])
-@pytest.mark.parametrize("angle,shear,offset", [(0.123, 0.3, 13.7), (2.0, 0.0, 1e4)])
+@pytest.mark.parametrize(
+    ("angle", "shear", "offset"), [(0.123, 0.3, 13.7), (2.0, 0.0, 1e4)]
+)
 def test_rotating_the_grid_and_positions_together_keeps_each_bin(
     n_dims, angle, shear, offset
 ):
@@ -297,7 +299,7 @@ def test_binning_and_frame_codec_versions():
 @pytest.mark.parametrize("kind", ["grid", "hexagonal"])
 @pytest.mark.parametrize("reflect", [False, True])
 @pytest.mark.parametrize(
-    "angle,scale", [(1.0, 1.0), (1.0, 0.25), (2.2250738585e-313, 1.9375)]
+    ("angle", "scale"), [(1.0, 1.0), (1.0, 0.25), (2.2250738585e-313, 1.9375)]
 )
 def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_storage(
     kind, reflect, angle, scale
@@ -348,7 +350,7 @@ def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_stora
             )
 
 
-@pytest.mark.parametrize("angle,reflect", [(0.3, True), (1.7, False)])
+@pytest.mark.parametrize(("angle", "reflect"), [(0.3, True), (1.7, False)])
 def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, reflect):
     from neurospatial.ops.transforms import translate
 
@@ -427,7 +429,7 @@ def test_rotated_millimetre_grid_far_from_the_origin_is_refused(offset):
         env.apply_transform(AffineND(turn))
 
 
-@pytest.mark.parametrize("gap,certified", [(0.0, True), (-1e-15, False)])
+@pytest.mark.parametrize(("gap", "certified"), [(0.0, True), (-1e-15, False)])
 def test_rotated_cells_in_contact_within_rounding_are_not_certified(gap, certified):
     """Rotated unit cubes that touch combine; an overlap of 1e-15 is unresolvable."""
     child = Environment.from_grid_mask(

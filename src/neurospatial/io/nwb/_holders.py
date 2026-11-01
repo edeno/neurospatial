@@ -233,11 +233,12 @@ class NWBUnits(ReadOnlyArraysMixin):
         n = len(self.spike_times)
         n_obs = n if self.obs_intervals is None else len(self.obs_intervals)
         if not (len(unit_ids) == n_obs == n):
-            raise ValueError(
+            msg = (
                 f"spike_times has {n} units, unit_ids {len(unit_ids)}, "
                 f"obs_intervals {n_obs}; these must match one-to-one.\n"
                 "Fix: pass one unit_id and one obs_intervals entry per spike train."
             )
+            raise ValueError(msg)
         values, counts = np.unique(unit_ids, return_counts=True)
         if np.any(counts > 1):
             raise ValueError(

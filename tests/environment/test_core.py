@@ -285,7 +285,10 @@ class TestEnvironmentFromDataSamplesGrid:
         """
         rng = np.random.default_rng(1)
         transposed = rng.uniform(0.0, 1.0, size=(5, 12))  # 5 "samples", 12 "dims"
-        with pytest.warns(UserWarning, match=r"(?i)transpos|positions\.T"):
+        with (
+            pytest.warns(UserWarning, match=r"(?i)transpos|positions\.T"),
+            pytest.warns(UserWarning, match="Creating large grid"),
+        ):
             env = Environment.from_samples(transposed, bin_size=0.5)
         assert env.n_dims == 12  # built anyway -- no false rejection
 
@@ -505,16 +508,12 @@ def data_for_morpho_ops() -> NDArray[np.float64]:
     Creates a C-shape that can be dilated, have holes filled (if it formed one),
     and gaps closed if another segment was nearby.
     """
-    points = []
     # Vertical bar
-    for y_val in np.arange(0, 5, 0.5):
-        points.append([0.0, y_val])
+    points = [[0.0, y_val] for y_val in np.arange(0, 5, 0.5)]
     # Top horizontal bar
-    for x_val in np.arange(0.5, 2.5, 0.5):
-        points.append([x_val, 4.5])
+    points.extend([x_val, 4.5] for x_val in np.arange(0.5, 2.5, 0.5))
     # Bottom horizontal bar
-    for x_val in np.arange(0.5, 2.5, 0.5):
-        points.append([x_val, 0.0])
+    points.extend([x_val, 0.0] for x_val in np.arange(0.5, 2.5, 0.5))
     return np.array(points)
 
 
@@ -569,12 +568,14 @@ class TestFromDataSamplesDetailed:
         data = np.array(
             [[0.5, 0.5]] * 2 + [[1.5, 1.5]] * 5
         )  # Bin (0,0) has 2, Bin (1,1) has 5 (if bin_size=1)
-        env_thresh0 = Environment.from_samples(
-            data, bin_size=1.0, bin_count_threshold=0
-        )
-        env_thresh3 = Environment.from_samples(
-            data, bin_size=1.0, bin_count_threshold=3
-        )
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env_thresh0 = Environment.from_samples(
+                data, bin_size=1.0, bin_count_threshold=0
+            )
+        with pytest.warns(UserWarning, match="is at least the per-axis data extent"):
+            env_thresh3 = Environment.from_samples(
+                data, bin_size=1.0, bin_count_threshold=3
+            )
 
         # Assuming (0.5,0.5) is in one bin and (1.5,1.5) in another with bin_size=1
         # This requires knowing how bins are aligned.
@@ -780,7 +781,8 @@ class TestDimensionality:
         )
         assert env.n_dims == 1
         assert not env.is_linearized_track  # RegularGrid layout is not flagged as is_linearized_track (which is for GraphLayout)
-        assert env.bin_centers.ndim == 2 and env.bin_centers.shape[1] == 1
+        assert env.bin_centers.ndim == 2
+        assert env.bin_centers.shape[1] == 1
         assert len(env.grid_edges) == 1
         assert len(env.grid_shape) == 1
         areas = env.bin_sizes  # Should be lengths
@@ -822,10 +824,10 @@ class TestDimensionality:
         assert pytest.approx(expected_vol_per_bin, rel=0.15) == (input_bin_size**3)
 
         # Test plotting for non-2D (should raise NotImplementedError by default _GridMixin.plot)
+        fig, ax = plt.subplots()
         with pytest.raises(NotImplementedError):
-            fig, ax = plt.subplots()
             env.plot(ax=ax)
-            plt.close(fig)
+        plt.close(fig)
 
 
 @pytest.fixture

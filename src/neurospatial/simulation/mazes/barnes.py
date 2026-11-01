@@ -250,10 +250,11 @@ def make_barnes_maze(
 
     # Validate escape_hole_index
     if not (0 <= escape_hole_index < dims.n_holes):
-        raise ValueError(
+        msg = (
             f"escape_hole_index must be between 0 and {dims.n_holes - 1}, "
             f"got {escape_hole_index}"
         )
+        raise ValueError(msg)
 
     # Create circular platform centered at origin
     radius = dims.diameter / 2.0

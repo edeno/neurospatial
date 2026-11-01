@@ -202,7 +202,8 @@ class TestDetectionRates:
         assert rates["n_replay"].tolist() == [1, 2, 0, 0]
         assert rates["session"].isna().tolist() == [False, True, False, True]
         agreement = method_agreement(table, groups=["session"]).iloc[0]
-        assert agreement["n_events"] == 4 and agreement["n_first_only"] == 3
+        assert agreement["n_events"] == 4
+        assert agreement["n_first_only"] == 3
 
     def test_properties_join_on_groups_and_event(self):
         """Two sessions number their events from 0; each keeps its own cells."""
@@ -228,7 +229,7 @@ class TestDetectionRates:
             by={"n_active_cells": [0, 10, np.inf]},
             groups=["session"],
         )
-        few = rates[rates["n_active_cells"].astype(str) == "[0.0, 10.0)"]
+        few = rates[rates["n_active_cells"] == pd.Interval(0.0, 10.0, closed="left")]
         # s1's event 0 (4 cells) is replay; s2's event 1 (4 cells) is replay.
         assert few["n_replay"].tolist() == [1, 1]
         assert few["n_events"].tolist() == [1, 1]
@@ -306,9 +307,10 @@ class TestDetectionRates:
         cell = rates[
             (rates["method"] == "a")
             & (rates["null_kind"] == "poisson")
-            & (rates["n_spikes"].astype(str) == "[0.0, 20.0)")
+            & (rates["n_spikes"] == pd.Interval(0.0, 20.0, closed="left"))
         ]
-        assert cell["n_replay"].item() == 1 and cell["n_events"].item() == 1
+        assert cell["n_replay"].item() == 1
+        assert cell["n_events"].item() == 1
 
     def test_events_outside_every_bin_are_refused(self):
         table = _table({"a": [True, False, True]})
@@ -332,7 +334,8 @@ class TestDetectionRates:
         with pytest.raises(ValueError, match="repeats 2"):
             detection_rates(both)
         rates = detection_rates(both, groups=["session"]).set_index("session")
-        assert rates.loc["s1", "rate"] == 0.5 and rates.loc["s2", "rate"] == 0.0
+        assert rates.loc["s1", "rate"] == 0.5
+        assert rates.loc["s2", "rate"] == 0.0
 
     def test_refusals(self):
         table = _table({"a": [True]})
@@ -619,7 +622,8 @@ def test_false_positive_rates_on_simulated_events(track):
         == by_kind.loc[totals.index, "n_replay"].to_numpy()
     ).all()
     agreement = method_agreement(table)
-    assert len(agreement) == 3 and (agreement["n_events"] == 16).all()
+    assert len(agreement) == 3
+    assert (agreement["n_events"] == 16).all()
 
 
 @pytest.fixture(scope="module")
@@ -650,7 +654,8 @@ class TestNullEvents:
     def test_layout_and_what_is_kept(self, recording, kind):
         trains, intervals = recording
         null = null_events(trains, intervals, kind=kind, n_copies=3, rng=0)
-        assert null.n_events == 9 and null.kind == kind
+        assert null.n_events == 9
+        assert null.kind == kind
         np.testing.assert_array_equal(null.source_events, np.repeat([0, 1, 2], 3))
         np.testing.assert_allclose(np.diff(null.intervals, axis=1).ravel(), 0.2)
         # Null events do not overlap, and no spike falls outside them.
@@ -968,19 +973,22 @@ class TestMatchedAlpha:
         )
         row = matched_alpha(table, replay_methods=[KF], target=0.2).iloc[0]
         # One allowed of five: the scored event at 0.001; 0.02 is excluded.
-        assert row["alpha"] == 0.02 and row["rate"] == 0.2
+        assert row["alpha"] == 0.02
+        assert row["rate"] == 0.2
 
     def test_criteria_alone_can_hold_the_rate(self):
         table = _p_table([0.001] * 10, criteria=[False] * 10)
         row = matched_alpha(table, replay_methods=[KF]).iloc[0]
-        assert row["alpha"] == 1.0 and row["rate"] == 0.0
+        assert row["alpha"] == 1.0
+        assert row["rate"] == 0.0
 
     def test_warns_at_the_smallest_p_value_the_shuffles_give(self):
         floor = 1 / (KF.n_shuffles + 1)
         table = _p_table([floor] * 3 + [0.5] * 17)
         with pytest.warns(UserWarning, match="more shuffles"):
             row = matched_alpha(table, replay_methods=[KF]).iloc[0]
-        assert row["alpha"] == floor and row["rate"] == 0.0
+        assert row["alpha"] == floor
+        assert row["rate"] == 0.0
 
     def test_warns_at_the_two_sided_floor(self):
         """A two-sided shuffle p-value is at least 2 / (n_shuffles + 1)."""
@@ -989,20 +997,23 @@ class TestMatchedAlpha:
         table = _p_table([floor] * 3 + [0.5] * 17, method=diba)
         with pytest.warns(UserWarning, match="more shuffles"):
             row = matched_alpha(table, replay_methods=[diba]).iloc[0]
-        assert row["alpha"] == floor and row["rate"] == 0.0
+        assert row["alpha"] == floor
+        assert row["rate"] == 0.0
 
     def test_warns_with_too_few_null_events(self):
         table = _p_table([0.3] + [0.6] * 9)
         with pytest.warns(UserWarning, match="more null events"):
             row = matched_alpha(table, replay_methods=[KF]).iloc[0]
-        assert row["alpha"] == 0.3 and row["rate"] == 0.0
+        assert row["alpha"] == 0.3
+        assert row["rate"] == 0.0
 
     def test_no_alpha_when_too_many_correlations_are_perfect(self):
         fw = FOSTER_WILSON_2006
         table = _p_table([0.0] * 3 + [0.5] * 17, method=fw)
         with pytest.warns(UserWarning, match="p = 0"):
             row = matched_alpha(table, replay_methods=[fw]).iloc[0]
-        assert np.isnan(row["alpha"]) and np.isnan(row["rate"])
+        assert np.isnan(row["alpha"])
+        assert np.isnan(row["rate"])
         with pytest.raises(ValueError, match="no alpha holds"):
             apply_alpha(table, alpha={fw.name: row["alpha"]}, replay_methods=[fw])
 

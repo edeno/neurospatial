@@ -19,7 +19,7 @@ def _polar(angle_range, **kwargs):
 
 @pytest.mark.parametrize("option", ["omitted", None])
 @pytest.mark.parametrize(
-    "angle_range,circular",
+    ("angle_range", "circular"),
     [
         ((-np.pi, np.pi), True),
         ((0.0, 2 * np.pi), True),

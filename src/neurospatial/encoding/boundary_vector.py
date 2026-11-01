@@ -148,9 +148,8 @@ def _check_boundary_labels(direction_frame: str, boundary_source: str) -> None:
 
     _check_direction_frame(direction_frame, context="boundary-vector result")
     if boundary_source not in ("physical", "analysis"):
-        raise ValueError(
-            f"boundary_source must be 'physical' or 'analysis', got {boundary_source!r}."
-        )
+        msg = f"boundary_source must be 'physical' or 'analysis', got {boundary_source!r}."
+        raise ValueError(msg)
 
 
 def _distance_information(

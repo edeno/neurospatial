@@ -86,8 +86,7 @@ def test_field_values_take_their_colormap_color_at_their_bin(
 
 @pytest.fixture
 def recording():
-    positions = np.array([[25.0, 25.0], [40.0, 30.0], [55.0, 60.0], [70.0, 70.0]])
-    return positions
+    return np.array([[25.0, 25.0], [40.0, 30.0], [55.0, 60.0], [70.0, 70.0]])
 
 
 def test_position_marker_follows_the_recording_and_hides_when_missing(env, recording):

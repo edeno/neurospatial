@@ -197,13 +197,14 @@ def _validate_weights(
     if np.any(weights < 0):
         n_neg = int(np.sum(weights < 0))
         first = int(np.argmax(weights < 0))
-        raise ValueError(
+        msg = (
             f"{name} must be non-negative (interpreted as counts/frequencies). "
             f"Found {n_neg} negative value(s) (first at index {first}: "
             f"{weights[first]!r}). "
             f"Fix: pass non-negative weights such as spike counts, not signed "
             f"quantities."
         )
+        raise ValueError(msg)
     return weights
 
 
@@ -336,7 +337,7 @@ def _valid_angles(
     nan_mask = np.isnan(angles)
     n_nan = int(np.sum(nan_mask))
     if n_nan and n_nan == len(angles) and min_samples > 0:
-        raise ValueError(
+        msg = (
             f"All angles are NaN ({len(angles)} samples). "
             f"Cannot compute circular statistics.\n"
             f"\n"
@@ -354,6 +355,7 @@ def _valid_angles(
             f"\n"
             f"Quick fix: Verify extraction with: np.isnan(angles).sum()"
         )
+        raise ValueError(msg)
     if n_nan:
         angles = angles[~nan_mask]
         if weights is not None:
@@ -368,18 +370,20 @@ def _valid_angles(
 
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
-        raise ValueError(
+        msg = (
             f"angles contains {n_inf} infinite values. "
             f"Cannot compute circular statistics.\n"
             f"Fix: Remove or replace infinite values before calling this function."
         )
+        raise ValueError(msg)
 
     if len(angles) < min_samples:
-        raise ValueError(
+        msg = (
             f"Need at least {min_samples} samples for circular statistics. "
             f"Got {len(angles)} valid samples in angles.\n"
             f"Fix: Provide more data points or use a different analysis method."
         )
+        raise ValueError(msg)
 
     return angles, weights
 
@@ -418,18 +422,28 @@ def _validate_paired_input(
     Raises
     ------
     ValueError
-        If lengths don't match or insufficient samples after NaN removal.
+        If lengths don't match, either array has an infinite value, or
+        insufficient samples remain after NaN removal.
     """
     arr1 = np.asarray(arr1, dtype=np.float64).ravel()
     arr2 = np.asarray(arr2, dtype=np.float64).ravel()
 
     if len(arr1) != len(arr2):
-        raise ValueError(
+        msg = (
             f"{name1} and {name2} must have same length. "
             f"Got {name1}: {len(arr1)}, {name2}: {len(arr2)}.\n"
             f"Fix: Ensure both arrays represent the same events "
             f"(e.g., same spikes)."
         )
+        raise ValueError(msg)
+
+    for name, arr in ((name1, arr1), (name2, arr2)):
+        if np.isinf(arr).any():
+            msg = (
+                f"{name} has {int(np.isinf(arr).sum())} infinite value(s).\n"
+                "Fix: NaN marks a missing value; replace infinities with NaN."
+            )
+            raise ValueError(msg)
 
     # Remove pairs where either is NaN
     nan_mask = np.isnan(arr1) | np.isnan(arr2)
@@ -446,11 +460,12 @@ def _validate_paired_input(
 
     # Check minimum samples after NaN removal
     if len(arr1) < min_samples:
-        raise ValueError(
+        msg = (
             f"Need at least {min_samples} valid pairs for analysis. "
             f"Got {len(arr1)} pairs after removing NaN values.\n"
             f"Fix: Provide more data points."
         )
+        raise ValueError(msg)
 
     return arr1, arr2
 
@@ -554,7 +569,7 @@ def rayleigh_test(
         angles, angle_unit, weights, min_samples=1 if weights is not None else 3
     )
     if weights is not None and np.any(weights != np.round(weights)):
-        raise ValueError(
+        msg = (
             "rayleigh_test weights must be whole-number counts (e.g., spike "
             "counts per phase bin). The test's sample size is sum(weights), so "
             "non-count weights such as occupancy times or rates make the "
@@ -562,14 +577,16 @@ def rayleigh_test(
             "Fix: pass integer counts, or use mean_resultant_length(angles, "
             "weights=...) for a descriptive weighted concentration."
         )
+        raise ValueError(msg)
     n_eff = float(np.sum(weights)) if weights is not None else float(len(angles))
     if n_eff < 3:
-        raise ValueError(
+        msg = (
             f"Need at least 3 total weight (sum of counts) for the weighted "
             f"Rayleigh test. Got sum(weights) = {n_eff:g}.\n"
             f"Fix: provide more spikes/counts (all-zero counts carry no "
             f"data), or use a different analysis method."
         )
+        raise ValueError(msg)
     r_mean = _mean_resultant_length(angles, weights=weights)
 
     # Rayleigh z-statistic: z = n_eff * R^2.
@@ -601,7 +618,9 @@ def circular_linear_correlation(
     angles : ndarray of shape (n_samples,)
         Circular variable (e.g., spike phases) in radians or degrees.
     linear_values : ndarray of shape (n_samples,)
-        Linear variable (e.g., positions, time).
+        Linear variable (e.g., positions, time). A pair with a NaN in either
+        array is dropped with a warning and the correlation uses the remaining
+        pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
 
@@ -610,9 +629,8 @@ def circular_linear_correlation(
     r : float
         Correlation coefficient in [0, 1]. It has no sign, so it cannot tell
         phase precession from procession; for slope and direction use
-        ``compute_phase_precession``. NaN, with a ``RuntimeWarning``, when
-        the correlation is undefined: constant ``linear_values`` or
-        constant angles.
+        ``compute_phase_precession``. NaN when the correlation is undefined:
+        constant ``linear_values`` or constant angles.
     pval : float
         P-value from the large-sample chi-squared approximation (see Notes).
         NaN when ``r`` is undefined.
@@ -670,29 +688,20 @@ def circular_linear_correlation(
     n = len(angles)
 
     if np.ptp(linear_values) == 0:
-        warnings.warn(
-            "linear_values are constant, so the circular-linear correlation is "
-            "undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     # Project the centered linear variable onto the span of the centered
     # cos/sin columns. cos and sin lie in [-1, 1], so an absolute singular
-    # value cutoff (RMS spread 1e-10) decides which directions exist.
+    # value cutoff (RMS spread 1e-10) decides which directions exist. r^2 does
+    # not depend on the scale of x; scaling it to at most 1 keeps the sums of
+    # squares finite for very large values.
     x = linear_values - linear_values.mean()
+    x /= np.max(np.abs(x))
     basis = np.column_stack([np.cos(angles), np.sin(angles)])
     basis -= basis.mean(axis=0)
     u, singular_values, _ = np.linalg.svd(basis, full_matrices=False)
     rank = int(np.sum(singular_values > 1e-10 * np.sqrt(n)))
     if rank == 0:
-        warnings.warn(
-            "angles are constant, so the circular-linear correlation is "
-            "undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     projection = u[:, :rank].T @ x
@@ -757,7 +766,8 @@ def circular_circular_correlation(
         First circular variable in radians or degrees.
     angles2 : ndarray of shape (n_samples,)
         Second circular variable in radians or degrees. Must have same
-        length as ``angles1``.
+        length as ``angles1``. A pair with a NaN in either array is dropped
+        with a warning and the correlation uses the remaining pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles (applies to both arrays).
 
@@ -768,7 +778,7 @@ def circular_circular_correlation(
         - r > 0: positive association (angles increase together)
         - r < 0: negative association (angles move in opposite directions)
         - r = 0: no circular correlation
-        NaN, with a ``RuntimeWarning``, when either variable is constant.
+        NaN when either variable is constant.
     pval : float
         Two-sided p-value from the large-sample normal approximation. NaN
         when ``r`` is undefined or the statistic's variance is zero.
@@ -847,12 +857,6 @@ def circular_circular_correlation(
     l02 = np.mean(sin_dev2**2)
     # A spread below 1e-10 rad RMS is rounding error around a constant angle.
     if min(l20, l02) <= 1e-20:
-        warnings.warn(
-            "One or both circular variables are constant, so the "
-            "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     # Jammalamadaka & Sarma coefficient
@@ -868,12 +872,6 @@ def circular_circular_correlation(
     l22 = np.mean(sin_dev1**2 * sin_dev2**2)
 
     if l22 == 0:
-        warnings.warn(
-            "Cannot compute the p-value: no pair varies in both variables at "
-            "once, so the statistic's variance is zero. Returning p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return rho, np.nan
 
     # Test statistic follows standard normal under null hypothesis
@@ -1131,23 +1129,24 @@ def _validated_cov(
             if intercept_allowed
             else "2x2 matrix for [beta_sin, beta_cos]"
         )
-        raise ValueError(
-            f"cov_matrix must be a {expected}, got shape {cov_matrix.shape}.\n{fix}"
-        )
+        msg = f"cov_matrix must be a {expected}, got shape {cov_matrix.shape}.\n{fix}"
+        raise ValueError(msg)
     if not np.all(np.isfinite(cov_matrix)):
-        raise ValueError(
+        msg = (
             f"cov_matrix must be finite, got {cov_matrix.tolist()}.\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
         )
+        raise ValueError(msg)
     scale = float(np.max(np.abs(cov_matrix)))
     if not np.allclose(cov_matrix, cov_matrix.T, rtol=1e-8, atol=1e-12 * scale) or (
         np.linalg.eigvalsh(cov_matrix).min() < -1e-12 * scale
     ):
-        raise ValueError(
+        msg = (
             f"cov_matrix must be a symmetric positive semi-definite covariance "
             f"matrix, got {cov_matrix.tolist()}.\n{fix}"
         )
+        raise ValueError(msg)
     return cov_matrix
 
 
@@ -1174,8 +1173,8 @@ def _wald_test_magnitude(
     Returns
     -------
     float
-        P-value from chi-squared distribution with 2 df; NaN, with a
-        warning, when ``cov_matrix`` is singular.
+        P-value from chi-squared distribution with 2 df; NaN when
+        ``cov_matrix`` is singular.
 
     Raises
     ------
@@ -1191,23 +1190,19 @@ def _wald_test_magnitude(
 
     beta = np.array([beta_sin, beta_cos], dtype=np.float64)
     if not np.all(np.isfinite(beta)):
-        raise ValueError(
+        msg = (
             f"beta_sin and beta_cos must be finite, got ({beta_sin!r}, "
             f"{beta_cos!r}).\n"
             f"Fix: check that the GLM fit converged before testing its "
             f"coefficients."
         )
+        raise ValueError(msg)
 
     # Wald statistic: beta.T @ inv(cov) @ beta
     # Use solve instead of inv for numerical stability
     try:
         wald_stat = float(beta @ np.linalg.solve(cov_matrix, beta))
     except np.linalg.LinAlgError:
-        warnings.warn(
-            "Covariance matrix is singular. Cannot compute p-value; returning NaN.",
-            stacklevel=_external_stacklevel(),
-            category=UserWarning,
-        )
         return np.nan
 
     return float(chi2.sf(wald_stat, df=2))
@@ -1307,13 +1302,14 @@ def circular_basis(
     """
     angles = np.asarray(angles, dtype=np.float64)
     if angles.ndim != 1 or not np.all(np.isfinite(angles)):
-        raise ValueError(
+        msg = (
             f"angles must be a 1-D array of finite values, got shape "
             f"{angles.shape} with {int(np.sum(~np.isfinite(angles)))} "
             f"non-finite value(s).\n"
             f"Fix: pass one angle per GLM sample, and drop the samples (with "
             f"their spike counts) where the angle is missing."
         )
+        raise ValueError(msg)
     return CircularBasisResult(angles=to_radians(angles, angle_unit))
 
 
@@ -1350,8 +1346,7 @@ def circular_basis_metrics(
         Computed as atan2(beta_sin, beta_cos).
     pvalue : float
         Wald-test p-value for H0: amplitude = 0 (no modulation). NaN if
-        ``cov_matrix`` is not provided, and NaN with a warning if it is
-        singular.
+        ``cov_matrix`` is not provided or is singular.
 
     Raises
     ------
@@ -1435,7 +1430,7 @@ def is_modulated(
         - p-value < alpha (statistically significant)
         - magnitude >= min_magnitude (practically meaningful)
         False otherwise, including when ``cov_matrix`` is singular (the
-        p-value is then NaN, with a warning).
+        p-value is then NaN).
 
     Raises
     ------
@@ -1594,7 +1589,7 @@ def plot_circular_basis_tuning(
 
     # Validate show_data requirements
     if show_data and (angles is None or rates is None):
-        raise ValueError(
+        msg = (
             "show_data=True requires both angles and rates arguments.\n\n"
             "To show model fit over raw data:\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, "
@@ -1602,15 +1597,17 @@ def plot_circular_basis_tuning(
             "To show only the fitted curve:\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)"
         )
+        raise ValueError(msg)
 
     # Validate show_ci requirements
     if show_ci and cov_matrix is None:
-        raise ValueError(
+        msg = (
             "show_ci=True requires cov_matrix argument.\n\n"
             "To show confidence bands:\n"
             "  cov = model.cov_params()[:3, :3]  # intercept, sin, cos\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
         )
+        raise ValueError(msg)
 
     # Create figure if needed
     if ax is None:

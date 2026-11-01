@@ -380,6 +380,7 @@ def test_refuses_a_threshold_that_disagrees_with_the_record(population: Any) -> 
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore:ChainedAssignmentError:FutureWarning")
 def test_unit_table_edits_through_the_result_do_not_change_it(
     family: str, recording: dict[str, Any]
 ) -> None:
@@ -389,7 +390,7 @@ def test_unit_table_edits_through_the_result_do_not_change_it(
     table = pd.DataFrame({"unit_id": ["a", "b", "c"], "region": ["CA1", "CA1", "CA3"]})
     labelled = FAMILIES[family](recording, unit_ids=["a", "b", "c"])
     result = dataclasses.replace(labelled, unit_table=table)
-    result.unit_table.drop(index=result.unit_table.index[0], inplace=True)
+    result.unit_table.drop(index=result.unit_table.index[0], inplace=True)  # noqa: PD002  # mutating the returned copy is what is tested
     result.unit_table.loc[:, "region"] = "V1"
     table.loc[:, "region"] = "PFC"
     assert result.unit_table["unit_id"].tolist() == ["a", "b", "c"]
@@ -409,7 +410,7 @@ def test_spike_trains_unit_table_is_copied_on_read() -> None:
         unit_ids=[7, 9],
         unit_table=pd.DataFrame({"unit_id": [7, 9], "depth": [10.0, 20.0]}),
     )
-    trains.unit_table.drop(index=0, inplace=True)
+    trains.unit_table.drop(index=0, inplace=True)  # noqa: PD002  # mutating the returned copy is what is tested
     assert trains.unit_table["depth"].tolist() == [10.0, 20.0]
 
 

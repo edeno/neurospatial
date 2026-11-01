@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Mapping
 
 import numpy as np
@@ -26,6 +27,11 @@ def test_region_point_creation(coords):
 
 
 BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+# shapely 2.1.0 warns while building a ring with a NaN vertex; the test is that
+# Region refuses it.
+with np.errstate(invalid="ignore"), warnings.catch_warnings():
+    warnings.simplefilter("ignore", RuntimeWarning)
+    NAN_VERTEX_POLYGON = shp.Polygon([(0, 0), (np.nan, 0), (1, 1)])
 
 
 @pytest.mark.parametrize(
@@ -60,7 +66,7 @@ BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
         (
             "bad",
             "polygon",
-            shp.Polygon([(0, 0), (np.nan, 0), (1, 1)]),
+            NAN_VERTEX_POLYGON,
             ValueError,
             "NaN or infinite vertex",
         ),
@@ -214,17 +220,17 @@ def test_regions_add_duplicate_name():
 
 def test_regions_add_both_point_and_polygon():
     regs = Regions()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Specify \*\*one\*\*"):
         regs.add(name="bad", point=(1.0, 2.0), polygon=[(0, 0), (1, 0), (0, 1)])
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Specify \*\*one\*\*"):
         regs.add("bar", point=[1, 2], polygon=poly)
 
 
 def test_regions_setitem_key_mismatch():
     regs = Regions()
     r = Region(name="foo", kind="point", data=[1, 2])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"must match Region\.name"):
         regs["bar"] = r
 
 
@@ -333,7 +339,7 @@ def test_regions_buffer_raw_point():
 
 def test_regions_buffer_invalid_shape():
     regs = Regions()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"source coordinates must have shape"):
         regs.buffer(np.array([1.0, 2.0, 3.0]), distance=1.0, new_name="badbuf")
 
 

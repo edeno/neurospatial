@@ -227,7 +227,8 @@ def test_blocked_edges_name_walls_of_a_component_next_to_a_track():
     assert len(table) == len(walled.get_blocked_edges())
     assert set(table["wall"]) == {"divider"}
     field_bins = _component(env, "field")
-    assert field_bins[table["source"]].all() and field_bins[table["target"]].all()
+    assert field_bins[table["source"]].all()
+    assert field_bins[table["target"]].all()
     subset = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     assert set(subset.get_blocked_edges()["wall"]) == {"divider"}
     rotated = env.apply_transform(translate(5.0, 0.0)).apply_transform(

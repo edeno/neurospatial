@@ -442,7 +442,8 @@ class TestObjectVectorOverlayValidation:
             firing_rates=firing_rates,
         )
 
-        result = overlay.convert_to_data(frame_times, len(frame_times), mock_env)
+        with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+            result = overlay.convert_to_data(frame_times, len(frame_times), mock_env)
         assert result.firing_rates[0] == 1.0
         assert np.isnan(result.firing_rates[1])
 

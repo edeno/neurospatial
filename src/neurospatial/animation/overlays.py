@@ -29,8 +29,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import warnings
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
@@ -60,6 +59,8 @@ from neurospatial._validation import (
     times_positions_problems,
     timestamps_of,
     validate_finite,
+    validate_instance,
+    validate_integer_at_least,
 )
 from neurospatial._video_io import _validate_frame_processing
 from neurospatial.animation._resources import _OwnedReaders
@@ -601,11 +602,12 @@ class BodypartOverlay(_Overlay):
                     self.times, frame_times, n_frames, len(part_data), name=name
                 )
             elif len(part_data) != len(times):
-                raise ValueError(
+                msg = (
                     f"{name} has {len(part_data)} samples; the other bodyparts "
                     f"have {len(times)}. Fix: give every bodypart one row per "
                     "sample time."
                 )
+                raise ValueError(msg)
             _validate_bounds(part_data, env.dimension_ranges, name=name, threshold=0.1)
             # Each keypoint has its own missing observations and support.
             parts[part_name] = part_data
@@ -1128,7 +1130,7 @@ class EventOverlay(_Overlay):
         has_trajectory = self.positions is not None or self.position_times is not None
 
         if has_explicit and has_trajectory:
-            raise ValueError(
+            msg = (
                 "WHAT: Both event_positions and positions/position_times provided.\n\n"
                 "WHY: EventOverlay supports two mutually exclusive position modes:\n"
                 "  - Mode A (explicit): Use event_positions for fixed-location events\n"
@@ -1137,9 +1139,10 @@ class EventOverlay(_Overlay):
                 "Fix: Provide EITHER event_positions OR (positions AND position_times), "
                 "not both."
             )
+            raise ValueError(msg)
 
         if not has_explicit and not has_trajectory:
-            raise ValueError(
+            msg = (
                 "WHAT: No position data provided for events.\n\n"
                 "WHY: EventOverlay needs to know where to display each event.\n\n"
                 "Fix: Provide either:\n"
@@ -1148,23 +1151,26 @@ class EventOverlay(_Overlay):
                 "  - positions + position_times: for events at animal location "
                 "(spikes, licks)"
             )
+            raise ValueError(msg)
 
         # Validate trajectory mode has both required fields
         if has_trajectory:
             if self.positions is None:
-                raise ValueError(
+                msg = (
                     "WHAT: position_times provided without positions.\n\n"
                     "WHY: Trajectory mode requires both the trajectory array (positions) "
                     "and its timestamps (position_times).\n\n"
                     "Fix: Provide positions array with shape (n_samples, n_dims)."
                 )
+                raise ValueError(msg)
             if self.position_times is None:
-                raise ValueError(
+                msg = (
                     "WHAT: positions provided without position_times.\n\n"
                     "WHY: Trajectory mode requires both the trajectory array (positions) "
                     "and its timestamps (position_times) for temporal interpolation.\n\n"
                     "Fix: Provide position_times array with shape (n_samples,)."
                 )
+                raise ValueError(msg)
 
         # Validate event_positions shape compatibility (if explicit positions mode)
         if self.event_positions is not None:
@@ -1179,7 +1185,7 @@ class EventOverlay(_Overlay):
                     1,
                     len(times_arr),
                 ):
-                    raise ValueError(
+                    msg = (
                         f"WHAT: event_positions for '{name}' has incompatible shape.\n\n"
                         f"WHY: Got {pos_arr.shape[0]} positions for {len(times_arr)} "
                         f"events. Must be either 1 (broadcast) or {len(times_arr)} "
@@ -1188,26 +1194,29 @@ class EventOverlay(_Overlay):
                         f"  - Single position (1, n_dims) to broadcast to all events\n"
                         f"  - One position per event ({len(times_arr)}, n_dims)"
                     )
+                    raise ValueError(msg)
 
         # Validate event times arrays (now guaranteed to be dict after normalization)
         assert isinstance(self.event_times, dict)  # Type narrowing for mypy
         for name, times_arr in self.event_times.items():
             if times_arr.ndim != 1:
-                raise ValueError(
+                msg = (
                     f"WHAT: Event times for '{name}' is not 1D "
                     f"(got shape {times_arr.shape}).\n\n"
                     "WHY: Event times must be a 1D array of timestamps.\n\n"
                     "Fix: Flatten the array or ensure shape is (n_events,)."
                 )
+                raise ValueError(msg)
             if not np.all(np.isfinite(times_arr)):
                 n_invalid = np.sum(~np.isfinite(times_arr))
-                raise ValueError(
+                msg = (
                     f"WHAT: Event times for '{name}' contains {n_invalid} "
                     "non-finite values (NaN or Inf).\n\n"
                     "WHY: Event timestamps must be finite numbers for temporal "
                     "alignment.\n\n"
                     "Fix: Remove or interpolate NaN/Inf values before creating overlay."
                 )
+                raise ValueError(msg)
 
     @classmethod
     def from_fixed_positions(
@@ -1456,14 +1465,16 @@ class EventOverlay(_Overlay):
         -------
         EventData
             Internal data container with event positions and frame indices.
+            Events outside the frame time range are left out of it, which is
+            normal when animating a subset of the recording; ``event_times`` holds
+            the events that were drawn.
         """
         frame_times = _validate_frame_times(frame_times, n_frames)
         support = None
         if self.positions is not None:
             if self.positions.ndim != 2:
-                raise ValueError(
-                    "EventOverlay.positions must have shape (n_samples, n_dims)."
-                )
+                msg = "EventOverlay.positions must have shape (n_samples, n_dims)."
+                raise ValueError(msg)
             _validate_shape(self.positions, env.n_dims, name="EventOverlay.positions")
             validate_finite(
                 self.positions, name="EventOverlay.positions", allow_nan=True
@@ -1475,10 +1486,11 @@ class EventOverlay(_Overlay):
             if not len(self.position_times) or len(self.position_times) != len(
                 self.positions
             ):
-                raise ValueError(
+                msg = (
                     "EventOverlay.position_times must have one timestamp per "
                     "nonempty position sample."
                 )
+                raise ValueError(msg)
             support = observed_support(
                 self.position_times,
                 self.positions,
@@ -1489,9 +1501,8 @@ class EventOverlay(_Overlay):
             assert isinstance(self.event_positions, dict)
             for name, positions in self.event_positions.items():
                 if positions.ndim != 2:
-                    raise ValueError(
-                        "EventOverlay.event_positions must have shape (n_events, n_dims)."
-                    )
+                    msg = "EventOverlay.event_positions must have shape (n_events, n_dims)."
+                    raise ValueError(msg)
                 _validate_shape(
                     positions,
                     env.n_dims,
@@ -1523,15 +1534,6 @@ class EventOverlay(_Overlay):
 
             # Events retain their identity when tracking is unavailable. Only
             # the display clock filters events; source support controls location.
-            n_outside = np.sum(~in_range_mask)
-            if n_outside > 0:
-                warnings.warn(
-                    f"EventOverlay '{event_name}': {n_outside} events are outside "
-                    f"the frame time range [{frame_t_min:.3f}, {frame_t_max:.3f}] "
-                    "and will be excluded.",
-                    UserWarning,
-                    stacklevel=_external_stacklevel(),
-                )
 
             # Get filtered event times
             filtered_times = event_times_arr[in_range_mask]
@@ -1625,12 +1627,11 @@ class EventOverlay(_Overlay):
             # Auto-assign from tab10 colormap
             tab10 = colormaps["tab10"]
             return {name: to_hex(tab10(i % 10)) for i, name in enumerate(event_names)}
-        elif isinstance(self.colors, str):
+        if isinstance(self.colors, str):
             # Single color for all
             return dict.fromkeys(event_names, self.colors)
-        else:
-            # Dict provided
-            return self.colors
+        # Dict provided
+        return self.colors
 
     def _resolve_markers(self, event_names: list[str]) -> dict[str, str]:
         """Resolve markers to dict[str, str] format.
@@ -1648,12 +1649,11 @@ class EventOverlay(_Overlay):
         if self.markers is None:
             # Default 'o' for all
             return dict.fromkeys(event_names, "o")
-        elif isinstance(self.markers, str):
+        if isinstance(self.markers, str):
             # Single marker for all
             return dict.fromkeys(event_names, self.markers)
-        else:
-            # Dict provided
-            return self.markers
+        # Dict provided
+        return self.markers
 
 
 # Convenience alias for neural spike visualization
@@ -1839,54 +1839,59 @@ class TimeSeriesOverlay(_Overlay):
         """Validate inputs after initialization."""
         # Validate data is 1D
         if self.data.ndim != 1:
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.data must be 1D "
                 f"(got shape {self.data.shape}).\n\n"
                 "WHY: Time series visualization expects a single variable over time.\n\n"
                 "Fix: Flatten the array or select a single column/variable."
             )
+            raise ValueError(msg)
 
         # Validate times is 1D
         if self.times.ndim != 1:
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.times must be 1D "
                 f"(got shape {self.times.shape}).\n\n"
                 "WHY: Timestamps must be a 1D array of time values.\n\n"
                 "Fix: Flatten the times array or ensure shape is (n_samples,)."
             )
+            raise ValueError(msg)
 
         # Validate data and times have same length
         if len(self.data) != len(self.times):
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.data and times have different lengths "
                 f"({len(self.data)} vs {len(self.times)}).\n\n"
                 "WHY: Each data point must have a corresponding timestamp.\n\n"
                 "Fix: Ensure both arrays have the same number of elements."
             )
+            raise ValueError(msg)
 
         # Validate data has at least one sample
         if len(self.data) == 0:
-            raise ValueError(
+            msg = (
                 "WHAT: TimeSeriesOverlay.data must have at least 1 sample (got 0).\n\n"
                 "WHY: Time series visualization requires at least one data point.\n\n"
                 "Fix: Provide non-empty data array."
             )
+            raise ValueError(msg)
 
         # Validate times are finite (no NaN or Inf)
         if not np.all(np.isfinite(self.times)):
             n_invalid = np.sum(~np.isfinite(self.times))
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.times contains {n_invalid} "
                 "non-finite values (NaN or Inf).\n\n"
                 "WHY: Timestamps must be finite numbers for window extraction.\n\n"
                 "Fix: Remove or fix NaN/Inf values in times array."
             )
+            raise ValueError(msg)
 
         # Validate times are monotonically increasing
         if len(self.times) > 1 and not np.all(np.diff(self.times) > 0):
             diffs = np.diff(self.times)
             first_bad_idx = np.where(diffs <= 0)[0][0] + 1
-            raise ValueError(
+            msg = (
                 f"WHAT: Non-monotonic timestamps in TimeSeriesOverlay.times.\n"
                 f"  First violation at index {first_bad_idx}: "
                 f"times[{first_bad_idx - 1}]={self.times[first_bad_idx - 1]:.6f}, "
@@ -1894,42 +1899,48 @@ class TimeSeriesOverlay(_Overlay):
                 "WHY: Window extraction requires strictly increasing timestamps.\n\n"
                 "Fix: Sort the times array or remove duplicates."
             )
+            raise ValueError(msg)
 
         # Validate alpha in [0, 1]
         if not (0.0 <= self.alpha <= 1.0):
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.alpha must be in [0, 1] "
                 f"(got {self.alpha}).\n\n"
                 "WHY: Alpha is an opacity value between fully transparent (0) "
                 "and fully opaque (1).\n\n"
                 "Fix: Use a value between 0.0 and 1.0."
             )
+            raise ValueError(msg)
 
         # Validate linewidth is positive
         if self.linewidth <= 0:
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.linewidth must be positive "
                 f"(got {self.linewidth}).\n\n"
                 "WHY: Line width must be a positive value for rendering.\n\n"
                 "Fix: Use a positive value like linewidth=1.0."
             )
+            raise ValueError(msg)
 
         # Validate no Inf in data (NaN is allowed for gaps)
         if np.any(np.isinf(self.data)):
             n_inf = np.sum(np.isinf(self.data))
-            raise ValueError(
+            msg = (
                 f"WHAT: TimeSeriesOverlay.data contains {n_inf} Inf values.\n\n"
                 "WHY: Inf values cannot be rendered. NaN is allowed for gaps, "
                 "but Inf is not supported.\n\n"
                 "Fix: Replace Inf values with NaN or finite values."
             )
+            raise ValueError(msg)
 
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
-        env: Any,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
+        env: Any,  # noqa: ARG002  # OverlayProtocol signature
     ) -> TimeSeriesData:
         """Convert overlay to internal data representation.
 
@@ -2083,21 +2094,21 @@ class SpikeRasterOverlay(_Overlay):
             context="SpikeRasterOverlay",
         )
         if not trains:
-            raise ValueError(
-                "SpikeRasterOverlay needs the spikes of at least one unit."
-            )
+            msg = "SpikeRasterOverlay needs the spikes of at least one unit."
+            raise ValueError(msg)
         order = (
             np.arange(len(trains))
             if self.order is None
             else np.asarray(self.order).astype(np.intp, casting="same_kind")
         )
         if not np.array_equal(np.sort(order), np.arange(len(trains))):
-            raise ValueError(
+            msg = (
                 f"order must list each of the {len(trains)} units once, as "
                 f"indices into spike_times; got {order.tolist()}. Why: each "
                 "row of the raster is one unit. Fix: pass a permutation, such "
                 "as np.argsort of each unit's place-field peak."
             )
+            raise ValueError(msg)
         if ids is None:
             ids = np.arange(len(trains))
         self._order = order
@@ -2106,8 +2117,10 @@ class SpikeRasterOverlay(_Overlay):
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
         env: Any,
     ) -> SpikeRasterData:
         """The raster's rows, bottom row first.
@@ -2144,9 +2157,12 @@ class SpikeRasterOverlay(_Overlay):
                 # connectivity does not change what a drawn bin shows.
                 mismatch = _environment_differences(self.rates.env, env).bins
                 if mismatch is not None:
-                    raise IncompatibleEnvironmentError(
+                    msg = (
                         "SpikeRasterOverlay rates were computed on an environment "
-                        f"that differs from the animated environment in {mismatch}.",
+                        f"that differs from the animated environment in {mismatch}."
+                    )
+                    raise IncompatibleEnvironmentError(
+                        msg,
                         fix="compute rates on the animated environment.",
                         first=self.rates.env,
                         second=env,
@@ -2174,13 +2190,14 @@ class SpikeRasterOverlay(_Overlay):
                 rates = np.asarray(self.rates, dtype=np.float64)
             expected = (len(spike_times), env.n_bins)
             if rates.shape != expected:
-                raise ValueError(
+                msg = (
                     f"rates has shape {rates.shape}, expected {expected}: one "
                     "rate map per unit, in the order of spike_times, over the "
                     "animated environment's bins. Fix: pass rate maps computed "
                     "on this environment, e.g. "
                     "compute_spatial_rates(env, ...).firing_rates."
                 )
+                raise ValueError(msg)
             rates = rates[self._order]
         return SpikeRasterData(
             spike_times=spike_times,
@@ -2248,15 +2265,18 @@ class EpochOverlay(_Overlay):
         intervals = as_intervals(self.epochs, name="epochs")
         assert intervals is not None  # epochs is required
         if not 0.0 <= self.alpha <= 1.0:
-            raise ValueError(f"alpha must be between 0 and 1, got {self.alpha}.")
+            msg = f"alpha must be between 0 and 1, got {self.alpha}."
+            raise ValueError(msg)
         self._intervals = intervals
 
     @reads_pynapple_samples
     def convert_to_data(
         self,
-        frame_times: NDArray[np.float64],
-        n_frames: int,
-        env: Any,
+        frame_times: NDArray[  # noqa: ARG002  # OverlayProtocol signature
+            np.float64
+        ],  # OverlayProtocol signature  # OverlayProtocol signature
+        n_frames: int,  # noqa: ARG002  # OverlayProtocol signature
+        env: Any,  # noqa: ARG002  # OverlayProtocol signature
     ) -> EpochData:
         """The epochs, sorted and merged.
 
@@ -2491,7 +2511,7 @@ class ObjectVectorOverlay(_Overlay):
                 allow_nan=True,
             )
             if len(self.firing_rates) != len(self.animal_positions):
-                raise ValueError(
+                msg = (
                     f"WHAT: ObjectVectorOverlay.firing_rates length "
                     f"({len(self.firing_rates)}) does not match "
                     f"animal_positions length ({len(self.animal_positions)}).\n\n"
@@ -2500,6 +2520,7 @@ class ObjectVectorOverlay(_Overlay):
                     "Fix: Ensure firing_rates has shape (n_samples,) matching "
                     "animal_positions shape (n_samples, n_dims)."
                 )
+                raise ValueError(msg)
 
         times = _sample_clock(
             self.times,
@@ -2600,7 +2621,9 @@ class VideoOverlay(_Overlay):
         whose border cells are inactive, that is smaller than the arena the
         camera saw, so a video of the whole arena needs a calibration there.
         Created using calibrate_from_scale_bar() or calibrate_from_landmarks().
-        Default is None.
+        Without one the video is scaled to fit the environment bounds and may
+        not align accurately with the spatial data; ``overlay.calibration is
+        None`` records that no calibration was given. Default is None.
     times : ndarray of shape (n_frames,), dtype float64, optional
         Timestamps for each video frame, in seconds. If None, video frames
         are aligned to animation frames by sample index. Must be monotonically
@@ -2628,11 +2651,11 @@ class VideoOverlay(_Overlay):
         Temporal interpolation method for aligning video to animation frames.
 
         - "nearest" (default): Use nearest video frame (no interpolation)
-        - "linear": **Not yet implemented** - emits warning and uses nearest
+        - "linear": **Not implemented**; raises ``NotImplementedError``
 
-        Currently only "nearest" is supported. Linear interpolation for video
-        would require blending adjacent frames, which is expensive. A warning
-        is emitted if "linear" is requested. Default is "nearest".
+        Only "nearest" is supported. Linear interpolation for video would
+        require blending adjacent frames, which is expensive. Default is
+        "nearest".
     cache_size : int, optional
         Number of video frames to keep in memory cache for file-based video.
         Larger values reduce disk I/O but use more memory. Only applies to
@@ -2755,59 +2778,62 @@ class VideoOverlay(_Overlay):
             If alpha is not in [0.0, 1.0].
             If source is an array with wrong shape, dtype, or channels.
             If downsample is not a positive integer.
+            If cache_size is not a positive integer.
+            If prefetch_ahead is not a non-negative integer.
+        NotImplementedError
+            If ``interp="linear"``.
         """
         # Validate alpha bounds
         if not 0.0 <= self.alpha <= 1.0:
-            raise ValueError(
+            msg = (
                 f"WHAT: alpha must be between 0.0 and 1.0, got {self.alpha}.\n"
                 f"WHY: Alpha controls transparency (0=invisible, 1=opaque).\n"
                 f"Fix: Use alpha=0.5 (default) for semi-transparent overlay."
             )
+            raise ValueError(msg)
 
         # Validate downsample
-        if not isinstance(self.downsample, int) or self.downsample < 1:
-            raise ValueError(
-                f"WHAT: downsample must be a positive integer >= 1, got {self.downsample}.\n"
-                f"WHY: Downsample factor controls spatial resolution reduction.\n"
-                f"Fix: Use downsample=1 (full resolution) or downsample=2 (half resolution)."
-            )
+        self.downsample = validate_integer_at_least(
+            self.downsample,
+            1,
+            name="downsample",
+            owner="VideoOverlay",
+            hint="use downsample=1 for full resolution or 2 for half resolution",
+        )
 
         # Validate cache_size
-        if not isinstance(self.cache_size, int) or self.cache_size < 1:
-            raise ValueError(
-                f"WHAT: cache_size must be a positive integer >= 1, got {self.cache_size}.\n"
-                f"WHY: cache_size controls how many video frames are kept in memory.\n"
-                f"Fix: Use cache_size=100 (default) or increase for faster playback "
-                f"with more memory usage."
-            )
+        self.cache_size = validate_integer_at_least(
+            self.cache_size,
+            1,
+            name="cache_size",
+            owner="VideoOverlay",
+            hint="it sets how many video frames are kept in memory; "
+            "use 100 (default) or more for faster playback",
+        )
 
         # Validate prefetch_ahead
-        if not isinstance(self.prefetch_ahead, int) or self.prefetch_ahead < 0:
-            raise ValueError(
-                f"WHAT: prefetch_ahead must be a non-negative integer, "
-                f"got {self.prefetch_ahead}.\n"
-                f"WHY: prefetch_ahead controls how many frames to load in background.\n"
-                f"Fix: Use prefetch_ahead=0 (default) to disable, or e.g. 5 to preload "
-                f"5 upcoming frames during playback."
-            )
+        self.prefetch_ahead = validate_integer_at_least(
+            self.prefetch_ahead,
+            0,
+            name="prefetch_ahead",
+            owner="VideoOverlay",
+            hint="use 0 (default) to disable background loading, or e.g. 5 "
+            "to preload 5 upcoming frames during playback",
+        )
 
         # Validate source array if it's a numpy array
         if isinstance(self.source, np.ndarray):
             self._validate_source_array(self.source)
 
-        # Warn if linear interpolation is requested (not implemented for video)
         if self.interp == "linear":
-            import warnings
-
-            warnings.warn(
-                "WHAT: VideoOverlay interp='linear' is not yet implemented.\n"
-                "WHY: Linear interpolation for video would require blending adjacent "
-                "frames, which is computationally expensive and rarely needed.\n"
-                "Fix: Using nearest-neighbor frame selection instead. Set interp='nearest' "
-                "explicitly to suppress this warning.",
-                UserWarning,
-                stacklevel=2,
+            msg = _format_error(
+                "VideoOverlay interp='linear' is not implemented.",
+                why="Linear interpolation for video would require blending "
+                "adjacent frames, which is computationally expensive and "
+                "rarely needed.",
+                fix="Use interp='nearest' (the default) to show the nearest frame.",
             )
+            raise NotImplementedError(msg)
 
     def _validate_source_array(self, arr: NDArray[np.uint8]) -> None:
         """Validate source array has correct shape and dtype.
@@ -2824,28 +2850,31 @@ class VideoOverlay(_Overlay):
         """
         # Check ndim (must be 4D: n_frames, height, width, channels)
         if arr.ndim != 4:
-            raise ValueError(
+            msg = (
                 f"WHAT: Video array must be 4D (n_frames, height, width, channels), "
                 f"got shape {arr.shape} ({arr.ndim}D).\n"
                 f"WHY: Video data requires frames, height, width, and color channels.\n"
                 f"Fix: Reshape array to (n_frames, height, width, 3) for RGB video."
             )
+            raise ValueError(msg)
 
         # Check channels (must be 3 for RGB)
         if arr.shape[3] != 3:
-            raise ValueError(
+            msg = (
                 f"WHAT: Video array must have 3 RGB channels, got {arr.shape[3]} channels.\n"
                 f"WHY: VideoOverlay requires RGB format for rendering.\n"
                 f"Fix: Convert to RGB (drop alpha channel if RGBA, or convert grayscale)."
             )
+            raise ValueError(msg)
 
         # Check dtype (must be uint8)
         if arr.dtype != np.uint8:
-            raise ValueError(
+            msg = (
                 f"WHAT: Video array must have dtype uint8, got {arr.dtype}.\n"
                 f"WHY: Video pixels are 0-255 values stored as unsigned 8-bit integers.\n"
                 f"Fix: Convert with arr.astype(np.uint8) if values are in 0-255 range."
             )
+            raise ValueError(msg)
 
     @reads_pynapple_samples
     def convert_to_data(
@@ -2879,21 +2908,8 @@ class VideoOverlay(_Overlay):
             "VideoOverlay",
             why="It places camera frames in arena coordinates.",
         )
-        import warnings
-
         # Validate environment supports video overlays
         _validate_video_env(env)
-
-        # Warn if no calibration provided
-        if self.calibration is None:
-            warnings.warn(
-                "VideoOverlay has no calibration. Video will be scaled to fit "
-                "environment bounds but may not align accurately with spatial data. "
-                "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
-                "or calibrate_from_landmarks().",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
 
         with ExitStack() as cleanup:
             # Determine video source: array or file path
@@ -2930,18 +2946,20 @@ class VideoOverlay(_Overlay):
                 times = np.asarray(self.times, dtype=np.float64)
                 _validate_monotonic_time(times, name="VideoOverlay.times")
                 if len(times) != n_video_frames:
-                    raise ValueError(
+                    msg = (
                         f"VideoOverlay.times length ({len(times)}) does not "
                         f"match number of video frames ({n_video_frames})."
                     )
+                    raise ValueError(msg)
                 _validate_temporal_alignment(times, frame_times, name="VideoOverlay")
             else:
                 if n_video_frames != n_frames:
-                    raise ValueError(
+                    msg = (
                         f"VideoOverlay source has {n_video_frames} frames but "
                         f"animation has {n_frames} frames. When times=None, "
                         f"video frames must match animation frames."
                     )
+                    raise ValueError(msg)
                 times = frame_times
 
             # Compute environment bounds for transform
@@ -3011,9 +3029,8 @@ def _check_rows(
     n_times = len(data.times)
     for name, values in rows.items():
         if np.ndim(values) not in (1, 2) or len(values) != n_times:
-            raise ValueError(
-                f"{kind}.{name} must have one row per sample time ({n_times})."
-            )
+            msg = f"{kind}.{name} must have one row per sample time ({n_times})."
+            raise ValueError(msg)
     for name, pair in masks.items():
         for label, mask, expected in zip(
             ("sample_valid", "interval_valid"),
@@ -3024,10 +3041,11 @@ def _check_rows(
             if mask is not None and (
                 np.shape(mask) != (expected,) or np.asarray(mask).dtype != np.bool_
             ):
-                raise ValueError(
+                msg = (
                     f"{kind}.{label} ({name}) must be a boolean array with "
                     f"shape ({expected},)."
                 )
+                raise ValueError(msg)
 
 
 def _moved(item: _ItemT, **changes: Any) -> _ItemT:
@@ -3124,7 +3142,9 @@ class PositionData(_SampledData):
         )
 
     def support(
-        self, name: str | None = None
+        self,
+        name: str  # noqa: ARG002  # OverlayProtocol signature
+        | None = None,  # OverlayProtocol signature  # OverlayProtocol signature
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the positions."""
         return self.sample_valid, self.interval_valid
@@ -3190,24 +3210,27 @@ class BodypartData(_SampledData):
 
     def __post_init__(self) -> None:
         """Resolve each body part's support and color."""
-        given = {
-            label: {} if masks is None else masks
-            for label, masks in (
-                ("sample_valid", self.sample_valid),
-                ("interval_valid", self.interval_valid),
-            )
+        # The fields as given: None (the default) accepts every finite row.
+        given: dict[str, object] = {
+            "sample_valid": self.sample_valid,
+            "interval_valid": self.interval_valid,
         }
-        for label, masks in given.items():
-            if not isinstance(masks, dict):
-                raise ValueError(
-                    f"BodypartData.{label} must map bodypart names to boolean masks."
-                )
+        checked: dict[str, dict[Any, Any]] = {}
+        for label, raw in given.items():
+            masks = checked[label] = validate_instance(
+                {} if raw is None else raw,
+                dict,
+                name=label,
+                owner="BodypartData",
+                hint="map bodypart names to boolean masks",
+            )
             unknown = masks.keys() - self.bodyparts.keys()
             if unknown:
-                raise ValueError(
+                msg = (
                     f"BodypartData.{label} references unknown bodyparts: "
                     f"{sorted(unknown, key=str)}."
                 )
+                raise ValueError(msg)
         # Every view draws a part in the same color: given, else the
         # skeleton's node color, else red.
         node_colors = {} if self.skeleton is None else self.skeleton.node_colors or {}
@@ -3220,8 +3243,8 @@ class BodypartData(_SampledData):
             self.bodyparts,
             {
                 name: (
-                    given["sample_valid"].get(name),
-                    given["interval_valid"].get(name),
+                    checked["sample_valid"].get(name),
+                    checked["interval_valid"].get(name),
                 )
                 for name in self.bodyparts
             },
@@ -3230,8 +3253,8 @@ class BodypartData(_SampledData):
         for name, values in self.bodyparts.items():
             bodyparts[name], sample_valid[name], interval_valid[name] = resolve_support(
                 values,
-                given["sample_valid"].get(name),
-                given["interval_valid"].get(name),
+                checked["sample_valid"].get(name),
+                checked["interval_valid"].get(name),
             )
         self.bodyparts = bodyparts
         self.sample_valid, self.interval_valid = sample_valid, interval_valid
@@ -3241,7 +3264,8 @@ class BodypartData(_SampledData):
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the body part ``name``."""
         if name is None:
-            raise ValueError("Name the body part whose support to return.")
+            msg = "Name the body part whose support to return."
+            raise ValueError(msg)
         return self.sample_valid[name], self.interval_valid[name]
 
     def on_clock(self, clock: NDArray[np.float64]) -> BodypartData:
@@ -3319,7 +3343,9 @@ class HeadDirectionData(_SampledData):
         )
 
     def support(
-        self, name: str | None = None
+        self,
+        name: str  # noqa: ARG002  # OverlayProtocol signature
+        | None = None,  # OverlayProtocol signature  # OverlayProtocol signature
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the headings."""
         return self.sample_valid, self.interval_valid
@@ -3476,10 +3502,11 @@ class VideoData:
         if indices.shape != (len(self.times),) or not np.issubdtype(
             indices.dtype, np.integer
         ):
-            raise ValueError(
+            msg = (
                 "VideoData.frame_indices must be a 1-D integer array with one "
                 "index per sample time."
             )
+            raise ValueError(msg)
         # Adapter readers need not report their length.
         count = (
             len(self.reader)
@@ -3487,10 +3514,11 @@ class VideoData:
             else getattr(self.reader, "n_frames", None)
         )
         if (indices < -1).any() or (count is not None and (indices >= count).any()):
-            raise ValueError(
+            msg = (
                 "VideoData.frame_indices must contain valid reader frame indices "
                 "or -1 for missing frames."
             )
+            raise ValueError(msg)
 
     def __deepcopy__(self, memo: dict[int, Any]) -> VideoData:
         # Readers may own decoder handles; copies share the reader.
@@ -3903,12 +3931,13 @@ class OverlayData:
             if isinstance(item, kind):
                 getattr(self, name).append(item)
                 return
-        raise TypeError(
+        msg = (
             "convert_to_data() must return PositionData, BodypartData, "
             "HeadDirectionData, VideoData, EventData, TimeSeriesData, "
             "SpikeRasterData, EpochData or ObjectVectorData, got "
             f"{type(item).__name__}."
         )
+        raise TypeError(msg)
 
     def sampled(self) -> Iterator[_SampledData | VideoData]:
         """Every item that keeps samples at its own ``times``."""
@@ -4020,7 +4049,7 @@ def _validate_shape(
         actual_ndims = data.shape[1]
     else:
         # Invalid shape (3D+ arrays)
-        raise ValueError(
+        msg = (
             f"WHAT: Invalid array shape for '{name}'.\n"
             f"  Expected: (n_samples,) or (n_samples, n_dims)\n"
             f"  Got: {data.shape} with {data.ndim} dimensions\n\n"
@@ -4029,9 +4058,10 @@ def _validate_shape(
             f"Fix: Reshape your data to 2D:\n"
             f"  data = data.reshape(-1, {expected_ndims})  # Flatten to 2D"
         )
+        raise ValueError(msg)
 
     if actual_ndims != expected_ndims:
-        raise ValueError(
+        msg = (
             f"WHAT: Shape mismatch for '{name}'.\n"
             f"  Expected: (n_samples, {expected_ndims}) spatial dimensions\n"
             f"  Got: {data.shape} with {actual_ndims} spatial dimension(s)\n\n"
@@ -4042,6 +4072,7 @@ def _validate_shape(
             f"  data = data[:, :{expected_ndims}]  # Use first {expected_ndims} columns\n"
             f"  # Or ensure env.n_dims matches your data dimensions"
         )
+        raise ValueError(msg)
 
 
 def _validate_temporal_alignment(
@@ -4083,7 +4114,7 @@ def _validate_temporal_alignment(
 
     if overlap_start > overlap_end:
         # No overlap at all
-        raise ValueError(
+        msg = (
             f"WHAT: No temporal overlap between '{name}' and animation frames.\n"
             f"  Overlay times: [{overlay_min:.3f}, {overlay_max:.3f}]\n"
             f"  Frame times: [{frame_min:.3f}, {frame_max:.3f}]\n\n"
@@ -4095,6 +4126,7 @@ def _validate_temporal_alignment(
             f"  # Option 2: Resample overlay data to animation time range\n"
             f"  # Option 3: Adjust frame_times to include overlay range"
         )
+        raise ValueError(msg)
 
     # Calculate overlap percentage relative to frame times
     overlap_duration = overlap_end - overlap_start
@@ -4245,7 +4277,7 @@ def _validate_skeleton_consistency(
             for missing, matches in suggestions.items()
         )
 
-        raise ValueError(
+        msg = (
             f"WHAT: Skeleton '{skeleton.name}' for '{name}' references missing "
             f"bodypart(s): {sorted(missing_parts)}\n"
             f"  Available bodyparts in data: {sorted(bodypart_names)}\n"
@@ -4261,6 +4293,7 @@ def _validate_skeleton_consistency(
             f"       if p1 in data and p2 in data]\n"
             f"  )"
         )
+        raise ValueError(msg)
 
 
 def _require_allocentric(env: Any, overlay: str, *, why: str) -> None:
@@ -4314,7 +4347,7 @@ def _validate_video_env(env: Any) -> None:
     """
     # Check 2D requirement
     if env.n_dims != 2:
-        raise ValueError(
+        msg = (
             f"VideoOverlay requires a 2D environment.\n\n"
             f"WHAT: Environment has n_dims={env.n_dims}, expected n_dims=2.\n\n"
             f"WHY: Video frames are 2D images that must be transformed into "
@@ -4322,11 +4355,12 @@ def _validate_video_env(env: Any) -> None:
             f"Fix: Create a 2D environment:\n"
             f"  env = Environment.from_samples(positions_2d, bin_size=5.0)"
         )
+        raise ValueError(msg)
 
     # Check finite dimension ranges
     dim_ranges = env.dimension_ranges
     if not np.all(np.isfinite(dim_ranges)):
-        raise ValueError(
+        msg = (
             f"VideoOverlay requires finite dimension ranges.\n\n"
             f"WHAT: Environment dimension_ranges contains non-finite values: "
             f"{dim_ranges}.\n\n"
@@ -4335,6 +4369,7 @@ def _validate_video_env(env: Any) -> None:
             f"Fix: Ensure your environment data has finite coordinates. "
             f"Check for infinite or NaN values in your position data."
         )
+        raise ValueError(msg)
 
 
 # =============================================================================
@@ -4395,24 +4430,25 @@ def _validate_frame_times(
     """
     frame_times = np.asarray(frame_times, dtype=np.float64)
     if frame_times.ndim != 1 or not np.isfinite(frame_times).all():
-        raise ValueError(
-            "frame_times must be a finite 1-D array of timestamps in seconds."
-        )
+        msg = "frame_times must be a finite 1-D array of timestamps in seconds."
+        raise ValueError(msg)
     # Validate length
     if len(frame_times) != n_frames:
-        raise ValueError(
+        msg = (
             f"frame_times length ({len(frame_times)}) must match n_frames ({n_frames})"
         )
+        raise ValueError(msg)
 
     # Check strict monotonicity (only if more than one frame)
     if len(frame_times) > 1:
         diffs = np.diff(frame_times)
         if not np.all(diffs > 0):
             n_bad = int(np.sum(diffs <= 0))
-            raise ValueError(
+            msg = (
                 "frame_times must be strictly monotonically increasing. "
                 f"Found {n_bad} non-increasing intervals."
             )
+            raise ValueError(msg)
 
     return frame_times
 
@@ -4451,17 +4487,17 @@ def _sample_clock(
     frame_times = _validate_frame_times(frame_times, n_frames)
     if times is None:
         if n_samples != n_frames:
-            raise ValueError(
+            msg = (
                 f"{name} data length ({n_samples}) does not match n_frames "
                 f"({n_frames}). When times=None, data must have exactly n_frames samples."
             )
+            raise ValueError(msg)
         return frame_times
     times = np.asarray(times, dtype=np.float64)
     _validate_monotonic_time(times, name=f"{name}.times")
     if len(times) != n_samples or not len(times):
-        raise ValueError(
-            f"{name}.times must have one timestamp per nonempty data sample."
-        )
+        msg = f"{name}.times must have one timestamp per nonempty data sample."
+        raise ValueError(msg)
     _validate_temporal_alignment(times, frame_times, name=name)
     return times
 
@@ -4582,7 +4618,8 @@ def _check_adapter_clock(
     if isinstance(item, (_SampledData, VideoData)):
         times = np.asarray(item.times, dtype=np.float64)
         if not len(times):
-            raise ValueError(f"{type(item).__name__}.times must be nonempty.")
+            msg = f"{type(item).__name__}.times must be nonempty."
+            raise ValueError(msg)
         _validate_frame_times(times, len(times))
         _validate_temporal_alignment(times, frame_times, name=name)
 
@@ -4610,7 +4647,7 @@ def _check_spatial_dimensions(item: Any, env: Any, *, name: str) -> None:
 
 
 def _convert_overlays_to_data(
-    overlays: list[OverlayProtocol],
+    overlays: Sequence[object],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
@@ -4711,10 +4748,11 @@ def _convert_overlays_to_data(
         cleanup.callback(readers.close)
         for overlay in overlays:
             if not isinstance(overlay, OverlayProtocol):
-                raise TypeError(
+                msg = (
                     f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
                     "Ensure your overlay has a 'convert_to_data()' method."
                 )
+                raise TypeError(msg)
             item = overlay.convert_to_data(frame_times, n_frames, env)
             # A video overlay with a file source opened its reader for us.
             if isinstance(overlay, VideoOverlay) and not isinstance(
@@ -4732,7 +4770,7 @@ def _convert_overlays_to_data(
             overlay_data.add(item)
 
         if overlay_data.head_directions and len(overlay_data.positions) > 1:
-            raise ValueError(
+            msg = (
                 "HeadDirectionOverlay cannot tell which of the "
                 f"{len(overlay_data.positions)} PositionOverlays it starts from. "
                 "Heading arrows are drawn from the animal's position, and "
@@ -4741,6 +4779,7 @@ def _convert_overlays_to_data(
                 "whose heading you measured), or omit PositionOverlays to draw "
                 "the heading as a compass arrow at the arena center."
             )
+            raise ValueError(msg)
         from neurospatial.animation._capabilities import require_scene_overlays
 
         require_scene_overlays(overlay_data, env.n_dims)

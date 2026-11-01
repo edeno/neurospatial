@@ -160,7 +160,8 @@ def load_benchmark_config(name: str):
         "large": LARGE_CONFIG,
     }
     if name not in configs:
-        raise ValueError(f"Unknown config: {name}. Available: {list(configs.keys())}")
+        msg = f"Unknown config: {name}. Available: {list(configs.keys())}"
+        raise ValueError(msg)
     return configs[name]
 
 

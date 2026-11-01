@@ -83,7 +83,8 @@ def test_identical_templates_are_shuffled_independently(env, posteriors):
     )
     maxed = both.shuffles["column_cycle"].null_scores
     single = one.shuffles["column_cycle"].null_scores
-    assert np.all(maxed >= single) and np.any(maxed > single)
+    assert np.all(maxed >= single)
+    assert np.any(maxed > single)
 
 
 def test_each_template_draws_its_own_stream(env, posteriors):

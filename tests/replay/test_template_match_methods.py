@@ -92,7 +92,7 @@ class TestMethodSettings:
         ],
     )
     def test_bad_settings_are_refused(self, change):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"'ji_wilson_2007': \w+ must be"):
             dataclasses.replace(JI_WILSON_2007, **change)
 
     def test_the_active_cell_criterion(self):
@@ -108,7 +108,8 @@ class TestVerdicts:
             env, spikes, intervals[0], rates, template_match_method=LEE_WILSON_2002
         )
         assert result.p_value == pytest.approx(1 / 24, rel=1e-12)
-        assert result.is_replay and result.score == 4.0
+        assert result.is_replay
+        assert result.score == 4.0
         strict = dataclasses.replace(LEE_WILSON_2002, p_comparison="<")
         assert not detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=strict
@@ -121,7 +122,8 @@ class TestVerdicts:
         result = detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=JI_WILSON_2007
         )
-        assert result.is_replay and result.score == pytest.approx(0.8)
+        assert result.is_replay
+        assert result.score == pytest.approx(0.8)
         at_p = dataclasses.replace(JI_WILSON_2007, alpha=5 / 120)
         assert not detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=at_p
@@ -134,12 +136,14 @@ class TestVerdicts:
         result = detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=loose
         )
-        assert result.p_value == pytest.approx(1 / 6) and not result.is_replay
+        assert result.p_value == pytest.approx(1 / 6)
+        assert not result.is_replay
         assert result.error == ""
         default = detect_template_match_replay(
             env, spikes, intervals[0], rates, template_match_method=JI_WILSON_2007
         )
-        assert np.isnan(default.score) and not default.is_replay
+        assert np.isnan(default.score)
+        assert not default.is_replay
         assert default.error == "fewer than 4 active template cells"
         assert not any(default.criteria.values())
 
@@ -153,7 +157,8 @@ class TestVerdicts:
             {"out": rates, "in": rates[:, ::-1]},
             template_match_method=JI_WILSON_2007,
         )
-        assert result.template == "in" and result.score == 1.0
+        assert result.template == "in"
+        assert result.score == 1.0
 
     def test_lee_needs_a_template_with_several(self, track):
         env, rates = track
@@ -359,7 +364,8 @@ class TestLeeDatasetTest:
         )
         table = result.groups_table()
         low = _by_template(table[table["group"] == "low_probability"])
-        assert low.loc["out", "n_matches"] == 1 and low.loc["in", "n_matches"] == 0
+        assert low.loc["out", "n_matches"] == 1
+        assert low.loc["in", "n_matches"] == 0
         assert low.loc["all", "n_trials"] == 2
 
 
@@ -375,7 +381,8 @@ class TestJiDatasetTest:
         )
         row = result.groups_table().iloc[0]
         sizes = [1 / 24, 5 / 120, 20 / 720, 174 / 5040, 1230 / 40320, 20 / 720]
-        assert row["n_trials"] == 6 and row["n_matches"] == 5
+        assert row["n_trials"] == 6
+        assert row["n_matches"] == 5
         assert row["expected"] == pytest.approx(sum(sizes), rel=1e-12)
         a = sum(sizes)
         assert row["z_score"] == pytest.approx((5 - a) / np.sqrt(a))
@@ -411,7 +418,8 @@ class TestJiDatasetTest:
         assert abs(rate - expected) < 4 * np.sqrt(expected * (1 - expected) / 3000)
         assert result.observed_statistic == 3.0
         table = _by_template(result.groups_table())
-        assert table.loc["out", "n_trials"] == 3 and table.loc["in", "n_trials"] == 0
+        assert table.loc["out", "n_trials"] == 3
+        assert table.loc["in", "n_trials"] == 0
 
     def test_frames_must_be_one_array(self, track):
         env, rates = track
@@ -438,6 +446,7 @@ def test_the_summary_reports_the_shuffled_group(track):
         rng=0,
     )
     summary = result.summary()
-    assert summary["group"] == "candidate_frames" and summary["n_matches"] == 4
+    assert summary["group"] == "candidate_frames"
+    assert summary["n_matches"] == 4
     assert isinstance(result.groups_table(), pd.DataFrame)
     assert not result.shuffle_statistics.flags.writeable

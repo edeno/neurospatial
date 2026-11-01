@@ -63,9 +63,8 @@ class _LazyUnitSpikeTrain:
         arr = self._materialize()
         if dtype is not None and np.dtype(dtype) != arr.dtype:
             if copy is False:
-                raise ValueError(
-                    f"Converting spike times to {np.dtype(dtype)} requires a copy."
-                )
+                msg = f"Converting spike times to {np.dtype(dtype)} requires a copy."
+                raise ValueError(msg)
             return arr.astype(dtype)
         return arr.copy() if copy else arr
 
@@ -192,8 +191,9 @@ def read_units(
 
     units = nwbfile.units
     if units is None:
+        msg = "NWBFile has no `units` table."
         raise missing_error(
-            "NWBFile has no `units` table.",
+            msg,
             fix="add sorted spikes with `nwbfile.add_unit(spike_times=...)` "
             "before reading.",
         )

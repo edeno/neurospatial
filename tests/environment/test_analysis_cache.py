@@ -24,7 +24,8 @@ N_THREADS = 4
 
 
 def _refuse_build():
-    raise AssertionError("expected a cached value")
+    msg = "expected a cached value"
+    raise AssertionError(msg)
 
 
 @pytest.fixture

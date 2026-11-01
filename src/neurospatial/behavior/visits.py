@@ -60,24 +60,26 @@ def _store_plain_scalars(
     for name in ints:
         value = getattr(record, name)
         if isinstance(value, bool | np.bool_):
-            raise TypeError(f"{record_name}.{name} must be an integer, got {value!r}.")
+            msg = f"{record_name}.{name} must be an integer, got {value!r}."
+            raise TypeError(msg)
         try:
             object.__setattr__(record, name, index(value))
         except TypeError:
-            raise TypeError(
-                f"{record_name}.{name} must be an integer, got {value!r}."
-            ) from None
+            msg = f"{record_name}.{name} must be an integer, got {value!r}."
+            raise TypeError(msg) from None
     for name in floats:
         object.__setattr__(record, name, float(getattr(record, name)))
     for name in bools:
         value = getattr(record, name)
         if not isinstance(value, bool | np.bool_):
-            raise TypeError(f"{record_name}.{name} must be a bool, got {value!r}.")
+            msg = f"{record_name}.{name} must be a bool, got {value!r}."
+            raise TypeError(msg)
         object.__setattr__(record, name, bool(value))
     for name in strings:
         value = getattr(record, name)
         if not isinstance(value, str):
-            raise TypeError(f"{record_name}.{name} must be a str, got {value!r}.")
+            msg = f"{record_name}.{name} must be a str, got {value!r}."
+            raise TypeError(msg)
         object.__setattr__(record, name, str(value))
 
 
@@ -138,16 +140,18 @@ class RegionVisit:
             strings=("region_name",),
         )
         if not self.start_index < self.stop_index:
-            raise ValueError(
+            msg = (
                 "RegionVisit needs start_index < stop_index (stop is exclusive and "
                 f"a visit has at least one sample); got {self.start_index} and "
                 f"{self.stop_index}."
             )
+            raise ValueError(msg)
         if not self.start_time <= self.end_time:
-            raise ValueError(
+            msg = (
                 "RegionVisit needs start_time <= end_time; got "
                 f"{self.start_time} and {self.end_time}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "duration", self.end_time - self.start_time)
 
 
@@ -210,7 +214,7 @@ class RegionTransition:
         if self.source_region == self.target_region:
             problems.append("different regions")
         if problems:
-            raise ValueError(
+            msg = (
                 "RegionTransition pairs an earlier entry with a later entry into "
                 f"another region; it needs {', '.join(problems)}. Got visits "
                 f"{self.source_visit_id} -> {self.target_visit_id}, regions "
@@ -218,6 +222,7 @@ class RegionTransition:
                 f"{self.start_index} -> {self.end_index}, times "
                 f"{self.start_time} -> {self.end_time}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "duration", self.end_time - self.start_time)
 
 
@@ -320,16 +325,18 @@ def detect_region_visits(
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(region_names, str):
-        raise TypeError(
-            "region_names must be a sequence of names, for example ['left', 'right']."
-        )
+        msg = "region_names must be a sequence of names, for example ['left', 'right']."
+        raise TypeError(msg)
     names = list(region_names)
     if not names:
-        raise ValueError("region_names must contain at least one named region.")
+        msg = "region_names must contain at least one named region."
+        raise ValueError(msg)
     if any(not isinstance(name, str) for name in names):
-        raise TypeError("region_names must contain strings from env.regions.")
+        msg = "region_names must contain strings from env.regions."
+        raise TypeError(msg)
     if len(set(names)) != len(names):
-        raise ValueError("region_names must not contain duplicate names.")
+        msg = "region_names must not contain duplicate names."
+        raise ValueError(msg)
     breaks = validate_break_before(
         break_before, clock.size, call="detect_region_visits"
     )
@@ -348,10 +355,11 @@ def detect_region_visits(
         overlap = mask & (labels >= 0)
         if overlap.any():
             other = sorted({names[index] for index in labels[overlap]})
-            raise ValueError(
+            msg = (
                 f"Selected region {name!r} overlaps {other} in {overlap.sum()} active bin(s). "
                 "Use disjoint bin-center memberships; region order does not resolve overlaps."
             )
+            raise ValueError(msg)
         labels[mask] = label
 
     # A sample at bin -1 is not located; as in env.occupancy, an interval
@@ -438,17 +446,15 @@ def region_transitions(visits: Sequence[RegionVisit]) -> list[RegionTransition]:
     """
     visits = list(visits)
     if any(not isinstance(visit, RegionVisit) for visit in visits):
-        raise TypeError(
-            "visits must contain RegionVisit records from detect_region_visits()."
-        )
+        msg = "visits must contain RegionVisit records from detect_region_visits()."
+        raise TypeError(msg)
     pairs = list(pairwise(visits))
     if any(
         target.visit_id <= source.visit_id or target.start_time < source.start_time
         for source, target in pairs
     ):
-        raise ValueError(
-            "visits must retain their original chronological visit order without duplicates."
-        )
+        msg = "visits must retain their original chronological visit order without duplicates."
+        raise ValueError(msg)
     return [
         RegionTransition(
             source_visit_id=source.visit_id,

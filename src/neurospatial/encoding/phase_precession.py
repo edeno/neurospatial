@@ -183,28 +183,30 @@ def theta_phase(
 
     lfp = np.asarray(lfp, dtype=np.float64)
     if lfp.ndim != 1:
-        raise ValueError(
+        msg = (
             f"lfp must be a 1-D array of shape (n_samples,), got shape {lfp.shape}.\n"
             f"Fix: pass a single LFP channel, e.g. lfp[:, channel]."
         )
+        raise ValueError(msg)
     # Reject non-finite samples up front: a single NaN/Inf makes sosfiltfilt
     # return an all-NaN trace, silently producing all-NaN phases. validate_finite
     # also coerces to float64.
     lfp = validate_finite(lfp, name="lfp")
     if not np.isfinite(sampling_rate) or sampling_rate <= 0:
-        raise ValueError(
-            f"sampling_rate must be a positive number (Hz), got {sampling_rate}."
-        )
+        msg = f"sampling_rate must be a positive number (Hz), got {sampling_rate}."
+        raise ValueError(msg)
     low, high = float(band[0]), float(band[1])
     if not (0 < low < high):
-        raise ValueError(f"band must be (low, high) with 0 < low < high, got {band}.")
+        msg = f"band must be (low, high) with 0 < low < high, got {band}."
+        raise ValueError(msg)
     nyquist = sampling_rate / 2.0
     if high >= nyquist:
-        raise ValueError(
+        msg = (
             f"band high edge ({high} Hz) must be below the Nyquist frequency "
             f"({nyquist} Hz = sampling_rate / 2). "
             f"Fix: lower the band or raise sampling_rate."
         )
+        raise ValueError(msg)
 
     # Zero-phase band-pass so the extracted phase is not time-shifted.
     # Second-order sections stay numerically stable when theta is a narrow
@@ -218,13 +220,14 @@ def theta_phase(
     # the minimum length instead.
     padlen = 3 * (2 * len(sos) + 1)
     if len(lfp) <= padlen:
-        raise ValueError(
+        msg = (
             f"lfp is too short for the zero-phase theta filter: got "
             f"{len(lfp)} sample(s), but the 4th-order Butterworth band-pass "
             f"requires more than {padlen} samples (sosfiltfilt padlen = "
             f"{padlen}).\n"
             f"Fix: pass a longer LFP segment (at least {padlen + 1} samples)."
         )
+        raise ValueError(msg)
 
     filtered = sosfiltfilt(sos, lfp, padlen=padlen)
 
@@ -414,14 +417,15 @@ def _slope_grid(
         or not np.all(np.isfinite(bounds))
         or bounds[0] >= bounds[1]
     ):
-        raise ValueError("slope_bounds must contain two finite, increasing bounds.")
+        msg = "slope_bounds must contain two finite, increasing bounds."
+        raise ValueError(msg)
     span = float(bounds[1] - bounds[0])
     position_span = float(np.ptp(positions))
     # The main lobe has half-width about pi / position_span. Resolve it with
     # four samples per half-width for both fitting and the permutation test.
     required_steps = 4 * span * position_span / np.pi
     if not np.isfinite(required_steps) or required_steps > 19_999:
-        raise ValueError(
+        msg = (
             f"slope_bounds={tuple(slope_bounds)} needs more than 20,000 slope "
             "candidates to resolve the fit.\n"
             "Why: the bounds are radians of phase change across the whole "
@@ -429,6 +433,7 @@ def _slope_grid(
             "(2*pi rad) per field.\n"
             "Fix: narrow slope_bounds, e.g. the default (-2*pi, 2*pi)."
         )
+        raise ValueError(msg)
     n_grid = max(100, int(np.ceil(required_steps)) + 1)
     return np.linspace(bounds[0], bounds[1], n_grid)
 
@@ -848,21 +853,23 @@ def _phase_precession(
         )
     n_shuffles_eff = int(n_shuffles)
     if n_shuffles_eff < 0:
-        raise ValueError(
+        msg = (
             f"n_shuffles must be non-negative, got {n_shuffles}.\n"
             "Fix: pass n_shuffles=0 to skip the shuffle test, or a positive count."
         )
+        raise ValueError(msg)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
     positions, phases = _validate_paired_input(
         positions, phases, "positions", "phases", min_samples=0
     )
     if len(positions) < min_spikes:
-        raise _InsufficientSpikesError(
+        msg = (
             f"Need at least min_spikes={min_spikes} spikes with finite position "
             f"and phase, got {len(positions)}.\n"
             "Fix: pool more passes through the field, or lower min_spikes."
         )
+        raise _InsufficientSpikesError(msg)
 
     # Wrap phases to [0, 2*pi] to ensure consistent residual calculation
     # during optimization. Input phases may be in any range after angle_unit
@@ -870,23 +877,25 @@ def _phase_precession(
     phases = phases % (2 * np.pi)
 
     if np.ptp(positions) == 0:
-        raise _InsufficientSpikesError(
+        msg = (
             f"All {len(positions)} spike positions equal {positions[0]}, so no "
             "phase-position slope can be fit.\n"
             "Fix: pass spikes from a pass through the place field, where "
             "position varies."
         )
+        raise _InsufficientSpikesError(msg)
     if position_range is None:
         start, end = float(positions.min()), float(positions.max())
     else:
         start, end = float(position_range[0]), float(position_range[1])
         if not (np.isfinite(start) and np.isfinite(end) and end > start):
-            raise ValueError(
+            msg = (
                 f"position_range must be (start, end) with end > start, got "
                 f"{position_range}.\n"
                 "Fix: pass the place-field boundaries in position units, e.g. "
                 "position_range=(20.0, 60.0)."
             )
+            raise ValueError(msg)
     width = end - start
     # Fit on positions rescaled to the range, so slope_bounds are radians
     # across the range whatever the position units.
@@ -1080,8 +1089,8 @@ def plot_phase_precession(
     marker_size: float = 20.0,
     marker_alpha: float = 0.6,
     show_doubled_note: bool = True,
-    scatter_kwargs: dict | None = None,
-    line_kwargs: dict | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
+    line_kwargs: dict[str, Any] | None = None,
 ) -> Axes:
     """
     Plot phase precession with doubled phase axis.
@@ -1159,10 +1168,11 @@ def plot_phase_precession(
 
     # Validate matching lengths
     if len(positions) != len(phases):
-        raise ValueError(
+        msg = (
             f"positions and phases must have the same length. "
             f"Got positions: {len(positions)}, phases: {len(phases)}."
         )
+        raise ValueError(msg)
 
     phases = to_radians(phases, angle_unit)
     if angle_unit == "rad":
@@ -1180,8 +1190,8 @@ def plot_phase_precession(
         _, ax = plt.subplots(figsize=(8, 6))
 
     # Default kwargs
-    scatter_defaults: dict = {"c": "C0", "zorder": 2}
-    line_defaults: dict = {"color": "red", "linewidth": 2, "zorder": 3}
+    scatter_defaults: dict[str, Any] = {"c": "C0", "zorder": 2}
+    line_defaults: dict[str, Any] = {"color": "red", "linewidth": 2, "zorder": 3}
 
     # Merge with user kwargs
     scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}

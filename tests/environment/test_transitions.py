@@ -567,7 +567,7 @@ class TestTransitionsModelBased:
 
     def test_unknown_method_error(self, minimal_1d_env):
         """Test error for unknown method."""
-        with pytest.raises(ValueError, match=r"Unknown method"):
+        with pytest.raises(ValueError, match=r"method must be one of"):
             minimal_1d_env.transitions(method="levy_flight")
 
     def test_model_with_lag_parameter_error(self, linear_track_1d_env):

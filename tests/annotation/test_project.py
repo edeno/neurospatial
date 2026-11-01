@@ -125,7 +125,7 @@ def test_unfinished_or_invalid_geometry_remains_editable(tmp_path, vertices):
 
 
 @pytest.mark.parametrize(
-    "shapes,match",
+    ("shapes", "match"),
     [
         (
             [
@@ -180,7 +180,7 @@ def test_missing_metadata_survives_save_and_load(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "matrix,size,match",
+    ("matrix", "size", "match"),
     [
         (np.eye(3), (9, 8), "frame_size_px"),
         (np.zeros((3, 3)), (10, 8), "affine"),
@@ -270,7 +270,8 @@ def test_failed_save_keeps_existing_project_and_removes_temporary_file(
 
     def fail(stream, **arrays):
         stream.write(b"partial archive")
-        raise OSError("disk full")
+        msg = "disk full"
+        raise OSError(msg)
 
     monkeypatch.setattr(np, "savez_compressed", fail)
     with pytest.raises(OSError, match="disk full"):
@@ -328,3 +329,8 @@ def test_display_preflight_allows_native_incomplete_and_complete_cardinalities()
             _validate_shapes_for_display(
                 [AnnotationShape(np.zeros((count, 2)), shape_type=shape_type)]
             )
+
+
+def test_video_path_of_another_type_is_refused():
+    with pytest.raises(TypeError, match="video_path must be a str, Path or None"):
+        AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), video_path=3)

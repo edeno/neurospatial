@@ -204,7 +204,7 @@ def _precompute_view_bins(
         if interval_mask is not None:
             required[:-1] = interval_mask
         if boundary_source == "physical" and np.any((wall_bins < 0) & required[wall]):
-            raise NotImplementedError(
+            msg = (
                 "Physical wall hit has no retained bin on the observer's side. "
                 "Build bins that reach the measured wall before computing view rates; "
                 "adding OpenArena or clipping existing cells cannot add missing bins. "
@@ -216,6 +216,7 @@ def _precompute_view_bins(
                 "choose boundary_source='analysis' to encode the retained analysis boundary. "
                 "compute_viewed_location(...) remains available for geometry-only wall contacts."
             )
+            raise NotImplementedError(msg)
         view_bins[wall] = wall_bins
 
     return view_bins

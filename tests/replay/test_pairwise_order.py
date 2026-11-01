@@ -302,7 +302,8 @@ class TestNulls:
         )
         observed_weights = calls[0][0][0]
         active = [u for u, train in enumerate(trains) if len(train)]
-        assert not centers[4] and 4 in active  # an active cell without a field
+        assert not centers[4]
+        assert 4 in active  # an active cell without a field
         field_sets = [tuple(c) for c in centers if len(c)]
         null = result.shuffles["cell_identity"].null_scores
         silent_field_taken = 0
@@ -613,8 +614,10 @@ class TestDetection:
             pairwise_order_method=GUPTA_2010,
             rng=0,
         )
-        assert forward.is_replay and forward.score > 0
-        assert backward.is_replay and backward.score < 0
+        assert forward.is_replay
+        assert forward.score > 0
+        assert backward.is_replay
+        assert backward.score < 0
         assert forward.p_value == pytest.approx(1 / 301)
         assert forward.n_shuffles_used == 300
         # z-scores are signed like the score.
@@ -695,7 +698,8 @@ class TestDetection:
         )
         # Reversed on "left" is forward on "right"; "left" backward ties it,
         # and "left" comes first.
-        assert result.template == "left" and result.score < 0
+        assert result.template == "left"
+        assert result.score < 0
         forward_only = dataclasses.replace(
             GUPTA_2010, name="forward", directions=("forward",)
         )
@@ -707,7 +711,9 @@ class TestDetection:
             pairwise_order_method=forward_only,
             rng=0,
         )
-        assert result.template == "right" and result.is_replay and result.score > 0
+        assert result.template == "right"
+        assert result.is_replay
+        assert result.score > 0
 
     def test_p_value_is_that_of_the_tests_own_stream(self, track):
         rates = _rates(track, [[b] for b in range(0, 20, 2)])

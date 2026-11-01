@@ -328,6 +328,7 @@ class TestComputeEgocentricRatesParameters:
 
         assert result.n_distance_bins == n_distance_bins
 
+    @pytest.mark.filterwarnings("ignore:.*peak in the outermost ring:UserWarning")
     def test_n_direction_bins_stored(self, trajectory_data, spike_times_list):
         """Test that n_direction_bins parameter is stored."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -366,6 +367,7 @@ class TestComputeEgocentricRatesParameters:
 
         assert result is not None
 
+    @pytest.mark.filterwarnings("ignore:.*peak in the outermost ring:UserWarning")
     def test_method_options(self, trajectory_data, spike_times_list):
         """Test that all smoothing methods work."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -908,11 +910,11 @@ class TestComputeObjectVectorRatesResultMethods:
 
     def test_plot_method_works(self, trajectory_data, spike_times_list):
         """Test that plot method works on batch result."""
-        import matplotlib
+        import matplotlib as mpl
 
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
 
         result = compute_egocentric_rates(
             None,

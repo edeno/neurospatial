@@ -471,5 +471,4 @@ def sample_2d_grid():
     n = 10
     points = [[i, j] for i in range(n) for j in range(n)]
     data = np.array(points, dtype=np.float64)
-    env = Environment.from_samples(data, bin_size=1.0)
-    return env
+    return Environment.from_samples(data, bin_size=1.0)

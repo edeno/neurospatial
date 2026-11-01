@@ -367,14 +367,16 @@ class AnnotationProjectSession:
         self.checkpoint()
         proposal = outline.proposal
         if proposal.mask.shape != self.frame.shape[:2]:
-            raise ValueError("Outline dimensions must match the reference frame.")
+            msg = "Outline dimensions must match the reference frame."
+            raise ValueError(msg)
         role, requested_name = self.controls.next_annotation()
         if role in ("wall", "landmark"):
-            raise ValueError(
+            msg = (
                 f"An outline is an area, not a {role}. Choose environment, hole "
                 f"or region under 'Accept as'; draw {role}s directly with "
                 "Annotation Controls."
             )
+            raise ValueError(msg)
         polygons = outline.polygons
         metadata = proposal.metadata
         outline_metadata: dict[str, Any] = {
@@ -384,10 +386,11 @@ class AnnotationProjectSession:
             outline_metadata["proposal_metadata"] = metadata["polygon_outline"]
         metadata["polygon_outline"] = outline_metadata
         if role == "environment" and len(polygons) != 1:
-            raise ValueError(
+            msg = (
                 "An environment needs one connected outline. Refine the preview "
                 "or accept separate components as regions."
             )
+            raise ValueError(msg)
         before = self._current
         existing = list(before.shapes)
         if role == "environment" and any(s.role == "environment" for s in existing):

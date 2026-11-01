@@ -160,11 +160,12 @@ class SungodDims(MazeDims):
 
     def __post_init__(self) -> None:
         if not (np.isfinite(self.scale) and self.scale > 0):
-            raise ValueError(
+            msg = (
                 f"SungodDims(scale={self.scale!r}) is not a scale factor: it must "
                 "be a positive, finite number. Use scale=1.0 for the traced "
                 "maze, about 1 m across, or a larger value to enlarge it."
             )
+            raise ValueError(msg)
 
 
 def make_sungod_maze(
@@ -557,7 +558,7 @@ def _create_sungod_track_graph(
     # the widest one: a sample within half that width of the centerline is
     # on the track, which lets a narrower arm admit a few samples just outside
     # its walls.
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edges,
         bin_size=bin_size,
@@ -565,5 +566,3 @@ def _create_sungod_track_graph(
         name="sungod_maze_1d",
         units="cm",
     )
-
-    return env_track

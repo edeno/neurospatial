@@ -285,7 +285,7 @@ class TestDatasetTest:
         """
         rng = np.random.default_rng(5)
         times = np.arange(10) * DT
-        sweeps = [np.eye(track.n_bins)[start + np.arange(10)] for start in range(0, 10)]
+        sweeps = [np.eye(track.n_bins)[start + np.arange(10)] for start in range(10)]
         mean_p, share_p = [], []
         for _ in range(200):
             seed = int(rng.integers(2**32))
@@ -594,9 +594,13 @@ class TestDatasetValues:
             track, pair, replay_method=method, shared=True, **common
         )
         apart = dataset_values(track, pair, replay_method=method, **common)
-        by_event = shared.pivot(index="dataset", columns="event", values="score")
+        by_event = shared.pivot_table(
+            index="dataset", columns="event", values="score", aggfunc="first"
+        )
         np.testing.assert_array_equal(by_event[0], by_event[1])
-        by_event = apart.pivot(index="dataset", columns="event", values="score")
+        by_event = apart.pivot_table(
+            index="dataset", columns="event", values="score", aggfunc="first"
+        )
         assert not np.array_equal(by_event[0], by_event[1])
 
     def test_shared_is_refused_for_nulls_that_act_on_each_event(self, track, session):
@@ -885,7 +889,8 @@ class TestRankOrderValues:
             )
             ours = null.loc[null["event"] == event, "score"].to_numpy()
             theirs = np.asarray(significance.shuffle.null_scores)
-            assert np.isfinite(ours).all() and np.isfinite(theirs).all()
+            assert np.isfinite(ours).all()
+            assert np.isfinite(theirs).all()
             assert stats.ks_2samp(ours, theirs).pvalue > 0.01, event
         real = dataset_values(
             track,
@@ -929,6 +934,11 @@ class TestRankOrderValues:
 
 
 class TestDistributionTest:
+    # At these sizes SciPy's exact KS p-value can fail and falls back to the
+    # asymptotic one, with a warning.
+    @pytest.mark.filterwarnings(
+        "ignore:ks_2samp. Exact calculation unsuccessful:RuntimeWarning"
+    )
     @pytest.mark.parametrize("test", ["ks", "rank_sum"])
     def test_side_is_stated_in_terms_of_the_values(self, test):
         rng = np.random.default_rng(0)
@@ -1170,9 +1180,9 @@ def test_silva_pooled_tests_run_on_absolute_correlations(track, session):
 
 @pytest.mark.parametrize("n_axes", [0, 1, 2])
 def test_plot_returns_the_axes(n_axes):
-    import matplotlib
+    import matplotlib as mpl
 
-    matplotlib.use("Agg")
+    mpl.use("Agg")
     import matplotlib.pyplot as plt
 
     rng = np.random.default_rng(0)

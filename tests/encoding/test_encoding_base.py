@@ -71,7 +71,7 @@ class TestToNumpy:
     """Tests for _to_numpy helper function."""
 
     @pytest.mark.parametrize(
-        "value,expected",
+        ("value", "expected"),
         [
             (np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0])),
             ([1.0, 2.0, 3.0], np.array([1.0, 2.0, 3.0])),
@@ -225,7 +225,8 @@ class TestSpatialResultMixin:
             min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
-        firing_rate = np.random.rand(n_bins) * 5.0
+        rng = np.random.default_rng(0)
+        firing_rate = rng.random(n_bins) * 5.0
         peak_value = 15.0
         firing_rate[n_bins // 2] = peak_value
 
@@ -253,7 +254,8 @@ class TestSpatialResultMixin:
         n_bins = simple_env.n_bins
         n_neurons = 3
 
-        firing_rates = np.random.rand(n_neurons, n_bins) * 5.0
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((n_neurons, n_bins)) * 5.0
         peak_values = [10.0, 15.0, 20.0]
         for i, peak_val in enumerate(peak_values):
             firing_rates[i, i + 1] = peak_val

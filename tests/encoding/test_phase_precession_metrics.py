@@ -1094,9 +1094,8 @@ class TestPlotPhasePrecession:
             texts = ax.texts
             for text in texts:
                 text_str = text.get_text().lower()
-                assert "doubled" not in text_str and "twice" not in text_str, (
-                    "Found doubled note when disabled"
-                )
+                assert "doubled" not in text_str, "Found doubled note when disabled"
+                assert "twice" not in text_str, "Found doubled note when disabled"
         finally:
             plt.close("all")
 
@@ -1354,7 +1353,10 @@ class TestHasPhasePrecessionValidation:
 
         positions = np.linspace(0, 50, 100)
         phases = np.linspace(0, 2 * np.pi, 90)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"positions and phases must have same length\. Got positions",
+        ):
             has_phase_precession(positions, phases)
 
     def test_has_phase_precession_default_work_is_bounded(

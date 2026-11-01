@@ -51,10 +51,11 @@ def test_seeded_reproducible():
 
 
 def test_rejects_too_short():
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(ValueError, match=r"Analyzed time is") as caught:
         list(stats.shuffle_spike_times_circular([10], [[0, 30]], min_shift=20))
     assert "min_shift" in str(caught.value)
-    assert "Why:" in str(caught.value) and "Fix:" in str(caught.value)
+    assert "Why:" in str(caught.value)
+    assert "Fix:" in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -100,28 +101,34 @@ def test_large_clock_rounding_stays_below_excluded_stop():
 
 @pytest.mark.parametrize("windows", [[[5, 1], [0, np.nan]], [[1, 2, 3]]])
 def test_invalid_windows_fix_names_primitive_argument(windows):
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError, match=r"Why: circular shifting requires finite half-open"
+    ) as exc:
         list(stats.shuffle_spike_times_circular([10], windows))
     message = str(exc.value)
-    assert "windows" in message and "Why:" in message
+    assert "windows" in message
+    assert "Why:" in message
     fix = message.split("Fix:", 1)[1]
     assert "windows=" in fix
-    assert "epochs" not in fix and "spike_window" not in fix and "None" not in fix
+    assert "epochs" not in fix
+    assert "spike_window" not in fix
+    assert "None" not in fix
     if len(windows) == 2:
-        assert "stop <= start" in message and "NaN" in message
+        assert "stop <= start" in message
+        assert "NaN" in message
     else:
         assert "shape" in message
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "message"),
     [
-        {"n_shuffles": -5},
-        {"windows": np.array([[10.0, 5.0]])},
-        {"min_shift": 1e6},
+        ({"n_shuffles": -5}, "must be a positive integer"),
+        ({"windows": np.array([[10.0, 5.0]])}, "have stop <= start"),
+        ({"min_shift": 1e6}, "not longer than 2 \\* min_shift"),
     ],
 )
-def test_invalid_arguments_raise_at_call_not_first_draw(kwargs):
+def test_invalid_arguments_raise_at_call_not_first_draw(kwargs, message):
     """Errors must surface where the shuffle is set up, before any draw."""
     options = {
         "windows": np.array([[0.0, 100.0]]),
@@ -130,5 +137,5 @@ def test_invalid_arguments_raise_at_call_not_first_draw(kwargs):
         "rng": 0,
         **kwargs,
     }
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         stats.shuffle_spike_times_circular(np.array([1.0, 2.0]), **options)

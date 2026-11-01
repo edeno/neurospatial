@@ -67,9 +67,8 @@ class _PolarGridLayout(MaskedGridLayout):
             If the grid is not two-dimensional or the masked grid is invalid.
         """
         if np.ndim(active_mask) != 2 or len(grid_edges) != 2:
-            raise ValueError(
-                "Polar layouts require a 2-D mask and two grid edge arrays."
-            )
+            msg = "Polar layouts require a 2-D mask and two grid edge arrays."
+            raise ValueError(msg)
         super().build(
             active_mask=active_mask,
             grid_edges=grid_edges,
@@ -81,7 +80,8 @@ class _PolarGridLayout(MaskedGridLayout):
         distances = _polar_pair_lengths(self.bin_centers, grid_pairs)
         n_distance, n_angle = active_mask.shape
         if circular_angle and n_angle > 1:
-            assert self.grid_edges is not None and self.active_mask is not None
+            assert self.grid_edges is not None
+            assert self.active_mask is not None
             distance_edges, angle_edges = self.grid_edges
             distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
             seams, seam_lengths = _circular_seam_pairs(

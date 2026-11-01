@@ -22,10 +22,10 @@ git clone https://github.com/edeno/neurospatial.git
 cd neurospatial
 
 # Install with uv (recommended)
-uv sync --extra dev
+uv sync
 
 # Or with pip
-pip install -e ".[dev]"
+pip install -e . --group dev  # pip >= 25.1
 ```
 
 The `dev` extra includes testing, linting, and development tools:
@@ -42,7 +42,7 @@ To build the documentation locally:
 
 ```bash
 # Install with documentation dependencies
-uv sync --extra docs --extra notebooks
+uv sync --group docs --group notebooks
 
 # Sync example notebooks
 uv run python docs/sync_notebooks.py

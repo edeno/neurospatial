@@ -212,12 +212,15 @@ def _bin_pairs(
     if bin_mapping is None:
         if differences.bins is not None:
             named, fix = _bin_refusal(differences.bins, env_a, env_b, caller)
-            raise IncompatibleEnvironmentError(
+            msg = (
                 f"{caller.operation}: {caller.first} and {caller.second} were "
                 f"estimated on environments that differ in {named}, so bin j of "
                 f"one map is not {_paired_meaning(differences.bins)} as bin j of "
                 "the other. Equal numbers of bins do not make the bins "
-                "match.",
+                "match."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix=fix,
                 first=env_a,
                 second=env_b,
@@ -228,11 +231,14 @@ def _bin_pairs(
         pairs = _validate_bin_mapping(bin_mapping, env_a, env_b, differences, caller)
         topology_difference = _mapped_topology_difference(env_a, env_b, pairs)
     if topology_difference is not None and topology == "same":
-        raise IncompatibleEnvironmentError(
+        msg = (
             f"{caller.operation}: {caller.first} and {caller.second} were "
             f"estimated on environments that differ in {topology_difference}, "
             "so smoothing over each environment passed a field between bins "
-            "differently (different neighbors, walls or face sizes).",
+            "differently (different neighbors, walls or face sizes)."
+        )
+        raise IncompatibleEnvironmentError(
+            msg,
             fix='pass topology="may_differ" to accept this when the bins are the '
             "same places and only how they connect changed (a door opened, one "
             "map covers part of the arena, or cell faces between neighbors "
@@ -302,9 +308,12 @@ def _validate_bin_mapping(
     )
     if reason is not None:
         named, fix = _bin_refusal(reason, env_a, env_b, caller)
-        raise IncompatibleEnvironmentError(
+        msg = (
             f"{operation}: bin_mapping pairs bins that differ in {named}, so "
-            f"paired bins are not {_paired_meaning(reason)}.",
+            f"paired bins are not {_paired_meaning(reason)}."
+        )
+        raise IncompatibleEnvironmentError(
+            msg,
             fix=fix,
             first=env_a,
             second=env_b,

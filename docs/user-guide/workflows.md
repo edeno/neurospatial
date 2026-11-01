@@ -1253,7 +1253,7 @@ assert np.isfinite(reactivation.explained_variance) and np.isfinite(
 
 `n_significant` counts dimensions above a random-matrix reference, not neurons
 with calibrated p-values. If no dimension passes, the result has no patterns
-and a warning says so. Pattern `member_indices` are positions in the
+(`n_significant == 0`; compare `eigenvalues[0]` with `threshold`). Pattern `member_indices` are positions in the
 selected unit order; `member_unit_ids` gives the original labels, and passing
 `unit_ids=` to `assembly_activation`, or `control_unit_ids=` and
 `match_unit_ids=` to `assembly_reactivation`, matches the count columns to the

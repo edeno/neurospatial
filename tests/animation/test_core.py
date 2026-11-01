@@ -27,6 +27,8 @@ from neurospatial.animation.core import (
 from neurospatial.animation.overlays import PositionOverlay
 from neurospatial.animation.scene import Animation, AnimationField
 
+from ._video_helpers import read_video
+
 
 @pytest.fixture
 def env():
@@ -272,7 +274,7 @@ class TestExports:
                 assert not np.array_equal(frames[1], other.render_frame(0.1, dpi=30))
 
     def test_video_holds_one_frame_per_row_at_the_sampling_rate(self, env, tmp_path):
-        imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+        pytest.importorskip("imageio_ffmpeg")
         times = np.arange(5) / 20.0
         path = animate_fields(
             env,
@@ -282,10 +284,9 @@ class TestExports:
             dpi=30,
         )
         assert path == tmp_path / "a.mp4"
-        reader = imageio_ffmpeg.read_frames(str(path))
-        meta = next(reader)
+        meta, frames = read_video(path)
         assert meta["fps"] == pytest.approx(20.0)
-        assert len(list(reader)) == 5
+        assert len(frames) == 5
         assert [item.name for item in tmp_path.iterdir()] == ["a.mp4"]
 
     @pytest.mark.parametrize(("speed", "fps"), [(1.0, 30.0), (0.5, 15.0), (2.0, 60.0)])
@@ -644,7 +645,8 @@ class TestEstimateColormapRangeFromSubset:
         vmin, vmax = estimate_colormap_range_from_subset(fields)
 
         # Nearly every frame's peak is below the top color, not above it.
-        assert vmin == 0.0 and vmax > np.percentile(peaks, 95)
+        assert vmin == 0.0
+        assert vmax > np.percentile(peaks, 95)
         assert (vmin, vmax) == robust_limits(*frame_extremes(fields))
 
     def test_custom_percentiles(self):
@@ -692,6 +694,7 @@ class TestEstimateColormapRangeFromSubset:
         assert isinstance(vmax, float)
         assert vmin < vmax
 
+    @pytest.mark.wallclock
     def test_fast_for_large_dataset(self):
         """Test that function completes quickly for large datasets."""
         import time
@@ -741,7 +744,8 @@ def test_lazy_reader_that_is_not_an_array_is_read_by_row(env):
             return np.full(env.n_bins, float(index))
 
         def __iter__(self):
-            raise AssertionError("the whole dataset was read")
+            msg = "the whole dataset was read"
+            raise AssertionError(msg)
 
     data = Dataset(1_000)
     times = np.arange(1_000) / 10
@@ -770,7 +774,8 @@ def test_napari_view_without_napari_says_how_to_install(env, monkeypatch):
 
     def without_napari(name, *args, **kwargs):
         if name == "napari" or name.startswith("napari."):
-            raise ModuleNotFoundError("No module named 'napari'")
+            msg = "No module named 'napari'"
+            raise ModuleNotFoundError(msg)
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", without_napari)

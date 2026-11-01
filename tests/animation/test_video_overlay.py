@@ -16,6 +16,8 @@ from PIL import Image
 from neurospatial import Environment
 from neurospatial.animation.overlays import VideoOverlay
 
+from ._video_helpers import read_video
+
 if TYPE_CHECKING:
     from neurospatial.ops.transforms import VideoCalibration
 
@@ -46,7 +48,7 @@ def test_video_is_composited_into_every_frame_and_follows_the_clock(
     sample_calibration: VideoCalibration,
 ):
     """Video frame i has brightness 25 * i, so later frames are brighter."""
-    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
+    pytest.importorskip("imageio_ffmpeg")
     overlay = VideoOverlay(
         source=sample_video_array,
         calibration=sample_calibration,
@@ -62,9 +64,10 @@ def test_video_is_composited_into_every_frame_and_follows_the_clock(
         vmax=1.0,
         dpi=50,
     )
-    reader = imageio_ffmpeg.read_frames(str(path))
-    next(reader)
-    frames = [np.frombuffer(frame, dtype=np.uint8).astype(float) for frame in reader]
+    _, raw_frames = read_video(path)
+    frames = [
+        np.frombuffer(frame, dtype=np.uint8).astype(float) for frame in raw_frames
+    ]
     # One output frame per row, through the last.
     assert len(frames) == N_ROWS
     brightness = [frame.mean() for frame in frames]

@@ -31,10 +31,10 @@ def load_trace(path: str | Path) -> list[dict]:
     # Handle both array format and object format with "traceEvents" key
     if isinstance(data, list):
         return data
-    elif isinstance(data, dict) and "traceEvents" in data:
+    if isinstance(data, dict) and "traceEvents" in data:
         return data["traceEvents"]  # type: ignore[no-any-return]
-    else:
-        raise ValueError(f"Unknown trace format in {path}")
+    msg = f"Unknown trace format in {path}"
+    raise ValueError(msg)
 
 
 def analyze_trace(events: list[dict]) -> None:

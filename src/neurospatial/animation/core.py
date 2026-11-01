@@ -246,10 +246,11 @@ def _field_streams(
             else [f"field {i + 1}" for i in range(len(fields))]
         )
         if len(names) != len(fields):
-            raise ValueError(
+            msg = (
                 f"layer_names has {len(names)} names for {len(fields)} fields. "
                 "Pass one name per field."
             )
+            raise ValueError(msg)
         streams = dict(zip(names, fields, strict=True))
     else:
         # Arrays, lazy readers (memmap, h5py) and lists of frames are one
@@ -293,7 +294,8 @@ def _field_streams(
         vmin = low if vmin is None else vmin
         vmax = high if vmax is None else vmax
         if vmin > vmax:
-            raise ValueError("vmin must be less than or equal to vmax.")
+            msg = "vmin must be less than or equal to vmax."
+            raise ValueError(msg)
         for name in plain:
             shared = copy.copy(built[name])
             object.__setattr__(shared, "vmin", vmin)
@@ -339,12 +341,13 @@ def _n_frames(fields: Any) -> int:
     if not isinstance(fields, Mapping) and not (
         hasattr(fields, "__getitem__") and hasattr(fields, "__len__")
     ):
-        raise TypeError(
+        msg = (
             "fields must be an array or an indexable sequence of rows "
             "(n_frames, n_bins), a list of such fields, or a mapping from name "
             f"to field; got {type(fields).__name__}. Fix: pass np.asarray(rows) "
             "or a memory-mapped array instead of an iterator."
         )
+        raise TypeError(msg)
     if isinstance(fields, Mapping):
         fields = next(iter(fields.values()), [])
     elif isinstance(fields, np.ndarray):
@@ -438,7 +441,8 @@ def animate_fields(
         Scene options for every backend: ``cmap``, ``vmin``, ``vmax``,
         ``colorbar_label``, ``layer_names``, ``title``, ``window_seconds``,
         ``track``. File options: ``dpi``, ``figsize``, ``n_workers`` and,
-        for video, ``codec``, ``crf``, ``preset``, ``bitrate``; for HTML,
+        for video, ``codec``, ``crf``, ``preset``, ``bitrate`` (``bitrate`` takes precedence when
+        both ``bitrate`` and ``crf`` are given); for HTML,
         ``image_format``, ``max_html_frames``, ``embed``, ``frames_dir``.
         View options: ``dpi`` and ``figsize`` (widget); ``viewer``, ``show``,
         ``ndisplay``, ``layout`` (napari); ``layout``, ``frame_labels``,
@@ -622,7 +626,7 @@ def _select_backend(
     try:
         from IPython import get_ipython  # type: ignore[attr-defined]
 
-        in_jupyter = get_ipython() is not None
+        in_jupyter = get_ipython() is not None  # type: ignore[no-untyped-call, unused-ignore]
     except ImportError:
         in_jupyter = False
     if in_jupyter and n_frames <= 10_000:
@@ -678,11 +682,11 @@ def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.i
 
 
 def subsample_frames(
-    fields: NDArray | list,
+    fields: NDArray[Any] | list[Any],
     *,
     target_fps: int,
     source_fps: int,
-) -> NDArray | list:
+) -> NDArray[Any] | list[Any]:
     """Subsample frames to target frame rate.
 
     Essential utility for large-scale sessions. Allows users to reduce
@@ -742,22 +746,20 @@ def subsample_frames(
     - 1000 Hz → 60 fps: takes frames at indices [0, 17, 33, 50, ...]
     """
     if target_fps > source_fps:
-        raise ValueError(
-            f"target_fps ({target_fps}) cannot exceed source_fps ({source_fps})"
-        )
+        msg = f"target_fps ({target_fps}) cannot exceed source_fps ({source_fps})"
+        raise ValueError(msg)
 
     indices = _subsample_indices(len(fields), source_fps, target_fps)
 
     if isinstance(fields, np.ndarray):
-        result: NDArray | list = fields[indices]
+        result: NDArray[Any] | list[Any] = fields[indices]
         return result
-    else:
-        result_list: NDArray | list = [fields[i] for i in indices]
-        return result_list
+    result_list: NDArray[Any] | list[Any] = [fields[i] for i in indices]
+    return result_list
 
 
 def estimate_colormap_range_from_subset(
-    fields: NDArray | list,
+    fields: NDArray[Any] | list[Any],
     *,
     n_samples: int = 10_000,
     percentile: tuple[float, float] = (1.0, 99.0),

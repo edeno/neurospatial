@@ -162,12 +162,15 @@ def assembly_member_cofiring(
     Warns
     -----
     UserWarning
-        If the pattern has fewer than two members (no pair; the means are
-        NaN), or members are constant in a period (their pairs are NaN
-        there).
+        If members are constant in a period (their pairs are NaN there and
+        are left out of both means).
 
     Notes
     -----
+    A pattern with fewer than two members has no pair to correlate, so the
+    means are NaN (no warning is raised); ``n_member_pairs`` counts the pairs
+    the means use.
+
     **Event bins and their durations.** With one row per event, each count
     is a number of spikes in an interval whose length varies from event to
     event. Every unit fires more in a longer event, so the counts of every
@@ -229,10 +232,11 @@ def assembly_member_cofiring(
             labels_argument=labels_argument,
         )
         if checked.shape[1] != pattern.weights.size:
-            raise ValueError(
+            msg = (
                 f"{call}: {argument} has {checked.shape[1]} neurons but the "
                 f"pattern has {pattern.weights.size} weights. They must match."
             )
+            raise ValueError(msg)
         periods.append(checked)
     members = pattern.member_indices
     member_labels = np.asarray(pattern.unit_ids)[members]
@@ -252,13 +256,6 @@ def assembly_member_cofiring(
             )
         correlations.append(pairs)
     control, match = correlations
-    if members.size < 2:
-        warnings.warn(
-            f"{call}: the pattern has {members.size} member(s), so it has no "
-            "pair of members to correlate; the means are NaN.",
-            UserWarning,
-            stacklevel=2,
-        )
     both = np.isfinite(control) & np.isfinite(match)
     control_mean = float(control[both].mean()) if both.any() else np.nan
     match_mean = float(match[both].mean()) if both.any() else np.nan
@@ -340,14 +337,16 @@ def _pattern_weights(
         )
     labels = np.asarray(items[0].unit_ids)
     if any(not np.array_equal(np.asarray(item.unit_ids), labels) for item in items):
-        raise ValueError(
+        msg = (
             f"{call}: every pattern of {argument} must carry the same unit_ids, "
             "as the patterns of one detect_assemblies() result do."
         )
+        raise ValueError(msg)
     weights = np.array([item.weights for item in items], dtype=np.float64)
     norms = np.linalg.norm(weights, axis=1)
     if np.any(norms == 0):
-        raise ValueError(f"{call}: a pattern of {argument} has only zero weights.")
+        msg = f"{call}: a pattern of {argument} has only zero weights."
+        raise ValueError(msg)
     return weights / norms[:, None], labels, items[0]._unit_ids_generated
 
 
@@ -426,11 +425,12 @@ def assembly_similarity(
         )
     if generated:
         if reference.shape[1] != weights.shape[1]:
-            raise ValueError(
+            msg = (
                 f"{call}: the patterns have {weights.shape[1]} weights and the "
                 f"reference patterns {reference.shape[1]}; without unit labels "
                 "they must match by position."
             )
+            raise ValueError(msg)
     else:
         order, only_reference, only_patterns = _label_order(reference_labels, labels)
         if only_reference or only_patterns:
@@ -554,10 +554,11 @@ def _checked_event_windows(
             or not np.all(np.isfinite(array))
             or array[0] >= array[1]
         ):
-            raise ValueError(
+            msg = (
                 f"{owner}: {name} must be (start, stop) in seconds{relative} with "
                 f"start < stop, got {value!r}."
             )
+            raise ValueError(msg)
         return float(array[0]), float(array[1])
 
     full = pair("window", window)
@@ -574,9 +575,8 @@ def _checked_event_windows(
         inside = full[0] <= part[0] and part[1] <= full[1]
         if step is None:
             if not inside:
-                raise ValueError(
-                    f"{owner}: {name}={value} must lie inside window={window}."
-                )
+                msg = f"{owner}: {name}={value} must lie inside window={window}."
+                raise ValueError(msg)
         elif not inside or not _window_holds_lag(full, part, step):
             raise ValueError(
                 _format_error(
@@ -894,12 +894,14 @@ def assembly_event_response(
         timestamps_of(event_times, name="event_times"), dtype=np.float64
     )
     if sample_times.ndim != 1 or sample_times.size < 2:
-        raise ValueError(f"{call}: times must be 1-D with at least 2 samples.")
+        msg = f"{call}: times must be 1-D with at least 2 samples."
+        raise ValueError(msg)
     if strength.shape != sample_times.shape:
-        raise ValueError(
+        msg = (
             f"{call}: activation must have one value per time, got shape "
             f"{strength.shape} for {sample_times.size} times."
         )
+        raise ValueError(msg)
     if not np.all(np.isfinite(sample_times)) or np.any(np.diff(sample_times) <= 0):
         raise ValueError(
             _format_error(
@@ -908,9 +910,11 @@ def assembly_event_response(
             )
         )
     if events.ndim != 1 or not np.all(np.isfinite(events)):
-        raise ValueError(f"{call}: event_times must be a 1-D array of finite times.")
+        msg = f"{call}: event_times must be a 1-D array of finite times."
+        raise ValueError(msg)
     if reduce not in ("mean", "peak"):
-        raise ValueError(f"{call}: reduce must be 'mean' or 'peak', got {reduce!r}.")
+        msg = f"{call}: reduce must be 'mean' or 'peak', got {reduce!r}."
+        raise ValueError(msg)
     step = float(np.median(np.diff(sample_times)))
     full, response, baseline = _checked_event_windows(
         window, response_window, baseline_window, call, step
@@ -1085,25 +1089,26 @@ def explained_variance_contributions(
         vectors.append(np.asarray(control_correlations, dtype=np.float64))
     n_pairs = template.size
     if any(vector.shape != (n_pairs,) for vector in vectors):
-        raise ValueError(
+        msg = (
             f"{call}: the correlation vectors must be 1-D with the same length, "
             f"got shapes {[vector.shape for vector in vectors]}."
         )
+        raise ValueError(msg)
     n_units = _n_units_from_pairs(n_pairs)
     if n_units is None:
-        raise ValueError(
+        msg = (
             f"{call}: {n_pairs} pairs is not n_units * (n_units - 1) / 2 for any "
             "number of units; pass pairwise_correlations() output."
         )
+        raise ValueError(msg)
     labels = resolve_unit_ids(unit_ids, n_units, context=call)
     valid = _selected_pairs(n_pairs, None, pair_mask, call=call)
     for vector in vectors:
         valid &= np.isfinite(vector)
     n_valid = int(valid.sum())
     if n_valid < 4:
-        raise ValueError(
-            f"{call}: {n_valid} valid pairs; leaving one out needs at least 4."
-        )
+        msg = f"{call}: {n_valid} valid pairs; leaving one out needs at least 4."
+        raise ValueError(msg)
     total = explained_variance_reactivation(
         template,
         match,

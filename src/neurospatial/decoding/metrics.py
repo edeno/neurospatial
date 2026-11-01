@@ -238,16 +238,18 @@ def _paired_positions(
     decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
     actual_positions = np.asarray(actual_positions, dtype=np.float64)
     if decoded_positions.shape != actual_positions.shape:
-        raise ValueError(
+        msg = (
             f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
             f"but actual_positions has shape {actual_positions.shape}"
         )
+        raise ValueError(msg)
     if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
-        raise ValueError(
+        msg = (
             f"{call} needs positions with {env.n_dims} columns, one per "
             f"dimension of the environment; got shape {decoded_positions.shape}. "
             "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
         )
+        raise ValueError(msg)
     return decoded_positions, actual_positions
 
 
@@ -367,6 +369,8 @@ def median_decoding_error(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
+    if np.isnan(errors).all():  # no time bin with an actual position
+        return float("nan")
     return float(np.nanmedian(errors))
 
 
@@ -433,7 +437,7 @@ def confusion_matrix(
 
     Create a simple environment and posterior:
 
-    >>> positions = np.array([[0, 0], [5, 0], [0, 5], [5, 5]])
+    >>> positions = np.array([[0, 0], [10, 0], [0, 10], [10, 10]])
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> n_bins = env.n_bins
 
@@ -462,27 +466,32 @@ def confusion_matrix(
 
     # Validate shapes
     if posterior.ndim != 2:
-        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
+        msg = f"posterior must be 2D, got shape {posterior.shape}"
+        raise ValueError(msg)
     if posterior.shape[1] != n_bins:
-        raise ValueError(
+        msg = (
             f"posterior has {posterior.shape[1]} bins but environment has {n_bins} bins"
         )
+        raise ValueError(msg)
     if actual_bins.ndim != 1:
-        raise ValueError(f"actual_bins must be 1D, got shape {actual_bins.shape}")
+        msg = f"actual_bins must be 1D, got shape {actual_bins.shape}"
+        raise ValueError(msg)
     if len(actual_bins) != n_time_bins:
-        raise ValueError(
+        msg = (
             f"Length mismatch: posterior has {n_time_bins} time bins but "
             f"actual_bins has {len(actual_bins)}"
         )
+        raise ValueError(msg)
 
     # Validate actual_bins range
     if np.any(actual_bins < 0) or np.any(actual_bins >= n_bins):
         min_bin = int(actual_bins.min())
         max_bin = int(actual_bins.max())
-        raise ValueError(
+        msg = (
             f"actual_bins contains values outside valid range [0, {n_bins}). "
             f"Found range [{min_bin}, {max_bin}]."
         )
+        raise ValueError(msg)
 
     # Rows with any non-finite posterior entry are undecodable (e.g. the
     # all-NaN rows that normalize_to_posterior(handle_degenerate="nan")
@@ -649,9 +658,8 @@ def decoding_correlation(
     else:
         weights = np.asarray(weights, dtype=np.float64)
         if weights.shape != (n_time_bins,):
-            raise ValueError(
-                f"weights must have shape ({n_time_bins},), got {weights.shape}"
-            )
+            msg = f"weights must have shape ({n_time_bins},), got {weights.shape}"
+            raise ValueError(msg)
         invalid = ~np.isfinite(weights) | (weights < 0)
         if np.any(invalid):
             raise ValueError(

@@ -148,9 +148,7 @@ def create_benchmark_env(n_bins: int, seed: int = 42):
     n_samples = max(1000, grid_size * 10)
     positions = rng.uniform(0, grid_size, size=(n_samples, 2))
 
-    env = Environment.from_samples(positions, bin_size=1.0)
-
-    return env
+    return Environment.from_samples(positions, bin_size=1.0)
 
 
 def create_benchmark_fields(
@@ -186,7 +184,8 @@ def create_benchmark_fields(
 
     if use_memmap:
         if tmpdir is None:
-            raise ValueError("tmpdir required for memmap")
+            msg = "tmpdir required for memmap"
+            raise ValueError(msg)
         memmap_path = tmpdir / "fields.dat"
         fields: NDArray[np.float64] = np.memmap(
             str(memmap_path),
@@ -201,9 +200,8 @@ def create_benchmark_fields(
             fields[start:end] = rng.random((end - start, n_bins))
         fields.flush()
         return fields, memmap_path
-    else:
-        fields = rng.random((n_frames, n_bins))
-        return fields, None
+    fields = rng.random((n_frames, n_bins))
+    return fields, None
 
 
 def create_colormap_lookup() -> NDArray[np.uint8]:
@@ -596,7 +594,7 @@ Examples:
             config = RENDERER_CONFIGS[config_name]
             result = run_renderer_benchmark(config)
             all_results[config_name] = result
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 
@@ -610,7 +608,7 @@ Examples:
     print("\n" + "=" * 60)
     print("DETAILED RESULTS")
     print("=" * 60)
-    for _config_name, result in all_results.items():
+    for result in all_results.values():
         result.print_table()
 
     # Print key insights

@@ -305,7 +305,7 @@ _TRACK.add_edge(1, 2, distance=6.0)
 
 
 @pytest.mark.parametrize(
-    "kind,params",
+    ("kind", "params"),
     [
         ("RegularGrid", {"bin_size": 1.0, "dimension_ranges": [(0.0, 4.0)] * 2}),
         ("Hexagonal", {"hexagon_width": 2.0, "dimension_ranges": [(0.0, 8.0)] * 2}),

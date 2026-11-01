@@ -61,7 +61,9 @@ def elevated(request):
 
 @pytest.fixture(scope="module", params=WALLED)
 def walled(request):
-    return getattr(mazes, request.param)(bin_size=4.0).env_2d
+    # Hamlet's slanted agora wall is only kept below 2.1 cm bins.
+    bin_size = 2.0 if request.param == "make_hamlet_maze" else 4.0
+    return getattr(mazes, request.param)(bin_size=bin_size).env_2d
 
 
 def test_elevated_maze_edges_are_drops(elevated):

@@ -312,16 +312,18 @@ class _CircularSequenceScorer(_Scorer):
         self.angles, self.loop_length = _bin_angles(env)
         posterior = np.asarray(posterior)
         if posterior.ndim != 2:
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: posterior must be 2-D, (n_time_bins, n_bins), "
                 f"got shape {posterior.shape}."
             )
+            raise ValueError(msg)
         if posterior.shape[1] != env.n_bins:
-            raise ValueError(
+            msg = (
                 f"{_OPERATION}: posterior has {posterior.shape[1]} columns but "
                 f"the environment has {env.n_bins} bins. Pass the posterior "
                 "decoded on this environment, with one column per bin."
             )
+            raise ValueError(msg)
         self.posterior = _probability_rows(posterior, _OPERATION, sums="one")
         self.times = _posterior_times(
             times, len(self.posterior), _OPERATION, why=_FIT_WHY, distinct=True

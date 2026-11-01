@@ -175,25 +175,25 @@ class SmallHexDims(MazeDims):
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.hex_side) and self.hex_side > 0):
-            raise ValueError(
-                f"hex_side must be a positive length in cm, got {self.hex_side!r}."
-            )
+            msg = f"hex_side must be a positive length in cm, got {self.hex_side!r}."
+            raise ValueError(msg)
         barriers = frozenset(operator.index(b) for b in self.barriers)
         object.__setattr__(self, "barriers", barriers)
         refused = sorted(barriers - _ALLOWED_BARRIERS)
         if refused:
-            raise ValueError(
+            msg = (
                 f"barriers {refused} are not hexes a movable barrier can occupy "
                 "in the hexmaze numbering. "
                 "Use hexes 7-46 except 33, 38 and 43: hexes 1-3 hold the reward "
                 "ports, and the three hexes leading to each port (4-6, 33, 38, "
                 "43, 47-49) stay open."
             )
+            raise ValueError(msg)
         graph = _maze_graph(barriers)
         components = sorted(nx.connected_components(graph), key=len, reverse=True)
         if len(components) > 1:
             cut_off = sorted(h for c in components[1:] for h in c)
-            raise ValueError(
+            msg = (
                 f"barriers {{{', '.join(map(str, sorted(barriers)))}}} cut off "
                 "open hex"
                 f"{'es' if len(cut_off) > 1 else ''} "
@@ -201,6 +201,7 @@ class SmallHexDims(MazeDims):
                 "Every open hex must be reachable; move a barrier next to "
                 "the cut-off hexes."
             )
+            raise ValueError(msg)
 
 
 def _maze_graph(barriers: frozenset[int]) -> nx.Graph:
@@ -410,7 +411,8 @@ def make_small_hex_maze(
     )
     if not isinstance(floor_lattice, Polygon):
         # SmallHexDims refuses barriers that cut off hexes.
-        raise RuntimeError("the hex maze floor is not one connected piece")
+        msg = "the hex maze floor is not one connected piece"
+        raise RuntimeError(msg)
     floor = affine_transform(floor_lattice, to_cm)
 
     env_2d = Environment.from_polygon(

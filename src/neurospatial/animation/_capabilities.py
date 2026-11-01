@@ -85,9 +85,8 @@ def require_scene_overlays(data: OverlayData, n_dims: int) -> None:
     if missing:
         drawn = _VIEWS["widget"][n_dims]
         names = ", ".join(_OVERLAY_NAMES[name] for name in missing)
-        raise ValueError(
-            f"A {n_dims}D scene cannot draw {names}: {drawn.why}. {drawn.fix}"
-        )
+        msg = f"A {n_dims}D scene cannot draw {names}: {drawn.why}. {drawn.fix}"
+        raise ValueError(msg)
 
 
 def _views_drawing(n_dims: int, overlays: frozenset[str] = frozenset()) -> list[str]:
@@ -106,10 +105,11 @@ def _require_view_draws(backend: str, scene: Animation) -> None:
         views = " or ".join(
             f"Animation.show(backend={view!r})" for view in _views_drawing(n_dims)
         )
-        raise ValueError(
+        msg = (
             f"The {backend} view cannot draw {n_dims}D scenes. "
             f"Use {views} for this environment."
         )
+        raise ValueError(msg)
     missing = _left_out(backend, scene._overlay_data, n_dims)
     if missing:
         drawn = dims[n_dims]
@@ -121,10 +121,11 @@ def _require_view_draws(backend: str, scene: Animation) -> None:
             if drawing
             else drawn.fix
         )
-        raise ValueError(
+        msg = (
             f"The {backend} view of a {n_dims}D scene cannot draw {names}: "
             f"{drawn.why}. {fix}"
         )
+        raise ValueError(msg)
 
 
 def checked_speed(speed: Any) -> float:
@@ -132,11 +133,11 @@ def checked_speed(speed: Any) -> float:
     try:
         value = float(speed)
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "speed must be a positive finite playback multiplier."
-        ) from exc
+        msg = "speed must be a positive finite playback multiplier."
+        raise ValueError(msg) from exc
     if not np.isfinite(value) or value <= 0:
-        raise ValueError("speed must be a positive finite playback multiplier.")
+        msg = "speed must be a positive finite playback multiplier."
+        raise ValueError(msg)
     return value
 
 
@@ -147,7 +148,8 @@ def checked_max_playback_fps(max_playback_fps: Any) -> int:
         or not isinstance(max_playback_fps, (int, np.integer))
         or max_playback_fps <= 0
     ):
-        raise ValueError("max_playback_fps must be a positive integer.")
+        msg = "max_playback_fps must be a positive integer."
+        raise ValueError(msg)
     return int(max_playback_fps)
 
 
@@ -155,11 +157,11 @@ def _checked_fps(fps: Any) -> float:
     try:
         value = float(fps)
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "fps must be a positive finite number of steps a second."
-        ) from exc
+        msg = "fps must be a positive finite number of steps a second."
+        raise ValueError(msg) from exc
     if not np.isfinite(value) or value <= 0:
-        raise ValueError("fps must be a positive finite number of steps a second.")
+        msg = "fps must be a positive finite number of steps a second."
+        raise ValueError(msg)
     return value
 
 
@@ -191,23 +193,26 @@ _SCENE_OPTIONS = {
 def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) -> None:
     """Check the entire request before importing or allocating a native viewer."""
     if backend not in _SCENE_OPTIONS:
-        raise ValueError("Use backend='widget', 'napari', or 'fastplotlib'.")
+        msg = "Use backend='widget', 'napari', or 'fastplotlib'."
+        raise ValueError(msg)
     unknown = set(options) - _SCENE_OPTIONS[backend]
     if unknown:
-        raise TypeError(
-            f"Unknown {backend} view options: {', '.join(sorted(unknown))}."
-        )
+        msg = f"Unknown {backend} view options: {', '.join(sorted(unknown))}."
+        raise TypeError(msg)
     _require_view_draws(backend, scene)
     for name, check in _PLAYBACK_CHECKS.items():
         if name in options:
             check(options[name])
     layout = options.get("layout")
     if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
-        raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
+        msg = "layout must be 'horizontal', 'vertical' or 'grid'."
+        raise ValueError(msg)
     if backend == "napari" and options.get("ndisplay", scene.env.n_dims) not in (2, 3):
-        raise ValueError("ndisplay must be 2 or 3 for a napari scene view.")
+        msg = "ndisplay must be 2 or 3 for a napari scene view."
+        raise ValueError(msg)
     if backend == "fastplotlib" and scene.scale_bar:
-        raise ValueError(
+        msg = (
             "The fastplotlib scene backend cannot draw scale_bar. "
             "Use backend='widget' or backend='napari', or omit scale_bar."
         )
+        raise ValueError(msg)

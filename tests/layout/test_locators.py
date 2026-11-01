@@ -122,7 +122,10 @@ def test_locator_matches_previous_lookup(
             locator.locate(points)
     elif f"{prefix}/error_type" in locator_parity:
         assert locator_parity[f"{prefix}/error_type"].item() == "ValueError"
-        with pytest.raises(ValueError) as exc:
+        with pytest.raises(
+            ValueError,
+            match=r"Dimensionality mismatch|Expected points of shape|Query points have",
+        ) as exc:
             locator.locate(points)
         assert str(exc.value) == locator_parity[f"{prefix}/error_message"].item()
     else:
@@ -177,9 +180,15 @@ def test_wrong_coordinate_width_is_rejected_before_row_filtering(
     """Empty or entirely missing batches still have to name the right axes."""
     env = built_environment
     points = np.full((n_rows, env.n_dims + width_offset), fill)
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"Dimensionality mismatch|Expected points of shape|Query points have",
+    ):
         env._binning.locator.locate(points)
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match=r"Dimensionality mismatch|Expected points of shape|Query points have",
+    ):
         env._binning.locator.locate(points)
 
 
@@ -468,7 +477,8 @@ def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
 
     class FailingTree:
         def query(self, points, k=1, **options):
-            raise MemoryError("query buffer")
+            msg = "query buffer"
+            raise MemoryError(msg)
 
     locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
     monkeypatch.setattr(

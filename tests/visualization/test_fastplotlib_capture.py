@@ -207,15 +207,18 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
         animation._unit.show(animation._rasters[0], 1)
         animation.widget.indices = {"time": 0.2}
         animation.widget.ui_sliders._playing["time"] = True
-        with (
-            pytest.raises(RuntimeError, match="writer failed"),
-            animation.capture_session() as capture,
-        ):
-            capture(100.8)
-            np.testing.assert_allclose(animation._unit.field.values, rates[1])
-            low, high = animation.figure["series 0"].x_range
-            assert (low + high) / 2 == pytest.approx(0.8)
-            raise RuntimeError("writer failed")
+
+        def capture_then_fail():
+            with animation.capture_session() as capture:
+                capture(100.8)
+                np.testing.assert_allclose(animation._unit.field.values, rates[1])
+                low, high = animation.figure["series 0"].x_range
+                assert (low + high) / 2 == pytest.approx(0.8)
+                msg = "writer failed"
+                raise RuntimeError(msg)
+
+        with pytest.raises(RuntimeError, match="writer failed"):
+            capture_then_fail()
         assert animation.widget.indices["time"] == pytest.approx(0.2)
         assert animation.widget.ui_sliders._playing["time"]
         assert all(not graphic.pause for graphic in animation.widget.ndgraphics)
@@ -345,7 +348,8 @@ def test_native_constructor_failure_drains_allocated_workers(env, monkeypatch):
         monkeypatch.setattr(self.figure.canvas, "close", close_canvas)
         # Start a real read executor so the assertion verifies shutdown.
         self._frames._reader.submit(lambda: None).result()
-        raise RuntimeError("Initial source read failed")
+        msg = "Initial source read failed"
+        raise RuntimeError(msg)
 
     monkeypatch.setattr(FastplotlibAnimation, "_show", fail_initial_show)
     scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.1])
@@ -354,7 +358,8 @@ def test_native_constructor_failure_drains_allocated_workers(env, monkeypatch):
     native = allocated[0]
     assert native._closed
     assert cleanup_order == ["workers", "canvas"]
-    assert not scene._closed and not scene._views
+    assert not scene._closed
+    assert not scene._views
     assert native.figure.canvas.get_closed()
     assert isinstance(native._frames._reader, ThreadPoolExecutor)
     with pytest.raises(RuntimeError, match="shutdown"):

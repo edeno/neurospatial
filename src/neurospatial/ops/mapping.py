@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+from neurospatial._validation import validate_mapping
 from neurospatial.geometry import (
     CallIndexes,
     _nearest_lowest_index,
@@ -56,27 +57,31 @@ def _validate_nearest_options(
 ) -> None:
     """Validate the tie-break name and the distance controls."""
     if max_distance is not None and max_distance_factor is not None:
-        raise ValueError(
+        msg = (
             "Cannot specify both max_distance and max_distance_factor. "
             "Choose one distance threshold method."
         )
+        raise ValueError(msg)
 
     if max_distance is not None and not max_distance >= 0:  # NaN is no distance
-        raise ValueError(f"max_distance must be non-negative, got {max_distance}")
+        msg = f"max_distance must be non-negative, got {max_distance}"
+        raise ValueError(msg)
 
     if max_distance_factor is not None and not (
         np.isfinite(max_distance_factor) and max_distance_factor > 0
     ):
-        raise ValueError(
+        msg = (
             f"max_distance_factor must be positive and finite, got "
             f"{max_distance_factor}"
         )
+        raise ValueError(msg)
 
     if tie_break not in _TIE_BREAKS:
-        raise ValueError(
+        msg = (
             f"Invalid tie_break value: {tie_break!r}. Must be one of: "
             f"{list(_TIE_BREAKS)}"
         )
+        raise ValueError(msg)
 
 
 @overload
@@ -325,13 +330,14 @@ def _regions_mask(
         resolved = [named(r) if isinstance(r, str) else r for r in regions]
     elif isinstance(regions, Region):
         resolved = [regions]
-    elif isinstance(regions, Mapping):
-        resolved = [_require_region(r, key=k) for k, r in regions.items()]
     else:
-        raise TypeError(
-            "regions must be str, list[str], Region, or a mapping of names to "
-            f"Region values; got {type(regions).__name__}."
+        mapping = validate_mapping(
+            regions,
+            name="regions",
+            owner="region_bin_masks()",
+            hint="pass a str, list[str], Region, or a mapping of names to Region values",
         )
+        resolved = [_require_region(r, key=k) for k, r in mapping.items()]
     masks = region_bin_masks(
         resolved,
         binning=binning,
@@ -539,30 +545,35 @@ def resample_field(
     src_centers = src_env.bin_centers
     dst_centers = dst_env.bin_centers
     if field.shape[0] != src_centers.shape[0]:
-        raise ValueError(
+        msg = (
             f"Field size {field.shape[0]} does not match source environment "
             f"n_bins ({src_centers.shape[0]})"
         )
+        raise ValueError(msg)
 
     if method not in ("nearest", "diffuse"):
-        raise ValueError(f"method must be 'nearest' or 'diffuse' (got '{method}')")
+        msg = f"method must be 'nearest' or 'diffuse' (got '{method}')"
+        raise ValueError(msg)
 
     if method == "diffuse":
         if bandwidth is None:
-            raise ValueError(
+            msg = (
                 "bandwidth must be provided when method='diffuse'. "
                 "Specify bandwidth parameter (in spatial units)."
             )
+            raise ValueError(msg)
         if not (np.isfinite(bandwidth) and bandwidth > 0):
-            raise ValueError(f"bandwidth must be positive and finite (got {bandwidth})")
+            msg = f"bandwidth must be positive and finite (got {bandwidth})"
+            raise ValueError(msg)
 
     # Check dimension compatibility
     if src_centers.shape[1] != dst_centers.shape[1]:
-        raise ValueError(
+        msg = (
             f"Source and destination environments must have same number of dimensions. "
             f"Source has {src_centers.shape[1]}D, "
             f"destination has {dst_centers.shape[1]}D."
         )
+        raise ValueError(msg)
 
     if method == "nearest":
         return _nearest_source_values(field, src_env, dst_centers)
@@ -596,12 +607,13 @@ def _diffuse_resample(
 
     if np.isinf(field).any():
         # NaN is a missing bin; an infinite value has no average to give.
-        raise ValueError(
+        msg = (
             "Field contains infinite values. "
             f"Found {int(np.sum(np.isinf(field)))} infinite values out of "
             f"{len(field)} bins. Replace them with finite values, or with NaN "
             "for bins without a value."
         )
+        raise ValueError(msg)
     half = bandwidth / np.sqrt(2.0)
     observed = ~np.isnan(field)
     stacked = np.column_stack([np.where(observed, field, 0.0), observed.astype(float)])

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import numpy as np
 import pytest
 
@@ -54,7 +56,7 @@ def test_track_coordinates_retain_segment_spacing_and_missing_positions():
 
 
 @pytest.mark.parametrize(
-    "env_metadata, track_metadata, accepted",
+    ("env_metadata", "track_metadata", "accepted"),
     [
         ({}, {}, True),
         (
@@ -73,14 +75,24 @@ def test_track_coordinates_retain_segment_spacing_and_missing_positions():
 def test_projection_requires_corresponding_units_and_frames(
     env_metadata, track_metadata, accepted
 ):
-    plane = Environment.from_grid_mask(
-        np.ones((2, 1), dtype=bool),
-        grid_edges=(np.arange(3.0), np.arange(2.0)),
-        **env_metadata,
-    )
-    track = Environment.linear_track(
-        endpoints=[[0.0, 0.5], [2.0, 0.5]], bin_size=1, **track_metadata
-    )
+    # "centimeters" is accepted as cm but is not a registered unit name.
+    free_form_units = "centimeters" in {
+        env_metadata.get("units"),
+        track_metadata.get("units"),
+    }
+    with (
+        pytest.warns(UserWarning, match="standard registry")
+        if free_form_units
+        else nullcontext()
+    ):
+        plane = Environment.from_grid_mask(
+            np.ones((2, 1), dtype=bool),
+            grid_edges=(np.arange(3.0), np.arange(2.0)),
+            **env_metadata,
+        )
+        track = Environment.linear_track(
+            endpoints=[[0.0, 0.5], [2.0, 0.5]], bin_size=1, **track_metadata
+        )
     if accepted:
         assert _checked_track(plane, track) is track
     else:

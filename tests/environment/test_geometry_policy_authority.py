@@ -33,7 +33,7 @@ def test_stored_polar_arena_owns_small_grid_circularity(n_angle, circular):
 
 def test_factor_rebin_depends_on_grid_geometry_instead_of_kind_label():
     source = Environment.from_samples(
-        np.array([[0.0, 0.0], [4.0, 4.0]]),
+        np.array([[0.0, 0.0], [5.0, 5.0]]),
         bin_size=1.0,
         infer_active_bins=False,
     )

@@ -260,8 +260,9 @@ class TestShufflePlaceFieldsCircular2D:
 
         # Create a full grid by using infer_active_bins=False
         positions = np.random.default_rng(42).uniform(0, 10, (1000, 2))
-        env = Environment.from_samples(positions, bin_size=2.0, infer_active_bins=False)
-        return env
+        return Environment.from_samples(
+            positions, bin_size=2.0, infer_active_bins=False
+        )
 
     @pytest.fixture
     def encoding_models_2d(self, env_2d) -> np.ndarray:
@@ -271,8 +272,7 @@ class TestShufflePlaceFieldsCircular2D:
         n_bins = int(np.prod(grid_shape))
         rng = np.random.default_rng(42)
         # Create simple place fields with some structure
-        models = rng.random((3, n_bins))
-        return models
+        return rng.random((3, n_bins))
 
     def test_yields_correct_number_of_shuffles(
         self, encoding_models_2d: np.ndarray, env_2d
@@ -523,7 +523,7 @@ class TestShufflePosteriorWeightedCircular:
             (np.ones(19), 0.0, "one finite, non-negative weight per bin"),
             (np.r_[-1.0, np.ones(19)], 0.0, "one finite, non-negative"),
             (np.r_[np.nan, np.ones(19)], 0.0, "one finite, non-negative"),
-            (np.ones(20), -1.0, "edge_exclusion must be a finite distance"),
+            (np.ones(20), -1.0, "edge_exclusion must be finite and nonnegative"),
             (np.r_[1.0, np.zeros(18), 1.0], 2.0, "has weight"),
             (np.ones(20), 10.0, "has weight"),
         ],

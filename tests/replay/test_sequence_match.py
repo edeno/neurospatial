@@ -187,7 +187,8 @@ class TestBestMatch:
         match = best_sequence_match(env, _letters(cells, n_cells=10), (1.0, 2.0), maps)
         assert (match.matched_letters, match.interruptions) == (6, 0)
         assert match.match_probability == pytest.approx(13 / 5040, rel=1e-12)
-        assert match.exact and match.n_letters == 7
+        assert match.exact
+        assert match.n_letters == 7
         # 12 orderings have a (6, 0) match and one a better one.
         dense = _dense(np.array(cells))
         distribution = _exact_distribution(tuple(np.sort(dense)), "interruptions_first")
@@ -299,7 +300,8 @@ class TestBestMatch:
         env, rates = track
         spikes = [np.array([1.0]), np.array([1.0])] + [np.array([])] * 18
         match = best_sequence_match(env, spikes, (1.0, 2.0), rates)
-        assert match.matched_letters == 0 and match.match_probability == 1.0
+        assert match.matched_letters == 0
+        assert match.match_probability == 1.0
 
     def test_sampled_probability_agrees_with_exact(self, track):
         env, rates = track
@@ -315,7 +317,8 @@ class TestBestMatch:
             n_samples=20_000,
             rng=0,
         )
-        assert exact.exact and not sampled.exact
+        assert exact.exact
+        assert not sampled.exact
         assert sampled.standard_error > 0
         assert abs(sampled.match_probability - exact.match_probability) < (
             3 * sampled.standard_error + 1 / 20_001
@@ -469,4 +472,5 @@ class TestMatchingIndex:
     def test_too_few_active_cells_has_no_index(self, track):
         env, rates = track
         result = sequence_matching_index(env, _letters([0, 1, 2]), (1.0, 2.0), rates)
-        assert result.n_active_cells == 3 and np.isnan(result.score)
+        assert result.n_active_cells == 3
+        assert np.isnan(result.score)

@@ -61,8 +61,7 @@ def selective_firing_rate() -> jnp.ndarray:
         Firing rate with a single peak at bin 50.
     """
     rate = jnp.zeros(100, dtype=jnp.float64)
-    rate = rate.at[50].set(30.0)
-    return rate
+    return rate.at[50].set(30.0)
 
 
 @pytest.fixture

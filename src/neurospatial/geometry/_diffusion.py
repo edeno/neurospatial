@@ -65,19 +65,21 @@ class FaceGeometry(NamedTuple):
         """
         n_bins = graph.number_of_nodes()
         if graph.is_directed() or graph.is_multigraph():
-            raise ValueError(
+            msg = (
                 f"finite-volume geometry needs an undirected simple nx.Graph, got "
                 f"{type(graph).__name__}. Each edge is one shared face, so reciprocal "
                 "or parallel edges would sum into a doubled conductance. Collapse "
                 "them first, e.g. nx.Graph(graph) after merging parallel edges."
             )
+            raise ValueError(msg)
         nodes = list(graph.nodes)
         if not all(
             isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in nodes
         ) or {int(x) for x in nodes} != set(range(n_bins)):
-            raise ValueError(
+            msg = (
                 "graph nodes must be contiguous integer labels 0..n-1 (no float/bool)."
             )
+            raise ValueError(msg)
         measures = _validate_volumes(volumes, n_bins).copy()
 
         edges: list[tuple[int, int]] = []
@@ -85,9 +87,8 @@ class FaceGeometry(NamedTuple):
         distances: list[float] = []
         for u, v, data in graph.edges(data=True):
             if "A" not in data or "distance" not in data:
-                raise ValueError(
-                    f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
-                )
+                msg = f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
+                raise ValueError(msg)
             edges.append((int(u), int(v)))
             areas.append(float(data["A"]))
             distances.append(float(data["distance"]))
@@ -98,12 +99,14 @@ class FaceGeometry(NamedTuple):
         if bad.any():
             k = int(np.argmax(bad))
             u, v = edge_array[k]
-            raise ValueError(f"edge ({u},{v}) has invalid face measure A={area[k]}.")
+            msg = f"edge ({u},{v}) has invalid face measure A={area[k]}."
+            raise ValueError(msg)
         bad = ~(np.isfinite(distance) & (distance > 0.0))
         if bad.any():
             k = int(np.argmax(bad))
             u, v = edge_array[k]
-            raise ValueError(f"edge ({u},{v}) has invalid distance d={distance[k]}.")
+            msg = f"edge ({u},{v}) has invalid distance d={distance[k]}."
+            raise ValueError(msg)
         for array in (edge_array, area, distance, measures):
             array.setflags(write=False)
         return cls(edge_array, area, distance, measures)
@@ -170,11 +173,9 @@ def _validate_volumes(volumes: NDArray[np.float64], n_bins: int) -> NDArray[np.f
     """Validate cell measures before any division or matrix construction."""
     measures = np.asarray(volumes, dtype=np.float64)
     if measures.shape != (n_bins,):
-        raise ValueError(
-            f"volumes must have shape ({n_bins},), but got {measures.shape}."
-        )
+        msg = f"volumes must have shape ({n_bins},), but got {measures.shape}."
+        raise ValueError(msg)
     if not np.all(np.isfinite(measures)) or np.any(measures <= 0.0):
-        raise ValueError(
-            "volumes must be finite and strictly positive (per-bin cell volume)."
-        )
+        msg = "volumes must be finite and strictly positive (per-bin cell volume)."
+        raise ValueError(msg)
     return measures

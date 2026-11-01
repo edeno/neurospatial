@@ -253,6 +253,4 @@ def t_maze_environment():
     region_builder.add("center", point=(50.0, 55.0))
     region_builder.add("left", point=(10.0, 55.0))
     region_builder.add("right", point=(90.0, 55.0))
-    env = env.with_regions(region_builder)
-
-    return env
+    return env.with_regions(region_builder)

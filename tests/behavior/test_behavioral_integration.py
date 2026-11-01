@@ -105,7 +105,7 @@ class TestVTEDecisionAnalysisIntegration:
             position_bins, times, env, region="decision"
         )
 
-        # Run VTE session - should use same entry detection
+        # Run VTE session - should use same entry detection.
         result = compute_vte_session(
             env,
             times,
@@ -190,7 +190,8 @@ class TestVTERoundTrip:
             for i in range(n_trials)
         ]
 
-        # Run VTE session
+        # Run VTE session; the trial that never reaches the decision region
+        # is reported as NaN.
         result = compute_vte_session(
             env,
             times_array,

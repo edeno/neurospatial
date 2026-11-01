@@ -286,11 +286,9 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
         assert table["cell_type"].iloc[0] == "undetermined"
 
-        # label_cell_types agrees with the table and says why.
+        # label_cell_types agrees with the table; the reason is in the table.
         population = compute_spatial_rates(env, [spike_times], times, positions)
-        with pytest.warns(UserWarning, match="grid_score cannot be computed") as caught:
-            labels = population.label_cell_types(boundary_source="analysis")
-        assert "Hexagonal" in str(caught[0].message)
+        labels = population.label_cell_types(boundary_source="analysis")
         np.testing.assert_array_equal(labels, ["undetermined"])
 
     def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:
@@ -312,7 +310,8 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         assert autocorr.shape == (19, 19)
         # Shifts past the strip's three rows have no overlap at all.
-        assert np.isnan(autocorr[:7]).all() and np.isnan(autocorr[12:]).all()
+        assert np.isnan(autocorr[:7]).all()
+        assert np.isnan(autocorr[12:]).all()
         np.testing.assert_allclose(autocorr[7:12], expected, atol=1e-12)
 
 
@@ -560,9 +559,9 @@ def test_pixel_size_refuses_what_the_autocorrelogram_refuses(case) -> None:
 
     env = _pixel_size_cases()[case]()
     rate = np.random.default_rng(13).random(env.n_bins)
-    with pytest.raises(Exception) as autocorrelation_error:
+    with pytest.raises((NotImplementedError, TypeError)) as autocorrelation_error:
         spatial_autocorrelation(env, rate)
-    with pytest.raises(Exception) as pixel_error:
+    with pytest.raises((NotImplementedError, TypeError)) as pixel_error:
         autocorrelation_pixel_size(env)
 
     assert type(pixel_error.value) is type(autocorrelation_error.value)
@@ -749,7 +748,8 @@ class TestGridOrientationInEnvironmentFrame:
             for grid in self.GRIDS
         }
 
-        assert shapes["square-even"][0] % 2 == 0 and shapes["square-odd"][0] % 2 == 1
+        assert shapes["square-even"][0] % 2 == 0
+        assert shapes["square-odd"][0] % 2 == 1
         assert len({n % 2 for n in shapes["anisotropic-mixed"]}) == 2
         assert abs(widths["anisotropic"][1] / widths["anisotropic"][0] - 1) > 0.2
 

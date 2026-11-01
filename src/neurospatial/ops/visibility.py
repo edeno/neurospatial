@@ -502,9 +502,11 @@ class ViewshedResult(ReadOnlyArraysMixin):
             and np.all(np.diff(cues) > 0)
         ):
             problems.append("visible_cues are increasing non-negative cue indices")
-        for name in ("cue_distances", "cue_bearings"):
-            if np.shape(getattr(self, name)) != n_cues:
-                problems.append(f"{name} needs shape {n_cues}, like visible_cues")
+        problems.extend(
+            f"{name} needs shape {n_cues}, like visible_cues"
+            for name in ("cue_distances", "cue_bearings")
+            if np.shape(getattr(self, name)) != n_cues
+        )
         return problems
 
     @property
@@ -771,10 +773,11 @@ def _resolve_gaze_distance(
             )
         )
     if not (np.isfinite(view_distance) and view_distance > 0):
-        raise ValueError(
+        msg = (
             f"{context}: view_distance must be a positive finite distance, "
             f"got {view_distance!r}."
         )
+        raise ValueError(msg)
     return float(view_distance)
 
 
@@ -805,9 +808,8 @@ def gaze_points(
     headings = np.asarray(headings, dtype=np.float64)
 
     if method not in ("fixed_distance", "ray_cast"):
-        raise ValueError(
-            f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
-        )
+        msg = f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
+        raise ValueError(msg)
     if method == "ray_cast" and env is None:
         raise ValueError(
             _format_error(

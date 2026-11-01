@@ -58,7 +58,7 @@ def scene(env):
         TimeSeriesOverlay(np.sin(CLOCK * 5), CLOCK, label="LFP"),
         SpikeRasterOverlay([np.array([0.1, 0.9]), np.array([0.2])]),
     ]
-    with pytest.warns(UserWarning, match="no calibration"):
+    with pytest.warns(UserWarning, match="Partial temporal overlap"):
         animation = Animation(env, fields, frame_times=CLOCK, overlays=overlays)
     yield animation
     animation.close()
@@ -94,7 +94,8 @@ def test_missing_samples_hide_artists_drawn_on_the_previous_frame(scene):
     trail = next(item for item in ax.collections if isinstance(item, LineCollection))
     marker = next(item for item in ax.collections if item.get_zorder() == 101)
     assert np.isfinite(mesh().get_array()).any()
-    assert len(trail.get_segments()) == 2 and marker.get_visible()
+    assert len(trail.get_segments()) == 2
+    assert marker.get_visible()
     # Position dropout: no marker and no trail bridging the gap.
     renderer.render(0.4)
     assert not marker.get_visible()
@@ -103,7 +104,8 @@ def test_missing_samples_hide_artists_drawn_on_the_previous_frame(scene):
     renderer.render(0.55)
     assert np.ma.getmaskarray(mesh().get_array()).all()
     # Overlay artists are updated rather than replaced.
-    assert trail in ax.collections and marker in ax.collections
+    assert trail in ax.collections
+    assert marker in ax.collections
     renderer.close()
 
 
@@ -112,7 +114,9 @@ def test_raster_rows_stay_fixed_while_units_fall_silent(scene):
     renderer.render(0.2)
     raster = next(ax for ax in renderer.figure.axes if ax.get_ylabel() == "Unit")
     limits = raster.get_ylim()
-    assert limits[0] <= -0.4 and limits[1] >= 1.4  # every row is in view
+    # every row is in view
+    assert limits[0] <= -0.4
+    assert limits[1] >= 1.4
     renderer.render(1.1)  # the second unit has no spike in this window
     assert raster.get_ylim() == limits
     renderer.close()
@@ -137,8 +141,10 @@ def test_1d_field_axes_stay_fixed_and_keep_markers_through_missing_rows():
         assert (ax.get_xlim(), ax.get_ylim()) == limits
         xmin, xmax = limits[0]
         ymin, ymax = limits[1]
-        assert xmin <= env.dimension_ranges[0][0] and xmax >= env.dimension_ranges[0][1]
-        assert ymin <= 0 and ymax >= 3.0
+        assert xmin <= env.dimension_ranges[0][0]
+        assert xmax >= env.dimension_ranges[0][1]
+        assert ymin <= 0
+        assert ymax >= 3.0
         markers = [
             artist.get_offsets()
             for artist in ax.collections

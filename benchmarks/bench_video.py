@@ -242,7 +242,7 @@ Examples:
         try:
             result = run_video_benchmark(config_name)
             results.append(result)
-        except Exception as e:
+        except Exception as e:  # noqa: PERF203  # each case reports its own failure
             print(f"\nERROR running {config_name}: {e}")
             import traceback
 

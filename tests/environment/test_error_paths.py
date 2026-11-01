@@ -36,9 +36,8 @@ class TestPathBetweenErrorPaths:
         assert bin2 >= 0
         assert bin1 != bin2
 
-        # Should warn and return empty path when no path exists
-        with pytest.warns(UserWarning, match="No path found"):
-            path = env.path_between(bins=[bin1, bin2])
+        # The empty path is the answer for disconnected bins (no warning)
+        path = env.path_between(bins=[bin1, bin2])
 
         assert path == []
         assert isinstance(path, list)
@@ -318,7 +317,8 @@ class TestBinAtErrorPaths:
         env = Environment.linear_track(
             endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0, track_width=5.0
         )
-        assert env.is_linearized_track and env.n_dims == 2
+        assert env.is_linearized_track
+        assert env.n_dims == 2
 
         positions_2d = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         linear = np.asarray(env.to_linear(positions_2d)).reshape(-1, 1)  # (50, 1)

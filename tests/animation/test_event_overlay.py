@@ -219,7 +219,9 @@ class TestEventOverlayValidation:
         position_times = np.array([0.0, 1.0])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: Both event_positions and positions/position_times"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 positions=positions,
@@ -237,7 +239,9 @@ class TestEventOverlayValidation:
 
         event_times = np.array([0.5, 1.5])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: No position data provided for events"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 # No positions or event_positions!
@@ -254,7 +258,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.5])
         positions = np.array([[0.0, 0.0], [10.0, 10.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: positions provided without position_times"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 positions=positions,
@@ -271,7 +277,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.5])
         position_times = np.array([0.0, 1.0])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"WHAT: position_times provided without positions"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 position_times=position_times,
@@ -288,7 +296,7 @@ class TestEventOverlayValidation:
         event_times = np.array([[0.5, 1.5], [2.0, 2.5]])  # 2D!
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"is not 1D") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -304,7 +312,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.nan, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"non-finite values \(NaN or Inf\)"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -320,7 +330,9 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, np.inf, 1.5])
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"non-finite values \(NaN or Inf\)"
+        ) as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -336,7 +348,7 @@ class TestEventOverlayValidation:
         event_times = np.array([0.5, 1.0, 1.5, 2.0])  # 4 events
         event_positions = np.array([[10.0, 20.0], [30.0, 40.0]])  # Only 2 positions
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"WHAT: event_positions for") as exc_info:
             EventOverlay(
                 event_times=event_times,
                 event_positions=event_positions,
@@ -812,8 +824,8 @@ class TestEventOverlayEdgeCases:
         assert len(event_data.event_positions["event"]) == 0
         assert len(event_data.event_frame_indices["event"]) == 0
 
-    def test_events_outside_frame_times_range_warns(self, mock_env):
-        """Test that events outside frame_times range emit warning."""
+    def test_events_outside_frame_times_range_are_excluded(self, mock_env):
+        """Events outside the frame_times range are left out, recorded in event_times."""
         from neurospatial.animation.overlays import EventOverlay
 
         # Events at t=-1 and t=15, but frames only cover 0-10
@@ -828,14 +840,14 @@ class TestEventOverlayEdgeCases:
         frame_times = np.linspace(0.0, 10.0, 11)  # 0 to 10
         n_frames = 11
 
-        with pytest.warns(UserWarning, match="outside"):
-            event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         # Only the event at t=5 should be included
         assert len(event_data.event_positions["event"]) == 1
+        np.testing.assert_array_equal(event_data.event_times["event"], [5.0])
 
-    def test_events_outside_position_times_range_warns(self, mock_env):
-        """Test that events outside position_times range emit warning (trajectory mode)."""
+    def test_events_outside_position_times_range_are_excluded(self, mock_env):
+        """Events outside the frame range are left out in trajectory mode too."""
         from neurospatial.animation.overlays import EventOverlay
 
         positions = np.array([[0.0, 0.0], [100.0, 100.0]])
@@ -847,16 +859,17 @@ class TestEventOverlayEdgeCases:
             event_times=event_times,
             positions=positions,
             position_times=position_times,
+            max_gap=None,  # the 10 s sampling is deliberate; bridge it
         )
 
         frame_times = np.linspace(0.0, 10.0, 11)
         n_frames = 11
 
-        with pytest.warns(UserWarning, match="outside"):
-            event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         # Only the event at t=5 should be included
         assert len(event_data.event_positions["event"]) == 1
+        np.testing.assert_array_equal(event_data.event_times["event"], [5.0])
 
 
 class TestEventOverlayPerformance:
@@ -993,6 +1006,7 @@ class TestConvertOverlaysToDataWithEvents:
         position_overlay = PositionOverlay(
             positions=np.array([[10.0, 20.0], [30.0, 40.0]]),
             times=np.array([0.0, 10.0]),
+            max_gap=None,  # the 10 s sampling is deliberate; bridge it
         )
         event_overlay = EventOverlay(
             event_times=np.array([5.0]),

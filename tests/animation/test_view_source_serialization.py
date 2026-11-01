@@ -33,7 +33,8 @@ class _Rows:
         return self.shape[0]
 
     def __array__(self, *args, **kwargs):
-        raise AssertionError("View preparation must keep sources lazy")
+        msg = "View preparation must keep sources lazy"
+        raise AssertionError(msg)
 
     def __getitem__(self, index):
         with self.mutex:
@@ -187,7 +188,8 @@ def test_napari_below_video_statistics_share_lock_with_existing_reader(env):
             handle._build_fields()
         assert not rows.overlaps
         assert len(rows.reads) == 103  # 100 scale rows and three consumers.
-        assert initial and np.all(initial[0] == 1)
+        assert initial
+        assert np.all(initial[0] == 1)
     finally:
         scene.close()
 
@@ -235,7 +237,8 @@ def test_scene_close_waits_for_view_statistics_snapshot(env, monkeypatch):
         try:
             view = opened.result(timeout=5)
         except RuntimeError as error:
-            assert "clos" in str(error)
+            if "clos" not in str(error):  # codespell:ignore clos
+                raise
         else:
             view.close()
         closed.result(timeout=5)

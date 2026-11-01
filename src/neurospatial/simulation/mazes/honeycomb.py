@@ -438,7 +438,7 @@ def _create_honeycomb_track_graph(
     # The platforms are the walkable surface, so the track is as wide as a
     # platform corner to corner: every point of a platform lies within one
     # side length of its center, which also admits a few samples in the gaps.
-    env_track = Environment.from_graph(
+    return Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         bin_size=bin_size,
@@ -446,5 +446,3 @@ def _create_honeycomb_track_graph(
         name="honeycomb_1d",
         units="cm",
     )
-
-    return env_track

@@ -82,7 +82,7 @@ For development installation with documentation tools:
 ```bash
 git clone https://github.com/edeno/neurospatial.git
 cd neurospatial
-uv sync --extra docs
+uv sync --group docs
 ```
 
 See the [Installation Guide](getting-started/installation.md) for more details.

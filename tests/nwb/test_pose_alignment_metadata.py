@@ -402,7 +402,9 @@ def test_overlay_refuses_skeleton_nodes_that_are_not_series_names(empty_nwb):
         PoseEstimation(name="pose", pose_estimation_series=series, skeleton=skeleton)
     )
     empty_nwb.create_processing_module(name="Skeletons", description="s").add(skeleton)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match="that are not PoseEstimationSeries names"
+    ) as caught:
         bodypart_overlay_from_nwb(empty_nwb)
     message = str(caught.value)
     assert (

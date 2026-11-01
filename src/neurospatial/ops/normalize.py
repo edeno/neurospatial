@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_choice
 from neurospatial.ops.diffusion import _HEAT_KERNEL_RANK_TOL
 
 #: Negative entries no larger than this fraction of a field's largest value
@@ -96,31 +97,35 @@ def normalize_field(field: NDArray[np.float64]) -> NDArray[np.float64]:
     if not np.isfinite(field).all():
         if np.isnan(field).any():
             n_nan = np.isnan(field).sum()
-            raise ValueError(
+            msg = (
                 f"Field contains NaN values ({n_nan} NaN entries). "
                 "Remove or impute NaN values before normalizing."
             )
+            raise ValueError(msg)
         if np.isinf(field).any():
             n_inf = np.isinf(field).sum()
-            raise ValueError(
+            msg = (
                 f"Field contains Inf values ({n_inf} Inf entries). "
                 "Replace Inf values before normalizing."
             )
+            raise ValueError(msg)
 
     field = _zero_smoothing_noise(field)
     if (field < 0).any():
         n_negative = (field < 0).sum()
-        raise ValueError(
+        msg = (
             f"Field contains negative values ({n_negative} negative entries). "
             "Normalization requires non-negative values."
         )
+        raise ValueError(msg)
 
     total = field.sum()
     if total == 0.0:
-        raise ValueError(
+        msg = (
             f"Cannot normalize field: all zeros (sum={total:.2e}). "
             "Provide a field with positive values."
         )
+        raise ValueError(msg)
 
     normalized: NDArray[np.float64] = field / total
     return normalized
@@ -195,9 +200,10 @@ def clamp(
     field = np.asarray(field, dtype=np.float64)
 
     if lo > hi:
-        raise ValueError(
+        msg = (
             f"lo ({lo}) must be less than or equal to hi ({hi}). Provide valid bounds."
         )
+        raise ValueError(msg)
 
     return np.clip(field, lo, hi)
 
@@ -258,7 +264,8 @@ def combine_fields(
     [3. 5. 4.]
     """
     if len(fields) == 0:
-        raise ValueError("At least one field required for combining.")
+        msg = "At least one field required for combining."
+        raise ValueError(msg)
 
     # Convert to list of arrays
     fields_list = [np.asarray(f, dtype=np.float64) for f in fields]
@@ -267,31 +274,39 @@ def combine_fields(
     shape = fields_list[0].shape
     for i, f in enumerate(fields_list[1:], start=1):
         if f.shape != shape:
-            raise ValueError(
+            msg = (
                 f"All fields must have the same shape. "
                 f"Field 0 has shape {shape}, but field {i} has shape {f.shape}."
             )
+            raise ValueError(msg)
+
+    mode = validate_choice(
+        mode, ("mean", "max", "min"), name="mode", owner="combine_fields()"
+    )
 
     # Handle weights parameter
     if weights is not None:
         if mode != "mean":
-            raise ValueError(
+            msg = (
                 f"Weights only valid for mode='mean', got mode='{mode}'. "
                 "Remove weights parameter or use mode='mean'."
             )
+            raise ValueError(msg)
 
         if len(weights) != len(fields_list):
-            raise ValueError(
+            msg = (
                 f"Number of weights ({len(weights)}) must match "
                 f"number of fields ({len(fields_list)})."
             )
+            raise ValueError(msg)
 
         weights_array = np.asarray(weights, dtype=np.float64)
         if not np.isclose(weights_array.sum(), 1.0, atol=1e-6):
-            raise ValueError(
+            msg = (
                 f"Weights must sum to 1, got sum={weights_array.sum():.6f}. "
                 "Normalize weights before passing."
             )
+            raise ValueError(msg)
     else:
         # Uniform weights for mean mode
         if mode == "mean":
@@ -310,11 +325,6 @@ def combine_fields(
             max_combined: NDArray[np.float64] = np.maximum.reduce(fields_list)
             return max_combined
 
-        case "min":
+        case _:
             min_combined: NDArray[np.float64] = np.minimum.reduce(fields_list)
             return min_combined
-
-        case _:
-            raise ValueError(
-                f"Unknown mode '{mode}'. Valid modes: 'mean', 'max', 'min'."
-            )

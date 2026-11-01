@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_callable, validate_instance
+
 __all__ = ["SnapshotAdapter"]
 
 _SnapshotRole = Literal["locator", "track", "arena", "binning"]
@@ -63,17 +65,26 @@ class SnapshotAdapter:
     decode: Callable[[Mapping[str, Any], Mapping[str, NDArray[Any]], str], object]
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.name, str)
-            or not self.name
-            or self.name != self.name.strip()
-        ):
-            raise ValueError("SnapshotAdapter.name must be a nonempty codec name.")
+        name = validate_instance(self.name, str, name="name", owner="SnapshotAdapter")
+        if not name or name != name.strip():
+            msg = "SnapshotAdapter.name must be a nonempty codec name."
+            raise ValueError(msg)
         if type(self.version) is not int or self.version <= 0:
-            raise ValueError("SnapshotAdapter.version must be a positive integer.")
+            msg = "SnapshotAdapter.version must be a positive integer."
+            raise ValueError(msg)
         if self.role not in _ROLES:
-            raise ValueError(f"SnapshotAdapter.role must be one of {_ROLES!r}.")
-        if not isinstance(self.provider_type, type):
-            raise TypeError("SnapshotAdapter.provider_type must be a Python type.")
-        if not callable(self.snapshot) or not callable(self.decode):
-            raise TypeError("SnapshotAdapter.snapshot and decode must be callable.")
+            msg = f"SnapshotAdapter.role must be one of {_ROLES!r}."
+            raise ValueError(msg)
+        validate_instance(
+            self.provider_type,
+            type,
+            name="provider_type",
+            owner="SnapshotAdapter",
+            hint="pass the Python class the adapter snapshots",
+        )
+        for field_name in ("snapshot", "decode"):
+            validate_callable(
+                getattr(self, field_name),
+                name=field_name,
+                owner="SnapshotAdapter",
+            )

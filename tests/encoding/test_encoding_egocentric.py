@@ -40,7 +40,8 @@ def single_neuron_firing_rate(sample_env: Environment) -> np.ndarray:
     """Create sample firing rate for a single neuron."""
     n_bins = sample_env.n_bins
     # Create a peaked firing rate map
-    rates = np.random.rand(n_bins) * 10.0
+    rng = np.random.default_rng(0)
+    rates = rng.random(n_bins) * 10.0
     # Add a clear peak
     peak_idx = n_bins // 2
     rates[peak_idx] = 25.0
@@ -59,7 +60,8 @@ def batch_firing_rates(sample_env: Environment) -> np.ndarray:
     """Create sample firing rates for multiple neurons."""
     n_neurons = 5
     n_bins = sample_env.n_bins
-    rates = np.random.rand(n_neurons, n_bins) * 10.0
+    rng = np.random.default_rng(0)
+    rates = rng.random((n_neurons, n_bins)) * 10.0
     # Add clear peaks for each neuron at different locations
     for i in range(n_neurons):
         peak_idx = (i + 1) * n_bins // (n_neurons + 1)

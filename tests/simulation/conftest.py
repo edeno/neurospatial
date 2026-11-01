@@ -23,8 +23,7 @@ def simple_2d_env():
 
     env = Environment.from_samples(samples, bin_size=2.0)
     env = env.with_metadata(units="cm")
-    env = env.with_metadata(frame="test_arena")
-    return env
+    return env.with_metadata(frame="test_arena")
 
 
 @pytest.fixture(scope="module")
@@ -56,8 +55,7 @@ def simple_1d_env():
     # For now, this will create a regular 1D grid
     env = Environment.from_samples(samples, bin_size=2.0)
     env = env.with_metadata(units="cm")
-    env = env.with_metadata(frame="linear_track")
-    return env
+    return env.with_metadata(frame="linear_track")
 
 
 @pytest.fixture

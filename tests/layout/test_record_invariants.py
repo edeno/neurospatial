@@ -76,9 +76,12 @@ def test_grid_records_refuse_a_shape_that_disagrees_with_the_edges(record):
 def test_grid_records_own_frozen_copies():
     edges, mask = np.array([0.0, 1.0, 2.0]), np.ones(2, bool)
     grid = RectilinearGrid((edges,), (np.int64(2),), mask)
-    assert grid.shape == (2,) and type(grid.shape[0]) is int
-    assert not grid.edges[0].flags.writeable and not grid.active_mask.flags.writeable
-    assert edges.flags.writeable and grid.active_mask is not mask
+    assert grid.shape == (2,)
+    assert type(grid.shape[0]) is int
+    assert not grid.edges[0].flags.writeable
+    assert not grid.active_mask.flags.writeable
+    assert edges.flags.writeable
+    assert grid.active_mask is not mask
 
 
 def test_framed_grid_refuses_a_one_dimensional_source():
@@ -134,14 +137,16 @@ def test_track_linearization_owns_valid_spacing():
         edges=(np.array([0.0, 1.0, 1.5, 2.5]),),
         mask=np.array([True, False, True]),
     )
-    assert track.edge_spacing == (0.5,) and track.edge_order == ((0, 1), (1, 2))
+    assert track.edge_spacing == (0.5,)
+    assert track.edge_order == ((0, 1), (1, 2))
     assert _track(spacing=np.int64(2)).edge_spacing == 2.0
 
 
 def test_grid_index_owns_a_frozen_mask():
     mask = np.ones(2, bool)
     index = GridIndex((np.arange(3.0),), (2,), mask)
-    assert not index.active_mask.flags.writeable and index.active_mask is not mask
+    assert not index.active_mask.flags.writeable
+    assert index.active_mask is not mask
     assert mask.flags.writeable
     with pytest.raises(ValueError, match="GridIndex"):
         GridIndex((np.arange(5.0),), (9,), mask)
@@ -273,7 +278,8 @@ def test_binning_refuses_records_that_disagree_in_shape(changes, error, pattern)
 def test_binning_holds_one_grid_description():
     """A binning's grid is axis-aligned or framed, never both."""
     binning = _two_bins()
-    assert binning.rectilinear is binning.grid and binning.grid_frame is None
+    assert binning.rectilinear is binning.grid
+    assert binning.grid_frame is None
     with pytest.raises(TypeError):
         _two_bins(rectilinear=binning.grid)
     with pytest.raises(TypeError):
@@ -282,8 +288,10 @@ def test_binning_holds_one_grid_description():
 
 def test_binning_codec_refuses_the_two_grid_field_format():
     meta, arrays = encode(_two_bins(), "binning")
-    assert meta["codec_version"] == 6 and meta["grid"]["codec"] == "RectilinearGrid"
-    assert "rectilinear" not in meta and "grid_frame" not in meta
+    assert meta["codec_version"] == 6
+    assert meta["grid"]["codec"] == "RectilinearGrid"
+    assert "rectilinear" not in meta
+    assert "grid_frame" not in meta
     with pytest.raises(ValueError, match="codec_version 5"):
         decode({**meta, "codec_version": 5}, arrays, "binning")
 
@@ -335,7 +343,8 @@ def _publish_polar(binning, arena):
 
 def test_seam_pairs_exist_exactly_when_the_arena_angle_wraps():
     wrapped, unwrapped = _polar(), _polar(circular_angle=False)
-    assert wrapped.arena.circular and not unwrapped.arena.circular
+    assert wrapped.arena.circular
+    assert not unwrapped.arena.circular
     _publish_polar(wrapped.binning, wrapped.arena)  # consistent records publish
     with pytest.raises(ValueError, match="across the angular seam"):
         _publish_polar(

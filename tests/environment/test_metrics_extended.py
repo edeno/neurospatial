@@ -162,7 +162,7 @@ class TestBinAttributes:
 
         # Extract positions from DataFrame
         pos_cols = [col for col in df.columns if col.startswith("pos_dim")]
-        df_positions = df[pos_cols].values
+        df_positions = df[pos_cols].to_numpy()
 
         # Should match bin_centers
         np.testing.assert_allclose(df_positions, small_2d_env.bin_centers, rtol=1e-10)

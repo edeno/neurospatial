@@ -15,7 +15,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import refuse_infinite
+from neurospatial._validation import refuse_infinite, validate_choice
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _declared_metadata, _Provenance
 from neurospatial.geometry import (
@@ -110,11 +110,12 @@ def _from_bins(
         )
 
     if not np.array_equal(result.edge_pairs, snapshot.connections.pairs):
-        raise ValueError(
+        msg = (
             "Supplied open neighbor pairs cross physical walls. Close those pairs "
             "(BinConnections.from_arrays(pairs, distances, is_open=...)) and drop "
             "their aligned face data explicitly before calling from_bins."
         )
+        raise ValueError(msg)
     return result
 
 
@@ -609,9 +610,8 @@ def _linear_track(
 ) -> Environment:
     """Implement Environment.linear_track using explicit construction inputs."""
     if endpoints is not None and node_positions is not None:
-        raise ValueError(
-            "Provide exactly one of `endpoints` or `node_positions`, not both."
-        )
+        msg = "Provide exactly one of `endpoints` or `node_positions`, not both."
+        raise ValueError(msg)
 
     if endpoints is not None:
         points = _track_points(endpoints, "endpoints")
@@ -634,12 +634,13 @@ def _linear_track(
     elif node_positions is not None:
         points = _track_points(node_positions, "node_positions")
         if len(points) < 2:
-            raise ValueError(
+            msg = (
                 "`node_positions` must contain at least two (x, y) waypoints "
                 f"for a piecewise-linear track. Got {len(points)} point(s)."
             )
+            raise ValueError(msg)
     else:
-        raise ValueError(
+        msg = (
             "linear_track requires an explicit topology: pass `endpoints` "
             "(two (x, y) points for a straight track) or `node_positions` "
             "(a sequence of (x, y) waypoints for a piecewise-linear track). "
@@ -647,6 +648,7 @@ def _linear_track(
             "cloud is indistinguishable from an open arena. For an open "
             "arena use Environment.open_field(positions, bin_size)."
         )
+        raise ValueError(msg)
 
     graph = nx.Graph()
     for i, pos in enumerate(points):
@@ -673,7 +675,7 @@ def _linear_track(
 def _maze(
     cls: type[Environment[Any]],
     *,
-    kind: str,
+    kind: str | None = None,
     track_graph: nx.Graph | None = None,
     node_positions: dict[Any, Sequence[float]] | None = None,
     bin_size: float,
@@ -685,32 +687,23 @@ def _maze(
     regions: Mapping[str, Region] | None = None,
 ) -> Environment:
     """Implement Environment.maze using explicit construction inputs."""
-    allowed = ("w", "plus", "t")
-    kind_normalized = kind.lower() if isinstance(kind, str) else kind
-    if kind_normalized not in allowed:
+    if track_graph is not None and node_positions is not None:
+        msg = "Provide exactly one of `track_graph` or `node_positions`, not both."
+        raise ValueError(msg)
+    if track_graph is not None and kind is not None:
         raise ValueError(
             _format_error(
-                f"Unknown maze kind {kind!r}. `kind` must be one of {allowed} (W maze, plus/cross maze, or T maze).",
-                fix="pass kind='w', kind='plus', or kind='t' with the documented node_positions order",
-                why="Why: maze topology depends on a supported maze kind.",
+                f"maze(kind={kind!r}, track_graph=...) got both a maze kind and "
+                "a ready track graph.",
+                why="Why: `kind` selects a standard topology for `node_positions`; "
+                "a supplied `track_graph` already defines the topology, so "
+                "`kind` would be ignored.",
+                fix="drop `kind` to use the track_graph, or pass `node_positions` "
+                "with `kind` to build a standard maze",
             )
         )
 
-    if track_graph is not None and node_positions is not None:
-        raise ValueError(
-            "Provide exactly one of `track_graph` or `node_positions`, not both."
-        )
-
     if track_graph is not None:
-        # `kind` is validated above but cannot be reconciled with an
-        # arbitrary supplied graph; the graph topology is authoritative.
-        warnings.warn(
-            f"maze(kind={kind!r}, track_graph=...): `kind` is not consulted "
-            "when an explicit `track_graph` is supplied; the supplied "
-            "`track_graph` is authoritative for the maze topology.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         _require_node_positions(track_graph)
         # Operate on a copy so the caller's graph is never mutated.
         graph = track_graph.copy()
@@ -722,6 +715,13 @@ def _maze(
             if "distance" not in graph.edges[u, v]:
                 add_edge_with_distance(graph, u, v)
     elif node_positions is not None:
+        allowed = ("w", "plus", "t")
+        kind_normalized = validate_choice(
+            kind.lower() if isinstance(kind, str) else kind,
+            allowed,
+            name="kind",
+            owner="maze()",
+        )
         coordinates = _track_points(
             list(node_positions.values()),
             "node_positions",
@@ -732,13 +732,14 @@ def _maze(
         node_positions = dict(zip(node_positions, coordinates, strict=True))
         graph, edge_order = maze_track_graph(kind_normalized, node_positions)
     else:
-        raise ValueError(
-            f"maze({kind!r}) requires an explicit topology: pass a ready "
+        msg = (
+            "maze() requires an explicit topology: pass a ready "
             "`track_graph` (a networkx.Graph with `pos` node attributes) or "
             "`node_positions` (a mapping of node label -> (x, y) coordinate) "
             "from which the standard topology is assembled. Raw positions "
             "cannot be used to infer maze topology."
         )
+        raise ValueError(msg)
 
     return _from_graph(
         cls,
@@ -1018,7 +1019,7 @@ def _from_layout(
 
 
 def _from_nwb(
-    cls: type[Environment[Any]],
+    cls: type[Environment[Any]],  # noqa: ARG001  # Environment.from_nwb passes its class
     nwbfile: Any,
     *,
     name: str,

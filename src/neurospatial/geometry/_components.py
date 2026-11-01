@@ -37,17 +37,19 @@ class HexagonShapes(ReadOnlyState):
             or centers.shape[1] != 2
             or not np.all(np.isfinite(centers))
         ):
-            raise ValueError(
+            msg = (
                 "HexagonShapes centers must be finite with shape (n_bins, 2), "
                 f"got shape {centers.shape}."
             )
+            raise ValueError(msg)
         radius, orientation = float(self.radius), float(self.orientation)
         if not (np.isfinite(radius) and radius > 0) or not np.isfinite(orientation):
-            raise ValueError(
+            msg = (
                 "HexagonShapes radius must be finite and positive and its "
                 f"orientation finite, got radius={self.radius!r}, "
                 f"orientation={self.orientation!r}."
             )
+            raise ValueError(msg)
         centers.setflags(write=False)
         object.__setattr__(self, "centers", centers)
         object.__setattr__(self, "radius", radius)
@@ -107,20 +109,22 @@ class TriangleShapes(ReadOnlyState):
         points = np.array(self.points, dtype=np.float64, copy=True)
         raw = np.asarray(self.triangles)
         if points.ndim != 2 or points.shape[1] != 2 or not np.all(np.isfinite(points)):
-            raise ValueError(
+            msg = (
                 "TriangleShapes points must be finite with shape (n_points, 2), "
                 f"got shape {points.shape}."
             )
+            raise ValueError(msg)
         if (
             raw.ndim != 2
             or raw.shape[1] != 3
             or (raw.size and raw.dtype.kind not in "iu")
             or np.any((raw < 0) | (raw >= len(points)))
         ):
-            raise ValueError(
+            msg = (
                 "TriangleShapes triangles must be integer indices into the "
                 f"{len(points)} points with shape (n_bins, 3)."
             )
+            raise ValueError(msg)
         triangles = np.array(raw, dtype=np.intp, copy=True)
         points.setflags(write=False)
         triangles.setflags(write=False)

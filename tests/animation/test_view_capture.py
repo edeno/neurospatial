@@ -76,7 +76,8 @@ def _view(scene, *, fail=False):
             seek(time)
             native.captures.append(time)
             if fail:
-                raise RuntimeError("capture failed")
+                msg = "capture failed"
+                raise RuntimeError(msg)
             image = np.full((24, 32, 3), round((time - 100) * 100), dtype=np.uint8)
             image[0, 0] = native.color  # A user-added graphic/style.
             return image
@@ -180,7 +181,8 @@ def test_encoding_failure_restores_time_and_removes_partial_file(
 ):
     class BrokenWriter:
         def __enter__(self):
-            raise RuntimeError("encoder unavailable")
+            msg = "encoder unavailable"
+            raise RuntimeError(msg)
 
         def __exit__(self, *exc):
             pass
@@ -265,11 +267,12 @@ def test_export_clock_preserves_exact_observations_and_half_open_stop(tmp_path):
 
     # The explicit scene clock need not include this stream's observations.
     source = np.array([100.1, 100.3])
-    field = AnimationField(
-        np.array([[1.0], [2.0], [3.0]]),
-        [100.1, 100.2, 100.3],
-        break_before=[False, True, True],
-    )
+    with pytest.warns(UserWarning, match="Interval filtering excluded ALL"):
+        field = AnimationField(
+            np.array([[1.0], [2.0], [3.0]]),
+            [100.1, 100.2, 100.3],
+            break_before=[False, True, True],
+        )
     # The whole recording ends on its last sample; a selection excludes stop.
     plan = prepare_export(
         tmp_path / "clock.gif", source, fps=10, sample_times=[field.times]

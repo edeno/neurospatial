@@ -348,9 +348,9 @@ class TestSpatialRateResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should return matplotlib Axes."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")  # Use non-interactive backend for testing
+        mpl.use("Agg")  # Use non-interactive backend for testing
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRateResult
@@ -373,9 +373,9 @@ class TestSpatialRateResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should accept an optional ax argument."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRateResult
@@ -614,8 +614,7 @@ def grid_cell_firing_rate(regular_grid_env: Environment) -> NDArray[np.float64]:
         firing_rate += np.cos(phase)
 
     # Normalize to positive values
-    firing_rate = (firing_rate + 3) / 6 * 20.0  # Peak around 20 Hz
-    return firing_rate
+    return (firing_rate + 3) / 6 * 20.0  # Peak around 20 Hz
 
 
 @pytest.fixture
@@ -878,8 +877,7 @@ class TestSpatialRateResultRegionCoverage:
         region_builder.add("north", polygon=box(0, 30, 40, 40))
         region_builder.add("south", polygon=box(0, 0, 40, 10))
         region_builder.add("center", polygon=box(15, 15, 25, 25))
-        simple_env = simple_env.with_regions(region_builder)
-        return simple_env
+        return simple_env.with_regions(region_builder)
 
     def test_region_coverage_accepts_threshold_parameter(
         self,
@@ -889,7 +887,8 @@ class TestSpatialRateResultRegionCoverage:
         from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = env_with_regions.n_bins
-        firing_rate = np.random.rand(n_bins) * 10.0
+        rng = np.random.default_rng(0)
+        firing_rate = rng.random(n_bins) * 10.0
         occ = np.ones(n_bins, dtype=np.float64)
 
         result = SpatialRateResult(
@@ -913,7 +912,8 @@ class TestSpatialRateResultRegionCoverage:
         from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = env_with_regions.n_bins
-        firing_rate = np.random.rand(n_bins) * 10.0
+        rng = np.random.default_rng(0)
+        firing_rate = rng.random(n_bins) * 10.0
         occ = np.ones(n_bins, dtype=np.float64)
 
         result = SpatialRateResult(
@@ -937,7 +937,8 @@ class TestSpatialRateResultRegionCoverage:
         from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = env_with_regions.n_bins
-        firing_rate = np.random.rand(n_bins) * 10.0
+        rng = np.random.default_rng(0)
+        firing_rate = rng.random(n_bins) * 10.0
         occ = np.ones(n_bins, dtype=np.float64)
 
         result = SpatialRateResult(
@@ -1019,9 +1020,9 @@ class TestSpatialRatesResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should require an idx argument for batch results."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -1045,9 +1046,9 @@ class TestSpatialRatesResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should return matplotlib Axes."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -1070,9 +1071,9 @@ class TestSpatialRatesResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should accept an optional ax argument."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -1099,9 +1100,9 @@ class TestSpatialRatesResultPlot:
         occupancy: NDArray[np.float64],
     ) -> None:
         """plot() should plot different neurons when idx changes."""
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -1330,7 +1331,8 @@ class TestSpatialRatesResultGridScores:
 
         n_neurons = 5
         n_bins = regular_grid_env.n_bins
-        firing_rates = np.random.rand(n_neurons, n_bins) * 10.0
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((n_neurons, n_bins)) * 10.0
         occupancy = np.ones(n_bins, dtype=np.float64)
 
         result = SpatialRatesResult(
@@ -2100,7 +2102,8 @@ class TestSpatialRatesResultSummaryTable:
         # Check if this is effectively 1D
         n_bins = env.n_bins
         n_neurons = 3
-        firing_rates = np.random.rand(n_neurons, n_bins) * 10
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((n_neurons, n_bins)) * 10
 
         result = SpatialRatesResult(
             firing_rates=firing_rates,
@@ -2125,7 +2128,8 @@ class TestSpatialRatesResultSummaryTable:
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         n_bins = simple_env.n_bins
-        firing_rates = np.random.rand(1, n_bins) * 10
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((1, n_bins)) * 10
 
         result = SpatialRatesResult(
             firing_rates=firing_rates,
@@ -2386,13 +2390,13 @@ class TestLabelCellTypesPrecomputedScores:
 def trajectory_env() -> Environment:
     """Create an environment from a realistic trajectory."""
     # Generate a random walk trajectory
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 1000
     dt = 0.01  # 10 ms sampling interval
     velocity = 10.0  # cm/s
 
     # Random walk
-    angles = np.cumsum(np.random.randn(n_samples) * 0.1)
+    angles = np.cumsum(rng.standard_normal(n_samples) * 0.1)
     dx = velocity * dt * np.cos(angles)
     dy = velocity * dt * np.sin(angles)
     x = 50 + np.cumsum(dx)
@@ -2417,12 +2421,12 @@ def trajectory_times() -> NDArray[np.float64]:
 @pytest.fixture
 def trajectory_positions(trajectory_env: Environment) -> NDArray[np.float64]:
     """Create positions matching the trajectory environment."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 1000
     dt = 0.01
     velocity = 10.0
 
-    angles = np.cumsum(np.random.randn(n_samples) * 0.1)
+    angles = np.cumsum(rng.standard_normal(n_samples) * 0.1)
     dx = velocity * dt * np.cos(angles)
     dy = velocity * dt * np.sin(angles)
     x = 50 + np.cumsum(dx)
@@ -2440,7 +2444,7 @@ def place_cell_spikes(
     trajectory_positions: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Create spike times for a place cell with a field at (60, 60)."""
-    np.random.seed(123)
+    rng = np.random.default_rng(123)
     field_center = np.array([60.0, 60.0])
     field_radius = 15.0
     max_rate = 20.0  # Hz
@@ -2454,10 +2458,8 @@ def place_cell_spikes(
     # Generate spikes using Poisson process
     dt = trajectory_times[1] - trajectory_times[0]
     spike_probs = firing_rates * dt
-    spikes_mask = np.random.random(len(trajectory_times)) < spike_probs
-    spike_times = trajectory_times[spikes_mask]
-
-    return spike_times
+    spikes_mask = rng.random(len(trajectory_times)) < spike_probs
+    return trajectory_times[spikes_mask]
 
 
 class TestComputeSpatialRateFunction:
@@ -2790,11 +2792,11 @@ class TestComputeSpatialRateMinOccupancy:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            min_occupancy=1.0,  # 1 second minimum
+            min_occupancy=0.5,  # 0.5 second minimum
         )
 
         # Bins with low occupancy should be NaN
-        low_occ_mask = result.occupancy < 1.0
+        low_occ_mask = result.occupancy < 0.5
         if np.any(low_occ_mask):
             assert np.all(np.isnan(result.firing_rate[low_occ_mask]))
 
@@ -3031,7 +3033,7 @@ def multiple_place_cell_spikes(
     trajectory_positions: NDArray[np.float64],
 ) -> list[NDArray[np.float64]]:
     """Create spike times for multiple place cells with different field locations."""
-    np.random.seed(456)
+    rng = np.random.default_rng(456)
     field_centers = [
         np.array([30.0, 30.0]),
         np.array([60.0, 60.0]),
@@ -3044,11 +3046,11 @@ def multiple_place_cell_spikes(
     dt = trajectory_times[1] - trajectory_times[0]
 
     for i, field_center in enumerate(field_centers):
-        np.random.seed(456 + i)
+        rng = np.random.default_rng(456 + i)
         distances = np.linalg.norm(trajectory_positions - field_center, axis=1)
         firing_rates = max_rate * np.exp(-0.5 * (distances / field_radius) ** 2)
         spike_probs = firing_rates * dt
-        spikes_mask = np.random.random(len(trajectory_times)) < spike_probs
+        spikes_mask = rng.random(len(trajectory_times)) < spike_probs
         spike_times = trajectory_times[spikes_mask]
         spike_times_list.append(spike_times)
 
@@ -3478,11 +3480,11 @@ class TestComputeSpatialRatesMinOccupancy:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            min_occupancy=1.0,  # 1 second minimum
+            min_occupancy=0.5,  # 0.5 second minimum
         )
 
         # Bins with low occupancy should be NaN for all neurons
-        low_occ_mask = result.occupancy < 1.0
+        low_occ_mask = result.occupancy < 0.5
         if np.any(low_occ_mask):
             for i in range(len(result)):
                 assert np.all(np.isnan(result.firing_rates[i, low_occ_mask]))
@@ -4400,5 +4402,6 @@ def test_silent_unit_summary_has_no_peak_location():
     spikes = [np.array([]), np.sort(np.random.default_rng(8).uniform(0, 60, 40))]
     table = compute_spatial_rates(env, spikes, times, positions).summary_table()
     assert table["peak_firing_rate"].iloc[0] == 0.0
-    assert np.isnan(table["peak_x"].iloc[0]) and np.isnan(table["peak_y"].iloc[0])
+    assert np.isnan(table["peak_x"].iloc[0])
+    assert np.isnan(table["peak_y"].iloc[0])
     assert np.isfinite(table["peak_x"].iloc[1])

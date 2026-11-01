@@ -107,7 +107,9 @@ def test_dilation_uses_the_eight_neighbor_element():
     ]
     np.testing.assert_array_equal(mask, np.any(within_one, axis=0))
     # Diagonal-only neighbors of the L's ends: a 4-neighbor element misses them.
-    assert mask[1, 1] and mask[5, 5] and mask[1, 3]
+    assert mask[1, 1]
+    assert mask[5, 5]
+    assert mask[1, 3]
 
 
 @pytest.mark.parametrize("bin_size", [3.0, 7.0, 2.5, (3.0, 1.7)])
@@ -131,7 +133,8 @@ def test_grid_cells_are_exactly_bin_size(bin_size):
     edges, _, _ = _create_regular_grid(
         positions=None, bin_size=2.5, dimension_range=[(0, 100)]
     )
-    assert edges[0][0] == 0.0 and edges[0][-1] == 100.0
+    assert edges[0][0] == 0.0
+    assert edges[0][-1] == 100.0
 
 
 def test_float_error_in_the_range_adds_no_cell():
@@ -140,7 +143,8 @@ def test_float_error_in_the_range_adds_no_cell():
         positions=None, bin_size=1.45, dimension_range=[(0, 4.35)]
     )
     assert shape == (3,)
-    assert edges[0][0] == 0.0 and edges[0][-1] == 4.35
+    assert edges[0][0] == 0.0
+    assert edges[0][-1] == 4.35
 
 
 def test_a_non_finite_range_is_refused():
@@ -212,9 +216,12 @@ def test_infer_active_bins_boundary_exists_3d():
     )
     assert mask.shape == (3, 3, 3)
     # Every outer slab on all three axes is inactive.
-    assert not mask[0, :, :].any() and not mask[-1, :, :].any()
-    assert not mask[:, 0, :].any() and not mask[:, -1, :].any()
-    assert not mask[:, :, 0].any() and not mask[:, :, -1].any()
+    assert not mask[0, :, :].any()
+    assert not mask[-1, :, :].any()
+    assert not mask[:, 0, :].any()
+    assert not mask[:, -1, :].any()
+    assert not mask[:, :, 0].any()
+    assert not mask[:, :, -1].any()
     # The single interior bin (center) is the only one that can survive.
     assert mask[1, 1, 1]
 

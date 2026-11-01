@@ -16,13 +16,13 @@ conversion in one call and return the converted array.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._validation import is_integer_at_least
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
@@ -239,10 +239,11 @@ class AffineND(ReadOnlyState, SpatialTransform):
         # Validate dimensions
         if pts.ndim == 0 or pts.shape[-1] != n_dims:
             given = pts.shape[-1] if pts.ndim else 0
-            raise ValueError(
+            msg = (
                 f"Transform is {n_dims}D but points have {given} dimensions. "
                 f"Expected shape (..., {n_dims}), got {pts.shape}"
             )
+            raise ValueError(msg)
 
         # Flatten to (n_points, n_dims)
         pts_flat = pts.reshape(-1, n_dims)
@@ -319,9 +320,8 @@ class AffineND(ReadOnlyState, SpatialTransform):
         array([[12.,  2.,  2.]])
         """
         if self.n_dims != other.n_dims:
-            raise ValueError(
-                f"Cannot compose {self.n_dims}D transform with {other.n_dims}D transform"
-            )
+            msg = f"Cannot compose {self.n_dims}D transform with {other.n_dims}D transform"
+            raise ValueError(msg)
         return AffineND(self.A @ other.A)
 
     def __matmul__(self, other: AffineND) -> AffineND:
@@ -455,15 +455,15 @@ def rotate_2d(
 
     """
     if not np.isfinite(angle):
-        raise ValueError(f"angle must be a finite number of radians, got {angle!r}.")
+        msg = f"angle must be a finite number of radians, got {angle!r}."
+        raise ValueError(msg)
     cos, sin = np.cos(angle), np.sin(angle)
     A = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
     if center is not None:
         pivot = np.asarray(center, dtype=np.float64)
         if pivot.shape != (2,) or not np.isfinite(pivot).all():
-            raise ValueError(
-                f"center must be two finite coordinates (x, y), got {center!r}."
-            )
+            msg = f"center must be two finite coordinates (x, y), got {center!r}."
+            raise ValueError(msg)
         A[:2, 2] = pivot - A[:2, :2] @ pivot
     return AffineND(A)
 
@@ -565,12 +565,13 @@ def calibrate_from_scale_bar(
     """
     # Validate inputs
     if not (np.isfinite(known_length_cm) and known_length_cm > 0):
-        raise ValueError(
+        msg = (
             f"WHAT: known_length_cm must be positive and finite (got "
             f"{known_length_cm}).\n"
             f"WHY: A scale bar must have a positive, finite real-world length.\n"
             f"Fix: Provide a positive value for known_length_cm."
         )
+        raise ValueError(msg)
 
     # Compute pixel distance between endpoints
     dx = p2_px[0] - p1_px[0]
@@ -578,11 +579,12 @@ def calibrate_from_scale_bar(
     px_distance = np.sqrt(dx * dx + dy * dy)
 
     if px_distance == 0:
-        raise ValueError(
+        msg = (
             f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
             f"WHY: Cannot compute scale from coincident endpoints.\n"
             f"Fix: Provide two distinct points for the scale bar."
         )
+        raise ValueError(msg)
 
     # Compute cm per pixel (uniform scaling assumed)
     cm_per_px = known_length_cm / px_distance
@@ -667,38 +669,42 @@ def calibrate_from_landmarks(
     landmarks_cm = np.asarray(landmarks_cm, dtype=np.float64)
 
     if landmarks_px.ndim != 2 or landmarks_px.shape[1] != 2:
-        raise ValueError(
+        msg = (
             f"WHAT: landmarks_px must have shape (n_points, 2), got {landmarks_px.shape}.\n"
             f"WHY: Each landmark needs (x, y) coordinates.\n"
             f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
+        raise ValueError(msg)
 
     if landmarks_cm.ndim != 2 or landmarks_cm.shape[1] != 2:
-        raise ValueError(
+        msg = (
             f"WHAT: landmarks_cm must have shape (n_points, 2), got {landmarks_cm.shape}.\n"
             f"WHY: Each landmark needs (x, y) coordinates.\n"
             f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
+        raise ValueError(msg)
 
     n_px = len(landmarks_px)
     n_cm = len(landmarks_cm)
 
     if n_px != n_cm:
-        raise ValueError(
+        msg = (
             f"WHAT: landmarks_px ({n_px} points) and landmarks_cm ({n_cm} points) "
             f"must have the same number of points.\n"
             f"WHY: Each pixel landmark must have a corresponding cm landmark.\n"
             f"Fix: Ensure both arrays have the same length."
         )
+        raise ValueError(msg)
 
     if n_px < 3:
-        raise ValueError(
+        msg = (
             f"WHAT: Need at least 3 landmarks for transform estimation (got {n_px}).\n"
             f"WHY: Each landmark gives 2 equations; rigid (3 degrees of freedom) "
             f"and similarity (4) fits need 2 landmarks and affine (6) fits need 3, "
             f"and a third landmark lets the fit residual reveal a misplaced one.\n"
             f"Fix: Provide at least 3 non-collinear landmark pairs."
         )
+        raise ValueError(msg)
 
     _require_finite_landmarks(landmarks_px, "landmarks_px")
     _require_finite_landmarks(landmarks_cm, "landmarks_cm")
@@ -723,7 +729,7 @@ def calibrate_from_landmarks(
     for name, s in [("pixel", s_px), ("environment", s_cm)]:
         if len(s) >= 2 and s[1] < 1e-6 * s[0]:
             ratio = s[0] / (s[1] + 1e-15)
-            raise ValueError(
+            msg = (
                 f"WHAT: Landmark calibration has ill-conditioned {name} points "
                 f"(spread ratio={ratio:.1e}).\n"
                 f"WHY: Landmarks are collinear or too close together. "
@@ -731,6 +737,7 @@ def calibrate_from_landmarks(
                 f"Fix: Use landmarks that span the full video frame with good spread. "
                 f"Ensure at least 3 non-collinear points."
             )
+            raise ValueError(msg)
 
     result = estimate_transform(landmarks_px_flipped, landmarks_cm, kind=kind)
 
@@ -831,11 +838,13 @@ class VideoCalibration:
                     "(frame.shape[1], frame.shape[0])",
                 )
             )
-        object.__setattr__(
-            self,
-            "frame_size_px",
-            (int(size[0]), int(size[1])),  # type: ignore[call-overload]
+        width, height = (
+            validate_integer_at_least(
+                n, 1, name="frame_size_px", owner="VideoCalibration"
+            )
+            for n in size
         )
+        object.__setattr__(self, "frame_size_px", (width, height))
         object.__setattr__(self, "transform_cm_to_px", transform.inverse())
 
     def __eq__(self, other: object) -> bool:
@@ -865,7 +874,7 @@ class VideoCalibration:
         axis_scales = np.linalg.norm(self.transform_px_to_cm.A[:2, :2], axis=0)
         return float(np.mean(axis_scales))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize calibration to dict for JSON storage.
 
         Returns
@@ -879,7 +888,7 @@ class VideoCalibration:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> VideoCalibration:
+    def from_dict(cls, d: dict[str, Any]) -> VideoCalibration:
         """Restore calibration from dict.
 
         Parameters
@@ -1022,7 +1031,8 @@ def from_rotation_matrix(
     """
     rot = np.asarray(rotation_matrix, dtype=float)
     if rot.ndim != 2 or rot.shape[0] != rot.shape[1]:
-        raise ValueError(f"Rotation matrix must be square, got shape {rot.shape}")
+        msg = f"Rotation matrix must be square, got shape {rot.shape}"
+        raise ValueError(msg)
 
     n_dims = rot.shape[0]
     if not np.all(np.isfinite(rot)) or not np.allclose(
@@ -1055,9 +1065,8 @@ def from_rotation_matrix(
     if translation is not None:
         t = np.asarray(translation, dtype=float)
         if t.shape != (n_dims,):
-            raise ValueError(
-                f"Translation vector must have shape ({n_dims},), got {t.shape}"
-            )
+            msg = f"Translation vector must have shape ({n_dims},), got {t.shape}"
+            raise ValueError(msg)
         A[:n_dims, n_dims] = t
 
     return AffineND(A)
@@ -1091,7 +1100,7 @@ def identity_nd(*, n_dims: int = 2) -> AffineND:
 # Quick NumPy helpers that build and apply a 2D AffineND
 # ---------------------------------------------------------------------
 def flip_y_data(
-    data: NDArray[np.float64] | tuple | list,
+    data: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
 ) -> NDArray[np.float64]:
     """Flip y-axis of coordinates so that the origin moves from
@@ -1135,7 +1144,7 @@ def _check_cm_per_px(cm_per_px: float) -> None:
 
 
 def convert_to_cm(
-    data_px: NDArray[np.float64] | tuple | list,
+    data_px: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
     *,
     cm_per_px: float,
@@ -1178,7 +1187,7 @@ def convert_to_cm(
 
 
 def convert_to_pixels(
-    data_cm: NDArray[np.float64] | tuple | list,
+    data_cm: NDArray[np.float64] | tuple[Any, ...] | list[Any],
     frame_size_px: tuple[float, float],
     *,
     cm_per_px: float,
@@ -1339,14 +1348,14 @@ def estimate_transform(
     dst = np.asanyarray(dst, dtype=float)
 
     if src.shape != dst.shape:
-        raise ValueError(
-            f"src and dst must have same shape, got {src.shape} and {dst.shape}"
-        )
+        msg = f"src and dst must have same shape, got {src.shape} and {dst.shape}"
+        raise ValueError(msg)
 
     if src.ndim != 2:
-        raise ValueError(
+        msg = (
             f"src and dst must be 2D arrays (N points x n_dims), got shape {src.shape}"
         )
+        raise ValueError(msg)
 
     for name, points in (("src", src), ("dst", dst)):
         _require_finite_landmarks(points, name)
@@ -1360,9 +1369,8 @@ def estimate_transform(
 
     if kind in ("rigid", "similarity"):
         if n_points < 2:
-            raise ValueError(
-                f"{kind} transform requires at least 2 point pairs, got {n_points}"
-            )
+            msg = f"{kind} transform requires at least 2 point pairs, got {n_points}"
+            raise ValueError(msg)
 
         # Center the points
         src_mean = src.mean(axis=0)
@@ -1435,12 +1443,13 @@ def estimate_transform(
         A[:n_dims, n_dims] = dst_mean - scale * (R @ src_mean)
         return AffineND(A)
 
-    elif kind == "affine":
+    if kind == "affine":
         if n_points < n_dims + 1:
-            raise ValueError(
+            msg = (
                 f"affine transform requires at least {n_dims + 1} point pairs "
                 f"for {n_dims}D, got {n_points}"
             )
+            raise ValueError(msg)
 
         # Least squares for every output coordinate at once: rows of the
         # design matrix are [x1, ..., xn, 1], so X @ result = dst with result
@@ -1469,10 +1478,8 @@ def estimate_transform(
         A[:n_dims, :] = result.T
         return AffineND(A)
 
-    else:
-        raise ValueError(
-            f"Invalid kind: {kind!r}. Must be 'rigid', 'similarity', or 'affine'."
-        )
+    msg = f"Invalid kind: {kind!r}. Must be 'rigid', 'similarity', or 'affine'."
+    raise ValueError(msg)
 
 
 # ---------------------------------------------------------------------
@@ -1531,7 +1538,8 @@ def simple_scale(
 
     """
     if px_per_cm == 0:
-        raise ValueError("px_per_cm must be nonzero to avoid division by zero.")
+        msg = "px_per_cm must be nonzero to avoid division by zero."
+        raise ValueError(msg)
 
     # Compute scale factors
     sx = sy = 1.0 / px_per_cm
@@ -1540,8 +1548,9 @@ def simple_scale(
     try:
         ox, oy = float(offset_px[0]), float(offset_px[1])
     except (TypeError, IndexError, ValueError) as e:
+        msg = f"offset_px must be a tuple of two numeric values (x, y), got {type(offset_px).__name__} with value {offset_px}."
         raise ValueError(
-            f"offset_px must be a tuple of two numeric values (x, y), got {type(offset_px).__name__} with value {offset_px}.",
+            msg,
         ) from e
 
     # Build a 3×3 affine matrix: scale then translate

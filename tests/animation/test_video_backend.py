@@ -7,6 +7,8 @@ import pytest
 
 from neurospatial import Environment
 
+from ._video_helpers import read_video
+
 # 21 rows sampled at 20 Hz span [0, 1] s.
 FRAME_TIMES = np.arange(21) / 20
 
@@ -23,10 +25,8 @@ def fields(env):
 
 
 def _metadata(path):
-    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
-    reader = imageio_ffmpeg.read_frames(str(path))
-    meta = next(reader)
-    return meta, sum(1 for _ in reader)
+    meta, frames = read_video(path)
+    return meta, len(frames)
 
 
 @pytest.mark.parametrize(("speed", "fps"), [(1.0, 20), (0.5, 10), (2.0, 40)])

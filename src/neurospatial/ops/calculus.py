@@ -105,11 +105,12 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     Environment.get_differential_operator : The inverse-distance edge operator.
     """
     if field.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"field must have shape ({env.n_bins},) to match environment bins, "
             f"but got shape {field.shape}; a scalar value is needed at each bin.\n"
             "Fix: pass a 1-D field with one value per environment bin."
         )
+        raise ValueError(msg)
     return np.asarray(
         env.get_differential_operator().T @ field, dtype=np.float64
     ).ravel()
@@ -166,11 +167,12 @@ def divergence(
     """
     n_edges = env.connectivity.number_of_edges()
     if edge_field.shape != (n_edges,):
-        raise ValueError(
+        msg = (
             f"edge_field must have shape ({n_edges},) to match connectivity graph edges, "
             f"but got shape {edge_field.shape}; a flux is needed for each edge.\n"
             "Fix: pass a 1-D edge_field in env.edge_pairs order."
         )
+        raise ValueError(msg)
     return np.asarray(
         env.get_divergence_operator() @ edge_field, dtype=np.float64
     ).ravel()

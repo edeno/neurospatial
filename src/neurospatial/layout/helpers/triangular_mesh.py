@@ -147,19 +147,24 @@ def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
 
     """
     if sample_points.shape[0] < 3:
+        msg = f"Triangulation requires at least 3 points, got {sample_points.shape[0]}."
         raise ValueError(
-            f"Triangulation requires at least 3 points, got {sample_points.shape[0]}.",
+            msg,
         )
     try:
         return Delaunay(sample_points)
     except QhullError as e:
-        raise ValueError(
+        msg = (
             "Delaunay triangulation failed. Points may be colinear, "
-            "insufficient, or have other geometric issues.",
+            "insufficient, or have other geometric issues."
+        )
+        raise ValueError(
+            msg,
         ) from e
     except TypeError as e:  # Can happen if points array is not float/double
+        msg = f"Delaunay triangulation failed due to input type: {e}. Ensure points are float."
         raise ValueError(
-            f"Delaunay triangulation failed due to input type: {e}. Ensure points are float.",
+            msg,
         ) from e
 
 

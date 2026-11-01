@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._affine import _check_homogeneous, linear_scale
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
@@ -90,8 +91,9 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         or keep.shape != (binning.bins.n_bins,)
         or not np.any(keep)
     ):
+        msg = "A bin subset needs a nonempty boolean selection of all parent bins."
         raise _refusal(
-            "A bin subset needs a nonempty boolean selection of all parent bins.",
+            msg,
             "whole-bin selection preserves geometry only when each parent bin has one selection flag",
             f"pass a boolean mask of shape ({binning.bins.n_bins},) with at least one True entry",
         )
@@ -113,18 +115,20 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     shapes = None if binning.shapes is None else binning.shapes.subset(keep)
     track = binning.linearization
     if track is not None:
-        if isinstance(track, TrackLinearization):
-            track = TrackLinearization(
-                track.graph,
-                track.edge_order,
-                track.edge_spacing,
-                track.grid_edges,
-                _restricted_mask(track.active_mask, keep),
-            )
-        else:
-            raise TypeError(
-                "Track derivation requires an owned TrackLinearization snapshot."
-            )
+        track = validate_instance(
+            track,
+            TrackLinearization,
+            name="linearization",
+            owner="Track derivation",
+            hint="it requires an owned TrackLinearization snapshot",
+        )
+        track = TrackLinearization(
+            track.graph,
+            track.edge_order,
+            track.edge_spacing,
+            track.grid_edges,
+            _restricted_mask(track.active_mask, keep),
+        )
     return Binning(
         binning.kind,
         bins,
@@ -295,12 +299,12 @@ def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
         matrix = np.array(transform.A, dtype=np.float64, copy=True)
         _check_homogeneous(matrix)
         if matrix.shape != (n_dims + 1, n_dims + 1):
-            raise ValueError(
-                f"expected shape ({n_dims + 1}, {n_dims + 1}), got {matrix.shape}"
-            )
+            msg = f"expected shape ({n_dims + 1}, {n_dims + 1}), got {matrix.shape}"
+            raise ValueError(msg)
     except (TypeError, ValueError) as exc:
+        msg = f"Cannot derive {n_dims}-D binning from this affine matrix: {exc}."
         raise _refusal(
-            f"Cannot derive {n_dims}-D binning from this affine matrix: {exc}.",
+            msg,
             "geometry scaling requires a finite invertible affine map with last row [0, ..., 0, 1]",
             "pass an affine transform with matching coordinate dimensions",
         ) from exc
@@ -380,8 +384,9 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         with np.errstate(over="raise", invalid="raise", divide="raise", under="ignore"):
             return _transform_binning(binning, transform)
     except (FloatingPointError, OverflowError) as exc:
+        msg = "Transformed geometry exceeds floating-point range."
         raise _refusal(
-            "Transformed geometry exceeds floating-point range.",
+            msg,
             "bin centers, measures and face geometry must remain finite and representable",
             "rescale the coordinate units before applying the transform",
         ) from exc
@@ -398,8 +403,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     couplings = bridge_values(binning)
     if any(value > 0 for value in couplings.values()):
         if not similarity:
+            msg = (
+                "Cannot transform declared bridge conductance by a general affine map."
+            )
             raise _refusal(
-                "Cannot transform declared bridge conductance by a general affine map.",
+                msg,
                 "conductance scaling requires a similarity with a known length scale",
                 "use a translation, rotation, reflection or uniform scaling",
             )
@@ -414,14 +422,16 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             ) or not np.all(np.isfinite(transformed_c)):
                 raise FloatingPointError
         except (OverflowError, FloatingPointError) as error:
+            msg = "Transformed bridge conductance exceeds floating-point range."
             raise _refusal(
-                "Transformed bridge conductance exceeds floating-point range.",
+                msg,
                 "positive conductances must remain finite and positive",
                 "rescale coordinate units before transforming",
             ) from error
     if np.any(dims < parent.n_dims) and not similarity:
+        msg = f"Cannot apply {kind} to embedded track bins."
         raise _refusal(
-            f"Cannot apply {kind} to embedded track bins.",
+            msg,
             "non-similarity maps change bin lengths according to each segment's direction",
             "rebuild the track from transformed node positions with Environment.from_graph",
         )
@@ -434,14 +444,16 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             else math.exp(logdet)
         )
     except OverflowError as exc:
+        msg = "Transformed bin measures exceed floating-point range."
         raise _refusal(
-            "Transformed bin measures exceed floating-point range.",
+            msg,
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         ) from exc
     if not np.all(np.isfinite(factor)) or np.any(factor <= 0):
+        msg = "Transformed bin measures are outside floating-point range."
         raise _refusal(
-            "Transformed bin measures are outside floating-point range.",
+            msg,
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         )
@@ -464,8 +476,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         or not np.all(np.isfinite(sizes))
         or np.any(sizes <= 0)
     ):
+        msg = "Transformed bins are outside floating-point range."
         raise _refusal(
-            "Transformed bins are outside floating-point range.",
+            msg,
             "bin centers and strictly positive measures must remain finite and representable",
             "rescale the coordinate units before applying the transform",
         )
@@ -483,16 +496,18 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     )
     if declared_paths:
         if not similarity:
+            msg = f"Cannot apply {kind} to declared navigation path distances."
             raise _refusal(
-                f"Cannot apply {kind} to declared navigation path distances.",
+                msg,
                 "scalar path lengths do not specify the paths needed for this transform",
                 "use a translation, rotation, reflection or uniform scaling, or rebuild "
                 "the bins with transformed path distances",
             )
         distances = links.all_distances * scale
         if np.any((links.all_distances > 0) & (distances == 0)):
+            msg = "Transformed navigation path distances are outside floating-point range."
             raise _refusal(
-                "Transformed navigation path distances are outside floating-point range.",
+                msg,
                 "positive path lengths must remain positive after scaling",
                 "rescale the coordinate units before applying the transform",
             )
@@ -574,9 +589,8 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "between center links and shared cell faces; the two-point flux geometry is no longer valid."
             )
         if isinstance(faces, KnownFaces) and np.any((old.A > 0) & (faces.faces.A == 0)):
-            raise ValueError(
-                "Transformed positive face areas underflow; rescale coordinate units."
-            )
+            msg = "Transformed positive face areas underflow; rescale coordinate units."
+            raise ValueError(msg)
     shapes = binning.shapes
     if isinstance(shapes, HexagonShapes):
         shapes = (
@@ -598,20 +612,26 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     outline = binning.outline
     if outline is not None:
         if parent.n_dims != 2:
+            msg = "Polygon outlines need two-dimensional affine coordinates."
             raise _refusal(
-                "Polygon outlines need two-dimensional affine coordinates.",
+                msg,
                 "the stored outline is a planar polygon",
                 "use a two-dimensional transform for this environment",
             )
         outline = Outline(affine_geometry(outline.geometry, matrix))
     track = binning.linearization
     if track is not None:
-        if isinstance(track, TrackLinearization):
-            track = _track_transform(track, matrix, scale)
-        else:
-            raise TypeError(
-                "Track derivation requires an owned TrackLinearization snapshot."
-            )
+        track = _track_transform(
+            validate_instance(
+                track,
+                TrackLinearization,
+                name="linearization",
+                owner="Track derivation",
+                hint="it requires an owned TrackLinearization snapshot",
+            ),
+            matrix,
+            scale,
+        )
     return Binning(
         binning.kind,
         bins,

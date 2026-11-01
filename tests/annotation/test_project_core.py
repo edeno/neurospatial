@@ -1,6 +1,7 @@
 """Entry points resume embedded drafts and export using live session settings."""
 
 import sys
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,11 +26,16 @@ def test_invalid_autosave_settings_fail_before_loading_or_viewer(
     monkeypatch.setattr(core, "_setup_annotation_viewer", forbidden)
     monkeypatch.setattr(core, "_load_video_frame", forbidden)
     monkeypatch.setattr(AnnotationProject, "load", forbidden)
+    if entry == "video":
+        call = partial(
+            core.annotate_video, "unused.mp4", bin_size=1.0, autosave_interval=interval
+        )
+    else:
+        call = partial(
+            core.annotate_project, "unused.project", autosave_interval=interval
+        )
     with pytest.raises(ValueError, match="autosave_interval"):
-        if entry == "video":
-            core.annotate_video("unused.mp4", bin_size=1.0, autosave_interval=interval)
-        else:
-            core.annotate_project("unused.project", autosave_interval=interval)
+        call()
 
 
 def test_fresh_session_cannot_overwrite_existing_project(tmp_path, monkeypatch):
@@ -52,7 +58,8 @@ def test_overwrite_starts_a_new_project_over_an_existing_file(tmp_path, monkeypa
     path.write_bytes(b"old draft")
 
     def loaded(*args):
-        raise RuntimeError("reached the video")
+        msg = "reached the video"
+        raise RuntimeError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setattr(core, "_load_video_frame", loaded)
@@ -196,7 +203,8 @@ def test_failed_export_does_not_trigger_final_save_and_disposes_session(monkeypa
             calls.append("dispose")
 
     def fail(*args):
-        raise ValueError("Repair invalid boundary")
+        msg = "Repair invalid boundary"
+        raise ValueError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setitem(
@@ -317,7 +325,8 @@ def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
         session = sessions[0]
         session.layer.data = [np.array([[1, 1], [11, 11], [1, 11], [11, 1]])[:, ::-1]]
         assert not session.viewer.window._qt_window.close()
-        assert errors and "invalid" in errors[-1]
+        assert errors
+        assert "invalid" in errors[-1]
         assert path.read_bytes() == original
         session.layer.data = [vertices[:, ::-1]]
         session.set_calibration(
@@ -357,7 +366,8 @@ def test_failed_session_start_closes_created_viewer(monkeypatch):
     draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
 
     def fail(*args, **kwargs):
-        raise RuntimeError("Cannot initialize assistance")
+        msg = "Cannot initialize assistance"
+        raise RuntimeError(msg)
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
     monkeypatch.setitem(
@@ -380,7 +390,7 @@ def test_failed_session_start_closes_created_viewer(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "shape_type,count",
+    ("shape_type", "count"),
     [
         ("polygon", 0),
         ("polygon", 1),
@@ -435,14 +445,15 @@ def test_missing_project_folder_fails_before_editing(tmp_path, monkeypatch, entr
         lambda *args, **kwargs: pytest.fail("Must reject the destination first"),
     )
     destination = tmp_path / "typo" / "draft.annotation.npz"
+    if entry == "video":
+        call = partial(
+            core.annotate_video, "unused.mp4", bin_size=1.0, project_path=destination
+        )
+    else:
+        draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
+        call = partial(core.annotate_project, draft, project_path=destination)
     with pytest.raises(FileNotFoundError, match=r"folder for project_path.*typo"):
-        if entry == "video":
-            core.annotate_video("unused.mp4", bin_size=1.0, project_path=destination)
-        else:
-            draft = AnnotationProject(
-                np.zeros((4, 4, 3), dtype=np.uint8), mode="regions"
-            )
-            core.annotate_project(draft, project_path=destination)
+        call()
 
 
 def test_failed_final_draft_save_still_returns_the_valid_result(monkeypatch):
@@ -460,7 +471,8 @@ def test_failed_final_draft_save_still_returns_the_valid_result(monkeypatch):
             pass
 
         def save_if_path(self):
-            raise OSError("disk full")
+            msg = "disk full"
+            raise OSError(msg)
 
         def dispose(self):
             pass

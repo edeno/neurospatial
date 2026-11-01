@@ -70,10 +70,11 @@ class _FittedState(ReadOnlyArraysMixin):
 
         models = read_only_copy(self.encoding_models)
         if models.ndim != 2:
-            raise ValueError(
+            msg = (
                 f"encoding_models must be 2-D (n_units, n_bins), got "
                 f"{models.ndim}-D with shape {models.shape}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "encoding_models", models)
         # One distinct label per encoding model: label pairing relies on it.
         resolve_record_unit_ids(self, models.shape[0], context="BayesianDecoder")
@@ -298,12 +299,13 @@ warn_on_drop
                 strict=True,
             ):
                 if current_value != fitted_value:
-                    raise ValueError(
+                    msg = (
                         f"{name} cannot change on a fitted decoder: changing "
                         "encoding settings would not refit the stored models. "
                         "Fix: construct a new BayesianDecoder with the desired "
                         "encoding settings and call fit()."
                     )
+                    raise ValueError(msg)
 
         # Method-specific validation, reusing the encoder's validator so the
         # mutual-exclusivity + value-domain errors are byte-identical to
@@ -321,11 +323,12 @@ warn_on_drop
             self._check_fitted_environment()
             n_model_bins = self._fit.encoding_models.shape[1]
             if n_model_bins != self.env.n_bins:
-                raise ValueError(
+                msg = (
                     f"encoding_models has {n_model_bins} bins but env.n_bins "
                     f"is {self.env.n_bins}; the encoding model's bin axis must "
                     f"match the environment it decodes over."
                 )
+                raise ValueError(msg)
             from neurospatial.decoding._support import validate_support
 
             if self._fit.spatial_support is not None:
@@ -342,9 +345,12 @@ warn_on_drop
         bins, topology = _environment_differences(self._fit.env, self.env)
         mismatch = bins or topology
         if mismatch is not None:
-            raise IncompatibleEnvironmentError(
+            msg = (
                 "env cannot change on a fitted decoder: the encoding models "
-                f"were fitted on an environment that differs in {mismatch}.",
+                f"were fitted on an environment that differs in {mismatch}."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix="fit a new BayesianDecoder(new_env, ...) on the training "
                 "data, or use BayesianDecoder.from_models(new_env, models) for "
                 "rate maps defined on new_env.",
@@ -458,15 +464,18 @@ warn_on_drop
         >>> bool(np.all(result.times >= 10.0))
         True
         """
+        from neurospatial._validation import validate_instance
         from neurospatial.encoding.spatial import SpatialRatesResult
 
-        if not isinstance(rates, SpatialRatesResult):
-            raise TypeError(
-                f"BayesianDecoder.from_rates expects SpatialRatesResult, got {type(rates).__name__}.\n"
-                "Why: the decoder needs spatial rate maps, their environment and unit identities.\n"
-                "Fix: call rates = compute_spatial_rates(env, spike_times, times, positions), "
-                "then BayesianDecoder.from_rates(rates)."
-            )
+        rates = validate_instance(
+            rates,
+            SpatialRatesResult,
+            name="rates",
+            owner="BayesianDecoder.from_rates()",
+            hint="the decoder needs spatial rate maps, their environment and unit "
+            "identities; call rates = compute_spatial_rates(env, spike_times, times, "
+            "positions), then BayesianDecoder.from_rates(rates)",
+        )
         models = np.asarray(rates.firing_rates)
         dtype = np.float32 if models.dtype == np.float32 else np.float64
         settings = rates.analysis_settings or {}
@@ -623,7 +632,7 @@ warn_on_drop
             If :meth:`fit` has not been called (``encoding_models is None``).
         """
         if self.encoding_models is None:
-            raise RuntimeError(
+            msg = (
                 "BayesianDecoder is not fitted.\n"
                 "Why: fit() returns a new fitted decoder and leaves the original "
                 "unchanged, so calling decoder.fit(...) without keeping the result "
@@ -631,6 +640,7 @@ warn_on_drop
                 "Fix: decoder = decoder.fit(spike_times, times, positions), or "
                 "decoder = BayesianDecoder.from_rates(rates) for precomputed rate maps."
             )
+            raise RuntimeError(msg)
         return self.encoding_models
 
     @reads_pynapple_samples
@@ -823,13 +833,14 @@ warn_on_drop
             )
         if input_ids is None:
             if len(trains) != n_models:
-                raise ValueError(
+                msg = (
                     f"Got {len(trains)} spike trains but the decoder was fitted "
                     f"with {n_models} units. Unlabelled trains are paired with "
                     "encoding models by position.\n"
                     "Fix: pass one spike train per fitted unit in the order used "
                     "for fit."
                 )
+                raise ValueError(msg)
             return trains
         labels = resolve_unit_ids(
             None,
@@ -843,7 +854,7 @@ warn_on_drop
         missing_ids = [u for u in fitted if u not in row]
         unexpected = [u for u in labels if u not in fitted_set]
         if missing_ids or unexpected:
-            raise ValueError(
+            msg = (
                 "Spike input unit labels do not match the decoder's fitted "
                 f"unit_ids (missing: {missing_ids}, unexpected: {unexpected}).\n"
                 "Decoding would pair spike trains with the wrong encoding "
@@ -851,6 +862,7 @@ warn_on_drop
                 "Fix: pass spikes for exactly the fitted units (pynapple: "
                 "group[list(decoder.unit_ids)]), or refit on this input."
             )
+            raise ValueError(msg)
         return [trains[row[u]] for u in fitted]
 
     @reads_pynapple_samples
@@ -1241,7 +1253,7 @@ warn_on_drop
         n = int(errors.size)
         n_bad = int(np.isnan(errors).sum())
         if n == 0 or n_bad == n:
-            raise ValueError(
+            msg = (
                 "score() could not decode any time bin: every decode time bin's "
                 "posterior was entirely non-finite (undecodable), or no observed "
                 "ground truth was available, so there is no "
@@ -1251,6 +1263,7 @@ warn_on_drop
                 "in seconds). Check the encoding-model coverage and that "
                 "spike_times and times share units (both seconds)."
             )
+            raise ValueError(msg)
         if n_bad > 0:
             warnings.warn(
                 f"{n_bad}/{n} decode time bins were undecodable or lacked observed "

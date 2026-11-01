@@ -289,7 +289,7 @@ class TestVideoReaderErrorHandling:
     def test_reader_invalid_crop_raises(self, larger_video_path: Path):
         """Test that invalid crop raises ValueError."""
         # Crop extends beyond frame bounds
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="crop") as exc_info:
             _VideoReader(larger_video_path, crop=(0, 0, 100, 100))
 
         error_msg = str(exc_info.value)
@@ -316,7 +316,7 @@ class TestVideoReaderErrorHandling:
         monkeypatch.setattr(cv2, "VideoCapture", UndecodableCapture)
         reader = _VideoReader(tiny_video_path)
 
-        with pytest.raises(OSError) as exc_info:
+        with pytest.raises(OSError, match="frame 2") as exc_info:
             reader[2]
         assert not isinstance(exc_info.value, IndexError)
         message = str(exc_info.value)
@@ -341,7 +341,9 @@ class TestVideoReaderErrorHandling:
         self, larger_video_path: Path, crop
     ):
         """A malformed crop names the (x, y, width, height) form and the frame."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"crop must be \(x, y, width, height\)"
+        ) as exc_info:
             _VideoReader(larger_video_path, crop=crop)
         message = str(exc_info.value)
         assert "crop must be (x, y, width, height)" in message
@@ -350,10 +352,10 @@ class TestVideoReaderErrorHandling:
 
     def test_reader_invalid_downsample_raises(self, larger_video_path: Path):
         """Test that invalid downsample raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="downsample must be a positive integer"):
             _VideoReader(larger_video_path, downsample=0)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="downsample must be a positive integer"):
             _VideoReader(larger_video_path, downsample=-1)
 
 

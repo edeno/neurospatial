@@ -556,9 +556,9 @@ class TestViewRateResultPlot:
             bandwidth=5.0,
         )
 
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         _fig, ax_in = plt.subplots()
@@ -1006,9 +1006,9 @@ class TestViewRatesResultPlot:
             bandwidth=5.0,
         )
 
-        import matplotlib
+        import matplotlib as mpl
 
-        matplotlib.use("Agg")
+        mpl.use("Agg")
         import matplotlib.pyplot as plt
 
         _fig, ax_in = plt.subplots()
@@ -1587,7 +1587,10 @@ class TestViewRatesResultSummaryTable:
         )
 
         # Wrong number of ids
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"unit_ids length mismatch in ViewRatesResult\.summary_table",
+        ):
             result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
     def test_summary_table_peak_x_matches_batch_method(

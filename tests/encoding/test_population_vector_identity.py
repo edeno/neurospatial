@@ -149,14 +149,16 @@ def test_unvisited_bins_are_nan_never_zero(make, maps):
     filled[:, 0] = [0.0, 0.0, 3.0, 0.0, 0.0]  # unvisited: filled or extrapolated
     filled[:, 4] = [1.0, 0.0, 0.0, 2.0, 0.0]  # visited for less than min_occupancy
 
-    pv_kept = population_vector_correlation(
-        make(first, IDS),
-        make(kept, IDS, occupancy, min_occupancy=0.05),
-    )
-    pv_filled = population_vector_correlation(
-        make(first, IDS),
-        make(filled, IDS, occupancy, min_occupancy=0.05),
-    )
+    with pytest.warns(UserWarning, match="different min_occupancy"):
+        pv_kept = population_vector_correlation(
+            make(first, IDS),
+            make(kept, IDS, occupancy, min_occupancy=0.05),
+        )
+    with pytest.warns(UserWarning, match="different min_occupancy"):
+        pv_filled = population_vector_correlation(
+            make(first, IDS),
+            make(filled, IDS, occupancy, min_occupancy=0.05),
+        )
 
     np.testing.assert_array_equal(pv_kept, pv_filled)
     assert np.isnan(pv_filled[[0, 4]]).all()
@@ -364,7 +366,7 @@ def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps
             unit_ids=list(IDS),
         )
 
-    with pytest.warns(UserWarning) as caught:
+    with pytest.warns(UserWarning, match=r"and firing_rates") as caught:
         pv = population_vector_correlation(
             estimated(first, 5.0), estimated(second, 10.0)
         )

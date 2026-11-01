@@ -76,10 +76,12 @@ def boundary_geometry(
         exact planar geometry.
     """
     if source not in ("physical", "analysis"):
-        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+        msg = "boundary_source must be 'physical' or 'analysis'."
+        raise ValueError(msg)
     if arena.coordinate_kind != "cartesian":
+        msg = f"Wall geometry (boundary_source={source!r})"
         raise CartesianOnlyError(
-            f"Wall geometry (boundary_source={source!r})",
+            msg,
             why="Walls and cell edges are lines in the Cartesian (x, y) plane.",
             fix="compute wall-based measures on the allocentric environment "
             "the positions were recorded in",
@@ -271,9 +273,8 @@ def wall_hit_bins(
                 original, _error = arena.affine.project(centers)
                 return source_locator(locator.base, arena.base, original)
             if source == "physical":
-                raise NotImplementedError(
-                    "Physical wall-bin assignment needs a shared source frame; retain the arena's transform with the bins, or explicitly choose boundary_source='analysis'."
-                )
+                msg = "Physical wall-bin assignment needs a shared source frame; retain the arena's transform with the bins, or explicitly choose boundary_source='analysis'."
+                raise NotImplementedError(msg)
         if isinstance(locator, SubsetLocator):
             return SubsetLocator(
                 source_locator(locator.base, arena, centers), locator.parent_to_child
@@ -294,9 +295,8 @@ def wall_hit_bins(
                 isinstance(part, TransformedLocator) for part in iter_locators(locator)
             )
         ):
-            raise NotImplementedError(
-                "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
-            )
+            msg = "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
+            raise NotImplementedError(msg)
         return locator
 
     locator = source_locator(binning.locator, arena, binning.bins.centers)
@@ -391,9 +391,8 @@ def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
         return []
     domain = arena.polygonal_domain()
     if domain is None:
-        raise NotImplementedError(
-            "Physical footprint has no exact planar polygon boundary. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
-        )
+        msg = "Physical footprint has no exact planar polygon boundary. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
+        raise NotImplementedError(msg)
     return [domain]
 
 
@@ -463,7 +462,7 @@ def physical_walls(arena: Arena, *, blocking: Blocking) -> shapely.Geometry:
         not physical and it has no named walls.
     """
     if not arena.walls and not _physical_footprints(arena):
-        raise NotImplementedError(
+        msg = (
             "Physical boundaries are unknown: this environment's outline was inferred from positions, "
             "bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what "
             "the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or "
@@ -472,6 +471,7 @@ def physical_walls(arena: Arena, *, blocking: Blocking) -> shapely.Geometry:
             "measured boundaries; attaching an arena does not extend bins or supply missing observations. "
             "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."
         )
+        raise NotImplementedError(msg)
     return unary_union(_physical_boundaries(arena, blocking))
 
 
@@ -533,9 +533,8 @@ def _ray_segments(
     """Validate rays and return only finite starts and finite search endpoints."""
     validate_finite_scalar(max_distance, name="max_distance", positive=True)
     if origins.ndim != 2 or origins.shape[1] != 2 or angles.shape != (len(origins),):
-        raise ValueError(
-            "Ray positions must have shape (n_time, 2) and directions (n_time,)."
-        )
+        msg = "Ray positions must have shape (n_time, 2) and directions (n_time,)."
+        raise ValueError(msg)
     valid = np.asarray(
         np.all(np.isfinite(origins), axis=1) & np.isfinite(angles), dtype=np.bool_
     )
@@ -544,9 +543,8 @@ def _ray_segments(
     with np.errstate(over="ignore", invalid="ignore"):
         end = selected + max_distance * direction
     if np.any(~np.isfinite(end)) or np.any(np.all(end == selected, axis=1)):
-        raise ValueError(
-            "Ray length is not representable at these coordinates; rescale or recenter positions."
-        )
+        msg = "Ray length is not representable at these coordinates; rescale or recenter positions."
+        raise ValueError(msg)
     return valid, selected, end
 
 
@@ -733,9 +731,8 @@ def physical_ray_hits(
     )
     base, query, frames = _wall_frame(arena, np.vstack((starts, ends)), blocking)
     if not np.all(np.isfinite(query)):
-        raise ValueError(
-            "Ray projection exceeds coordinate precision; recenter or rescale positions."
-        )
+        msg = "Ray projection exceeds coordinate precision; recenter or rescale positions."
+        raise ValueError(msg)
     hits = _segment_hits(
         physical_walls(base, blocking=blocking),
         query[: len(starts)],
@@ -910,9 +907,8 @@ def search_distance(walls: shapely.Geometry, positions: NDArray[np.float64]) -> 
             np.hypot.reduce(coordinates.max(axis=0) - coordinates.min(axis=0))
         )
     if not np.isfinite(extent):
-        raise ValueError(
-            "Wall search extent exceeds coordinate precision; rescale positions."
-        )
+        msg = "Wall search extent exceeds coordinate precision; rescale positions."
+        raise ValueError(msg)
     return max(extent * 2, 1.0)
 
 
@@ -1092,9 +1088,8 @@ def batch_line_of_sight_clear(
     observer = np.asarray(observer, dtype=np.float64)
     targets = np.asarray(targets, dtype=np.float64)
     if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
-        raise ValueError(
-            "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
-        )
+        msg = "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
+        raise ValueError(msg)
     missing = []
     if not np.all(np.isfinite(observer)):
         missing.append(f"the observer {observer.tolist()}")

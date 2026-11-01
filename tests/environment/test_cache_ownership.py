@@ -144,8 +144,7 @@ def test_bin_sizes_array_metadata_cannot_change_published_sizes(env):
 def test_public_cached_properties_cannot_be_rebound(env, name, access_first, operation):
     if access_first:
         getattr(env, name)
+    rebind = setattr if operation == "set" else delattr
+    args = ("caller value",) if operation == "set" else ()
     with pytest.raises((AttributeError, TypeError)):
-        if operation == "set":
-            setattr(env, name, "caller value")
-        else:
-            delattr(env, name)
+        rebind(env, name, *args)

@@ -198,10 +198,11 @@ class CriterionGrid:
         prefix = f"CriterionGrid {self.quantity!r}"
         thresholds = np.array(self.thresholds, dtype=np.float64)
         if thresholds.ndim > 1 or thresholds.size == 0:
-            raise ValueError(
+            msg = (
                 f"{prefix}: thresholds must be a number or a 1-D array of at "
                 f"least one threshold, got shape {thresholds.shape}."
             )
+            raise ValueError(msg)
         if not np.isfinite(thresholds).all():
             raise ValueError(
                 _format_error(
@@ -457,10 +458,11 @@ class DatasetTestResult(ReadOnlyArraysMixin, ResultMixin):
             _, ax = plt.subplots()
         shape = self.grid_shape
         if len(shape) > 2:
-            raise ValueError(
+            msg = (
                 f"DatasetTestResult.plot(): a grid over {len(shape)} criteria "
                 "cannot be drawn as one matrix; plot slices of grid_table()."
             )
+            raise ValueError(msg)
         if not shape:
             ax.hist(self.null_statistics, bins=kwargs.pop("bins", 30), **kwargs)
             ax.axvline(float(self.statistic), color="k", linestyle="--")
@@ -863,10 +865,11 @@ def _dataset_values(
     operation = "dataset_values()"
     validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     if null is None and (n_datasets != 1 or shared):
-        raise ValueError(
+        msg = (
             f"{operation}: n_datasets and shared apply to null data sets; with "
             "null=None the events are measured once, as data set 0."
         )
+        raise ValueError(msg)
     if shared and null not in _SHAREABLE_NULLS:
         raise ValueError(
             _format_error(
@@ -965,10 +968,11 @@ def _replay_values(
     counts = _event_counts(spike_counts, decoded, operation)
     unknown = [name for name in quantities if name not in _TRAJECTORY_SCALARS]
     if unknown:
-        raise ValueError(
+        msg = (
             f"{operation}: quantities {unknown} are not scalars of "
             f"TrajectoryMetrics; choose from {list(_TRAJECTORY_SCALARS)}."
         )
+        raise ValueError(msg)
     quantity_columns = _measured_quantities(method, quantities)
     if counts is None and method._needs_spike_counts:
         raise ValueError(
@@ -1064,21 +1068,24 @@ def _check_replay_method_inputs(
 ) -> None:
     """Refuse a rank-order null, a template, and a mapping of environments."""
     if null is not None and null not in _NULLS:
-        raise ValueError(
+        msg = (
             f"{operation}: null must be None or one of {list(_NULLS)} for a "
             f"replay method, got {null!r}; 'cell_order' is a rank-order null."
         )
+        raise ValueError(msg)
     if template is not None:
-        raise ValueError(
+        msg = (
             f"{operation}: template applies to a rank-order method with several "
             "rate maps; a replay method measures each event's posterior as "
             "decoded."
         )
+        raise ValueError(msg)
     if isinstance(env, Mapping):
-        raise ValueError(
+        msg = (
             f"{operation}: a replay method takes the one environment the events "
             "were decoded on, not a mapping."
         )
+        raise ValueError(msg)
 
 
 def _null_event_values(
@@ -1210,7 +1217,8 @@ def _decoded_events(
 
     decoded = list(events)
     if not decoded:
-        raise ValueError(f"{operation}: events is empty; pass at least one event.")
+        msg = f"{operation}: events is empty; pass at least one event."
+        raise ValueError(msg)
     for index, event in enumerate(decoded):
         if not isinstance(event, DecodingResult):
             raise ValueError(
@@ -1225,9 +1233,8 @@ def _decoded_events(
                 )
             )
         if event.times is None:
-            raise ValueError(
-                f"{operation}: event {index} has no times; decode with times=."
-            )
+            msg = f"{operation}: event {index} has no times; decode with times=."
+            raise ValueError(msg)
         if not isinstance(env, Mapping):
             _check_decoded_environment(env, event.env, index, operation)
     return decoded
@@ -1241,10 +1248,11 @@ def _event_counts(
     if spike_counts is None:
         return None
     if len(spike_counts) != len(events):
-        raise ValueError(
+        msg = (
             f"{operation}: spike_counts has {len(spike_counts)} entries but there "
             f"are {len(events)} events."
         )
+        raise ValueError(msg)
     counts = []
     for index, (entry, event) in enumerate(zip(spike_counts, events, strict=True)):
         array = np.asarray(entry)
@@ -1271,10 +1279,11 @@ def _null_options_of(
 
     if null is None:
         if null_options:
-            raise ValueError(
+            msg = (
                 f"{operation}: null_options needs a null; with null=None the "
                 "events are not shuffled."
             )
+            raise ValueError(msg)
         return {}
     checked = _checked_null_options(null_options, (null,), operation)
     return checked.get(null, {})
@@ -1397,7 +1406,8 @@ class _NullContext:
             missing = _missing_decoding_inputs(counts, encoding_models, dt)
             if missing:
                 _refuse_missing_decoding_inputs(operation, [null], missing)
-            assert dt is not None and counts is not None
+            assert dt is not None
+            assert counts is not None
             if spec.spreads_spikes:
                 for event in events:
                     _require_contiguous_time_bins(
@@ -1408,11 +1418,12 @@ class _NullContext:
                     )
             decoder = _EventDecoder(env, encoding_models, dt, prior, None)
             if shared and options.get("active_only", False):
-                raise ValueError(
+                msg = (
                     f"{operation}: shared=True permutes every cell once per data "
                     "set, so unit_identity's active_only, which permutes each "
                     "event's active cells, cannot be used with it."
                 )
+                raise ValueError(msg)
             if shared:
                 generator = _stream(entropy, _SHARED_KEY)
                 if null == "unit_identity":
@@ -1904,23 +1915,27 @@ def _check_rank_order_inputs(
 ) -> None:
     """Refuse the inputs a rank-order data set cannot use, or lacks."""
     if null not in (None, "cell_order"):
-        raise ValueError(
+        msg = (
             f"{operation}: a rank-order method's null is 'cell_order' (or None), "
             f"got {null!r}."
         )
+        raise ValueError(msg)
     if null_options:
-        raise ValueError(f"{operation}: the cell_order null takes no options.")
+        msg = f"{operation}: the cell_order null takes no options."
+        raise ValueError(msg)
     if quantities:
-        raise ValueError(
+        msg = (
             f"{operation}: quantities are TrajectoryMetrics of a decoded event; a "
             "rank-order method measures spikes and reports its score and active "
             "cells."
         )
+        raise ValueError(msg)
     if method.test == "pooled_ssi":
-        raise ValueError(
+        msg = (
             f"{operation}: method {method.name!r} scores the SSI against an epoch's "
             "pooled shuffles; use a rank-order method with a correlation test."
         )
+        raise ValueError(msg)
     if spike_times is None or encoding_models is None:
         raise ValueError(
             _format_error(
@@ -2267,14 +2282,16 @@ def dataset_test(
     codes, names = pd.factorize(null_table["dataset"], sort=True)
     n_datasets = len(names)
     if n_datasets == 0:
-        raise ValueError(f"{operation}: null_table has no data sets.")
+        msg = f"{operation}: null_table has no data sets."
+        raise ValueError(msg)
     if criteria is not None:
         grids = list(criteria)
         if not grids or not all(isinstance(c, CriterionGrid) for c in grids):
-            raise ValueError(
+            msg = (
                 f"{operation}: criteria must be one or more CriterionGrid, got "
                 f"{criteria!r}."
             )
+            raise ValueError(msg)
         observed_count = _grid_counts(
             observed, np.zeros(len(observed), dtype=np.intp), 1, grids
         )[0]
@@ -2303,10 +2320,11 @@ def dataset_test(
             ]
         )
         if not np.isfinite(observed_statistic).all():
-            raise ValueError(
+            msg = (
                 f"{operation}: the observed statistic is not finite "
                 f"({observed_statistic}); it cannot be compared with the null."
             )
+            raise ValueError(msg)
         undefined = ~np.isfinite(null_statistics).reshape(n_datasets, -1).all(axis=1)
         if undefined.any():
             raise ValueError(
@@ -2365,13 +2383,15 @@ def _check_dataset_tables(
                 "dataset from a NullSpikeData's copy_index",
             )
         )
-    if "dataset" in observed and observed["dataset"].nunique(dropna=False) > 1:
-        raise ValueError(
+    if "dataset" in observed and len(observed["dataset"].unique()) > 1:
+        msg = (
             f"{operation}: observed holds {observed['dataset'].nunique()} data "
             "sets; pass the one observed data set (dataset_values with null=None)."
         )
+        raise ValueError(msg)
     if len(observed) == 0:
-        raise ValueError(f"{operation}: observed has no events.")
+        msg = f"{operation}: observed has no events."
+        raise ValueError(msg)
     n_unlabeled = int(null_table["dataset"].isna().sum())
     if n_unlabeled:
         raise ValueError(
@@ -2528,14 +2548,16 @@ def distribution_test(
     dropped = []
     for name, table in (("observed", observed), ("null_table", null_table)):
         if column not in table:
-            raise ValueError(f"{operation}: {name} has no {column!r} column.")
+            msg = f"{operation}: {name} has no {column!r} column."
+            raise ValueError(msg)
         values = np.asarray(table[column], dtype=np.float64)
         finite = np.isfinite(values)
         if finite.sum() < 2:
-            raise ValueError(
+            msg = (
                 f"{operation}: {name} has {int(finite.sum())} finite values of "
                 f"{column!r}; a two-sample test needs at least two."
             )
+            raise ValueError(msg)
         samples.append(values[finite])
         dropped.append(int((~finite).sum()))
     first, second = samples
@@ -2653,10 +2675,11 @@ def relative_rank_template(
         owner=operation,
     )
     if not is_integer_at_least(min_active_cells, 2):
-        raise ValueError(
+        msg = (
             f"{operation}: min_active_cells must be an integer of at least 2, got "
             f"{min_active_cells!r}; a relative rank needs two active cells."
         )
+        raise ValueError(msg)
     windows = _checked_intervals(intervals, operation)
     trains = as_spike_trains(spike_times)
     # When each cell fired in each frame, (n_cells, n_frames); NaN if silent.
@@ -2786,11 +2809,12 @@ def template_correlation_test(
     validate_integer_at_least(n_shuffles, 1, name="n_shuffles", owner=operation)
     validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=operation)
     if len(templates) != len(reference_templates) or not len(templates):
-        raise ValueError(
+        msg = (
             f"{operation}: templates and reference_templates must pair one to one "
             f"and not be empty, got {len(templates)} and "
             f"{len(reference_templates)}."
         )
+        raise ValueError(msg)
     generator = np.random.default_rng(rng)
     observed = []
     shuffled = np.empty((n_shuffles, len(templates)))
@@ -2800,18 +2824,20 @@ def template_correlation_test(
         x = np.asarray(template, dtype=np.float64)
         y = np.asarray(reference, dtype=np.float64)
         if x.shape != y.shape or x.ndim != 1:
-            raise ValueError(
+            msg = (
                 f"{operation}: template {unit} has shape {x.shape} and its "
                 f"reference {y.shape}; pass one value per cell, the same cells "
                 "in both."
             )
+            raise ValueError(msg)
         in_reference = np.flatnonzero(np.isfinite(y))
         both = np.isfinite(x) & np.isfinite(y)
         if both.sum() < 3:
-            raise ValueError(
+            msg = (
                 f"{operation}: template {unit} shares {int(both.sum())} cells with "
                 "its reference; a rank correlation needs at least three."
             )
+            raise ValueError(msg)
         correlation = _spearman_rows(y[both][None, :], x[both])[0]
         if not np.isfinite(correlation):
             raise ValueError(
@@ -2990,10 +3016,11 @@ class DatasetTestRecipe:
         if self.p_value_rule == "monte_carlo":
             return result.p_value
         if self.p_value_rule == "test":
-            raise ValueError(
+            msg = (
                 f"{self.name}: the paper's p-value is the two-sample test's; read "
                 "it from distribution_test()."
             )
+            raise ValueError(msg)
         one_tailed = 1.0 - np.asarray(result.percentile, dtype=np.float64) / 100.0
         if self.p_value_rule == "percentile_two_tailed":
             one_tailed = np.minimum(2.0 * one_tailed, 1.0)

@@ -177,9 +177,8 @@ def plot_grid(
 
     grid_edges = rectilinear.edges
     if len(rectilinear.shape) != 2 or len(grid_edges) != 2:
-        raise NotImplementedError(
-            "Plotting for non-2D grid layouts is not implemented yet."
-        )
+        msg = "Plotting for non-2D grid layouts is not implemented yet."
+        raise NotImplementedError(msg)
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     x, y = _grid_mesh(rectilinear, frame)
@@ -189,7 +188,7 @@ def plot_grid(
     ax.pcolormesh(
         x,
         y,
-        np.ma.masked_where(~active, np.ones(active.shape)),
+        np.ma.masked_where(~active, np.ones(active.shape)),  # type: ignore[no-untyped-call]
         cmap=cmap,
         vmin=0.0,
         vmax=4.0,
@@ -296,11 +295,13 @@ def _generic_graph_plot(
     import matplotlib.pyplot as plt
 
     if graph.number_of_nodes() == 0:
-        raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
+        msg = "Graph is empty or None. Cannot plot an empty graph."
+        raise ValueError(msg)
 
     node_positions = nx.get_node_attributes(graph, "pos")
     if not node_positions:  # No 'pos' attributes
-        raise ValueError("Nodes in graph are missing 'pos' attribute for plotting.")
+        msg = "Nodes in graph are missing 'pos' attribute for plotting."
+        raise ValueError(msg)
 
     if ax is None:
         _, ax = plt.subplots(figsize=kwargs.get("figsize", (7, 7)))

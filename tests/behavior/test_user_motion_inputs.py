@@ -186,7 +186,8 @@ def test_your_speed_decides_who_is_moving(session):
         r.times, positions, min_speed=MIN_SPEED, speed=speed, **support
     )
     overlaps = (epochs[:, 0] < 60.0) & (epochs[:, 1] > 50.0)
-    assert epochs.size and not overlaps.any()
+    assert epochs.size
+    assert not overlaps.any()
     labels = heading_direction_labels(
         r.times, positions, min_speed=MIN_SPEED, speed=speed, **support
     )

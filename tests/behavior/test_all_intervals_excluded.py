@@ -93,9 +93,7 @@ def _vte_session(env, times, positions, **kwargs):
         result = compute_vte_session(env, times, positions, **options, **kwargs)
         assert len(result.trial_results) == 2
         return result
-    with pytest.warns(UserWarning, match=r"only 0 observed sample\(s\)") as record:
-        result = compute_vte_session(env, times, positions, **options, **kwargs)
-    assert sum("only 0 observed" in str(w.message) for w in record) == 2
+    result = compute_vte_session(env, times, positions, **options, **kwargs)
     assert [t.status for t in result.trial_results] == ["too_few_samples"] * 2
     return result
 
@@ -207,6 +205,8 @@ def test_unlocated_rows_are_not_bridged_by_bin_detectors(nan_bridged_track):
 def test_disabling_the_gap_gate_is_silent(coarse_track, name):
     env, times, positions = coarse_track
     with warnings.catch_warnings():
+        # The toy trials have identical kinematics; that warning is not under test.
+        warnings.filterwarnings("ignore", message="No variation in ")
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=None)
 

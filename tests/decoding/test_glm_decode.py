@@ -200,9 +200,13 @@ class TestDecoderValidationMirrorsEncoder:
 
         env, spike_times, times, positions = _tiled_session(_grid_open_field())
 
-        with pytest.raises(ValueError) as enc_exc:
+        with pytest.raises(
+            ValueError, match=r"bandwidth|min_occupancy|penalty|rank"
+        ) as enc_exc:
             compute_spatial_rate(env, spike_times[0], times, positions, **kwargs)
-        with pytest.raises(ValueError) as dec_exc:
+        with pytest.raises(
+            ValueError, match=r"bandwidth|min_occupancy|penalty|rank"
+        ) as dec_exc:
             BayesianDecoder(env, **kwargs)
 
         assert str(dec_exc.value) == str(enc_exc.value)

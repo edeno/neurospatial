@@ -18,7 +18,9 @@ class TestNoActiveBinsError:
         # This creates a 1x1 grid, and with threshold=2, no bins have enough samples
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=50.0,  # Much larger than data range
                 positions=data,
@@ -56,7 +58,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=1.0,
                 positions=data,
@@ -89,7 +93,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=1.0,
                 positions=data,
@@ -120,7 +126,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=100.0,  # Too large
                 positions=data,
@@ -145,7 +153,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=100.0,
                 positions=data,
@@ -171,7 +181,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=50.0,
                 positions=data,
@@ -201,7 +213,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=50.0,
                 positions=data,
@@ -242,7 +256,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=50.0,
                 positions=data,
@@ -265,7 +281,9 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"No active bins found after filtering"
+        ) as exc_info:
             layout.build(
                 bin_size=[100.0, 50.0],  # Different sizes per dimension
                 positions=data,
@@ -289,8 +307,10 @@ class TestNoActiveBinsError:
 
         layout = RegularGridLayout()
 
-        # With all NaN data, the active_mask will be all False after filtering
-        with pytest.raises(ValueError) as exc_info:
+        # With all NaN data there is nothing to infer the active bins from
+        with pytest.raises(
+            ValueError, match=r"infer_active_bins needs finite positions"
+        ) as exc_info:
             layout.build(
                 bin_size=1.0,
                 dimension_ranges=[(0, 10), (0, 10)],  # Must provide explicit range
@@ -305,8 +325,7 @@ class TestNoActiveBinsError:
         error_msg = str(exc_info.value)
 
         # Should specifically mention NaN issue
-        assert "NaN" in error_msg or "nan" in error_msg.lower()
-        assert "no valid data" in error_msg.lower() or "all nan" in error_msg.lower()
+        assert "all 3 rows contain NaN" in error_msg
 
 
 class TestInferredRangeBuffer:

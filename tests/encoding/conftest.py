@@ -22,7 +22,7 @@ def rate_family_inputs():
     headings = np.arctan2(velocity[:, 1], velocity[:, 0])
     rng = np.random.default_rng(0)
     spikes = [np.sort(rng.uniform(0, times[-1], count)) for count in (200, 50, 300)]
-    return env, times, positions, headings, spikes, np.array([[30.0, 30.0]])
+    return env, times, positions, headings, spikes, np.array([[50.0, 50.0]])
 
 
 @pytest.fixture(scope="module")
@@ -333,15 +333,6 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def restore_numpy_random_state() -> Generator[None, None, None]:
-    """Make legacy global np.random use deterministic and order-independent."""
-    previous_state: tuple[Any, ...] = np.random.get_state()
-    np.random.seed(0)
-    yield
-    np.random.set_state(previous_state)
-
-
-@pytest.fixture(autouse=True)
 def restore_jax_x64_config() -> Generator[None, None, None]:
     """Keep tests that enable JAX x64 from leaking global config state."""
     # Resolve ``is_jax_available`` dynamically. ``restore_backend_availability_cache``
@@ -629,7 +620,8 @@ def simulate_varied_smoothness() -> Callable[..., tuple[np.ndarray, np.ndarray]]
         seed: int = 0,
     ) -> tuple[np.ndarray, np.ndarray]:
         if len(sigmas) != len(centers):
-            raise ValueError("sigmas must have one width per center.")
+            msg = "sigmas must have one width per center."
+            raise ValueError(msg)
         rng = np.random.default_rng(seed)
         bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
         n_bins = env.n_bins

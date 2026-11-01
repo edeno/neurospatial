@@ -84,7 +84,9 @@ class TestPopulationCoverageErrorMessage:
         """ValueError must not contain the old np.stack([rate1, rate2, ...]) recipe."""
         env, n_bins = self._make_env()
         wrong_rates = np.zeros((3, n_bins + 1))
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"firing_rates shape mismatch: expected"
+        ) as exc_info:
             population_coverage(env, wrong_rates, bandwidth=0.0)
         msg = str(exc_info.value)
         assert "firing_rates = np.stack([rate1, rate2" not in msg, (
@@ -95,7 +97,9 @@ class TestPopulationCoverageErrorMessage:
         """ValueError must not show the old singular .firing_rate + np.stack pattern."""
         env, n_bins = self._make_env()
         wrong_rates = np.zeros((3, n_bins + 1))
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(
+            ValueError, match=r"firing_rates shape mismatch: expected"
+        ) as exc_info:
             population_coverage(env, wrong_rates, bandwidth=0.0)
         msg = str(exc_info.value)
         # The old recipe ended with: .firing_rate\n  firing_rates = np.stack(...)

@@ -69,7 +69,8 @@ def test_missing_rows_stay_missing_and_shapes_are_kept():
     positions = np.c_[times * 10, np.zeros_like(times)]
     positions[5] = np.nan
     smoothed = smooth_positions(times, positions)
-    assert np.isnan(smoothed[5]).all() and np.isfinite(np.delete(smoothed, 5, 0)).all()
+    assert np.isnan(smoothed[5]).all()
+    assert np.isfinite(np.delete(smoothed, 5, 0)).all()
     line = smooth_positions(times, times * 10)
     assert line.shape == times.shape
 

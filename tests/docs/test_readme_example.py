@@ -13,7 +13,8 @@ def test_readme_simulation_recovers_printed_peak(monkeypatch, tmp_path, capsys):
     output = capsys.readouterr().out
     true_match = re.search(r"True field center: \[([^\]]+)\]", output)
     peak_match = re.search(r"Detected peak: \[([^\]]+)\]", output)
-    assert true_match and peak_match, output
+    assert true_match, output
+    assert peak_match, output
     center = np.fromstring(true_match[1].replace(",", " "), sep=" ")
     peak = np.fromstring(peak_match[1].replace(",", " "), sep=" ")
     # Recover the known synthetic center to within one 5 cm demonstration bin.

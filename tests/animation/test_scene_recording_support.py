@@ -30,10 +30,9 @@ def test_decoding_known_recording_gaps_survive_animation_options(env, options):
         np.array([0.05, 0.25]),
         spike_window=np.array([[0.0, 0.1], [0.2, 0.3]]),
     )
-    with (
-        pytest.warns(UserWarning, match="exact samples only"),
-        Animation.from_decoding(result, **options) as scene,
-    ):
+    with pytest.warns(UserWarning, match="exact samples only"):
+        scene = Animation.from_decoding(result, **options)
+    with scene:
         field = scene.fields["posterior"]
         assert field.values is result.posterior
         np.testing.assert_array_equal(field.epochs, result.spike_window)
@@ -113,10 +112,9 @@ def test_decoding_time_support_narrows_spike_window(env):
         spike_window=np.array([[0.0, 0.4]]),
         time_support=np.array([[0.0, 0.1], [0.2, 0.3]]),
     )
-    with (
-        pytest.warns(UserWarning, match="exact samples only"),
-        Animation.from_decoding(result, max_gap=None) as scene,
-    ):
+    with pytest.warns(UserWarning, match="exact samples only"):
+        scene = Animation.from_decoding(result, max_gap=None)
+    with scene:
         np.testing.assert_array_equal(
             scene.fields["posterior"].epochs, result.time_support
         )
@@ -276,7 +274,9 @@ def test_builtin_raster_snapshot_preserves_mixed_public_ids_and_rate_identity(
         np.testing.assert_array_equal(prepared.rates[:, 0], expected_rates)
 
 
-@pytest.mark.parametrize("labels, expected_kind", [([1, 2], "i"), (["a", "b"], "U")])
+@pytest.mark.parametrize(
+    ("labels", "expected_kind"), [([1, 2], "i"), (["a", "b"], "U")]
+)
 def test_builtin_raster_snapshot_keeps_homogeneous_public_id_dtype(
     env, labels, expected_kind
 ):

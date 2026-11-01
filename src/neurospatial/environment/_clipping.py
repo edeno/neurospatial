@@ -19,20 +19,21 @@ def _clip(
 ) -> _Derivation:
     """Intersect represented cells with an analysis polygon and known domain."""
     if binning.bins.n_dims != 2:
-        raise NotImplementedError(
-            "Exact polygon clipping requires Cartesian 2-D cells."
-        )
+        msg = "Exact polygon clipping requires Cartesian 2-D cells."
+        raise NotImplementedError(msg)
     if bridge_values(binning):
-        raise NotImplementedError(
+        msg = (
             "Clipping navigation bridge endpoints needs an explicit reconnection rule. "
             "Combine with auto_bridge=False before clipping, or clip the children first."
         )
+        raise NotImplementedError(msg)
     domain = arena.polygonal_domain()
     if arena.domain_known and domain is None:
-        raise NotImplementedError(
+        msg = (
             "Exact clipping requires a polygonal representation of the known "
             "arena domain. Provide polygon geometry or use whole-bin subset()."
         )
+        raise NotImplementedError(msg)
     clipped, _ = clip_binning(
         binning,
         polygon,

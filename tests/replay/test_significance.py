@@ -254,7 +254,8 @@ class TestReplaySignificanceAnyScore:
         score, options = _unwrap_partial(
             functools.partial(detect_trajectory_radon, band=10.0), {}
         )
-        assert score is detect_trajectory_radon and options == {"band": 10.0}
+        assert score is detect_trajectory_radon
+        assert options == {"band": 10.0}
         from neurospatial.replay.significance import _scorer_for
 
         assert isinstance(

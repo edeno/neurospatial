@@ -212,7 +212,9 @@ def test_missing_faces_preserves_actionable_reason():
 
 
 def test_unregistered_layout_locator_refuses():
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"cannot save object: no codec is registered for it"
+    ) as caught:
         encode(object(), "locator")
     assert "no codec" in str(caught.value)
     assert "Fix:" in str(caught.value)
@@ -220,13 +222,17 @@ def test_unregistered_layout_locator_refuses():
 
 def test_unregistered_layout_linearization_refuses():
     env = Environment.linear_track(endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0)
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"cannot save Environment: no codec is registered for it"
+    ) as caught:
         encode(env, "linearization")
     assert "no codec" in str(caught.value)
     assert "Fix:" in str(caught.value)
 
 
-@pytest.mark.parametrize("field,value", [("codec", "unknown"), ("codec_version", 999)])
+@pytest.mark.parametrize(
+    ("field", "value"), [("codec", "unknown"), ("codec_version", 999)]
+)
 def test_unknown_codec_or_version_refused(field, value):
     meta, arrays = encode(MissingFaces("No faces"), "faces")
     meta[field] = value
@@ -235,7 +241,7 @@ def test_unknown_codec_or_version_refused(field, value):
 
 
 @pytest.mark.parametrize(
-    "record,key,pattern",
+    ("record", "key", "pattern"),
     [
         ("bins", "centers", "centers"),
         ("bins", "sizes", "sizes"),

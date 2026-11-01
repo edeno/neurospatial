@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -19,7 +19,7 @@ from neurospatial.encoding.population import (
     rate_map_correlations,
 )
 
-matplotlib.use("Agg")  # Use non-interactive backend for testing
+mpl.use("Agg")  # Use non-interactive backend for testing
 
 
 def _coverage_result(place_fields, is_observed):
@@ -61,7 +61,9 @@ class TestPopulationCoverageResult:
         assert result.fields_per_place_cell == pytest.approx(1.5)
         assert result.mean_redundancy == pytest.approx(5 / 4)
         text = str(result)
-        assert "80.0%" in text and "2/4" in text and "1 bins" in text
+        assert "80.0%" in text
+        assert "2/4" in text
+        assert "1 bins" in text
 
     def test_dataclass_frozen(self) -> None:
         result = _coverage_result([[np.array([0])]], [True, True])
@@ -135,10 +137,9 @@ class TestPopulationCoverage:
         # Every map exceeds the explicitly requested spatial-map-mean cutoff.
         firing_rates = np.ones((5, n_bins)) * 15.0
 
-        with pytest.warns(UserWarning, match="spatial-map-mean filter"):
-            result = population_coverage(
-                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
-            )
+        result = population_coverage(
+            simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
+        )
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
@@ -436,7 +437,7 @@ class TestPlotPopulationCoverage:
         plt.close()
 
     @staticmethod
-    def _gap_line_positions(ax: matplotlib.axes.Axes) -> np.ndarray:
+    def _gap_line_positions(ax: mpl.axes.Axes) -> np.ndarray:
         """Sorted x positions of the dashed vertical gap lines."""
         return np.sort(
             [line.get_xdata()[0] for line in ax.lines if line.get_linestyle() == "--"]
@@ -510,7 +511,9 @@ class TestPlotPopulationCoverage:
     ) -> None:
         """Test error when result is not PopulationCoverageResult."""
         env, _ = env_and_result
-        with pytest.raises(TypeError, match="result must be PopulationCoverageResult"):
+        with pytest.raises(
+            TypeError, match="result must be a PopulationCoverageResult"
+        ):
             plot_population_coverage(env, {"coverage_fraction": 0.5})  # type: ignore[arg-type]
 
     def test_title_contains_coverage_info(
@@ -803,7 +806,8 @@ class TestRateMapCorrelations:
         flat = 5.0 * (1.0 + 1e-15 * rng.standard_normal(50))
         assert flat.max() > flat.min()  # the trap: an exact check passes it
         corr_matrix = rate_map_correlations(np.vstack([varying[0], flat, varying[1]]))
-        assert np.isnan(corr_matrix[1]).all() and np.isnan(corr_matrix[:, 1]).all()
+        assert np.isnan(corr_matrix[1]).all()
+        assert np.isnan(corr_matrix[:, 1]).all()
         np.testing.assert_array_equal(
             corr_matrix[np.ix_([0, 2], [0, 2])], rate_map_correlations(varying)
         )
@@ -891,7 +895,8 @@ class TestPopulationVectorCorrelation:
         a = a.copy()
         a[:, 9] = np.nan  # a whole unvisited location
         pv = population_vector_correlation(a, c)
-        assert np.isnan(pv[5]) and np.isnan(pv[9])
+        assert np.isnan(pv[5])
+        assert np.isnan(pv[9])
         assert np.isfinite(np.delete(pv, [5, 9])).all()
 
     def test_location_outside_spatial_support_is_nan(self, random_maps) -> None:

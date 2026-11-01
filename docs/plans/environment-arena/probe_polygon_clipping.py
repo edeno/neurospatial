@@ -64,7 +64,9 @@ def overlay(
     ]
     result.sort(key=lambda entry: (entry[0], key(entry[2])))
     for _, _, piece in result:
-        assert piece.is_valid and np.isfinite(piece.area) and piece.area > 0
+        assert piece.is_valid
+        assert np.isfinite(piece.area)
+        assert piece.area > 0
         anchor(piece)
     return result
 
@@ -104,7 +106,8 @@ def numerical_evidence() -> None:
     np.testing.assert_allclose([cell.area for cell in cells], [3 / 8, 5 / 8])
     np.testing.assert_allclose(centers, [[5 / 9, 7 / 36], [23 / 15, 19 / 60]])
     area, distance, flux, geometry = vertical_face_flux(cells, centers)
-    assert area == 0.5 and flux > 0.06  # Analytic normal derivative of u=y is zero.
+    assert area == 0.5
+    assert flux > 0.06  # Analytic normal derivative of u=y is zero.
     print(
         f"grid trapezoids: areas (3/8, 5/8), A={area:g}, d={distance:.12g}; "
         f"u=y numerical normal flux {flux:.12g}, analytic 0"
@@ -152,7 +155,8 @@ def numerical_evidence() -> None:
         for cell, point in zip(cells, parents, strict=True)
     )
     _, _, parent_flux, _ = vertical_face_flux(cells, parents)
-    assert centroid_flux > 0.1 and parent_flux == 0
+    assert centroid_flux > 0.1
+    assert parent_flux == 0
     print(
         f"canonical hex cut: u=y centroid flux {centroid_flux:.12g}; parent-anchor flux 0"
     )
@@ -161,7 +165,9 @@ def numerical_evidence() -> None:
     area, distance, flux, _ = vertical_face_flux(
         cells, np.array([anchor(c) for c in cells])
     )
-    assert area == 1 and distance == 0.875 and flux == 0
+    assert area == 1
+    assert distance == 0.875
+    assert flux == 0
     print("valid rectangle clip: areas (0.75, 1), A=1, d=0.875; u=y flux 0")
 
     first, final = box(0, 0, 0.4, 1), box(0, 0, 0.4, 0.8)
@@ -199,7 +205,8 @@ def main() -> None:
     for touching in [box(4, 0, 5, 4), box(4, 4, 5, 5)]:
         assert not overlay([cell], touching)
     thin = overlay([cell], box(0, 0, 2.0**-40, 4))
-    assert len(thin) == 1 and thin[0][2].area == 2.0**-38
+    assert len(thin) == 1
+    assert thin[0][2].area == 2.0**-38
     print(
         f"degeneracies: line/point touches discarded; positive sliver area {thin[0][2].area:.12g}"
     )
@@ -237,7 +244,8 @@ def main() -> None:
         .intersection(hole)
         .boundary.intersection(box(2, 0, 4, 4).intersection(hole).boundary)
     )
-    assert shared.geom_type == "MultiLineString" and shared.length == 2
+    assert shared.geom_type == "MultiLineString"
+    assert shared.length == 2
     print("shared face: two disjoint collinear interface segments; total length 2")
     left, right = [box(x, 0, x + 2, 4).intersection(hole) for x in (0, 2)]
     left_center, right_center = anchor(left), anchor(right)

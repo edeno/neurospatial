@@ -285,9 +285,7 @@ class TestBehavioralFunctions:
         region_builder = Regions(env.regions.values())
         region_builder.add("start", point=np.array([10.0, 10.0]))
         region_builder.add("goal", point=np.array([90.0, 90.0]))
-        env = env.with_regions(region_builder)
-
-        return env
+        return env.with_regions(region_builder)
 
     def test_path_progress_basic(self, simple_env):
         """Test path_progress computation."""

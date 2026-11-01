@@ -107,7 +107,8 @@ def test_result_records_frame(frame, ou_env, ou_2min, noise_trains, obj):
 def test_frame_compute_signatures_are_truthful():
     for name in ("compute_object_vector_rate", "compute_object_vector_rates"):
         params = inspect.signature(getattr(encoding, name)).parameters
-        assert "headings" not in params and "direction_frame" not in params
+        assert "headings" not in params
+        assert "direction_frame" not in params
     for name in ("compute_egocentric_rate", "compute_egocentric_rates"):
         params = inspect.signature(getattr(encoding, name)).parameters
         assert params["headings"].default is inspect.Parameter.empty
@@ -207,7 +208,8 @@ def test_free_predicates_match_methods(
 
 def test_frame_predicate_signatures_are_truthful():
     allocentric = inspect.signature(encoding.is_object_vector_cell).parameters
-    assert "headings" not in allocentric and "direction_frame" not in allocentric
+    assert "headings" not in allocentric
+    assert "direction_frame" not in allocentric
     egocentric = inspect.signature(encoding.is_egocentric_object_vector_cell).parameters
     assert egocentric["headings"].default is inspect.Parameter.empty
     with pytest.raises(TypeError, match="headings"):
@@ -284,7 +286,8 @@ def test_plot_allocentric_north_is_up(ou_env, ou_2min, obj):
     origin = ax.transData.transform((0, 0))
     target = ax.transData.transform((np.pi / 2, 20))
     dx, dy = target - origin
-    assert dy > 0 and abs(dx) < 0.1 * dy
+    assert dy > 0
+    assert abs(dx) < 0.1 * dy
     assert "allocentric" in ax.get_xlabel()
     plt.close(ax.figure)
 
@@ -367,7 +370,8 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
 
     r = continuous_recording
     args = (r.env, r.spike_times, r.times, r.positions, None, np.array([[50.0, 50.0]]))
-    with pytest.raises(ValueError, match="headings is required") as exc:
+
+    def run() -> None:
         if call == "significance":
             egocentric_object_vector_cell_significance(
                 *args,
@@ -380,6 +384,9 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
             is_egocentric_object_vector_cell(
                 *args, criterion="shuffle", n_shuffles=3, rng=0
             )
+
+    with pytest.raises(ValueError, match="headings is required") as exc:
+        run()
     assert "Fix:" in str(exc.value)
 
 

@@ -278,11 +278,12 @@ def spike_words(
     if cells is not None:
         selected = np.asarray(cells)
         if selected.dtype != bool or selected.shape != (len(trains),):
-            raise ValueError(
+            msg = (
                 f"{operation}: cells must be one boolean per cell, shape "
                 f"({len(trains)},), got dtype {selected.dtype} and shape "
                 f"{selected.shape}."
             )
+            raise ValueError(msg)
     units = np.flatnonzero(selected)
     onsets = [_onsets(trains[unit], max_isi) for unit in units]
     times = np.concatenate([np.empty(0), *onsets])
@@ -799,9 +800,8 @@ def _check_seconds(value: Any, name: str, operation: str, *, allow_zero: bool) -
         or (value == 0 and not allow_zero)
     ):
         bound = "non-negative" if allow_zero else "positive"
-        raise ValueError(
-            f"{operation}: {name} must be a {bound} number of seconds, got {value!r}."
-        )
+        msg = f"{operation}: {name} must be a {bound} number of seconds, got {value!r}."
+        raise ValueError(msg)
 
 
 def _check_match_options(
@@ -815,28 +815,31 @@ def _check_match_options(
 ) -> None:
     _check_seconds(max_isi, "max_isi", operation, allow_zero=True)
     if match_order not in _MATCH_ORDERS:
-        raise ValueError(
+        msg = (
             f"{operation}: match_order must be one of {_MATCH_ORDERS}, got "
             f"{match_order!r}."
         )
+        raise ValueError(msg)
     if (
         isinstance(trial_probability, bool)
         or not isinstance(trial_probability, (int, float, np.integer, np.floating))
         or not 0 < trial_probability < 1
     ):
-        raise ValueError(
+        msg = (
             f"{operation}: trial_probability must be in (0, 1), got "
             f"{trial_probability!r}; Lee & Wilson used 1/24."
         )
+        raise ValueError(msg)
     if not (
         is_integer_at_least(exact_max_letters, 1)
         and exact_max_letters <= _MAX_EXACT_LETTERS
     ):
-        raise ValueError(
+        msg = (
             f"{operation}: exact_max_letters must be an integer from 1 to "
             f"{_MAX_EXACT_LETTERS}, got {exact_max_letters!r}; enumerating the "
             f"orderings of more letters needs more than {_MAX_EXACT_LETTERS}! rows."
         )
+        raise ValueError(msg)
     validate_integer_at_least(n_samples, 1, name="n_samples", owner=operation)
 
 
@@ -897,10 +900,11 @@ def _template_ranks(
     from neurospatial.replay.rank_order import _template_fields
 
     if field_order not in _FIELD_ORDERS:
-        raise ValueError(
+        msg = (
             f"{operation}: field_order must be one of {_FIELD_ORDERS}, got "
             f"{field_order!r}."
         )
+        raise ValueError(msg)
     _, positions = _template_fields(
         env, encoding_models, field_order, min_peak_rate, operation
     )

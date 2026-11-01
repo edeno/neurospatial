@@ -82,7 +82,8 @@ def test_result_layout_and_table(significance_recording):
         result.p_values, np.where(np.isfinite(result.observed_scores), expected, np.nan)
     )
     table = result.summary_table(alpha=0.1)
-    assert table.index.name == "unit_id" and table.index.tolist() == ["a", "b", "c"]
+    assert table.index.name == "unit_id"
+    assert table.index.tolist() == ["a", "b", "c"]
     assert list(table.columns) == [
         *STATISTICS,
         "spatial_information_bias",
@@ -93,10 +94,12 @@ def test_result_layout_and_table(significance_recording):
         "cell_type",
     ]
     assert table.attrs["null_percentile"] == 90.0
-    np.testing.assert_allclose(
-        table["grid_score_null_percentile"],
-        np.nanpercentile(result.null_scores[:, :, 1], 90, axis=1),
-    )
+    with warnings.catch_warnings():
+        # A unit with no finite null grid score has a NaN threshold; the
+        # reference percentile warns about that all-NaN row.
+        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+        expected = np.nanpercentile(result.null_scores[:, :, 1], 90, axis=1)
+    np.testing.assert_allclose(table["grid_score_null_percentile"], expected)
     np.testing.assert_array_equal(
         table["passes_border_score"].to_numpy(dtype=bool),
         result.p_values[:, 2] < 0.1,
@@ -114,7 +117,8 @@ def test_result_layout_and_table(significance_recording):
     assert np.isfinite(result[1]["spatial_information"].p_value)
     summary = result.summary()
     labels = result.label_cell_types()
-    assert summary["n_units"] == 3 and summary["n_shuffles"] == 20
+    assert summary["n_units"] == 3
+    assert summary["n_shuffles"] == 20
     assert summary["n_place"] == np.sum(labels == "place")
     assert summary["n_grid_and_border"] == np.sum(labels == "grid+border")
 
@@ -125,7 +129,7 @@ def test_result_owns_read_only_arrays(significance_recording):
         r.env, r.trains, r.times, r.positions, n_shuffles=5, rng=0
     )
     for array in (result.observed_scores, result.null_scores, result.p_values):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"assignment destination is read-only"):
             array[...] = 0
     restored = pickle.loads(pickle.dumps(result))
     np.testing.assert_array_equal(restored.p_values, result.p_values)
@@ -172,8 +176,7 @@ def test_missing_walls_leave_border_undetermined(ou_2min_env, ou_2min, noise_tra
     assert "border_score" in result.unavailable_metrics
     assert result.inapplicable_metrics == ()
     assert np.isnan(result.p_values[:, 2]).all()
-    with pytest.warns(UserWarning, match="border_score"):
-        labels = result.label_cell_types()
+    labels = result.label_cell_types()
     np.testing.assert_array_equal(labels, ["undetermined", "undetermined"])
     assert result.summary_table()["passes_border_score"].isna().all()
 
@@ -406,7 +409,8 @@ def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
         rng=0,
         boundary_source="analysis",
     )
-    assert np.isfinite(result.grid_spacing[0]) and np.isnan(result.grid_spacing[1])
+    assert np.isfinite(result.grid_spacing[0])
+    assert np.isnan(result.grid_spacing[1])
     assert abs(result.grid_spacing[0] - 45.0) < 5.0
     assert (result.p_values[:, 1] < 0.05).all()
     labels = result.label_cell_types()
@@ -474,7 +478,9 @@ def test_undefined_information_bias_is_not_place(significance_recording):
     )
     with pytest.warns(UserWarning, match="1 of 3 units"):
         passes = rebuilt.summary_table()["passes_spatial_information"]
-    assert passes.tolist() == [False, True, False]
+    # The unknown-bias unit is undetermined, not failed.
+    assert passes.isna().tolist() == [True, False, False]
+    assert passes[1:].tolist() == [True, False]
 
 
 def _synthetic(observed, null, bias=None):
@@ -505,8 +511,7 @@ def test_too_few_finite_null_scores_leave_the_test_undetermined():
         bias=np.array([0.0, 0.0, 0.9]),
     )
     np.testing.assert_allclose(result.p_values[:, 2], [0.1, 1 / 40, 1.0])
-    with pytest.warns(UserWarning, match="1 of 3 units have a test .border_score"):
-        table = result.summary_table()
+    table = result.summary_table()
     np.testing.assert_array_equal(table["border_score_n_finite_null"], [9, 39, 39])
     np.testing.assert_array_equal(
         table["spatial_information_n_finite_null"], [39, 39, 9]
@@ -514,8 +519,7 @@ def test_too_few_finite_null_scores_leave_the_test_undetermined():
     assert table["passes_border_score"].isna().tolist() == [True, False, False]
     # Unit 2's information test cannot reject either, but its bias-corrected
     # information (0.1 bits/spike) rules out a place label regardless.
-    with pytest.warns(UserWarning, match="too few finite null scores"):
-        labels = result.label_cell_types()
+    labels = result.label_cell_types()
     np.testing.assert_array_equal(labels, ["undetermined", "border", "unclassified"])
     # At alpha = 0.2 the nine finite nulls are enough.
     assert result.label_cell_types(alpha=0.2)[0] == "border"
@@ -635,8 +639,7 @@ def test_holm_floor_above_the_first_step_is_undetermined():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert _border_unit(39).label_cell_types()[0] == "border"
-    with pytest.warns(UserWarning, match="at least 60 finite null scores"):
-        table = _border_unit(39).summary_table(correction="holm")
+    table = _border_unit(39).summary_table(correction="holm")
     assert table["cell_type"].iloc[0] == "undetermined"
     for name in ("spatial_information", "grid_score", "border_score"):
         assert table[f"passes_{name}"].isna().all()
@@ -673,8 +676,7 @@ def test_bh_floor_below_alpha_is_never_undetermined():
     with pytest.warns(UserWarning, match="fail correction='fdr_bh'"):
         table = _floor_unit_among_null_units(39).summary_table(correction="fdr_bh")
     assert not table.filter(like="passes_").isna().any().any()
-    with pytest.warns(UserWarning, match="at least 20 finite null scores"):
-        table = _floor_unit_among_null_units(19).summary_table(correction="fdr_bh")
+    table = _floor_unit_among_null_units(19).summary_table(correction="fdr_bh")
     assert table.loc[0, "cell_type"] == "undetermined"
 
 

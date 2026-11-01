@@ -79,10 +79,12 @@ class EventInspector:
         padding: float = 0.0,
     ) -> None:
         if not np.isfinite(padding) or padding < 0:
-            raise ValueError("padding must be nonnegative finite seconds.")
+            msg = "padding must be nonnegative finite seconds."
+            raise ValueError(msg)
         columns = (id_column, start_column, stop_column)
         if len(set(columns)) != 3:
-            raise ValueError("ID, start and stop columns must have different names.")
+            msg = "ID, start and stop columns must have different names."
+            raise ValueError(msg)
         if isinstance(events, pd.DataFrame):
             table = _copy_event_table(events)
         else:
@@ -98,33 +100,35 @@ class EventInspector:
             table = _copy_event_table(pd.DataFrame(data))
         missing = set(columns) - set(table.columns)
         if missing:
-            raise ValueError(f"Event records are missing columns: {sorted(missing)}.")
+            msg = f"Event records are missing columns: {sorted(missing)}."
+            raise ValueError(msg)
         ids = table[id_column]
         try:
             valid_ids = not ids.isna().any() and ids.is_unique
             for value in ids:
                 hash(value)
         except TypeError as exc:
-            raise ValueError(
-                "Event IDs must be unique, nonmissing, hashable values."
-            ) from exc
+            msg = "Event IDs must be unique, nonmissing, hashable values."
+            raise ValueError(msg) from exc
         if not valid_ids:
-            raise ValueError("Event IDs must be unique and nonmissing.")
+            msg = "Event IDs must be unique and nonmissing."
+            raise ValueError(msg)
         try:
             starts = table[start_column].to_numpy(dtype=float)
             stops = table[stop_column].to_numpy(dtype=float)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "Event start and stop times must be numeric seconds."
-            ) from exc
+            msg = "Event start and stop times must be numeric seconds."
+            raise ValueError(msg) from exc
         if not np.isfinite([starts, stops]).all() or np.any(starts >= stops):
-            raise ValueError("Each event needs finite start_time < stop_time.")
+            msg = "Each event needs finite start_time < stop_time."
+            raise ValueError(msg)
         bounds = animation.frame_times[[0, -1]]
         if np.any(stops <= bounds[0]) or np.any(starts >= bounds[1]):
-            raise ValueError(
+            msg = (
                 "Each event must overlap the animation's recording clock; "
                 "remove events outside the recording before inspection."
             )
+            raise ValueError(msg)
         self.animation = animation
         self.id_column, self.start_column, self.stop_column = columns
         self.padding = float(padding)
@@ -156,10 +160,11 @@ class EventInspector:
         """Show rows selected by a Boolean mask on the full ``events_table``."""
         selected = np.asarray(mask)
         if selected.dtype.kind != "b" or selected.shape != (len(self._table),):
-            raise ValueError(
+            msg = (
                 "mask must be one Boolean per row of events_table(), "
                 "including currently hidden events."
             )
+            raise ValueError(msg)
         self._visible = selected.copy()
         ids = self._table.loc[self._visible, self.id_column].tolist()
         if self._selected not in ids:
@@ -177,15 +182,15 @@ class EventInspector:
         try:
             return self._rows_by_id[event_id]
         except (KeyError, TypeError) as exc:
-            raise KeyError(f"Unknown event ID {event_id!r}.") from exc
+            msg = f"Unknown event ID {event_id!r}."
+            raise KeyError(msg) from exc
 
     def select(self, event_id: Any) -> EventInspector:
         """Select an event by its original ID and seek the view to its window."""
         row = self._row_index(event_id)
         if not self._visible[row]:
-            raise ValueError(
-                f"Event {event_id!r} is filtered out; call reset_filter first."
-            )
+            msg = f"Event {event_id!r} is filtered out; call reset_filter first."
+            raise ValueError(msg)
         self._selected = event_id
         if self._view is not None:
             start, stop = self.time_range()
@@ -197,7 +202,8 @@ class EventInspector:
     def time_range(self) -> tuple[float, float]:
         """Selected event window, including padding and clipped to the scene."""
         if self._selected is None:
-            raise ValueError("No event is selected. Select a visible event first.")
+            msg = "No event is selected. Select a visible event first."
+            raise ValueError(msg)
         row = self._table.iloc[self._row_index(self._selected)]
         bounds = self.animation.frame_times[[0, -1]]
         return (
@@ -210,21 +216,23 @@ class EventInspector:
         row = self._row_index(event_id)
         for name, value in annotations.items():
             if not name:
-                raise ValueError("Annotation names must be nonempty.")
+                msg = "Annotation names must be nonempty."
+                raise ValueError(msg)
             column = f"annotation_{name}"
             if column not in self._table:
                 self._table[column] = pd.Series([None] * len(self._table), dtype=object)
             elif self._table[column].dtype != object:
                 self._table[column] = self._table[column].astype(object)
-            self._table.at[row, column] = copy.deepcopy(value)
+            self._table.at[row, column] = copy.deepcopy(  # noqa: PD008  # .at stores a list or dict in one object cell; .loc would broadcast it
+                value
+            )  # .at stores a list or dict in one object cell; .loc would broadcast it
         self._update_controls()
 
     def export(self, path: str | Path, **kwargs: Any) -> Path:
         """Export the selected event with the scene's complete panels."""
         if "time_range" in kwargs:
-            raise TypeError(
-                "EventInspector.export uses the selected event's time range."
-            )
+            msg = "EventInspector.export uses the selected event's time range."
+            raise TypeError(msg)
         return self.animation.export(path, time_range=self.time_range(), **kwargs)
 
     def export_events(
@@ -248,11 +256,13 @@ class EventInspector:
         """
         path = Path(path)
         if path.suffix.lower() not in {".csv", ".json"}:
-            raise ValueError("Use a .csv or .json path for event records.")
+            msg = "Use a .csv or .json path for event records."
+            raise ValueError(msg)
         table = self.events_table(visible_only=visible_only)
         if selected_only:
             if self._selected is None:
-                raise ValueError("No event is selected.")
+                msg = "No event is selected."
+                raise ValueError(msg)
             table = table.loc[table[self.id_column].isin([self._selected])]
         # Serialize and check identity before opening or truncating the file.
         if path.suffix.lower() == ".csv":
@@ -297,10 +307,11 @@ class EventInspector:
         import ipywidgets as widgets
 
         if backend != "widget":
-            raise ValueError(
+            msg = (
                 "EventInspector.show uses notebook controls; choose backend='widget'. "
                 "Use Animation.show(backend='fastplotlib') for native GPU controls."
             )
+            raise ValueError(msg)
         self.close()
         self._view = self.animation.show(backend=backend, **kwargs)
         selector = widgets.Select(description="Event", rows=8)
@@ -339,7 +350,9 @@ class EventInspector:
             if not updating and change["new"] is not None:
                 self.select(change["new"])
 
-        def annotated(change: dict[str, Any]) -> None:
+        def annotated(
+            change: dict[str, Any],  # noqa: ARG001  # ipywidgets observer signature
+        ) -> None:  # ipywidgets observer signature  # ipywidgets observer signature
             if not updating and self._selected is not None:
                 self.annotate(self._selected, review=decision.value, note=note.value)
 

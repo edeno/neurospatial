@@ -438,10 +438,10 @@ class TestEdgeCases:
         firing_rate = np.array([1.0, 2.0, 3.0])
         occupancy = np.array([1.0, 1.0])
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"firing_rate shape"):
             spatial_information(firing_rate, occupancy)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"firing_rate shape"):
             sparsity(firing_rate, occupancy)
 
     def test_batch_mismatched_shapes_raises(self):
@@ -449,10 +449,10 @@ class TestEdgeCases:
         firing_rates = np.ones((3, 100))
         occupancy = np.ones(50)  # Wrong size
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"firing_rates has"):
             batch_spatial_information(firing_rates, occupancy)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"firing_rates has"):
             batch_sparsity(firing_rates, occupancy)
 
 
@@ -539,8 +539,7 @@ class TestBatchGridScores:
         x = np.linspace(-50, 50, 51)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
-        return env
+        return Environment.from_samples(positions, bin_size=2.0)
 
     @pytest.fixture
     def batch_firing_rates_for_grid(self, env_2d_grid):
@@ -645,12 +644,13 @@ class TestBatchGridScores:
         env = env_2d_grid
 
         # 1D array should raise
-        firing_rate_1d = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(0)
+        firing_rate_1d = rng.random(env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             batch_grid_scores(env, firing_rate_1d)
 
         # Wrong n_bins should raise
-        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        firing_rates_wrong = rng.random((3, env.n_bins + 10))
         with pytest.raises(ValueError, match="bins"):
             batch_grid_scores(env, firing_rates_wrong)
 
@@ -952,7 +952,7 @@ class TestBatchScoresFailuresMask:
         assert result.n_failures == 0
         assert not result.failures.any()
 
-    def test_batch_border_scores_warns_and_flags_failed_neurons(
+    def test_batch_border_scores_flags_failed_neurons_without_warning(
         self,
         env_2d_grid,
     ):
@@ -964,7 +964,7 @@ class TestBatchScoresFailuresMask:
         1. Continue computing the remaining neurons.
         2. Set failures[0]=True (and not flag the others).
         3. Set scores[0]=NaN (and leave the others finite).
-        4. Emit a UserWarning that mentions the failure count.
+        4. Emit no warning (the mask is the record).
         """
         from neurospatial.encoding import _metrics
 
@@ -977,7 +977,8 @@ class TestBatchScoresFailuresMask:
         def fake_border_score(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                raise ValueError("intentional test failure on neuron 0")
+                msg = "intentional test failure on neuron 0"
+                raise ValueError(msg)
             return 0.5  # something finite for the other two
 
         # batch_border_scores does `from neurospatial.encoding.border
@@ -988,17 +989,16 @@ class TestBatchScoresFailuresMask:
         original = border_mod.border_score
         try:
             border_mod.border_score = fake_border_score
-            with pytest.warns(
-                UserWarning, match=r"raised an exception for 1 of 3 neurons"
-            ):
-                result = _metrics.batch_border_scores(
-                    env, firing_rates, boundary_source="analysis"
-                )
+            result = _metrics.batch_border_scores(
+                env, firing_rates, boundary_source="analysis"
+            )
         finally:
             border_mod.border_score = original
 
         assert result.n_failures == 1
-        assert result.failures[0] and not result.failures[1] and not result.failures[2]
+        assert result.failures[0]
+        assert not result.failures[1]
+        assert not result.failures[2]
         assert np.isnan(result.scores[0])
         assert result.scores[1] == pytest.approx(0.5)
         assert result.scores[2] == pytest.approx(0.5)
@@ -1027,8 +1027,7 @@ class TestBatchBorderScores:
         x = np.linspace(-50, 50, 51)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
-        return env
+        return Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     @pytest.fixture
     def batch_firing_rates_for_border(self, env_2d_grid):
@@ -1139,7 +1138,7 @@ class TestBatchBorderScores:
         for i in range(len(batch_scores)):
             if np.isnan(batch_scores[i]) and np.isnan(single_scores[i]):
                 continue  # Both NaN is OK
-            elif np.isnan(batch_scores[i]) or np.isnan(single_scores[i]):
+            if np.isnan(batch_scores[i]) or np.isnan(single_scores[i]):
                 # One NaN, one not - that's OK as long as behavior is consistent
                 pass
             else:
@@ -1152,12 +1151,13 @@ class TestBatchBorderScores:
         env = env_2d_grid
 
         # 1D array should raise
-        firing_rate_1d = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(0)
+        firing_rate_1d = rng.random(env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             batch_border_scores(env, firing_rate_1d, boundary_source="analysis")
 
         # Wrong n_bins should raise
-        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        firing_rates_wrong = rng.random((3, env.n_bins + 10))
         with pytest.raises(ValueError, match="bins"):
             batch_border_scores(env, firing_rates_wrong, boundary_source="analysis")
 

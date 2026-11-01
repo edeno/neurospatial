@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import Arena, contains_with_error
 from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
@@ -63,17 +64,20 @@ class CombinedLocator(ReadOnlyState):
         if (
             not keys
             or len(set(keys)) != len(keys)
-            or any(not isinstance(key, str) or not key or "/" in key for key in keys)
+            or any(
+                not validate_instance(key, str, name="keys", owner="Composition")
+                or "/" in key
+                for key in keys
+            )
         ):
-            raise ValueError(
-                "Component keys must be unique nonempty strings without '/'."
-            )
+            msg = "Component keys must be unique nonempty strings without '/'."
+            raise ValueError(msg)
         if len(children) != len(keys) or len(arenas) != len(keys):
-            raise ValueError(
-                "Component keys, children and arenas must have equal lengths."
-            )
+            msg = "Component keys, children and arenas must have equal lengths."
+            raise ValueError(msg)
         if any(type(child) is not Binning for child in children):
-            raise TypeError("Composition children must be built-in Binning snapshots.")
+            msg = "Composition children must be built-in Binning snapshots."
+            raise TypeError(msg)
         for child in children:
             child.connections.check_bins(child.bins.n_bins)
         dims = children[0].bins.n_dims
@@ -83,7 +87,8 @@ class CombinedLocator(ReadOnlyState):
             or arena.coordinate_kind != "cartesian"
             for child, arena in zip(children, arenas, strict=True)
         ):
-            raise ValueError("Components need matching Cartesian dimensions.")
+            msg = "Components need matching Cartesian dimensions."
+            raise ValueError(msg)
         centers = np.concatenate([child.bins.centers for child in children])
         bridges = BinConnections.from_arrays(self.bridge_pairs, self.bridge_distances)
         bridges.check_bins(len(centers))
@@ -93,25 +98,25 @@ class CombinedLocator(ReadOnlyState):
         if not np.allclose(
             bridges.pair_distances, geometric, rtol=32 * np.finfo(float).eps, atol=0
         ):
-            raise ValueError(
-                "Inferred bridge distances must match endpoint separation."
-            )
+            msg = "Inferred bridge distances must match endpoint separation."
+            raise ValueError(msg)
         for child, arena in zip(children, arenas, strict=True):
             if arena.domain_known and not np.all(arena.contains(child.bins.centers)):
-                raise ValueError("A component arena excludes its own bin centers.")
+                msg = "A component arena excludes its own bin centers."
+                raise ValueError(msg)
         conductances = np.array(self.bridge_conductances, dtype=np.float64, copy=True)
         if conductances.shape != (len(bridges.pairs),) or np.any(
             ~np.isfinite(conductances) | (conductances < 0)
         ):
-            raise ValueError(
-                "Bridge conductances must be finite nonnegative edge values."
-            )
+            msg = "Bridge conductances must be finite nonnegative edge values."
+            raise ValueError(msg)
         offsets = np.cumsum([0, *[child.bins.n_bins for child in children]])
         owners = np.repeat(np.arange(len(children)), np.diff(offsets))
         if len(bridges.pairs) and np.any(
             owners[bridges.pairs[:, 0]] == owners[bridges.pairs[:, 1]]
         ):
-            raise ValueError("Bridges must join bins in different components.")
+            msg = "Bridges must join bins in different components."
+            raise ValueError(msg)
         refuse_mixed_measure_conductance(
             np.concatenate([child.bins.measure_dims for child in children]),
             bridges.pairs,
@@ -234,7 +239,8 @@ class CombinedLocator(ReadOnlyState):
         query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
         if query.ndim != 2 or query.shape[1] != dims:
-            raise ValueError(f"Expected positions of shape (n_points, {dims}).")
+            msg = f"Expected positions of shape (n_points, {dims})."
+            raise ValueError(msg)
         result = np.full(len(query), -1, dtype=np.intp)
         finite = np.all(np.isfinite(query), axis=1)
         # A grid child's outline is closed, but a face it shares with another
@@ -413,9 +419,8 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     nested = weights(child.locator, retained)
                     if nested is None:
                         child.build_faces()  # Preserve the actionable missing-child refusal.
-                        raise AssertionError(
-                            "missing faces unexpectedly returned geometry"
-                        )
+                        msg = "missing faces unexpectedly returned geometry"
+                        raise AssertionError(msg)
                     block = nested[0]
                 blocks.append(block)
             result = sparse.block_diag(blocks, format="csr")
@@ -449,9 +454,8 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             measured = linear_scale(locator.forward[:-1, :-1])
             scale = measured.scale
             if not measured.is_similarity():
-                raise MissingCellGeometryError(
-                    "Combined scalar diffusion requires a similarity transform; use the original coordinates."
-                )
+                msg = "Combined scalar diffusion requires a similarity transform; use the original coordinates."
+                raise MissingCellGeometryError(msg)
             # Conductance has units length ** (measure_dim - 2) of the bins it
             # joins; positive couplings only join bins of one measure.
             coupling = matrix.tocoo()
@@ -464,9 +468,8 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if not np.all(np.isfinite(data)) or np.any(
                 (coupling.data > 0) & (data == 0)
             ):
-                raise ValueError(
-                    "Transformed conductances exceed floating-point range; rescale the coordinates."
-                )
+                msg = "Transformed conductances exceed floating-point range; rescale the coordinates."
+                raise ValueError(msg)
             return matrix, dims
         return None
 

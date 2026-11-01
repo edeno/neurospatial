@@ -80,7 +80,8 @@ class Reader:
         self.events.append("reader")
         self.closed = True
         if self.fail:
-            raise RuntimeError("reader close failed")
+            msg = "reader close failed"
+            raise RuntimeError(msg)
 
 
 def animation(env, reader=None):
@@ -106,7 +107,8 @@ def test_scene_closes_all_views_before_reader_and_allows_pending_source_reads(en
     scene = animation(env, reader)
 
     def stop(name):
-        assert scene._closing and not scene._closed
+        assert scene._closing
+        assert not scene._closed
         assert not reader.closed
         np.testing.assert_array_equal(scene.sample_fields(0.1)["field"], 1)
         with pytest.raises(RuntimeError, match="closing"):
@@ -122,7 +124,9 @@ def test_scene_closes_all_views_before_reader_and_allows_pending_source_reads(en
     scene.close()
     assert set(events[:-1]) == {"first", "second"}
     assert events[-1] == "reader"
-    assert first._closed and second._closed and scene._closed
+    assert first._closed
+    assert second._closed
+    assert scene._closed
     assert not scene._views
     scene.close()
     first.close()
@@ -141,7 +145,8 @@ def test_explicit_view_close_unregisters_and_preserves_other_consumers(env):
         scene, object(), seek=Mock(), close=closes[1]
     )
     first.close()
-    assert first not in scene._views and second in scene._views
+    assert first not in scene._views
+    assert second in scene._views
     second.seek(0.1)
     scene.close()
     closes[0].assert_called_once_with()
@@ -184,7 +189,8 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
 
     def failed_view_close():
         events.append("failed view")
-        raise ValueError("view close failed")
+        msg = "view close failed"
+        raise ValueError(msg)
 
     first = AnimationView._from_callbacks(
         scene, object(), seek=Mock(), close=failed_view_close
@@ -195,7 +201,8 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
 
     def failed_renderer_close():
         events.append("renderer")
-        raise RuntimeError("renderer close failed")
+        msg = "renderer close failed"
+        raise RuntimeError(msg)
 
     scene._renderer = SimpleNamespace(close=failed_renderer_close)
     from neurospatial.animation._resources import _cleanup_error
@@ -207,7 +214,9 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
     assert set(events[:2]) == {"failed view", "other view"}
     assert events[2:] == ["renderer", "reader"]
     assert len(captured.value.exceptions) == 3
-    assert first._closed and second._closed and scene._closed
+    assert first._closed
+    assert second._closed
+    assert scene._closed
     assert not scene._views
     scene.close()
     assert len(events) == 4
@@ -257,8 +266,9 @@ def test_context_preserves_body_failure_and_reports_cleanup_failure(
         seek=Mock(),
         close=Mock(side_effect=ValueError("cleanup failure")),
     )
-    with pytest.raises(RuntimeError, match="body failure") as captured, scene:
-        raise RuntimeError("body failure")
+    msg = "body failure"
+    with pytest.raises(RuntimeError, match=msg) as captured, scene:
+        raise RuntimeError(msg)
     assert any("cleanup failure" in note for note in captured.value.__notes__)
     assert scene._closed
 
@@ -271,7 +281,8 @@ def test_widget_parent_context_stops_playback_and_disconnects_controls(env):
         play, slider = native.children[1].children
         play.playing = True
         assert play.playing
-    assert view._closed and not play.playing
+    assert view._closed
+    assert not play.playing
     assert native.comm is None
     # A queued frontend update after shutdown must no longer request rendering.
     slider.value = 0.1
@@ -303,7 +314,8 @@ def test_view_close_callbacks_all_run_even_when_native_cleanup_fails(env):
 
     def failed_callback():
         calls.append("failed callback")
-        raise ValueError("callback failed")
+        msg = "callback failed"
+        raise ValueError(msg)
 
     view._add_close_callback(failed_callback)
     view._add_close_callback(lambda: calls.append("other callback"))
@@ -409,10 +421,12 @@ def test_live_napari_scene_close_stops_timer_before_readers_and_preserves_suppli
         assert controller.timer.isActive()
         scene.close()
         QApplication.processEvents()
-        assert view._closed and controller._closed
+        assert view._closed
+        assert controller._closed
         if not timer_deleted:
             assert not controller.timer.isActive()
-        assert reader.closed and events[-1] == "reader"
+        assert reader.closed
+        assert events[-1] == "reader"
         assert not scene._views
         with pytest.raises(RuntimeError, match="closed"):
             view.seek(0.1)

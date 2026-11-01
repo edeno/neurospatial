@@ -381,13 +381,13 @@ def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
         show_progress=False,
     )
     cell_types = [session.ground_truth[int(u)]["cell_type"] for u in session.unit_ids]
-    with pytest.warns(UserWarning, match="not place fields"):
-        report = validate_simulation(session)
+    report = validate_simulation(session)
     for cell_type, status, reason in zip(
         cell_types, report.unit_status, report.skip_reasons, strict=True
     ):
         if cell_type == "place":
-            assert status in {"passed", "failed"} and reason is None
+            assert status in {"passed", "failed"}
+            assert reason is None
         else:
             assert (status, reason) == ("excluded", "not_a_place_field")
     assert report.n_evaluated == cell_types.count("place") == 3
@@ -402,8 +402,7 @@ def test_border_session_passes_on_its_recovered_place_cells():
     session = border_cell_session(
         duration=300.0, n_border_cells=3, n_place_cells=4, seed=0
     )
-    with pytest.warns(UserWarning, match="not place fields"):
-        report = validate_simulation(session)
+    report = validate_simulation(session)
     assert report.unit_status[:3] == ("excluded",) * 3
     assert report.unit_status[3:] == ("passed",) * 4
     assert report.passed
@@ -722,8 +721,7 @@ class TestPlotSessionSummary:
         plt.close(fig2)
 
     def test_plot_session_summary_truncates_many_cells(self, simple_2d_env):
-        """plot_session_summary() should warn and truncate when >6 cells requested."""
-        import warnings
+        """plot_session_summary() truncates to the first 6 requested cells."""
 
         import matplotlib.pyplot as plt
 
@@ -739,19 +737,9 @@ class TestPlotSessionSummary:
 
         from neurospatial.simulation.validation import plot_session_summary
 
-        # Should emit UserWarning about truncation
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            fig, _ = plot_session_summary(session, unit_ids=list(range(10)))
-
-            # Filter for just the truncation warning (other warnings may be emitted)
-            truncation_warnings = [
-                warning
-                for warning in w
-                if issubclass(warning.category, UserWarning)
-                and "Only first 6 will be plotted" in str(warning.message)
-            ]
-            assert len(truncation_warnings) == 1
+        # More than 6 requested units: the first 6 are drawn, silently.
+        fig, axes = plot_session_summary(session, unit_ids=list(range(10)))
+        assert [ax.get_title() for ax in axes[2:8]] == [f"Cell {i}" for i in range(6)]
 
         plt.close(fig)
 

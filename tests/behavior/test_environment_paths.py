@@ -187,6 +187,8 @@ class TestTrackEnvironments:
 # loaded machine while still catching the per-bin path rebuild this replaced
 # (6 s and 13 s).
 @pytest.mark.wallclock
+# The full-size maze grids are the point of this timing test.
+@pytest.mark.filterwarnings("ignore:Creating large grid:UserWarning")
 @pytest.mark.parametrize(
     ("maze", "budget"),
     [("make_hampton_court_maze", 2.0), ("make_rat_hexmaze", 3.0)],
@@ -778,8 +780,10 @@ class TestMeshLinesOfSightPastVertices:
             shapely.distance(outline.boundary, lines) > 1e-9
         )
         outside = shapely.length(shapely.difference(lines, outline)) > 1e-9
-        assert inside[-1] and visible[-1]
-        assert inside.sum() > 1000 and outside.sum() > 1000
+        assert inside[-1]
+        assert visible[-1]
+        assert inside.sum() > 1000
+        assert outside.sum() > 1000
         assert visible[inside].all()
         assert not visible[outside].any()
 
@@ -805,7 +809,8 @@ class TestMeshLinesOfSightPastVertices:
         offsets = np.array([0.0, 1e-9, -1e-9, 2e-3, -2e-3])[:, None] * [1, -1]
         starts, ends = p + offsets, q + offsets
         a, b = env.bin_at(starts), env.bin_at(ends)
-        assert np.all(a == a[0]) and np.all(b == b[0])
+        assert np.all(a == a[0])
+        assert np.all(b == b[0])
         visible, _ = _OpenPaths(env)._trace(starts, ends, a, b)
         lengths = [
             shortest_path_length(env, s, e) for s, e in zip(starts, ends, strict=True)

@@ -16,9 +16,9 @@ duplicated ``test_rayleigh_test_uniform`` / ``test_*_basic`` tests that
 overlap with ``test_circular_metrics.py``) was removed.
 """
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")  # non-interactive
+mpl.use("Agg")  # non-interactive
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -448,9 +448,9 @@ def test_circular_linear_undefined_is_nan(angles, linear):
     """An undefined correlation is NaN, not r=0, p=1 ("no correlation")."""
     from neurospatial.stats.circular import circular_linear_correlation
 
-    with pytest.warns(RuntimeWarning, match="undefined"):
-        r, p = circular_linear_correlation(angles, linear)
-    assert np.isnan(r) and np.isnan(p)
+    r, p = circular_linear_correlation(angles, linear)
+    assert np.isnan(r)
+    assert np.isnan(p)
 
 
 def test_circular_circular_exact_identities_and_pvalue():
@@ -572,11 +572,9 @@ def test_wald_rejects_invalid_inputs(beta_sin, cov, match):
 
 def test_singular_covariance_gives_nan_and_not_modulated():
     singular = np.array([[0.01, 0.01], [0.01, 0.01]])
-    with pytest.warns(UserWarning, match="singular"):
-        _, _, p = circular_basis_metrics(0.5, 0.5, singular)
+    _, _, p = circular_basis_metrics(0.5, 0.5, singular)
     assert np.isnan(p)
-    with pytest.warns(UserWarning, match="singular"):
-        assert is_modulated(0.5, 0.5, singular) is False
+    assert is_modulated(0.5, 0.5, singular) is False
 
 
 @pytest.mark.parametrize(

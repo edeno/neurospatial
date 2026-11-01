@@ -43,14 +43,14 @@ def _subset_mask(
     # Exactly one selection parameter must be provided
     n_params = sum([mask is not None, region_names is not None, polygon is not None])
     if n_params == 0:
-        raise ValueError(
-            "Exactly one of {mask, region_names, polygon} must be provided."
-        )
+        msg = "Exactly one of {mask, region_names, polygon} must be provided."
+        raise ValueError(msg)
     if n_params > 1:
-        raise ValueError(
+        msg = (
             "Exactly one of {mask, region_names, polygon} must be provided. "
             f"Got {n_params} parameters."
         )
+        raise ValueError(msg)
 
     # --- Build Selection Mask ---
 
@@ -67,19 +67,20 @@ def _subset_mask(
                 )
             )
         if mask.shape != (n_bins,):
-            raise ValueError(
+            msg = (
                 f"mask must have shape (n_bins,) = ({n_bins},), got shape {mask.shape}"
             )
+            raise ValueError(msg)
 
     elif region_names is not None:
         # Validate region_names parameter
         if not isinstance(region_names, (list, tuple)):
-            raise ValueError(
-                f"region_names must be a list or tuple, got {type(region_names)}"
-            )
+            msg = f"region_names must be a list or tuple, got {type(region_names)}"
+            raise ValueError(msg)
 
         if len(region_names) == 0:
-            raise ValueError("region_names cannot be empty")
+            msg = "region_names cannot be empty"
+            raise ValueError(msg)
 
         # Check all regions exist
         for name in region_names:
@@ -101,18 +102,19 @@ def _subset_mask(
         try:
             # Type check
             if not isinstance(polygon, shapely.geometry.base.BaseGeometry):
-                raise TypeError(
-                    f"polygon must be a Shapely geometry object, got {type(polygon)}"
-                )
+                msg = f"polygon must be a Shapely geometry object, got {type(polygon)}"
+                raise TypeError(msg)
 
             mask = polygon_bin_mask(polygon, binning.bins.centers)
 
         except (AttributeError, TypeError, ValueError) as e:
-            raise ValueError(f"Invalid polygon: {e}") from e
+            msg = f"Invalid polygon: {e}"
+            raise ValueError(msg) from e
 
     else:
         # Should never reach here due to earlier validation
-        raise RuntimeError("No selection method specified (should be unreachable)")
+        msg = "No selection method specified (should be unreachable)"
+        raise RuntimeError(msg)
 
     # Apply invert if requested
     if invert:
@@ -120,9 +122,8 @@ def _subset_mask(
 
     # Check that selection is not empty
     if not np.any(mask):
-        raise ValueError(
-            f"No bins selected. Selection resulted in empty mask. (invert={invert})"
-        )
+        msg = f"No bins selected. Selection resulted in empty mask. (invert={invert})"
+        raise ValueError(msg)
 
     return mask
 

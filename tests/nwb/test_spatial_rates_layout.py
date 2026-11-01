@@ -141,7 +141,8 @@ def test_overwrite_replaces_an_environment_only_its_own_rates_use(
     from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
 
     env = sample_environment
-    coarse = env.rebin(2)
+    with pytest.warns(UserWarning, match="not evenly divisible"):
+        coarse = env.rebin(2)
     write_spatial_rates(empty_nwb, _rates(env))
     write_spatial_rates(empty_nwb, _rates(coarse), overwrite=True)
 
@@ -159,11 +160,13 @@ def test_overwrite_never_replaces_an_environment_other_rates_use(
     write_spatial_rates(empty_nwb, _rates(env), name="ca1", environment_name="arena")
     write_spatial_rates(empty_nwb, _rates(env), name="ca3", environment_name="arena")
 
+    with pytest.warns(UserWarning, match="not evenly divisible"):
+        coarse = env.rebin(2)
     # ca1 is being rewritten; ca3 keeps using the record.
     with pytest.raises(ValueError, match=r"spatial rates use it \(\['ca3'\]\)"):
         write_spatial_rates(
             empty_nwb,
-            _rates(env.rebin(2)),
+            _rates(coarse),
             name="ca1",
             environment_name="arena",
             overwrite=True,
@@ -409,11 +412,14 @@ def test_environment_writers_never_replace_a_record_rates_use(
     write_spatial_rates(empty_nwb, _rates(env), name="ca3", environment_name="arena")
     record = empty_nwb.analysis["arena"]
 
-    with pytest.raises(ValueError, match="spatial rates use it") as error:
+    def attempt():
         if route == "to_nwb":
             other.to_nwb(empty_nwb, name="arena", overwrite=True)
         else:
             write_environment(empty_nwb, other, name="arena", overwrite=True)
+
+    with pytest.raises(ValueError, match="spatial rates use it") as error:
+        attempt()
     assert "['ca1', 'ca3']" in str(error.value)
     assert "Fix:" in str(error.value)
     assert empty_nwb.analysis["arena"] is record
@@ -432,13 +438,17 @@ def test_a_record_no_rates_use_is_replaced_only_when_the_caller_may(
     write_environment(empty_nwb, sample_environment, name="arena")
     record = empty_nwb.analysis["arena"]
     other = _shifted(sample_environment)
-    with pytest.raises(ValueError, match="/analysis/arena stores a different") as error:
+
+    def attempt():
         if route == "write_environment":
             write_environment(empty_nwb, other, name="arena")
         else:
             write_spatial_rates(
                 empty_nwb, _rates(other), environment_name="arena", overwrite=True
             )
+
+    with pytest.raises(ValueError, match="/analysis/arena stores a different") as error:
+        attempt()
     message = str(error.value)
     argument = "name" if route == "write_environment" else "environment_name"
     assert f"Fix: pass {argument}= another name" in message

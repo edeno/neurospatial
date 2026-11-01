@@ -41,7 +41,10 @@ def test_old_versions_refused(version):
         Path(__file__).parent
         / f"data/environment_schema_{version.replace('.', '_')}.nwb"
     )
-    with pynwb.NWBHDF5IO(str(path), "r") as io, pytest.raises(ValueError) as caught:
+    with (
+        pynwb.NWBHDF5IO(str(path), "r") as io,
+        pytest.raises(ValueError, match="is in NWB scratch space") as caught,
+    ):
         read_environment(io.read())
     text = str(caught.value)
     # Every earlier schema saved environments in NWB scratch space.

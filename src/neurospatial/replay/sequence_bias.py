@@ -262,7 +262,8 @@ class BiasSequenceMethod:
         self, event: _CompareEvent, rng: np.random.Generator
     ) -> ReplayDetectionResult:
         """This method's verdict on one event of ``compare_replay_methods``."""
-        assert event.window is not None and event.template_bias is not None
+        assert event.window is not None
+        assert event.template_bias is not None
         return detect_bias_sequence_replay(
             event.spike_times,
             event.window,
@@ -741,7 +742,8 @@ def _check_test(
     )
     validate_choice(alternative, _ALTERNATIVES, name="alternative", owner=prefix)
     if not isinstance(use_absolute, (bool, np.bool_)):
-        raise TypeError(f"{prefix}: use_absolute must be a bool, got {use_absolute!r}.")
+        msg = f"{prefix}: use_absolute must be a bool, got {use_absolute!r}."
+        raise TypeError(msg)
     if use_absolute and alternative != "greater":
         raise ValueError(
             _format_error(

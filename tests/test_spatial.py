@@ -18,8 +18,7 @@ class TestNearestBin:
         xx, yy = np.meshgrid(x, y)
         data = np.column_stack([xx.ravel(), yy.ravel()])
 
-        env = Environment.from_samples(data, bin_size=2.0, name="grid")
-        return env
+        return Environment.from_samples(data, bin_size=2.0, name="grid")
 
     def test_map_points_basic(self, grid_env):
         """Test basic point mapping."""

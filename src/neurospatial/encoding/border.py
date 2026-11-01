@@ -262,9 +262,8 @@ def border_score(
     neurospatial.encoding.SpatialRatesResult.label_cell_types : Cell-type labels
     """
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
-        )
+        msg = f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        raise ValueError(msg)
     _validate_border_arguments(threshold, min_area, metric, boundary_source)
 
     from neurospatial.encoding._physical_border import _border_score, border_geometry
@@ -330,11 +329,11 @@ def observed_wall_fraction(
     from neurospatial.encoding._physical_border import border_geometry, observed_lengths
 
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
-        )
+        msg = f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        raise ValueError(msg)
     if boundary_source not in ("physical", "analysis"):
-        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+        msg = "boundary_source must be 'physical' or 'analysis'."
+        raise ValueError(msg)
     geometry = border_geometry(env, boundary_source)
     observed = observed_lengths(geometry, firing_rate).sum()
     return float(observed / geometry.atom_length.sum())
@@ -399,10 +398,11 @@ def untuned_border_score(
         support = np.ones(env.n_bins, dtype=bool)
     support = np.asarray(support)
     if support.shape != (env.n_bins,) or support.dtype != bool:
-        raise ValueError(
+        msg = (
             f"support must be a boolean array of shape ({env.n_bins},), got "
             f"{support.dtype} of shape {support.shape}"
         )
+        raise ValueError(msg)
     return border_score(
         env,
         np.where(support, 1.0, np.nan),
@@ -420,16 +420,20 @@ def _validate_border_arguments(
 ) -> None:
     """Refuse invalid border-score arguments before any computation."""
     if not (0 < threshold < 1):
-        raise ValueError(
+        msg = (
             f"threshold must be in (0, 1), got {threshold}. "
             "Typically 0.3 (30% of peak)."
         )
+        raise ValueError(msg)
     if min_area is not None and not (np.isfinite(min_area) and min_area >= 0):
-        raise ValueError(f"min_area must be non-negative and finite, got {min_area}")
+        msg = f"min_area must be non-negative and finite, got {min_area}"
+        raise ValueError(msg)
     if metric not in ("geodesic", "euclidean"):
-        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
+        msg = f"metric must be 'geodesic' or 'euclidean', got '{metric}'"
+        raise ValueError(msg)
     if boundary_source not in ("physical", "analysis"):
-        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+        msg = "boundary_source must be 'physical' or 'analysis'."
+        raise ValueError(msg)
 
 
 def _border_field_minimum(env: Environment, min_area: float | None = None) -> str:

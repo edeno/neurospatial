@@ -43,7 +43,7 @@ def _refuse_in_place_replacement(nwbfile: NWBFile, what: str) -> None:
     mode = getattr(read_io, "mode", None)
     if mode in (None, "r"):
         return
-    raise NotImplementedError(
+    msg = (
         f"Cannot replace the {what}: the file was opened with mode={mode!r}, "
         "and pynwb cannot delete an object that is already written to disk. "
         "Open the file with mode='r', call this function with overwrite=True, "
@@ -51,6 +51,7 @@ def _refuse_in_place_replacement(nwbfile: NWBFile, what: str) -> None:
         "NWBHDF5IO(new_path, 'w').export(src_io=io, nwbfile=nwbfile). "
         "Or write under a different name."
     )
+    raise NotImplementedError(msg)
 
 
 def _clear_for_write(
@@ -85,9 +86,8 @@ def _clear_for_write(
     if name not in container:
         return False
     if not overwrite:
-        raise ValueError(
-            f"The {what} already exists. Pass overwrite=True to replace it."
-        )
+        msg = f"The {what} already exists. Pass overwrite=True to replace it."
+        raise ValueError(msg)
     _refuse_in_place_replacement(nwbfile, what)
     del container[name]
     logger.info("Overwriting the existing %s", what)
@@ -174,10 +174,9 @@ def _find_containers_by_type(
         path = item[0]
         if path.startswith("processing/behavior/"):
             return (0, path)
-        elif path.startswith("processing/"):
+        if path.startswith("processing/"):
             return (1, path)
-        else:
-            return (2, path)
+        return (2, path)
 
     return sorted(found, key=sort_key)
 

@@ -3787,7 +3787,7 @@ class Environment(Generic[_C]):
     def maze(
         cls,
         *,
-        kind: str,
+        kind: str | None = None,
         track_graph: nx.Graph | None = None,
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
@@ -3856,12 +3856,15 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        kind : {"w", "plus", "t"}
-            Which standard maze topology to build.
+        kind : {"w", "plus", "t"}, optional
+            Which standard maze topology to assemble from `node_positions`.
+            Required with `node_positions`; not allowed with `track_graph`,
+            whose edges already define the topology.
         track_graph : networkx.Graph, optional
             A ready track graph with ``pos`` node attributes. Edges join the
             nodes that define the maze; ``distance`` weights are filled in from
-            node positions if absent. Mutually exclusive with `node_positions`.
+            node positions if absent. Mutually exclusive with `node_positions`
+            and `kind`.
         node_positions : dict, optional
             Mapping of node label -> (x, y) coordinate from which the standard
             `kind` topology is assembled. Mutually exclusive with `track_graph`.
@@ -3893,10 +3896,12 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If `kind` is not one of ``{"w", "plus", "t"}``; if neither
-            `track_graph` nor `node_positions` is given (positions alone cannot
-            infer maze topology); if both are given; or if `node_positions` does
-            not contain the expected number of nodes for `kind`.
+            If `kind` is not one of ``{"w", "plus", "t"}`` or is missing with
+            `node_positions`; if neither `track_graph` nor `node_positions` is
+            given (positions alone cannot infer maze topology); if both are
+            given; if `kind` is given with `track_graph`; or if
+            `node_positions` does not contain the expected number of nodes for
+            `kind`.
 
         See Also
         --------
@@ -4802,8 +4807,9 @@ class Environment(Generic[_C]):
         -------
         list[int]
             Bin indices from start to end, both included. A single-element
-            list when both ends are the same bin, and an empty list (with a
-            warning) when no path exists.
+            list when both ends are the same bin. The list is empty when the
+            two bins lie in disconnected parts of the environment, since no
+            path joins them; test ``len(path) == 0`` for that case.
 
         Raises
         ------
@@ -5829,6 +5835,8 @@ class Environment(Generic[_C]):
             Whether to add a scale bar showing physical scale. If True, uses
             auto-calculated length based on environment extent. If ScaleBarConfig,
             uses the specified configuration. Default: False (no scale bar).
+            The plot is drawn without a scale bar when its extent is missing,
+            non-finite or too small to scale.
         backend : {"matplotlib", "fastplotlib"}, default="matplotlib"
             ``"fastplotlib"`` draws on the GPU (``pip install
             "neurospatial[fastplotlib]"``, Python 3.11 or newer). Inside
@@ -5919,8 +5927,8 @@ class Environment(Generic[_C]):
         *,
         layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> matplotlib.axes.Axes | None:
-        """Plot a 1D representation of the environment, if applicable.
+    ) -> matplotlib.axes.Axes:
+        """Plot a 1D representation of a track environment.
 
         For track environments (``is_linearized_track`` is True, as built by
         ``from_graph``, ``linear_track`` and ``maze``), this draws the bins
@@ -5938,15 +5946,15 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        matplotlib.axes.Axes | None
-            The axes on which the 1D layout was plotted, or the original `ax`
-            (which may be None) if plotting was not applicable.
+        matplotlib.axes.Axes
+            The axes on which the 1D layout was plotted.
 
-        Warns
-        -----
-        UserWarning
+        Raises
+        ------
+        ValueError
             If the environment is not a track (``is_linearized_track`` is
-            False); nothing is drawn and ``ax`` is returned unchanged.
+            False): there is no linearized coordinate to draw. Use
+            :meth:`plot` instead.
 
         Examples
         --------
@@ -6068,6 +6076,8 @@ class Environment(Generic[_C]):
             Whether to add a scale bar showing physical scale. If True, uses
             auto-calculated length based on environment extent. If ScaleBarConfig,
             uses the specified configuration. Default: False (no scale bar).
+            The plot is drawn without a scale bar when its extent is missing,
+            non-finite or too small to scale.
         backend : {"matplotlib", "fastplotlib"}, default="matplotlib"
             ``"fastplotlib"`` draws on the GPU (``pip install
             "neurospatial[fastplotlib]"``, Python 3.11 or newer): each bin's
@@ -6671,8 +6681,8 @@ class Environment(Generic[_C]):
         returned matrix occupies ``n_bins**2 * 8`` bytes of float64 memory —
         for example ``20000**2 * 8 / 1e9 ≈ 3.2 GB`` at 20,000 bins. This peak
         cannot be avoided while using the dense diffusion kernel. There is no
-        hard limit: a ``UserWarning`` estimating the GB is issued above 3,000
-        bins and the kernel is then built regardless of size. The matrix
+        hard limit and no warning: the kernel is built whatever the size, so
+        check ``n_bins**2 * 8`` bytes against your memory first. The matrix
         exponential is also O(n³) in time, so large environments are slow as
         well as memory-hungry.
 
@@ -7100,8 +7110,8 @@ class Environment(Generic[_C]):
 
         A light bandwidth on a large grid needs most modes; there the eigenbasis
         cannot beat the dense kernel, so ``diffuse`` solves the full dense basis
-        once, with the same large-matrix ``UserWarning`` as
-        :meth:`compute_kernel`, and keeps it for later calls at any bandwidth.
+        once and keeps it for later calls at any bandwidth: ``n_bins**2 * 8``
+        bytes of float64, with no warning, as for :meth:`compute_kernel`.
         :meth:`clear_cache` releases it.
         """
         return _diffuse(

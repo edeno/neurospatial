@@ -38,13 +38,17 @@ def _create_polar_environment(
 ) -> Environment[EgocentricPolarSystem]:
     """Build owned annular sectors with physical polar distances and measures."""
     if distance_bin_size <= 0:
-        raise ValueError(f"distance_bin_size must be positive, got {distance_bin_size}")
+        msg = f"distance_bin_size must be positive, got {distance_bin_size}"
+        raise ValueError(msg)
     if angle_bin_size <= 0:
-        raise ValueError(f"angle_bin_size must be positive, got {angle_bin_size}")
+        msg = f"angle_bin_size must be positive, got {angle_bin_size}"
+        raise ValueError(msg)
     if distance_range[0] >= distance_range[1]:
-        raise ValueError(f"distance_range must have min < max, got {distance_range}")
+        msg = f"distance_range must have min < max, got {distance_range}"
+        raise ValueError(msg)
     if angle_range[0] >= angle_range[1]:
-        raise ValueError(f"angle_range must have min < max, got {angle_range}")
+        msg = f"angle_range must have min < max, got {angle_range}"
+        raise ValueError(msg)
 
     angle_span = angle_range[1] - angle_range[0]
     full_circle = bool(
@@ -66,10 +70,11 @@ def _create_polar_environment(
     if circular_angle is None:
         circular_angle = full_circle
     elif circular_angle and not full_circle:
-        raise ValueError(
+        msg = (
             "circular_angle=True requires a full circle (2π radians). "
             "Use circular_angle=False or None for a partial angular range."
         )
+        raise ValueError(msg)
 
     n_distance = _bin_count(distance_range[1] - distance_range[0], distance_bin_size)
     n_angle = _bin_count(angle_span, angle_bin_size)

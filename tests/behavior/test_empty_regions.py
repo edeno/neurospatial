@@ -100,7 +100,9 @@ def test_region_covering_no_bins_raises(arena, call, empty):
 
 def test_point_region_error_names_the_point_and_a_polygon_fix(arena):
     env, times, _, bins = arena
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(
+        ValueError, match=r"covers no bins, so segment_trials"
+    ) as caught:
         segment_trials(
             bins, times, env, start_region="outside_well", end_regions=["right"]
         )

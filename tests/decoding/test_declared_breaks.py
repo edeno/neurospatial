@@ -213,7 +213,8 @@ def test_plotted_truth_is_split_at_a_break_between_decode_samples(uniform_decode
     np.testing.assert_array_equal(x[np.isfinite(y)], true_times)
     split = int(np.flatnonzero(np.isnan(y))[0])
     assert np.isnan(y).sum() == 1
-    assert x[split - 1] == 4.0 and x[split + 1] == 5.0
+    assert x[split - 1] == 4.0
+    assert x[split + 1] == 5.0
     plt.close(ax.figure)
 
 

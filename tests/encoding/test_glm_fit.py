@@ -205,7 +205,8 @@ def test_reml_objective_callable(open_field_env, simulate_place_fields):
         max_iter=_MAX_ITER,
         tol=_FIT_TOL,
     )
-    assert np.isfinite(lam) and np.isfinite(obj)
+    assert np.isfinite(lam)
+    assert np.isfinite(obj)
     assert lam > 0.0
     assert at_boundary is False  # an interior optimum is not at a search bound
 
@@ -707,7 +708,8 @@ def test_step_halve_returns_accepted_step(open_field_env, simulate_place_fields)
     assert ok is True  # a genuine descent direction: line search succeeds
     # The accepted step is a strict fraction of the inflated step (it was halved).
     ratio = accepted_step / inflated
-    assert np.all(ratio <= 1.0) and np.any(ratio < 1.0)
+    assert np.all(ratio <= 1.0)
+    assert np.any(ratio < 1.0)
     # By the halving criterion the accepted objective does not increase.
     assert np.all(obj <= prev)
     # new_coeffs == coeffs + accepted_step exactly.
@@ -769,7 +771,8 @@ def test_step_halve_rejects_nonfinite_trial(open_field_env, simulate_place_field
     )
 
     assert ok is False
-    assert np.all(np.isfinite(new_coeffs)) and np.all(np.isfinite(obj))
+    assert np.all(np.isfinite(new_coeffs))
+    assert np.all(np.isfinite(obj))
     np.testing.assert_allclose(new_coeffs, coeffs, rtol=0, atol=0)  # fully reverted
 
 
@@ -807,7 +810,8 @@ def test_newton_failed_line_search_not_reported_converged(
     )
 
     assert converged is False  # a failed line search is not convergence
-    assert np.all(np.isfinite(eta)) and np.all(np.isfinite(coeffs))
+    assert np.all(np.isfinite(eta))
+    assert np.all(np.isfinite(coeffs))
 
 
 # ---------------------------------------------------------------------------
@@ -834,15 +838,14 @@ def test_pooled_flag_recorded(open_field_env, simulate_place_fields):
 def test_all_zero_spike_population(open_field_env):
     """counts.sum() == 0, penalty=None -> REML skipped, penalty is None,
     reml_objective is None, fields floor to _RATE_FLOOR, deviance finite, a
-    warning is emitted, no raise."""
+    no warning, no raise."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
     basis = env.get_mrf_basis(occ_full, rank=15)
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(UserWarning):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None)
 
     assert fit.penalty is None
     assert fit.reml_objective is None
@@ -860,8 +863,7 @@ def test_all_zero_spike_fixed_penalty(open_field_env):
     counts = np.zeros((basis.live_bins.size, 2), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(UserWarning):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=3.0)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=3.0)
 
     assert fit.penalty == 3.0
     assert fit.reml_objective is None
@@ -935,15 +937,14 @@ def test_no_neurons(open_field_env):
     assert fit.coefficients.shape == (basis.B.shape[1], 0)
     assert fit.log_rate.shape == (basis.live_bins.size, 0)
     assert fit.deviance.shape == (0,)
-    assert fit.penalty is None and fit.reml_objective is None
+    assert fit.penalty is None
+    assert fit.reml_objective is None
     assert fit.converged is True
     assert fit.rank == basis.B.shape[1]
 
 
-def test_zero_occupancy_empty_basis(open_field_env):
-    """A (0, 0) basis (zero total occupancy) -> coefficients (0, n_units),
-    log_rate (0, n_units), zero deviance, penalty/reml None, converged True,
-    warns; no fit runs and nothing raises."""
+def test_zero_occupancy_empty_basis_raises(open_field_env):
+    """A (0, 0) basis (zero total occupancy) has no live bins to fit."""
     env = open_field_env
     occ_full = np.zeros(env.n_bins)
     basis = env.get_mrf_basis(occ_full, rank=None)
@@ -951,14 +952,8 @@ def test_zero_occupancy_empty_basis(open_field_env):
     counts = np.zeros((0, 3), dtype=np.int64)
     occ = np.zeros(0)
 
-    with pytest.warns(UserWarning):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None)
-
-    assert fit.coefficients.shape == (0, 3)
-    assert fit.log_rate.shape == (0, 3)
-    np.testing.assert_array_equal(fit.deviance, np.zeros(3))
-    assert fit.penalty is None and fit.reml_objective is None
-    assert fit.converged is True
+    with pytest.raises(ValueError, match=r"zero total occupancy"):
+        fit_mrf_gam(basis, counts, occ, penalty=None)
 
 
 def test_dead_component_fits_live_bins(two_component_env, simulate_place_fields):

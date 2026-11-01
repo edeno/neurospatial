@@ -50,7 +50,8 @@ def test_point_lookup_returns_the_pixel_that_holds_it():
     rows = np.floor(points[:, 1] / py).astype(int)
     cols = np.floor(points[:, 0] / px).astype(int)
     active = image_mask[rows, cols]
-    assert active.any() and not active.all()
+    assert active.any()
+    assert not active.all()
 
     result = layout.binning().locator.locate(points)
     np.testing.assert_array_equal(result[~active], -1)
@@ -119,7 +120,7 @@ _MASK = np.array([[True, False], [True, True]])
         (
             {"image_mask": _MASK.tolist(), "pixel_size": 1.0},
             TypeError,
-            "must be a numpy array",
+            "image_mask must be a ndarray",
         ),
         (
             {"image_mask": np.ones(3, dtype=bool), "pixel_size": 1.0},

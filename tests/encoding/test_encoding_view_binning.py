@@ -75,21 +75,21 @@ def trajectory_data(simple_env: Environment) -> dict:
         - positions: array of positions (centered in environment)
         - headings: array of headings (radians, random walk)
     """
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 1000
     times = np.linspace(0, 10.0, n_samples)
 
     # Stay in center of environment so viewed locations are valid
     positions = np.zeros((n_samples, 2))
-    positions[:, 0] = 50 + np.cumsum(np.random.randn(n_samples) * 0.5)
-    positions[:, 1] = 50 + np.cumsum(np.random.randn(n_samples) * 0.5)
+    positions[:, 0] = 50 + np.cumsum(rng.standard_normal(n_samples) * 0.5)
+    positions[:, 1] = 50 + np.cumsum(rng.standard_normal(n_samples) * 0.5)
     positions = np.clip(positions, 20, 80)  # Stay away from edges
 
     # Random walk in heading
     headings = np.zeros(n_samples)
     headings[0] = 0.0
     for i in range(1, n_samples):
-        headings[i] = headings[i - 1] + np.random.randn() * 0.1
+        headings[i] = headings[i - 1] + rng.standard_normal() * 0.1
     headings = headings % (2 * np.pi)
 
     return {"times": times, "positions": positions, "headings": headings}
@@ -635,8 +635,9 @@ class TestViewBinningInputValidation:
     ) -> None:
         """Should raise error if times and positions have different lengths."""
         times = np.linspace(0, 10, 100)
-        positions = np.random.rand(50, 2) * 100  # Different length
-        headings = np.random.uniform(0, 2 * np.pi, 100)
+        rng = np.random.default_rng(0)
+        positions = rng.random((50, 2)) * 100  # Different length
+        headings = rng.uniform(0, 2 * np.pi, 100)
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
             compute_view_rate(
@@ -654,8 +655,9 @@ class TestViewBinningInputValidation:
     ) -> None:
         """Should raise error if times and headings have different lengths."""
         times = np.linspace(0, 10, 100)
-        positions = np.random.rand(100, 2) * 100
-        headings = np.random.uniform(0, 2 * np.pi, 50)  # Different length
+        rng = np.random.default_rng(0)
+        positions = rng.random((100, 2)) * 100
+        headings = rng.uniform(0, 2 * np.pi, 50)  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
             compute_view_rate(

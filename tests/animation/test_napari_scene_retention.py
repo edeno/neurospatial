@@ -71,11 +71,13 @@ def test_napari_construction_preserves_original_failure_if_cleanup_also_fails(
     original_close = NapariScene.close
 
     def fail_source(self):
-        raise ValueError("Original overlay preparation failure")
+        msg = "Original overlay preparation failure"
+        raise ValueError(msg)
 
     def failed_cleanup(self):
         original_close(self)
-        raise RuntimeError("Cleanup diagnostic")
+        msg = "Cleanup diagnostic"
+        raise RuntimeError(msg)
 
     monkeypatch.setattr(NapariScene, "_build_overlays", fail_source)
     monkeypatch.setattr(NapariScene, "close", failed_cleanup)

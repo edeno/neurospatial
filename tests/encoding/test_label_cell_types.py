@@ -105,8 +105,7 @@ def test_unavailable_border_score_is_undetermined_not_an_error(
         positions,
         bandwidth=5,
     )
-    with pytest.warns(UserWarning, match="border_score cannot be computed"):
-        labels = rates.label_cell_types()
+    labels = rates.label_cell_types()
     table = rates.summary_table()
     np.testing.assert_array_equal(labels, ["undetermined", "undetermined"])
     np.testing.assert_array_equal(table["cell_type"], labels)
@@ -135,7 +134,8 @@ def test_grid_label_needs_a_hexagonal_ring(grid_and_hexless):
     scores = rates.grid_scores().scores
     assert (scores >= 0.4).all()
     spacing = [rates[i].grid_properties().scale for i in range(2)]
-    assert np.isfinite(spacing[0]) and np.isnan(spacing[1])
+    assert np.isfinite(spacing[0])
+    assert np.isnan(spacing[1])
     labels = rates.label_cell_types(boundary_source="analysis")
     assert labels[0] == "grid"
     assert "grid" not in labels[1]

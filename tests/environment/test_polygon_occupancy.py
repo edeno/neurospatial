@@ -120,7 +120,8 @@ def test_crossing_a_joint_in_a_continuous_wall_is_refused(operation):
     )
     times = np.array([0.0, 1.0])
     positions = np.array([[0.5, 0.5], [1.5, 1.5]])
-    with pytest.raises(ValueError, match="wall"):
+
+    def attempt():
         if operation == "occupancy":
             env.occupancy(times, positions, max_gap=None, time_allocation="linear")
         else:
@@ -134,6 +135,9 @@ def test_crossing_a_joint_in_a_continuous_wall_is_refused(operation):
                 max_gap=None,
                 time_allocation="linear",
             )
+
+    with pytest.raises(ValueError, match="wall"):
+        attempt()
 
 
 @pytest.mark.parametrize("operation", ["occupancy", "encoding"])
@@ -163,7 +167,8 @@ def test_wall_junction_crossings_do_not_depend_on_line_partition(operation, junc
         grid_edges=(np.arange(5.0),) * 2,
         arena=OpenArena(box(0, 0, 4, 4), walls=(*vertical, *horizontal)),
     )
-    with pytest.raises(ValueError, match="wall"):
+
+    def attempt():
         if operation == "occupancy":
             env.occupancy(
                 np.array([0.0, 1.0]), positions, time_allocation="linear", max_gap=None
@@ -179,6 +184,9 @@ def test_wall_junction_crossings_do_not_depend_on_line_partition(operation, junc
                 time_allocation="linear",
                 max_gap=None,
             )
+
+    with pytest.raises(ValueError, match="wall"):
+        attempt()
 
 
 @pytest.mark.parametrize("contact", ["tip", "end_at_joint", "along", "graze_bend"])
@@ -442,9 +450,8 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
             return None
 
         def transformed(self, matrix):
-            raise NotImplementedError(
-                "This analytical provider has no affine transform"
-            )
+            msg = "This analytical provider has no affine transform"
+            raise NotImplementedError(msg)
 
     base = Environment.from_grid_mask(
         np.ones((1, 1), dtype=bool), grid_edges=(np.array([-1.0, 1.0]),) * 2
@@ -479,7 +486,8 @@ def test_sample_exactly_on_wall_does_not_split_a_physical_crossing(
     positions.append([1.5, 0.75])
     positions = np.asarray(positions)
     times = np.arange(len(positions), dtype=float)
-    with pytest.raises(ValueError, match="wall"):
+
+    def attempt():
         if operation == "occupancy":
             env.occupancy(times, positions, time_allocation="linear", max_gap=None)
         else:
@@ -493,6 +501,9 @@ def test_sample_exactly_on_wall_does_not_split_a_physical_crossing(
                 time_allocation="linear",
                 max_gap=None,
             )
+
+    with pytest.raises(ValueError, match="wall"):
+        attempt()
 
 
 @pytest.mark.parametrize("junction", ["straight", "split", "bend", "T", "X"])

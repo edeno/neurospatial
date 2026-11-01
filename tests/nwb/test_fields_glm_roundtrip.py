@@ -157,8 +157,10 @@ class TestGlmRoundTrip:
         times = np.arange(positions.shape[0], dtype=np.float64) * 0.05
         spike_times = [np.sort(rng.uniform(times[0], times[-1], 40)) for _ in range(3)]
 
+        # 40 spikes per unit leave the REML penalty at its upper search bound.
         result = compute_spatial_rates(env, spike_times, times, positions, method="glm")
         assert result.method == "glm"
+        assert np.asarray(result.reml_at_boundary).any()
 
         write_spatial_rates(empty_nwb, result)
         back = read_spatial_rates(empty_nwb, env=env)
@@ -260,7 +262,8 @@ class TestOverwriteAtomicity:
 
         def _boom(obj):
             if obj.name == "rates_occupancy" and obj is not original_occupancy:
-                raise RuntimeError("injected occupancy write failure")
+                msg = "injected occupancy write failure"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", _boom)
@@ -316,7 +319,7 @@ class TestSchemaVersionGuard:
         env = sample_environment
         self._write_then_patch_schema(empty_nwb, env, bad)
         recorded = None if bad is _MISSING else bad
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="Spatial-rates schema") as caught:
             read_spatial_rates(empty_nwb, env=env)
         message = str(caught.value)
         assert (

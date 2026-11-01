@@ -231,9 +231,8 @@ def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
         try:
             cell_boxes(binning.locator)
         except ValueError as error:
-            raise NotImplementedError(
-                "Linear allocation needs exact component cells; use time_allocation='start'."
-            ) from error
+            msg = "Linear allocation needs exact component cells; use time_allocation='start'."
+            raise NotImplementedError(msg) from error
         return True
     polygon_cells = isinstance(binning.shapes, PolygonCells)
     planar_cells = n_dims == 2 and binning.bins.has_measure_dim(2)
@@ -332,9 +331,8 @@ def retained_linear_intervals(
     if positions.shape != (len(times), 2) or valid_mask.shape != (
         max(len(times) - 1, 0),
     ):
-        raise ValueError(
-            "polygon allocation needs (n_samples, 2) positions and one validity per interval"
-        )
+        msg = "polygon allocation needs (n_samples, 2) positions and one validity per interval"
+        raise ValueError(msg)
     try:
         cells = materialize_cells(binning)
     except ValueError as error:
@@ -375,7 +373,7 @@ def retained_linear_intervals(
             )
             walls = tuple(shapely.transform(wall, frame.to_source) for wall in walls)
 
-    def owner_of(queries):
+    def owner_of(queries: NDArray[np.float64]) -> NDArray[np.intp]:
         if source_locator is None:
             return locate(binning, arena, queries, indexes, call=_LINEAR_CALL)
         owners = source_locator.locate(queries, indexes)
@@ -429,11 +427,12 @@ def retained_linear_intervals(
                 start, stop, arrival, wall_segments, wall_tree
             )
             if crosses:
-                raise ValueError(
+                msg = (
                     f"Trajectory interval {index} crosses a physical wall; "
                     "provide observations that resolve the route around the wall "
                     "or exclude the interval with the observation filters."
                 )
+                raise ValueError(msg)
         # One varying coordinate gives the segment parameter without squaring
         # its length. Every intersection endpoint is a possible ownership change.
         axis = int(np.argmax(np.abs(delta)))
@@ -531,7 +530,7 @@ def _retained_box_intervals(
         source_locator, positions = _source_grid(frame, positions)
         boxes = cell_boxes(source_locator)
 
-    def domain_boxes(arena):
+    def domain_boxes(arena: Arena) -> list[NDArray[np.float64]]:
         if isinstance(arena, UnknownArena):
             return []
         if isinstance(arena, _CombinedArena):
@@ -544,9 +543,8 @@ def _retained_box_intervals(
             ]
         pieces = arena_pieces(arena)
         if any(piece.kind != "box" for piece in pieces):
-            raise NotImplementedError(
-                "Linear N-D allocation requires rectangular component domains; use start allocation."
-            )
+            msg = "Linear N-D allocation requires rectangular component domains; use start allocation."
+            raise NotImplementedError(msg)
         return [piece.data for piece in pieces]
 
     domains = domain_boxes(arena)

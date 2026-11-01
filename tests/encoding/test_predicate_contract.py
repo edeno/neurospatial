@@ -39,6 +39,7 @@ def test_is_place_cell_requires_criterion(significance_recording):
     assert "has_place_field" in str(exc.value)
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_threshold_free_method_classify_agree(
     significance_family, significance_recording
 ):
@@ -95,7 +96,8 @@ def test_mode_keywords_raise(significance_family, significance_recording):
     assert all(key in str(exc.value) for key in bad)
     with pytest.raises(ValueError, match="Fix:") as exc:
         predicate(*args, criterion="percentile")
-    assert criterion in str(exc.value) and "shuffle" in str(exc.value)
+    assert criterion in str(exc.value)
+    assert "shuffle" in str(exc.value)
 
 
 def test_free_predicates_raise_on_bad_input(
@@ -107,10 +109,18 @@ def test_free_predicates_raise_on_bad_input(
     offset = 1 if f.name == "head_direction" else 2
     args[offset], args[offset + 1] = args[offset + 1], args[offset]
     kwargs = {"criterion": "threshold"} if f.name == "place" else {}
-    with pytest.raises(ValueError):
+    # Swapped, a heading series read as times decreases; 2-D positions are not 1-D.
+    swapped = (
+        r"times must be strictly increasing"
+        if f.name == "head_direction"
+        else r"times must be 1-D"
+    )
+    with pytest.raises(ValueError, match=swapped):
         predicate(*args, **kwargs)
 
 
+@pytest.mark.filterwarnings("ignore:ChainedAssignmentError:FutureWarning")
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_threshold_constants_are_the_defaults(
     significance_family, significance_recording
 ):
@@ -161,7 +171,8 @@ def test_shuffle_defaults_have_one_source():
 def test_methods_have_no_shuffle(significance_family, significance_recording):
     f, r = significance_family, significance_recording
     rates = f.compute(*f.args(r), **f.defaults)
-    assert not hasattr(rates, "shuffle_test") and not hasattr(rates[0], "shuffle_test")
+    assert not hasattr(rates, "shuffle_test")
+    assert not hasattr(rates[0], "shuffle_test")
     with pytest.raises(TypeError):
         rates.classify(criterion="shuffle")
     if f.name == "place":
@@ -196,7 +207,7 @@ def test_has_place_field_flags_noise(
     for fn in [encoding.has_place_field, result.has_place_field]:
         for key, value in encoding.spatial.PLACE_FIELD_DETECTION_DEFAULTS.items():
             assert inspect.signature(fn).parameters[key].default == value
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"times must be 1-D"):
         encoding.has_place_field(ou_2min_env, tr, p, t)
 
 
@@ -215,7 +226,8 @@ def test_label_constants_and_removed_aliases(significance_recording):
     )
     for name in constant:
         param = inspect.signature(rates.label_cell_types).parameters[name]
-        assert param.kind is inspect.Parameter.KEYWORD_ONLY and param.default is None
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY
+        assert param.default is None
     for cls, alias in [
         (encoding.SpatialRatesResult, "detect_cell_types"),
         (encoding.DirectionalRatesResult, "detect_hd_cells"),
@@ -292,6 +304,7 @@ def _information_cutoff(f):
     ["place", "view", "egocentric_object_vector"],
     indirect=True,
 )
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_shuffle_verdict_needs_bias_corrected_information(
     significance_family, ou_2min_env, ou_2min, noise_trains, obj
 ):
@@ -398,6 +411,7 @@ def test_is_place_cell_shuffle_rejects_noise(ou_2min_env, ou_2min, noise_trains)
     assert sum(flags) <= 2
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_head_direction_alpha_in_both_modes(significance_recording):
     r = significance_recording
     screen = encoding.is_head_direction_cell(
@@ -419,6 +433,7 @@ def test_head_direction_alpha_in_both_modes(significance_recording):
         ) == (sig.p_value < alpha)
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_results_do_not_retain_inputs(significance_family, significance_recording):
     from functools import partial
 
@@ -432,7 +447,8 @@ def test_results_do_not_retain_inputs(significance_family, significance_recordin
         for name, value in vars(result).items():
             if name == "env":
                 continue
-            assert not callable(value) and not isinstance(value, partial)
+            assert not callable(value)
+            assert not isinstance(value, partial)
             if isinstance(value, np.ndarray):
                 assert not any(
                     np.shares_memory(value, input_array) for input_array in inputs
@@ -466,6 +482,7 @@ def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
     assert sum(flags) == 0
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_heading_interpretation_uses_shared_thresholds(
     significance_recording, monkeypatch
 ):

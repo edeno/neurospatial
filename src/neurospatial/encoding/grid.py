@@ -517,7 +517,8 @@ def spatial_autocorrelation_radial(
     _validate_autocorr_input(env, firing_rate)
 
     if n_distance_bins <= 0:
-        raise ValueError(f"n_distance_bins must be positive, got {n_distance_bins}")
+        msg = f"n_distance_bins must be positive, got {n_distance_bins}"
+        raise ValueError(msg)
 
     return _spatial_autocorrelation_graph(
         env,
@@ -538,16 +539,15 @@ def _validate_autocorr_input(
     implementation.
     """
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
-        )
+        msg = f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        raise ValueError(msg)
     if np.all(np.isnan(firing_rate)):
-        raise ValueError("All firing rates are NaN")
+        msg = "All firing rates are NaN"
+        raise ValueError(msg)
     valid_rates = firing_rate[np.isfinite(firing_rate)]
     if len(valid_rates) > 0 and np.all(valid_rates == valid_rates[0]):
-        raise ValueError(
-            "All valid firing rates are constant. Autocorrelation undefined."
-        )
+        msg = "All valid firing rates are constant. Autocorrelation undefined."
+        raise ValueError(msg)
 
 
 def _has_rectangular_grid(env: Environment) -> bool:
@@ -735,7 +735,8 @@ def _spatial_autocorrelation_graph(
     valid_bins = np.where(np.isfinite(firing_rate))[0]
 
     if len(valid_bins) < 2:
-        raise ValueError("Need at least 2 valid (non-NaN) bins")
+        msg = "Need at least 2 valid (non-NaN) bins"
+        raise ValueError(msg)
 
     valid_rates = firing_rate[valid_bins]
     n_valid = len(valid_bins)
@@ -761,7 +762,8 @@ def _spatial_autocorrelation_graph(
     rates_j = rates_j[finite_mask]
 
     if len(pair_distances) == 0:
-        raise ValueError("No valid bin pairs found (graph may be disconnected)")
+        msg = "No valid bin pairs found (graph may be disconnected)"
+        raise ValueError(msg)
 
     # Determine max distance
     if max_distance is None:
@@ -920,7 +922,8 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
     if autocorr_2d.ndim != 2:
-        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
+        msg = f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D"
+        raise ValueError(msg)
 
     centered = _zero_lag_centered(np.asarray(autocorr_2d, dtype=np.float64))
     central_radius = _central_peak_radius(centered)
@@ -1186,7 +1189,7 @@ def _find_autocorr_peaks(
     center = np.array([n // 2 for n in centered.shape])
     valid = np.isfinite(centered)
     floor = np.min(centered[valid]) - 1.0
-    peaks = peak_local_max(
+    peaks = peak_local_max(  # type: ignore[no-untyped-call]
         np.where(valid, centered, floor),
         min_distance=max(1, int(np.floor(central_radius))),
         threshold_abs=threshold_rel * centered[tuple(center)],
@@ -1213,25 +1216,30 @@ def _validate_peak_arguments(
 ) -> None:
     """Check the arguments shared by :func:`grid_scale` and :func:`grid_properties`."""
     if autocorr_2d.ndim != 2:
-        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
+        msg = f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D"
+        raise ValueError(msg)
     if not pixel_size > 0:
-        raise ValueError(
+        msg = (
             f"pixel_size must be positive (env units, e.g., cm), got {pixel_size}. "
             "Pass autocorrelation_pixel_size(env), the side of the "
             "autocorrelogram's pixels."
         )
+        raise ValueError(msg)
     if isinstance(n_peaks, bool) or not isinstance(n_peaks, (int, np.integer)):
-        raise TypeError(f"n_peaks must be an integer, got {n_peaks!r}")
+        msg = f"n_peaks must be an integer, got {n_peaks!r}"
+        raise TypeError(msg)
     if n_peaks < 3:
-        raise ValueError(
+        msg = (
             f"n_peaks must be >= 3, got {n_peaks}: the spacing is the median "
             "distance to at least three peaks of the first ring."
         )
+        raise ValueError(msg)
     if not 0 <= threshold_rel < 1:
-        raise ValueError(
+        msg = (
             f"threshold_rel must be in [0, 1), got {threshold_rel}: it is the "
             "minimum peak correlation as a fraction of the zero-lag correlation."
         )
+        raise ValueError(msg)
 
 
 def grid_scale(

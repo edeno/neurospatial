@@ -17,6 +17,7 @@ from time import monotonic
 from typing import Any, NamedTuple, cast
 
 import numpy as np
+from typing_extensions import override
 
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
@@ -155,7 +156,7 @@ class _ScientificPanels:
             len(scene.fields) - 1 if helper.track_extents is not None else 0
         )
         self.figure = Figure(figsize=(8, max(1.5, 1.5 * count)), dpi=100)
-        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas = FigureCanvasQTAgg(self.figure)  # type: ignore[no-untyped-call, unused-ignore]
         self.axes: list[Any] = []
 
         def axis() -> Any:
@@ -190,12 +191,12 @@ class _ScientificPanels:
     def update(self, time: float, prepared: list[Any]) -> None:
         for panel, data in zip(self.panels, prepared, strict=True):
             panel.apply(time, data)
-        self.canvas.draw_idle()
+        self.canvas.draw_idle()  # type: ignore[no-untyped-call, unused-ignore]
 
     def capture(self) -> np.ndarray:
         if self.figure.stale:
-            self.canvas.draw()
-        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
+            self.canvas.draw()  # type: ignore[no-untyped-call, unused-ignore]
+        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())  # type: ignore[no-untyped-call, unused-ignore]
 
 
 class NapariScene:
@@ -209,12 +210,13 @@ class NapariScene:
         try:
             import napari
         except ImportError as error:
-            raise ImportError(
+            msg = (
                 "The napari view needs napari. Install it with "
                 "pip install 'neurospatial[animation]', or use "
                 "backend='widget' in a notebook or backend='fastplotlib'."
-            ) from error
-        from qtpy.QtCore import (  # type: ignore[attr-defined]
+            )
+            raise ImportError(msg) from error
+        from qtpy.QtCore import (  # type: ignore[attr-defined, unused-ignore]
             QEvent,
             QObject,
             Qt,
@@ -319,7 +321,7 @@ class NapariScene:
                 getattr(owner, name).connect(slot)
                 self._connections.append((owner, name, slot))
 
-            class PreparedBridge(QObject):
+            class PreparedBridge(QObject):  # type: ignore[misc, unused-ignore]
                 ready = Signal(object)
 
             self._bridge = PreparedBridge(controls)
@@ -335,8 +337,9 @@ class NapariScene:
             window = qt_window(self.viewer)
             handle_ref, window_ref = weakref.ref(self), weakref.ref(window)
 
-            class WindowLifecycle(QObject):
-                def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802
+            class WindowLifecycle(QObject):  # type: ignore[misc, unused-ignore]
+                @override
+                def eventFilter(self, obj: Any, event: Any) -> bool:
                     if event.type() == QEvent.Type.Close:
 
                         def after_close() -> None:
@@ -467,7 +470,9 @@ class NapariScene:
                 )
 
                 def assign(
-                    values: np.ndarray, layer: Any = layer, grid: Any = None
+                    values: np.ndarray,
+                    layer: Any = layer,
+                    grid: Any = None,  # noqa: ARG001  # field-update callback signature
                 ) -> None:
                     layer.features = {"value": values}
                     layer.shown = np.isfinite(values)
@@ -720,7 +725,9 @@ class NapariScene:
                 for name, (key, positions, colors) in prepared.items():
                     if drawn.get(name) != key:
                         layers[name].data = positions
-                        layers[name].face_color = colors
+                        # napari cannot parse an empty color array and warns.
+                        if len(colors):
+                            layers[name].face_color = colors
                         drawn[name] = key
 
             self._updates.append(_LayerUpdate(prepare_events, apply_events))
@@ -735,7 +742,8 @@ class NapariScene:
                 else np.zeros((1, 1, 3), dtype=np.uint8)
             )
             if image is None:
-                raise ValueError("VideoOverlay's first mapped frame could not be read.")
+                msg = "VideoOverlay's first mapped frame could not be read."
+                raise ValueError(msg)
             # Video-to-environment transforms are x,y; napari uses y,x.
             matrix = video.pixel_to_env(image.shape[1], image.shape[0])
             order = [1, 0, 2]
@@ -811,15 +819,15 @@ class NapariScene:
 
     def _validate_time(self, time: float) -> float:
         if self._closed:
-            raise RuntimeError("This napari view is closed.")
+            msg = "This napari view is closed."
+            raise RuntimeError(msg)
         time = float(time)
         if (
             not np.isfinite(time)
             or not self.scene.frame_times[0] <= time <= self.scene.frame_times[-1]
         ):
-            raise ValueError(
-                "time must lie inside the scene's recording clock, in seconds."
-            )
+            msg = "time must lie inside the scene's recording clock, in seconds."
+            raise ValueError(msg)
         return time
 
     def _prepare(self, time: float) -> _PreparedFrame:
@@ -954,7 +962,8 @@ class NapariScene:
     @contextmanager
     def capture_session(self) -> Iterator[Any]:
         if self._closed:
-            raise RuntimeError("This napari view is closed.")
+            msg = "This napari view is closed."
+            raise RuntimeError(msg)
         state = self.capture_state()
         self.timer.stop()
         was_capturing = self._capturing

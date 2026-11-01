@@ -145,7 +145,7 @@ def test_polygon_packed_arrays_reject_corruption(corruption):
         arrays["cells/wkb"][:] = 0
     else:
         arrays["cells/wkb"] = arrays["cells/wkb"].astype(float)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"invalid PolygonCells payload at cells"):
         decode(meta, arrays, "cells")
 
 
@@ -157,7 +157,9 @@ def test_locator_reference_and_mapping_payload_corruption_is_rejected():
         decode(bad, arrays, "binning")
     bad = copy.deepcopy(meta)
     bad["snapshots"]["clip_mappings"][0]["n_parent_bins"] = 0.5
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"invalid Binning payload at binning: invalid ClipMapping"
+    ):
         decode(bad, arrays, "binning")
 
 

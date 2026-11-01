@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._units import default_speed
+from neurospatial._validation import validate_integer_at_least
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
@@ -985,7 +986,7 @@ def simulate_trajectory_laps(
     return_metadata: bool = False,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
 ):
     """Simulate structured lap-based trajectory.
 
@@ -1184,7 +1185,7 @@ def _simulate_trajectory_laps(
     call: str,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
 ):
     """Shared lap engine; sessions allocate samples before generating positions.
 
@@ -1216,18 +1217,14 @@ def _simulate_trajectory_laps(
         ("pause_duration", pause_duration, True, "seconds"),
     ):
         _check_positive(name, value, allow_zero=allow_zero, units=units)
-    if (
-        not isinstance(n_laps, (int, np.integer))
-        or isinstance(n_laps, bool)
-        or n_laps <= 0
-    ):
-        raise ValueError(
-            _format_error(
-                f"n_laps must be a positive integer, got {n_laps!r}.",
-                why="Why: n_laps counts one-way traversals of the route.",
-                fix="pass n_laps=2 for one out-and-back cycle",
-            )
-        )
+    n_laps = validate_integer_at_least(
+        n_laps,
+        1,
+        name="n_laps",
+        owner="simulate_trajectory_laps()",
+        hint="n_laps counts one-way traversals of the route; pass n_laps=2 for "
+        "one out-and-back cycle",
+    )
 
     # Initialize random number generator
     rng = np.random.default_rng(seed)
@@ -1416,5 +1413,4 @@ def _simulate_trajectory_laps(
             "direction": directions,
         }
         return positions, times, metadata
-    else:
-        return positions, times
+    return positions, times

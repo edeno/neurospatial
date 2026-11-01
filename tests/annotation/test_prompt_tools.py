@@ -144,7 +144,8 @@ def test_drag_does_not_add_even_when_cursor_returns_to_press(prompts):
         assert not event.handled
     assert not len(p.inside.data)
     assert not len(p.outside.data)
-    assert p.inside.mouse_pan and p.inside.mouse_zoom
+    assert p.inside.mouse_pan
+    assert p.inside.mouse_zoom
 
 
 @pytest.mark.parametrize("modifiers", [("Shift",), ("Control",), ("Meta",)])

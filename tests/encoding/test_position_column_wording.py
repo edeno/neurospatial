@@ -34,7 +34,9 @@ def test_spatial_rate_reports_the_shared_clause(env, trajectory):
 
 def test_occupancy_reports_the_shared_clause(env, trajectory):
     times, positions = trajectory
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(
+        ValueError, match=r"compute_occupancy got positions with shape"
+    ) as error:
         compute_occupancy(env, times, positions)
     assert CLAUSE in str(error.value)
     with pytest.raises(ValueError, match="positions with shape"):
@@ -60,7 +62,7 @@ def test_significance_reports_the_shared_clause(env, trajectory, significance):
         "egocentric_object_vector_cell_significance": (positions, headings, objects),
         "spatial_view_cell_significance": (positions, headings),
     }[significance]
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(ValueError, match=r"Got positions with shape") as error:
         getattr(encoding, significance)(
             env, [np.array([1.0, 2.0])], times, *args, n_shuffles=2, rng=0
         )
@@ -92,5 +94,6 @@ def test_object_vectors_without_env_need_planar_positions(trajectory, function):
             **kwargs,
         )
     message = str(error.value)
-    assert "(n_positions, 2)" in message and "Fix:" in message
+    assert "(n_positions, 2)" in message
+    assert "Fix:" in message
     assert "environment's bins" not in message

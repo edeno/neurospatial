@@ -88,7 +88,7 @@ def test_target_fps_exceeds_source_error_message():
     """Verify subsample_frames fps validation is clear."""
     fields = [np.array([1, 2, 3]) for _ in range(100)]
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match=r"cannot exceed source_fps") as exc_info:
         subsample_frames(fields, target_fps=100, source_fps=50)
 
     error_msg = str(exc_info.value)

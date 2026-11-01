@@ -79,7 +79,9 @@ def test_as_intervals_real_intervalset():
 def test_as_intervals_errors_follow_contract(value, detail):
     from neurospatial._intervals import as_intervals
 
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError, match=r"Why: epochs and spike_window are half-open"
+    ) as exc:
         as_intervals(value, name="epochs")
     message = str(exc.value)
     assert "epochs" in message
@@ -100,7 +102,9 @@ def test_as_intervals_rejects_parallel_start_stop_arrays(n, container):
 
     starts = np.arange(n) * 10.0
     value = container([starts, starts + 5.0])
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError, match=r"Invalid time window: epochs is a pair of 1-D arrays, which"
+    ) as exc:
         as_intervals(value, name="epochs")
     message = str(exc.value)
     assert "parallel" in message
@@ -112,11 +116,11 @@ def test_as_intervals_rejects_parallel_start_stop_arrays(n, container):
 def test_as_intervals_reports_every_problem():
     from neurospatial._intervals import as_intervals, resolve_time_windows
 
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match=r"Invalid time window: epochs row") as exc:
         as_intervals([[1, 0], [np.nan, 1]], name="epochs")
     assert "row(s) 0 have stop <= start" in str(exc.value)
     assert "row(s) 1 contain NaN or inf" in str(exc.value)
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match=r"Invalid time window: epochs row") as exc:
         resolve_time_windows([[1, 0]], [[np.inf, 2]])
     assert "epochs" in str(exc.value)
     assert "spike_window" in str(exc.value)
@@ -133,7 +137,10 @@ def test_as_intervals_reports_every_problem():
 def test_intervalset_numeric_errors_follow_contract(value):
     from neurospatial._intervals import as_intervals
 
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid time window: epochs\.start and epochs\.end could not",
+    ) as exc:
         as_intervals(value, name="epochs")
     message = str(exc.value)
     assert "epochs.start and epochs.end" in message
@@ -146,7 +153,10 @@ def test_intervalset_numeric_error_does_not_hide_other_window_errors():
     from neurospatial._intervals import resolve_time_windows
 
     value = IntervalSetLike(np.array(["bad"]), np.array([10]))
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid time window: epochs\.start and epochs\.end could not",
+    ) as exc:
         resolve_time_windows(value, [[5, 1]])
     message = str(exc.value)
     assert "epochs.start and epochs.end" in message
@@ -229,7 +239,7 @@ def test_intersect_intervals():
 
 
 @pytest.mark.parametrize(
-    "mask,expected",
+    ("mask", "expected"),
     [
         ([True, True, False, True], [[0, 2], [3, 4]]),
         ([False, False], []),
@@ -373,13 +383,17 @@ def test_context_warnings_survive_an_error_in_the_block() -> None:
 
     from neurospatial._stacklevel import _warnings_with_context
 
+    def emit_then_fail() -> None:
+        with _warnings_with_context("ctx"):
+            warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
+            msg = "nothing left"
+            raise ValueError(msg)
+
     with (
         pytest.warns(UserWarning, match="ctx: all intervals excluded"),
         pytest.raises(ValueError, match="nothing left"),
-        _warnings_with_context("ctx"),
     ):
-        warnings.warn("all intervals excluded", UserWarning, stacklevel=1)
-        raise ValueError("nothing left")
+        emit_then_fail()
 
 
 def test_break_declared_on_a_missing_row_moves_to_the_next_kept_row():

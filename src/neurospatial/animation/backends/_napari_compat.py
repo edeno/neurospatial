@@ -72,10 +72,11 @@ def screen_point_options(size: float) -> dict[str, Any]:
     from napari.layers import Points
 
     if not hasattr(Points, "canvas_size_limits"):
-        raise RuntimeError(
+        msg = (
             "Screen-sized overlays require napari Points.canvas_size_limits "
             "(napari >=0.5,<0.10)."
         )
+        raise RuntimeError(msg)
     return {"size": size, "canvas_size_limits": (size, size)}
 
 

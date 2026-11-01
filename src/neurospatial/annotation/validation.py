@@ -76,7 +76,12 @@ def validate_polygon_geometry(
 
     >>> # Self-intersecting (bowtie) polygon
     >>> bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
-    >>> issues = validate_polygon_geometry(bowtie, "bowtie")
+    >>> import warnings
+    >>> with warnings.catch_warnings(record=True) as caught:
+    ...     warnings.simplefilter("always")
+    ...     issues = validate_polygon_geometry(bowtie, "bowtie")
+    >>> "self-intersecting" in str(caught[0].message)  # it also warns
+    True
     >>> "self-intersect" in issues[0].lower()
     True
 
@@ -191,7 +196,6 @@ def validate_region_overlap(
     regions: Mapping[str, Region],
     *,
     overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
-    warn_overlap: bool = True,
 ) -> list[str]:
     """Check for heavy overlap between regions.
 
@@ -200,10 +204,8 @@ def validate_region_overlap(
     regions : mapping of str to Region
         Regions to check for overlap, such as a Regions builder.
     overlap_threshold : float, default=0.5
-        Fraction of region area overlapping another region that triggers
-        a warning. Set to 1.0 to disable overlap warnings.
-    warn_overlap : bool, default=True
-        Whether to emit warnings for overlapping regions.
+        Fraction of region area overlapping another region that is reported
+        as an issue. Set to 1.0 to report none.
 
     Returns
     -------
@@ -213,11 +215,11 @@ def validate_region_overlap(
     Notes
     -----
     Some overlap between regions may be intentional (e.g., nested regions).
-    This validation warns about significant overlap (>50% by default) that
-    may indicate drawing errors.
+    This validation reports significant overlap (>50% by default) in the
+    returned list, without warning, because nested regions are legitimate.
 
     The overlap is checked bidirectionally: if A overlaps 60% of B's area
-    OR B overlaps 60% of A's area, a warning is issued.
+    OR B overlaps 60% of A's area, an issue is returned.
 
     """
     issues: list[str] = []
@@ -263,15 +265,6 @@ def validate_region_overlap(
                     f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
                     f"({max_overlap:.1%} of smaller region)",
                 )
-                if warn_overlap:
-                    warnings.warn(
-                        f"Regions '{r1.name}' and '{r2.name}' overlap "
-                        f"heavily ({max_overlap:.1%} of the smaller "
-                        f"region's area). This may be intentional, but "
-                        f"could indicate a drawing error.",
-                        UserWarning,
-                        stacklevel=3,
-                    )
 
     return issues
 
@@ -422,7 +415,6 @@ def validate_annotations(
     overlap_issues = validate_region_overlap(
         regions,
         overlap_threshold=overlap_threshold,
-        warn_overlap=warn_issues,
     )
     all_issues.extend(overlap_issues)
 

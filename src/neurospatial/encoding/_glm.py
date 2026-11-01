@@ -27,6 +27,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import MRFBasis
 
@@ -96,8 +97,9 @@ class MRFFit(NamedTuple):
         Whether the selected ``log(lambda)`` lies within ``_REML_BOUNDARY_TOL``
         of either fixed search bound: the applied ``lambda`` is finite and the
         fit is valid, but ``lambda`` itself is weakly identified (the optimum may
-        lie beyond the interval). A diagnostic/warning, never an automatic
-        fallback. ``None`` when REML did not run; a scalar bool for shared
+        lie beyond the interval). A diagnostic only (no warning is raised), never
+        an automatic fallback; it is the ``reml_at_boundary`` column of
+        ``summary_table()``. ``None`` when REML did not run; a scalar bool for shared
         (``pooled=True``) REML; a ``(n_units,)`` bool vector for per-unit REML (a
         zero-spike fallback unit inherits the pooled-informative search's flag).
     penalty_selected_by_reml : NDArray or None
@@ -139,26 +141,30 @@ def _structural_constant_base(
     B = np.asarray(B, dtype=np.float64)
     n_components = int(n_live_components)
     if B.ndim != 2:
-        raise ValueError(f"B must be 2-D; got shape {B.shape}.")
+        msg = f"B must be 2-D; got shape {B.shape}."
+        raise ValueError(msg)
     if not 1 <= n_components <= B.shape[1]:
-        raise ValueError(
+        msg = (
             "n_live_components must be between 1 and the basis rank; got "
             f"{n_components} for B shape {B.shape}."
         )
+        raise ValueError(msg)
 
     intercepts = B[:, :n_components]
     peak_rows = np.argmax(np.abs(intercepts), axis=0)
     levels = intercepts[peak_rows, np.arange(n_components)]
     if np.any(levels == 0.0):
-        raise ValueError("a structural component-intercept column is identically zero.")
+        msg = "a structural component-intercept column is identically zero."
+        raise ValueError(msg)
 
     base = np.zeros(B.shape[1], dtype=np.float64)
     base[:n_components] = 1.0 / levels
     if not np.allclose(B @ base, 1.0, rtol=1e-12, atol=1e-12):
-        raise ValueError(
+        msg = (
             "the leading component-intercept columns do not span the all-ones "
             "predictor required by MRFBasis."
         )
+        raise ValueError(msg)
     return base
 
 
@@ -200,17 +206,6 @@ def _is_rank_deficient_on_exposed(
     return bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
 
 
-def _reml_boundary_side(penalty: float) -> str:
-    """Which fixed log-lambda bound a selected ``penalty`` sits against.
-
-    ``"lower"`` (under-smoothing) when ``log lambda`` is closer to the lower
-    bound, else ``"upper"`` (over-smoothing).
-    """
-    log_lam = float(np.log(penalty))
-    lower, upper = _LOG_PENALTY_BOUNDS
-    return "lower" if (log_lam - lower) <= (upper - log_lam) else "upper"
-
-
 def _format_affected_units(indices: Any, unit_ids: Any) -> str:
     """Name the affected units in a per-unit warning.
 
@@ -225,30 +220,6 @@ def _format_affected_units(indices: Any, unit_ids: Any) -> str:
         return f"unit(s) {labels}"
     label = "index" if len(idx) == 1 else "indices"
     return f"unit {label} {idx}"
-
-
-def _warn_reml_boundary(side: str, who: str) -> None:
-    """Emit the one weakly-identified-lambda warning for a boundary REML optimum.
-
-    ``side`` is ``"lower"`` / ``"upper"`` (or ``"lower/upper"`` when a per-unit
-    batch hits both); ``who`` names the affected fit -- ``"the pooled fit"``, or
-    ``"unit(s) [<labels>]"`` when the caller supplied ``unit_ids``, else the
-    positional ``"unit index/indices [...]"`` (see :func:`_format_affected_units`).
-    The applied ``lambda`` is the finite value the search returned near the bound;
-    the interval is never expanded. Only weak identification of ``lambda`` is
-    established -- the fitted field is finite but its sensitivity to ``lambda`` is
-    not measured here.
-    """
-    warnings.warn(
-        f"MRF-GAM REML: the selected smoothing penalty lambda is near the {side} "
-        f"search bound for {who}; lambda is weakly identified there (its optimum "
-        "may lie at or beyond the bound). The applied lambda is the finite value "
-        "the search returned near the bound (the interval is not expanded); the "
-        "fitted field remains finite, but its sensitivity to lambda should be "
-        "checked.",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
 
 
 def _fit_mrf_gam_per_unit(
@@ -335,11 +306,12 @@ def _fit_mrf_gam_per_unit(
                 tol=_FIT_TOL,
             )
         except ValueError as exc:
-            raise ValueError(
+            msg = (
                 f"MRF-GAM per-unit REML failed for "
                 f"{_format_affected_units([int(k)], unit_ids)}: {exc} Supply a "
                 "fixed penalty or use pooled=True (which pools across units)."
-            ) from exc
+            )
+            raise ValueError(msg) from exc
         lam_per_unit[k] = lam_k
         reml_obj_per_unit[k] = obj_k
         boundary_per_unit[k] = bool(bnd_k)
@@ -361,10 +333,11 @@ def _fit_mrf_gam_per_unit(
                 tol=_FIT_TOL,
             )
         except ValueError as exc:
-            raise ValueError(
+            msg = (
                 "MRF-GAM per-unit REML failed for the pooled fallback over the "
                 f"informative units (needed for zero-spike units): {exc}"
-            ) from exc
+            )
+            raise ValueError(msg) from exc
         lam_per_unit[zero_spike] = pooled_lam
         boundary_per_unit[zero_spike] = bool(pooled_bnd)
 
@@ -403,18 +376,6 @@ def _fit_mrf_gam_per_unit(
             "supplying a fixed penalty.",
             UserWarning,
             stacklevel=_external_stacklevel(),
-        )
-
-    # One boundary warning naming the affected units + side(s). A boundary lambda
-    # stays the finite applied penalty (never expanded or replaced).
-    if boundary_per_unit.any():
-        at_ids = np.flatnonzero(boundary_per_unit)
-        log_lams = np.log(lam_per_unit[at_ids])
-        lower, upper = _LOG_PENALTY_BOUNDS
-        sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
-        side_desc = "/".join(sorted(set(sides.tolist())))
-        _warn_reml_boundary(
-            side_desc, _format_affected_units(at_ids.tolist(), unit_ids)
         )
 
     return MRFFit(
@@ -481,7 +442,7 @@ def fit_mrf_gam(
     unit_ids : sequence, keyword-only, optional
         Per-unit identity labels, aligned to the columns of ``counts``, used
         **only** to name the affected units in the per-unit (``pooled=False``)
-        convergence / boundary warnings. Purely diagnostic -- it does not touch
+        convergence warnings. Purely diagnostic -- it does not touch
         the numerics. ``None`` (the default, and every direct low-level call)
         names units by their unit-axis index instead; the public estimator passes
         its resolved ``unit_ids`` so the warnings carry the caller's labels.
@@ -489,15 +450,19 @@ def fit_mrf_gam(
     Returns
     -------
     MRFFit
-        The fit result; see :class:`MRFFit` for the field contract.
+        The fit result; see :class:`MRFFit` for the field contract. When no
+        unit has any spikes, ``lambda`` is unidentified, REML selection is
+        skipped without a warning, and every rate is the rate floor
+        (``_RATE_FLOOR``); the fit is the expected one for silent units.
 
     Raises
     ------
     ValueError
         If ``counts`` is not 2-D or its bin count does not match the basis
-        (i.e. it was not restricted to ``basis.live_bins``); or if ``unit_ids``
+        (i.e. it was not restricted to ``basis.live_bins``); if ``unit_ids``
         is supplied but is not a 1-D sequence aligned with the unit axis
-        (length ``n_units``).
+        (length ``n_units``); or if the basis has no live bins (zero total
+        occupancy), where every rate would be the floor.
     """
     from ._backend import is_jax_available
     from ._glm_numpy import (
@@ -523,21 +488,22 @@ def fit_mrf_gam(
 
     # --- shape validation: inputs must already be restricted to live_bins ---
     if counts.ndim != 2:
-        raise ValueError(
-            f"counts must be 2-D (n_live_bins, n_units); got shape {counts.shape}."
-        )
+        msg = f"counts must be 2-D (n_live_bins, n_units); got shape {counts.shape}."
+        raise ValueError(msg)
     if counts.shape[0] != n_live_bins:
-        raise ValueError(
+        msg = (
             f"counts has {counts.shape[0]} bin rows but the basis has "
             f"{n_live_bins} live bins. counts and occupancy must be restricted to "
             "basis.live_bins before calling fit_mrf_gam; it validates the bin "
             "count and never re-slices."
         )
+        raise ValueError(msg)
     if occupancy.shape != (n_live_bins,):
-        raise ValueError(
+        msg = (
             f"occupancy must have shape ({n_live_bins},) matching the basis live "
             f"bins; got {occupancy.shape}."
         )
+        raise ValueError(msg)
     n_units = int(counts.shape[1])
 
     # ``unit_ids`` (diagnostic-only) must align with the unit axis, else a later
@@ -545,10 +511,11 @@ def fit_mrf_gam(
     if unit_ids is not None:
         ids_arr = np.asarray(unit_ids)
         if ids_arr.ndim != 1 or ids_arr.shape[0] != n_units:
-            raise ValueError(
+            msg = (
                 f"unit_ids must be a 1-D sequence aligned with the unit axis "
                 f"(length n_units={n_units}); got shape {ids_arr.shape}."
             )
+            raise ValueError(msg)
 
     # --- degenerate: no neurons (skip the fit) ---
     if n_units == 0:
@@ -568,28 +535,16 @@ def fit_mrf_gam(
             pooled=pooled,
         )
 
-    # --- degenerate: zero total occupancy / empty basis (skip the fit) ---
+    # --- zero total occupancy / empty basis: nothing to fit ---
     if n_live_bins == 0:
-        warnings.warn(
-            "MRF-GAM fit: zero total occupancy (no live bins); every rate floors "
-            f"to _RATE_FLOOR ({_RATE_FLOOR:.0e}).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-        return MRFFit(
-            coefficients=np.zeros((r_eff, n_units)),
-            log_rate=np.zeros((0, n_units)),
-            penalty=None,
-            penalty_weights=d,
-            rank=r_eff,
-            penalty_rank=penalty_rank,
-            deviance=np.zeros(n_units),
-            converged=True,
-            n_iter=0,
-            reml_objective=None,
-            reml_at_boundary=None,
-            penalty_selected_by_reml=None,
-            pooled=pooled,
+        raise ValueError(
+            _format_error(
+                "MRF-GAM fit: zero total occupancy (no live bins).",
+                why="Why: every rate would be the rate floor, so the result "
+                "would not describe the data",
+                fix="check that positions fall inside the environment and "
+                "that min_occupancy is not larger than the time spent there",
+            )
         )
 
     # --- backend selection for the fit compute, decided BEFORE lambda selection ---
@@ -665,12 +620,6 @@ def fit_mrf_gam(
         # No unit has a spike: lambda is unidentified, so skip REML *selection*.
         # Still respect the fixed-penalty contract -- echo a supplied fixed
         # penalty, else None (auto). The fit runs; every rate floors to the floor.
-        warnings.warn(
-            "MRF-GAM fit: no unit has any spikes; lambda is unidentified so REML "
-            "selection is skipped and every rate floors to _RATE_FLOOR.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         applied_penalty = None if penalty is None else float(penalty)
     elif penalty is None:
         applied_penalty, reml_objective, reml_at_boundary = select_penalty(
@@ -708,10 +657,6 @@ def fit_mrf_gam(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-
-    # --- boundary diagnostic: the shared REML optimum sat on a search bound ---
-    if reml_at_boundary and applied_penalty is not None:
-        _warn_reml_boundary(_reml_boundary_side(applied_penalty), "the pooled fit")
 
     return MRFFit(
         coefficients=coeffs,

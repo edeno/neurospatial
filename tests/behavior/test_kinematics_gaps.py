@@ -226,15 +226,17 @@ def test_smoothed_turns_declared_break_equals_separate_calls(two_epoch_recording
 )
 def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
     r = two_epoch_recording
-    result = function(positions=r.positions, times=r.times, epochs=(500, 600))
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = function(positions=r.positions, times=r.times, epochs=(500, 600))
     assert np.isnan(result).all()
 
 
 def test_home_range_without_observations_is_empty(two_epoch_recording):
     r = two_epoch_recording
-    result = compute_home_range(
-        r.env.bin_at(r.positions), r.env, times=r.times, epochs=(500, 600)
-    )
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = compute_home_range(
+            r.env.bin_at(r.positions), r.env, times=r.times, epochs=(500, 600)
+        )
     assert result.size == 0
 
 
@@ -291,7 +293,9 @@ def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
     Arrival used to be searched outside the epochs, giving 1100 s.
     """
     r = two_epoch_recording
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    ):
         result = compute_goal_directed_metrics(
             r.env,
             r.times,
@@ -367,16 +371,15 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         min_speed=5.0,
     )
     assert expected_sweep > 0
-    with pytest.warns(UserWarning, match="No variation"):
-        result = compute_vte_session(
-            env,
-            times,
-            positions,
-            decision_region="decision",
-            trials=[Trial(times[0], times[-1], "source", "target", "reached")],
-            window_duration=duration,
-            max_gap=None,
-        )
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        decision_region="decision",
+        trials=[Trial(times[0], times[-1], "source", "target", "reached")],
+        window_duration=duration,
+        max_gap=None,
+    )
     assert len(result.trial_results) == 1
     assert result.trial_results[0].mean_speed == expected_speed
     assert result.trial_results[0].head_sweep_magnitude == expected_sweep

@@ -274,7 +274,8 @@ def run_single_benchmark(
             )
 
     else:
-        raise ValueError(f"Unknown function: {function_name}")
+        msg = f"Unknown function: {function_name}"
+        raise ValueError(msg)
 
     # Warmup run (excludes JIT compilation time for JAX)
     if warmup:
@@ -435,7 +436,7 @@ def results_to_dataframe(results: list[EncodingBenchmarkResult]) -> pd.DataFrame
                 & (df["backend"] == "numpy")
             ]["elapsed_ms"]
             if len(numpy_time) > 0:
-                speedups.append(numpy_time.values[0] / row["elapsed_ms"])
+                speedups.append(numpy_time.to_numpy()[0] / row["elapsed_ms"])
             else:
                 speedups.append(np.nan)
 

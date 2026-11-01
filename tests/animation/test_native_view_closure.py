@@ -61,7 +61,8 @@ def test_fastplotlib_native_close_unregisters_and_notifies_once(scene, fail_clea
             native._canvas_closed(None)
     else:
         native._canvas_closed(None)
-    assert view._closed and native._closed
+    assert view._closed
+    assert native._closed
     assert view.time == 0.1
     assert not scene._views
     assert not scene._closed
@@ -88,7 +89,8 @@ def test_native_close_runs_remaining_callbacks_after_callback_failure(scene):
     view._add_close_callback(called)
     with pytest.raises(Exception, match="native animation resources"):
         native._canvas_closed(None)
-    assert view._closed and not scene._views
+    assert view._closed
+    assert not scene._views
     failed.assert_called_once_with()
     called.assert_called_once_with()
     native._canvas_closed(None)
@@ -108,7 +110,8 @@ def test_fastplotlib_close_finishes_after_an_interrupted_step(scene):
     assert any(isinstance(error, KeyboardInterrupt) for error in _leaves(caught.value))
     native._frames.close.assert_called_once_with()
     canvas.close.assert_called_once_with()  # the step after the interrupt
-    assert view._closed and not scene._views
+    assert view._closed
+    assert not scene._views
 
 
 def _leaves(error):
@@ -162,8 +165,10 @@ def test_napari_native_close_unregisters_notifies_and_releases_graphics(
         for _ in range(3):
             QApplication.processEvents()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-        assert controller._closed and view._closed
-        assert not controller._layers and not controller.field_layers
+        assert controller._closed
+        assert view._closed
+        assert not controller._layers
+        assert not controller.field_layers
         assert not scene._views
         called.assert_called_once_with()
         view.close()

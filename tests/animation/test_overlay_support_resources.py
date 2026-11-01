@@ -1,6 +1,5 @@
 """Scientific event support and transactional decoder ownership regressions."""
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -93,21 +92,21 @@ def test_event_coordinate_dimensions_checked_at_environment(env, explicit):
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "message"),
     [
-        {"position_times": np.array([0.0, 0.0])},
-        {"position_times": np.array([0.0])},
-        {"position_times": np.array([0.0, np.inf])},
-        {"break_before": np.array([True])},
-        {"max_gap": -1.0},
-        {"positions": np.array([[0.0, np.inf], [1.0, 1.0]])},
+        ({"position_times": np.array([0.0, 0.0])}, "strictly increasing"),
+        ({"position_times": np.array([0.0])}, "one timestamp per nonempty"),
+        ({"position_times": np.array([0.0, np.inf])}, "non-finite"),
+        ({"break_before": np.array([True])}, "Boolean array of shape"),
+        ({"max_gap": -1.0}, "positive finite number of seconds"),
+        ({"positions": np.array([[0.0, np.inf], [1.0, 1.0]])}, "infinite value"),
     ],
 )
-def test_event_trajectory_validates_observation_contract(env, kwargs):
+def test_event_trajectory_validates_observation_contract(env, kwargs, message):
     params = {"positions": np.zeros((2, 2)), "position_times": np.array([0.0, 1.0])}
     params.update(kwargs)
     overlay = EventOverlay(np.array([0.0, 1.0]), **params)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         overlay.convert_to_data(np.array([0.0, 1.0]), 2, env)
 
 
@@ -146,35 +145,41 @@ def test_video_conversion_closes_acquired_reader_on_validation_failure(
     else:
         overlay.times = None
     frames = np.arange(2.0) if failure == "frame_count" else np.arange(3.0)
-    with (
-        pytest.raises((ValueError, AttributeError)),
-        pytest.warns(UserWarning) if overlay.calibration is None else nullcontext(),
-    ):
+    with pytest.raises((ValueError, AttributeError)):
         overlay.convert_to_data(frames, len(frames), env)
     assert len(readers) == 1
     assert readers[0].close_count == 1
 
 
-def test_pipeline_closes_all_owned_readers_on_later_failure(env, readers):
+def test_pipeline_closes_all_owned_readers_on_later_failure(
+    env, readers, sample_calibration
+):
     overlays = [
-        VideoOverlay("first.mp4", times=np.arange(3.0)),
-        VideoOverlay("second.mp4", times=np.arange(3.0)),
+        VideoOverlay("first.mp4", times=np.arange(3.0), calibration=sample_calibration),
+        VideoOverlay(
+            "second.mp4", times=np.arange(3.0), calibration=sample_calibration
+        ),
         object(),
     ]
-    with pytest.raises(TypeError), pytest.warns(UserWarning):
+    with pytest.raises(TypeError):
         _convert_overlays_to_data(overlays, np.arange(3.0), 3, env)
     assert len(readers) == 2
     assert [r.close_count for r in readers] == [1, 1]
 
 
-def test_conversion_opens_one_reader_and_realign_borrows_it(env, readers):
-    with pytest.warns(UserWarning):
-        prepared, owned = _convert_overlays_to_data(
-            [VideoOverlay("test.mp4", times=np.arange(3.0))],
-            np.array([0.0, 2.0]),
-            2,
-            env,
-        )
+def test_conversion_opens_one_reader_and_realign_borrows_it(
+    env, readers, sample_calibration
+):
+    prepared, owned = _convert_overlays_to_data(
+        [
+            VideoOverlay(
+                "test.mp4", times=np.arange(3.0), calibration=sample_calibration
+            )
+        ],
+        np.array([0.0, 2.0]),
+        2,
+        env,
+    )
     for clock in (np.array([0.0, 1.0, 2.0]), np.array([0.5, 1.5])):
         result = _realign_prepared_overlays(prepared, clock)
         assert result.videos[0].reader is prepared.videos[0].reader
@@ -186,18 +191,26 @@ def test_conversion_opens_one_reader_and_realign_borrows_it(env, readers):
     assert readers[0].close_count == 1
 
 
-def test_single_conversion_failure_closes_previously_opened_reader(env, readers):
+def test_single_conversion_failure_closes_previously_opened_reader(
+    env, readers, sample_calibration
+):
     class Fails:
         calls = 0
 
         def convert_to_data(self, frame_times, n_frames, env):
             self.calls += 1
-            raise ValueError("adapter conversion failed")
+            msg = "adapter conversion failed"
+            raise ValueError(msg)
 
     failing = Fails()
-    with pytest.raises(ValueError, match="adapter"), pytest.warns(UserWarning):
+    with pytest.raises(ValueError, match="adapter"):
         _convert_overlays_to_data(
-            [VideoOverlay("test.mp4", times=np.arange(3.0)), failing],
+            [
+                VideoOverlay(
+                    "test.mp4", times=np.arange(3.0), calibration=sample_calibration
+                ),
+                failing,
+            ],
             np.arange(3.0),
             3,
             env,

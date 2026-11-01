@@ -37,7 +37,8 @@ def remove_unprompted_fragments(
         return _CleanedOutline(proposal, 0, 0)
     height, width = proposal.mask.shape
     if not _inside_pixels(points, (0, 0, width, height)):
-        raise ValueError("Inside points must lie within the preview image.")
+        msg = "Inside points must lie within the preview image."
+        raise ValueError(msg)
     components, count, clicked = _clicked_components(proposal.mask, points)
     missed = int(np.count_nonzero(clicked == 0))
     keep = np.unique(clicked[clicked != 0])

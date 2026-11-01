@@ -38,7 +38,8 @@ class LazyRows:
         return self.values[index]
 
     def __array__(self, *args, **kwargs):
-        raise AssertionError("A field source must remain lazy")
+        msg = "A field source must remain lazy"
+        raise AssertionError(msg)
 
 
 @pytest.fixture

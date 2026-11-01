@@ -311,12 +311,14 @@ class _Predictor:
         self.image = image.copy()
         self.images.append(image.copy())
         if self.fail_set:
-            raise RuntimeError("embedding failure")
+            msg = "embedding failure"
+            raise RuntimeError(msg)
 
     def predict(self, **kwargs):
         self.prompts.append(kwargs)
         if self.fail_predict:
-            raise RuntimeError("decoder failure")
+            msg = "decoder failure"
+            raise RuntimeError(msg)
         if self.output is not None:
             return self.output
         # Depend on the embedded image to exercise meaningful cache state.
@@ -345,7 +347,7 @@ def test_sam_prediction_selects_best_and_passes_xy_prompt():
 
 
 @pytest.mark.parametrize(
-    "points,labels,box,multimask",
+    ("points", "labels", "box", "multimask"),
     [
         # Meta's guidance: only a lone click is ambiguous enough for candidates.
         (((7, 2),), (1,), None, True),
@@ -427,7 +429,8 @@ def test_sam_embedding_cache_content_and_shape_invalidation():
     image[3, 9] = 255
     third = provider.predict(image, prompt)
     assert len(predictor.images) == 2
-    assert third.mask[3, 9] and not first.mask[3, 9]
+    assert third.mask[3, 9]
+    assert not first.mask[3, 9]
     resized = np.full((4, 10, 3), 255, dtype=np.uint8)
     assert provider.predict(resized, prompt).mask.shape == (4, 10)
     assert len(predictor.images) == 3
@@ -577,7 +580,8 @@ def test_module_import_does_not_import_optional_model_or_viewer_libraries(monkey
 
     def guarded_import(name, *args, **kwargs):
         if name.split(".")[0] in {"torch", "sam2", "napari", "qtpy"}:
-            raise AssertionError(f"Optional import {name}")
+            msg = f"Optional import {name}"
+            raise AssertionError(msg)
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
@@ -670,7 +674,7 @@ def _fake_torch(*, cuda, mps):
 
 
 @pytest.mark.parametrize(
-    "cuda,mps,expected",
+    ("cuda", "mps", "expected"),
     [(True, True, "cuda"), (False, True, "mps"), (False, False, "cpu")],
 )
 def test_from_sam2_selects_the_fastest_available_device(
@@ -701,7 +705,8 @@ def test_from_sam2_wrong_weights_point_to_the_large_checkpoint(tmp_path, monkeyp
     checkpoint.write_bytes(b"fake weights")
 
     def fail(*args, **kwargs):
-        raise ValueError("wrong state dict")
+        msg = "wrong state dict"
+        raise ValueError(msg)
 
     modules = {
         "torch": _fake_torch(cuda=False, mps=False),

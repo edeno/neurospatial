@@ -104,7 +104,8 @@ def test_1d_column_swap_no_longer_silent():
         behavior.compute_path_efficiency(env, positions, times[:, None], goal)
     message = str(caught.value)
     assert "got shape (600, 1)" in message
-    assert "Why:" in message and "Fix:" in message
+    assert "Why:" in message
+    assert "Fix:" in message
 
     correct = behavior.compute_path_efficiency(env, times, positions, goal)
     assert np.isfinite(correct.efficiency)

@@ -1,5 +1,5 @@
 """Keep documentation examples headless."""
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")
+mpl.use("Agg")

@@ -65,6 +65,6 @@ def test_long_recordings_use_every_nth_frame_for_color_limits():
 
     fields = np.zeros((250_001, 2), dtype=np.float32)
     fields[1, 0] = 99.0  # not a sampled frame
-    with pytest.warns(UserWarning, match="sample_stride=5"):
-        _, highs = frame_extremes(fields)
-    assert len(highs) == 50_001 and highs.max() == 0.0
+    _, highs = frame_extremes(fields)
+    assert len(highs) == 50_001
+    assert highs.max() == 0.0

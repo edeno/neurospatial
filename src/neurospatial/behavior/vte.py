@@ -85,6 +85,7 @@ from neurospatial._observation import ObservationSupport, validated_observations
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_instance
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -213,10 +214,11 @@ class VTETrialResult(ResultMixin):
     def __post_init__(self) -> None:
         """Store plain Python scalars and check the status and window."""
         if self.status not in _VTE_TRIAL_STATUSES:
-            raise ValueError(
+            msg = (
                 f"VTETrialResult status must be one of {_VTE_TRIAL_STATUSES}; "
                 f"got {self.status!r}."
             )
+            raise ValueError(msg)
         for name in (
             "head_sweep_magnitude",
             "mean_speed",
@@ -232,15 +234,17 @@ class VTETrialResult(ResultMixin):
         if self.is_vte is not None:
             object.__setattr__(self, "is_vte", bool(self.is_vte))
         if self.window_start > self.window_end:
-            raise ValueError(
+            msg = (
                 f"VTETrialResult window_start ({self.window_start}) is after "
                 f"window_end ({self.window_end})."
             )
+            raise ValueError(msg)
         if self.status != "ok" and self.is_vte is not None:
-            raise ValueError(
+            msg = (
                 f"A VTE trial with status {self.status!r} was not measured, so "
                 "it cannot be classified: is_vte must be None."
             )
+            raise ValueError(msg)
 
     # Aliases for common terminology
     @property
@@ -343,13 +347,16 @@ class VTESessionResult(ResultMixin):
 
     def __post_init__(self) -> None:
         """Store the trial results as a tuple."""
-        trial_results = tuple(self.trial_results)
-        for trial in trial_results:
-            if not isinstance(trial, VTETrialResult):
-                raise TypeError(
-                    "VTESessionResult.trial_results must hold VTETrialResult "
-                    f"objects; got {type(trial).__name__}."
-                )
+        trial_results = tuple(
+            validate_instance(
+                trial,
+                VTETrialResult,
+                name="trial_results entry",
+                owner="VTESessionResult",
+                hint="build trial results with compute_vte_trial()",
+            )
+            for trial in self.trial_results
+        )
         object.__setattr__(self, "trial_results", trial_results)
 
     def _observed(self, name: str) -> NDArray[np.float64]:
@@ -793,8 +800,9 @@ def normalize_vte_scores(
     Warns
     -----
     UserWarning
-        If std over the finite entries is zero (no variation across trials);
-        their z-scores will be 0.
+        If two or more finite entries have zero std (no variation across
+        trials); their z-scores will be 0. A single finite entry also has
+        std 0 and is z-scored to 0 without a warning.
 
     Notes
     -----
@@ -823,10 +831,11 @@ def normalize_vte_scores(
     head_sweeps = np.asarray(head_sweeps, dtype=np.float64)
     speeds = np.asarray(speeds, dtype=np.float64)
     if len(head_sweeps) != len(speeds):
-        raise ValueError(
+        msg = (
             f"head_sweeps and speeds must have same length. "
             f"Got {len(head_sweeps)} and {len(speeds)}."
         )
+        raise ValueError(msg)
 
     z_head_sweeps = _observed_z_scores(
         head_sweeps,
@@ -856,13 +865,15 @@ def _observed_z_scores(
     mean = np.mean(observed)
     std = np.std(observed)
     if std < 1e-10:
-        warnings.warn(
-            no_variation
-            + "Z-scores will be 0, and VTE classification may not be meaningful. "
-            "Consider adjusting window_duration or min_speed parameters.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
+        # One observed trial always has std 0; that is not a finding.
+        if observed.size > 1:
+            warnings.warn(
+                no_variation + "Z-scores will be 0, and VTE classification may not be "
+                "meaningful. Consider adjusting window_duration or min_speed "
+                "parameters.",
+                category=UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
         z_scores[finite] = 0.0
     elif invert:
         z_scores[finite] = -(observed - mean) / std
@@ -920,7 +931,7 @@ def _validated_alpha(alpha: float, *, call: str) -> float:
     """A head-sweep weight in [0, 1]."""
     value = float(alpha)
     if not 0.0 <= value <= 1.0:
-        raise ValueError(
+        msg = (
             f"{call}() needs alpha in [0, 1]; got {alpha!r}.\n"
             "Why: alpha weights the head-sweep z-score and 1 - alpha the "
             "slowness z-score, so outside [0, 1] one of them counts against "
@@ -928,6 +939,7 @@ def _validated_alpha(alpha: float, *, call: str) -> float:
             "Fix: pass alpha=0.5 to weight both equally, 1.0 for head sweep "
             "only or 0.0 for slowness only."
         )
+        raise ValueError(msg)
     return value
 
 
@@ -972,12 +984,13 @@ def classify_vte(
     True
     """
     if not np.isfinite(threshold):
-        raise ValueError(
+        msg = (
             f"classify_vte() needs a finite threshold; got {threshold!r}.\n"
             "Why: no VTE index compares meaningfully with a NaN or infinite "
             "threshold.\n"
             "Fix: pass a finite threshold on the VTE index, e.g. threshold=0.5."
         )
+        raise ValueError(msg)
     if np.isnan(vte_index):
         return None
     return bool(vte_index >= threshold)
@@ -1325,14 +1338,17 @@ def compute_vte_session(
     Warns
     -----
     UserWarning
-        For each trial that could not be measured: no samples between its
-        start and end times (often trial times on another clock), no entry
-        to ``decision_region`` inside ``epochs``, or fewer than three
-        observed samples in its window. Also when every trial has the same
-        head sweep or speed (z-scores of 0).
+        For each trial with no samples between its start and end times
+        (often trial times on another clock). Also when two or more trials
+        all have the same head sweep or speed (z-scores of 0).
 
     Notes
     -----
+    A trial that never enters ``decision_region`` inside ``epochs`` (for
+    example an error trial) or has fewer than three observed samples before
+    the entry is expected data, not an error: it has NaN metrics and
+    ``status`` ``"no_entry"`` or ``"too_few_samples"``, with no warning.
+
     A missing row is skipped as if it were deleted: when the observed
     samples on either side are no more than ``max_gap`` apart, velocity and
     heading are computed across it. Only a longer gap, an ``epochs`` edge or
@@ -1437,7 +1453,7 @@ def compute_vte_session(
     )
     alpha = _validated_alpha(alpha, call="compute_vte_session")
     if not np.isfinite(vte_threshold):
-        raise ValueError(
+        msg = (
             f"compute_vte_session() needs a finite vte_threshold; got "
             f"{vte_threshold!r}.\n"
             "Why: no VTE index compares meaningfully with a NaN or infinite "
@@ -1445,6 +1461,7 @@ def compute_vte_session(
             "Fix: pass a finite threshold on the VTE index, e.g. "
             "vte_threshold=0.5."
         )
+        raise ValueError(msg)
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session")
     motion = _Motion(
         min_speed=min_speed,
@@ -1469,7 +1486,6 @@ def compute_vte_session(
                 env=env,
                 region_bins=region_bins,
                 in_epochs=in_epochs,
-                decision_region=decision_region,
                 window_duration=window_duration,
                 motion=motion,
             )
@@ -1531,7 +1547,6 @@ def _measure_trial(
     env: Environment,
     region_bins: NDArray[np.int_],
     in_epochs: NDArray[np.bool_],
-    decision_region: str,
     window_duration: float,
     motion: _Motion,
 ) -> VTETrialResult:
@@ -1558,12 +1573,6 @@ def _measure_trial(
         env.bin_at(positions[first:stop]), region_bins, in_epochs[first:stop]
     )
     if entry is None:
-        warnings.warn(
-            f"{span} never enters decision region '{decision_region}' (inside "
-            "epochs), so its VTE metrics are NaN.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return _unscored_trial(status="no_entry")
     entry_time = float(trial_times[entry])
     window_start = max(entry_time - window_duration, float(trial.start_time))
@@ -1580,13 +1589,6 @@ def _measure_trial(
     window = slice(first + in_trial.start, first + in_trial.stop)
     n_observed = int(np.count_nonzero(support.sample_valid[window]))
     if n_observed < 3:
-        warnings.warn(
-            f"{span}: only {n_observed} observed sample(s) between the trial "
-            f"start and its decision-region entry at {entry_time:.3f} s; heading "
-            "analysis needs at least 3, so its VTE metrics are NaN.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return _unscored_trial(
             status="too_few_samples", window_start=window_start, window_end=entry_time
         )

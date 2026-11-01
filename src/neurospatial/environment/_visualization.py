@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -12,7 +11,7 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 
-from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import (
     Binning,
     CartesianSystem,
@@ -72,7 +71,8 @@ def _add_scale_bar_if_requested(
     """Add scale bar to axes if requested and valid.
 
     Helper function to reduce code duplication between plot() and plot_field().
-    Handles validation of dimension_ranges and emits warnings for invalid cases.
+    Handles validation of dimension_ranges. When the plot extent is missing,
+    non-finite or too small, the plot is drawn without a scale bar.
 
     Parameters
     ----------
@@ -93,29 +93,16 @@ def _add_scale_bar_if_requested(
 
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 
-    # Validate extent is available and reasonable
-    if not dimension_ranges:
-        warnings.warn(
-            "Cannot add scale bar: dimension_ranges not available",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    elif not np.isfinite(dimension_ranges[0]).all():
-        warnings.warn(
-            "Cannot add scale bar: dimension_ranges contains non-finite values",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    else:
-        extent_x = dimension_ranges[0][1] - dimension_ranges[0][0]
-        if extent_x < _MIN_EXTENT_FOR_SCALE_BAR:
-            warnings.warn(
-                f"Cannot add scale bar: extent too small ({extent_x})",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-        else:
-            _add_scale_bar_to_axes(ax, extent_x, units, config)
+    # No scale bar without a usable extent: the plot is drawn without one.
+    if (
+        not dimension_ranges
+        or not np.isfinite(dimension_ranges[0]).all()
+        or dimension_ranges[0][1] - dimension_ranges[0][0] < _MIN_EXTENT_FOR_SCALE_BAR
+    ):
+        return
+    _add_scale_bar_to_axes(
+        ax, dimension_ranges[0][1] - dimension_ranges[0][0], units, config
+    )
 
 
 def _plot(
@@ -277,36 +264,38 @@ def _plot_1d(
     ax: matplotlib.axes.Axes | None = None,
     layout_plot_kwargs: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> matplotlib.axes.Axes | None:
-    """Draw a linearized track in its 1D coordinate, or warn for other layouts."""
+) -> matplotlib.axes.Axes:
+    """Draw a linearized track in its 1D coordinate; refuse other layouts."""
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
     linearization = binning.linearization
-    if linearization is not None:
-        ax = _plot_track_linear(
-            ax=ax,
-            title=layout_type,
-            linearization=linearization,
-            grid_edges=linearization.grid_edges,
-            **l_kwargs,
+    if linearization is None:
+        raise ValueError(
+            _format_error(
+                f"plot_1d() draws a linearized track; this {layout_type!r} "
+                "environment has no linearization.",
+                why="Why: a 1D plot needs each bin's position along a track.",
+                fix="call env.plot() for a spatial view, or build a track with "
+                "Environment.from_graph() or Environment.linear_track()",
+            )
         )
-    else:
-        warnings.warn(
-            "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
-    return ax
+    return _plot_track_linear(
+        ax=ax,
+        title=layout_type,
+        linearization=linearization,
+        grid_edges=linearization.grid_edges,
+        **l_kwargs,
+    )
 
 
 def check_field(field: NDArray[np.float64], n_bins: int) -> None:
     """Refuse a field that is not one value per bin."""
     if field.ndim != 1 or field.shape[0] != n_bins:
-        raise ValueError(
+        msg = (
             f"field must be 1D array with length n_bins={n_bins}, "
             f"got shape {field.shape}"
         )
+        raise ValueError(msg)
 
 
 def field_color_limits(
@@ -317,12 +306,13 @@ def field_color_limits(
     An all-missing or infinite end falls back to 0 or 1, and equal limits
     widen by one, as every ``plot_field`` backend draws them.
     """
+    all_missing = bool(np.isnan(field).all())
     if vmin is None:
-        vmin = np.nanmin(field)
+        vmin = np.nanmin(field) if not all_missing else np.nan
         if np.isnan(vmin) or np.isinf(vmin):
             vmin = 0.0
     if vmax is None:
-        vmax = np.nanmax(field)
+        vmax = np.nanmax(field) if not all_missing else np.nan
         if np.isnan(vmax) or np.isinf(vmax):
             vmax = 1.0
     if vmin >= vmax:
@@ -353,11 +343,12 @@ def _plot_field(
 
     # Check dimensionality for spatial plots
     if not is_linearized_track and n_dims > 2:
-        raise NotImplementedError(
+        msg = (
             f"Cannot plot {n_dims}D fields spatially. "
             "Only 1D and 2D environments are supported. "
             "Consider using marginal plots, slicing, or 3D scatter plots instead."
         )
+        raise NotImplementedError(msg)
 
     # Polar envs render via the same dispatch but with polar-aware
     # axis labels and aspect ratio: bin_centers[:, 0] is

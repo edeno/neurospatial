@@ -67,7 +67,8 @@ def test_undefined_information_and_sparsity_are_nan(xp, rates, occupancy):
     population = xp.stack([rates, xp.asarray([1.0, 3.0, 1.0])])
     info = np.asarray(batch_spatial_information(population, occupancy))
     spars = np.asarray(batch_sparsity(population, occupancy))
-    assert np.isnan(info[0]) and np.isnan(spars[0])
+    assert np.isnan(info[0])
+    assert np.isnan(spars[0])
     # A firing neuron in the same population is unaffected unless occupancy is zero.
     assert np.isnan(info[1]) == (float(xp.sum(occupancy)) == 0.0)
 
@@ -154,7 +155,7 @@ def test_mutual_information_invalid_base(base):
     [np.zeros((2, 2)), [[-1, 2]], [[np.nan, 1]], [[np.inf, 1]], np.empty((2, 0))],
 )
 def test_mutual_information_invalid_histogram(counts):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="joint"):
         mutual_information(counts)
 
 

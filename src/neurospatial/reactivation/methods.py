@@ -63,6 +63,7 @@ from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial._validation import (
     is_integer_at_least,
     validate_alpha,
+    validate_bool,
     validate_integer_at_least,
 )
 from neurospatial.reactivation.assemblies import (
@@ -222,15 +223,16 @@ class ReactivationWindows:
         for name in ("length", "step"):
             value = getattr(self, name)
             if value is not None and not (np.isfinite(value) and value > 0):
-                raise ValueError(
+                msg = (
                     f"ReactivationWindows: {name} must be a positive number of "
                     f"seconds or None, got {value!r}."
                 )
-        if not isinstance(self.allow_shorter, (bool, np.bool_)):
-            raise ValueError(
-                "ReactivationWindows: allow_shorter must be True or False, got "
-                f"{self.allow_shorter!r}."
-            )
+                raise ValueError(msg)
+        validate_bool(
+            self.allow_shorter,
+            name="allow_shorter",
+            owner="ReactivationWindows",
+        )
         if self.length is None and (
             self.step is not None or self.count is not None or self.allow_shorter
         ):
@@ -244,20 +246,23 @@ class ReactivationWindows:
                 )
             )
         if self.anchor not in ("start", "end"):
-            raise ValueError(
+            msg = (
                 f"ReactivationWindows: anchor must be 'start' or 'end', got "
                 f"{self.anchor!r}."
             )
+            raise ValueError(msg)
         if self.clock not in ("concatenated", "wall"):
-            raise ValueError(
+            msg = (
                 "ReactivationWindows: clock must be 'concatenated' or 'wall', "
                 f"got {self.clock!r}."
             )
+            raise ValueError(msg)
         if self.count is not None and not is_integer_at_least(self.count, 1):
-            raise ValueError(
+            msg = (
                 f"ReactivationWindows: count must be a positive integer or None, "
                 f"got {self.count!r}."
             )
+            raise ValueError(msg)
 
     def split(self, epochs: Any) -> list[NDArray[np.float64]]:
         """Cut epochs into this rule's windows.
@@ -382,14 +387,16 @@ class EventResponse:
             self.window, self.response_window, self.baseline_window, "EventResponse"
         )
         if self.reduce not in ("mean", "peak"):
-            raise ValueError(
+            msg = (
                 f"EventResponse: reduce must be 'mean' or 'peak', got {self.reduce!r}."
             )
+            raise ValueError(msg)
         if self.significant_z is not None and not np.isfinite(self.significant_z):
-            raise ValueError(
+            msg = (
                 "EventResponse: significant_z must be a finite z-score or None, "
                 f"got {self.significant_z!r}."
             )
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -650,10 +657,11 @@ class ReactivationMethod:
         if self.min_events is not None and (
             not is_integer_at_least(self.min_events, 1) or not self.needs_events
         ):
-            raise ValueError(
+            msg = (
                 f"{where}: min_events must be a positive integer for a method "
                 f"that counts or follows events, got {self.min_events!r}."
             )
+            raise ValueError(msg)
         self._check_sampling(where)
         self._check_event_response(where)
         self._check_test_settings(where)
@@ -670,10 +678,11 @@ class ReactivationMethod:
             ("zscore_over", _ZSCORE_OVER),
         ):
             if getattr(self, name) not in choices:
-                raise ValueError(
+                msg = (
                     f"{where}: {name} must be one of {choices}, got "
                     f"{getattr(self, name)!r}."
                 )
+                raise ValueError(msg)
 
     def _check_bins(self, where: str) -> None:
         """Refuse event bins for an assembly method and a bin_size that does not fit."""
@@ -694,38 +703,42 @@ class ReactivationMethod:
             and np.isfinite(self.bin_size)
             and self.bin_size > 0
         ):
-            raise ValueError(
+            msg = (
                 f"{where}: bin_size must be a positive number of seconds, got "
                 f"{self.bin_size!r}."
             )
+            raise ValueError(msg)
         if not fixed_bins and self.bin_size is not None:
-            raise ValueError(
+            msg = (
                 f"{where}: every period is counted in events, so bin_size must "
                 f"be None, got {self.bin_size!r}."
             )
+            raise ValueError(msg)
 
     def _check_measure_fit(self, where: str) -> None:
         """Refuse a pair rule, statistic, test or detection the measure lacks."""
         if self.pairs not in _PAIRS:
-            raise ValueError(
-                f"{where}: pairs must be one of {_PAIRS}, got {self.pairs!r}."
-            )
+            msg = f"{where}: pairs must be one of {_PAIRS}, got {self.pairs!r}."
+            raise ValueError(msg)
         if self.statistic not in _STATISTICS[self.measure]:
-            raise ValueError(
+            msg = (
                 f"{where}: statistic {self.statistic!r} does not fit measure "
                 f"{self.measure!r}; use one of {_STATISTICS[self.measure]}."
             )
+            raise ValueError(msg)
         if self.test not in _TESTS[self.measure]:
-            raise ValueError(
+            msg = (
                 f"{where}: test {self.test!r} does not fit measure "
                 f"{self.measure!r}; use one of {_TESTS[self.measure]}."
             )
+            raise ValueError(msg)
         patterns = self.measure in ("assembly", "member_cofiring")
         if patterns and self.detection not in _DETECTIONS:
-            raise ValueError(
+            msg = (
                 f"{where}: a {self.measure} method needs detection='pca' or "
                 f"'ica', got {self.detection!r}."
             )
+            raise ValueError(msg)
 
     def _check_options_apply(self, where: str) -> None:
         """Refuse assembly or pattern options given to another measure."""
@@ -757,10 +770,11 @@ class ReactivationMethod:
                     )
                 )
         if self.measure != "explained_variance" and self.pairs != "all":
-            raise ValueError(
+            msg = (
                 f"{where}: pairs={self.pairs!r} applies only to EV methods; "
                 f"a {self.measure} method uses every unit."
             )
+            raise ValueError(msg)
 
     def _check_member_threshold(self, where: str) -> None:
         """Require a threshold for the z-score member rules and none otherwise."""
@@ -768,41 +782,46 @@ class ReactivationMethod:
         if z_rule and not (
             self.member_threshold is not None and np.isfinite(self.member_threshold)
         ):
-            raise ValueError(
+            msg = (
                 f"{where}: member_rule={self.member_rule!r} needs a finite "
                 f"member_threshold, got {self.member_threshold!r}."
             )
+            raise ValueError(msg)
         if not z_rule and self.member_threshold is not None:
-            raise ValueError(
+            msg = (
                 f"{where}: member_rule={self.member_rule!r} sets its own cutoff; "
                 "pass member_threshold=None."
             )
+            raise ValueError(msg)
 
     def _check_sampling(self, where: str) -> None:
         """Refuse a smoothing or R(t) step that is not positive or does not fit."""
         for name in ("smoothing_bandwidth", "activation_step"):
             value = getattr(self, name)
             if value is not None and not (np.isfinite(value) and value > 0):
-                raise ValueError(
+                msg = (
                     f"{where}: {name} must be positive seconds or None, got {value!r}."
                 )
+                raise ValueError(msg)
         if self.activation_step is not None and self.smoothing_bandwidth is None:
             assert self.bin_size is not None
             ratio = self.bin_size / self.activation_step
             if not (ratio >= 1 - 1e-9 and abs(ratio - round(ratio)) < 1e-6):
-                raise ValueError(
+                msg = (
                     f"{where}: without smoothing, activation_step "
                     f"({self.activation_step:g} s) must divide bin_size "
                     f"({self.bin_size:g} s) into a whole number of steps."
                 )
+                raise ValueError(msg)
 
     def _check_event_response(self, where: str) -> None:
         """Refuse a missing event response and windows that hold no lag."""
         if self.statistic in _EVENT_RESPONSE_STATISTICS and self.event_response is None:
-            raise ValueError(
+            msg = (
                 f"{where}: statistic {self.statistic!r} needs "
                 "event_response=EventResponse(...)."
             )
+            raise ValueError(msg)
         if self.event_response is not None:
             step = _sample_step(self)
             for name in ("response_window", "baseline_window"):
@@ -823,23 +842,24 @@ class ReactivationMethod:
         if self.test == "event_modulation" and (
             self.event_response is None or self.event_response.baseline_window is None
         ):
-            raise ValueError(
+            msg = (
                 f"{where}: test='event_modulation' compares each event's "
                 "response with its baseline; pass "
                 "event_response=EventResponse(baseline_window=(start, stop))."
             )
+            raise ValueError(msg)
 
     def _check_test_settings(self, where: str) -> None:
         """Refuse a percentile, shuffle count or alpha the test cannot use."""
         if self.percentile is not None and not 0 < self.percentile < 100:
-            raise ValueError(
-                f"{where}: percentile must be in (0, 100), got {self.percentile!r}."
-            )
+            msg = f"{where}: percentile must be in (0, 100), got {self.percentile!r}."
+            raise ValueError(msg)
         if self.test == "cell_identity_shuffle" and self.percentile is None:
-            raise ValueError(
+            msg = (
                 f"{where}: the cell-identity shuffle compares each bin with a "
                 "percentile of its shuffles; pass percentile=."
             )
+            raise ValueError(msg)
         validate_integer_at_least(self.n_shuffles, 1, name="n_shuffles", owner=where)
         validate_alpha(self.alpha, owner=where)
 
@@ -849,10 +869,11 @@ class ReactivationMethod:
         if subsamples is None:
             return
         if not is_integer_at_least(subsamples, 1):
-            raise ValueError(
+            msg = (
                 f"{where}: n_rate_subsamples must be a positive integer or "
                 f"None, got {subsamples!r}."
             )
+            raise ValueError(msg)
         if self.measure != "explained_variance":
             raise ValueError(
                 _format_error(
@@ -1163,7 +1184,8 @@ def compare_reactivation_methods(
     template = as_intervals(template_epochs, name="template_epochs")
     match = as_intervals(match_epochs, name="match_epochs")
     control = as_intervals(control_epochs, name="control_epochs")
-    assert template is not None and match is not None
+    assert template is not None
+    assert match is not None
     if control is None and methods:
         raise ValueError(
             _format_error(
@@ -1266,16 +1288,18 @@ def _checked_events(value: Any, name: str) -> NDArray[np.float64] | None:
         value = np.column_stack([np.asarray(value.start, dtype=np.float64), stops])
     rows = np.asarray(value, dtype=np.float64)
     if rows.ndim != 2 or rows.shape[1] != 2:
-        raise ValueError(
+        msg = (
             f"{_CALL}: {name} must be an (n_events, 2) array of start and stop "
             f"times, got shape {rows.shape}."
         )
+        raise ValueError(msg)
     bad = ~np.all(np.isfinite(rows), axis=1) | (rows[:, 1] <= rows[:, 0])
     if bad.any():
-        raise ValueError(
+        msg = (
             f"{_CALL}: {name} rows {np.flatnonzero(bad)[:10].tolist()} are not "
             "finite with stop > start."
         )
+        raise ValueError(msg)
     rows = rows[np.argsort(rows[:, 0], kind="stable")]
     overlapping = np.flatnonzero(rows[1:, 0] < rows[:-1, 1])
     if overlapping.size:
@@ -1337,16 +1361,18 @@ def _rest_counts(
 def _check_min_events(method: ReactivationMethod, n_events: int, period: str) -> None:
     """Refuse a window without events, or with fewer than ``min_events``."""
     if not n_events:
-        raise _MethodError(
+        msg = (
             f"no {period}_events start inside the {period} window, so its "
             f"counts per event or event responses are undefined; pass "
             f"{period}_events that start inside {period}_epochs"
         )
+        raise _MethodError(msg)
     if method.min_events is not None and n_events < method.min_events:
-        raise _MethodError(
+        msg = (
             f"a {period} window has {n_events} events, fewer than "
             f"min_events={method.min_events}"
         )
+        raise _MethodError(msg)
 
 
 def _template_counts(
@@ -1356,7 +1382,8 @@ def _template_counts(
     if method.template_bins == "events":
         events = _events_in(session.events["template_events"], session.template)
         if not len(events):
-            raise _MethodError("no template event starts inside template_epochs")
+            msg = "no template event starts inside template_epochs"
+            raise _MethodError(msg)
         return _event_counts(session.trains, events)
     assert method.bin_size is not None
     return _binned(session.trains, session.template, method.bin_size)[0]
@@ -1413,16 +1440,18 @@ def _checked_groups(
     checked = {}
     for kind, values in given.items():
         if kind not in _GROUP_OF_PAIRS.values():
-            raise ValueError(
+            msg = (
                 f"{_CALL}: unit_groups keys must be 'tetrode', 'shank' or "
                 f"'region', got {kind!r}."
             )
+            raise ValueError(msg)
         array = np.asarray(values)
         if array.shape != (n_units,):
-            raise ValueError(
+            msg = (
                 f"{_CALL}: unit_groups[{kind!r}] must hold one group per unit "
                 f"({n_units}), got shape {array.shape}."
             )
+            raise ValueError(msg)
         checked[kind] = array
     return checked
 
@@ -1470,10 +1499,11 @@ def _one_control_window(
         method.control_windows, session.control, "control"
     )
     if len(control_windows) != 1:
-        raise _MethodError(
+        msg = (
             f"{method._needs_one_control} needs one control window, "
             f"got {len(control_windows)}"
         )
+        raise _MethodError(msg)
     return control_windows[0]
 
 
@@ -1484,10 +1514,11 @@ def _windows_or_error(
     windows = rule.split(epochs)
     if not windows:
         duration = float(np.sum(epochs[:, 1] - epochs[:, 0]))
-        raise _MethodError(
+        msg = (
             f"the {period} epochs ({duration:g} s) are shorter than one "
             f"{rule.length:g} s window"
         )
+        raise _MethodError(msg)
     return windows
 
 
@@ -1519,7 +1550,7 @@ def _match_window_rows(
     ):
         try:
             rows.extend(window_rows(index, window))
-        except _MethodError as failure:
+        except _MethodError as failure:  # noqa: PERF203  # a failing window becomes an error row
             rows.append({**_window_columns(index, window), "error": str(failure)})
     return rows
 
@@ -1530,10 +1561,11 @@ def _explained_variance_rows(
     """One row per match window of an EV method."""
     n_pairs = session.pair_mask.size
     if n_pairs < 3:
-        raise _MethodError(
+        msg = (
             f"EV needs at least 3 pairs of units; {len(session.trains)} units "
             f"hold {n_pairs} pair{'s' * (n_pairs != 1)}"
         )
+        raise _MethodError(msg)
     # The method's pairs rule, on top of the call's pair_mask.
     pair_rule = _selected_pairs(
         n_pairs,
@@ -1554,7 +1586,8 @@ def _explained_variance_rows(
     n_controls = len(control_correlations)
     needs = method._needs_one_control
     if needs is not None and n_controls != 1:
-        raise _MethodError(f"{needs} needs one control window, got {n_controls}")
+        msg = f"{needs} needs one control window, got {n_controls}"
+        raise _MethodError(msg)
 
     def window_rows(index: int, window: NDArray[np.float64]) -> list[dict[str, Any]]:
         match_counts, n_match_events = _rest_counts(method, session, window, "match")
@@ -1852,8 +1885,10 @@ def _detected_patterns(
         sets.append((every, None))
     else:
         regions = session.groups["region"]
-        for region in np.unique(regions):
-            sets.append((np.flatnonzero(regions == region), str(region)))
+        sets.extend(
+            (np.flatnonzero(regions == region), str(region))
+            for region in np.unique(regions)
+        )
         if method.detection_units == "each_region_and_cross_region":
             sets.append((every, "cross_region"))
     generator = stream()
@@ -2065,14 +2100,6 @@ def _event_response_columns(
         after = float(periods["match"].summary[component])
         if method.statistic == "event_response_ratio":
             value = (after - before) / before if before > 0 else np.nan
-            if not before > 0:
-                warnings.warn(
-                    f"component {component}: the control event response is "
-                    f"{before:.3g}, not positive, so the ratio to it is undefined "
-                    "(NaN).",
-                    UserWarning,
-                    stacklevel=2,
-                )
         else:
             value = after - before
         columns: dict[str, Any] = {
@@ -2162,7 +2189,8 @@ def _period_samples(
     per_bin = round(width / step)
     pieces = window[window[:, 1] - window[:, 0] >= width]
     if not len(pieces):
-        raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
+        msg = f"no epoch of the window holds a whole {width:g} s bin"
+        raise _MethodError(msg)
     # One pass over the spikes bins every piece; each piece's steps are then
     # summed or smoothed on their own and packed in place, as a piece has no
     # more samples than steps.
@@ -2191,7 +2219,8 @@ def _period_samples(
             segments.append((n_samples, n_samples + n, step))
             n_samples += n
     if not n_samples:
-        raise _MethodError(f"no epoch of the window holds a whole {width:g} s bin")
+        msg = f"no epoch of the window holds a whole {width:g} s bin"
+        raise _MethodError(msg)
     return _Samples(values[:n_samples], times[:n_samples], segments)
 
 
@@ -2247,8 +2276,12 @@ def _z_scored(
         n = total
     constant = high == low
     std = np.where(constant, 1.0, np.sqrt(squares / n))
-    control_z = (control.values - mean) / std
-    match_z = (match.values - mean) / std
+    control_z = (
+        control.values - mean  # noqa: PD011  # a dataclass field holding an array, not a DataFrame
+    ) / std  # a dataclass field holding an array, not a DataFrame
+    match_z = (
+        match.values - mean  # noqa: PD011  # a dataclass field holding an array, not a DataFrame
+    ) / std  # a dataclass field holding an array, not a DataFrame
     control_z[:, constant] = 0.0
     match_z[:, constant] = 0.0
     return control_z, match_z, ~constant

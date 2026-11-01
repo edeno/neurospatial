@@ -23,8 +23,7 @@ video-to-environment coordinate transforms.
 
 from __future__ import annotations
 
-import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from neurospatial._logging import logger
 from neurospatial.animation.backends._napari_compat import (
@@ -118,7 +117,9 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
                         return
                     draw = overlay._on_rendering_change
 
-                    def draw_in_original_units(*, _overlay=overlay, _draw=draw):
+                    def draw_in_original_units(
+                        *, _overlay: Any = overlay, _draw: Any = draw
+                    ) -> None:
                         length = _overlay._current_length * _overlay._scale
                         _overlay.node.text.text = f"{length * _overlay._unit:g~P}"
                         _draw()
@@ -128,7 +129,9 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
                     overlay._on_size_or_zoom_change(force=True)
                     return
 
-                def patched_on_zoom_change(*, force: bool = False, _overlay=overlay):
+                def patched_on_zoom_change(
+                    *, force: bool = False, _overlay: Any = overlay
+                ) -> None:
                     """Patched zoom handler that uses unit-preserving format."""
                     import numpy as np
 
@@ -210,7 +213,9 @@ def configure_napari_scale_bar(
     viewer : napari.Viewer
         The napari viewer instance.
     units : str | None
-        Unit label (e.g., "cm", "um"). If None, no unit shown.
+        Unit label (e.g., "cm", "um"). If None, no unit shown. A label napari
+        cannot interpret as a physical unit hides the scale bar instead of
+        showing a wrong one; use a recognized unit to display it.
     config : ScaleBarConfig | None
         Configuration object. Note: ``config.length`` is ignored because
         napari auto-sizes based on layer scale and zoom level.
@@ -258,12 +263,6 @@ def configure_napari_scale_bar(
     scale_bar = canvas_overlay(viewer, "scale_bar")
     if units is not None and spatial_unit_label(units) is None:
         scale_bar.visible = False
-        warnings.warn(
-            f"Napari cannot interpret the environment's unit label {units!r}; "
-            "the scale bar is hidden. Use recognized physical units to display it.",
-            UserWarning,
-            stacklevel=2,
-        )
         return
     scale_bar.visible = True
     scale_bar.position = position_map[config.position]

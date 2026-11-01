@@ -45,11 +45,16 @@ class TestRotate2d:
         assert_allclose(turn.inverse()(moved), points, atol=1e-12)
 
     @pytest.mark.parametrize(
-        ("angle", "center"),
-        [(np.nan, None), (np.inf, None), (1.0, (1.0, np.nan)), (1.0, (1.0, 2.0, 3.0))],
+        ("angle", "center", "match"),
+        [
+            (np.nan, None, "angle must be a finite number"),
+            (np.inf, None, "angle must be a finite number"),
+            (1.0, (1.0, np.nan), "center must be two finite coordinates"),
+            (1.0, (1.0, 2.0, 3.0), "center must be two finite coordinates"),
+        ],
     )
-    def test_non_finite_angle_or_bad_center_is_refused(self, angle, center):
-        with pytest.raises(ValueError):
+    def test_non_finite_angle_or_bad_center_is_refused(self, angle, center, match):
+        with pytest.raises(ValueError, match=match):
             rotate_2d(angle, center=center)
 
 

@@ -41,7 +41,7 @@ def native(layer, scene, item):
 
 
 @pytest.mark.parametrize(
-    "interp, expected", [("linear", [0.25, 0.25]), ("nearest", [0, 0])]
+    ("interp", "expected"), [("linear", [0.25, 0.25]), ("nearest", [0, 0])]
 )
 def test_inherited_native_clock_honors_interpolation_and_recording_gap(
     env, interp, expected
@@ -94,7 +94,7 @@ def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
 
 
 @pytest.mark.parametrize(
-    "rates, expected_peak",
+    ("rates", "expected_peak"),
     [(None, 1), ([np.nan, np.inf], 1), ([0, 0], 1), ([0, 5, np.nan, 10], 10)],
 )
 def test_rate_summary_ignores_missing_and_nonfinite_observations(rates, expected_peak):
@@ -197,7 +197,9 @@ def test_native_close_drains_workers_and_notifies_after_window_failure():
     )
     animation.figure = SimpleNamespace(renderer=Mock())
     animation._canvas = Mock()
-    with pytest.raises(Exception) as error:
+    with pytest.raises(
+        Exception, match=r"Failed to close native animation resources"
+    ) as error:
         animation.close()
     assert "window already destroyed" in str(error.value.exceptions[0])
     # Workers drain before the view, and so the scene's readers, are released.
@@ -241,7 +243,8 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
     with animation.capture_session():
         animation.close()
     assert not animation.widget.ui_sliders._playing["time"]
-    assert animation._frames.pause and other.pause
+    assert animation._frames.pause
+    assert other.pause
     animation._prepare.assert_not_called()
     camera.set_state.assert_not_called()
 

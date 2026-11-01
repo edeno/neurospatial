@@ -39,7 +39,7 @@ def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, of
 SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 
 
-@pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
+@pytest.mark.parametrize(("offset", "step"), [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
 def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
     from neurospatial.encoding._spatial_counts import (
         _bin_spike_train_with_stats,

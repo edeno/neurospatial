@@ -368,10 +368,11 @@ def _check_gam_result_invariant(
 
     method = fields["method"]
     if method not in _SPATIAL_METHODS:
-        raise ValueError(
+        msg = (
             f"{kind} has method={method!r}, which is not a known estimator; "
             f"expected one of {list(_SPATIAL_METHODS)}."
         )
+        raise ValueError(msg)
 
     is_glm = method == "glm"
     required = {name: fields[name] for name in _GAM_REQUIRED_FIELDS}
@@ -387,15 +388,17 @@ def _check_gam_result_invariant(
     if is_glm:
         missing = [name for name, value in required.items() if value is None]
         if missing:
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' is missing required GAM field(s): "
                 f"{missing}. glm results carry all of {list(_GAM_REQUIRED_FIELDS)}."
             )
+            raise ValueError(msg)
         if fields["bandwidth"] is not None:
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' must have bandwidth=None (glm has no "
                 f"bandwidth); got {fields['bandwidth']!r}."
             )
+            raise ValueError(msg)
         # Full shape coupling: a mis-shaped diagnostic (e.g. coefficients
         # (rank, 1) on a 2-unit result) would construct and only IndexError when a
         # unit is later indexed. Pin every GAM array shape here. The singular
@@ -437,17 +440,19 @@ def _check_gam_result_invariant(
             ndim = np.ndim(value)
             if n_units is None:  # singular: must be a scalar
                 if ndim != 0:
-                    raise ValueError(
+                    msg = (
                         f"{kind} (single-unit) glm field {name!r} must be a scalar; "
                         f"got shape {tuple(np.shape(value))}."
                     )
+                    raise ValueError(msg)
             elif ndim not in (0, 1) or (
                 ndim == 1 and tuple(np.shape(value)) != (n_units,)
             ):  # plural: scalar or (n_units,)
-                raise ValueError(
+                msg = (
                     f"{kind} glm field {name!r} must be a scalar or a ({n_units},) "
                     f"vector; got shape {tuple(np.shape(value))}."
                 )
+                raise ValueError(msg)
         # State-machine coupling: the per-unit-lambda fields travel together, and
         # NWB persistence keys "is this per-unit?" off the provenance mask alone.
         # So the mask's presence must agree with the vector-ness of the other
@@ -469,23 +474,25 @@ def _check_gam_result_invariant(
             # three slots populated and per-unit-shaped (a scalar mask alongside
             # vector slots is exactly what crashes the NWB writer at len()).
             if fields["pooled"] is not False:
-                raise ValueError(
+                msg = (
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
                     f"but pooled={fields['pooled']!r}; per-unit lambda is only "
                     "produced under pooled=False."
                 )
+                raise ValueError(msg)
             missing_vec = [
                 n
                 for n in (*per_unit_slots, "penalty_selected_by_reml")
                 if not _is_per_unit_shaped(fields[n])
             ]
             if missing_vec:
-                raise ValueError(
+                msg = (
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
                     f"but {missing_vec} are not per-unit values; penalty, "
                     "reml_objective, reml_at_boundary, and penalty_selected_by_reml "
                     "must all be per-unit when the provenance mask is present."
                 )
+                raise ValueError(msg)
             # Semantic coupling of the per-unit provenance (values, not just
             # shapes), so a corrupt record cannot round-trip through NWB:
             selected = np.asarray(mask, dtype=bool)
@@ -493,10 +500,11 @@ def _check_gam_result_invariant(
             reml_vals = np.asarray(fields["reml_objective"], dtype=np.float64)
             # Every applied lambda is a finite, positive smoothing penalty.
             if not np.all(np.isfinite(penalty_vals) & (penalty_vals > 0.0)):
-                raise ValueError(
+                msg = (
                     f"{kind} per-unit penalty must be finite and > 0 (an applied "
                     f"smoothing lambda); got {penalty_vals}."
                 )
+                raise ValueError(msg)
             # A REML-selected unit carries a FINITE objective; a pooled-fallback
             # unit carries the ``nan`` sentinel specifically (not ``inf``). Check
             # the two partitions explicitly -- ``isfinite`` alone would let a
@@ -509,20 +517,22 @@ def _check_gam_result_invariant(
                 np.all(np.isfinite(reml_1d[sel_1d]))
                 and np.all(np.isnan(reml_1d[~sel_1d]))
             ):
-                raise ValueError(
+                msg = (
                     f"{kind} reml_objective must be finite for REML-selected units "
                     "and the nan sentinel for pooled-fallback units; got "
                     f"selected={selected}, reml_objective={reml_vals}."
                 )
+                raise ValueError(msg)
             # The per-unit vector path only exists with >= 1 informative unit
             # (population level). A singular slice may legitimately be a lone
             # fallback unit, so only pin this on the plural class.
             if n_units is not None and not selected.any():
-                raise ValueError(
+                msg = (
                     f"{kind} is a per-unit result but penalty_selected_by_reml is "
                     "all False; the per-unit lambda path requires at least one "
                     "informative (REML-selected) unit."
                 )
+                raise ValueError(msg)
         else:
             # Non-per-unit result: none of the three may be a per-unit vector
             # (this is exactly the state that crashes NWB writing).
@@ -532,48 +542,53 @@ def _check_gam_result_invariant(
                 if fields[n] is not None and np.ndim(fields[n]) != 0
             ]
             if stray_vec:
-                raise ValueError(
+                msg = (
                     f"{kind} has vector {stray_vec} but no penalty_selected_by_reml "
                     "mask; per-unit penalty / reml_objective / reml_at_boundary "
                     "require the provenance mask (a per-unit pooled=False result). "
                     "For a shared/fixed lambda these must be scalar or None."
                 )
+                raise ValueError(msg)
         # A boundary flag only exists when REML produced an objective, so
         # ``reml_at_boundary`` being set requires ``reml_objective`` set too. The
         # reverse is NOT required: a schema-2.1 file records ``reml_objective`` but
         # no ``reml_at_boundary`` (it predates the flag), and reads back with the
         # objective set and the boundary flag ``None`` -- a legitimate state.
         if fields["reml_at_boundary"] is not None and fields["reml_objective"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} has reml_at_boundary={fields['reml_at_boundary']!r} but "
                 "reml_objective=None; a boundary flag requires REML to have run "
                 "(so reml_objective must be populated)."
             )
+            raise ValueError(msg)
         # Symmetrically, a REML objective only exists when a lambda was applied, so
         # a set ``reml_objective`` requires a set ``penalty`` (both come from the
         # same selection; None together on REML-skip / no-data).
         if fields["reml_objective"] is not None and fields["penalty"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} has reml_objective={fields['reml_objective']!r} but "
                 "penalty=None; a REML objective requires an applied penalty."
             )
+            raise ValueError(msg)
         # The boolean diagnostics must be boolean (a float boundary flag or an
         # integer provenance mask would round-trip wrong through NWB).
         for name in ("reml_at_boundary", "penalty_selected_by_reml"):
             value = fields[name]
             if value is not None and np.asarray(value).dtype != np.bool_:
-                raise ValueError(
+                msg = (
                     f"{kind} glm field {name!r} must be boolean; got dtype "
                     f"{np.asarray(value).dtype}."
                 )
+                raise ValueError(msg)
         # ``pooled`` is a concrete bool for every glm result (the only reliable
         # NWB source, since scalar cases are value-identical under both settings).
         # Checked last so a more fundamental shape/required error surfaces first.
         if not isinstance(fields["pooled"], bool):
-            raise ValueError(
+            msg = (
                 f"{kind} with method='glm' must carry pooled=True/False; got "
                 f"{fields['pooled']!r}."
             )
+            raise ValueError(msg)
     else:
         stray = [
             name
@@ -583,15 +598,17 @@ def _check_gam_result_invariant(
         if fields["pooled"] is not None:
             stray.append("pooled")
         if stray:
-            raise ValueError(
+            msg = (
                 f"{kind} with ratio method={fields['method']!r} must not carry GAM "
                 f"field(s): {stray}. GAM diagnostics belong only to method='glm'."
             )
+            raise ValueError(msg)
         if fields["bandwidth"] is None:
-            raise ValueError(
+            msg = (
                 f"{kind} with ratio method={fields['method']!r} must have a float "
                 "bandwidth; got None (bandwidth=None is reserved for method='glm')."
             )
+            raise ValueError(msg)
 
 
 SPATIAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
@@ -765,11 +782,17 @@ def _screen_outcomes(
     """Fixed-threshold outcome of each test; a NaN score fails its test.
 
     ``information`` is the bias-corrected spatial information the place
-    screen compares with its cutoff, shape (n_units,). A grid score at its
+    screen compares with its cutoff, shape (n_units,). A unit with fewer
+    spikes than its map has independent bins has no defined bias, so its
+    information test is unknown (NaN outcome, label ``"undetermined"``), not
+    failed. A grid score at its
     cutoff passes only when the unit's map has a hexagonal first ring of
     autocorrelogram peaks (see :func:`_grid_spacings`); the ring is read
     from ``result``'s maps for those units alone.
     """
+    from neurospatial.encoding._metrics import _information_bias_terms
+
+    too_few = _information_bias_terms(result).too_few
     with np.errstate(invalid="ignore"):
         grid = scores["grid_score"] >= min_grid_score
     if grid.any():
@@ -780,12 +803,14 @@ def _screen_outcomes(
         "grid_score": grid,
         "border_score": scores["border_score"] >= min_border_score,
     }
-    return {
+    outcomes = {
         name: _test_outcome(
             values, unknown=name in unavailable and name not in inapplicable
         )
         for name, values in passed.items()
     }
+    outcomes["spatial_information"][too_few] = np.nan
+    return outcomes
 
 
 def _glm_summary_columns(
@@ -1299,9 +1324,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         float
-            Expected untuned information in bits/spike. NaN for a silent unit,
-            and, with a ``UserWarning``, when the unit has fewer spikes than
-            the map has effectively independent bins (see Notes).
+            Expected untuned information in bits/spike. NaN for a silent unit
+            and, without a warning, when the unit has fewer spikes than the
+            map has effectively independent bins: the bias is then
+            undetermined, not zero (see Notes).
 
         Notes
         -----
@@ -1871,8 +1897,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         cutoff: the information an untuned cell shows from Poisson noise alone
         is subtracted first (derivation in
         :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
-        spikes than the map has effectively independent bins fail, with a
-        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        spikes than the map has effectively independent bins have no estimable
+        information bias, so the boolean is False for them, without a warning:
+        False includes "too few spikes to tell". ``label_cell_types()`` and
+        ``summary_table()`` mark them "undetermined". For 40 untuned Poisson units
+        per spike count in a 100 x 100 cm
         arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
         information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
@@ -2337,12 +2366,13 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         """
         if idx is None:
             n_units = np.asarray(self.firing_rates).shape[0]
-            raise ValueError(
+            msg = (
                 f"plot() requires a unit index: this batch result holds "
                 f"{n_units} units, so there is no single rate map to plot. "
                 f"Pass a unit index, e.g. result.plot(0), or iterate the units "
                 f"with `for r in result: r.plot()` / `result[i].plot()`."
             )
+            raise ValueError(msg)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
@@ -2424,8 +2454,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         -------
         ndarray, shape (n_neurons,)
             Expected untuned information in bits/spike. NaN for silent units
-            and, with one ``UserWarning``, for units with fewer spikes than
-            the maps have effectively independent bins.
+            and, without a warning, for units with fewer spikes than
+            the maps have effectively independent bins: the bias is then
+            undetermined, not zero.
 
         Examples
         --------
@@ -2704,8 +2735,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               environment but cannot be computed (no regular grid of
               rectangular cells for the grid score; no measured walls, or
               walls without observed bins, for the physical border score), so
-              any label is possible. A ``UserWarning`` gives the reason, as
-              ``summary_table()`` records it in ``attrs['unavailable_metrics']``.
+              any label is possible. ``summary_table()`` records the reason in
+              ``attrs['unavailable_metrics']``; no warning is raised.
 
             Grid and border cells are defined on 2-D maps, so on a 1-D track
             neither applies and a tuned cell is ``"place"``. A neuron whose
@@ -2789,29 +2820,15 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             if value is not None:
                 array = np.asarray(value, dtype=np.float64)
                 if array.ndim != 1 or array.shape[0] != len(self):
-                    raise ValueError(
+                    msg = (
                         f"{name} must be a 1-D array of length {len(self)} (one "
                         f"per neuron), got shape {array.shape}"
                     )
+                    raise ValueError(msg)
                 given[name] = array
         scores, unavailable, inapplicable = _screen_scores(
             self, boundary_source=boundary_source, **given
         )
-        unknown = {
-            name: reason
-            for name, reason in unavailable.items()
-            if name not in inapplicable
-        }
-        if unknown:
-            reasons = " ".join(f"{name}: {reason}" for name, reason in unknown.items())
-            warnings.warn(
-                "label_cell_types: "
-                + " and ".join(unknown)
-                + " cannot be computed on this environment, so cells are "
-                f"labeled 'undetermined'. Reason: {reasons}",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         from neurospatial.encoding._metrics import _debiased_information
 
         return _cell_type_labels(
@@ -2884,8 +2901,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         cutoff: the information an untuned cell shows from Poisson noise alone
         is subtracted first (derivation in
         :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
-        spikes than the map has effectively independent bins fail, with a
-        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        spikes than the map has effectively independent bins have no estimable
+        information bias, so the boolean is False for them, without a warning:
+        False includes "too few spikes to tell". ``label_cell_types()`` and
+        ``summary_table()`` mark them "undetermined". For 40 untuned Poisson units
+        per spike count in a 100 x 100 cm
         arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
         information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
@@ -3129,7 +3149,6 @@ def _compute_glm_spatial_rates(
         The raw (always-NumPy, float64) fit result; the caller reads the GAM
         result fields off it.
     """
-    from neurospatial._stacklevel import _external_stacklevel
     from neurospatial.encoding._backend import _to_backend
     from neurospatial.encoding._glm import _RATE_FLOOR, fit_mrf_gam
 
@@ -3141,22 +3160,9 @@ def _compute_glm_spatial_rates(
     basis = env.get_mrf_basis(occupancy, rank=rank)
     live_bins = np.asarray(basis.live_bins, dtype=np.intp)
 
-    # Dead-component warning is owned here (not by ``fit_mrf_gam``): it needs env's
-    # TOTAL component count, which the basis (live-only) does not carry. Warn only
-    # when there ARE units and there is at least one live component but fewer than
-    # the total: the fully-dead (zero total occupancy) case is already covered by
-    # ``fit_mrf_gam``'s own warning, and a no-neuron call has no rates to floor.
-    n_components = int(env.get_diffusion_geometry().n_components)
-    if n_units and 0 < basis.n_live_components < n_components:
-        n_dead = n_components - basis.n_live_components
-        warnings.warn(
-            f"MRF-GAM fit: {n_dead} of {n_components} environment components were "
-            f"never occupied (dead); their bins are set to _RATE_FLOOR "
-            f"({_RATE_FLOOR:.0e} Hz). Fit runs on the live bins only.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
+    # Bins of components the animal never occupied are not in the basis; they
+    # keep ``_RATE_FLOOR`` and are outside ``spatial_support`` (zero occupancy),
+    # so metrics and peaks read them as unsupported, not as zero firing.
     # Boundary in: unit-major (n_units, n_bins) -> bin-major (n_live_bins,
     # n_units), restricted to live bins (the ONLY live-bin restriction).
     counts_fit = spike_counts.T[live_bins, :]  # (n_live_bins, n_units)
@@ -3229,7 +3235,8 @@ def _check_spatial_env(
         env, context=context, arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
-        raise ValueError("time_allocation must be 'start' or 'linear'.")
+        msg = "time_allocation must be 'start' or 'linear'."
+        raise ValueError(msg)
     # Refuse polar before any default (such as the bandwidth) is resolved.
     if time_allocation == "start":
         require_allocentric(env, f"{context}()")
@@ -4407,12 +4414,9 @@ default="diffusion_kde"
     >>> # Create trajectory timestamps
     >>> times = np.linspace(0, 10, 1000)
 
-    >>> # Spike times for 3 neurons (each sorted ascending)
-    >>> spike_times = [
-    ...     np.array([1.0, 2.5, 4.0]),  # Neuron 0
-    ...     np.array([0.5, 1.5, 2.5, 3.5]),  # Neuron 1
-    ...     np.array([5.0, 8.0]),  # Neuron 2
-    ... ]
+    >>> # Spike times for 3 neurons (each sorted ascending); enough spikes
+    >>> # per neuron for the summary table's information screen
+    >>> spike_times = [np.sort(rng.uniform(0, 10, n)) for n in (400, 500, 600)]
 
     >>> # Compute spatial rates for all neurons
     >>> result = compute_spatial_rates(
@@ -4679,10 +4683,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         for label in (label_a, label_b):
             if label not in self.firing_rates:
-                raise KeyError(
+                msg = (
                     f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
-                    + f" Fix: pass one of {tuple(self.firing_rates)}."
+                    f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
+                raise KeyError(msg)
         return field_stability(
             _to_numpy(self.firing_rates[label_a]).ravel(),
             _to_numpy(self.firing_rates[label_b]).ravel(),
@@ -4755,10 +4760,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         for label in (label_a, label_b):
             if label not in self.firing_rates:
-                raise KeyError(
+                msg = (
                     f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
-                    + f" Fix: pass one of {tuple(self.firing_rates)}."
+                    f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
+                raise KeyError(msg)
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
         observed = np.isfinite(a) & np.isfinite(b)
@@ -5118,10 +5124,11 @@ def compute_directional_place_fields(
     require_allocentric(env, "compute_directional_place_fields()")
 
     if len(direction_labels) != len(times):
-        raise ValueError(
+        msg = (
             f"direction_labels must have same length as times, "
             f"got {len(direction_labels)} and {len(times)}"
         )
+        raise ValueError(msg)
     breaks = validate_break_before(
         break_before, len(times), call="compute_directional_place_fields"
     )
@@ -5251,8 +5258,10 @@ def detect_place_fields(
         against noise.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
-        rates (Hz). The default disables exclusion. This is not the
-        recording-time mean firing rate and does not identify cell type.
+        rates (Hz). The default disables exclusion. A map above the bound
+        returns no fields and no warning; ``excluded_reason`` is
+        ``"mean_rate_above_threshold"``. This is not the recording-time mean
+        firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, separate two fields that merge at the ``threshold`` level,
         with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
@@ -5374,10 +5383,11 @@ def detect_place_fields(
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
-        raise ValueError(
+        msg = (
             f"firing_rate shape {firing_rate.shape} does not match "
             f"env.n_bins ({env.n_bins})"
         )
+        raise ValueError(msg)
     _check_place_field_arguments(
         threshold=threshold,
         min_peak_rate=min_peak_rate,
@@ -5405,7 +5415,8 @@ def _check_place_field_arguments(
 ) -> None:
     """Refuse invalid :func:`detect_place_fields` arguments."""
     if not 0 < threshold < 1:
-        raise ValueError(f"threshold must be in (0, 1), got {threshold}")
+        msg = f"threshold must be in (0, 1), got {threshold}"
+        raise ValueError(msg)
     if not (np.isfinite(min_peak_rate) and min_peak_rate >= 0):
         raise ValueError(
             _format_error(
@@ -5461,7 +5472,6 @@ def _search_place_fields(
     detect_subfields: bool,
 ) -> _FieldSearch:
     """Segment one validated rate map into candidate fields around its peaks."""
-    from neurospatial._stacklevel import _external_stacklevel
 
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
@@ -5471,15 +5481,6 @@ def _search_place_fields(
     if np.isfinite(max_mean_rate):
         mean_rate = np.nanmean(firing_rate)
         if mean_rate > max_mean_rate:
-            warnings.warn(
-                f"detect_place_fields: map excluded by the spatial-map-mean filter "
-                f"(unweighted mean {float(mean_rate):.2f} Hz > max_mean_rate "
-                f"{max_mean_rate} Hz). Returning empty field list. This is not "
-                "a recording-time mean or a cell-type verdict. Pass "
-                "max_mean_rate=np.inf to disable the filter.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
             return _FieldSearch([], [], finite, "mean_rate_above_threshold")
 
     min_peak = max(
@@ -5650,8 +5651,10 @@ def has_place_field(
         see :func:`detect_place_fields`.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
-        rates (Hz). The default disables exclusion. This is not the
-        recording-time mean firing rate and does not identify cell type.
+        rates (Hz). The default disables exclusion. A map above the bound
+        returns no fields and no warning; ``excluded_reason`` is
+        ``"mean_rate_above_threshold"``. This is not the recording-time mean
+        firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, separate two fields that merge at ``threshold`` (the
         FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
@@ -6710,13 +6713,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             or spacing.shape != (observed.shape[0],)
             or bias.shape != (observed.shape[0],)
         ):
-            raise ValueError(
+            msg = (
                 "observed_scores must have shape (n_units, 3), null_scores "
                 "(n_units, n_shuffles, 3), and unit_ids, grid_spacing and "
                 "spatial_information_bias (n_units,); got "
                 f"{observed.shape}, {null.shape}, {np.shape(self.unit_ids)}, "
                 f"{spacing.shape} and {bias.shape}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "grid_spacing", spacing)
         object.__setattr__(self, "spatial_information_bias", bias)
         object.__setattr__(self, "observed_scores", observed)
@@ -6800,8 +6804,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_spatial_info: float | None,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
-        from neurospatial._stacklevel import _external_stacklevel
-
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         min_info = (
             PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
@@ -6819,45 +6821,19 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
 
         debiased = self.observed_scores[:, 0] - self.spatial_information_bias
         _warn_unknown_bias(passed[:, 0], debiased, kind="place")
+        # Significant information with an unknown bias is undetermined below.
+        unknown_bias = passed[:, 0] & np.isnan(debiased)
         met = np.ones_like(passed)
         # Significant information is a place cell only beyond the untuned bias.
         met[:, 0] = debiased >= min_info
         # A significant grid score is a grid cell only with a lattice to show.
         met[:, 1] = np.isfinite(self.grid_spacing)
         undetermined = cannot_reject & met
-        if undetermined.any():
-            names = [
-                name
-                for k, name in enumerate(self.statistics)
-                if undetermined[:, k].any()
-            ]
-            # With every test of a unit at one floor, Holm's first step needs
-            # m p < level for the unit's m scored tests; uncorrected and BH
-            # tests need p < level (see _adjusted).
-            m = 1
-            if correction == "holm":
-                scored = np.isfinite(self.observed_scores).sum(axis=1)
-                m = int(scored[undetermined.any(axis=1)].max())
-            needed = _smallest_null_count(lambda p: p * m < level, m / level)
-            cutoff = (
-                f"p < {level}"
-                if correction is None
-                else f"correction={correction!r} at alpha={level}"
-            )
-            warnings.warn(
-                f"{int(undetermined.any(axis=1).sum())} of {len(self)} units "
-                f"have a test ({', '.join(names)}) with too few finite null "
-                f"scores to pass {cutoff}, so that test is undetermined.\n"
-                "Why: with n finite null scores the smallest p-value is "
-                "1 / (n + 1); shifted maps without a defined score (a silent "
-                "shift, or a border map with no field) are left out of n.\n"
-                f"Fix: run more shuffles, so that each test has at least {needed} "
-                "finite null scores; summary_table() reports them as "
-                "<statistic>_n_finite_null.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-        outcomes = np.where(undetermined, np.nan, (passed & met).astype(np.float64))
+        undetermined_bias = np.zeros_like(undetermined)
+        undetermined_bias[:, 0] = unknown_bias
+        outcomes = np.where(
+            undetermined | undetermined_bias, np.nan, (passed & met).astype(np.float64)
+        )
         for k, name in enumerate(self.statistics):
             if (
                 name in self.unavailable_metrics
@@ -6884,7 +6860,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         names the smallest n whose floor p-value ``1 / (n + 1)`` passes,
         evaluated as the adjusted p-values are.
         """
-        from neurospatial._stacklevel import _external_stacklevel
 
         n_finite = self._n_finite_null()
         at_floor = np.isfinite(adjusted) & (self.p_values <= 1.0 / (1.0 + n_finite))
@@ -6979,7 +6954,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             ``"undetermined"`` when a grid or border test applies to the
             environment but its score could not be computed, or when a test
             has too few finite null scores to pass and its other requirement
-            holds; a ``UserWarning`` gives the reason. Too few means
+            holds; ``summary_table()`` gives the reason (``attrs["unavailable_metrics"]``
+            and the ``<statistic>_n_finite_null`` columns). No warning is
+            raised. Too few means
             ``1 / (n_finite + 1) >= alpha``, or, with a ``correction``, that
             the test fails the correction even with every test at its
             smallest p-value ``1 / (n_finite + 1)``: under Holm, a unit's
@@ -6988,21 +6965,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             grid and border do not apply, so a significant cell is
             ``"place"``.
         """
-        unknown = {
-            name: reason
-            for name, reason in self.unavailable_metrics.items()
-            if name not in self.inapplicable_metrics
-        }
-        if unknown:
-            reasons = " ".join(f"{name}: {reason}" for name, reason in unknown.items())
-            warnings.warn(
-                "label_cell_types: "
-                + " and ".join(unknown)
-                + " could not be computed on this environment, so cells are "
-                f"labeled 'undetermined'. Reason: {reasons}",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 
     def summary_table(

@@ -115,7 +115,8 @@ def test_unrelated_runtime_errors_are_not_hidden_as_input_corruption(monkeypatch
     record = _environment().to_dict()
 
     def broken_decoder(*args, **kwargs):
-        raise RuntimeError("implementation failure")
+        msg = "implementation failure"
+        raise RuntimeError(msg)
 
     monkeypatch.setattr(_codecs, "decode", broken_decoder)
     with pytest.raises(RuntimeError, match="implementation failure"):

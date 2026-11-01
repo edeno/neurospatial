@@ -84,7 +84,10 @@ def test_external_html_urls_resolve_relative_to_the_page(
             1
         )
     )
-    assert " " not in url and "#" not in url and "&" not in url and "'" not in url
+    assert " " not in url
+    assert "#" not in url
+    assert "&" not in url
+    assert "'" not in url
     assert (output.parent / Path(unquote(url))).resolve() == frames.resolve()
     assert sorted(item.name for item in frames.iterdir()) == [
         "frame_00000.png",

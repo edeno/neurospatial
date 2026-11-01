@@ -119,7 +119,8 @@ def _check_transform(env, result, names):
 def _check_distance(env, result, names):
     assert result.shape == (env.n_bins,)
     assert result[0] == 0.0
-    assert np.all(np.isfinite(result)) and np.all(result[1:] > 0)
+    assert np.all(np.isfinite(result))
+    assert np.all(result[1:] > 0)
 
 
 CHECKS = {
@@ -204,7 +205,8 @@ def test_mode_alternative_gives_the_right_answer(call, check, extra):
     with pytest.raises(CartesianOnlyError) as refused:
         call(env)
     example = refused.value.example
-    assert example is not None and example in str(refused.value)
+    assert example is not None
+    assert example in str(refused.value)
     names = _names(env, extra)
     check(env, _run(example, names), names)
 

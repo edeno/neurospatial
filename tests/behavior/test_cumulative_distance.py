@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -85,14 +86,20 @@ def test_stationary_run_is_zero_not_nan():
 
 
 @pytest.mark.parametrize(
-    ("times", "positions"),
+    ("times", "positions", "warns"),
     [
-        (np.array([0.0]), np.zeros((1, 2))),
-        (np.arange(3) * 0.1, np.full((3, 2), np.nan)),
+        (np.array([0.0]), np.zeros((1, 2)), False),
+        (np.arange(3) * 0.1, np.full((3, 2), np.nan), True),
     ],
 )
-def test_no_usable_interval_is_nan(times, positions):
-    result = compute_cumulative_distance(times, positions)
+def test_no_usable_interval_is_nan(times, positions, warns):
+    # Only the all-missing recording has samples to exclude, so only it warns.
+    with (
+        pytest.warns(UserWarning, match="excluded ALL trajectory intervals")
+        if warns
+        else nullcontext()
+    ):
+        result = compute_cumulative_distance(times, positions)
     assert np.isnan(result.total_distance)
     assert (result.run_ids == -1).all()
     assert np.isnan(result.cumulative_distance).all()

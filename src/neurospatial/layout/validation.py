@@ -182,23 +182,26 @@ def validate_dimension_ranges(
     """
     pairs = list(dimension_ranges)
     if n_dims is not None and len(pairs) != n_dims:
-        raise ValueError(
+        msg = (
             f"`{name}` length ({len(pairs)}) must match n_dims ({n_dims}): one "
-            "(min, max) pair per dimension.",
+            "(min, max) pair per dimension."
+        )
+        raise ValueError(
+            msg,
         )
     ranges = []
     for i, pair in enumerate(pairs):
         try:
             values = [float(value) for value in pair]
         except (TypeError, ValueError) as e:
-            raise TypeError(
+            msg = (
                 f"{name} must contain numeric tuples of (min, max). "
                 f"Error at dimension {i}: got {pair!r}"
-            ) from e
-        if len(values) != 2:
-            raise ValueError(
-                f"{name}[{i}] is {pair!r}; each axis needs one (min, max) pair."
             )
+            raise TypeError(msg) from e
+        if len(values) != 2:
+            msg = f"{name}[{i}] is {pair!r}; each axis needs one (min, max) pair."
+            raise ValueError(msg)
         lo, hi = values
         if not (np.isfinite(lo) and np.isfinite(hi)):
             raise ValueError(
@@ -388,18 +391,20 @@ def validate_uniform_edges(
         name = label.format(axis=axis)
         edges = np.asarray(raw, dtype=np.float64)
         if edges.ndim != 1 or edges.size < 2 or not np.all(np.isfinite(edges)):
-            raise ValueError(
+            msg = (
                 f"{name} must be a finite 1-D array with >= 2 edges, "
                 f"got shape {edges.shape}.\n"
                 "Fix: pass e.g. np.linspace(start, stop, n_bins + 1)."
             )
+            raise ValueError(msg)
         widths = np.diff(edges)
         if np.any(widths <= 0):
-            raise ValueError(
+            msg = (
                 f"{name} must be strictly increasing; smallest width "
                 f"is {widths.min():.6g}.\n"
                 "Fix: sort the edges and drop duplicates."
             )
+            raise ValueError(msg)
         w0 = widths[0]
         # Float spacing at the largest coordinate bounds each edge's
         # representation error.
@@ -411,7 +416,7 @@ def validate_uniform_edges(
         # spread that large is either that rounding or cannot be told from it.
         coarse = 4 * ulp > 1e-4 * w0
         if coarse and deviation > 1e-4 * w0:
-            raise ValueError(
+            msg = (
                 f"{name} reaches {largest:.6g}, where float64 resolves only "
                 f"{ulp:.3g}; its bin widths differ from the first "
                 f"({w0:.6g}) by up to {deviation:.3g}, more than 1 part in "
@@ -419,13 +424,15 @@ def validate_uniform_edges(
                 "Fix: subtract an origin offset before building the environment, "
                 "e.g. positions - positions.min(axis=0)."
             )
+            raise ValueError(msg)
         if deviation > allowance:
-            raise ValueError(
+            msg = (
                 f"{name} must be uniformly spaced: widths differ from "
                 f"the first ({w0:.10g}) by up to {deviation:.3g}, more than the "
                 f"{allowance:.3g} rounding allowance; cell volumes and diffusion "
                 "face measures assume one width per axis.\n"
                 "Fix: use np.linspace(start, stop, n_bins + 1) for each axis."
             )
+            raise ValueError(msg)
         checked.append(edges)
     return tuple(checked)

@@ -165,8 +165,7 @@ def test_cofiring_means_use_pairs_defined_in_both(
 def test_cofiring_of_a_single_member_is_nan() -> None:
     pattern = AssemblyPattern(np.array([1.0, 0.1, 0.1]), np.array([0]), 0.3)
     counts = np.random.default_rng(0).poisson(1.0, (50, 3)).astype(float)
-    with pytest.warns(UserWarning, match="no pair of members"):
-        result = assembly_member_cofiring(counts, counts, pattern)
+    result = assembly_member_cofiring(counts, counts, pattern)
     assert np.isnan(result.mean_correlation_difference)
     assert result.n_member_pairs == 0
 
@@ -255,7 +254,8 @@ def test_event_response_matches_a_hand_alignment(trace) -> None:
     np.testing.assert_allclose(result.lags, lags, atol=1e-12)
     hand = _hand_peri_event(times, activation, 0.01, events, lags)
     # The event at 19.8 s runs into the gap and the one at 29.9 s starts in it.
-    assert np.isnan(hand[2, -10:]).all() and np.isnan(hand[3, :10]).all()
+    assert np.isnan(hand[2, -10:]).all()
+    assert np.isnan(hand[3, :10]).all()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         np.testing.assert_allclose(result.peri_event_mean, np.nanmean(hand, axis=0))
@@ -263,8 +263,10 @@ def test_event_response_matches_a_hand_alignment(trace) -> None:
         expected = np.nanmean(hand[:, in_response], axis=1)
     np.testing.assert_allclose(result.event_responses, expected)
     assert result.response == pytest.approx(np.nanmean(expected))
-    assert result.n_events == 4 and np.isnan(result.event_responses[3])
-    assert np.isnan(result.p_value) and np.isnan(result.baseline_responses).all()
+    assert result.n_events == 4
+    assert np.isnan(result.event_responses[3])
+    assert np.isnan(result.p_value)
+    assert np.isnan(result.baseline_responses).all()
 
 
 def test_event_response_peak_and_baseline_test(trace) -> None:

@@ -169,7 +169,7 @@ class TestGetBackend:
         """Error message should suggest valid backend options."""
         from neurospatial.encoding._backend import get_backend
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"Unknown backend") as exc_info:
             get_backend("invalid")
 
         error_msg = str(exc_info.value)
@@ -229,16 +229,16 @@ class TestBackendEdgeCases:
         """Backend names should be case-sensitive (lowercase required)."""
         from neurospatial.encoding._backend import get_backend
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Unknown backend"):
             get_backend("NumPy")  # Should be "numpy"
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Unknown backend"):
             get_backend("NUMPY")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Unknown backend"):
             get_backend("Jax")  # Should be "jax"
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Unknown backend"):
             get_backend("AUTO")  # Should be "auto"
 
 

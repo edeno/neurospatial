@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
@@ -100,16 +101,22 @@ _MARKERS = {
 
 
 def _marker(code: str) -> str:
-    """A Matplotlib marker code as a pygfx marker; circles, with a warning, if none."""
+    """A Matplotlib marker code as a pygfx marker.
+
+    Raises
+    ------
+    ValueError
+        If the fastplotlib backend has no such marker.
+    """
     marker = _MARKERS.get(code)
     if marker is None:
-        warnings.warn(
-            f"The fastplotlib backend has no marker {code!r}; drawing circles. "
-            f"Use one of {sorted(_MARKERS)}.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
+        msg = _format_error(
+            f"The fastplotlib backend has no marker {code!r}.",
+            why="Only the marker codes it can draw are accepted, so the "
+            "overlay is not silently shown with a different shape.",
+            fix=f"Use one of {sorted(_MARKERS)}.",
         )
-        return "circle"
+        raise ValueError(msg)
     return marker
 
 
@@ -150,7 +157,13 @@ class _Field:
         # The held row: the same array until the field's sample changes.
         return self.prepared.field_sample(self.field, time)
 
-    def apply(self, time: float, values: NDArray[np.float64]) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        values: NDArray[
+            np.float64
+        ],  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if values is not self.graphic.values:
             self.graphic.update(values)
 
@@ -197,7 +210,11 @@ class _Position:
         point = np.array(self.prepared.sample(data, data.data, time))
         return point, self.prepared.trail(data, time) if self.capacity else None
 
-    def apply(self, time: float, prepared: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        prepared: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         point, trail = prepared
         for marker in self.markers:
             marker.data = xyz(point)
@@ -247,7 +264,11 @@ class _Bodyparts:
     def prepare(self, time: float) -> Any:
         return self.prepared.pose(self.data, time)
 
-    def apply(self, time: float, pose: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        pose: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         for points in self.points:
             points.data = xyz(pose.points)
         if self.lines:
@@ -273,7 +294,11 @@ class _HeadDirection:
     def prepare(self, time: float) -> Any:
         return self.prepared.heading_arrow(self.data, time)
 
-    def apply(self, time: float, arrow: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        arrow: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if arrow is None:
             segment = np.full((2, self.prepared.scene.env.n_dims), np.nan)
         else:
@@ -322,7 +347,11 @@ class _Events:
     def prepare(self, time: float) -> Any:
         return self.prepared.events(self.data, time)
 
-    def apply(self, time: float, shown: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        shown: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         for name, (fill, border, graphics) in self.kinds.items():
             visible = shown[name]
             if self.drawn.get(name) == visible.key:
@@ -377,7 +406,11 @@ class _ObjectVectors:
         rate = self.prepared.sample(data, data.firing_rates, time, name="firing_rates")
         return animal, _rate_opacity(float(rate), data._rate_peak)
 
-    def apply(self, time: float, prepared: Any) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        prepared: Any,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         animal, opacity = prepared
         objects = self.data.object_positions
         segments = pair_segments(np.broadcast_to(animal, objects.shape), objects)
@@ -427,7 +460,12 @@ class _Video:
         # The held frame: the same array until the nearest sample changes.
         return self.prepared.video_frame(self.data, time)
 
-    def apply(self, time: float, frame: NDArray[np.uint8] | None) -> None:
+    def apply(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        frame: NDArray[np.uint8]
+        | None,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # same apply(time, prepared) signature as the other layers
         if frame is self.shown:
             return
         self.shown = frame
@@ -546,7 +584,8 @@ class _PositionTime:
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
-        assert prepared.track_extents is not None and prepared.track_rows is not None
+        assert prepared.track_extents is not None
+        assert prepared.track_rows is not None
         self.subplot, self.prepared, self.field = subplot, prepared, field
         self.scale, self.start = scale, start
         self.lower, self.upper = prepared.track_extents
@@ -1092,26 +1131,17 @@ def playback_step(frame_times: NDArray[np.float64]) -> float:
     """Seconds that play and the step buttons move: short enough to reach
     every frame, unless frames are much closer than the typical interval.
 
-    Warns when the frames are unevenly spaced enough for playback to hold
-    one frame through a gap or pass over frames.
+    Uneven spacing is normal in behaviour recordings: when the frames are
+    unevenly spaced enough, a long gap plays as one held frame and frames
+    closer than the step can be passed over. Step frame by frame with the
+    Left and Right arrow keys, jump between events with N given an
+    EpochOverlay, or set ``animation.frame``.
     """
     if len(frame_times) < 2:
         return 1.0
     intervals = np.diff(frame_times)
     typical = float(np.median(intervals))
-    step = max(float(intervals.min()), typical / 2)
-    if intervals.min() < typical / 2 or intervals.max() > 10 * typical:
-        warnings.warn(
-            f"frame_times are unevenly spaced (intervals from {intervals.min():.3g} "
-            f"to {intervals.max():.3g} s). Play and the step buttons move "
-            f"{step:.3g} s at a time, so a long gap plays as one held frame and "
-            f"frames closer than {step:.3g} s can be passed over. Step "
-            "frame by frame with the Left and Right arrow keys, jump between "
-            "events with N given an EpochOverlay, or set animation.frame.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    return step
+    return max(float(intervals.min()), typical / 2)
 
 
 class _Frame(NamedTuple):
@@ -1256,10 +1286,11 @@ class FastplotlibAnimation:
             streams = list(scene.fields.values())
             names = list(scene.fields) if layer_names is None else list(layer_names)
             if len(names) != len(streams):
-                raise ValueError(
+                msg = (
                     f"layer_names has {len(names)} names for {len(streams)} "
                     "fields; pass one name per field."
                 )
+                raise ValueError(msg)
             frame_times = scene.frame_times
             self.n_frames = len(frame_times)
             # The widget's clock: seconds from the first frame, so session
@@ -1269,11 +1300,12 @@ class FastplotlibAnimation:
             self._clock = frame_times - self._start
             self._labels = None if frame_labels is None else list(frame_labels)
             if self._labels is not None and len(self._labels) != self.n_frames:
-                raise ValueError(
+                msg = (
                     f"frame_labels has {len(self._labels)} labels for "
                     f"{self.n_frames} frames. Pass one label per frame, or omit "
                     "frame_labels to label frames by their time."
                 )
+                raise ValueError(msg)
             data = scene._overlay_data
             groups = list(prepared.signal_groups.values())
             step, steps_per_second = _playback(
@@ -1354,10 +1386,11 @@ class FastplotlibAnimation:
             if rendering == "iso" and volume_threshold is not None:
                 for scale in scales:
                     if not scale.vmin <= volume_threshold <= scale.vmax:
-                        raise ValueError(
+                        msg = (
                             "volume_threshold must lie between fixed vmin and vmax "
                             f"({scale.vmin}, {scale.vmax}), in field data units."
                         )
+                        raise ValueError(msg)
 
             # The slider stops at the last frame.
             self.widget = fastplotlib.NDWidget(
@@ -1575,7 +1608,7 @@ class FastplotlibAnimation:
             keys.append("Up/Down unit, Esc none")
         self.key_hint = "Keys, after a click on the figure:  " + "  |  ".join(keys)
 
-        @self.figure.add_imgui_window(location="top", size=48, title=None)
+        @self.figure.add_imgui_window(location="top", size=48, title=None)  # type: ignore[misc, unused-ignore]
         def hint() -> None:
             imgui.text(self.status)
             imgui.text_disabled(self.key_hint)
@@ -1659,7 +1692,11 @@ class FastplotlibAnimation:
         with self._source_lock:
             return _Frame(time, [layer.prepare(time) for layer in self._updates])
 
-    def _show(self, time: float, frame: _Frame) -> None:
+    def _show(
+        self,
+        time: float,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+        frame: _Frame,  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # callers pass the slider time  # _show/apply: the slider time, kept with the frame it was read for
         """Draw ``frame``; ``time`` is the slider's, which ``frame`` was read for."""
         for layer, prepared in zip(self._updates, frame.layers, strict=True):
             layer.apply(frame.time, prepared)
@@ -1707,11 +1744,11 @@ class FastplotlibAnimation:
     def seek(self, time: float) -> None:
         """Move every panel to an absolute recording time, in seconds."""
         if self._closed:
-            raise RuntimeError(
-                "This animation is closed. Create a new view before seeking."
-            )
+            msg = "This animation is closed. Create a new view before seeking."
+            raise RuntimeError(msg)
         if not np.isfinite(time):
-            raise ValueError("time must be a finite recording time in seconds.")
+            msg = "time must be a finite recording time in seconds."
+            raise ValueError(msg)
         self.widget.indices = {
             "time": float(np.clip(time - self._start, 0, self._clock[-1]))
         }
@@ -1726,9 +1763,8 @@ class FastplotlibAnimation:
         Playback and asynchronous field reads stay suspended until exit.
         """
         if self._closed:
-            raise RuntimeError(
-                "This animation is closed. Create a new view before exporting."
-            )
+            msg = "This animation is closed. Create a new view before exporting."
+            raise RuntimeError(msg)
         self.show()
         original_time = self.time
         playing = playback_state(self.widget)
@@ -1740,7 +1776,8 @@ class FastplotlibAnimation:
 
         def update(time: float) -> None:
             if self._closed:
-                raise RuntimeError("This animation was closed during capture.")
+                msg = "This animation was closed during capture."
+                raise RuntimeError(msg)
             # Drawn at the recording time itself, not one rounded through
             # the widget's clock.
             time = float(np.clip(time, first, last))
@@ -1754,7 +1791,8 @@ class FastplotlibAnimation:
 
         def capture(time: float) -> NDArray[np.uint8]:
             if not np.isfinite(time):
-                raise ValueError("time must be a finite recording time in seconds.")
+                msg = "time must be a finite recording time in seconds."
+                raise ValueError(msg)
             update(time)
             # force_draw works on GUI, notebook and offscreen canvases. It
             # submits all updated GPU buffers before the snapshot reads back.
@@ -1801,7 +1839,10 @@ class FastplotlibAnimation:
         with self.capture_session() as capture:
             return capture(time)
 
-    def _canvas_closed(self, event: Any) -> None:
+    def _canvas_closed(
+        self,
+        event: Any,  # noqa: ARG002  # _show/apply: the slider time, kept with the frame it was read for
+    ) -> None:  # canvas close callback signature  # _show/apply: the slider time, kept with the frame it was read for
         """Closing the native canvas also stops the workers and the view."""
         self.close()
 
@@ -1884,7 +1925,7 @@ class FastplotlibAnimation:
     def _ipython_display_(self) -> None:
         from IPython.display import display
 
-        display(self.show())
+        display(self.show())  # type: ignore[no-untyped-call, unused-ignore]
 
 
 def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> None:

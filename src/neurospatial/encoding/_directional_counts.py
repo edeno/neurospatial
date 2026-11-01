@@ -47,28 +47,31 @@ def _validate_directional_samples(
     """Validate aligned directional samples and positive sampling intervals."""
     # Validate inputs
     if len(headings) != len(times):
-        raise ValueError(
+        msg = (
             f"headings and times must have the same length. "
             f"Got headings: {len(headings)}, times: {len(times)}.\n"
             f"Fix: Ensure both arrays represent the same time series."
         )
+        raise ValueError(msg)
 
     if len(times) < 3:
-        raise ValueError(
+        msg = (
             f"Need at least 3 samples to compute occupancy. "
             f"Got {len(times)} samples.\n"
             f"Fix: Provide more data points."
         )
+        raise ValueError(msg)
 
     # Check strict monotonicity (no duplicates, no decreasing)
     time_diffs = np.diff(times)
     if np.any(time_diffs <= 0):
         n_problems = np.sum(time_diffs <= 0)
-        raise ValueError(
+        msg = (
             f"times must be strictly monotonically increasing (no duplicates). "
             f"Found {n_problems} non-increasing time steps.\n"
             f"Fix: Remove duplicate timestamps or check for timestamp errors."
         )
+        raise ValueError(msg)
 
 
 DEFAULT_HEADING_BIN_SIZE_DEG = 6.0
@@ -95,21 +98,23 @@ def directional_frame_bins(
         )
 
     if bin_size <= 0:
-        raise ValueError(
+        msg = (
             f"bin_size must be positive, got {bin_size}.\n"
             f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
         )
+        raise ValueError(msg)
 
     headings_rad = to_radians(headings, angle_unit)
     bin_size_rad = float(to_radians(bin_size, angle_unit))
 
     n_bins = int(np.round(2 * np.pi / bin_size_rad))
     if n_bins < 1:
-        raise ValueError(
+        msg = (
             f"bin_size is too large: {bin_size} ({angle_unit}). "
             f"Results in {n_bins} bins (need at least 1).\n"
             f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
         )
+        raise ValueError(msg)
 
     finite = np.isfinite(headings_rad)
     wrapped = (headings_rad[finite] + np.pi) % (2 * np.pi) - np.pi

@@ -174,10 +174,11 @@ def _prepare_border(env: Environment, source: BoundarySource) -> _BorderGeometry
         try:
             cells = list(materialize_cells(env.binning))
         except ValueError as exc:
-            raise NotImplementedError(
+            msg = (
                 "Analysis-boundary border scores need exact planar cells; use a 2-D "
                 "grid, hexagonal layout, triangular mesh or polygon cells."
-            ) from exc
+            )
+            raise NotImplementedError(msg) from exc
         forward = None
         domain = unary_union(cells)
         if env.arena.domain_known:
@@ -292,7 +293,7 @@ def _physical_frame(
             if len(keys) == len(arena.children)
             else f"{len(missing)} of {len(arena.children)}"
         )
-        raise NotImplementedError(
+        msg = (
             f"Physical border scores need a physical outline for every combined component; component(s) {named} "
             "have none (their outline was inferred), so fields at their edges would be scored against walls "
             "elsewhere (their own internal walls or walls in other components). Build each component with its "
@@ -300,8 +301,9 @@ def _physical_frame(
             "OpenArena(outline, outline='drop') for an elevated track, or MaskArena(..., outline=...)) before "
             "combining, or explicitly use boundary_source='analysis'."
         )
+        raise NotImplementedError(msg)
     if not outline_declared(arena):
-        raise NotImplementedError(
+        msg = (
             "Physical border scores need the arena's outer boundary, but its outline was inferred rather than "
             "declared: only internal walls are declared, so a field on the outer edge would be scored against "
             "those walls alone. If the outline is the measured enclosure, say what it is, for example "
@@ -309,19 +311,18 @@ def _physical_frame(
             "or arena=OpenArena(outline, outline='drop') for an elevated platform. Otherwise explicitly "
             "use boundary_source='analysis' to score the retained analysis boundary."
         )
+        raise NotImplementedError(msg)
     if composition is not None and any(
         independent_frame(child.locator) for child in composition[0].children
     ):
-        raise NotImplementedError(
-            "Physical border contact needs a shared source frame for combined cells and walls. Combine components before applying a shared transform, or explicitly use boundary_source='analysis'."
-        )
+        msg = "Physical border contact needs a shared source frame for combined cells and walls. Combine components before applying a shared transform, or explicitly use boundary_source='analysis'."
+        raise NotImplementedError(msg)
 
     try:
         cells = materialize_cells(binning)
     except ValueError as exc:
-        raise NotImplementedError(
-            "Physical border coverage needs exact planar cells; supply supported grid or polygon cells, or choose boundary_source='analysis'."
-        ) from exc
+        msg = "Physical border coverage needs exact planar cells; supply supported grid or polygon cells, or choose boundary_source='analysis'."
+        raise NotImplementedError(msg) from exc
     frame = wall_source_frame(binning.locator, env.arena, env.bin_centers)
     if frame is None:
         return list(cells), env.arena, None
@@ -593,13 +594,13 @@ def _corner_positions(
         # the ring's start.
         order = np.roll(np.arange(len(position)), -int(np.flatnonzero(turning == 0)[0]))
         edges = np.flatnonzero(np.diff(turning[order]) != 0) + 1
-        for run in np.split(order, edges):
-            if (
-                turning[run[0]] != 0
-                and np.max(np.abs(turn[run])) > threshold
-                and not sharp_sample[run].any()
-            ):
-                cuts.append(position[run[int(np.argmax(np.abs(turn[run])))]])
+        cuts.extend(
+            position[run[int(np.argmax(np.abs(turn[run])))]]
+            for run in np.split(order, edges)
+            if turning[run[0]] != 0
+            and np.max(np.abs(turn[run])) > threshold
+            and not sharp_sample[run].any()
+        )
     return np.sort(np.asarray(cuts, dtype=float))
 
 
@@ -728,7 +729,7 @@ def _refuse_unowned_walls(
         )
     )[0]
     unit = f" {units}" if units else " position units"
-    raise NotImplementedError(
+    msg = (
         f"Physical border scores need a bin at every measured wall, but {unowned.length:.3g}{unit} of wall "
         f"(for example near ({where[0]:.4g}, {where[1]:.4g})) lies outside every bin and not in a cell next "
         "to one. The bins stop short of the walls there: they were built from positions inside the measured "
@@ -737,6 +738,7 @@ def _refuse_unowned_walls(
         "smaller than the narrowest corridor; or explicitly use boundary_source='analysis' to score the "
         "outline of the retained bins."
     )
+    raise NotImplementedError(msg)
 
 
 def _inscribed_radius(
@@ -789,9 +791,8 @@ def _distance_from_walls(
     try:
         paths = nx.single_source_dijkstra_path_length(graph, source, weight="distance")
     except (ValueError, nx.NetworkXException) as exc:
-        raise RuntimeError(
-            "border_score: geodesic wall distance computation failed; check navigation distances or use metric='euclidean'."
-        ) from exc
+        msg = "border_score: geodesic wall distance computation failed; check navigation distances or use metric='euclidean'."
+        raise RuntimeError(msg) from exc
     for node, length in paths.items():
         if node is not source:
             distances[int(node)] = length

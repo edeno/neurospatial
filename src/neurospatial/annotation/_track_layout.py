@@ -21,22 +21,23 @@ def validate_edge_coverage(
     actual = [frozenset(edge) for edge in edges]
     expected = {frozenset(edge) for edge in expected_edges}
     if len(actual) != len(set(actual)) or set(actual) != expected:
-        raise ValueError(
+        msg = (
             f"{name} must contain every track graph edge exactly once "
             "(no missing, duplicate, or unknown edges). "
             "Recompute the edge order after changing the graph."
         )
+        raise ValueError(msg)
 
 
 def validate_edge_spacing(spacing: object, n_edges: int) -> None:
     """Validate scalar or per-transition gaps in output coordinate units."""
     values = np.asarray(spacing, dtype=np.float64)
     if values.ndim > 1 or (values.ndim == 1 and len(values) != max(0, n_edges - 1)):
-        raise ValueError(
-            f"edge_spacing must have {max(0, n_edges - 1)} values or be a scalar."
-        )
+        msg = f"edge_spacing must have {max(0, n_edges - 1)} values or be a scalar."
+        raise ValueError(msg)
     if not np.all(np.isfinite(values)) or np.any(values < 0):
-        raise ValueError("edge_spacing must contain finite, non-negative values.")
+        msg = "edge_spacing must contain finite, non-negative values."
+        raise ValueError(msg)
 
 
 def resolve_track_layout(
@@ -54,7 +55,8 @@ def resolve_track_layout(
     output units and are never scaled by calibration.
     """
     if start_node is not None and start_node not in graph:
-        raise ValueError("start_node must identify a node in the track graph.")
+        msg = "start_node must identify a node in the track graph."
+        raise ValueError(msg)
     if edge_order is None:
         order: list[tuple[int, int]] = []
         visited: set[int] = set()

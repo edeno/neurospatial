@@ -318,15 +318,14 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
     positions = r.positions.copy()
     positions[1000:1005, 0] = 80
     trial = Trial(99.5, 1109.9, "source", "target", "reached")
-    with pytest.warns(UserWarning, match="No variation"):
-        result = compute_vte_session(
-            r.env,
-            r.times,
-            positions,
-            decision_region="target",
-            trials=[trial],
-            window_duration=1001,
-        )
+    result = compute_vte_session(
+        r.env,
+        r.times,
+        positions,
+        decision_region="target",
+        trials=[trial],
+        window_duration=1001,
+    )
     assert len(result.trial_results) == 1
     (trial_result,) = result.trial_results
     assert trial_result.mean_speed == 0

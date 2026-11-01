@@ -11,7 +11,7 @@ import numpy as np
 from napari.layers import Points
 from napari.qt.threading import thread_worker
 from numpy.typing import NDArray
-from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined]
+from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined, unused-ignore]
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -79,13 +79,13 @@ def _run_prediction(
     )
 
 
-@thread_worker(ignore_errors=True)
+@thread_worker(ignore_errors=True)  # type: ignore[misc, unused-ignore]
 def _warm_up(provider: SegmentAnythingProvider, frame: NDArray[np.uint8]) -> None:
     """Compute SAM image features before the first prompt, off the GUI thread."""
     provider._prepare(frame)
 
 
-@thread_worker(ignore_errors=True)
+@thread_worker(ignore_errors=True)  # type: ignore[misc, unused-ignore]
 def _predict(
     provider: SegmentationProvider,
     frame: NDArray[np.uint8],
@@ -97,7 +97,7 @@ def _predict(
     return _run_prediction(provider, frame, prompt, previous, bounds)
 
 
-class AnnotationAssistWidget(QWidget):
+class AnnotationAssistWidget(QWidget):  # type: ignore[misc, unused-ignore]
     """Keep temporary pixel prompts separate from committed annotations.
 
     Callbacks are the only route to session mutations. ``dispose`` must be called
@@ -377,12 +377,12 @@ class AnnotationAssistWidget(QWidget):
             signal.connect(callback)
         worker.start()
 
-    @Slot(object)
+    @Slot(object)  # type: ignore[misc, unused-ignore]
     def _warm_up_done(self, _result: object) -> None:
         if not self._disposed and not self._pending_preview:
             self.status.setText("SAM 2 is ready. " + self._prompt_hint())
 
-    @Slot(object)
+    @Slot(object)  # type: ignore[misc, unused-ignore]
     def _warm_up_error(self, exc: Exception) -> None:
         if not self._disposed:
             self._error("Could not prepare SAM 2; prompts will retry", exc)
@@ -497,9 +497,11 @@ class AnnotationAssistWidget(QWidget):
         try:
             points = np.asarray(self._scale.data, dtype=float)
             if points.shape != (2, 2) or not np.all(np.isfinite(points)):
-                raise ValueError("Mark exactly two finite scale endpoints first.")
+                msg = "Mark exactly two finite scale endpoints first."
+                raise ValueError(msg)
             if np.array_equal(points[0], points[1]):
-                raise ValueError("The two scale endpoints must be distinct.")
+                msg = "The two scale endpoints must be distinct."
+                raise ValueError(msg)
             # napari points use (row, column); calibration expects (x, y).
             xy = points[:, ::-1]
             height, width = self._frame.shape[:2]
@@ -631,7 +633,7 @@ class AnnotationAssistWidget(QWidget):
             self._preview_timer.stop()
             self._pending_preview = False
 
-    @Slot()
+    @Slot()  # type: ignore[misc, unused-ignore]
     def _update_preview(self) -> None:
         # Coalesce edits made during inference into one request for the latest
         # prompts. Never run concurrent predictions on the stateful SAM model.
@@ -677,7 +679,7 @@ class AnnotationAssistWidget(QWidget):
             self.suggest_button.setEnabled(True)
             self._error("Could not suggest an outline", exc)
 
-    @Slot(object)
+    @Slot(object)  # type: ignore[misc, unused-ignore]
     def _show_proposal(self, result: _PredictionResult) -> None:
         if self._disposed or self._job_generation != self._generation:
             return
@@ -732,13 +734,13 @@ class AnnotationAssistWidget(QWidget):
             self._invalidate()
             self._error("Could not display outline", exc)
 
-    @Slot(object)
+    @Slot(object)  # type: ignore[misc, unused-ignore]
     def _inference_error(self, exc: Exception) -> None:
         if not self._disposed and self._job_generation == self._generation:
             self._refinement = None
             self._error("Could not suggest an outline; edit prompts and retry", exc)
 
-    @Slot()
+    @Slot()  # type: ignore[misc, unused-ignore]
     def _finished(self) -> None:
         self._worker = None
         self._worker_slots = []

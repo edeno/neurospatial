@@ -85,6 +85,7 @@ def grid():
 
 
 @pytest.mark.parametrize("method", ["binned", "gaussian_kde", "diffusion_kde", "glm"])
+@pytest.mark.filterwarnings("ignore:MRF-GAM fit:UserWarning")
 def test_linear_single_batch_agree_for_each_rate_method(method):
     env = grid()
     times = np.array([0.0, 2.0])

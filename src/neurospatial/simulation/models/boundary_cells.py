@@ -232,7 +232,8 @@ class BorderCellModel:
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        headings: NDArray[np.float64] | None = None,
+        headings: NDArray[np.float64]  # noqa: ARG002  # NeuralModel protocol signature
+        | None = None,  # NeuralModel protocol signature  # NeuralModel protocol signature
     ) -> NDArray[np.float64]:
         """Firing rate at each position.
 
@@ -522,7 +523,8 @@ class BoundaryVectorCellModel:
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        headings: NDArray[np.float64] | None = None,
+        headings: NDArray[np.float64]  # noqa: ARG002  # NeuralModel protocol signature
+        | None = None,  # NeuralModel protocol signature  # NeuralModel protocol signature
     ) -> NDArray[np.float64]:
         """Firing rate at each position.
 

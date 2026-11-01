@@ -24,6 +24,7 @@ from scipy import sparse
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.arena import EgocentricSurround
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._regions import _owned_regions
@@ -81,7 +82,8 @@ class _Metadata:
             value = getattr(self, key)
             if not isinstance(value, str) and not (key != "name" and value is None):
                 expected = "str" if key == "name" else "str or None"
-                raise TypeError(f"Environment.{key} must be a {expected}.")
+                msg = f"Environment.{key} must be a {expected}."
+                raise TypeError(msg)
 
 
 # Unit labels that tools reading ``units`` (scale bars, simulators) recognize.
@@ -99,9 +101,8 @@ def _validate_units(value: object) -> None:
     if value is None:
         return
     if not isinstance(value, str):
-        raise TypeError(
-            f"Environment.units must be a str or None, got {type(value).__name__}."
-        )
+        msg = f"Environment.units must be a str or None, got {type(value).__name__}."
+        raise TypeError(msg)
     if value not in _UNITS_REGISTRY:
         warnings.warn(
             f"Environment.units={value!r} is not in the standard "
@@ -166,7 +167,10 @@ def _diffusion_geometry_view(geometry: DiffusionGeometry) -> DiffusionGeometry:
     )
 
 
-def _refuse_graph_edit(*args: Any, **kwargs: Any) -> NoReturn:
+def _refuse_graph_edit(
+    *args: Any,  # noqa: ARG001  # replaces every mutating graph method
+    **kwargs: Any,  # noqa: ARG001  # replaces every mutating graph method
+) -> NoReturn:  # replaces every mutating graph method
     raise TypeError(
         _format_error(
             "Environment.connectivity attributes are read-only.",
@@ -208,7 +212,7 @@ class _ReadOnlyGraphAttributes(dict[str, Any]):
         return type(self), (dict(self),)
 
 
-class _PublishedGraph(nx.Graph):
+class _PublishedGraph(nx.Graph):  # type: ignore[misc]
     """Freeze public graph bindings as well as topology and attribute values.
 
     NetworkX's cached views remain lazy. Copies construct an ordinary editable
@@ -224,9 +228,8 @@ class _PublishedGraph(nx.Graph):
     @graph.setter
     def graph(self, attributes: dict[str, Any]) -> None:
         if self.__dict__.get("_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
+            msg = "Environment.connectivity is read-only; copy the graph to edit it."
+            raise AttributeError(msg)
         self.__dict__["graph"] = attributes
 
     def copy(self, as_view: bool = False) -> nx.Graph:
@@ -238,16 +241,14 @@ class _PublishedGraph(nx.Graph):
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
+            msg = "Environment.connectivity is read-only; copy the graph to edit it."
+            raise AttributeError(msg)
         super().__setattr__(name, value)
 
     def __delattr__(self, name: str) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
-            raise AttributeError(
-                "Environment.connectivity is read-only; copy the graph to edit it."
-            )
+            msg = "Environment.connectivity is read-only; copy the graph to edit it."
+            raise AttributeError(msg)
         super().__delattr__(name)
 
 
@@ -358,20 +359,12 @@ class _Provenance:
         object.__setattr__(self, "choices", tuple(choices.items()))
         derivations = tuple(derivations)
         if not all(isinstance(step, str) for step in derivations):
-            raise TypeError("Derivation names must be strings.")
+            msg = "Derivation names must be strings."
+            raise TypeError(msg)
         object.__setattr__(self, "derivations", derivations)
-        if length_scale is not None:
-            if (
-                isinstance(length_scale, bool)
-                or not isinstance(length_scale, (int, float, np.number))
-                or not np.isfinite(length_scale)
-                or length_scale <= 0
-            ):
-                raise ValueError(
-                    "length_scale must be None or a finite positive number, "
-                    f"got {length_scale!r}."
-                )
-            length_scale = float(length_scale)
+        length_scale = validate_finite_scalar(
+            length_scale, name="length_scale", positive=True, none_allowed=True
+        )
         object.__setattr__(self, "length_scale", length_scale)
 
     @property
@@ -474,7 +467,7 @@ def _restored_state(state: object) -> dict[str, Any]:
                 ),
             )
         )
-    geometry: _PublishedGeometry = state["_geometry"]
+    geometry: _PublishedGeometry[Any] = state["_geometry"]
     state = {key: value for key, value in state.items() if key != "_state_format"}
     return {
         **state,
@@ -503,7 +496,8 @@ def owned_landmarks(landmarks: object, n_dims: int, coordinate_kind: str) -> Lan
         If their dimension differs, or the environment is polar.
     """
     if not isinstance(landmarks, Landmarks):
-        raise TypeError("landmarks must be a Landmarks instance.")
+        msg = "landmarks must be a Landmarks instance."
+        raise TypeError(msg)
     if landmarks and coordinate_kind != "cartesian":
         raise ValueError(
             _format_error(
@@ -656,11 +650,12 @@ def publish_layout(
         A new instance of ``cls``.
     """
     if wall_fit not in ("split", "snap"):
-        raise ValueError(
+        msg = (
             f"wall_fit must be 'split' or 'snap', got {wall_fit!r}: 'split' cuts "
             "the bins a wall crosses along it, 'snap' moves the wall onto bin "
             "edges."
         )
+        raise ValueError(msg)
     binning, resolved = _built_layout_data(layout)
     if arena is not None and arena.domain_known and coordinate_kind == "cartesian":
         centers = binning.bins.centers

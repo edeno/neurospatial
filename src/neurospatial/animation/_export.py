@@ -7,7 +7,6 @@ import re
 import secrets
 import shutil
 import tempfile
-import warnings
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,8 +18,7 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import check_writable
+from neurospatial._validation import check_writable, validate_bool
 
 _VIDEO_CODECS = {
     ".mp4": "libx264",
@@ -93,12 +91,13 @@ class _ExportPlan:
         )
         missing = [name for name in needed if importlib.util.find_spec(name) is None]
         if missing:
-            raise ImportError(
+            msg = (
                 f"Writing {self.container} files needs {' and '.join(missing)}, "
                 "which is not installed. Install video support with "
                 "pip install 'neurospatial[video]', or export a .html player, "
                 "which needs no extra packages."
             )
+            raise ImportError(msg)
 
     def write(self, render_frame: Callable[[float], NDArray[np.uint8]]) -> Path:
         """Render each output time in order, then publish the finished file."""
@@ -116,10 +115,11 @@ class _ExportPlan:
         try:
             import imageio.v2 as imageio
         except ImportError as exc:
-            raise ImportError(
+            msg = (
                 "Animation export requires imageio. Install video support with: "
                 "pip install 'neurospatial[video]'."
-            ) from exc
+            )
+            raise ImportError(msg) from exc
 
         options: dict[str, Any] = (
             {"mode": "I", "duration": 1000 / self.fps, "loop": 0}
@@ -246,17 +246,17 @@ def _checked_frames(
             or frame.shape[-1] not in (3, 4)
             or min(frame.shape[:2]) == 0
         ):
-            raise ValueError(
-                "The renderer must return a nonempty uint8 RGB or RGBA image."
-            )
+            msg = "The renderer must return a nonempty uint8 RGB or RGBA image."
+            raise ValueError(msg)
         frame = frame[..., :3]
         if shape is None:
             shape = frame.shape
         elif frame.shape != shape:
-            raise ValueError(
+            msg = (
                 "The rendered image size changed during export. "
                 "Keep the viewer window size fixed until export completes."
             )
+            raise ValueError(msg)
         yield frame
 
 
@@ -308,44 +308,44 @@ def _video_output_params(
     """Resolve the encoder, its ffmpeg options and imageio's quality fallback.
 
     Encoders without a known constant-quality option keep imageio's default
-    variable-quality setting unless a bitrate is given.
+    variable-quality setting unless a bitrate is given. When both ``bitrate``
+    and ``crf`` are passed, the video is encoded at the constant bitrate and
+    ``crf`` is ignored.
     """
     codec = _CODEC_ALIASES.get(codec, codec) if codec else _VIDEO_CODECS[container]
     if container == ".webm" and codec not in _WEBM_CODECS:
-        raise ValueError(
+        msg = (
             f"WebM holds VP8, VP9 or AV1 video, not {codec}. Use codec='vp9' "
             "(the default) for .webm, or an .mp4 path for H.264."
         )
+        raise ValueError(msg)
     if bitrate is not None and not _number(bitrate, integer=False) > 0:
-        raise ValueError("bitrate must be a positive number of kilobits per second.")
+        msg = "bitrate must be a positive number of kilobits per second."
+        raise ValueError(msg)
     if crf is not None:
         if codec == "mpeg4":
-            raise TypeError(
+            msg = (
                 "crf does not apply to the mpeg4 codec. Use bitrate= for mpeg4, "
                 "or codec='h264' for constant-quality encoding."
             )
+            raise TypeError(msg)
         limit = _CRF_RANGE.get(codec)
         if not 0 <= _number(crf) <= (limit or np.inf):
-            raise ValueError(
+            msg = (
                 f"crf must be an integer from 0 (best) to {limit or 51} (worst) "
                 f"for {codec}; 18 is visually lossless for H.264."
             )
+            raise ValueError(msg)
     if preset is not None:
         if codec in _CRF_RANGE and codec not in _PRESET_CODECS:
-            raise TypeError(
+            msg = (
                 f"preset does not apply to the {codec} codec; it applies to "
                 "h264 and h265. Remove preset=."
             )
+            raise TypeError(msg)
         if codec in _PRESET_CODECS and preset not in _PRESETS:
-            raise ValueError(f"preset must be one of {', '.join(_PRESETS)}.")
-    if crf is not None and bitrate is not None:
-        warnings.warn(
-            f"bitrate={bitrate!r} and crf={crf!r} were both passed; the video is "
-            "encoded at the constant bitrate, so crf is ignored. Pass only crf= "
-            "for constant quality, or only bitrate= for a fixed bitrate.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
+            msg = f"preset must be one of {', '.join(_PRESETS)}."
+            raise ValueError(msg)
     params: list[str] = []
     if codec in _PRESET_CODECS or preset is not None:
         params += ["-preset", preset or "medium"]
@@ -401,15 +401,17 @@ def prepare_export(
     ``TypeError``.
     """
     if not np.isfinite(fps) or fps <= 0 or not np.isfinite(speed) or speed <= 0:
-        raise ValueError("fps and speed must be positive finite numbers.")
+        msg = "fps and speed must be positive finite numbers."
+        raise ValueError(msg)
     path = Path(path)
     container = path.suffix.lower()
     if container not in _CONTAINERS:
-        raise ValueError(
+        msg = (
             f"Animation export writes {', '.join(_CONTAINERS)} files, not "
             f"{container or 'a path without an extension'}. Add one of these "
             "extensions to the path."
         )
+        raise ValueError(msg)
     video = {"codec": codec, "crf": crf, "preset": preset, "bitrate": bitrate}
     html = {
         "image_format": image_format,
@@ -428,9 +430,8 @@ def prepare_export(
     if n_workers is None:
         n_workers = os.cpu_count() or 1
     elif not _number(n_workers) >= 1:
-        raise ValueError(
-            "n_workers must be a positive integer, or None to use every CPU."
-        )
+        msg = "n_workers must be a positive integer, or None to use every CPU."
+        raise ValueError(msg)
     resolved_codec, output_params, quality = (
         _video_output_params(container, codec, crf, preset, bitrate)
         if container in _VIDEO_CODECS
@@ -440,33 +441,35 @@ def prepare_export(
     if container == ".html":
         image_format = str(image_format).lower()
         if image_format not in ("png", "jpeg"):
-            raise ValueError(
-                f"image_format must be 'png' or 'jpeg', got {image_format!r}."
-            )
-        if not isinstance(embed, bool):
-            raise TypeError("embed must be True or False.")
+            msg = f"image_format must be 'png' or 'jpeg', got {image_format!r}."
+            raise ValueError(msg)
+        embed = validate_bool(embed, name="embed", owner="animation export")
         if embed and frames_dir is not None:
-            raise TypeError(
+            msg = (
                 "frames_dir applies only with embed=False, which writes frames "
                 "beside the page. Pass embed=False or remove frames_dir=."
             )
+            raise TypeError(msg)
         if not embed and max_html_frames != _HTML_DEFAULTS["max_html_frames"]:
-            raise TypeError(
+            msg = (
                 "max_html_frames limits only embedded players (embed=True); a "
                 "page with external frames loads them on demand. Remove "
                 "max_html_frames=."
             )
+            raise TypeError(msg)
         if not _number(max_html_frames) >= 1:
-            raise ValueError("max_html_frames must be a positive integer.")
+            msg = "max_html_frames must be a positive integer."
+            raise ValueError(msg)
         if not embed:
             resolved_frames = (
                 Path(frames_dir) if frames_dir is not None else path.with_suffix("")
             )
             if resolved_frames.exists() and not resolved_frames.is_dir():
-                raise FileExistsError(
+                msg = (
                     f"frames_dir {resolved_frames} is a file. Choose a directory "
                     "path for the frames."
                 )
+                raise FileExistsError(msg)
             check_writable(
                 [resolved_frames],
                 overwrite=overwrite,
@@ -484,11 +487,11 @@ def prepare_export(
         or bounds[1] < bounds[0]
         or (time_range is not None and bounds[1] == bounds[0])
     ):
-        raise ValueError(
-            "time_range must be a finite half-open (start, stop) pair with start < stop."
-        )
+        msg = "time_range must be a finite half-open (start, stop) pair with start < stop."
+        raise ValueError(msg)
     if bounds[0] < source_times[0] or bounds[1] > source_times[-1]:
-        raise ValueError("time_range must lie inside the scene's physical clock.")
+        msg = "time_range must lie inside the scene's physical clock."
+        raise ValueError(msg)
     steps = float((bounds[1] - bounds[0]) * fps / speed)
     nearest = round(steps)
     if np.isclose(steps, nearest, rtol=1e-12, atol=1e-12):
@@ -524,7 +527,7 @@ def prepare_export(
         times = times[times < bounds[1]]
     times.flags.writeable = False
     if container == ".html" and embed and len(times) > max_html_frames:
-        raise ValueError(
+        msg = (
             f"The embedded HTML player would hold {len(times)} frames, more than "
             f"max_html_frames={max_html_frames}; large embedded pages load slowly "
             "or crash browsers. Export fewer frames with a shorter time_range= "
@@ -532,6 +535,7 @@ def prepare_export(
             "embed=False to write frames beside the page, or raise "
             "max_html_frames."
         )
+        raise ValueError(msg)
     return _ExportPlan(
         path,
         times,

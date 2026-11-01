@@ -101,7 +101,9 @@ class TestLinearTrack:
             Environment.linear_track(bin_size=5.0)
 
     def test_two_endpoints_required(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"takes the two ends of a straight track, got"
+        ):
             Environment.linear_track(endpoints=[(0, 0)], bin_size=5.0)
 
     def test_coincident_endpoints_raise(self):
@@ -348,8 +350,7 @@ class TestMaze:
         g.add_node("c", pos=(100.0, 0.0))
         g.add_edge("a", "b")
         g.add_edge("b", "c")
-        with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
+        env = Environment.maze(track_graph=g, bin_size=5.0)
         assert env.is_linearized_track is True
         assert env.n_bins == 20
 
@@ -362,8 +363,7 @@ class TestMaze:
         g.add_edge("a", "b")
         g.add_edge("b", "c")
 
-        with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
+        env = Environment.maze(track_graph=g, bin_size=5.0)
 
         # The caller's graph must be untouched: no `distance`/`edge_id` written.
         for u, v in g.edges():
@@ -381,8 +381,7 @@ class TestMaze:
         # Only `distance` provided; no `edge_id` at all.
         g.add_edge("a", "b", distance=50.0)
         g.add_edge("b", "c", distance=50.0)
-        with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
+        env = Environment.maze(track_graph=g, bin_size=5.0)
         linear = env.to_linear(np.array([[50.0, 0.0]]))
         assert linear.shape[0] == 1
         assert np.isfinite(linear[0])
@@ -427,17 +426,29 @@ class TestMaze:
         with pytest.raises(ValueError, match="coincident"):
             Environment.maze(kind="t", node_positions=nodes, bin_size=5.0)
 
-    def test_kind_ignored_warning_with_track_graph(self):
-        # When both kind and track_graph are supplied, kind is not consulted:
-        # warn that the supplied track_graph is authoritative.
+    def test_kind_with_track_graph_is_refused(self):
+        # `kind` selects a topology for node_positions; a track_graph already
+        # defines one, so passing both is contradictory.
         g = nx.Graph()
         g.add_node("a", pos=(0.0, 0.0))
         g.add_node("b", pos=(50.0, 0.0))
         g.add_node("c", pos=(100.0, 0.0))
         g.add_edge("a", "b")
         g.add_edge("b", "c")
-        with pytest.warns(UserWarning, match="kind.*not consulted"):
+        with pytest.raises(
+            ValueError, match="both a maze kind and a ready track graph"
+        ):
             Environment.maze(kind="t", track_graph=g, bin_size=5.0)
+
+    def test_unknown_kind_is_refused(self):
+        nodes = {"a": (0, 0), "b": (0, 50), "c": (50, 50), "d": (-50, 50)}
+        with pytest.raises(ValueError, match="kind must be one of"):
+            Environment.maze(kind="circle", node_positions=nodes, bin_size=5.0)
+
+    def test_node_positions_need_a_kind(self):
+        nodes = {"a": (0, 0), "b": (0, 50), "c": (50, 50), "d": (-50, 50)}
+        with pytest.raises(ValueError, match="kind must be one of"):
+            Environment.maze(node_positions=nodes, bin_size=5.0)
 
 
 class TestFactoryMetadataKwargs:

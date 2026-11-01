@@ -385,7 +385,8 @@ def __getattr__(name: str) -> Any:
         obj = getattr(import_module(f"neurospatial.{submodule}"), attr)
         globals()[name] = obj
         return obj
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
 
 
 def __dir__() -> list[str]:

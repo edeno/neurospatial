@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_instance
 from neurospatial.geometry import get_centers as get_centers
 from neurospatial.layout.validation import (
     validate_cell_size,
@@ -101,11 +102,12 @@ def get_n_bins(
     # extent / small bin_size cannot silently overflow.
     n_bins_float = np.ceil(np.asarray(extent, dtype=np.float64) / bin_size_arr)
     if np.any(n_bins_float > np.iinfo(np.int64).max):
-        raise ValueError(
+        msg = (
             f"Requested binning overflows: extent / bin_size implies "
             f"{n_bins_float.max():.3g} bins, exceeding the int64 limit. "
             f"Increase bin_size or reduce the dimension range."
         )
+        raise ValueError(msg)
     n_bins = n_bins_float.astype(np.int64)
     n_bins[n_bins == 0] = 1  # Handle zero-extent case
     return np.asarray(n_bins, dtype=np.int64)
@@ -126,7 +128,10 @@ def _infer_dimension_ranges_from_samples(
         Buffer to add to the min and max of the inferred range in each
         dimension. If a float, applied to all dimensions. If a sequence,
         specifies buffer per dimension. Useful for ensuring extent if data
-        is collinear or a margin around the data is desired.
+        is collinear or a margin around the data is desired. A dimension
+        whose samples are all equal (for example a constant coordinate on a
+        single lane) with a buffer of 0 is extended by 0.5 on each side of
+        that value, so the range has a nonzero width.
 
     Returns
     -------
@@ -141,8 +146,9 @@ def _infer_dimension_ranges_from_samples(
 
     """
     if positions.ndim != 2:
+        msg = f"positions must be a 2D array, shape is {positions.shape}"
         raise ValueError(
-            f"positions must be a 2D array, shape is {positions.shape}",
+            msg,
         )
     n_dimensions = positions.shape[1]
 
@@ -167,9 +173,12 @@ def _infer_dimension_ranges_from_samples(
     elif buffer_array.shape == (n_dimensions,):
         buffer_values = buffer_array
     else:
-        raise ValueError(
+        msg = (
             f"buffer_around_data sequence length ({buffer_array.size}) "
-            f"must match number of dimensions ({n_dimensions}).",
+            f"must match number of dimensions ({n_dimensions})."
+        )
+        raise ValueError(
+            msg,
         )
 
     inferred_ranges = []
@@ -180,12 +189,6 @@ def _infer_dimension_ranges_from_samples(
         # Exact comparisons: a tolerance relative to the coordinates would
         # read a short extent far from the origin as a point.
         if d_min == d_max and buffer == 0.0:
-            warnings.warn(
-                f"Dimension {dim_idx} has zero extent and no buffer specified. "
-                "Extending it by 0.5 on each side of the point.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
             buffer = 0.5
         d_min -= buffer
         d_max += buffer
@@ -196,8 +199,8 @@ def _infer_dimension_ranges_from_samples(
 
 
 def map_active_data_to_grid(
-    grid_shape: tuple[int, ...],
-    active_mask: NDArray[np.bool_],
+    grid_shape: tuple[int, ...] | None,
+    active_mask: NDArray[np.bool_] | None,
     active_bin_data: NDArray[np.float64],
     fill_value: float = np.nan,
 ) -> NDArray[np.float64]:
@@ -208,9 +211,10 @@ def map_active_data_to_grid(
 
     Parameters
     ----------
-    grid_shape : tuple of int
-        Shape of the full grid, ``(n_0, ..., n_{d-1})``.
-    active_mask : NDArray[np.bool_], shape grid_shape
+    grid_shape : tuple of int or None
+        Shape of the full grid, ``(n_0, ..., n_{d-1})``; None (a layout
+        without a grid) is refused.
+    active_mask : NDArray[np.bool_], shape grid_shape, or None
         True for the grid's active cells.
     active_bin_data : NDArray, shape (n_active_bins,)
         One value per active bin, in active-bin order: the order of
@@ -234,18 +238,31 @@ def map_active_data_to_grid(
 
     """
     if grid_shape is None or active_mask is None:
-        raise ValueError(
+        msg = (
             "This method is applicable only to grid-based environments "
-            "that have 'grid_shape' and 'active_mask' attributes.",
+            "that have 'grid_shape' and 'active_mask' attributes."
         )
-    if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:
-        raise ValueError("active_bin_data must be a 1D NumPy array.")
+        raise ValueError(
+            msg,
+        )
+    validate_instance(
+        active_bin_data,
+        np.ndarray,
+        name="active_bin_data",
+        owner="map_active_data_to_grid()",
+    )
+    if active_bin_data.ndim != 1:
+        msg = "active_bin_data must be a 1D NumPy array."
+        raise ValueError(msg)
 
     n_bins = active_mask.sum()
     if active_bin_data.shape[0] != n_bins:
-        raise ValueError(
+        msg = (
             f"Length of active_bin_data ({active_bin_data.shape[0]}) "
-            f"must match the number of active bins ({n_bins}).",
+            f"must match the number of active bins ({n_bins})."
+        )
+        raise ValueError(
+            msg,
         )
 
     # Create an array for the full grid, filled with the fill_value
@@ -325,8 +342,7 @@ def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     n_edges = n_bins * avg_edges_per_node / 2  # Divide by 2 (edges counted twice)
     edges_mb = (n_edges * 300) / (1024**2)
 
-    total_mb = bin_centers_mb + nodes_mb + edges_mb
-    return total_mb
+    return bin_centers_mb + nodes_mb + edges_mb
 
 
 def check_grid_size_safety(

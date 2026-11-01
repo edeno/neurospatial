@@ -16,14 +16,14 @@ require files produced by another notebook.
 From a repository checkout:
 
 ```bash
-uv sync --extra notebooks
+uv sync --group notebooks
 uv run jupyter lab examples/
 ```
 
 To run the complete collection, including video and NWB:
 
 ```bash
-uv sync --extra dev --extra notebooks --extra video --extra nwb
+uv sync --group notebooks --extra video --extra nwb
 uv run jupyter lab examples/
 ```
 

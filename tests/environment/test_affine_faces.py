@@ -112,13 +112,17 @@ def test_skew_cells_refuse_all_numerical_consumers_but_retain_geometry(operation
     env = grid().apply_transform(affine(np.array([[1.0, 0.3], [0.0, 1.0]])))
     assert env._binning.grid_frame is not None
     assert np.all(env.bin_at(env.bin_centers) == np.arange(env.n_bins))
-    with pytest.raises(NotImplementedError, match=r"face [0-9]+"):
+
+    def consume():
         if operation in ("smooth", "diffuse"):
             getattr(env, operation)(np.ones(env.n_bins), bandwidth=0.7, mode="average")
         elif operation == "gradient":
             gradient(env, np.ones(env.n_bins))
         else:
             divergence(env, np.zeros(len(env.edge_pairs)))
+
+    with pytest.raises(NotImplementedError, match=r"face [0-9]+"):
+        consume()
 
 
 def test_new_support_requires_located_flux_distances_and_normal_authority():

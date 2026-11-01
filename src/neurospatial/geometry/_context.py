@@ -47,9 +47,8 @@ class GridIndex(ReadOnlyState):
             edges, shape = (), tuple(int(count) for count in self.shape)
             mask = np.array(self.active_mask, dtype=np.bool_, copy=True)
             if mask.shape != shape:
-                raise ValueError(
-                    f"GridIndex active_mask has shape {mask.shape}, not {shape}."
-                )
+                msg = f"GridIndex active_mask has shape {mask.shape}, not {shape}."
+                raise ValueError(msg)
             mask.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "shape", shape)

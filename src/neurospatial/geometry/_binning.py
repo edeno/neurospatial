@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
@@ -67,40 +68,47 @@ class SpatialBins(ReadOnlyState):
         raw_dims = np.asarray(self.measure_dims)
 
         if centers.ndim != 2:
-            raise ValueError(f"centers must be 2D, got shape {centers.shape}.")
+            msg = f"centers must be 2D, got shape {centers.shape}."
+            raise ValueError(msg)
         index: int | tuple[int, ...]
         invalid = ~np.isfinite(centers)
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
-            raise ValueError(f"centers{index} must be finite.")
+            msg = f"centers{index} must be finite."
+            raise ValueError(msg)
         n_bins, n_dims = centers.shape
         if sizes.shape != (n_bins,):
-            raise ValueError(f"sizes must have shape ({n_bins},), got {sizes.shape}.")
+            msg = f"sizes must have shape ({n_bins},), got {sizes.shape}."
+            raise ValueError(msg)
         invalid = ~np.isfinite(sizes) | (sizes <= 0.0)
         if np.any(invalid):
             index = int(np.flatnonzero(invalid)[0])
-            raise ValueError(f"sizes[{index}] must be finite and strictly positive.")
+            msg = f"sizes[{index}] must be finite and strictly positive."
+            raise ValueError(msg)
         if raw_dims.ndim == 0:
             if raw_dims.dtype.kind not in "iu" or not 1 <= raw_dims <= n_dims:
-                raise ValueError(
+                msg = (
                     f"measure_dim must be an integer between 1 and {n_dims}, "
                     f"got {self.measure_dims!r}."
                 )
+                raise ValueError(msg)
             raw_dims = np.full(n_bins, raw_dims)
         if raw_dims.shape != (n_bins,) or (
             raw_dims.size and raw_dims.dtype.kind not in "iu"
         ):
-            raise ValueError(
+            msg = (
                 f"measure_dims must be one integer per bin, shape ({n_bins},), "
                 f"got {raw_dims.dtype} with shape {raw_dims.shape}."
             )
+            raise ValueError(msg)
         invalid = (raw_dims < 1) | (raw_dims > n_dims)
         if np.any(invalid):
             index = int(np.flatnonzero(invalid)[0])
-            raise ValueError(
+            msg = (
                 f"measure_dims[{index}] must be between 1 and {n_dims}, "
                 f"got {raw_dims[index]}."
             )
+            raise ValueError(msg)
         dims = np.array(raw_dims, dtype=np.intp, copy=True)
         for name, array in (
             ("centers", centers),
@@ -270,29 +278,30 @@ class BinConnections(ReadOnlyState):
         raw_pairs = np.asarray(self.all_pairs)
         distances = np.array(self.all_distances, dtype=np.float64, copy=True)
         if raw_pairs.ndim != 2 or raw_pairs.shape[1] != 2:
-            raise ValueError(
-                f"pairs must have shape (n_pairs, 2), got {raw_pairs.shape}."
-            )
+            msg = f"pairs must have shape (n_pairs, 2), got {raw_pairs.shape}."
+            raise ValueError(msg)
         index: int | tuple[int, ...]
         if raw_pairs.size and raw_pairs.dtype.kind not in "iu":
             if raw_pairs.dtype.kind == "f":
                 invalid = ~np.isfinite(raw_pairs) | (raw_pairs != np.floor(raw_pairs))
                 if np.any(invalid):
                     index = tuple(int(i) for i in np.argwhere(invalid)[0])
-                    raise ValueError(f"pairs{index} must contain integer bin indices.")
+                    msg = f"pairs{index} must contain integer bin indices."
+                    raise ValueError(msg)
             else:
-                raise ValueError(
-                    f"pairs must contain integer bin indices, got {raw_pairs.dtype}."
-                )
+                msg = f"pairs must contain integer bin indices, got {raw_pairs.dtype}."
+                raise ValueError(msg)
         invalid = raw_pairs < 0
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
-            raise ValueError(f"pairs{index} must be a nonnegative bin index.")
+            msg = f"pairs{index} must be a nonnegative bin index."
+            raise ValueError(msg)
         pairs = np.array(raw_pairs, dtype=np.intp, copy=True)
         self_pairs = pairs[:, 0] == pairs[:, 1]
         if np.any(self_pairs):
             index = int(np.flatnonzero(self_pairs)[0])
-            raise ValueError(f"pairs[{index}] is a self pair.")
+            msg = f"pairs[{index}] is a self pair."
+            raise ValueError(msg)
         # One integer per unordered pair; much faster than unique rows.
         low, high = np.minimum(pairs[:, 0], pairs[:, 1]), np.maximum(*pairs.T)
         keys = low * (int(high.max(initial=0)) + 1) + high
@@ -301,24 +310,26 @@ class BinConnections(ReadOnlyState):
         duplicates[first_indices] = False
         if np.any(duplicates):
             index = int(np.flatnonzero(duplicates)[0])
-            raise ValueError(f"pairs[{index}] duplicates an earlier unordered pair.")
+            msg = f"pairs[{index}] duplicates an earlier unordered pair."
+            raise ValueError(msg)
         if distances.shape != (len(pairs),):
-            raise ValueError(
+            msg = (
                 f"pair_distances must have shape ({len(pairs)},), "
                 f"got {distances.shape}."
             )
+            raise ValueError(msg)
         invalid = ~np.isfinite(distances) | (distances < 0.0)
         if np.any(invalid):
             index = int(np.flatnonzero(invalid)[0])
-            raise ValueError(
-                f"pair_distances[{index}] must be finite and non-negative."
-            )
+            msg = f"pair_distances[{index}] must be finite and non-negative."
+            raise ValueError(msg)
         is_open = np.asarray(self.is_open)
         if is_open.dtype.kind != "b" or is_open.shape != (len(pairs),):
-            raise ValueError(
+            msg = (
                 f"is_open must be a boolean array of shape ({len(pairs)},), "
                 f"got {is_open.dtype} with shape {is_open.shape}."
             )
+            raise ValueError(msg)
         is_open = np.array(is_open, dtype=bool, copy=True)
         closed_by = np.asarray(self.closed_by)
         if (
@@ -327,10 +338,11 @@ class BinConnections(ReadOnlyState):
             or np.any(closed_by < -1)
             or np.any(closed_by[is_open] != -1)
         ):
-            raise ValueError(
+            msg = (
                 f"closed_by must hold one wall index >= -1 per pair, shape "
                 f"({len(pairs)},), and -1 for every open pair."
             )
+            raise ValueError(msg)
         closed_by = np.array(closed_by, dtype=np.intp, copy=True)
         open_fraction = np.array(self.open_fraction, dtype=np.float64, copy=True)
         if (
@@ -338,11 +350,12 @@ class BinConnections(ReadOnlyState):
             or np.any(~(open_fraction[is_open] > 0) | (open_fraction[is_open] > 1))
             or np.any(open_fraction[~is_open] != 0)
         ):
-            raise ValueError(
+            msg = (
                 f"open_fraction must hold one value per pair, shape "
                 f"({len(pairs)},): in (0, 1] for every open pair and 0 for "
                 "every closed pair."
             )
+            raise ValueError(msg)
         values = {
             "all_pairs": pairs,
             "all_distances": distances,
@@ -499,7 +512,8 @@ class BinConnections(ReadOnlyState):
         invalid = self.all_pairs >= n_bins
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
-            raise ValueError(f"pairs{index} must be in [0, {n_bins}).")
+            msg = f"pairs{index} must be in [0, {n_bins})."
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, eq=False)
@@ -515,25 +529,26 @@ class KnownFaces(ReadOnlyState):
         distances = np.array(raw.distance, dtype=np.float64, copy=True)
         volumes = np.array(raw.volumes, dtype=np.float64, copy=True)
         if volumes.ndim != 1 or np.any(~np.isfinite(volumes) | (volumes <= 0)):
-            raise ValueError(
-                "face volumes must be finite, positive and one-dimensional."
-            )
+            msg = "face volumes must be finite, positive and one-dimensional."
+            raise ValueError(msg)
         if edges.ndim != 2 or edges.shape[1] != 2 or edges.dtype.kind not in "iu":
-            raise ValueError(
-                "face edges must have shape (n_faces, 2) and integer indices."
-            )
+            msg = "face edges must have shape (n_faces, 2) and integer indices."
+            raise ValueError(msg)
         if np.any((edges < 0) | (edges >= len(volumes))):
-            raise ValueError("face edges contain an out-of-range bin index.")
+            msg = "face edges contain an out-of-range bin index."
+            raise ValueError(msg)
         if areas.shape != (len(edges),) or np.any(~np.isfinite(areas) | (areas < 0)):
-            raise ValueError(
+            msg = (
                 "face areas must have shape (n_faces,) and be finite and non-negative."
             )
+            raise ValueError(msg)
         if distances.shape != (len(edges),) or np.any(
             ~np.isfinite(distances) | (distances <= 0)
         ):
-            raise ValueError(
+            msg = (
                 "face distances must have shape (n_faces,) and be finite and positive."
             )
+            raise ValueError(msg)
         owned_edges = np.array(edges, dtype=np.intp, copy=True)
         for array in (owned_edges, areas, distances, volumes):
             array.setflags(write=False)
@@ -546,7 +561,11 @@ class KnownFaces(ReadOnlyState):
         """Whether validated face geometry can be obtained."""
         return True
 
-    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+    def build(
+        self,
+        bins: SpatialBins,  # noqa: ARG002  # face-source signature
+        connections: BinConnections,  # noqa: ARG002  # face-source signature
+    ) -> FaceGeometry:
         """Return the stored faces, which a binning checks against its pairs."""
         return self.faces
 
@@ -568,20 +587,27 @@ class MissingFaces:
     reason: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.reason, str):
-            raise TypeError(
-                "MissingFaces.reason must be a string explaining why the faces "
-                f"are missing, got {self.reason!r}."
-            )
+        validate_instance(
+            self.reason,
+            str,
+            name="reason",
+            owner="MissingFaces",
+            hint="explain why the faces are missing",
+        )
 
     @property
     def available(self) -> bool:
         """Whether validated face geometry can be obtained."""
         return False
 
-    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+    def build(
+        self,
+        bins: SpatialBins,  # noqa: ARG002  # face-source signature
+        connections: BinConnections,  # noqa: ARG002  # face-source signature
+    ) -> FaceGeometry:
         """Refuse construction because valid face geometry is unavailable."""
-        raise self.missing_error("This operation")
+        msg = "This operation"
+        raise self.missing_error(msg)
 
     def missing_error(self, operation: str) -> MissingCellGeometryError:
         """Name the operation, missing geometry and supported recovery."""
@@ -597,8 +623,9 @@ class MissingFaces:
 class _ReadOnlyTrackAttributes(dict[str, Any]):
     """Protect stored track geometry while supporting pickle and editable copies."""
 
-    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
-        raise TypeError("Stored track graph attributes are read-only.")
+    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:  # noqa: ARG002  # stands in for every dict mutator
+        msg = "Stored track graph attributes are read-only."
+        raise TypeError(msg)
 
     __setitem__ = _refuse_edit
     __delitem__ = _refuse_edit
@@ -641,7 +668,7 @@ def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
             pickle.dumps(value)
         # Any failure to pickle, whatever the value's own __reduce__ raises,
         # means the attribute cannot be saved; name it and chain the cause.
-        except Exception as exc:
+        except Exception as exc:  # noqa: PERF203  # names the attribute that fails
             raise TypeError(
                 _format_error(
                     f"Track graph {element} attribute {key!r} holds a "
@@ -674,10 +701,11 @@ def _node_position(node: Any, attributes: dict[str, Any]) -> tuple[float, ...]:
             )
         ) from error
     if not position or not np.all(np.isfinite(position)):
-        raise ValueError(
+        msg = (
             f"Track graph node {node!r} 'pos' must be finite coordinates, "
             f"got {position!r}."
         )
+        raise ValueError(msg)
     return position
 
 
@@ -687,22 +715,23 @@ def _edge_spacing(spacing: Any, n_segments: int) -> float | tuple[float, ...]:
     try:
         values = np.asarray(spacing, dtype=np.float64)
     except (TypeError, ValueError) as error:
-        raise ValueError(
-            f"TrackLinearization.edge_spacing must be numbers, got {spacing!r}."
-        ) from error
+        msg = f"TrackLinearization.edge_spacing must be numbers, got {spacing!r}."
+        raise ValueError(msg) from error
     if isinstance(spacing, (str, bytes, bool, np.bool_)) or (
         not scalar and values.shape != (max(n_segments - 1, 0),)
     ):
-        raise ValueError(
+        msg = (
             "TrackLinearization.edge_spacing must be one number or one gap per "
             f"pair of successive segments ({max(n_segments - 1, 0)}), got "
             f"{spacing!r}."
         )
+        raise ValueError(msg)
     if not np.all(np.isfinite(values) & (values >= 0)):
-        raise ValueError(
+        msg = (
             "TrackLinearization.edge_spacing must be finite and non-negative, "
             f"got {spacing!r}."
         )
+        raise ValueError(msg)
     return float(values) if scalar else tuple(float(value) for value in values)
 
 
@@ -752,10 +781,11 @@ class TrackLinearization(ReadOnlyState):
         if not isinstance(self.graph, nx.Graph) or (
             self.graph.is_directed() or self.graph.is_multigraph()
         ):
-            raise ValueError(
+            msg = (
                 "TrackLinearization.graph must be an undirected simple "
                 f"networkx.Graph, got {type(self.graph).__name__}."
             )
+            raise ValueError(msg)
         _refuse_unsaveable_attributes(self.graph)
         graph = copy.deepcopy(self.graph)
         for node, attrs in graph.nodes(data=True):
@@ -769,10 +799,11 @@ class TrackLinearization(ReadOnlyState):
                 or isinstance(edge_id, (bool, np.bool_))
                 or edge_id != expected_id
             ):
-                raise ValueError(
+                msg = (
                     f"track edge ({u!r}, {v!r}) edge_id must equal its graph "
                     f"enumeration index {expected_id}, got {edge_id!r}"
                 )
+                raise ValueError(msg)
             frozen = _ReadOnlyTrackAttributes(attrs)
             graph._adj[u][v] = graph._adj[v][u] = frozen
         graph.graph = _ReadOnlyTrackAttributes(graph.graph)
@@ -780,26 +811,29 @@ class TrackLinearization(ReadOnlyState):
         edge_order = tuple(tuple(edge) for edge in self.edge_order)
         for index, edge in enumerate(edge_order):
             if len(edge) != 2 or not graph.has_edge(*edge):
-                raise ValueError(
+                msg = (
                     f"TrackLinearization.edge_order[{index}] = {edge!r} is not "
                     "an edge of the track graph; list the graph's edges in "
                     "linear order."
                 )
+                raise ValueError(msg)
         object.__setattr__(self, "edge_order", edge_order)
         object.__setattr__(
             self, "edge_spacing", _edge_spacing(self.edge_spacing, len(edge_order))
         )
         problem = zero_gap_problem(edge_order, self.edge_spacing)
         if problem is not None:
-            raise ValueError(
+            msg = (
                 f"TrackLinearization: {problem}. Give that boundary a positive "
                 "gap in edge_spacing."
             )
+            raise ValueError(msg)
         if len(self.grid_edges) != 1:
-            raise ValueError(
+            msg = (
                 "TrackLinearization.grid_edges must hold one linear axis, got "
                 f"{len(self.grid_edges)}."
             )
+            raise ValueError(msg)
         edges, _, mask = owned_grid(
             self.grid_edges, None, self.active_mask, name="TrackLinearization"
         )
@@ -938,32 +972,36 @@ class Binning:
         return self.grid if isinstance(self.grid, FramedGrid) else None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.kind, str):
-            raise TypeError(
-                f"Binning.kind must be a descriptive string, got {self.kind!r}."
-            )
+        validate_instance(
+            self.kind,
+            str,
+            name="kind",
+            owner="Binning",
+            hint="pass a descriptive string such as 'grid'",
+        )
         self.connections.check_bins(self.bins.n_bins)
         pairs = self.connections.pairs
         if isinstance(self.faces, KnownFaces):
             faces = self.faces.faces
             if not np.array_equal(faces.edges, pairs):
-                raise ValueError(
+                msg = (
                     "Binning faces.edges must be the open neighbor pairs, "
                     "connections.pairs, in the same order and orientation."
                 )
+                raise ValueError(msg)
             if not np.array_equal(faces.volumes, self.bins.sizes):
-                raise ValueError(
-                    "Binning faces.volumes must equal bins.sizes, one per bin."
-                )
+                msg = "Binning faces.volumes must equal bins.sizes, one per bin."
+                raise ValueError(msg)
         if self.face_normals is not None and self.face_normals.values.shape != (
             len(pairs),
             self.bins.n_dims,
         ):
-            raise ValueError(
+            msg = (
                 "Binning face_normals must have one row per open pair and one "
                 f"column per axis, shape ({len(pairs)}, {self.bins.n_dims}), got "
                 f"{self.face_normals.values.shape}."
             )
+            raise ValueError(msg)
         # The grid is the one record of a frame: lookup and linear allocation
         # share its cell rule, and a locator without one keeps none.
         object.__setattr__(
@@ -976,15 +1014,17 @@ class Binning:
                 (float(low), float(high)) for low, high in self.dimension_ranges
             )
         except (TypeError, ValueError) as error:
-            raise ValueError(
+            msg = (
                 "Binning.dimension_ranges must be one (low, high) pair of numbers "
                 f"per coordinate axis, got {self.dimension_ranges!r}."
-            ) from error
+            )
+            raise ValueError(msg) from error
         if len(ranges) != self.bins.n_dims:
-            raise ValueError(
+            msg = (
                 f"Binning.dimension_ranges has {len(ranges)} axes but the bins "
                 f"have {self.bins.n_dims}; give one (low, high) pair per axis."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "dimension_ranges", ranges)
 
 

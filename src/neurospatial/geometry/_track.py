@@ -185,9 +185,11 @@ def project_1d_to_2d(
         elif squeezed_pos.ndim == 0 and linear_position.size == 1:  # e.g. from [[5.]]
             linear_position = squeezed_pos.reshape((1,))
         else:  # If it's still not 1D (e.g. (M,N) where M,N > 1)
-            raise ValueError("linear_position must be convertible to a 1D array.")
+            msg = "linear_position must be convertible to a 1D array."
+            raise ValueError(msg)
     if linear_position.ndim != 1:
-        raise ValueError("linear_position must be a 1D array.")
+        msg = "linear_position must be a 1D array."
+        raise ValueError(msg)
     n_edges = len(edge_order)
 
     # Every edge must carry a numeric 'distance' (segment length). An external
@@ -197,13 +199,14 @@ def project_1d_to_2d(
     # fix it.
     missing = [e for e in edge_order if "distance" not in graph.edges[e]]
     if missing:
-        raise ValueError(
+        msg = (
             f"{len(missing)} of {n_edges} track-graph edge(s) are missing the "
             f"required 'distance' edge attribute (segment length); the first is "
             f"edge {missing[0]}. Give every edge a numeric 'distance', e.g. "
             f"nx.set_edge_attributes(graph, {{{missing[0]!r}: <length>}}, "
             f"name='distance'), or pass distance=<length> when adding each edge."
         )
+        raise ValueError(msg)
 
     # --- edge lengths & spacing ------------------------------------------------
     edge_lengths = np.array(
@@ -214,7 +217,8 @@ def project_1d_to_2d(
     if not isinstance(edge_spacing, (int, float, np.number)) and np.size(
         edge_spacing
     ) != max(0, n_edges - 1):
-        raise ValueError("edge_spacing length must be len(edge_order)-1")
+        msg = "edge_spacing length must be len(edge_order)-1"
+        raise ValueError(msg)
 
     # cumulative start position of each edge, shape (n_edges,)
     cumulative_edge_start_position = _segment_starts(graph, edge_order, edge_spacing)

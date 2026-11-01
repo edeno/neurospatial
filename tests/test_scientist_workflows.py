@@ -98,9 +98,10 @@ def test_low_occupancy_bins_stay_missing_through_decoding(partial_recording):
     assert not rates.spatial_support[1]
     decoded = decode_position(env, np.zeros((3, 1)), rates, dt=0.1)
     np.testing.assert_array_equal(decoded.posterior[:, 1:], 0.0)
-    unsupported = compute_spatial_rates(
-        env, spikes, times, positions, min_occupancy=100
-    )
+    with pytest.warns(UserWarning, match="masks ALL"):
+        unsupported = compute_spatial_rates(
+            env, spikes, times, positions, min_occupancy=100
+        )
     with pytest.raises(ValueError, match="supported training data"):
         BayesianDecoder.from_rates(unsupported)
 

@@ -456,10 +456,11 @@ def rank_order_significance(
         hint="Diba & Buzsáki used 500 permutations per event, Silva et al. 5000",
     )
     if alternative not in _ALTERNATIVES:
-        raise ValueError(
+        msg = (
             f"{operation}: alternative must be one of {_ALTERNATIVES}, got "
             f"{alternative!r}."
         )
+        raise ValueError(msg)
     pairs = _event_pairs(
         env,
         spike_times,
@@ -527,15 +528,17 @@ def _event_pairs(
     from neurospatial._spikes import as_spike_trains
 
     if spike_statistic not in _SPIKE_STATISTICS:
-        raise ValueError(
+        msg = (
             f"{operation}: spike_statistic must be one of {_SPIKE_STATISTICS}, "
             f"got {spike_statistic!r}."
         )
+        raise ValueError(msg)
     if field_order not in _FIELD_ORDERS:
-        raise ValueError(
+        msg = (
             f"{operation}: field_order must be one of {_FIELD_ORDERS}, got "
             f"{field_order!r}."
         )
+        raise ValueError(msg)
     validate_integer_at_least(
         min_active_cells,
         3,
@@ -617,10 +620,11 @@ def _multi_field_units(
     Run after :func:`_field_positions` has validated ``encoding_models``.
     """
     if multi_field_cells not in _MULTI_FIELD_CELLS:
-        raise ValueError(
+        msg = (
             f"{operation}: multi_field_cells must be one of {_MULTI_FIELD_CELLS}, "
             f"got {multi_field_cells!r}."
         )
+        raise ValueError(msg)
     if multi_field_cells == "keep":
         if place_fields is not None:
             raise ValueError(
@@ -1015,9 +1019,12 @@ def _field_positions(
         bins, topology = _environment_differences(source, env)
         mismatch = bins or topology
         if mismatch is not None:
-            raise IncompatibleEnvironmentError(
+            msg = (
                 f"{operation}: the rate result's environment differs from env "
-                f"in {mismatch}.",
+                f"in {mismatch}."
+            )
+            raise IncompatibleEnvironmentError(
+                msg,
                 fix="pass the environment the rates were computed on, or "
                 "recompute the rates on env.",
                 first=source,
@@ -1025,10 +1032,11 @@ def _field_positions(
             )
     rates = _supported_rates(encoding_models)
     if rates.ndim != 2 or rates.shape[1] != env.n_bins:
-        raise ValueError(
+        msg = (
             f"{operation}: encoding_models must have shape (n_cells, {env.n_bins}), "
             f"one rate map per cell on env, got {rates.shape}."
         )
+        raise ValueError(msg)
     if np.any(rates < 0):
         raise ValueError(
             _format_error(

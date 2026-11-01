@@ -434,11 +434,12 @@ class TestSpatialRatesRoundTrip:
         def fail(obj):
             # Adding the new occupancy fails; restoring the original succeeds.
             if obj.name == "spatial_rates_occupancy" and obj is not original_occupancy:
-                raise RuntimeError("disk full")
+                msg = "disk full"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail)
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="disk full") as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
             )
@@ -465,11 +466,12 @@ class TestSpatialRatesRoundTrip:
             # The occupancy add fails; every later add (the restores) fails too.
             if failed or obj.name == "spatial_rates_occupancy":
                 failed.append(obj.name)
-                raise RuntimeError("disk full")
+                msg = "disk full"
+                raise RuntimeError(msg)
             add_analysis(obj)
 
         monkeypatch.setattr(empty_nwb, "add_analysis", fail_then_refuse_restore)
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(ValueError, match="could not be restored") as caught:
             write_spatial_rates(
                 empty_nwb, _make_rates_result(env, seed=1), overwrite=True
             )

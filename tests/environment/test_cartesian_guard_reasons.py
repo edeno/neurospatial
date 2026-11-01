@@ -38,7 +38,8 @@ def test_polar_bins_refuse_each_call_with_what_why_and_fix(name, bound):
     assert what == f"Environment.{name}() does not work on a polar environment."
     assert why.startswith("Why: ")
     assert "(distance, angle)" in why
-    assert fix.startswith("Fix: ") and len(fix) > len("Fix: ")
+    assert fix.startswith("Fix: ")
+    assert len(fix) > len("Fix: ")
     assert refused.value.operation == f"Environment.{name}()"
     assert isinstance(refused.value, TypeError)
     assert not isinstance(refused.value, (AttributeError, NotImplementedError))

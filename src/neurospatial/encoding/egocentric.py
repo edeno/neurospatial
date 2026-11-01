@@ -167,7 +167,7 @@ def _object_vector_summary_frame(
     from neurospatial.encoding._metrics import _information_bias, _information_screen
 
     bias = _information_bias(result)
-    return polar_summary_frame(
+    frame = polar_summary_frame(
         result,
         index=index,
         extra={
@@ -187,6 +187,12 @@ def _object_vector_summary_frame(
         },
         thresholds=OBJECT_VECTOR_THRESHOLDS,
     )
+    frame.attrs["unsampled_direction_arcs"] = _unsampled_direction_arcs(
+        result.occupancy,
+        n_distance_bins=result.n_distance_bins,
+        n_direction_bins=result.n_direction_bins,
+    )
+    return frame
 
 
 @_copy_analysis_settings
@@ -349,6 +355,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
+        ``df.attrs["unsampled_direction_arcs"]`` lists the direction arcs
+        ``(low, high)`` in degrees, in that frame, with no occupancy at any
+        distance (for example when the object sits at a wall); direction
+        tuning is then measured over the sampled arc only, and compute
+        functions do not warn about it.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
@@ -362,9 +373,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -614,8 +625,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         -------
         float
             Expected untuned information in bits/spike. NaN for a silent unit
-            and, with a ``UserWarning``, when the unit has fewer spikes than
-            the map has effectively independent bins.
+            and, without a warning, when the unit has fewer spikes than the
+            map has effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -652,7 +664,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning.
+        polar bins, and units with fewer spikes than K have no estimable bias, so
+        the boolean is False for them without a warning (False includes "too few
+        spikes to tell").
         The default grid covers the arena, so K grows with it: with the object
         at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
         rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -1196,8 +1210,9 @@ class ObjectVectorRatesResult(
         -------
         ndarray, shape (n_neurons,)
             Expected untuned information in bits/spike. NaN for silent units
-            and, with one ``UserWarning``, for units with fewer spikes than
-            the maps have effectively independent bins.
+            and, without a warning, for units with fewer spikes than
+            the maps have effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -1234,7 +1249,9 @@ class ObjectVectorRatesResult(
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning.
+        polar bins, and units with fewer spikes than K have no estimable bias, so
+        the boolean is False for them without a warning (False includes "too few
+        spikes to tell").
         The default grid covers the arena, so K grows with it: with the object
         at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
         rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -1265,9 +1282,9 @@ class ObjectVectorRatesResult(
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -1279,7 +1296,7 @@ class ObjectVectorRatesResult(
         ...     distance_range=(0.0, 50.0),
         ...     distance_bin_size=5.0,
         ... )
-        >>> is_object_vector_cell = result.classify()  # untuned: warns, none pass
+        >>> is_object_vector_cell = result.classify()  # untuned cells: none pass
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
         Found 0 OVCs
 
@@ -1348,6 +1365,11 @@ class ObjectVectorRatesResult(
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
+        ``df.attrs["unsampled_direction_arcs"]`` lists the direction arcs
+        ``(low, high)`` in degrees, in that frame, with no occupancy at any
+        distance (for example when the object sits at a wall); direction
+        tuning is then measured over the sampled arc only, and compute
+        functions do not warn about it.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
@@ -1371,9 +1393,9 @@ class ObjectVectorRatesResult(
         >>> headings = rng.uniform(-np.pi, np.pi, 1000)
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
+        ...     np.sort(rng.uniform(0, 100, 400)),
+        ...     np.sort(rng.uniform(0, 100, 500)),
+        ...     np.sort(rng.uniform(0, 100, 600)),
         ... ]
         >>> result = compute_egocentric_rates(
         ...     None,
@@ -1636,7 +1658,7 @@ def compute_egocentric_rate(
     >>> positions = rng.uniform(10, 90, (1000, 2))
     >>> headings = rng.uniform(-np.pi, np.pi, 1000)
     >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
-    >>> spike_times = np.sort(rng.uniform(0, 40, 100))
+    >>> spike_times = np.sort(rng.uniform(0, 40, 500))
 
     >>> # Compute egocentric rate
     >>> result = compute_egocentric_rate(
@@ -2113,6 +2135,49 @@ def _object_vector_grid(
     )
 
 
+def _unsampled_direction_arcs(
+    occupancy: ArrayLike, *, n_distance_bins: int, n_direction_bins: int
+) -> list[tuple[float, float]]:
+    """Direction arcs (degrees) with no occupancy at any distance.
+
+    Parameters
+    ----------
+    occupancy : array-like
+        Seconds in each polar bin, ``n_distance_bins * n_direction_bins``
+        values, distance-major.
+    n_distance_bins, n_direction_bins : int
+        Polar grid shape.
+
+    Returns
+    -------
+    list of (float, float)
+        Contiguous unsampled arcs ``[low, high)`` in degrees, in
+        ``[-180, 180]``; an arc across the +/-180 seam is reported once.
+        Empty when every direction, or no direction, was sampled.
+    """
+    occupancy = np.asarray(_to_numpy(occupancy), dtype=np.float64).reshape(
+        n_distance_bins, n_direction_bins
+    )
+    sampled: NDArray[np.bool_] = np.asarray((occupancy > 0).any(axis=0))
+    if sampled.all() or not sampled.any():
+        return []
+    # Start just after a sampled bin so an arc across the seam is reported once.
+    width = 360.0 / n_direction_bins
+    first = int(np.flatnonzero(sampled)[0])
+    order = np.roll(np.arange(n_direction_bins), -first)
+    arcs: list[tuple[float, float]] = []
+    start: int | None = None
+    for k in [*order.tolist(), first]:
+        if not sampled[k] and start is None:
+            start = k
+        elif sampled[k] and start is not None:
+            low = -180.0 + width * start
+            high = -180.0 + width * k if k > start else 180.0 + width * k
+            arcs.append((low, high))
+            start = None
+    return arcs
+
+
 def _warn_if_directions_unsampled(
     occupancy: ArrayLike,
     *,
@@ -2132,27 +2197,12 @@ def _warn_if_directions_unsampled(
     """
     if extended_landmarks:
         return
-    occupancy = np.asarray(_to_numpy(occupancy), dtype=np.float64).reshape(
-        n_distance_bins, n_direction_bins
+    found = _unsampled_direction_arcs(
+        occupancy, n_distance_bins=n_distance_bins, n_direction_bins=n_direction_bins
     )
-    sampled: NDArray[np.bool_] = np.asarray((occupancy > 0).any(axis=0))
-    if sampled.all() or not sampled.any():
+    if not found:
         return
-    # Contiguous unsampled arcs, starting just after a sampled bin so an arc
-    # across the +/-180 degree seam is reported once.
-    width = 360.0 / n_direction_bins
-    first = int(np.flatnonzero(sampled)[0])
-    order = np.roll(np.arange(n_direction_bins), -first)
-    arcs: list[str] = []
-    start: int | None = None
-    for k in [*order.tolist(), first]:
-        if not sampled[k] and start is None:
-            start = k
-        elif sampled[k] and start is not None:
-            low = -180.0 + width * start
-            high = -180.0 + width * k if k > start else 180.0 + width * k
-            arcs.append(f"[{low:g}, {high:g})")
-            start = None
+    arcs = [f"[{low:g}, {high:g})" for low, high in found]
     warnings.warn(
         _format_error(
             f"{context}: no time was spent with the nearest object in the "
@@ -2668,9 +2718,9 @@ def compute_egocentric_rates(
 
     >>> # Spike times for 3 neurons
     >>> spike_times = [
-    ...     np.sort(rng.uniform(0, 40, 100)),  # Neuron 0
-    ...     np.sort(rng.uniform(0, 40, 150)),  # Neuron 1
-    ...     np.sort(rng.uniform(0, 40, 50)),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 40, 400)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 40, 500)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 40, 600)),  # Neuron 2
     ... ]
 
     >>> # Compute egocentric rates for all neurons
@@ -2682,7 +2732,7 @@ def compute_egocentric_rates(
     ...     headings,
     ...     object_positions,
     ...     n_jobs=2,  # Parallel spike binning,
-    ...     distance_range=(0.0, 50.0),
+    ...     distance_range=(0.0, 60.0),
     ...     distance_bin_size=5.0,
     ... )
 
@@ -2690,7 +2740,7 @@ def compute_egocentric_rates(
     >>> print(f"Number of neurons: {len(result)}")
     Number of neurons: 3
     >>> print(f"Firing rates shape: {result.firing_rates.shape}")
-    Firing rates shape: (3, 120)
+    Firing rates shape: (3, 144)
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
@@ -2698,8 +2748,8 @@ def compute_egocentric_rates(
     ...     pref_dir = single.preferred_direction()
     ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
     Neuron 0: 2.5 cm at 15 deg
-    Neuron 1: 7.5 cm at 45 deg
-    Neuron 2: 17.5 cm at 135 deg
+    Neuron 1: 52.5 cm at -135 deg
+    Neuron 2: 52.5 cm at 15 deg
 
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
@@ -3249,15 +3299,6 @@ def _object_vector_rates(
         backend=resolved_backend,
     )
 
-    _warn_if_directions_unsampled(
-        counts.occupancy,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        direction_frame="allocentric" if headings is None else "egocentric",
-        units=units,
-        extended_landmarks=(object_names is not None and object_positions.ndim == 3),
-        context=context,
-    )
     _warn_if_peak_at_range_edge(
         firing_rates,
         n_distance_bins=n_distance_bins,
@@ -3632,7 +3673,9 @@ def is_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning.
+    polar bins, and units with fewer spikes than K have no estimable bias, so
+    the boolean is False for them without a warning (False includes "too few
+    spikes to tell").
     The default grid covers the arena, so K grows with it: with the object
     at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
     rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -3672,7 +3715,7 @@ def is_object_vector_cell(
     >>> times = np.arange(0, 40, 0.04)
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
     >>> result = is_object_vector_cell(
     ...     None,
     ...     spikes,
@@ -3894,7 +3937,9 @@ def is_egocentric_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning.
+    polar bins, and units with fewer spikes than K have no estimable bias, so
+    the boolean is False for them without a warning (False includes "too few
+    spikes to tell").
     The default grid covers the arena, so K grows with it: with the object
     at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
     rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -3935,7 +3980,7 @@ def is_egocentric_object_vector_cell(
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> headings = rng.uniform(-np.pi, np.pi, len(times))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
+    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
     >>> result = is_egocentric_object_vector_cell(
     ...     None,
     ...     spikes,

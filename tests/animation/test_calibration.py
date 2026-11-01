@@ -104,11 +104,13 @@ class TestCalibrateVideoScaleBar:
         from neurospatial.animation import calibrate_video
 
         # 8 pixels = 4 cm -> cm_per_px = 0.5
-        calibration = calibrate_video(
-            simple_env_16cm,
-            tiny_video_path,
-            scale_bar=((0.0, 8.0), (8.0, 8.0), 4.0),
-        )
+        # At 0.5 cm/px the 16 px video covers 8 cm, less than the 16 cm arena.
+        with pytest.warns(UserWarning, match="extend beyond"):
+            calibration = calibrate_video(
+                simple_env_16cm,
+                tiny_video_path,
+                scale_bar=((0.0, 8.0), (8.0, 8.0), 4.0),
+            )
 
         assert calibration.cm_per_px == pytest.approx(0.5, rel=0.01)
 
@@ -220,11 +222,13 @@ class TestCalibrateVideoCmPerPx:
         """Different cm_per_px values work correctly."""
         from neurospatial.animation import calibrate_video
 
-        calibration = calibrate_video(
-            simple_env_16cm,
-            tiny_video_path,
-            cm_per_px=0.5,
-        )
+        # At 0.5 cm/px the 16 px video covers 8 cm, less than the 16 cm arena.
+        with pytest.warns(UserWarning, match="extend beyond"):
+            calibration = calibrate_video(
+                simple_env_16cm,
+                tiny_video_path,
+                cm_per_px=0.5,
+            )
 
         assert calibration.cm_per_px == pytest.approx(0.5, rel=0.01)
 

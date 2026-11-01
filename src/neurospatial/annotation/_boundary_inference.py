@@ -10,12 +10,13 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 
 # Module logger for debug output
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ LARGE_DATASET_THRESHOLD = 10_000
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from shapely.geometry import Polygon
+    from shapely.geometry.base import BaseGeometry
 
 
 @dataclass(frozen=True)
@@ -38,8 +40,7 @@ class BoundaryConfig:
         Boundary inference algorithm. Default is "alpha_shape".
 
         - "alpha_shape": Captures concave boundaries (L-shapes, mazes).
-          Provides tighter fit to actual trajectory. Falls back to
-          convex_hull if alphashape package not installed.
+          Provides tighter fit to actual trajectory.
         - "convex_hull": Fast, robust, always produces single polygon.
           Best when you want guaranteed simple results.
     buffer_fraction : float
@@ -82,15 +83,15 @@ def boundary_from_positions(
     config: BoundaryConfig | None = None,
     buffer_fraction: float | None = None,
     simplify_fraction: float | None = None,
-    **method_kwargs,
+    **method_kwargs: Any,
 ) -> Polygon:
     """Infer environment boundary from position data.
 
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal positions in (x, y) format. NaN/Inf values are automatically
-        filtered with a warning (common in tracking data for lost frames).
+        Animal positions in (x, y) format. NaN/Inf values (lost tracking
+        frames) are dropped before the boundary is inferred.
     method : {"alpha_shape", "convex_hull"}, optional
         Boundary inference algorithm. Overrides config.method if provided.
     config : BoundaryConfig, optional
@@ -110,7 +111,8 @@ def boundary_from_positions(
     Raises
     ------
     ValueError
-        If positions has wrong shape or insufficient points.
+        If positions has wrong shape or insufficient points, or ``method`` is
+        not ``"alpha_shape"`` or ``"convex_hull"``.
 
     Examples
     --------
@@ -128,39 +130,39 @@ def boundary_from_positions(
     # Validate and cast input
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 2:
-        raise ValueError(f"positions must have shape (n, 2), got {positions.shape}")
+        msg = f"positions must have shape (n, 2), got {positions.shape}"
+        raise ValueError(msg)
 
     # Filter out NaN/Inf values (common in tracking data for lost frames)
     valid_mask = np.all(np.isfinite(positions), axis=1)
     n_invalid = (~valid_mask).sum()
     positions = positions[valid_mask]
 
-    if n_invalid > 0:
-        import warnings
-
-        warnings.warn(
-            f"Filtered {n_invalid} positions with NaN/Inf values "
-            f"({n_invalid / (len(positions) + n_invalid) * 100:.1f}% of data).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
     if len(positions) < 3:
-        raise ValueError(
+        msg = (
             f"positions must have at least 3 valid points, got {len(positions)} "
-            f"(after filtering {n_invalid} NaN/Inf values)",
+            f"(after filtering {n_invalid} NaN/Inf values)"
+        )
+        raise ValueError(
+            msg,
         )
 
     # Check for degenerate cases (all points identical or collinear)
     unique_points = np.unique(positions, axis=0)
     if len(unique_points) < 3:
+        msg = f"positions must have at least 3 unique points, got {len(unique_points)}"
         raise ValueError(
-            f"positions must have at least 3 unique points, got {len(unique_points)}",
+            msg,
         )
 
     # Build effective config
     cfg = config or BoundaryConfig()
-    effective_method = method or cfg.method
+    effective_method = validate_choice(
+        method or cfg.method,
+        ("alpha_shape", "convex_hull"),
+        name="method",
+        owner="boundary_from_positions()",
+    )
     effective_buffer = (
         buffer_fraction if buffer_fraction is not None else cfg.buffer_fraction
     )
@@ -176,22 +178,9 @@ def boundary_from_positions(
     # Dispatch to method
     if effective_method == "convex_hull":
         boundary = _convex_hull_boundary(positions)
-    elif effective_method == "alpha_shape":
+    else:  # "alpha_shape"
         alpha = method_kwargs.get("alpha", cfg.alpha)
-        try:
-            boundary = _alpha_shape_boundary(positions, alpha)
-        except ImportError:
-            import warnings
-
-            warnings.warn(
-                "alphashape package not installed. Falling back to convex_hull. "
-                "Install with: pip install alphashape",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-            boundary = _convex_hull_boundary(positions)
-    else:
-        raise ValueError(f"Unknown method: {effective_method}")
+        boundary = _alpha_shape_boundary(positions, alpha)
 
     # Apply buffer (fraction of bbox diagonal)
     if effective_buffer > 0:
@@ -231,13 +220,49 @@ def _convex_hull_boundary(positions: NDArray[np.float64]) -> Polygon:
     try:
         hull = ConvexHull(positions)
     except QhullError as e:
-        raise ValueError(
+        msg = (
             "Cannot compute convex hull: points may be collinear or degenerate. "
-            f"Original error: {e}",
+            f"Original error: {e}"
+        )
+        raise ValueError(
+            msg,
         ) from e
 
     vertices = positions[hull.vertices]
     return Polygon(vertices)
+
+
+def _alpha_shape(points: NDArray[np.float64], alpha: float) -> BaseGeometry:
+    """The alpha shape of 2-D points: the union of Delaunay triangles whose
+    circumradius is below ``1 / alpha``, with every region their outline
+    encloses filled.
+
+    Fewer than four points, or ``alpha <= 0``, give the convex hull. The same
+    construction as the ``alphashape`` package, vectorized.
+    """
+    import shapely
+    from scipy.spatial import Delaunay
+    from shapely.geometry import MultiPoint
+
+    if len(points) < 4 or alpha <= 0:
+        return MultiPoint(points).convex_hull
+    simplices = Delaunay(points).simplices
+    corners = points[simplices]  # (n_triangles, 3, 2)
+    a = np.linalg.norm(corners[:, 1] - corners[:, 2], axis=1)
+    b = np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1)
+    c = np.linalg.norm(corners[:, 0] - corners[:, 1], axis=1)
+    d1 = corners[:, 1] - corners[:, 0]
+    d2 = corners[:, 2] - corners[:, 0]
+    area = 0.5 * np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        radius = np.where(area > 0, a * b * c / (4 * area), np.inf)
+    kept = simplices[radius < 1.0 / alpha]
+    # The edges of exactly one kept triangle bound the shape; every region they
+    # enclose is part of it, holes included.
+    edges = np.sort(kept[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1)
+    edges, counts = np.unique(edges, axis=0, return_counts=True)
+    boundary = shapely.linestrings(points[edges[counts == 1]])
+    return shapely.union_all(shapely.get_parts(shapely.polygonize(boundary)))
 
 
 def _alpha_shape_boundary(
@@ -260,8 +285,6 @@ def _alpha_shape_boundary(
 
     Raises
     ------
-    ImportError
-        If alphashape package not installed.
     ValueError
         If the alpha shape collapses to a degenerate (non-``Polygon`` or
         empty) geometry, e.g. when the positions are nearly collinear,
@@ -269,14 +292,6 @@ def _alpha_shape_boundary(
 
     """
     import warnings
-
-    try:
-        import alphashape
-    except ImportError:
-        raise ImportError(
-            "alphashape package required for alpha_shape method. "
-            "Install with: pip install alphashape",
-        ) from None
 
     from shapely.geometry import MultiPolygon, Polygon
 
@@ -288,13 +303,13 @@ def _alpha_shape_boundary(
             n_points,
         )
         # Also print to stdout for users who don't have logging configured
-        print(
+        print(  # noqa: T201  # notice for users who have not configured logging
             f"Computing alpha shape boundary for {n_points:,} positions...",
             file=sys.stderr,
             flush=True,
         )
 
-    result = alphashape.alphashape(positions, alpha)
+    result = _alpha_shape(positions, alpha)
 
     if n_points >= LARGE_DATASET_THRESHOLD:
         logger.info("Alpha shape computation complete")
@@ -315,12 +330,12 @@ def _alpha_shape_boundary(
         )
         return largest
 
-    # Validate the single-geometry result before returning. alphashape can
+    # Validate the single-geometry result before returning. The alpha shape can
     # return a Point / LineString / empty Polygon / GeometryCollection when the
     # input points are collinear, near-duplicate, or too sparse for the chosen
     # alpha; downstream code assumes a non-empty Polygon.
     if not isinstance(result, Polygon) or result.is_empty:
-        raise ValueError(
+        msg = (
             f"Alpha shape produced a degenerate boundary "
             f"({type(result).__name__}"
             f"{', empty' if getattr(result, 'is_empty', False) else ''}) "
@@ -331,7 +346,10 @@ def _alpha_shape_boundary(
             f"  1. Increase alpha from {alpha:.3f} to ~{alpha * 2:.3f} for a "
             f"looser boundary\n"
             f"  2. Use method='convex_hull' for a guaranteed single polygon\n"
-            f"  3. Add more position samples or remove duplicate points",
+            f"  3. Add more position samples or remove duplicate points"
+        )
+        raise ValueError(
+            msg,
         )
 
     return result

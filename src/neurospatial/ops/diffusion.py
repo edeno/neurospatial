@@ -50,8 +50,8 @@ import scipy.sparse.csgraph
 import scipy.sparse.linalg
 from numpy.typing import NDArray
 
-from neurospatial import _constants
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 from neurospatial.ops._types import KernelMode
 
 if TYPE_CHECKING:
@@ -291,27 +291,6 @@ def _generator(
     return (scipy.sparse.diags(1.0 / volumes) @ (degree - W)).tocsr()
 
 
-def _warn_dense_kernel(n_bins: int) -> None:
-    """Warn (never raise) before a dense ``(n_bins, n_bins)`` heat kernel is built."""
-    if n_bins > _constants.LARGE_KERNEL_THRESHOLD:
-        estimated_gb = n_bins * n_bins * 8 / 1e9
-        warnings.warn(
-            f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
-            f"kernel exp(-tL) is dense by construction (every entry > 0), so it "
-            f"requires an {n_bins} x {n_bins} float64 matrix "
-            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
-            f"matrix exponential). Proceeding anyway; this may be slow and "
-            f"memory-intensive. To avoid this dense kernel entirely, smooth "
-            f"matrix-free via env.diffuse (or the 'diffusion_kde' / 'binned' "
-            f"encoding methods, which route through it) -- both scale as "
-            f"O(n * rank), not O(n^2). Only compute_kernel (this call) and the "
-            f"'gaussian_kde' method build a dense kernel. You can also increase "
-            f"bin_size to reduce the bin count.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
-
 def heat_kernel_from_W(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
@@ -353,29 +332,24 @@ def heat_kernel_from_W(
         If ``mode`` is not one of the three supported values, or ``bandwidth``
         is not finite and positive.
 
-    Warns
-    -----
-    UserWarning
-        When ``n_bins`` exceeds the large-kernel threshold: the kernel is a
-        dense ``(n_bins, n_bins)`` float64 matrix whatever the mode.
-
     Notes
     -----
+    The kernel is a dense ``(n_bins, n_bins)`` float64 matrix whatever the
+    mode (``n_bins**2 * 8`` bytes), built without a size warning.
+
     At full rank the raw operator is block-diagonal across the connected
     components of ``W`` (a masked wall or corner-only ``A = 0`` splits it), and
     clipping round-off adds no cross-block entries, so the per-mode
     normalization is inherently within-component; no explicit component loop is
     needed here.
     """
-    # Validate before the high-bin warning and the dense matrix exponential so a
-    # bad argument fails fast rather than after paying the O(n^3) expm cost.
+    # Validate before the dense matrix exponential so a bad argument fails fast rather than after paying the O(n^3) expm cost.
     if mode not in get_args(KernelMode):
-        raise ValueError(
-            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-        )
+        msg = f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+        raise ValueError(msg)
     if not (np.isfinite(bandwidth) and bandwidth > 0.0):
-        raise ValueError(f"bandwidth must be finite and > 0, got {bandwidth}.")
-    _warn_dense_kernel(volumes.shape[0])
+        msg = f"bandwidth must be finite and > 0, got {bandwidth}."
+        raise ValueError(msg)
 
     # Clip round-off negatives (real cross-block lobes only appear under the
     # truncated env.diffuse apply-path, not on this full-rank dense path).
@@ -534,11 +508,12 @@ def _symmetric_eigenbasis(
     n_bins = S.shape[0]
     n_components, labels = scipy.sparse.csgraph.connected_components(S, directed=False)
     if rank is not None and rank < n_components:
-        raise ValueError(
+        msg = (
             f"rank={rank} is below n_components={n_components}: a truncation this "
             "small would drop a connected component's null mode and break "
             "mass conservation. Raise the bandwidth or the rank."
         )
+        raise ValueError(msg)
 
     if n_components == 1:
         return _block_eigenbasis(S, rank)
@@ -649,18 +624,20 @@ def _validate_occupancy(occupancy: NDArray[np.float64]) -> None:
     if not np.all(np.isfinite(occ)):
         bad = np.flatnonzero(~np.isfinite(occ))
         shown = bad[:10].tolist()
-        raise ValueError(
+        msg = (
             f"occupancy must be finite; {bad.size} non-finite bin(s) at "
             f"indices {shown}{'...' if bad.size > 10 else ''}."
         )
+        raise ValueError(msg)
     if np.any(occ < 0.0):
         bad = np.flatnonzero(occ < 0.0)
         shown = bad[:10].tolist()
-        raise ValueError(
+        msg = (
             f"occupancy must be non-negative (time/samples per bin); "
             f"{bad.size} negative bin(s) at indices "
             f"{shown}{'...' if bad.size > 10 else ''}."
         )
+        raise ValueError(msg)
 
 
 def _live_components(
@@ -759,11 +736,12 @@ def _null_mode_mask(
     """
     is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live_comp)
     if missing.size:
-        raise ValueError(
+        msg = (
             f"component(s) {missing.tolist()}: constant null mode not present in "
             "the supplied eigenbasis; grow it to include every component null "
             "before selecting."
         )
+        raise ValueError(msg)
     return is_null
 
 
@@ -841,24 +819,26 @@ def _select_live_basis(
     is_null = _null_mode_mask(Q, mode_comp, volumes, labels, live_comp)
     fill_idx = np.flatnonzero(np.isin(mode_comp, live_comp) & ~is_null)[:n_fill]
     if fill_idx.size != n_fill:
-        raise ValueError(
+        msg = (
             f"_select_live_basis needs {n_fill} fill mode(s) but only "
             f"{fill_idx.size} non-null live mode(s) are present in the "
             f"{Q.shape[1]}-mode eigenbasis. Grow the eigenbasis to full rank "
             "before selecting (Environment.get_mrf_basis does this)."
         )
+        raise ValueError(msg)
     d_fill = Lam[fill_idx]
     # A structurally non-null fill must carry a positive penalty weight. A
     # nonpositive weight means the mode's eigenvalue was clipped to <= 0 (a
     # numerically (near-)disconnected component) -- it would be an unpenalized
     # nonconstant direction contradicting the reported penalty_rank. Fail loudly.
     if d_fill.size and np.any(d_fill <= 0.0):
-        raise ValueError(
+        msg = (
             "a selected non-null fill mode has nonpositive penalty weight "
             f"(min {float(d_fill.min()):.3e}); its eigenvalue was clipped to "
             "<= 0, i.e. a numerically (near-)disconnected component. Check the "
             "environment connectivity / bin resolution."
         )
+        raise ValueError(msg)
     B_fill = (inv_sqrt_vol[:, None] * Q[:, fill_idx])[live_bins, :]
 
     B = np.concatenate([B_int, B_fill], axis=1)  # (n_live_bins, r_eff)
@@ -954,10 +934,11 @@ def apply_heat_operator(
         If ``F`` is not 2-D.
     """
     if F.ndim != 2:
-        raise ValueError(
+        msg = (
             f"F must be 2-D (n_bins, n_fields), got {F.ndim}-D. A 1-D field "
             "would silently broadcast to (n, n); reshape to (n_bins, 1)."
         )
+        raise ValueError(msg)
     t = sigma**2 / 2.0
     coeff = xp.exp(-t * Lam)  # (rank,)
     sqrt_m = xp.sqrt(volumes).reshape(-1, 1)  # (n, 1)
@@ -984,6 +965,9 @@ def _apply_modes(
     ``density = H @ (F / m)``. All reduce to ``H`` / ``H^T`` applied to ``F`` and
     to ``{1, M}`` -- no ``(n, n)``.
     """
+    mode = validate_choice(
+        mode, get_args(KernelMode), name="mode", owner="the diffusion operator"
+    )
 
     def _h(x: Any) -> Any:
         return apply_heat_operator(Q, Lam, volumes, sigma, x, transpose=False, xp=xp)
@@ -997,12 +981,8 @@ def _apply_modes(
     if mode == "transition":
         r = _safe_denominator(_h(xp.ones_like(F[:, :1])), xp)
         return _ht(F / r)
-    if mode == "density":
-        m = _safe_denominator(_ht(volumes.reshape(-1, 1)), xp)
-        return _h(F / m)
-    raise ValueError(
-        f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-    )
+    m = _safe_denominator(_ht(volumes.reshape(-1, 1)), xp)
+    return _h(F / m)
 
 
 def _safe_denominator(d: Any, xp: Any) -> Any:
@@ -1013,25 +993,6 @@ def _safe_denominator(d: Any, xp: Any) -> Any:
     degenerate all-zero row, matching :func:`heat_kernel_from_W`.
     """
     return xp.where(d > 0.0, d, 1.0)
-
-
-def _warn_large_dense_basis(n: int) -> None:
-    """Warn (never raise) before a near-full-rank ``env.diffuse`` builds a dense
-    ``(n, n)`` eigenvector basis -- the inherent cost of a light bandwidth on a
-    large grid. Mirrors the dense ``compute_kernel`` GB-estimate warning."""
-    if n > _constants.LARGE_KERNEL_THRESHOLD:
-        estimated_gb = n * n * 8 / 1e9
-        warnings.warn(
-            f"env.diffuse resolved a near-full-rank basis for {n} bins (a light "
-            f"bandwidth on a large grid needs most modes), so a dense {n} x {n} "
-            f"float64 eigenvector matrix (~{estimated_gb:.1f} GB) is built once "
-            f"and kept in this environment's cache for later bandwidths; "
-            f"env.clear_cache() releases it. Proceeding; this may be slow and "
-            f"memory-intensive. To reduce the cost, increase the bandwidth or the "
-            f"bin_size (fewer bins).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
 
 
 def _resolve_basis(
@@ -1062,8 +1023,6 @@ def _resolve_basis(
     # Fast path: rank already resolved for this bandwidth.
     r = holder.resolved.get(key)
     if r == "dense":
-        # No re-warn here: the large-matrix warning fired once, when the full
-        # basis was first solved (the probe path below).
         assert holder.basis is not None  # "dense" is resolved on the full basis
         return holder, holder.basis
     if isinstance(r, int):
@@ -1097,11 +1056,12 @@ def _resolve_basis(
         n_components=n_components,
     )
     if rank is None:
-        _warn_large_dense_basis(n)
         vals_full, vecs_full = _symmetric_eigenbasis(S, rank=None)
         basis = (_frozen(vecs_full), _frozen(vals_full))
         return holder.with_rank(key, "dense", basis), basis
-    assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
+    # Narrowed by rank is not None.
+    assert eigvals is not None
+    assert eigvecs is not None
     # The single cached basis is replaced by a larger one (it never shrinks),
     # so a request needing more modes than are cached recomputes it.
     cached_rank = 0 if holder.basis is None else holder.basis[1].shape[0]

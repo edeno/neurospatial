@@ -236,10 +236,11 @@ def _check_clock(
         from ``clock`` in length or beyond float64 roundoff.
     """
     if clock is not None and len(series_times) != len(clock):
-        raise ValueError(
+        msg = (
             f"Length mismatch: timestamps={len(clock)}, "
             f"timestamps[{series_name}]={len(series_times)}. These must agree."
         )
+        raise ValueError(msg)
     # Allow only floating-point roundoff, including clocks computed by
     # equivalent explicit and rate-based expressions. A tolerance tied to
     # sampling intervals would hide actual acquisition-clock shifts.
@@ -306,9 +307,12 @@ def _get_pose_estimation_container(
     """
     found = _find_containers_by_type(nwbfile, target_type)
     if not found:
-        raise missing_error(
+        msg = (
             "No PoseEstimation data found in NWB file. Searched: "
-            "processing/* and acquisition.",
+            "processing/* and acquisition."
+        )
+        raise missing_error(
+            msg,
             fix="add an ndx-pose PoseEstimation container to processing/behavior.",
         )
     container = select_one(

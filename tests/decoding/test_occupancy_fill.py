@@ -158,7 +158,9 @@ def test_decode_warns_on_nan_model(
         np.int64
     )
 
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning, match=r"decode_position: encoding_models has a NaN or Inf rate for"
+    ) as record:
         result = decode_position(env, spike_counts, encoding_models, dt=dt)
 
     # Exactly one warning per call.
@@ -223,7 +225,9 @@ def test_decode_all_nan_bin_gets_zero_posterior() -> None:
     spike_counts = np.array([[0]], dtype=np.int64)
     dt = 1.0
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"decode_position: encoding_models has a NaN or Inf rate for"
+    ):
         post = decode_position(env, spike_counts, rates, dt=dt).posterior
 
     assert np.isfinite(post).all()
@@ -292,7 +296,9 @@ def test_decode_partial_model_one_finite_bin_still_decodes() -> None:
     rates[0, -1] = 5.0
     spike_counts = np.array([[2]], dtype=np.int64)
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"decode_position: encoding_models has a NaN or Inf rate for"
+    ):
         post = decode_position(env, spike_counts, rates, dt=0.1).posterior
 
     assert np.isfinite(post).all()
@@ -362,7 +368,10 @@ def test_decode_one_finite_bin_with_inf_elsewhere_validate_false_decodes() -> No
     spike_counts = np.array([[2]], dtype=np.int64)
 
     # Must not raise the no-finite-bins ValueError (guard sees a finite bin).
-    post = decode_position(env, spike_counts, rates, dt=0.1, validate=False).posterior
+    with pytest.warns(UserWarning, match=r"NaN or Inf rate"):
+        post = decode_position(
+            env, spike_counts, rates, dt=0.1, validate=False
+        ).posterior
     assert post.shape == (1, n_bins)
 
 
@@ -383,7 +392,9 @@ def test_decode_partial_inf_model_concentrates_on_finite_bin() -> None:
     rates = np.array([[np.inf, np.inf, 5.0]])
     spike_counts = np.array([[3]], dtype=np.int64)
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match=r"decode_position: encoding_models has a NaN or Inf rate for"
+    ):
         post = decode_position(
             env, spike_counts, rates, dt=0.1, validate=False
         ).posterior

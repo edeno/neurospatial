@@ -128,7 +128,9 @@ def test_numpy_integer_code_accepted():
 
 
 def test_interpolation_error_explains_and_fixes():
-    with pytest.raises(ValueError) as err:
+    with pytest.raises(
+        ValueError, match=r"align_continuous_to_events: interpolation"
+    ) as err:
         _mixed(interpolation={"zone": "linear"})
     text = str(err.value)
     assert "not a category" in text

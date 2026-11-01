@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import itertools
 import math
-import warnings
 from collections.abc import Sequence
 
 import numpy as np
@@ -25,7 +24,6 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 from neurospatial.layout.helpers.utils import get_n_bins
@@ -144,19 +142,28 @@ def _infer_active_bins_from_regular_grid(
         N-dimensional boolean mask indicating which bins in the grid are
         considered active or part of the track interior.
 
+    Raises
+    ------
+    ValueError
+        If no row of `positions` is finite.
+
     """
     bin_count_threshold = validate_count_threshold(bin_count_threshold)
     pos_clean = positions[np.all(np.isfinite(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:
-        grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
-        warnings.warn(
-            "infer_active_bins is True, but positions has no row without NaN. "
-            "Returning all bins inactive (no data to infer from).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
+        raise ValueError(
+            _format_error(
+                f"infer_active_bins needs finite positions, but all "
+                f"{len(positions)} rows contain NaN or infinite coordinates, or "
+                "the array is empty.",
+                why="Why: with no observed position there is no data to infer "
+                "the active bins from, and an environment with no active bins "
+                "would put every position outside it.",
+                fix="remove tracking-dropout rows or interpolate them, or "
+                "pass infer_active_bins=False to keep every bin",
+            )
         )
-        return np.zeros(grid_shape, dtype=bool)
 
     bin_counts, _ = np.histogramdd(pos_clean, bins=edges)
     active_mask = (bin_counts > 0) & (bin_counts >= bin_count_threshold)
@@ -233,9 +240,8 @@ def _validate_and_prepare_inputs(
     """
     if positions is None:
         if dimension_range is None:
-            raise ValueError(
-                "Either `positions` or `dimension_range` must be provided."
-            )
+            msg = "Either `positions` or `dimension_range` must be provided."
+            raise ValueError(msg)
         n_dims = len(dimension_range)
         return None, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
@@ -244,20 +250,23 @@ def _validate_and_prepare_inputs(
         samples = np.asarray(positions, dtype=float)
     except (TypeError, ValueError) as e:
         actual_type = type(positions).__name__
-        raise TypeError(
+        msg = (
             f"positions must be a numeric array-like object (e.g., numpy array, "
             f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-        ) from e
+        )
+        raise TypeError(msg) from e
 
     if samples.ndim != 2:
-        raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
+        msg = f"`positions` must be 2D, got shape {samples.shape}."
+        raise ValueError(msg)
     n_dims = samples.shape[1]
     finite = None
     if dimension_range is None:
         finite = samples[np.isfinite(samples).all(axis=1)]
         if finite.size == 0:
+            msg = "`positions` has no valid points and no `dimension_range` given."
             raise ValueError(
-                "`positions` has no valid points and no `dimension_range` given.",
+                msg,
             )
     return finite, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
@@ -298,7 +307,8 @@ def _compute_dimension_ranges(
     else:
         # Infer from `samples`
         if samples is None:
-            raise ValueError("Cannot infer ranges without samples")
+            msg = "Cannot infer ranges without samples"
+            raise ValueError(msg)
         ranges = []
         for dim in range(n_dims):
             dim_vals = samples[:, dim]
