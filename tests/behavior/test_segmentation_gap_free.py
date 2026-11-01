@@ -51,6 +51,16 @@ import pytest
 
 from ._segmentation_snapshots import capture_segmentation_outputs, structural_snapshot
 
+# The recordings include a trial that never enters the decision region, so the
+# session has one usable trial and no variation to z-score; the snapshots
+# compare outputs, and the VTE warnings about both are expected.
+pytestmark = [
+    pytest.mark.filterwarnings(
+        r"ignore:Trial \d+ spanning .* never enters decision region:UserWarning"
+    ),
+    pytest.mark.filterwarnings("ignore:No variation in :UserWarning"),
+]
+
 
 @pytest.fixture(scope="session")
 def gap_free_outputs(continuous_pause_track, continuous_lap_track):

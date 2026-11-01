@@ -1755,7 +1755,7 @@ def distance_to_boundary(
         )
 
     else:
-        msg = f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."
+        msg = f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
 
     if len(boundary_bins) == 0:
@@ -2725,7 +2725,7 @@ def _validate_n_directions(n_directions: int, *, call: str) -> None:
     """Raise unless ``n_directions`` is a positive integer."""
     if (
         isinstance(n_directions, bool)
-        or not isinstance(n_directions, (int, np.integer))
+        or not isinstance(n_directions, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
         or n_directions <= 0
     ):
         raise ValueError(

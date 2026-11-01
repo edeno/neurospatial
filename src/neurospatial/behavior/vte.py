@@ -349,7 +349,7 @@ class VTESessionResult(ResultMixin):
         trial_results = tuple(self.trial_results)
         for trial in trial_results:
             if not isinstance(trial, VTETrialResult):
-                msg = (
+                msg = (  # type: ignore[unreachable]  # runtime check of user input
                     "VTESessionResult.trial_results must hold VTETrialResult "
                     f"objects; got {type(trial).__name__}."
                 )

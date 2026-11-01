@@ -983,7 +983,9 @@ class TestComputeVTESession:
             ),
         ]
 
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(
+            UserWarning, match=r"s never enters decision region"
+        ) as record:
             compute_vte_session(
                 positions=positions,
                 times=times,
@@ -1473,7 +1475,10 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
         outcome="reached",
     )
     trials = [trials[0], ms_trial, trials[1], trials[2]]
-    with pytest.warns(UserWarning) as record:
+    with pytest.warns(
+        UserWarning,
+        match=r"has no samples between its start and end times|never enters decision region",
+    ) as record:
         result = compute_vte_session(
             t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
         )

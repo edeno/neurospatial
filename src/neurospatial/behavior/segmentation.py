@@ -319,7 +319,8 @@ class Crossing:
         )
         time = float(self.time)
         if not np.isfinite(time):
-            raise ValueError(f"Crossing.time must be finite; got {time!r}.")
+            msg = f"Crossing.time must be finite; got {time!r}."
+            raise ValueError(msg)
         object.__setattr__(self, "time", time)
         object.__setattr__(self, "bin_index", int(self.bin_index))
 
@@ -379,10 +380,11 @@ class Run(ReadOnlyArraysMixin):
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Run")
         bins = np.asarray(self.bins)
         if bins.ndim != 1 or (bins.size and bins.dtype.kind not in "iu"):
-            raise ValueError(
+            msg = (
                 "Run.bins must be a 1-D integer array of bin indices; got "
                 f"dtype {bins.dtype} with shape {bins.shape}."
             )
+            raise ValueError(msg)
         object.__setattr__(self, "bins", bins.astype(np.int64))
         self._own_arrays()
 
@@ -429,9 +431,8 @@ class Lap:
         )
         score = float(self.overlap_score)
         if not (np.isnan(score) or 0.0 <= score <= 1.0):
-            raise ValueError(
-                f"Lap.overlap_score must be in [0, 1] or NaN; got {score!r}."
-            )
+            msg = f"Lap.overlap_score must be in [0, 1] or NaN; got {score!r}."
+            raise ValueError(msg)
         object.__setattr__(self, "overlap_score", score)
 
 
@@ -1225,7 +1226,8 @@ def segment_by_velocity(
     validate_finite_scalar(smooth_window, name="smooth_window", positive=False)
     validate_finite_scalar(hysteresis, name="hysteresis", positive=True)
     if hysteresis <= 1.0:
-        raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
+        msg = f"hysteresis must be > 1.0 for stability. Got {hysteresis}"
+        raise ValueError(msg)
 
     from neurospatial._velocity import smoothed_speed
     from neurospatial.behavior._kinematics import observed_run_samples, validated_motion
@@ -1733,10 +1735,11 @@ def detect_laps(
             argument="reference_lap",
         )
         if template.size == 0:
-            raise ValueError(
+            msg = (
                 "reference_lap is empty; pass the bin sequence of one complete "
                 "lap, for example position_bins[lap_start:lap_stop]."
             )
+            raise ValueError(msg)
     else:
         found = _first_circuit(position_bins, runs, env)
         if found is None:
@@ -2001,8 +2004,7 @@ def _first_circuit(
         reached_far = np.maximum.accumulate(from_anchor[bins] >= far_distance)
         for stop in passes[1:]:
             if reached_far[stop - 1]:
-                found = bins[:stop]
-                return found
+                return bins[:stop]
     return None
 
 
@@ -2233,10 +2235,11 @@ def runs_to_direction_labels(
     ):
         per_run_labels: list[object] = list(labels)
         if len(per_run_labels) != len(runs):
-            raise ValueError(
+            msg = (
                 f"labels sequence must have one entry per run. "
                 f"Got {len(per_run_labels)} labels for {len(runs)} runs."
             )
+            raise ValueError(msg)
     else:
         per_run_labels = [labels] * len(runs)
 
@@ -2728,10 +2731,11 @@ def segment_trials(
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
     if start_region in end_regions:
-        raise ValueError(
+        msg = (
             f"start_region '{start_region}' cannot be in end_regions. "
             f"Start and end regions must be spatially distinct for trial segmentation."
         )
+        raise ValueError(msg)
 
     position_bins, times = _validated_samples(
         position_bins, times, env, call="segment_trials"
@@ -2971,7 +2975,8 @@ def trajectory_similarity(
     """
     # Input validation
     if len(position_bins1) == 0 or len(position_bins2) == 0:
-        raise ValueError("Trajectories cannot be empty")
+        msg = "Trajectories cannot be empty"
+        raise ValueError(msg)
 
     validate_choice(
         method,
@@ -3055,7 +3060,7 @@ def trajectory_similarity(
         either = np.union1d(position_bins1, position_bins2)
         return float(sizes[shared].sum() / sizes[either].sum())
 
-    elif method == "correlation":
+    if method == "correlation":
         # Sequential correlation
         # Align to same length using indices modulo shorter length
         if len(position_bins1) < len(position_bins2):
@@ -3337,9 +3342,8 @@ def detect_goal_directed_runs(
     )
 
     if not 0.0 <= directedness_threshold <= 1.0:
-        raise ValueError(
-            f"directedness_threshold must be in [0, 1], got {directedness_threshold}"
-        )
+        msg = f"directedness_threshold must be in [0, 1], got {directedness_threshold}"
+        raise ValueError(msg)
 
     if min_progress is None:
         from neurospatial._units import default_length
