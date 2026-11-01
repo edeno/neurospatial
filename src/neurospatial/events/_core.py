@@ -222,6 +222,39 @@ def interval_events(
     return stops, ids, (starts, unbounded)
 
 
+def _snap_to(
+    times: NDArray[np.float64], limit: NDArray[np.float64], scale: Any
+) -> NDArray[np.float64]:
+    """``times`` with those within float rounding of ``limit`` set to it.
+
+    Bounds computed as ``event + offset`` are off by a few ulp of the larger
+    of the two, ``scale`` (``2.0 - 1.9`` is ``0.09999999999999987``), so a
+    window edge meant to be a trial's start or stop can land just inside or
+    outside it. Snapping treats both sides alike.
+    """
+    near = np.abs(times - limit) <= _edge_rounding(times, np.asarray(scale))
+    return np.where(near, limit, times)
+
+
+def _offset_scale(
+    event_times: NDArray[np.float64], window: tuple[float, float]
+) -> NDArray[np.float64]:
+    """Magnitude bounding ``event + offset`` for offsets inside ``window``."""
+    return np.abs(event_times) + max(abs(window[0]), abs(window[1]))
+
+
+def _cut_to_limits(
+    times: NDArray[np.float64],
+    lower: NDArray[np.float64],
+    upper: NDArray[np.float64],
+    scale: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Clip absolute ``times`` to ``[lower, upper]``, snapping rounded bounds."""
+    snapped = _snap_to(_snap_to(times, lower, scale), upper, scale)
+    cut: NDArray[np.float64] = np.clip(snapped, lower, upper)
+    return cut
+
+
 def _window_bounds(
     event_times: NDArray[np.float64],
     window: tuple[float, float],
@@ -229,13 +262,15 @@ def _window_bounds(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Each event's absolute window, cut to its own ``limits`` when given.
 
-    A window entirely outside its limits becomes empty (``stop <= start``).
+    A bound within float rounding of its limit is the limit. A window
+    entirely outside its limits becomes empty (``stop <= start``).
     """
     starts = event_times + window[0]
     stops = event_times + window[1]
     if limits is not None:
-        starts = np.maximum(starts, limits[0])
-        stops = np.minimum(stops, limits[1])
+        scale = _offset_scale(event_times, window)
+        starts = np.maximum(_snap_to(starts, limits[0], scale), limits[0])
+        stops = np.minimum(_snap_to(stops, limits[1], scale), limits[1])
     return starts, stops
 
 

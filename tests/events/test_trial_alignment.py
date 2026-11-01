@@ -232,3 +232,44 @@ def test_response_plot_cuts_raster_rows_like_the_histogram():
     assert rows == [[0.5], [0.1, 0.5]]
     with pytest.raises(ValueError, match="computed from intervals"):
         plot_peri_event_response(spikes, trials.start, result)
+
+
+@pytest.mark.parametrize(("start", "stop"), [(0.6, 3.2), (0.1, 2.0)])
+def test_aligned_at_the_stop_keeps_a_spike_at_the_trial_start(start, stop):
+    # 3.2 - 2.6 rounds to 0.6000000000000001, above the start 0.6, and
+    # 2.0 - 1.9 to 0.09999999999999987, many ulp of 0.1 below 0.1: the cut at
+    # the start must allow the rounding of the stop, as the cut at the stop does.
+    trials = Intervals.from_arrays([start], [stop])
+    spikes = np.array([start])
+    length = round(stop - start, 1)
+    for align, window in (("stop", (-length, 0.0)), ("start", (0.0, length))):
+        result = peri_event_histogram(spikes, trials, window, bin_size=0.1, align=align)
+        assert np.nansum(result.histogram * result.events_per_bin) == 1.0
+        raster = align_spikes_to_events(spikes, trials, window, align=align)
+        assert [r.size for r in raster] == [1]
+
+
+@pytest.mark.parametrize("align", ["start", "stop"])
+def test_spikes_at_trial_bounds_count_once_in_counts_psth_and_raster(align):
+    # 50 trials on a 0.1 s grid, some back to back, some overlapping, with a
+    # spike planted at every start and stop. Each trial's [start, stop) is a
+    # whole number of 0.1 s bins, so the PSTH, the raster and
+    # Intervals.spike_counts must count the same spikes.
+    rng = np.random.default_rng(0)
+    gaps = rng.choice([-3, 0, 0, 2, 5], size=50)
+    lengths = rng.integers(1, 21, size=50)
+    first = np.cumsum(np.r_[0, (lengths + gaps)[:-1]]) + 1
+    trials = Intervals.from_arrays(first / 10, (first + lengths) / 10)
+    spikes = np.unique(np.r_[trials.start, trials.stop])
+    window = (0.0, 2.0) if align == "start" else (-2.0, 0.0)
+
+    per_trial = trials.spike_counts(spikes)[0].to_numpy()
+    raster = align_spikes_to_events(spikes, trials, window, align=align)
+    np.testing.assert_array_equal([r.size for r in raster], per_trial)
+    result = peri_event_histogram(spikes, trials, window, bin_size=0.1, align=align)
+    assert result.n_events == 50
+    # histogram is the mean count over the events_per_bin trials of each bin,
+    # so their product summed over bins is every counted spike (NaN bins have
+    # no trial).
+    total = np.nansum(result.histogram * result.events_per_bin)
+    assert total == pytest.approx(per_trial.sum(), rel=1e-12)

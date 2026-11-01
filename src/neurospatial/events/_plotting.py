@@ -11,8 +11,10 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_instance
 from neurospatial.events._core import (
     PeriEventResult,
+    _cut_to_limits,
     _finite_times,
     _make_bin_edges,
+    _offset_scale,
     interval_events,
 )
 from neurospatial.events.alignment import _peri_event_bin_edges, _sorted_times
@@ -189,10 +191,11 @@ def plot_peri_event_response(
         selected_events, result.window, bin_edges, result.bin_size
     )
     if limits is not None:
-        edges = np.clip(
+        edges = _cut_to_limits(
             edges,
             limits[0][result.event_indices, None],
             limits[1][result.event_indices, None],
+            _offset_scale(selected_events, result.window)[:, None],
         )
     first = np.searchsorted(spikes, edges[:, 0], side="left")
     stop = np.searchsorted(spikes, edges[:, -1], side="left")
