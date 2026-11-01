@@ -235,11 +235,13 @@ def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.intp]
     return components
 
 
-def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.intp]]:
-    """Bins grouped by hop distance from ``center_bin``, up to ``hops``."""
-    # Type validation for hops
+def _rings(graph: nx.Graph, center_bin: int, *, hops: object) -> list[NDArray[np.intp]]:
+    """Bins grouped by hop distance from ``center_bin``, up to ``hops``.
+
+    ``hops`` is the caller's argument as given, checked here.
+    """
     if not isinstance(hops, (int, np.integer)):
-        msg = f"hops must be an integer, got {type(hops).__name__}"  # type: ignore[unreachable]  # runtime check of user input
+        msg = f"hops must be an integer, got {type(hops).__name__}"
         raise TypeError(msg)
 
     # Validate hops is non-negative

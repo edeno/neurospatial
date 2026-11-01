@@ -16,6 +16,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
@@ -1267,9 +1268,13 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
             msg = "outline boundary does not match mesh locator boundary."
             raise ValueError(msg)
     if track is not None:
-        if not isinstance(track, TrackLinearization) or not isinstance(  # type: ignore[redundant-expr]  # runtime check of user input
-            geometry.leaf, NearestBinLocator
-        ):
+        validate_instance(
+            track,
+            TrackLinearization,
+            name="linearization",
+            owner="Binning",
+        )
+        if not isinstance(geometry.leaf, NearestBinLocator):
             msg = "linearization needs stored track geometry and a nearest-bin locator."
             raise ValueError(msg)
         edges = track.grid_edges[0]

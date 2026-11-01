@@ -1053,7 +1053,7 @@ class Regions(MutableMapping[str, Region]):
             if src.kind == "polygon":
                 assert isinstance(src.data, Polygon)
                 geom: Point | Polygon = src.data
-            elif src.kind == "point" and src.n_dims == 2:  # type: ignore[redundant-expr]  # runtime check of user input
+            elif src.kind == "point" and src.n_dims == 2:  # type: ignore[redundant-expr]  # mypy narrows kind past the polygon branch; n_dims is the real test
                 assert isinstance(src.data, np.ndarray)
                 geom = Point(src.data)
             else:

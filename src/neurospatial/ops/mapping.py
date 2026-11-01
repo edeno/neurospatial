@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+from neurospatial._validation import validate_mapping
 from neurospatial.geometry import (
     CallIndexes,
     _nearest_lowest_index,
@@ -329,14 +330,14 @@ def _regions_mask(
         resolved = [named(r) if isinstance(r, str) else r for r in regions]
     elif isinstance(regions, Region):
         resolved = [regions]
-    elif isinstance(regions, Mapping):
-        resolved = [_require_region(r, key=k) for k, r in regions.items()]
     else:
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            "regions must be str, list[str], Region, or a mapping of names to "
-            f"Region values; got {type(regions).__name__}."
+        mapping = validate_mapping(
+            regions,
+            name="regions",
+            owner="region_bin_masks()",
+            hint="pass a str, list[str], Region, or a mapping of names to Region values",
         )
-        raise TypeError(msg)
+        resolved = [_require_region(r, key=k) for k, r in mapping.items()]
     masks = region_bin_masks(
         resolved,
         binning=binning,

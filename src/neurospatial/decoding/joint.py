@@ -26,6 +26,7 @@ from scipy.special import logsumexp
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, read_only_copy
+from neurospatial._validation import validate_instance
 from neurospatial.decoding._result import DecodingResult
 from neurospatial.decoding._time_bins import centered_bin_support, validate_dt
 
@@ -341,10 +342,8 @@ def decode_jointly(
                 fix="decode one set of rate maps with decode_position()",
             )
         )
-    bad_names = [name for name in names if not isinstance(name, str)]  # type: ignore[redundant-expr]  # runtime check of user input
-    if bad_names:
-        msg = f"{_OPERATION}: template names must be strings, got {bad_names!r}."
-        raise ValueError(msg)
+    for name in names:
+        validate_instance(name, str, name="template name", owner=_OPERATION)
     envs = _per_template(env, names, "env")
     if prior is not None and not isinstance(prior, Mapping):
         raise ValueError(

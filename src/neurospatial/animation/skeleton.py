@@ -243,9 +243,10 @@ class Skeleton:
 
         # Validate edges reference existing nodes
         node_set = set(self.nodes)
-        for edge in self.edges:
+        for given in self.edges:
+            edge = tuple(given)
             if len(edge) != 2:
-                msg = (  # type: ignore[unreachable]  # runtime check of user input
+                msg = (
                     f"WHAT: Invalid edge format: {edge}\n"
                     "WHY: Edges must be (source, target) pairs.\n"
                     "Fix: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"

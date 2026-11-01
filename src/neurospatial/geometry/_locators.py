@@ -24,6 +24,7 @@ from shapely.geometry import Polygon
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
 from neurospatial._results import read_only_copy
+from neurospatial._validation import is_integer_at_least
 from neurospatial.geometry._affine import AffineMap, _check_homogeneous
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
@@ -667,12 +668,7 @@ class HexLocator(ReadOnlyState):
             )
             raise ValueError(msg)
         shape = tuple(self.centers_shape)
-        if len(shape) != 2 or any(
-            not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or isinstance(count, (bool, np.bool_))
-            or count < 1
-            for count in shape
-        ):
+        if len(shape) != 2 or any(not is_integer_at_least(count, 1) for count in shape):
             msg = (
                 "HexLocator centers_shape must be two positive row and column "
                 f"counts, got {self.centers_shape!r}."

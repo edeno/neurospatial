@@ -65,11 +65,8 @@ class SnapshotAdapter:
     decode: Callable[[Mapping[str, Any], Mapping[str, NDArray[Any]], str], object]
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.name, str)  # type: ignore[redundant-expr]  # runtime check of user input
-            or not self.name
-            or self.name != self.name.strip()
-        ):
+        name = validate_instance(self.name, str, name="name", owner="SnapshotAdapter")
+        if not name or name != name.strip():
             msg = "SnapshotAdapter.name must be a nonempty codec name."
             raise ValueError(msg)
         if type(self.version) is not int or self.version <= 0:

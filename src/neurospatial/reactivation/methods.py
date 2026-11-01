@@ -63,6 +63,7 @@ from neurospatial._time_bins import _count_spikes_in_time_bins
 from neurospatial._validation import (
     is_integer_at_least,
     validate_alpha,
+    validate_bool,
     validate_integer_at_least,
 )
 from neurospatial.reactivation.assemblies import (
@@ -227,12 +228,11 @@ class ReactivationWindows:
                     f"seconds or None, got {value!r}."
                 )
                 raise ValueError(msg)
-        if not isinstance(self.allow_shorter, (bool, np.bool_)):
-            msg = (  # type: ignore[unreachable]  # runtime check of user input
-                "ReactivationWindows: allow_shorter must be True or False, got "
-                f"{self.allow_shorter!r}."
-            )
-            raise ValueError(msg)
+        validate_bool(
+            self.allow_shorter,
+            name="allow_shorter",
+            owner="ReactivationWindows",
+        )
         if self.length is None and (
             self.step is not None or self.count is not None or self.allow_shorter
         ):

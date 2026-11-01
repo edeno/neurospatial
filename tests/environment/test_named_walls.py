@@ -39,17 +39,33 @@ def test_a_mapping_names_walls_and_a_sequence_gets_default_names():
 
 
 @pytest.mark.parametrize(
-    ("options", "match"),
+    ("options", "error", "match"),
     [
-        ({"walls": {"divider": DIVIDER}, "wall_names": ("x",)}, "mapping of walls"),
-        ({"walls": (DIVIDER,), "wall_names": ("a", "b")}, "2 names for 1 walls"),
-        ({"walls": {"": DIVIDER}}, "nonempty strings"),
-        ({"walls": (DIVIDER,), "wall_names": (3,)}, "nonempty strings"),
-        ({"walls": {"outside": LineString([(5, 0), (6, 0)])}}, "'outside' lies"),
+        (
+            {"walls": {"divider": DIVIDER}, "wall_names": ("x",)},
+            ValueError,
+            "mapping of walls",
+        ),
+        (
+            {"walls": (DIVIDER,), "wall_names": ("a", "b")},
+            ValueError,
+            "2 names for 1 walls",
+        ),
+        ({"walls": {"": DIVIDER}}, ValueError, "nonempty strings"),
+        (
+            {"walls": (DIVIDER,), "wall_names": (3,)},
+            TypeError,
+            "wall_names must be a str",
+        ),
+        (
+            {"walls": {"outside": LineString([(5, 0), (6, 0)])}},
+            ValueError,
+            "'outside' lies",
+        ),
     ],
 )
-def test_invalid_wall_names_are_refused(options, match):
-    with pytest.raises(ValueError, match=match):
+def test_invalid_wall_names_are_refused(options, error, match):
+    with pytest.raises(error, match=match):
         OpenArena(box(0, 0, 4, 4), **options)
 
 

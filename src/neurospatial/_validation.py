@@ -387,20 +387,45 @@ def format_times_positions_error(
     )
 
 
+def is_integer(value: object) -> TypeGuard[numbers.Integral]:
+    """Whether ``value`` is a Python or NumPy integer; booleans are not.
+
+    Examples
+    --------
+    >>> is_integer(np.int64(3)), is_integer(True), is_integer(3.0)
+    (True, False, False)
+    """
+    return not isinstance(value, (bool, np.bool_)) and isinstance(
+        value, numbers.Integral
+    )
+
+
+def is_real_number(value: object) -> bool:
+    """Whether ``value`` is one real number; booleans, arrays and None are not.
+
+    Examples
+    --------
+    >>> is_real_number(np.float32(-1.5)), is_real_number(True), is_real_number("1")
+    (True, False, False)
+    """
+    return isinstance(value, numbers.Real) and not isinstance(value, (bool, np.bool_))
+
+
 def is_integer_at_least(value: object, minimum: int) -> bool:
     """Whether ``value`` is an integer of at least ``minimum``, booleans excluded.
 
     Python and NumPy integers both count; ``True`` is not read as 1.
     """
-    return (
-        not isinstance(value, (bool, np.bool_))
-        and isinstance(value, numbers.Integral)
-        and int(value) >= minimum
-    )
+    return is_integer(value) and int(value) >= minimum
 
 
 def validate_integer_at_least(
-    value: object, minimum: int, *, name: str, owner: str, hint: str = ""
+    value: object,
+    minimum: int,
+    *,
+    name: str,
+    owner: str,
+    hint: str = "",
 ) -> int:
     """Require an integer of at least ``minimum``, booleans excluded; return it.
 
@@ -664,7 +689,12 @@ def validate_bool(value: object, *, name: str, owner: str) -> bool:
 
 
 def validate_instance(
-    value: object, cls: type[_T], *, name: str, owner: str, hint: str = ""
+    value: object,
+    cls: type[_T],
+    *,
+    name: str,
+    owner: str,
+    hint: str = "",
 ) -> _T:
     """Require an instance of ``cls``; return it, typed as one.
 
@@ -695,6 +725,33 @@ def validate_instance(
         msg = (
             f"{owner}: {name} must be a {cls.__name__}, got {type(value).__name__}"
             + (f"; {hint}." if hint else ".")
+        )
+        raise TypeError(msg)
+    return value
+
+
+def validate_mapping(
+    value: object,
+    *,
+    name: str,
+    owner: str,
+    hint: str = "",
+) -> Mapping[Any, Any]:
+    """Require a mapping; return it, with keys and values of unknown type.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a :class:`~collections.abc.Mapping`.
+
+    Examples
+    --------
+    >>> validate_mapping({"a": 1}, name="weights", owner="f()")
+    {'a': 1}
+    """
+    if not isinstance(value, Mapping):
+        msg = f"{owner}: {name} must be a mapping, got {type(value).__name__}" + (
+            f"; {hint}." if hint else "."
         )
         raise TypeError(msg)
     return value

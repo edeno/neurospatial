@@ -12,6 +12,7 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import is_integer
 from neurospatial.annotation._mask_cleanup import (
     _CleanedOutline,
     remove_unprompted_fragments,
@@ -41,13 +42,11 @@ def _frame_size(frame_shape: Sequence[int]) -> tuple[int, int]:
 def validate_roi_bounds(bounds: ROIBounds, frame_shape: Sequence[int]) -> ROIBounds:
     """Validate a nonempty half-open crop entirely inside the original frame."""
     height, width = _frame_size(frame_shape)
-    if len(bounds) != 4 or any(  # type: ignore[redundant-expr]  # runtime check of user input
-        isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer))
-        for value in bounds
-    ):
+    given = tuple(bounds)
+    if len(given) != 4 or any(not is_integer(value) for value in given):
         msg = "Region of interest needs integer (x0, y0, x1, y1) pixel bounds."
         raise ValueError(msg)
-    x0, y0, x1, y1 = (int(value) for value in bounds)
+    x0, y0, x1, y1 = (int(value) for value in given)
     if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
         msg = (
             f"Region of interest must be nonempty and inside the {width} by "

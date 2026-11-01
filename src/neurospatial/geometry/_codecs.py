@@ -102,7 +102,8 @@ def encode(obj: object, prefix: str) -> Payload:
     Returns
     -------
     meta : dict
-        JSON-safe metadata, including the codec name and integer version.
+        JSON-safe metadata, including the codec name and integer version, as
+        read from storage; anything but a dict is refused.
     arrays : dict of ndarray
         Independent arrays keyed by ``prefix/field``. Lookup memos are omitted.
 
@@ -126,9 +127,7 @@ def encode(obj: object, prefix: str) -> Payload:
     return _json_safe({"codec": name, "codec_version": codec.version, **meta}), arrays
 
 
-def decode(
-    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
-) -> object:
+def decode(meta: object, arrays: Mapping[str, NDArray[Any]], prefix: str) -> object:
     """Decode stored geometry without running a layout builder.
 
     Parameters
@@ -152,7 +151,7 @@ def decode(
         If the codec is unknown, its version is unsupported, or data is invalid.
     """
     if not isinstance(meta, dict):
-        msg = f"invalid geometry metadata at {prefix}: expected a dict."  # type: ignore[unreachable]  # runtime check of user input
+        msg = f"invalid geometry metadata at {prefix}: expected a dict."
         raise ValueError(msg)
     name = meta.get("codec")
     codec = _CODECS.get(name) if isinstance(name, str) else None

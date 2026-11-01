@@ -457,14 +457,6 @@ def shuffle_place_fields_circular_2d(
         )
         raise ValueError(msg)
 
-    # Get grid shape from environment
-    if env.grid_shape is None:
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            "shuffle_place_fields_circular_2d requires environment with grid layout "
-            "(grid_shape attribute)"
-        )
-        raise ValueError(msg)
-
     grid_shape = env.grid_shape
     if len(grid_shape) != 2:
         raise ValueError(

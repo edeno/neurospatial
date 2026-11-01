@@ -10,6 +10,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import mark_read_only
+from neurospatial._validation import is_integer_at_least
 
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -108,10 +109,7 @@ def owned_grid(
         tuple(len(edge) - 1 for edge in raw_edges) if shape is None else tuple(shape)
     )
     if len(counts) != len(raw_edges) or any(
-        not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-        or isinstance(count, (bool, np.bool_))
-        or count < 1
-        for count in counts
+        not is_integer_at_least(count, 1) for count in counts
     ):
         raise ValueError(
             _format_error(

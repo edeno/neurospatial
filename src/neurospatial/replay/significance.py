@@ -25,7 +25,11 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
-from neurospatial._validation import is_integer_at_least, validate_callable
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_callable,
+    validate_mapping,
+)
 from neurospatial.replay._inputs import (
     _CORRELATION_WHY,
     _FIT_WHY,
@@ -1449,10 +1453,14 @@ def _checked_null_options(
         is not run or takes no options, or an option the null does not
         take, or gives an option an invalid value.
     """
-    given = {} if null_options is None else null_options
-    if not isinstance(given, Mapping) or not all(  # type: ignore[redundant-expr]  # runtime check of user input
-        isinstance(options, Mapping) for options in given.values()
-    ):
+    example = "such as {'column_cycle_weighted': {'edge_exclusion': 10.0}}"
+    given = validate_mapping(
+        {} if null_options is None else null_options,
+        name="null_options",
+        owner=owner,
+        hint=f"map null names to mappings of options, {example}",
+    )
+    if not all(isinstance(options, Mapping) for options in given.values()):
         msg = (
             f"{owner}: null_options must map null names to mappings of "
             "options, such as {'column_cycle_weighted': {'edge_exclusion': "

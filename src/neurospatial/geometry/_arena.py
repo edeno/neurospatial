@@ -27,7 +27,11 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._validation import is_finite_real, validate_integer_at_least
+from neurospatial._validation import (
+    is_finite_real,
+    validate_instance,
+    validate_integer_at_least,
+)
 from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
@@ -602,7 +606,14 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                 "give one name per wall",
             )
         for name in names:
-            if not isinstance(name, str) or not name:  # type: ignore[redundant-expr]  # runtime check of user input
+            validate_instance(
+                name,
+                str,
+                name="wall_names",
+                owner="Arena",
+                hint='name each wall with a string such as "divider"',
+            )
+            if not name:
                 msg = f"Wall names must be nonempty strings, got {name!r}."
                 raise _error(
                     msg,

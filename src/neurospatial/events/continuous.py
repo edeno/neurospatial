@@ -190,9 +190,9 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         """List every way the fields disagree with each other."""
         # The query grid, and so every per-time shape, follows from window
         # and dt.
-        window = self.window
+        window = tuple(self.window)
         if not (
-            len(window) == 2  # type: ignore[redundant-expr]  # runtime check of user input
+            len(window) == 2
             and all(_is_real_number(v) and np.isfinite(v) for v in window)
             and window[0] < window[1]
         ):

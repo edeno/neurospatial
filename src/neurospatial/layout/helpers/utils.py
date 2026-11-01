@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_instance
 from neurospatial.geometry import get_centers as get_centers
 from neurospatial.layout.validation import (
     validate_cell_size,
@@ -198,8 +199,8 @@ def _infer_dimension_ranges_from_samples(
 
 
 def map_active_data_to_grid(
-    grid_shape: tuple[int, ...],
-    active_mask: NDArray[np.bool_],
+    grid_shape: tuple[int, ...] | None,
+    active_mask: NDArray[np.bool_] | None,
     active_bin_data: NDArray[np.float64],
     fill_value: float = np.nan,
 ) -> NDArray[np.float64]:
@@ -210,9 +211,10 @@ def map_active_data_to_grid(
 
     Parameters
     ----------
-    grid_shape : tuple of int
-        Shape of the full grid, ``(n_0, ..., n_{d-1})``.
-    active_mask : NDArray[np.bool_], shape grid_shape
+    grid_shape : tuple of int or None
+        Shape of the full grid, ``(n_0, ..., n_{d-1})``; None (a layout
+        without a grid) is refused.
+    active_mask : NDArray[np.bool_], shape grid_shape, or None
         True for the grid's active cells.
     active_bin_data : NDArray, shape (n_active_bins,)
         One value per active bin, in active-bin order: the order of
@@ -235,15 +237,21 @@ def map_active_data_to_grid(
         1D NumPy array, or its length is not the number of active bins.
 
     """
-    if grid_shape is None or active_mask is None:  # type: ignore[redundant-expr]  # runtime check of user input
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
+    if grid_shape is None or active_mask is None:
+        msg = (
             "This method is applicable only to grid-based environments "
             "that have 'grid_shape' and 'active_mask' attributes."
         )
         raise ValueError(
             msg,
         )
-    if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:  # type: ignore[redundant-expr]  # runtime check of user input
+    validate_instance(
+        active_bin_data,
+        np.ndarray,
+        name="active_bin_data",
+        owner="map_active_data_to_grid()",
+    )
+    if active_bin_data.ndim != 1:
         msg = "active_bin_data must be a 1D NumPy array."
         raise ValueError(msg)
 

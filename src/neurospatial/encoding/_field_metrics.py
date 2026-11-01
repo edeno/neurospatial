@@ -260,6 +260,9 @@ def rate_map_centroid(
     ...     env, firing_rate, field_bins, method="geodesic"
     ... )
     """
+    method = validate_choice(
+        method, ("euclidean", "geodesic"), name="method", owner="rate_map_centroid()"
+    )
     if method == "euclidean":
         require_cartesian(
             env.coordinate_system,
@@ -294,7 +297,7 @@ def rate_map_centroid(
                 np.sum(field_positions * field_mass[:, None], axis=0) / total_mass
             )
 
-    elif method == "geodesic":
+    else:  # geodesic
         # Weighted medoid: the field bin that minimizes the sum of
         # (rate x measure x graph distance) to all field bins.
 
@@ -310,11 +313,6 @@ def rate_map_centroid(
         finite = costs < np.inf
         best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
         centroid = field_positions[best]
-
-    else:  # pragma: no cover
-        # Runtime safety check (type system enforces at compile time)
-        msg = f"Unknown method: {method}. Must be 'euclidean' or 'geodesic'."  # type: ignore[unreachable]
-        raise ValueError(msg)
 
     return centroid
 

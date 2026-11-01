@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import Arena, contains_with_error
 from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
@@ -63,7 +64,11 @@ class CombinedLocator(ReadOnlyState):
         if (
             not keys
             or len(set(keys)) != len(keys)
-            or any(not isinstance(key, str) or not key or "/" in key for key in keys)  # type: ignore[redundant-expr]  # runtime check of user input
+            or any(
+                not validate_instance(key, str, name="keys", owner="Composition")
+                or "/" in key
+                for key in keys
+            )
         ):
             msg = "Component keys must be unique nonempty strings without '/'."
             raise ValueError(msg)

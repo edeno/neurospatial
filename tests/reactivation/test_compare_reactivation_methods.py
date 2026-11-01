@@ -153,21 +153,23 @@ class TestReactivationWindows:
         assert len(blocks.split([[0.0, 1700.0]])) == 2
 
     @pytest.mark.parametrize(
-        ("options", "message"),
+        ("options", "error", "message"),
         [
-            ({"length": -1.0}, "length must be a positive"),
-            ({"step": 10.0}, "need length"),
-            ({"allow_shorter": True}, "need length"),
-            ({"length": 10.0, "allow_shorter": 1}, "allow_shorter must be"),
-            ({"length": 10.0, "anchor": "middle"}, "anchor must be"),
-            ({"length": 10.0, "clock": "sleep"}, "clock must be"),
-            ({"length": 10.0, "count": 0}, "count must be a positive"),
-            ({"length": 10.0, "count": 2.0}, "count must be a positive"),
-            ({"length": 10.0, "count": True}, "count must be a positive"),
+            ({"length": -1.0}, ValueError, "length must be a positive"),
+            ({"step": 10.0}, ValueError, "need length"),
+            ({"allow_shorter": True}, ValueError, "need length"),
+            ({"length": 10.0, "allow_shorter": 1}, TypeError, "allow_shorter must be"),
+            ({"length": 10.0, "anchor": "middle"}, ValueError, "anchor must be"),
+            ({"length": 10.0, "clock": "sleep"}, ValueError, "clock must be"),
+            ({"length": 10.0, "count": 0}, ValueError, "count must be a positive"),
+            ({"length": 10.0, "count": 2.0}, ValueError, "count must be a positive"),
+            ({"length": 10.0, "count": True}, ValueError, "count must be a positive"),
         ],
     )
-    def test_invalid_options(self, options: dict, message: str) -> None:
-        with pytest.raises(ValueError, match=message):
+    def test_invalid_options(
+        self, options: dict, error: type[Exception], message: str
+    ) -> None:
+        with pytest.raises(error, match=message):
             ReactivationWindows(**options)
 
 

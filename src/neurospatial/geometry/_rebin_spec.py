@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_bool
 from neurospatial.geometry._affine import _check_homogeneous
 from neurospatial.geometry._arrays import ReadOnlyState
 
@@ -53,9 +54,11 @@ class GridBinningSpec(ReadOnlyState):
         if matrix.shape != (len(origin) + 1, len(origin) + 1):
             msg = "Grid specification frame dimensions must match its origin."
             raise ValueError(msg)
-        if type(self.connect_diagonal) is not bool:
-            msg = "Grid specification connect_diagonal must be boolean."  # type: ignore[unreachable]  # runtime check of user input
-            raise ValueError(msg)
+        validate_bool(
+            self.connect_diagonal,
+            name="connect_diagonal",
+            owner="Grid specification",
+        )
         origin.setflags(write=False)
         matrix.setflags(write=False)
         object.__setattr__(self, "origin", origin)

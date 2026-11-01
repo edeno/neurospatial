@@ -59,6 +59,7 @@ from neurospatial._validation import (
     times_positions_problems,
     timestamps_of,
     validate_finite,
+    validate_instance,
     validate_integer_at_least,
 )
 from neurospatial._video_io import _validate_frame_processing
@@ -3209,17 +3210,20 @@ class BodypartData(_SampledData):
 
     def __post_init__(self) -> None:
         """Resolve each body part's support and color."""
-        given = {
-            label: {} if masks is None else masks  # type: ignore[redundant-expr]  # runtime check of user input
-            for label, masks in (
-                ("sample_valid", self.sample_valid),
-                ("interval_valid", self.interval_valid),
-            )
+        # The fields as given: None (the default) accepts every finite row.
+        given: dict[str, object] = {
+            "sample_valid": self.sample_valid,
+            "interval_valid": self.interval_valid,
         }
-        for label, masks in given.items():
-            if not isinstance(masks, dict):
-                msg = f"BodypartData.{label} must map bodypart names to boolean masks."  # type: ignore[unreachable]  # runtime check of user input
-                raise ValueError(msg)
+        checked: dict[str, dict[Any, Any]] = {}
+        for label, raw in given.items():
+            masks = checked[label] = validate_instance(
+                {} if raw is None else raw,
+                dict,
+                name=label,
+                owner="BodypartData",
+                hint="map bodypart names to boolean masks",
+            )
             unknown = masks.keys() - self.bodyparts.keys()
             if unknown:
                 msg = (
@@ -3239,8 +3243,8 @@ class BodypartData(_SampledData):
             self.bodyparts,
             {
                 name: (
-                    given["sample_valid"].get(name),
-                    given["interval_valid"].get(name),
+                    checked["sample_valid"].get(name),
+                    checked["interval_valid"].get(name),
                 )
                 for name in self.bodyparts
             },
@@ -3249,8 +3253,8 @@ class BodypartData(_SampledData):
         for name, values in self.bodyparts.items():
             bodyparts[name], sample_valid[name], interval_valid[name] = resolve_support(
                 values,
-                given["sample_valid"].get(name),
-                given["interval_valid"].get(name),
+                checked["sample_valid"].get(name),
+                checked["interval_valid"].get(name),
             )
         self.bodyparts = bodyparts
         self.sample_valid, self.interval_valid = sample_valid, interval_valid
@@ -4744,7 +4748,7 @@ def _convert_overlays_to_data(
         cleanup.callback(readers.close)
         for overlay in overlays:
             if not isinstance(overlay, OverlayProtocol):
-                msg = (  # type: ignore[unreachable]  # runtime check of user input
+                msg = (  # type: ignore[unreachable]  # runtime check of user input; OverlayProtocol is a Protocol, which validate_instance cannot take
                     f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
                     "Ensure your overlay has a 'convert_to_data()' method."
                 )

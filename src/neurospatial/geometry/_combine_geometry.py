@@ -16,7 +16,11 @@ from scipy.spatial import cKDTree
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from neurospatial._validation import validate_bool, validate_finite_scalar
+from neurospatial._validation import (
+    is_integer_at_least,
+    validate_bool,
+    validate_finite_scalar,
+)
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -903,9 +907,7 @@ def combine_binnings(
             msg = "Conductance keys must be pairs of (component_key, local_bin_id) endpoints."
             raise ValueError(msg) from error
         if any(
-            not isinstance(index, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or isinstance(index, (bool, np.bool_))
-            or not 0 <= index < children[owner].bins.n_bins
+            not is_integer_at_least(index, 0) or not index < children[owner].bins.n_bins
             for index, owner in ((source_bin, i), (target_bin, j))
         ):
             msg = "Conductance endpoint bin IDs must be valid local integers."

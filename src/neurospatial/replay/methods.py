@@ -44,6 +44,7 @@ from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._validation import (
     is_integer_at_least,
+    is_real_number,
     validate_alpha,
     validate_callable,
     validate_choice,
@@ -236,11 +237,7 @@ class ReplayCriterion:
     def __post_init__(self) -> None:
         """Refuse unknown comparisons and scales, and non-numeric thresholds."""
         threshold = self.threshold
-        if (
-            isinstance(threshold, bool)
-            or not isinstance(threshold, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-            or not np.isfinite(threshold)
-        ):
+        if not is_real_number(threshold) or not np.isfinite(threshold):
             raise ValueError(
                 _format_error(
                     f"ReplayCriterion {self.quantity!r}: threshold must be a "
@@ -693,7 +690,8 @@ class ReplayMethod:
             self, "nulls", (given,) if isinstance(given, str) else tuple(given)
         )
         options = self.null_options
-        if isinstance(options, Mapping) and all(  # type: ignore[redundant-expr]  # runtime check of user input
+        # Well-formed options are frozen here; replay_significance refuses the rest.
+        if isinstance(options, Mapping) and all(  # type: ignore[redundant-expr]  # options as given, before replay_significance validates them
             isinstance(value, Mapping) for value in options.values()
         ):
             options = MappingProxyType(

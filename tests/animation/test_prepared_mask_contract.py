@@ -282,6 +282,7 @@ def test_partial_bodypart_masks_infer_missing_entries_and_realign(env, mask_kind
 def test_bodypart_mask_errors_are_actionable(env, mask_kind, malformed):
     count = 4 if mask_kind == "sample_valid" else 3
     mask = {"nose": np.ones(count, dtype=bool)}
+    error: type[Exception] = ValueError
     if malformed == "unknown":
         mask = {"ghost": np.ones(count, dtype=bool)}
         message = "unknown bodyparts.*ghost"
@@ -294,7 +295,8 @@ def test_bodypart_mask_errors_are_actionable(env, mask_kind, malformed):
     else:
         mask = np.ones(count, dtype=bool)
         message = "map bodypart names"
-    with pytest.raises(ValueError, match=message):
+        error = TypeError
+    with pytest.raises(error, match=message):
         BodypartData(
             {"nose": POINTS.copy()}, None, None, times=CLOCK, **{mask_kind: mask}
         )

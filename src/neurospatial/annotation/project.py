@@ -24,7 +24,9 @@ from neurospatial._results import read_only_copy
 from neurospatial._validation import (
     check_writable,
     validate_finite_scalar,
+    validate_instance,
     validate_integer_at_least,
+    validate_mapping,
 )
 from neurospatial.annotation._types import (
     AnnotationMode,
@@ -101,10 +103,14 @@ class AnnotationShape:
         if not self.identifier:
             msg = "Shape identifier must be nonempty."
             raise ValueError(msg)
-        if not isinstance(self.metadata, Mapping):
-            msg = "Shape metadata must be a mapping of JSON values."  # type: ignore[unreachable]  # runtime check of user input
-            raise ValueError(msg)
-        metadata = _thaw_metadata(self.metadata)
+        metadata = _thaw_metadata(
+            validate_mapping(
+                self.metadata,
+                name="metadata",
+                owner="AnnotationShape",
+                hint="give a mapping of JSON values",
+            )
+        )
         # Refused now rather than when the draft becomes a Region.
         _require_json_metadata(metadata)
         object.__setattr__(self, "vertices", vertices)
@@ -167,9 +173,13 @@ def _checked_calibration(
     VideoCalibration is immutable and validates its transform, so the project
     can share it instead of copying it.
     """
-    if not isinstance(calibration, VideoCalibration):
-        msg = "calibration must be a VideoCalibration or None."  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
+    validate_instance(
+        calibration,
+        VideoCalibration,
+        name="calibration",
+        owner="AnnotationProject",
+        hint="pass a VideoCalibration or None",
+    )
     if calibration.frame_size_px != frame_size:
         msg = (
             "Calibration frame_size_px must match the reference frame "
@@ -248,7 +258,7 @@ class AnnotationProject:
             frame_index, 0, name="frame_index", owner="AnnotationProject"
         )
         if video_path is not None and not isinstance(video_path, (str, Path)):
-            msg = "video_path must be a string, Path, or None."  # type: ignore[unreachable]  # runtime check of user input
+            msg = "video_path must be a string, Path, or None."  # type: ignore[unreachable]  # runtime check of user input (a str | Path union)
             raise ValueError(msg)
         if mode not in get_args(AnnotationMode):
             msg = f"Unknown annotation mode {mode!r}."

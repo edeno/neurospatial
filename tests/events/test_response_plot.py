@@ -239,8 +239,16 @@ def test_population_result_requires_explicit_unit_selection():
         plot_peri_event_response(spikes, events, population)
 
 
-@pytest.mark.parametrize("invalid", [(), [None, None], ["raster", "histogram"], None])
-def test_invalid_axes_pair_rejected(invalid):
+@pytest.mark.parametrize(
+    ("invalid", "error"),
+    [
+        ((), ValueError),
+        ([None, None], TypeError),
+        (["raster", "histogram"], TypeError),
+        (None, ValueError),  # the same Axes twice
+    ],
+)
+def test_invalid_axes_pair_rejected(invalid, error):
     events = np.array([1.0, 2.0])
     spikes = np.array([1.0])
     result = peri_event_histogram(spikes, events, (-0.5, 0.5))
@@ -248,7 +256,7 @@ def test_invalid_axes_pair_rejected(invalid):
         _, ax = plt.subplots()
         invalid = (ax, ax)
 
-    with pytest.raises(ValueError, match="two distinct Matplotlib Axes"):
+    with pytest.raises(error, match="two distinct Matplotlib Axes"):
         plot_peri_event_response(spikes, events, result, axes=invalid)
 
 

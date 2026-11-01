@@ -153,11 +153,15 @@ def plot_peri_event_response(
         except (TypeError, ValueError) as error:
             msg = "axes must contain two distinct Matplotlib Axes."
             raise ValueError(msg) from error
-        if (
-            not isinstance(raster_ax, Axes)  # type: ignore[redundant-expr]  # runtime check of user input
-            or not isinstance(histogram_ax, Axes)  # type: ignore[redundant-expr]  # runtime check of user input
-            or raster_ax is histogram_ax
-        ):
+        for ax in (raster_ax, histogram_ax):
+            validate_instance(
+                ax,
+                Axes,
+                name="axes",
+                owner="plot_peri_event_response()",
+                hint="pass two distinct Matplotlib Axes",
+            )
+        if raster_ax is histogram_ax:
             msg = "axes must contain two distinct Matplotlib Axes."
             raise ValueError(msg)
 

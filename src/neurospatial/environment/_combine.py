@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_environment_combine
+from neurospatial._validation import validate_mapping
 from neurospatial.environment._publication import _Derivation, publish_derived
 from neurospatial.geometry import (
     BridgeKey,
@@ -40,11 +41,17 @@ def _combine(
     ``environment_type`` is the ``Environment`` class, passed in because
     ``core`` imports this module; every component must be an instance of it.
     """
-    if not isinstance(components, Mapping) or not components:  # type: ignore[redundant-expr]  # runtime check of user input
+    given = validate_mapping(
+        components,
+        name="components",
+        owner="Environment.combine()",
+        hint="pass a nonempty ordered mapping of keys to environments",
+    )
+    if not given:
         msg = "components must be a nonempty ordered mapping of keys to environments."
         raise ValueError(msg)
-    keys, values = tuple(components), tuple(components.values())
-    if any(not isinstance(key, str) or not key or "/" in key for key in keys):  # type: ignore[redundant-expr]  # runtime check of user input
+    keys, values = tuple(given), tuple(given.values())
+    if any(not isinstance(key, str) or not key or "/" in key for key in keys):
         msg = "Component keys must be nonempty strings without '/'."
         raise ValueError(msg)
     if any(not isinstance(env, environment_type) for env in values):

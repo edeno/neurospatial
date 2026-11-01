@@ -45,7 +45,11 @@
 A warning now means a result is probably wrong or misleading and you can do
 something about it. Facts about a result live on the result, documented
 consequences of an input live in the docstring, and invalid input raises.
-About 55 warnings moved out of the warning stream; the rest are unchanged.
+About 40 warnings moved out of the warning stream. Data that is dropped or
+excluded still warns: NaN pairs in circular statistics, zero-duration
+records in `to_pynapple`, constant neurons in reactivation measures, a
+dimension left out of `decoding_correlation`, rows skipped by a capped
+video export, and units outside the standard registry.
 
 **Changed**
 
@@ -64,12 +68,10 @@ About 55 warnings moved out of the warning stream; the rest are unchanged.
   reach the decision region (the session's `status`), and region overlaps
   (the returned `issues`; `validate_region_overlap(warn_overlap=)` is
   removed).
-- Documented instead of warned: free-form `Environment.units`, a single-event
-  PSTH's NaN SEM, NaN angle pairs dropped from circular statistics, dense
-  kernels on very many bins, empty NWB writes, zero-duration records dropped
-  by `to_pynapple`, playback rates capped at `max_playback_fps`, colormap
-  ranges estimated from sampled frames, and others listed in each
-  function's docstring.
+- Documented instead of warned: a single-event PSTH's NaN SEM, dense
+  kernels on very many bins, empty NWB writes, colormap ranges estimated
+  from sampled frames, an empty path between disconnected bins, and others
+  listed in each function's docstring.
 - The VTE "No variation across trials" warning needs at least two trials
   with metrics.
 
@@ -86,14 +88,24 @@ About 55 warnings moved out of the warning stream; the rest are unchanged.
 - `VideoOverlay(interp="linear")` raises `NotImplementedError` instead of
   drawing nearest frames; an unknown fastplotlib marker and an invalid
   initial track-graph edge raise `ValueError`.
+- An argument of the wrong type raises `TypeError` (a wrong value still
+  raises `ValueError`). Changed from `ValueError`: non-string template
+  names in `decode_jointly`, wall names in `Arena`, composition keys,
+  `Environment.combine` components that are not a mapping, `null_options`
+  that is not a mapping, non-Axes `axes` in `plot_peri_event_response`,
+  `BodypartData` masks that are not a dict, `ReactivationWindows(allow_shorter=)`,
+  and record fields such as `AnnotationShape.metadata`.
 
 **Development**
 
 - Argument checks go through validators that return the checked value with
   its type (`validate_choice`, `validate_integer_at_least`,
-  `validate_bool`, `validate_instance`, `validate_callable`), so a type
-  checker accepts the runtime check; 57 of 92 `type: ignore` comments are
-  gone, and the messages of those checks follow one form.
+  `validate_bool`, `validate_instance`, `validate_mapping`,
+  `validate_callable`, plus `is_integer` and `is_real_number`), so a type
+  checker accepts the runtime check; 85 of 92 `type: ignore` comments are
+  gone, the rest say why, and the messages of those checks follow one form.
+  A dead check (`shuffle_place_fields_circular_2d` testing a `grid_shape`
+  that is never None) is gone.
 
 ### Dependencies, packaging and development tools
 
