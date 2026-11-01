@@ -78,7 +78,7 @@ from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-from neurospatial.behavior._position_bins import sample_bins
+from neurospatial.behavior._position_bins import bridge_missing_positions, sample_bins
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -131,10 +131,12 @@ def _event_runs(
 ) -> list[NDArray[np.intp]]:
     """Observed runs holding only samples inside the half-open ``epochs``.
 
-    As in ``env.occupancy``, an interval is observed when its gap passes
-    ``max_gap``, ``epochs`` and ``break_before`` and both of its samples are
-    in a bin: a sample at bin -1 (outside the environment, or missing) ends
-    the run.
+    Takes the samples left after NaN rows were dropped
+    (:func:`~neurospatial.behavior._position_bins.bridge_missing_positions`,
+    which also warns when nothing is observed). As in ``env.occupancy``, an
+    interval is observed when its gap passes ``max_gap``, ``epochs`` and
+    ``break_before`` and both of its samples are in a bin: a sample at bin
+    -1 (outside the environment) ends the run.
 
     An observed run keeps the sample at an epoch's ``stop``, because the
     interval that ends there lies inside the epoch. That instant is outside
@@ -150,7 +152,6 @@ def _event_runs(
         epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
     ).gates
-    warn_excluded_intervals(gates)
     runs = [
         np.arange(first, last + 1, dtype=np.intp)
         for first, last in run_sample_bounds(gates.mask)
@@ -397,7 +398,8 @@ def detect_region_crossings(
         Timestamps in seconds; finite and strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Positions in the environment's coordinates; NaN where tracking was
-        lost. Each is located in its bin inside the function.
+        lost, bridged like a deleted row (see ``max_gap``). Each is located
+        in its bin inside the function.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
         Passed as a keyword-only argument.
@@ -451,13 +453,14 @@ def detect_region_crossings(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart.
+    A NaN position (lost tracking, a low-confidence frame) is a missing
+    sample, the same as a deleted row: the samples around it are joined
+    when no more than ``max_gap`` apart, and a longer gap splits the
+    recording. A position outside the environment is observed but not
+    located, so an interval with a sample there is not observed and splits
+    the recording too, like an ``epochs`` edge or a ``break_before``. Each
+    resulting stretch is analyzed on its own, so no crossing is reported
+    across a split.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -505,8 +508,15 @@ def detect_region_crossings(
     times, position_bins = sample_bins(
         env, times, positions, call="detect_region_crossings"
     )
-    breaks = validate_break_before(
-        break_before, len(times), call="detect_region_crossings"
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_region_crossings"
+        ),
     )
     results: list[Crossing] = []
     for run in _event_runs(
@@ -910,7 +920,8 @@ def detect_laps(
         Timestamps in seconds; finite and strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Positions in the environment's coordinates; NaN where tracking was
-        lost. Each is located in its bin inside the function.
+        lost, bridged like a deleted row (see ``max_gap``). Each is located
+        in its bin inside the function.
     method : {'auto', 'reference', 'region'}, optional
         Method for detecting laps:
         - 'auto': the first complete circuit is the template (default)
@@ -996,16 +1007,14 @@ def detect_laps(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart.
-
-    Laps never span recordings. Samples outside the environment are left
-    out as if their rows were deleted.
+    A NaN position (lost tracking, a low-confidence frame) is a missing
+    sample, the same as a deleted row: the samples around it are joined
+    when no more than ``max_gap`` apart, and a longer gap splits the
+    recording. A position outside the environment is observed but not
+    located, so an interval with a sample there is not observed and splits
+    the recording too, like an ``epochs`` edge or a ``break_before``. Each
+    resulting stretch is analyzed on its own, so no lap spans a split or a
+    recording boundary.
 
     **Lap Detection Methods:**
 
@@ -1209,7 +1218,16 @@ def detect_laps(
         )
 
     times, position_bins = sample_bins(env, times, positions, call="detect_laps")
-    breaks = validate_break_before(break_before, len(times), call="detect_laps")
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_laps"
+        ),
+    )
     runs = _event_runs(
         times,
         position_bins,
