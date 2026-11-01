@@ -85,14 +85,16 @@ def test_native_fields_sample_independent_clocks_and_keep_native_edits():
         label="Rate (Hz)",
         max_gap=0.5,  # the 0.8 s interval is unsupported
     )
-    second = AnimationField(
-        np.array([np.full(env.n_bins, 10.0), np.full(env.n_bins, 20.0)]),
-        [100.1, 100.3],
-        vmin=10,
-        vmax=20,
-        cmap="viridis",
-        break_before=[False, True],
-    )
+    # The break leaves the second field no interval to interpolate.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        second = AnimationField(
+            np.array([np.full(env.n_bins, 10.0), np.full(env.n_bins, 20.0)]),
+            [100.1, 100.3],
+            vmin=10,
+            vmax=20,
+            cmap="viridis",
+            break_before=[False, True],
+        )
     scene = Animation(env, {"first": first, "second": second})
     handle = model_handle(scene)
     layer = handle.field_layers["first"]
@@ -753,11 +755,12 @@ def test_legacy_spatial_units_leave_frame_axes_dimensionless():
 
 
 def test_freeform_environment_unit_labels_do_not_break_native_layers():
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool),
-        (np.arange(3.0), np.arange(3.0)),
-        units="arena units",
-    )
+    with pytest.warns(UserWarning, match="not in the standard registry"):
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            (np.arange(3.0), np.arange(3.0)),
+            units="arena units",
+        )
     scene = Animation(env, np.ones((2, 4)), frame_times=[0.0, 0.1])
     handle = model_handle(scene)
     handle.seek(0.05)

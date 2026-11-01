@@ -587,7 +587,10 @@ def test_calibration_swaps_coordinates_once_and_keeps_explicit_bin_size(assist):
 )
 def test_invalid_scale_does_not_change_calibration(assist, points):
     widget = assist["widget"]
-    widget._scale.data = np.asarray(points, dtype=float).reshape((-1, 2))
+    # napari's thumbnail casts a NaN point's extent to integers; the NaN point
+    # is the invalid input under test.
+    with np.errstate(invalid="ignore"):
+        widget._scale.data = np.asarray(points, dtype=float).reshape((-1, 2))
     widget._apply_calibration()
     assert assist["calibrations"] == []
     assert "Could not calibrate" in widget.status.text()
