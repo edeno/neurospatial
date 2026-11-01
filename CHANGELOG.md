@@ -31,6 +31,10 @@ by its trial.
 
 **Added**
 
+- `Intervals.spike_counts(spike_times)`: spikes of each unit in each
+  interval, a table indexed by `interval_id` with one column per unit. Join
+  the trial fields with `trials.intervals_table().join(counts)`; divide by
+  `trials.durations` for rates.
 - A single `Interval` (one trial, from `sel(interval_id=...)` or iterating
   an `Intervals`) is accepted wherever `epochs=` is, through its `windows`.
   One curve per trial is `compute_tuning_curve(..., bin_edges=edges,

@@ -439,6 +439,32 @@ def test_ids_beyond_int64_are_refused() -> None:
         )
 
 
+def test_spike_counts_by_hand_with_overlapping_rows():
+    trials = Intervals.from_arrays(
+        [0.0, 0.5, 2.0], [1.0, 1.5, 2.0], interval_ids=[4, 9, 2]
+    )
+    # A spike at a start counts, at a stop does not; the spike at 0.75 lies
+    # in two overlapping rows and counts in both. Trains need not be sorted.
+    counts = trials.spike_counts(
+        {"a": np.array([1.0, 0.0, 0.75]), "b": np.array([1.5, 0.5])}
+    )
+    assert counts.index.tolist() == [4, 9, 2]
+    assert counts.columns.tolist() == ["a", "b"]
+    assert counts["a"].tolist() == [2, 2, 0]
+    assert counts["b"].tolist() == [1, 1, 0]
+    assert counts.dtypes.tolist() == [np.int64, np.int64]
+
+
+def test_spike_counts_sum_to_the_spikes_inside_separate_rows():
+    rng = np.random.default_rng(1)
+    spikes = np.sort(rng.uniform(0, 100, 500))
+    trials = Intervals.from_arrays([5.0, 20.0, 47.5, 80.0], [12.0, 33.3, 61.0, 99.0])
+    inside = ((spikes[:, None] >= trials.start) & (spikes[:, None] < trials.stop)).any(
+        axis=1
+    )
+    assert trials.spike_counts([spikes])[0].sum() == inside.sum()
+
+
 def test_one_interval_restricts_an_analysis_like_its_row():
     trials = Intervals.from_arrays([1.0, 4.0, 6.0], [3.0, 5.0, 6.0])
     one = trials.sel(interval_id=1)
