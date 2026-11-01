@@ -105,3 +105,23 @@ def test_linear_matches_old_time_per_bin():
         rtol=0,
         atol=1e-12,
     )
+
+
+def test_allocated_time_adds_up_to_the_counted_intervals():
+    """Every counted second lands in some bin when the values stay inside.
+
+    With every value inside ``[edges[0], edges[-1])``, each masked interval's
+    time is split over bins only, so the bins sum to ``dt[mask].sum()``.
+    """
+    from neurospatial._intervals import linear_allocated_occupancy
+
+    rng = np.random.default_rng(4)
+    edges = np.linspace(-10.0, 10.0, 9)
+    values = rng.uniform(-10.0, 10.0, 200)
+    values[50:60] = values[50]  # a stop: zero-length steps
+    values[80] = edges[3]  # a sample on an inner edge
+    dt = rng.uniform(0.01, 0.1, values.size - 1)
+    mask = rng.random(dt.size) < 0.7
+    seconds = linear_allocated_occupancy(values, dt, edges, mask)
+    np.testing.assert_allclose(seconds.sum(), dt[mask].sum(), rtol=1e-12)
+    assert (seconds >= 0).all()
