@@ -415,3 +415,32 @@ def test_psth_result_refuses_events_per_bin_its_align_cannot_give(
             align=align,
             event_ids=np.array([0, 1]),
         )
+
+
+@pytest.mark.parametrize(
+    "event_ids",
+    [
+        None,
+        np.array(["a", "b", "c"]),
+        np.array([7, 7, 3]),
+        np.array([7, -1, 3]),
+        np.array([7, 3]),
+    ],
+)
+def test_continuous_result_aligned_on_trials_needs_their_interval_ids(
+    clock, trials, event_ids
+):
+    import dataclasses
+
+    result = align_continuous_to_events(clock, clock, trials, (0.0, 1.0), dt=0.5)
+    with pytest.raises(ValueError, match="align"):
+        dataclasses.replace(result, event_ids=event_ids)
+
+
+def test_continuous_result_of_plain_times_keeps_any_labels(clock):
+    # Plain times carry the caller's labels (any values) and no align.
+    for labels in (None, ["b", "a"], [3, 3]):
+        result = align_continuous_to_events(
+            clock, clock, [5.0, 7.0], (0.0, 1.0), dt=0.5, event_ids=labels
+        )
+        assert result.align is None

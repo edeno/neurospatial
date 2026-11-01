@@ -151,7 +151,8 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         each row for intervals.
     align : {"start", "stop"} or None, default=None
         For intervals, the bound each row was aligned at; the window was cut
-        at the row's other bound. None for plain event times.
+        at the row's other bound. None for plain event times. When set,
+        ``event_ids`` holds the rows' unique non-negative ``interval_id``.
     """
 
     feature_ids: NDArray[Any]
@@ -326,6 +327,22 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             problems.append(f"window_coverage must be in {list(_WINDOW_COVERAGES)}")
         if self.align is not None and self.align not in ALIGNS:
             problems.append(f"align must be None or in {list(ALIGNS)}")
+        if self.align is not None:
+            # Aligned intervals are labelled by their interval_id; plain times
+            # (the caller's labels, any values) have no align.
+            ids = None if self.event_ids is None else np.asarray(self.event_ids)
+            if (
+                ids is None
+                or ids.shape != (n_input,)
+                or ids.dtype.kind not in "iu"
+                or np.any(ids < 0)
+                or np.unique(ids).size != ids.size
+            ):
+                problems.append(
+                    "align is set only for intervals, whose event_ids are their "
+                    f"unique non-negative integer interval_ids, one per input "
+                    f"event ({n_input}); plain event times need align=None"
+                )
         threshold = self.resultant_threshold
         if not (
             _is_real_number(threshold)
