@@ -306,6 +306,12 @@ def _make_bin_edges(
     window stop is excluded. Edges are clamped to the window stop using
     timestamp-relative rounding rather than an absolute epsilon.
 
+    When ``window[0]`` is a whole number of bins from 0 (up to float
+    rounding), each edge is the grid value ``k * bin_size`` rather than
+    ``window[0] + j * bin_size``, so the edge at the event is exactly 0
+    (``-0.3 + 3 * 0.1`` is ``5.6e-17``, which would put a spike at the event
+    in the bin before it). The outer edges are the window bounds.
+
     Parameters
     ----------
     window : tuple[float, float]
@@ -319,10 +325,17 @@ def _make_bin_edges(
         Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
         which never exceeds ``window[1]``.
     """
-    left, right = _time_bins_in_windows(
-        np.asarray([window], dtype=np.float64), bin_size
+    left, _ = _time_bins_in_windows(np.asarray([window], dtype=np.float64), bin_size)
+    steps = np.arange(left.size + 1, dtype=np.float64)
+    first = window[0] / bin_size
+    on_grid = abs(first - round(first)) <= 4.0 * np.finfo(np.float64).eps * max(
+        1.0, abs(first)
     )
-    return np.r_[left, right[-1]] if left.size else np.array([window[0]])
+    edges = (
+        (round(first) + steps) * bin_size if on_grid else window[0] + bin_size * steps
+    )
+    clipped: NDArray[np.float64] = np.clip(edges, window[0], window[1])
+    return clipped
 
 
 def _psth_bins(
