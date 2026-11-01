@@ -17,14 +17,17 @@ import pytest
 pytest.importorskip("pynwb")
 pytest.importorskip("ndx_events")
 
+from neurospatial import Intervals
 from neurospatial.behavior.segmentation import Lap
 
 from ._nwb_helpers import create_roundtrip_nwb
 
-REGION_LAPS = [
-    Lap(start_time=1.0, end_time=5.0, direction="unknown", overlap_score=np.nan),
-    Lap(start_time=6.0, end_time=9.0, direction="clockwise", overlap_score=np.nan),
-]
+REGION_LAPS = Intervals(
+    [
+        Lap(start_time=1.0, stop_time=5.0, direction="unknown", overlap_score=np.nan),
+        Lap(start_time=6.0, stop_time=9.0, direction="clockwise", overlap_score=np.nan),
+    ]
+)
 
 
 @pytest.fixture
@@ -32,7 +35,6 @@ def edge_case_file(tmp_path: Path) -> Path:
     """Write every record writer with zero records, plus region-method laps."""
     from pynwb import NWBHDF5IO
 
-    from neurospatial import Intervals
     from neurospatial.io.nwb import (
         write_events,
         write_laps,
@@ -42,7 +44,7 @@ def edge_case_file(tmp_path: Path) -> Path:
 
     nwbfile = create_roundtrip_nwb()
     write_trials(nwbfile, Intervals.from_arrays([], []))
-    write_laps(nwbfile, [])
+    write_laps(nwbfile, Intervals(record_type=Lap))
     write_region_crossings(nwbfile, [])
     write_events(nwbfile, pd.DataFrame({"timestamp": []}), name="rewards")
     write_laps(nwbfile, REGION_LAPS, name="region_laps")

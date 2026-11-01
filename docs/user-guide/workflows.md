@@ -73,42 +73,44 @@ env = Environment.from_samples(
     np.linspace(0, 100, 201)[:, None], bin_size=5.0, units="cm"
 )
 
-# Direction labels -> half-open [start, stop) windows for each direction,
-# using only frames where the animal was tracked.
+# Direction labels -> one half-open [start, stop) epoch per row, with its
+# label, using only frames where the animal was tracked.
 valid = np.isfinite(positions).all(axis=1)
 conditions = labels_to_epochs(times, direction, valid=valid)
+runs = {label: conditions[conditions.label == label] for label in ["outbound", "inbound"]}
 
 # One rate map per direction: the original arrays, restricted by epochs=.
 maps = {
     label: compute_spatial_rates(
         env, spike_times, times, positions,
-        unit_ids=unit_ids, epochs=conditions[label],
+        unit_ids=unit_ids, epochs=epochs,
         bandwidth=5.0, min_occupancy=0.5,
     )
-    for label in conditions
+    for label, epochs in runs.items()
 }
 
-print({label: round(seconds, 2) for label, seconds in conditions.durations.items()})
-print({label: len(conditions[label]) for label in conditions})
-table = conditions.epochs_table()
+print({label: round(float(epochs.durations.sum()), 2) for label, epochs in runs.items()})
+print({label: len(epochs) for label, epochs in runs.items()})
+table = conditions.intervals_table()
 print(table.head())
-shortened = np.isclose(table["start"], 101.0)  # the run the dropout shortened
-print(table.loc[shortened, ["label", "start", "stop", "duration"]])
-assert abs(conditions.durations["outbound"] - 99.0) < 1e-6
-assert abs(conditions.durations["inbound"] - 99.93) < 0.01
-assert len(conditions["outbound"]) == len(conditions["inbound"]) == 20
-assert [101.0, 105.0] in np.round(conditions["outbound"], 6).tolist()
+shortened = np.isclose(table["start_time"], 101.0)  # the run the dropout shortened
+print(table.loc[shortened])
+assert abs(runs["outbound"].durations.sum() - 99.0) < 1e-6
+assert abs(runs["inbound"].durations.sum() - 99.93) < 0.01
+assert len(runs["outbound"]) == len(runs["inbound"]) == 20
+assert [101.0, 105.0] in np.round(runs["outbound"].windows, 6).tolist()
 ```
 
-`labels_to_epochs` turns one label per frame into time windows for each
-label. The time between two frames, `[times[k], times[k + 1])`, gets the label
+`labels_to_epochs` turns one label per frame into time windows, one row per
+epoch with a `label` field; `conditions[conditions.label == "outbound"]`
+selects one direction. The time between two frames, `[times[k], times[k + 1])`, gets the label
 of the frame at its start. An untracked frame (`valid` False) is skipped as if
 its row were deleted, so a time between frames is kept when the tracked
 frames around it are no more than `max_gap` (1.0 s by default) apart, and carries the
 label of the tracked frame that starts it. Kept stretches with the same label
 join into one epoch; a tracking loss longer than `max_gap` or a change of
 label ends it, so the same label after a long dropout starts a new epoch. The
-table lists each epoch with its label, start, stop and duration.
+table lists each epoch with its `interval_id`, start, stop and label.
 
 Here the dropout starts exactly at the beginning of an outbound run
 (t = 100 s), so it shortens that run to 101–105 s instead of splitting it;
@@ -119,7 +121,7 @@ the recording, because the final frame starts no interval. A dropout in the
 middle of a run would split that run into two epochs.
 
 The rate maps use the original `times`, `positions` and `spike_times` with
-`epochs=conditions[label]`. `compute_spatial_rates` then counts spikes and
+`epochs=` set to one direction's epochs. `compute_spatial_rates` then counts spikes and
 dwell time over exactly the same windows: a spike counts only if it falls in a
 window where the animal was tracked in that direction. Slicing the arrays to
 outbound frames yourself would leave the spikes to be filtered separately,
@@ -140,10 +142,10 @@ from neurospatial.behavior import compute_speed, in_epochs
 
 speed = compute_speed(times, positions)  # cm/s; NaN where tracking was lost
 coverage = {}
-for label in conditions:
-    inside = in_epochs(times, conditions[label])
+for label, epochs in runs.items():
+    inside = in_epochs(times, epochs)
     coverage[label] = {
-        "duration_s": round(conditions.durations[label], 2),
+        "duration_s": round(float(epochs.durations.sum()), 2),
         "occupied_bins": int(maps[label].spatial_support.sum()),
         "mean_speed_cm_s": round(float(np.nanmean(speed[inside])), 1),
     }
@@ -241,15 +243,18 @@ from neurospatial.encoding import SpikeTrains
 
 lap = (times // 10).astype(int)
 fold = np.where(lap % 2 == 0, "train", "test")
-out_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["outbound"])
-in_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["inbound"])
+out_folds = labels_to_epochs(times, fold, valid=valid, epochs=runs["outbound"])
+in_folds = labels_to_epochs(times, fold, valid=valid, epochs=runs["inbound"])
+out_train = out_folds[out_folds.label == "train"]
+out_test = out_folds[out_folds.label == "test"]
+in_test = in_folds[in_folds.label == "test"]
 
 cells = SpikeTrains(spike_times, unit_ids=unit_ids)
 decoder = BayesianDecoder(env, dt=0.25, bandwidth=5.0).fit(
-    cells, times, positions, epochs=out_folds["train"],
+    cells, times, positions, epochs=out_train,
 )
-within = decoder.predict(cells, times, epochs=out_folds["test"])
-transfer = decoder.predict(cells, times, epochs=in_folds["test"])
+within = decoder.predict(cells, times, epochs=out_test)
+transfer = decoder.predict(cells, times, epochs=in_test)
 within_error = within.error_against(times, positions)  # cm, one per time bin
 transfer_error = transfer.error_against(times, positions)
 assert np.isfinite(within_error).all() and np.isfinite(transfer_error).all()
@@ -258,7 +263,7 @@ for name, error in [("Held-out outbound laps", within_error),
     print(f"{name}: median error {np.median(error):.1f} cm, "
           f"errors over 10 cm in {100 * np.mean(error > 10):.1f}% of time bins")
 print("Training coverage:", int(decoder.spatial_support.sum()), "of", env.n_bins, "bins")
-assert within.times.min() >= out_folds["test"][0, 0]
+assert within.times.min() >= out_test.start[0]
 assert abs(np.median(within_error) - 5.0) < 0.5
 assert abs(np.median(transfer_error) - 5.0) < 0.5
 assert abs(100 * np.mean(within_error > 10) - 4.5) < 1.0
@@ -355,9 +360,11 @@ conditions = labels_to_epochs(times, labels, valid=valid)
 maps = {
     label: compute_spatial_rates(
         env, spike_times, times, positions, unit_ids=unit_ids,
-        epochs=conditions[label], bandwidth=5.0, min_occupancy=0.5,
+        epochs=conditions[conditions.label == label],
+        bandwidth=5.0, min_occupancy=0.5,
     )
-    for label in conditions
+    # The labels found, so a misspelled label cannot select nothing silently.
+    for label in conditions.analysis_settings["labels"]
 }
 comparison = compare_spatial_rates(maps["outbound"], maps["inbound"])
 comparison.summary_table()
@@ -367,12 +374,15 @@ comparison.summary_table()
   where tracking was lost), `spike_times` (one array of spike times in
   seconds per unit) and `unit_ids` with your arrays. Take unit IDs from spike
   sorting; they must name the same cells in every condition.
-- Labels come from your task: a trial table converted to one label per frame,
-  `laps_to_direction_labels` on detected laps,
-  `goal_pair_direction_labels` on segmented trials, or door-state intervals.
-  Samples labeled `None` or `NaN` are left out; the direction-label
-  functions give `None` to frames outside any lap or trial; pass
-  `missing_label=` if your own labels use another value.
+- Labels come from your task, one per frame: from detected laps,
+  `laps[laps.direction != "unknown"].sample_values(times, "direction")`;
+  from detected trials,
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`
+  (for a trial table without `outcome`, select with
+  `trials.end_region.notna()` instead);
+  or from door-state intervals. Samples labeled `None` or `NaN` are left
+  out; `sample_values` gives `None` to frames outside every lap or trial;
+  pass `missing_label=` if your own labels use another value.
 - Build `valid` from your tracking quality, for example
   `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
 - When you join several recordings on one clock, pass `break_before`, True at
@@ -1054,8 +1064,8 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, Intervals
-from neurospatial.behavior import goal_pair_direction_labels, segment_trials
+from neurospatial import Environment
+from neurospatial.behavior import detect_trials
 from neurospatial.encoding import compute_directional_place_fields
 from neurospatial.simulation import generate_poisson_spikes
 
@@ -1087,21 +1097,25 @@ region_builder = Regions(env.regions.values())
 region_builder.add("home", polygon=Polygon([(-1, -5), (15, -5), (15, 5), (-1, 5)]))
 region_builder.add("goal", polygon=Polygon([(85, -5), (101, -5), (101, 5), (85, 5)]))
 env = env.with_regions(region_builder)
-position_bins = env.bin_sequence(times, positions, dedup=False)
-outbound = segment_trials(position_bins, times, env, start_region="home", end_regions=["goal"])
-inbound = segment_trials(position_bins, times, env, start_region="goal", end_regions=["home"])
-# One table of both directions; the combined rows get new ids 0 to n-1.
-labels = goal_pair_direction_labels(times, Intervals([*outbound, *inbound]))
+# Trials run from leaving one zone to arriving at the other, in both directions.
+trials = detect_trials(env, times, positions, regions=["home", "goal"])
+# Each frame of a reached trial gets its route, ("home", "goal") or
+# ("goal", "home"); frames outside every reached trial get None.
+reached = trials[trials.outcome == "reached"]
+labels = reached.sample_values(times, ("start_region", "end_region"))
 fields = compute_directional_place_fields(env, spikes, times, positions, labels)
+assert set(fields.labels) == {("home", "goal"), ("goal", "home")}
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
-for ax, label, truth in zip(axes, ["home→goal", "goal→home"], [60.0, 40.0], strict=True):
-    field = fields.firing_rates[label]
+routes = [("home", "goal"), ("goal", "home")]
+for ax, route, truth in zip(axes, routes, [60.0, 40.0], strict=True):
+    field = fields.firing_rates[route]
     recovered = env.bin_centers[np.nanargmax(field), 0]
     assert abs(recovered - truth) <= 5.0  # Recover each planted center within one bin.
     env.plot_field(field, ax=ax, colorbar_label="Firing rate (Hz)")
-    ax.set_title(f"{label}: peak {recovered:.1f} cm")
-    print(f"{label}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
+    name = " → ".join(route)
+    ax.set_title(f"{name}: peak {recovered:.1f} cm")
+    print(f"{name}: planted {truth:.1f} cm, recovered {recovered:.1f} cm")
 plt.show()
 ```
 
@@ -1432,162 +1446,174 @@ as silence.
 **The question.** On a W-track alternation task, does a cell fire at a
 consistent point along the route to the goal, and does that differ between
 runs to the left well and runs to the right well? Position alone cannot answer
-this: the left and right routes share the centre arm and part of the base, so
-the same place is a different point on the two routes. The analysis needs a
-coordinate that says how far along the route to *this trial's* goal the animal
-is, a firing rate binned by that coordinate, and the same bins for every
-condition.
+it: the left and right routes share the centre arm and part of the base, so the
+same place is a different point on the two routes. The answer takes four
+steps: define the environment, find the trials, compute progress along each
+trial's route, and bin the cell's firing by progress.
 
-### The session and the task log
+### Step 1: the environment
 
-The example simulates a session so that the answers are known; the last
-subsection says what to replace with your own data. The W-track
-(`make_w_maze()`) has three 69 cm arms joined by a
-base corridor, with a well at the end of each arm: `well_1` (left), `well_2`
-(centre) and `well_3` (right). The animal runs 60 trials, alternating outbound
-runs from the centre well to an outer well (left, then right) with inbound
-runs back to the centre. On 15% of outbound runs it goes to the wrong outer
-well. It pauses for 1 s at the choice point, where the centre arm meets the
-base, on every outbound run, and it eats at the well for 2 s after each run.
-Its running speed varies from trial to trial between 25 and 60 cm/s.
-
-The cell fires at 1 Hz in the background, up to 25 Hz more in a place field
-on the left half of the base corridor (a Gaussian with an 8 cm standard
-deviation), and 12 Hz more whenever the animal is stopped, wherever that is: a mix of place and pause firing that the analysis below has to take
-apart.
-
-The task software writes a log with one row per trial: when the trial started
-and stopped, where the animal started, the instructed goal and the outcome.
-`Intervals.from_dataframe` reads it into the same trial table that
-`segment_trials` returns, so everything below works the same way on trials you
-detected yourself.
+The W-track (`make_w_maze()`) has three 69 cm arms joined by a base corridor,
+with a well at the end of each arm: `well_1` (left), `well_2` (centre) and
+`well_3` (right). Its wells are points; give each the size of the place where
+the animal stops to eat, so that "at the well" means the same thing to every
+step below.
 
 <!-- docs-test: run -->
 ```python
-import numpy as np
-import pandas as pd
-
-from neurospatial import Intervals
-from neurospatial.behavior import compute_speed
-from neurospatial.simulation import generate_poisson_spikes
+from neurospatial import Regions
 from neurospatial.simulation.mazes import make_w_maze
 
 track = make_w_maze().env_track  # the W-track as a linearized track, in cm
-wells = {name: region.data for name, region in track.regions.items()}
+wells = Regions()
+for name, region in track.regions.items():
+    # Each well is the place where the animal stops to eat: 5 cm around it.
+    wells.add(name, point=region.data, radius=5.0)
+track = track.with_regions(wells)
+print({name: round(region.area, 1) for name, region in track.regions.items()})
+```
+
+```text
+{'well_1': 78.4, 'well_2': 78.4, 'well_3': 78.4}
+```
+
+### The recording
+
+The example simulates a recording so that the answers are known; replace this
+block with your own `times`, `positions` (cm) and spike times. The animal runs
+60 trials of alternation: from the centre well to the outer well it did not
+visit last, then back to the centre. On 15% of outbound runs it goes to the
+wrong outer well. It pauses for 1 s at the choice point (where the centre arm
+meets the base) on every outbound run, eats for 2 s at each well, and runs at
+25 to 60 cm/s. The cell fires at 1 Hz, up to 25 Hz more in a place field on
+the left half of the base (a Gaussian with an 8 cm standard deviation), and
+12 Hz more whenever the animal is stopped.
+
+<!-- docs-test: run setup=workflows_route_environment -->
+```python
+import numpy as np
+
+from neurospatial.behavior import compute_speed
+from neurospatial.simulation import generate_poisson_spikes
+
 frame_rate = 30.0  # Hz
 rng = np.random.default_rng(1)
+centers = {name: np.array(r.metadata["center"]) for name, r in track.regions.items()}
 
 
 def run(start, goal, speed, pause):
-    """Positions along the route between two wells, pausing at the choice point.
-
-    The route goes down the start arm to the base, along the base and up the
-    goal arm. The animal runs at `speed` cm/s and stops for `pause` seconds
-    where the centre arm meets the base.
-    """
-    a, b = wells[start], wells[goal]
+    """Positions from one well to another, pausing at the choice point."""
+    a, b = centers[start], centers[goal]
     corners = np.array([a, [a[0], 0.0], [b[0], 0.0], b])
     along = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(corners, axis=0), axis=1))]
-    choice_point = along[1] if a[0] == 0.0 else along[2]  # distance to x = 0
+    choice_point = along[1] if a[0] == 0.0 else along[2]  # where x = 0
     t = np.arange(0.0, along[-1] / speed + pause, 1 / frame_rate)
     distance = np.minimum(speed * t, choice_point)
     after = t > choice_point / speed + pause
     distance[after] = speed * (t[after] - pause)
     distance = np.minimum(distance, along[-1])
-    return t, np.column_stack(
-        [np.interp(distance, along, corners[:, 0]), np.interp(distance, along, corners[:, 1])]
+    return np.column_stack(
+        [np.interp(distance, along, corners[:, k]) for k in (0, 1)]
     )
 
 
-log_rows, times, positions = [], [], []
-clock, where = 0.0, "well_2"
+# Alternation: from the centre well, go to the outer well not visited last;
+# from an outer well, return to the centre. 15% of outbound runs are errors.
+pieces, where, last_outer = [], "well_2", "well_3"
 for k in range(60):
-    outbound = k % 2 == 0
-    instructed = ("well_1" if k % 4 == 0 else "well_3") if outbound else "well_2"
-    error = outbound and rng.random() < 0.15
-    visited = {"well_1": "well_3", "well_3": "well_1"}[instructed] if error else instructed
-    t, xy = run(where, visited, rng.uniform(25.0, 60.0), pause=1.0 if outbound else 0.0)
-    stop = clock + t[-1] + 1 / frame_rate
-    log_rows.append(
-        {
-            "start_time": clock,
-            "stop_time": stop,
-            "start_region": where,
-            "instructed_goal": instructed,
-            "outcome": "error" if error else "correct",
-        }
-    )
-    eating = np.arange(int(2 * frame_rate)) / frame_rate  # 2 s at the well
-    times += [clock + t, stop + eating]
-    positions += [xy, np.repeat(xy[-1:], len(eating), axis=0)]
-    clock, where = stop + 2.0, visited
-times = np.concatenate(times)
-positions = np.concatenate(positions)
-task_log = pd.DataFrame(log_rows)
-trials = Intervals.from_dataframe(task_log)
+    if where == "well_2":
+        goal = {"well_1": "well_3", "well_3": "well_1"}[last_outer]
+        if rng.random() < 0.15:
+            goal = last_outer  # the error: the arm visited last time
+        last_outer = goal
+    else:
+        goal = "well_2"
+    path = run(where, goal, rng.uniform(25.0, 60.0), pause=1.0 if where == "well_2" else 0.0)
+    eating = np.repeat(path[-1:], int(2 * frame_rate), axis=0)  # 2 s at the well
+    pieces += [path, eating]
+    where = goal
+positions = np.concatenate(pieces)
+times = np.arange(len(positions)) / frame_rate
 
 # The cell: a place field on the left half of the base, plus firing at stops.
 speed = compute_speed(times, positions)  # cm/s
 in_field = np.exp(-np.sum((positions - [-17.0, 0.0]) ** 2, axis=1) / (2 * 8.0**2))
 rate = 1.0 + 25.0 * in_field + 12.0 * (speed < 2.0)  # Hz
 spike_times = [generate_poisson_spikes(rate, times, seed=7)]
-
-print(task_log.head(4).round(2).to_string(index=False))
+print(f"{times[-1] / 60:.1f} min tracked, {len(spike_times[0])} spikes")
 ```
 
 ```text
- start_time  stop_time start_region instructed_goal outcome
-       0.00       3.97       well_2          well_1 correct
-       5.97      11.73       well_1          well_2 correct
-      13.73      19.57       well_2          well_3 correct
-      21.57      25.90       well_3          well_2 correct
+6.6 min tracked, 2449 spikes
 ```
 
-**Why the instructed goal, not the well reached.** The conditions compare
-firing *before* the animal reaches a well, so they must be defined by what was
-known before: the instructed goal. Grouping by the well reached would put each
-error trial with the trials to the other well, and let the animal's eventual
-choice decide which group its earlier firing belongs to. A difference between
-such groups could then reflect the choice rather than the goal. Keep the
-reached well as an outcome (`outcome` here) and select on it explicitly.
+### Step 2: the trials
 
-### Selecting trials
+A trial is a run from one well to the next: it starts when the animal leaves a
+well and stops when it arrives at another, whichever it is. One call finds
+them for every start well, so an alternation task needs no special handling.
+The task's meaning, here the instructed goal and whether the animal went
+there, comes from your task: the alternation rule below, or the columns of
+your task log.
 
-Each condition is a selection of rows of the trial table:
-
-- **A:** correct outbound trials to the left well;
-- **B:** correct outbound trials to the right well;
-- **C:** inbound error trials. The simulated animal never errs on the way back,
-  so this selection is empty. It stands for a condition with no trials in
-  your data, such as a rare error type in one session, and shows how the
-  analysis handles it.
-
-<!-- docs-test: run setup=workflows_route_session -->
+<!-- docs-test: run setup=workflows_route_recording -->
 ```python
+from neurospatial.behavior import detect_trials
+
+trials = detect_trials(track, times, positions, regions=["well_1", "well_2", "well_3"])
+
+# Your task's meaning: the alternation rule gives each trial's instructed goal.
+instructed, last_outer = [], None
+for start, end in zip(trials.start_region, trials.end_region):
+    if start == "well_2":
+        goal = {"well_1": "well_3", "well_3": "well_1"}.get(last_outer, "well_1")
+    else:
+        goal = "well_2"
+    instructed.append(goal)
+    if end in ("well_1", "well_3"):
+        last_outer = end
+trials = trials.with_fields(instructed_goal=instructed)
+trials = trials.with_fields(correct=trials.end_region == trials.instructed_goal)
+print(trials.intervals_table().head(4).round(2).to_string())
+
 conditions = {
-    "A: left, correct": trials[(trials.instructed_goal == "well_1") & (trials.outcome == "correct")],
-    "B: right, correct": trials[(trials.instructed_goal == "well_3") & (trials.outcome == "correct")],
-    "C: inbound, error": trials[(trials.instructed_goal == "well_2") & (trials.outcome == "error")],
+    "A: left, correct": trials[(trials.instructed_goal == "well_1") & trials.correct],
+    "B: right, correct": trials[(trials.instructed_goal == "well_3") & trials.correct],
+    "C: inbound, error": trials[(trials.instructed_goal == "well_2") & ~trials.correct],
 }
 for name, chosen in conditions.items():
     print(f"{name}: {len(chosen)} trials")
 ```
 
 ```text
+             start_time  stop_time start_region end_region  outcome instructed_goal  correct
+interval_id
+0                  0.10       3.90       well_2     well_1  reached          well_1     True
+1                  6.13      11.57       well_1     well_2  reached          well_2     True
+2                 13.87      19.43       well_2     well_3  reached          well_3     True
+3                 21.70      25.80       well_3     well_2  reached          well_2     True
 A: left, correct: 13 trials
 B: right, correct: 12 trials
 C: inbound, error: 0 trials
 ```
 
-### Progress along the route
+Conditions A and B are the correct outbound runs to each outer well.
+Condition C, inbound errors, is empty: the simulated animal never errs on the
+way back. It stands for a condition with no trials in your data and shows how
+the analysis handles it.
 
-`path_progress` gives each sample a value from 0 at the trial's start to 1 at
-its goal. Each trial has its own start and goal: outbound trials start at the
-centre well, inbound trials at an outer well, so a single fixed start would
-equal the goal on the inbound trials. Passing the trials with the
-`start_region` and `instructed_goal` fields gives every trial its own pair.
+If your trials come from elsewhere, step 2 is still one line:
+`trials = Intervals.from_dataframe(task_log)` for a task log with
+`start_time` and `stop_time` columns, `read_trials(nwbfile)` for an NWB file,
+or `trials_between_visits(pokes, region="port")` for a table of port visits
+(nose pokes or beam breaks, with port names mapped to region names).
 
-<!-- docs-test: run setup=workflows_route_session -->
+### Step 3: progress along the route
+
+`path_progress` gives each sample a value from 0 at its trial's start to 1 at
+its goal. Each trial has its own start and goal, read from its fields.
+
+<!-- docs-test: run setup=workflows_route_trials -->
 ```python
 from neurospatial.behavior import path_progress
 
@@ -1596,36 +1622,30 @@ progress = path_progress(
 )
 first_run = progress[trials.sample_slices(times)[0]]  # the first trial
 print(np.round(first_run[::15], 2), "... last sample:", round(first_run[-1], 2))
-print("between trials:", progress[(times > 4.0) & (times < 5.9)][:3])
+print("while eating between trials:", progress[(times > 4.0) & (times < 5.9)][:3])
 ```
 
 ```text
-[0.   0.17 0.34 0.41 0.41 0.51 0.67 0.84] ... last sample: 0.99
-between trials: [nan nan nan]
+[0.01 0.19 0.37 0.4  0.4  0.54 0.72 0.89] ... last sample: 0.99
+while eating between trials: [nan nan nan]
 ```
 
 The first trial runs from the centre well to the left well. Progress rises
-steadily along the route, holds at about 0.4 during the 1 s pause at the
-choice point (69 of the route's 172.5 cm), and is 0.99 on the last sample
-before the left well, where it would be 1. On a corridor maze like this, read
-on the linearized track, progress is the fraction of the route covered, so equal
-steps of progress are equal distances. On an error trial the animal turns
-right at the choice point; the right half of the base is not on the route to
-the left well, so progress stays at the choice point's value there: a
-side arm is no progress. Between trials, while the animal eats, progress is
-undefined (NaN), and those samples are left out of the tuning curves.
+steadily, holds at 0.4 during the 1 s pause at the choice point (69 of the
+route's 172.5 cm), and is 0.99 on the last sample before the well. On a
+corridor maze read on its linearized track, progress is the fraction of the
+route covered. On an error trial the animal turns the wrong way at the choice
+point; the wrong half of the base is not on the route to the instructed well,
+so progress stays at the choice point's value there. Between trials, while the
+animal eats, progress is undefined (NaN) and left out of the tuning curves.
+Use `distance_to_goal` instead for a question in centimetres, such as firing
+20 cm before the goal.
 
-Use `distance_to_goal` instead when the question is in centimetres (does the
-cell fire 20 cm before the goal, whatever the route length?) or when trials
-have a goal but no defined start.
+### Step 4: firing along the route
 
-### Tuning curves with the same bins for every condition
-
-`compute_tuning_curves` divides each bin's spike count by the time spent in it.
-The bins are set once, `bin_edges = np.linspace(0, 1, 21)`, and reused for
-every condition, so bin *k* means the same stretch of the route in every
-curve; deriving bins from each condition's data could shift them. Each
-condition is passed as `epochs`, so only time inside its trials is analyzed.
+`compute_tuning_curves` divides each bin's spike count by the time spent in
+it. The bins are set once and reused for every condition, so bin *k* is the
+same stretch of route in every curve.
 
 <!-- docs-test: run setup=workflows_route_progress -->
 ```python
@@ -1635,7 +1655,7 @@ import matplotlib.pyplot as plt
 
 from neurospatial.encoding import compute_tuning_curves
 
-bin_edges = np.linspace(0, 1, 21)
+bin_edges = np.linspace(0, 1, 21)  # the same 20 bins for every condition
 curves = {}
 fig, axes = plt.subplots(2, 3, figsize=(11, 5), sharex=True, sharey="row")
 for column, (name, chosen) in enumerate(conditions.items()):
@@ -1653,177 +1673,78 @@ for column, (name, chosen) in enumerate(conditions.items()):
     axes[1, column].set_xlabel("progress")
 axes[1, 0].set_ylabel("Occupancy (s)")
 fig.tight_layout()
+print(np.round(curves["A: left, correct"].firing_rates[0], 1))
 
-left = curves["A: left, correct"]
-print(np.round(left.firing_rates[0], 1))
-assert np.isnan(curves["C: inbound, error"].firing_rates).all()
-assert curves["C: inbound, error"].occupancy.sum() == 0.0
+# Running time only: stops at the choice point no longer count.
+running = compute_tuning_curves(
+    spike_times, times, progress, bin_edges=bin_edges, variable="progress",
+    epochs=conditions["A: left, correct"], speed=speed, min_speed=2.0,
+)
+pause_bin = 8  # progress 0.40 to 0.45, the choice point
+for label, curve in (("all time", curves["A: left, correct"]), ("running", running)):
+    print(f"choice point, {label}: {curve.firing_rates[0, pause_bin]:.1f} Hz "
+          f"over {curve.occupancy[pause_bin]:.1f} s")
 ```
 
 ```text
 C: inbound, error: epochs selects no time (an Intervals with no windows, such as a condition with no trials), so the tuning curve is empty. Fix: select intervals with duration, or leave this condition out.
-[ 1.9  0.4  0.6  0.7  1.2  1.1  1.8  3.2 11.1 20.5 21.1  7.8  4.2  1.4
-  1.4  0.6  0.   0.9  1.8  0.7]
+[ 1.1  1.9  1.1  1.5  0.3  2.2  1.5  1.5 11.6 15.7 20.3  8.2  5.3  2.2
+  0.7  1.2  0.4  0.7  0.4  0.4]
+choice point, all time: 11.6 Hz over 16.3 s
+choice point, running: 6.4 Hz over 7.5 s
 ```
 
 The top row is firing rate against progress, the bottom row the seconds spent
 in each bin. On left trials (A) the cell fires most between progress 0.45 and
-0.55: the left half of the base, just past the choice point. On right trials
-(B) the animal never goes there, and the curve is low except around progress
-0.4.
-Both conditions have a tall occupancy bar at 0.4, the 1 s pause at the choice
-point on every outbound trial, and both have an elevated rate in that bin: the
-cell fires while the animal is stopped, and that firing is credited to the
-progress value where it stopped (see "Pauses and running speed" below).
+0.55, the left half of the base just past the choice point; on right trials
+(B) the animal never goes there. Both conditions have a tall occupancy bar at
+0.4, the pause at the choice point, with a raised rate there: the cell fires
+while the animal is stopped, and that firing is credited to the progress
+value where it stopped. Over running time only (`min_speed`), most of the
+paused time and its spikes are gone from that bin (about 0.3 s of each 1 s
+pause remains, because `compute_speed` smooths velocity over 0.1 s). A bin
+with no occupancy has no rate (NaN), not zero. Condition C has no trials, so
+its rates are NaN and its occupancy zero, with one warning; the loop needs no
+special case.
 
-A bin with no occupancy would have no rate (NaN), not zero: no time there
-means nothing was observed, and the plot leaves a gap. Condition C has no
-trials, so its rates are all NaN and its occupancy all zero, with one warning
-that says so. The loop handles it like any other condition; it needs no
-special case, and the warning makes an empty condition hard to miss.
+### Reading the curves
 
-### Is the curve consistent across trials?
+These limits were measured in simulations of this task:
 
-A tuning curve pools spikes and time over all the selected trials. A peak can
-come from a few trials, so check that it holds in independent subsets: here
-the odd and even trials of condition A, binned with the same edges.
-
-<!-- docs-test: run setup=workflows_route_curves -->
-```python
-chosen = conditions["A: left, correct"]
-halves = {
-    half: compute_tuning_curves(
-        spike_times, times, progress, bin_edges=bin_edges, variable="progress", epochs=subset
-    ).firing_rates[0]
-    for half, subset in (("odd", chosen[0::2]), ("even", chosen[1::2]))
-}
-both = np.isfinite(halves["odd"]) & np.isfinite(halves["even"])
-r = np.corrcoef(halves["odd"][both], halves["even"][both])[0, 1]
-print(f"odd vs even trials: r = {r:.2f} over {both.sum()} bins")
-```
-
-```text
-odd vs even trials: r = 0.95 over 20 bins
-```
-
-The two halves agree closely (r = 0.95). This is a description of
-consistency, not a statistical test: with few trials, a high correlation can
-come from one strong bin, and bins are not independent observations. For a
-test, shuffle trial labels or compare per-trial curves.
-
-### Pauses and running speed
-
-A pause piles time at one progress value, and whatever the cell does while
-stopped is credited to that value. Comparing the curve over all time with the
-curve over running time only (`min_speed`, with speed from `compute_speed`)
-shows how much of a bin's rate comes from stops.
-
-<!-- docs-test: run setup=workflows_route_curves -->
-```python
-chosen = conditions["A: left, correct"]
-running = compute_tuning_curves(
-    spike_times, times, progress, bin_edges=bin_edges, variable="progress",
-    epochs=chosen, speed=speed, min_speed=2.0,
-)
-all_time = curves["A: left, correct"]
-pause_bin = 8  # progress 0.40 to 0.45, the choice point
-print(f"choice point, all time: {all_time.firing_rates[0, pause_bin]:.1f} Hz "
-      f"over {all_time.occupancy[pause_bin]:.1f} s")
-print(f"choice point, running:  {running.firing_rates[0, pause_bin]:.1f} Hz "
-      f"over {running.occupancy[pause_bin]:.1f} s")
-
-# Slower and faster halves of the trials, by duration, with the same edges.
-durations = chosen.durations
-slow = chosen[durations > np.median(durations)]
-fast = chosen[durations <= np.median(durations)]
-fig, ax = plt.subplots(figsize=(6, 3))
-for label, subset in (("slower trials", slow), ("faster trials", fast)):
-    compute_tuning_curves(
-        spike_times, times, progress, bin_edges=bin_edges, variable="progress",
-        epochs=subset, speed=speed, min_speed=2.0,
-    )[0].plot(ax=ax, label=label)
-ax.legend()
-```
-
-```text
-choice point, all time: 11.1 Hz over 15.7 s
-choice point, running:  6.3 Hz over 7.0 s
-```
-
-Over all time, the choice-point bin holds 15.7 s and an 11 Hz rate. Over
-running time only it holds 7.0 s and 6 Hz: most of the stopped time, and the
-spikes fired then, are gone from it, and the other bins hardly change. About
-0.3 s of each 1 s pause remains, because `compute_speed` smooths velocity over
-time (`smooth_window=0.1` s): speed stays above 2 cm/s for a moment after the
-animal stops and rises above it shortly before it moves again. A shorter
-`smooth_window` keeps less of each stop but lets tracking jitter at rest count
-as movement. Report which curve you used: the all-time curve answers "where along the route does
-the cell fire", the running curve "where does it fire while running".
-
-Neither curve shows that the tuning is independent of speed: a pooled curve
-averages over whatever speeds the animal ran. The slower and faster halves of
-the trials, binned with the same edges, peak in the same place here. In your
-data, a shift between them would mean the cell's firing depends on more than
-progress alone.
-
-### Trials from NWB give the same curves
-
-Trials written to an NWB file and read back are the same table, with the same
-fields and ids, so the analysis does not change. Save the file with
-`pynwb.NWBHDF5IO` as usual; here the file stays in memory.
-
-<!-- nwb-docs-test: run -->
-```python
-from datetime import datetime, timezone
-
-from pynwb import NWBFile
-
-from neurospatial.io.nwb import read_trials, write_trials
-
-nwbfile = NWBFile(
-    session_description="W-track alternation",
-    identifier="w-track-session",
-    session_start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
-)
-write_trials(nwbfile, trials)
-reloaded = read_trials(nwbfile)
-chosen = reloaded[(reloaded.instructed_goal == "well_1") & (reloaded.outcome == "correct")]
-again = compute_tuning_curves(
-    spike_times, times, progress, bin_edges=bin_edges, variable="progress", epochs=chosen
-)
-assert np.array_equal(again.firing_rates, curves["A: left, correct"].firing_rates, equal_nan=True)
-print(again.analysis_settings["epoch_interval_ids"])
-```
-
-```text
-[0, 4, 8, 12, 16, 20, 28, 36, 40, 44, 48, 52, 56]
-```
-
-`analysis_settings["epoch_interval_ids"]` records which trials each curve
-used, so the selection can be reported and reproduced.
+- **Goal or choice.** On correct trials the instructed goal and the well
+  reached are the same, so A and B cannot tell a cell that codes the goal from
+  one that codes the upcoming turn. Error trials can: a goal cell keeps its
+  difference on error trials, a choice cell reverses it. A 15 versus 5 Hz
+  difference needed about 6 error trials per instructed goal for a correct call
+  in 95% of sessions; this session has too few. Compute progress toward the
+  same goal you group by.
+- **Speed.** A pooled curve does not show that firing is independent of
+  running speed. Where speed changes along the route, a cell that follows only
+  speed gives a curve that rises and falls with progress, and `min_speed` does
+  not remove that. Compare slower and faster trials with one test across bins,
+  or fit a model with both.
+- **Consistency.** Correlating curves from odd and even trials shows how
+  reproducible the shape is, whatever drives it: firing at stops or with speed
+  also gives high correlations (about 0.7 to 0.8). Compute it on the running
+  curve, and compare it with the correlation after shifting the spike train in
+  time.
 
 ### Use your own recording
 
-- **Task log.** A table with `start_time` and `stop_time` in seconds on the
-  clock of your tracking and spikes, the start well, the instructed goal and
-  the outcome, one row per trial. `Intervals.from_dataframe(log)` reads it;
-  pass `id_column=` if the log numbers its trials. Trials from
-  `read_trials(nwbfile)` or from `segment_trials` work the same way. Region
-  names in the log must match the names of your environment's regions.
-- **Progress.** `path_progress(env, times, positions, trials, start=...,
-  goal=...)` on your maze's linearized track (`env_track` for the simulated
-  mazes; `Environment.from_graph` for your own) gives progress as a fraction of
-  the route. In an open arena, pass the 2-D environment and a `point_radius` for
-  point goals.
-- **Bins.** Choose `bin_edges` once for all conditions you compare. Twenty bins
-  of progress (5% of the route each, about 9 cm on this W-track) is a common
-  start; narrower bins need more trials to be filled.
-- **Occupancy.** Pass `min_occupancy` (seconds) so a bin crossed for a few
-  frames does not report a noisy rate; such bins become NaN.
-- **Report** for each condition: how trials were selected (the `epochs`
-  you passed and the `epoch_interval_ids` on the result), the number of
-  trials, the bin edges, `min_occupancy`, whether you gated by speed, and the
-  speed threshold and how speed was computed.
+- **Environment.** Your maze's linearized track (`Environment.from_graph`) for
+  progress as a fraction of the route, or the 2-D arena; wells and ports as
+  regions with a size, `regions.add(name, point=..., radius=...)`.
+- **Trials.** `detect_trials(env, times, positions, regions=[...])` from
+  tracking (delete the rows of short tracking dropouts so they are bridged;
+  NaN rows end a trial), or your task log or port visits as above. Attach your
+  task's labels with `trials.with_fields(...)`.
+- **Bins.** Choose `bin_edges` once for every condition you compare; 20 bins
+  of progress (about 9 cm on this W-track) is a common start. Pass
+  `min_occupancy` so a bin crossed for a few frames does not report a noisy
+  rate.
+- **Report** for each condition the trials selected (the result's
+  `analysis_settings["epoch_interval_ids"]`), their number, the bin edges,
+  `min_occupancy`, and whether and how you gated by speed.
 
 ## Common Patterns
 

@@ -19,7 +19,7 @@ def trials() -> Intervals[Trial]:
     records = [
         Trial(20.0, 29.0, "home", "left", "reached"),
         Trial(0.0, 8.0, "home", "right", "reached"),
-        Trial(10.0, 17.0, "home", None, "timeout"),
+        Trial(10.0, 17.0, "home", None, "returned"),
         Trial(30.0, 30.0, "home", None, "censored"),
     ]
     return Intervals(records, interval_ids=[7, 3, 5, 9])
@@ -281,11 +281,88 @@ def test_analysis_settings_are_copies() -> None:
     assert intervals[[]].analysis_settings == {"epochs": [[0.0, 5.0]]}
 
 
-def test_fields_are_read_only(trials: Intervals[Trial]) -> None:
-    with pytest.raises(ValueError, match="read-only"):
-        trials.outcome[0] = "timeout"
+def test_fields_are_copies_and_bounds_read_only(trials: Intervals[Trial]) -> None:
+    outcome = trials.outcome
+    outcome.iloc[0] = "timeout"
+    assert trials.outcome.iloc[0] != "timeout"
     with pytest.raises(ValueError, match="read-only"):
         trials.start[0] = 1.0
+
+
+def test_field_is_series_by_interval_id(trials: Intervals[Trial]) -> None:
+    outcome = trials.outcome
+    assert outcome.name == "outcome"
+    assert outcome.index.name == "interval_id"
+    assert outcome.index.tolist() == trials.interval_ids.tolist()
+    subset = trials[[2, 0]]
+    assert subset.outcome.index.tolist() == subset.interval_ids.tolist()
+    empty = trials[trials.outcome == "never"]
+    assert len(empty.outcome) == 0
+    assert empty.outcome.dtype == trials.outcome.dtype
+
+
+def test_boolean_series_selection_aligns_by_id() -> None:
+    log = Intervals.from_arrays(
+        [20.0, 0.0, 10.0], [29.0, 8.0, 17.0], interval_ids=[5, 9, 2], goal=list("aba")
+    )
+    # Rows are in time order (ids 9, 2, 5); a mask built in another order
+    # selects by id.
+    # By id this keeps id 5; by position it would keep the first row (id 9).
+    mask = pd.Series([True, False, False], index=[5, 2, 9])
+    assert log[mask].interval_ids.tolist() == [5]
+    assert log[log.goal == "a"].interval_ids.tolist() == [2, 5]
+    # A plain Boolean array still selects by position.
+    assert log[np.array([True, False, False])].interval_ids.tolist() == [9]
+    with pytest.raises(ValueError, match=r"ids \[7\]"):
+        log[pd.Series([True, True, True, True], index=[5, 9, 2, 7])]
+
+
+def test_with_fields_adds_and_replaces() -> None:
+    trials = Intervals.from_arrays(
+        [10.0, 0.0], [17.0, 8.0], interval_ids=[4, 1], end_region=["b", "a"]
+    )
+    labelled = trials.with_fields(
+        outcome=pd.Series(["error", "correct"], index=[4, 1]), end_region=["x", "y"]
+    )
+    assert labelled.fields == ("end_region", "outcome")
+    assert labelled.interval_ids.tolist() == [1, 4]
+    assert labelled.outcome.tolist() == ["correct", "error"]
+    assert labelled.end_region.tolist() == ["x", "y"]
+    np.testing.assert_array_equal(labelled.start, trials.start)
+    for name in ("interval_id", "start_time", "with_fields", "_hidden"):
+        with pytest.raises(ValueError, match="field"):
+            trials.with_fields(**{name: [1, 2]})
+    with pytest.raises(ValueError, match="empty string"):
+        trials.with_fields(label=["", "a"])
+    with pytest.raises(ValueError, match="one entry per interval"):
+        trials.with_fields(label=["a"])
+
+
+def test_series_selection_must_be_boolean_with_unique_ids() -> None:
+    log = Intervals.from_arrays([0.0, 10.0], [8.0, 17.0], n=[1, 2])
+    with pytest.raises(TypeError, match="Boolean mask"):
+        log[log.n - 1]
+    with pytest.raises(ValueError, match=r"ids \[0\] repeat"):
+        log[pd.Series([True, False, True], index=[0, 0, 1])]
+
+
+def test_with_fields_reads_missing_labels_as_none() -> None:
+    trials = Intervals.from_arrays([0.0, 10.0], [8.0, 17.0], interval_ids=[3, 4])
+    labelled = trials.with_fields(
+        goal=pd.Series(["a", np.nan], index=[3, 4]),
+        cue=pd.Series(["x", pd.NA], index=[3, 4], dtype="string"),
+    )
+    assert labelled.goal.tolist() == ["a", None]
+    assert labelled.cue.tolist() == ["x", None]
+    with pytest.raises(TypeError, match="one value per interval"):
+        trials.with_fields(goal="a")
+
+
+def test_with_fields_keeps_analysis_settings() -> None:
+    trials = Intervals(
+        [Interval(0.0, 1.0)], analysis_settings={"detector": "test"}
+    ).with_fields(label=["a"])
+    assert trials.analysis_settings == {"detector": "test"}
 
 
 def test_repr(trials: Intervals[Trial]) -> None:

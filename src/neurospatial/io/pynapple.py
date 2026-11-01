@@ -14,20 +14,19 @@ gaps between recording epochs are not lost on the array route either.
 Functions
 ---------
 from_pynapple
-    Convert a pynapple ``Ts`` / ``Tsd`` / ``TsdFrame`` / ``TsGroup`` /
-    ``IntervalSet`` to plain arrays plus its time support as ``(n_epochs, 2)``
-    epochs.
+    Convert a pynapple ``Ts`` / ``Tsd`` / ``TsdFrame`` / ``TsGroup`` to plain
+    arrays plus its time support as ``(n_epochs, 2)`` epochs, and an
+    ``IntervalSet`` to :class:`~neurospatial.Intervals`.
 to_pynapple
     Convert ``times`` + ``values``, a decode result (MAP or mean track, or
-    the posterior), or behavior records (laps, trials, runs, region visits,
-    labelled epochs, region crossings) to the matching pynapple object.
+    the posterior), intervals (trials, laps, region visits, movement epochs),
+    labelled epochs or region crossings to the matching pynapple object.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import warnings
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
 from numpy.typing import NDArray
@@ -37,18 +36,18 @@ from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
     interval_set,
+    intervals_from_interval_set,
     refuse_permuted_spatial_columns,
 )
 from neurospatial._stacklevel import _external_stacklevel
+
+if TYPE_CHECKING:
+    from neurospatial._interval_table import Interval, Intervals
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
 _DecodeQuantity = Literal["map_position", "mean_position", "posterior"]
 _DECODE_QUANTITIES = get_args(_DecodeQuantity)
-
-# Record fields that become IntervalSet bounds, or that hold an array per
-# record and so cannot be an IntervalSet metadata column.
-_NOT_METADATA = frozenset({"start_time", "end_time", "bins"})
 
 
 def _require_pynapple() -> Any:
@@ -56,13 +55,15 @@ def _require_pynapple() -> Any:
     return require_optional("pynapple", extra="pynapple", purpose="pynapple conversion")
 
 
-def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
+def from_pynapple(obj: Any) -> tuple[Any, ...] | Intervals[Interval]:
     """Convert a pynapple object to plain NumPy arrays and its epochs.
 
     Each time series comes back with its pynapple ``time_support`` as
     ``epochs``, a ``(n_epochs, 2)`` array of half-open ``[start, stop)`` rows
     in seconds. Pass it as ``epochs=`` (or, for spikes, ``spike_window=``) so the
-    gaps between recording epochs stay out of occupancy and rates.
+    gaps between recording epochs stay out of occupancy and rates. An
+    ``IntervalSet`` (for example trials) comes back as
+    :class:`~neurospatial.Intervals`, with its metadata as fields.
 
     Parameters
     ----------
@@ -81,8 +82,14 @@ def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
 ndarray of shape (n_epochs, 2)
         For a ``TsGroup``: one spike-time array per unit in group order, the
         group's unit labels, and the group's time support.
-    epochs : ndarray, shape (n_epochs, 2)
-        For an ``IntervalSet``: one ``[start, stop)`` row per interval.
+    intervals : Intervals of Interval
+        For an ``IntervalSet``: one ``[start, stop)`` row per interval, its
+        metadata columns as fields (text ``""`` as ``None``). An
+        ``interval_id`` column, as :func:`to_pynapple` writes, gives the
+        ids, so ``from_pynapple(to_pynapple(trials))`` keeps them; otherwise
+        the ids are ``0`` to ``n - 1`` in time order. Select rows by field
+        (``trials[trials.outcome == "reached"]``) and pass them as
+        ``epochs=``.
 
     All arrays are float64 copies (``unit_ids`` keeps its label type), so
     editing them never changes the pynapple object.
@@ -118,6 +125,7 @@ ndarray of shape (n_epochs, 2)
     >>> from neurospatial.io import from_pynapple  # doctest: +SKIP
     >>> times, positions, epochs = from_pynapple(tsdframe)  # doctest: +SKIP
     >>> trains, unit_ids, recorded = from_pynapple(tsgroup)  # doctest: +SKIP
+    >>> trials = from_pynapple(trial_set)  # doctest: +SKIP
     >>> rates = compute_spatial_rates(  # doctest: +SKIP
     ...     env, trains, times, positions, epochs=epochs, spike_window=recorded,
     ...     unit_ids=unit_ids,
@@ -126,7 +134,8 @@ ndarray of shape (n_epochs, 2)
     nap = _require_pynapple()
 
     if isinstance(obj, nap.IntervalSet):
-        return interval_rows(obj)
+        intervals: Intervals[Interval] = intervals_from_interval_set(obj)
+        return intervals
     if isinstance(obj, nap.Ts):
         return np.array(obj.t, dtype=np.float64), interval_rows(obj.time_support)
     if isinstance(obj, (nap.Tsd, nap.TsdFrame)):
@@ -170,13 +179,10 @@ def to_pynapple(
       (2-D values).
     - a decode result: a ``TsdFrame`` of ``quantity``, the MAP track by
       default.
-    - an :class:`~neurospatial.Intervals` (for example trials): an
-      ``IntervalSet``, one interval per row, with ``interval_id`` and the
-      fields as metadata columns.
-    - a list of ``Lap``, ``Run``, ``RegionVisit`` or ``RegionTransition``
-      records: an ``IntervalSet``, one interval per record, with the record
-      fields as metadata columns.
-    - a ``LabelEpochsResult``: an ``IntervalSet`` with a ``label`` column.
+    - an :class:`~neurospatial.Intervals` (trials, laps, visits, movement
+      epochs, ``labels_to_epochs`` conditions): an ``IntervalSet``, one
+      interval per row, with ``interval_id`` and the fields as metadata
+      columns.
     - a list of ``Crossing`` records: a ``TsGroup`` with one ``Tsd`` of
       ``bin_index`` per region and direction.
 
@@ -187,15 +193,13 @@ def to_pynapple(
 
     Parameters
     ----------
-    data : array-like, decode result, Intervals, behavior records or LabelEpochsResult
+    data : array-like, decode result, Intervals or crossings
         Finite, strictly increasing timestamps in seconds (with ``values``);
         a :class:`~neurospatial.decoding.DecodingResult` or
         :class:`~neurospatial.decoding.DecodingSummary` (any object with
         ``.times`` and ``.map_position``); an :class:`~neurospatial.Intervals`;
-        a non-empty list of one kind of behavior record; or a
-        :class:`~neurospatial.behavior.LabelEpochsResult`. Timestamps are
-        never sorted here: pynapple would sort them without reordering
-        ``values``.
+        or a non-empty list of ``Crossing`` records. Timestamps are never
+        sorted here: pynapple would sort them without reordering ``values``.
     values : NDArray[np.float64] or None, default=None
         Values sampled at ``data``, shape ``(n,)`` or ``(n, n_columns)``.
         Required with timestamps; must be ``None`` for every other ``data``.
@@ -215,8 +219,7 @@ or None, optional
         interval from the first to the last timestamp (or crossing). For
         region crossings, pass the ``epochs`` they were detected in, or the
         recording span.
-        Not accepted for intervals or interval records, which have no time
-        support.
+        Not accepted for intervals, which have no time support.
     quantity : {"map_position", "mean_position", "posterior"}, \
 default="map_position"
         Which estimate of a decode result to export: the MAP or posterior
@@ -235,25 +238,25 @@ default="map_position"
     ImportError
         If pynapple is not installed.
     TypeError
-        If ``data`` is none of the accepted inputs, a list mixes record
-        types or holds ``Trial`` records (pass an ``Intervals``), or an argument does not apply to ``data`` (``values`` with a
-        decode result or records, ``columns`` with a posterior or records,
-        ``epochs`` with interval records, ``quantity`` with anything but a
-        decode result).
+        If ``data`` is none of the accepted inputs, a list holds interval
+        records (pass the ``Intervals`` the detector returned) or mixes
+        crossings with other objects, or an argument does not apply to
+        ``data`` (``values`` with a decode result or records, ``columns``
+        with a posterior or records, ``epochs`` with intervals, ``quantity``
+        with anything but a decode result).
     ValueError
         If timestamps are not 1-D, finite and strictly increasing, ``values``
         is not 1-D or 2-D or differs in length, ``columns`` does not have one
         label per value column, ``epochs`` is not a valid set of windows or
         leaves a timestamp outside, a decode result has no ``times``,
         ``quantity`` is unknown or ``"posterior"`` for a
-        ``DecodingSummary``, the list of records is empty, or interval
-        records overlap. These checks run before
-        pynapple is imported.
+        ``DecodingSummary``, the list of crossings is empty, or intervals
+        overlap. These checks run before pynapple is imported.
 
     Warns
     -----
     UserWarning
-        If interval records without duration are dropped.
+        If intervals without duration are dropped.
 
     Notes
     -----
@@ -286,21 +289,16 @@ default="map_position"
     over space. neurospatial gives a bin where any rate is missing zero
     probability, and its default prior is proportional to bin size.
 
-    **Intervals and behavior records.** Each row of an ``Intervals``
-    becomes one interval with its ``interval_id`` and fields as metadata, so
-    selecting by field in pynapple (``iset[iset.outcome == "reached"]``)
-    keeps the ids. Each record of a list ``[start_time, end_time)`` becomes
-    one interval, sorted by start; every scalar field becomes a metadata
-    column (``Run.bins``, one bin per sample, is not exported). A row
+    **Intervals.** Each row of an ``Intervals`` becomes one interval with
+    its ``interval_id`` and fields as metadata, so selecting by field in
+    pynapple (``iset[iset.outcome == "reached"]``) keeps the ids. A row
     without duration (``stop == start``, such as a visit seen in one sample
     before a tracking loss) holds no half-open time and cannot be a pynapple
     interval, so it is dropped with a warning. pynapple merges overlapping
-    intervals and then drops all metadata, so overlapping records are
-    refused: export them (for example visits to overlapping regions) in
-    separate calls. A ``LabelEpochsResult`` becomes one interval per epoch,
-    with its label in a ``label`` column. An empty list carries no record
-    type, so it is refused rather than guessed; skip the export when no
-    records were detected.
+    intervals and then drops all metadata, so overlapping rows are refused:
+    export them (for example visits to overlapping regions) in separate
+    calls. An empty list carries no record type, so it is refused rather
+    than guessed; skip the export when no crossings were detected.
 
     **Region crossings.** pynapple time series carry no per-sample labels, so
     crossings become a ``TsGroup`` with one ``Tsd`` of ``bin_index`` per
@@ -318,13 +316,13 @@ default="map_position"
     >>> posterior = to_pynapple(result, quantity="posterior")  # doctest: +SKIP
     >>> posterior.bin_center_x  # column metadata  # doctest: +SKIP
 
-    Behavior records as interval sets with metadata, and crossings as a group:
+    Detected intervals as interval sets with metadata, and crossings as a group:
 
-    >>> laps = to_pynapple(detect_laps(position_bins, times, env))  # doctest: +SKIP
+    >>> laps = to_pynapple(detect_laps(env, times, positions))  # doctest: +SKIP
     >>> cw = laps[laps.direction == "clockwise"]  # doctest: +SKIP
     >>> spikes.restrict(cw)  # spikes during clockwise laps  # doctest: +SKIP
     >>> crossings = to_pynapple(  # doctest: +SKIP
-    ...     detect_region_crossings(position_bins, times, env, region_name="reward"),
+    ...     detect_region_crossings(env, times, positions, region_name="reward"),
     ...     epochs=(times[0], times[-1]),
     ... )
 
@@ -341,8 +339,8 @@ default="map_position"
             raise TypeError(
                 _format_error(
                     "to_pynapple(data) without values expects a decode result "
-                    "(e.g. a neurospatial.decoding.DecodingResult), a list of "
-                    "behavior records or a LabelEpochsResult; got "
+                    "(e.g. a neurospatial.decoding.DecodingResult), an "
+                    "Intervals or a list of region crossings; got "
                     f"{type(data).__name__!r}.",
                     why="only those inputs carry their own values; timestamps "
                     "need the values sampled at them.",
@@ -541,37 +539,26 @@ def _series_to_pynapple(
 def _records_to_pynapple(
     data: Any, values: Any, columns: Any, epochs: Any, quantity: str
 ) -> Any:
-    """Export behavior records, or return None if ``data`` is not records.
+    """Export intervals or crossings, or return None if ``data`` is neither.
 
-    Interval records and a ``LabelEpochsResult`` become an ``IntervalSet``,
-    region crossings a ``TsGroup``. An empty list or tuple is refused, unless
-    ``values`` are given: then it is an empty time series, not records.
+    An ``Intervals`` becomes an ``IntervalSet``, region crossings a
+    ``TsGroup``. An empty list or tuple is refused, unless
+    ``values`` are given: then it is an empty time series, not records. A list
+    of interval records is refused: pass the ``Intervals`` the detector
+    returned.
     """
-    from neurospatial._interval_table import Intervals
-    from neurospatial.behavior import (
-        Crossing,
-        LabelEpochsResult,
-        Lap,
-        RegionTransition,
-        RegionVisit,
-        Run,
-        Trial,
-    )
+    from neurospatial._interval_table import Interval, Intervals
+    from neurospatial.behavior import Crossing, Lap, RegionVisit, Trial
 
     if isinstance(data, Intervals):
         _refuse_record_arguments(values, columns, quantity, epochs)
         metadata = {"interval_id": np.array(data.interval_ids)}
-        metadata.update({name: np.array(getattr(data, name)) for name in data.fields})
-        return _intervals_to_pynapple(
-            np.array(data.start), np.array(data.stop), metadata, "interval"
+        metadata.update(
+            {name: np.array(data._field_array(name)) for name in data.fields}
         )
-    if isinstance(data, LabelEpochsResult):
-        _refuse_record_arguments(values, columns, quantity, epochs)
-        labels = np.empty(len(data.labels), dtype=object)
-        labels[:] = data.labels  # element-wise, so tuple labels stay whole
-        bounds = np.array(data.epoch_bounds)
-        metadata = {"label": labels[data.epoch_labels]}
-        return _intervals_to_pynapple(bounds[:, 0], bounds[:, 1], metadata, "epoch")
+        return _intervals_to_pynapple(
+            np.array(data.start), np.array(data.stop), metadata
+        )
     if not isinstance(data, (list, tuple)) or (not data and values is not None):
         return None
     if not data:
@@ -580,50 +567,38 @@ def _records_to_pynapple(
             _format_error(
                 "to_pynapple got an empty list.",
                 why="an empty list carries no record type, so whether it should "
-                "become an IntervalSet (laps, trials, runs, visits) or a TsGroup "
-                "(crossings) is unknown.",
-                fix="skip the export when no records were detected, or build the "
-                "empty object directly, e.g. nap.IntervalSet(start=[], end=[]).",
+                "become a TsGroup of crossings or something else is unknown.",
+                fix="skip the export when no crossings were detected, or build "
+                "the empty object directly, e.g. nap.TsGroup({}).",
             )
         )
     first = type(data[0])
-    if first is Trial:
+    if first in (Interval, Lap, RegionVisit, Trial):
         raise TypeError(
             _format_error(
-                "to_pynapple got a list of Trial records.",
-                why="trials are an Intervals, which carries their interval_ids "
+                f"to_pynapple got a list of {first.__name__} records.",
+                why="intervals are an Intervals, which carries their interval_ids "
                 "and fields to the IntervalSet metadata.",
-                fix="pass the Intervals from segment_trials() or read_trials(), "
-                "or wrap the records with neurospatial.Intervals(trials).",
+                fix="pass the Intervals the detector returned (detect_laps, "
+                "detect_region_visits, detect_trials) or read_trials(), or wrap "
+                "the records with neurospatial.Intervals(records).",
             )
         )
-    kinds = (Lap, Run, RegionVisit, RegionTransition, Crossing)
-    if first not in kinds:
+    if first is not Crossing:
         return None
     mixed = sorted({type(r).__name__ for r in data} - {first.__name__})
     if mixed:
         raise TypeError(
             _format_error(
-                f"to_pynapple got a list of {first.__name__} records mixed with "
+                f"to_pynapple got a list of Crossing records mixed with "
                 f"{', '.join(mixed)}.",
                 why="one pynapple object holds one kind of record, with one set "
                 "of metadata columns.",
-                fix="export each kind of record separately.",
+                fix="export the crossings on their own.",
             )
         )
-    if first is Crossing:
-        _refuse_record_arguments(values, columns, quantity, epochs=None)
-        return _crossings_to_pynapple(data, epochs)
-    _refuse_record_arguments(values, columns, quantity, epochs)
-    names = [
-        f.name
-        for f in dataclasses.fields(first)
-        if f.init and f.name not in _NOT_METADATA
-    ]
-    metadata = {name: np.array([getattr(r, name) for r in data]) for name in names}
-    starts = np.array([r.start_time for r in data], dtype=np.float64)
-    stops = np.array([r.end_time for r in data], dtype=np.float64)
-    return _intervals_to_pynapple(starts, stops, metadata, first.__name__)
+    _refuse_record_arguments(values, columns, quantity, epochs=None)
+    return _crossings_to_pynapple(data, epochs)
 
 
 def _refuse_record_arguments(
@@ -659,7 +634,6 @@ def _intervals_to_pynapple(
     starts: NDArray[np.float64],
     stops: NDArray[np.float64],
     metadata: dict[str, NDArray[Any]],
-    kind: str,
 ) -> Any:
     """Build an ``IntervalSet`` of half-open records with metadata columns."""
     from neurospatial._intervals import stop_to_pynapple_end
@@ -672,7 +646,7 @@ def _intervals_to_pynapple(
     if not timed.all():
         n_empty = int(np.count_nonzero(~timed))
         warnings.warn(
-            f"to_pynapple dropped {n_empty} of {starts.size} {kind} record(s) "
+            f"to_pynapple dropped {n_empty} of {starts.size} interval record(s) "
             "without duration (stop == start), such as a visit seen "
             "in one sample before a tracking loss. A half-open "
             "[start, stop) window then holds no time, and a pynapple "
@@ -687,7 +661,7 @@ def _intervals_to_pynapple(
         i = int(overlap[0]) + 1
         raise ValueError(
             _format_error(
-                f"{overlap.size} {kind} record(s) overlap an earlier one (first "
+                f"{overlap.size} interval record(s) overlap an earlier one (first "
                 f"[{starts[i]!r}, {stops[i]!r}) in time order).",
                 why="pynapple merges overlapping intervals and then drops every "
                 "interval's metadata.",

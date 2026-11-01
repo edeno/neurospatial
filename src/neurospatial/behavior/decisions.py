@@ -75,7 +75,6 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import (
     ObservationSupport,
-    _validated_signal_times,
     validated_observations,
     validated_signals,
 )
@@ -95,7 +94,7 @@ from neurospatial.behavior._kinematics import (
     validated_min_speed,
     validated_motion,
 )
-from neurospatial.behavior._position_bins import validated_position_bins
+from neurospatial.behavior._position_bins import sample_bins, validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _region_names
 from neurospatial.geometry import require_cartesian
@@ -451,9 +450,9 @@ class DecisionAnalysisResult(ResultMixin):
 
 @reads_pynapple_samples
 def decision_region_entry_time(
-    position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
     env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     *,
     region: str,
 ) -> float:
@@ -461,13 +460,13 @@ def decision_region_entry_time(
 
     Parameters
     ----------
-    position_bins : NDArray[np.int64], shape (n_samples,)
-        Bin index of each sample, from ``env.bin_at``; -1 marks a sample
-        outside every bin.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds; finite and strictly increasing.
     env : Environment
         Environment with region definitions.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where tracking was
+        lost (such a sample is in no region).
     region : str
         Name of decision region in env.regions.
 
@@ -479,13 +478,10 @@ def decision_region_entry_time(
     Raises
     ------
     ValueError
-        If region not found in env.regions, if ``position_bins`` and
-        ``times`` differ in length, if ``times`` is empty, not finite or not
-        strictly increasing, or if the trajectory never enters the region.
-    TypeError
-        If ``position_bins`` is not an integer array.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, env.n_bins)`` and is not ``-1``.
+        If region not found in env.regions, if ``positions`` do not have one
+        row per time with the environment's number of coordinates, if
+        ``times`` is not finite or not strictly increasing, or if the
+        trajectory never enters the region.
 
     Examples
     --------
@@ -497,17 +493,16 @@ def decision_region_entry_time(
     >>> _ = regions.add("center", point=(50.0,))
     >>> env = env.with_regions(regions)
     >>> times = np.arange(11) / 10  # s
-    >>> position_bins = env.bin_at(10.0 * np.arange(11)[:, None])  # 100 cm/s
-    >>> decision_region_entry_time(position_bins, times, env, region="center")
+    >>> positions = 10.0 * np.arange(11)[:, None]  # 100 cm/s
+    >>> decision_region_entry_time(env, times, positions, region="center")
     0.5
     """
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
-    position_bins = validated_position_bins(
-        position_bins, env, call="decision_region_entry_time", times=times
+    times, position_bins = sample_bins(
+        env, times, positions, call="decision_region_entry_time"
     )
-    times = _validated_signal_times(times, call="decision_region_entry_time")
     entry = first_entry(
         position_bins, env.bins_in_region(region), np.ones(times.shape, dtype=bool)
     )

@@ -56,7 +56,7 @@ Build one ordinary environment from disjoint component environments.
 
 `Intervals` and `Interval`, imported from the top level
 (`from neurospatial import Intervals`): half-open time windows with stable
-ids and named fields, from `segment_trials`, a task log or an NWB trials
+ids and named fields, from `detect_trials`, a task log or an NWB trials
 table, usable as `epochs=` in any analysis. See the
 [tutorial](../user-guide/trajectory-and-behavioral-analysis.md#intervals).
 
@@ -360,10 +360,12 @@ Behavioral analysis built on trajectory + environment.
 - `distance_to_goal()`, `distance_to_boundary()`, `distance_to_reward()`:
   Per-sample distance to a goal, the environment's edge or the reward
   location (GLM covariates)
-- `behavior.segmentation`: Laps, trials, region crossings,
-  velocity-based segmentation
-- `detect_region_visits()`, `region_transitions()`: Observed visits and
-  entry-to-entry transitions with original sample indices and gap censoring
+- `behavior.segmentation`: Laps, region crossings, movement epochs
+  (`segment_by_velocity`) and goal-directed runs, each as `Intervals`
+- `detect_region_visits()`: Observed visits to named regions with original
+  sample indices and gap censoring
+- `detect_trials()`, `trials_between_visits()`: Trials, the runs between
+  consecutive visits, from tracked positions or from port visits you bring
 - `behavior.decisions` / `behavior.vte`: Decision-point analysis,
   vicarious trial-and-error
 - `behavior.reward`: Reward-field construction
@@ -474,7 +476,7 @@ NWB (Neurodata Without Borders) read / write integration.
 
 - `read_environment()`, `read_position()`, `read_units()`, `read_head_direction()`, `read_pose()`,
   `read_events()`, `read_intervals()`, `read_trials()`: Read NWB
-  components into neurospatial types
+  components into neurospatial types (interval tables as `Intervals`)
 - `write_environment()`, `write_spatial_rates()`, `write_events()`,
   `write_laps()`, `write_region_crossings()`, `write_trials()`: Persist neurospatial
   results back into an NWBFile
@@ -577,7 +579,8 @@ pynwb.
 
 - `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids, epochs)`, `Ts` →
   `(spike_times, epochs)`, `Tsd` / `TsdFrame` → `(times, values, epochs)`,
-  `IntervalSet` → `(n, 2)` epochs; `epochs` is the object's time support.
+  `IntervalSet` → `Intervals` (metadata as fields); `epochs` is the object's
+  time support.
 - `to_pynapple(times, values=..., epochs=...)`: Decoded track / arrays → `Tsd` /
   `TsdFrame` whose time support is `epochs` or the decode's `spike_window`.
 

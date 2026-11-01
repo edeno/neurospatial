@@ -23,7 +23,6 @@ All navigation functions are importable from ``behavior.navigation``::
         cost_to_goal,
         time_to_goal,
         graph_turn_sequence,
-        goal_pair_direction_labels,
         heading_direction_labels,
         headings_to_direction_labels,
         # Path efficiency
@@ -52,7 +51,8 @@ Or from the behavior module::
 Typical Workflows
 -----------------
 **Multi-trial analysis** (T-maze, Y-maze, spatial bandit):
-    1. Segment trajectory into trials with ``segment_trials()``
+    1. Find the trials between named regions with ``detect_trials()``,
+       or read them from a task log or NWB
     2. Compute per-sample metrics with the trials as ``intervals``:
        ``path_progress()``, ``distance_to_goal()``, ``time_to_goal()``
 
@@ -70,24 +70,26 @@ Example
 Complete analysis pipeline for a spatial navigation task::
 
     from neurospatial.behavior import (
-        segment_trials,
+        detect_trials,
         path_progress,
         compute_path_efficiency,
         compute_goal_directed_metrics,
     )
 
-    # 1. Segment trajectory into trials
-    trials = segment_trials(
-        position_bins,
-        times,
-        env,
-        start_region="home",
-        end_regions=["goal_left", "goal_right"],
+    # 1. Trials between the home box and the goal wells
+    trials = detect_trials(
+        env, times, positions, regions=["home", "goal_left", "goal_right"]
     )
+    reached = trials[trials.outcome == "reached"]
 
     # 2. Per-sample progress toward each trial's destination
     progress = path_progress(
-        env, times, positions, trials, start="home", goal=trials.end_region
+        env,
+        times,
+        positions,
+        reached,
+        start=reached.start_region,
+        goal=reached.end_region,
     )
 
     # 3. Compute efficiency
@@ -108,6 +110,7 @@ References
 
 from __future__ import annotations
 
+import numbers
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -145,7 +148,6 @@ __all__ = [  # noqa: RUF022
     "distance_to_boundary",
     "distance_to_goal",
     "distance_to_reward",
-    "goal_pair_direction_labels",
     "graph_turn_sequence",
     "heading_direction_labels",
     "headings_to_direction_labels",
@@ -602,6 +604,15 @@ def _harmonic_progress(
     return u
 
 
+def _is_missing(value: object) -> bool:
+    """Whether a per-interval value is a pandas missing marker (NaN, pd.NA)."""
+    if value is None:
+        return True
+    if isinstance(value, float) and np.isnan(value):
+        return True
+    return type(value).__name__ in {"NAType", "NaTType"}
+
+
 def _as_point(target: object) -> NDArray[np.float64] | None:
     """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
     if isinstance(target, str) or target is None:
@@ -622,6 +633,7 @@ def _rows_and_targets(
     *,
     name: str,
     call: str,
+    n_dims: int,
     rows: NDArray[np.intp] | None = None,
 ) -> tuple[NDArray[np.intp], list[Any], bool]:
     """Row of each sample, the target of each row, and whether it is one target.
@@ -631,7 +643,9 @@ def _rows_and_targets(
     every row; overlapping rows are refused), and ``target`` is one target
     for every row or one per row: a sequence of region names, points or
     ``None`` in row order, or a ``pandas.Series`` indexed by
-    ``interval_id``.
+    ``interval_id``. In an environment of more than one dimension a number
+    per interval (a well number) is refused: a field (a Series) of numbers,
+    or integers with one per interval, cannot be a point there.
     """
     # A Series is one value per interval_id, whatever its values are.
     by_id = hasattr(target, "reindex") and hasattr(target, "index")
@@ -650,11 +664,31 @@ def _rows_and_targets(
                 )
             )
         return np.zeros(times.size, dtype=np.intp), [one], True
+    if (
+        point is not None
+        and n_dims > 1
+        and np.asarray(target).dtype.kind in "iu"
+        and point.size == len(intervals)
+    ):
+        raise TypeError(
+            _format_error(
+                f"{call}: {name}={list(np.asarray(target).tolist())} has one "
+                f"integer per interval ({len(intervals)}), like well numbers.",
+                why="well numbers are not region names, and integers read as one "
+                "point would silently move the target.",
+                fix=f"map the numbers to the environment's region names, e.g. "
+                f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}); for "
+                "one point, give float coordinates.",
+            )
+        )
     if rows is None:
         rows = intervals._sample_positions(times, call)
     if single:
         return rows, [one] * len(intervals), True
     values = list(intervals._per_row(target, name=name)) if by_id else list(target)
+    # A missing entry in a pandas column (NaN, pd.NA; pandas 3 stores a
+    # missing string as NaN) is an unknown target, like None.
+    values = [None if _is_missing(value) else value for value in values]
     if len(values) != len(intervals):
         msg = (
             f"{call}: {name}= has {len(values)} entries; give one per interval "
@@ -662,7 +696,21 @@ def _rows_and_targets(
         )
         raise ValueError(msg)
     targets: list[Any] = []
-    for value in values:
+    for interval_id, value in zip(intervals.interval_ids, values, strict=True):
+        if n_dims > 1 and (
+            isinstance(value, numbers.Number)
+            or (isinstance(value, np.ndarray) and value.ndim == 0)
+        ):
+            raise TypeError(
+                _format_error(
+                    f"{call}: {name}= for interval_id {interval_id} is the number "
+                    f"{value}, not a region name or a point.",
+                    why="a number per interval, such as a well number, is not a "
+                    "region name, and a point is a sequence of coordinates.",
+                    fix=f"map the numbers to the environment's region names, e.g. "
+                    f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}).",
+                )
+            )
         entry = _as_point(value)
         if entry is None and value is not None and not isinstance(value, str):
             msg = (
@@ -759,8 +807,9 @@ def _target_bins(
                 f"{call}: {name}={described} is a point in a "
                 f"{env.n_dims}-D environment, but point_radius was not given.",
                 why=why,
-                fix="pass point_radius= the size of the reward site or start "
-                "zone (environment units), or define the region as a polygon.",
+                fix="give the region a size when you define it, "
+                "regions.add(name, point=..., radius=...), or pass point_radius= "
+                "the size of the reward site or start zone (environment units).",
             )
         )
     _point_target_bins(env, point, name=name, call=call)
@@ -895,14 +944,20 @@ def path_progress(
         or point per interval in row order (a ``pandas.Series`` indexed by
         ``interval_id`` is aligned by id), for example
         ``goal=trials.end_region``. ``None`` marks an unknown start or goal:
-        that interval's samples are NaN.
+        that interval's samples are NaN. Well or port numbers are not region
+        names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
+        In 2-D and 3-D a field of numbers or integers with one per interval
+        are refused; in 1-D a number is a position, so a well number there
+        would be read as that many units along the track without an error.
     point_radius : float, optional
         Size, in environment units, of point starts and goals (point regions
         and points) off a linearized track: each becomes the bins whose
         centres lie within ``point_radius`` of the point, for example the
         radius of a reward well. Required for point targets in 2-D and 3-D
         environments that are not linearized tracks (see Notes); ignored in
-        1-D and on a linearized track.
+        1-D and on a linearized track. For a well used across analyses, give
+        the region its size once instead: ``regions.add(name, point=...,
+        radius=...)``.
 
     Returns
     -------
@@ -1045,10 +1100,16 @@ def path_progress(
     # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
     sized = env.n_dims > 1 and not env.is_linearized_track
     rows, starts, single_start = _rows_and_targets(
-        intervals, times, start, name="start", call=f"{call}()"
+        intervals, times, start, name="start", call=f"{call}()", n_dims=env.n_dims
     )
     _, goals, single_goal = _rows_and_targets(
-        intervals, times, goal, name="goal", call=f"{call}()", rows=rows
+        intervals,
+        times,
+        goal,
+        name="goal",
+        call=f"{call}()",
+        n_dims=env.n_dims,
+        rows=rows,
     )
     bins = env.bin_at(positions)
     from neurospatial.geometry import MissingCellGeometryError
@@ -1172,7 +1233,11 @@ def distance_to_goal(
         interval in row order (a ``pandas.Series`` indexed by
         ``interval_id`` is aligned by id), for example
         ``goal=trials.end_region``. ``None`` marks an unknown goal: that
-        interval's samples are NaN.
+        interval's samples are NaN. Well or port numbers are not region
+        names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
+        In 2-D and 3-D a field of numbers or integers with one per interval
+        are refused; in 1-D a number is a position, so a well number there
+        would be read as that many units along the track without an error.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         ``"geodesic"`` is the length of the shortest path that stays inside
         the environment, measured from the position itself; ``"euclidean"``
@@ -1235,7 +1300,7 @@ def distance_to_goal(
         env, times, positions, intervals, call=call
     )
     rows, goals, _ = _rows_and_targets(
-        intervals, times, goal, name="goal", call=f"{call}()"
+        intervals, times, goal, name="goal", call=f"{call}()", n_dims=env.n_dims
     )
     distances = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)
@@ -2272,10 +2337,10 @@ def time_to_goal(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session, strictly increasing (seconds).
     trials : Intervals
-        Trials from segment_trials(), read_trials() or a task log, with an
+        Trials from detect_trials(), read_trials() or a task log, with an
         ``outcome`` field. Only trials with ``outcome == "reached"`` are
-        included; timed-out, returned and censored trials, whose arrival was
-        never observed, are not. The arrival is each trial's ``stop``.
+        included; other trials (returned, censored or a task's own
+        outcomes), whose arrival was never observed, are not. The arrival is each trial's ``stop``.
 
     Returns
     -------
@@ -2306,14 +2371,14 @@ def time_to_goal(
     >>> from neurospatial import Intervals
     >>> from neurospatial.behavior import time_to_goal
     >>> trials = Intervals.from_arrays(
-    ...     [1.0, 5.0], [4.0, 8.0], outcome=["reached", "timeout"]
+    ...     [1.0, 5.0], [4.0, 8.0], outcome=["reached", "censored"]
     ... )
     >>> time_to_goal(np.arange(10.0), trials).tolist()
     [nan, 3.0, 2.0, 1.0, nan, nan, nan, nan, nan, nan]
 
     See Also
     --------
-    segment_trials : Segment trajectory into trials
+    detect_trials : Trials between visits to named regions
     path_progress : Normalized progress along path
     """
     from neurospatial._interval_table import require_intervals
@@ -2516,80 +2581,6 @@ def _simplified_polyline(
 
 
 @reads_pynapple_samples
-def goal_pair_direction_labels(
-    times: NDArray[np.float64],
-    trials: Intervals[Trial],
-) -> NDArray[np.object_]:
-    """Generate per-timepoint direction labels from trial data.
-
-    Creates labels like ``'home→goal_left'`` or ``'goal_left→home'`` from the
-    trial (if any) each timepoint belongs to. Samples outside every completed
-    trial are ``None``, which :func:`compute_directional_place_fields` and
-    :func:`labels_to_epochs` leave out.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for the entire session (seconds).
-    trials : Intervals
-        Trials from ``segment_trials()``, ``read_trials()`` or a task log,
-        with ``start_region`` and ``end_region`` fields. Each completed trial
-        labels ``[start, stop)``; trials with ``end_region=None`` label
-        nothing.
-
-    Returns
-    -------
-    NDArray[np.object_], shape (n_samples,)
-        Direction label for each timepoint using arrow notation, dtype
-        ``object``; ``None`` outside every completed trial.
-
-    Raises
-    ------
-    ValueError
-        If ``times`` is empty, not 1-D, holds a non-finite value or is not
-        strictly increasing, or if two completed trials overlap.
-    TypeError
-        If ``trials`` is not an Intervals.
-
-    Warns
-    -----
-    UserWarning
-        If completed trials contain no sample of ``times`` (usually trials on
-        a different clock).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Intervals
-    >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
-    >>> times = np.arange(6.0)
-    >>> trials = Intervals([Trial(1.0, 3.0, "home", "goal_left", "reached")])
-    >>> goal_pair_direction_labels(times, trials).tolist()
-    [None, 'home→goal_left', 'home→goal_left', None, None, None]
-
-    See Also
-    --------
-    segment_trials : Segment trajectory into behavioral trials
-    heading_direction_labels : Direction labels from the direction of movement
-    headings_to_direction_labels : Direction labels from headings you computed
-    laps_to_direction_labels : Direction labels from detected laps
-    runs_to_direction_labels : Direction labels from detected runs
-    """
-    from neurospatial._interval_table import require_intervals
-
-    require_intervals(trials, name="trials", owner="goal_pair_direction_labels()")
-    completed = trials[np.array([end is not None for end in trials.end_region], bool)]
-    labels = [
-        f"{start}\u2192{end}"
-        for start, end in zip(completed.start_region, completed.end_region, strict=True)
-    ]
-    out: NDArray[np.object_] = completed.sample_values(
-        times, np.array(labels, dtype=object)
-    )
-    return out
-
-
-@reads_pynapple_samples
 def heading_direction_labels(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -2683,7 +2674,7 @@ def heading_direction_labels(
     See Also
     --------
     headings_to_direction_labels : The same sectors for headings you computed.
-    goal_pair_direction_labels : Direction labels for trialized tasks.
+    neurospatial.Intervals.sample_values : Labels from trials or laps.
     labels_to_epochs : Turn the labels into ``[start, stop)`` windows.
 
     Notes

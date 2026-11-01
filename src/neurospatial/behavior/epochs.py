@@ -28,10 +28,11 @@ restrict_spike_trains
     labels and metadata.
 labels_to_epochs
     Turn one label per sample (task phase, running direction, trial type) into
-    half-open ``[start, stop)`` epochs per label, ready to pass as ``epochs=``
-    to an analysis. A missing sample is bridged like a deleted row when the
-    gap around it is no longer than ``max_gap``; a longer gap, a declared
-    break or an ``epochs`` edge ends an epoch.
+    an ``Intervals`` of half-open ``[start, stop)`` epochs with a ``label``
+    field; select one condition (``conditions[conditions.label == "out"]``)
+    and pass it as ``epochs=`` to an analysis. A missing sample is bridged
+    like a deleted row when the gap around it is no longer than ``max_gap``;
+    a longer gap, a declared break or an ``epochs`` edge ends an epoch.
 
 Aligned vs ragged
 -----------------
@@ -44,14 +45,14 @@ masked against itself.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Iterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._interval_table import Interval, Intervals
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
@@ -69,22 +70,14 @@ from neurospatial._observation import (
     validate_break_before,
 )
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._results import (
-    ReadOnlyArraysMixin,
-    ResultMixin,
-    as_label_array,
-    read_only_copy,
-)
+from neurospatial._results import as_label_array
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from neurospatial.encoding.spike_trains import SpikeTrains
 
 __all__ = [
-    "LabelEpochsResult",
     "in_epochs",
     "labels_to_epochs",
     "restrict",
@@ -193,7 +186,7 @@ def in_epochs(
     --------
     restrict : Slice times and aligned arrays to the epochs.
     neurospatial.events.filter_by_intervals : Keep the rows of an events
-        DataFrame that fall in an intervals DataFrame.
+        DataFrame that fall in Intervals.
 
     Notes
     -----
@@ -290,7 +283,7 @@ def restrict(
     in_epochs : The boolean mask this function slices by.
     restrict_spike_trains : Restrict ragged per-unit spike trains.
     neurospatial.events.filter_by_intervals : Keep the rows of an events
-        DataFrame that fall in an intervals DataFrame.
+        DataFrame that fall in Intervals.
 
     Examples
     --------
@@ -427,319 +420,6 @@ def restrict_spike_trains(
     )
 
 
-@dataclass(frozen=True, eq=False, repr=False)
-class LabelEpochsResult(
-    ReadOnlyArraysMixin, ResultMixin, Mapping[Hashable, NDArray[np.float64]]
-):
-    """Half-open epochs per label, returned by :func:`labels_to_epochs`.
-
-    A read-only mapping from each label to its ``(n_epochs, 2)`` array of
-    ``[start, stop)`` windows in seconds. Pass ``result[label]`` as ``epochs=``
-    to an analysis to restrict it to the time spent in that condition.
-
-    Attributes
-    ----------
-    labels : tuple of hashable
-        The mapping's keys, in the order of their first retained interval.
-    epoch_bounds : NDArray[np.float64], shape (n_epochs, 2)
-        ``[start, stop)`` of every epoch in seconds, in time order.
-    epoch_labels : NDArray[np.intp], shape (n_epochs,)
-        Index into ``labels`` of each epoch; derived as the label of its
-        first interval, ``interval_labels[epoch_intervals[:, 0]]``.
-    epoch_intervals : NDArray[np.intp], shape (n_epochs, 2)
-        Inclusive first and last interval ``k`` of each epoch; interval ``k``
-        is ``[times[k], times[k + 1])``.
-    interval_labels : NDArray[np.intp], shape (max(n_samples - 1, 0),)
-        Index into ``labels`` of each interval, or -1 when the interval was
-        not retained (unsupported or missing label).
-    interval_supported : NDArray[np.bool_], shape (max(n_samples - 1, 0),)
-        True where the gap between the valid samples around the interval
-        passes ``max_gap``, the interval lies inside one ``epochs`` row, and
-        no break is declared. Intervals before the first or after the last
-        valid sample are False.
-    unsupported_labels : tuple of hashable
-        Labels that start an interval but have no supported interval, in
-        first-seen order. They are not keys.
-    n_samples : int
-        Number of input samples, derived as ``len(interval_labels) + 1``.
-    max_gap : float or None
-        The gap limit that was applied, in seconds.
-    input_epochs : NDArray[np.float64] or None, shape (n_windows, 2)
-        The normalized ``epochs=`` windows that were applied, or None.
-    missing_label : hashable or None
-        The label value treated as missing, besides ``None`` and ``NaN``.
-    n_declared_breaks : int
-        Number of breaks declared by ``break_before`` (entry 0 is not a break).
-
-    Notes
-    -----
-    Each label is one condition; the epochs of different labels never overlap.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.behavior import labels_to_epochs
-    >>> times = np.arange(5) * 0.25
-    >>> conditions = labels_to_epochs(times, ["a", "a", "b", "b", "b"])
-    >>> list(conditions)
-    ['a', 'b']
-    >>> conditions["b"]
-    array([[0.5, 1. ]])
-    """
-
-    labels: tuple[Hashable, ...]
-    epoch_bounds: NDArray[np.float64]
-    epoch_labels: NDArray[np.intp] = field(init=False)
-    epoch_intervals: NDArray[np.intp]
-    interval_labels: NDArray[np.intp]
-    interval_supported: NDArray[np.bool_]
-    unsupported_labels: tuple[Hashable, ...]
-    n_samples: int = field(init=False)
-    max_gap: float | None
-    input_epochs: NDArray[np.float64] | None
-    missing_label: Hashable | None
-    n_declared_breaks: int
-
-    def __post_init__(self) -> None:
-        """Check the epoch and interval invariants, derive fields, own arrays."""
-        bounds = np.asarray(self.epoch_bounds, dtype=np.float64)
-        spans = np.asarray(self.epoch_intervals)
-        interval_labels = np.asarray(self.interval_labels)
-        supported = np.asarray(self.interval_supported)
-        n_intervals = interval_labels.size
-        problems = []
-        if bounds.ndim != 2 or bounds.shape[1:] != (2,):
-            problems.append(f"epoch_bounds has shape {bounds.shape}, not (n_epochs, 2)")
-        elif not np.all(bounds[:, 0] < bounds[:, 1]):
-            problems.append("an epoch_bounds row has stop <= start")
-        if spans.shape != bounds.shape or spans.dtype.kind not in "iu":
-            problems.append(
-                f"epoch_intervals must be integers of shape {bounds.shape}, "
-                f"got {spans.dtype} {spans.shape}"
-            )
-        elif spans.size and not (
-            np.all(spans[:, 0] <= spans[:, 1])
-            and spans.min() >= 0
-            and spans.max() < n_intervals
-        ):
-            problems.append(
-                f"epoch_intervals rows must satisfy 0 <= first <= last < {n_intervals}"
-            )
-        if interval_labels.ndim != 1 or interval_labels.dtype.kind not in "iu":
-            problems.append("interval_labels must be a 1-D integer array")
-        elif n_intervals and not (
-            interval_labels.min() >= -1 and interval_labels.max() < len(self.labels)
-        ):
-            problems.append(
-                f"interval_labels must lie in [-1, {len(self.labels)}) "
-                "(-1 marks an interval that was not retained)"
-            )
-        if supported.dtype != np.bool_ or supported.shape != interval_labels.shape:
-            problems.append(
-                "interval_supported must be Boolean with the shape of interval_labels"
-            )
-        if not problems:
-            epoch_labels = interval_labels[spans[:, 0]].astype(np.intp)
-            if np.any(epoch_labels < 0):
-                problems.append("an epoch starts at an interval that was not retained")
-        if problems:
-            raise ValueError(
-                _format_error(
-                    "LabelEpochsResult received inconsistent epochs: "
-                    + "; ".join(problems)
-                    + ".",
-                    why="each epoch is a run of retained intervals, and interval k "
-                    "is [times[k], times[k + 1]).",
-                    fix="build the result with labels_to_epochs() instead of "
-                    "constructing it directly.",
-                )
-            )
-        object.__setattr__(self, "epoch_labels", epoch_labels)
-        object.__setattr__(self, "n_samples", n_intervals + 1)
-        self._own_arrays()
-
-    def __getitem__(self, label: Hashable) -> NDArray[np.float64]:
-        """Return the ``(n_epochs, 2)`` ``[start, stop)`` windows of ``label``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(4) * 0.25
-        >>> labels_to_epochs(times, ["a", "a", "b", "b"])["a"]
-        array([[0. , 0.5]])
-        """
-        if label not in self.labels:
-            if label in self.unsupported_labels:
-                why = (
-                    f"label {label!r} occurs but none of its intervals is "
-                    "supported: each lies in a gap between observed samples "
-                    "longer than max_gap, crosses a declared break, lies "
-                    "outside epochs, or comes before the first or after the "
-                    "last observed sample."
-                )
-            else:
-                why = f"label {label!r} starts no interval."
-            raise KeyError(
-                _format_error(
-                    f"No epochs for label {label!r}.",
-                    why=why,
-                    fix=f"use one of the labels with epochs: {list(self.labels)}.",
-                )
-            )
-        rows = self.epoch_bounds[self.epoch_labels == self.labels.index(label)]
-        return read_only_copy(rows)
-
-    def __iter__(self) -> Iterator[Hashable]:
-        """Iterate over labels in the order of their first retained interval.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(5) * 0.25
-        >>> conditions = labels_to_epochs(times, ["b", "b", "a", "a", "b"])
-        >>> for label in conditions:
-        ...     print(label, conditions[label].tolist())
-        b [[0.0, 0.5]]
-        a [[0.5, 1.0]]
-        """
-        return iter(self.labels)
-
-    def __len__(self) -> int:
-        """Number of labels with at least one epoch.
-
-        A label whose intervals were all left out is not counted; it is in
-        ``unsupported_labels``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(5) * 0.25
-        >>> valid = np.array([True, True, True, False, True])
-        >>> labels = ["a", "a", "b", "c", "c"]
-        >>> conditions = labels_to_epochs(times, labels, valid=valid, max_gap=0.3)
-        >>> len(conditions)
-        1
-        >>> conditions.unsupported_labels
-        ('b', 'c')
-        """
-        return len(self.labels)
-
-    def __eq__(self, other: object) -> bool:
-        """Results are equal only when they are the same object."""
-        return self is other
-
-    @property
-    def durations(self) -> dict[Hashable, float]:
-        """Total epoch duration of each label, in seconds.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(4) * 0.25
-        >>> labels_to_epochs(times, ["a", "a", "b", "b"]).durations
-        {'a': 0.5, 'b': 0.25}
-        """
-        totals = np.bincount(
-            self.epoch_labels,
-            weights=self.epoch_bounds[:, 1] - self.epoch_bounds[:, 0],
-            minlength=len(self.labels),
-        )
-        return dict(zip(self.labels, totals.tolist(), strict=True))
-
-    def epochs_table(self) -> pd.DataFrame:
-        """One row per epoch, in time order.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Columns ``label``, ``start``, ``stop``, ``duration`` (seconds),
-            ``first_interval``, ``last_interval`` and ``n_intervals``.
-            ``df.attrs`` holds ``max_gap``, ``input_epochs`` (list of rows or None),
-            ``missing_label``, ``n_declared_breaks`` and
-            ``allocation="interval_start"``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(4) * 0.25
-        >>> table = labels_to_epochs(times, ["a", "a", "b", "b"]).epochs_table()
-        >>> table[["label", "start", "stop", "n_intervals"]]
-          label  start  stop  n_intervals
-        0     a    0.0  0.50            2
-        1     b    0.5  0.75            1
-
-        The ``epochs=`` windows that were applied are recorded as
-        ``input_epochs``:
-
-        >>> result = labels_to_epochs(times, ["a", "a", "b", "b"], epochs=[(0.0, 0.5)])
-        >>> result.input_epochs
-        array([[0. , 0.5]])
-        >>> result.epochs_table().attrs["input_epochs"]
-        [[0.0, 0.5]]
-        """
-        import pandas as pd
-
-        start = self.epoch_bounds[:, 0].copy()
-        stop = self.epoch_bounds[:, 1].copy()
-        first = self.epoch_intervals[:, 0].copy()
-        last = self.epoch_intervals[:, 1].copy()
-        df = pd.DataFrame(
-            {
-                "label": [self.labels[i] for i in self.epoch_labels.tolist()],
-                "start": start,
-                "stop": stop,
-                "duration": stop - start,
-                "first_interval": first,
-                "last_interval": last,
-                "n_intervals": last - first + 1,
-            }
-        )
-        df.attrs.update(
-            max_gap=self.max_gap,
-            input_epochs=(
-                None if self.input_epochs is None else self.input_epochs.tolist()
-            ),
-            missing_label=self.missing_label,
-            n_declared_breaks=self.n_declared_breaks,
-            allocation="interval_start",
-        )
-        return df
-
-    def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics.
-
-        ``n_unsupported_intervals`` counts intervals the support rules
-        excluded; ``n_missing_label_intervals`` counts supported intervals
-        whose label is missing. ``labeled_duration`` is in seconds.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.behavior import labels_to_epochs
-        >>> times = np.arange(4) * 0.25
-        >>> summary = labels_to_epochs(times, ["a", None, "b", "b"]).summary()
-        >>> summary["n_missing_label_intervals"], summary["labeled_duration"]
-        (1, 0.5)
-        """
-        bounds = self.epoch_bounds
-        return {
-            "n_labels": len(self.labels),
-            "n_epochs": int(bounds.shape[0]),
-            "labeled_duration": float((bounds[:, 1] - bounds[:, 0]).sum()),
-            "n_unsupported_intervals": int((~self.interval_supported).sum()),
-            "n_missing_label_intervals": int(
-                (self.interval_supported & (self.interval_labels == -1)).sum()
-            ),
-            "n_unsupported_labels": len(self.unsupported_labels),
-            "max_gap": self.max_gap,
-        }
-
-
 def _label_array(labels: Any) -> NDArray[Any]:
     """Return labels as a 1-D array; tuples stay single labels."""
     if isinstance(labels, str | bytes) or not np.iterable(labels):
@@ -766,12 +446,13 @@ def labels_to_epochs(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     missing_label: Hashable | None = None,
-) -> LabelEpochsResult:
-    """Convert one label per sample into half-open epochs per label.
+) -> Intervals[Interval]:
+    """Convert one label per sample into half-open epochs, one row per epoch.
 
     Use this to split a session into behavioral conditions (outbound and
     inbound runs, task phases, cue or trial types) and then estimate a rate
-    map for each condition by passing ``conditions[label]`` as ``epochs=``
+    map for each condition: select one condition with
+    ``conditions[conditions.label == "outbound"]`` and pass it as ``epochs=``
     together with the original ``times``, ``positions`` and ``spike_times``.
 
     Interval ``k`` is ``[times[k], times[k + 1])`` and carries the label of
@@ -789,9 +470,11 @@ def labels_to_epochs(
         Sample times in seconds; finite and strictly increasing.
     labels : array-like, shape (n_samples,)
         One hashable label per sample. ``None``, ``NaN`` and ``missing_label``
-        mark a sample without a label. ``0``, ``-1`` and ``""`` are ordinary
-        labels. A tuple such as ``("arm1", "out")`` is one label, so a combined
-        condition needs no string joining. Result keys are plain Python values.
+        mark a sample without a label. ``0`` and ``-1`` are ordinary labels.
+        A tuple such as ``("arm1", "out")`` is one label, so a combined
+        condition needs no string joining. The empty string is refused: pass
+        ``missing_label=""`` if it means "no label". Labels are stored as
+        plain Python values.
     valid : array-like of bool, shape (n_samples,), optional
         False marks a sample that was not observed (for example lost
         tracking). Default: every sample is valid.
@@ -814,21 +497,27 @@ def labels_to_epochs(
 
     Returns
     -------
-    LabelEpochsResult
-        A mapping from each label to its ``(n_epochs, 2)`` ``[start, stop)``
-        windows in seconds, with per-interval provenance.
+    Intervals of Interval
+        One row per epoch, ``[start, stop)`` in seconds, in time order, ids
+        ``0`` to ``n - 1``, with a ``label`` field. ``analysis_settings``
+        records ``labels`` (the labels with epochs, in order of their first
+        epoch), ``unsupported_labels`` (labels that start an interval but
+        have no epoch, in first-seen order), ``max_gap``, ``epochs`` (the
+        windows applied, or None), ``missing_label`` and
+        ``n_declared_breaks`` (breaks declared by ``break_before``; entry 0
+        is not a break).
 
     Raises
     ------
     ValueError
         If ``times`` is empty, not finite or not strictly increasing; if
-        ``labels`` is not 1-D with one entry per sample; or if ``valid``,
-        ``break_before`` or ``max_gap`` is malformed.
+        ``labels`` is not 1-D with one entry per sample or holds the empty
+        string; or if ``valid``, ``break_before`` or ``max_gap`` is
+        malformed.
 
     See Also
     --------
-    neurospatial.behavior.laps_to_direction_labels : Per-sample labels from laps.
-    neurospatial.behavior.running_direction_labels : Per-sample running direction.
+    neurospatial.Intervals.sample_values : Per-sample labels from laps or trials.
 
     Notes
     -----
@@ -837,14 +526,15 @@ def labels_to_epochs(
     change contributes one interval. The same label after a gap longer than
     ``max_gap`` (counting unobserved samples as missing rows), a declared
     break, an excluded window or a different label starts a new epoch; no
-    duration is inferred across any of them. A label that starts intervals but has none kept is listed in
-    ``unsupported_labels`` rather than returned with an empty window set.
+    duration is inferred across any of them. A label that starts intervals
+    but has none kept has no row; it is listed in
+    ``analysis_settings["unsupported_labels"]``.
 
-    Labels here are disjoint by construction: each interval has one label.
-    Conditions passed to an analysis as separate ``epochs=`` sets may overlap
-    elsewhere. Labels assigned after the fact, for example from the path the
-    animal later took, describe the trajectory; they are not causal
-    predictors of the animal's choice.
+    Labels here are disjoint by construction: each interval has one label,
+    so the rows never overlap. Conditions passed to an analysis as separate
+    ``epochs=`` sets may overlap elsewhere. Labels assigned after the fact,
+    for example from the path the animal later took, describe the
+    trajectory; they are not causal predictors of the animal's choice.
 
     Examples
     --------
@@ -855,18 +545,23 @@ def labels_to_epochs(
     >>> valid = np.ones(10, dtype=bool)
     >>> valid[7] = False  # tracking lost at 0.7 s for one frame: bridged
     >>> conditions = labels_to_epochs(times, labels, valid=valid)
-    >>> list(conditions)
+    >>> conditions.label.tolist()
     ['out', 'in']
-    >>> conditions["in"]
+    >>> conditions[conditions.label == "in"].windows
     array([[0.5, 0.9]])
-    >>> labels_to_epochs(times, labels, valid=valid, max_gap=0.15)["in"]
+
+    A shorter ``max_gap`` treats the lost frame as a tracking loss, which
+    splits the inbound epoch:
+
+    >>> split = labels_to_epochs(times, labels, valid=valid, max_gap=0.15)
+    >>> split[split.label == "in"].windows
     array([[0.5, 0.6],
            [0.8, 0.9]])
 
     Tuples are single labels, for combined conditions:
 
     >>> labels = [("arm1", "out")] * 3 + [("arm1", "in")] * 2
-    >>> list(labels_to_epochs(np.arange(5.0) / 10, labels))
+    >>> labels_to_epochs(np.arange(5.0) / 10, labels).label.tolist()
     [('arm1', 'out'), ('arm1', 'in')]
     """
     call = "labels_to_epochs"
@@ -891,6 +586,17 @@ def labels_to_epochs(
     windows = as_intervals(epochs, name="epochs")
 
     sample_codes, values = label_codes(label_array[:-1], missing_label)
+    if any(isinstance(value, str) and value == "" for value in values):
+        raise ValueError(
+            _format_error(
+                f"{call}() got the empty string as a label.",
+                why="each epoch stores its label as a field, and a missing field "
+                'value is None: NWB writes None as "" and reads "" back as None, '
+                "so an empty-string label would come back as missing.",
+                fix='pass missing_label="" if the empty string means "no label", '
+                "or give that condition a name.",
+            )
+        )
     # An interval inside a bridged gap carries the label of the gap's start.
     codes = hold_last_valid(sample_codes, sample_valid[:-1], fill=-1)
 
@@ -904,27 +610,27 @@ def labels_to_epochs(
     )
     first, last, epoch_codes = label_runs(codes, support.interval_mask)
 
-    # Re-index codes so labels follow their first retained interval.
+    # Labels in the order of their first epoch; every label in ``values``
+    # starts an interval, so those without an epoch are unsupported.
     _, first_epoch = np.unique(epoch_codes, return_index=True)
-    ordered = epoch_codes[np.sort(first_epoch)]
-    # One extra slot so that remap[-1] (a missing code) stays -1.
-    remap = np.full(len(values) + 1, -1, dtype=np.intp)
-    remap[ordered] = np.arange(ordered.size, dtype=np.intp)
-    retained = support.interval_mask & (codes >= 0)
-    interval_labels = np.where(retained, remap[codes], -1).astype(np.intp)
-    occurs = np.zeros(len(values), dtype=bool)
-    occurs[sample_codes[sample_codes >= 0]] = True
-    unsupported = np.flatnonzero(occurs & (remap[:-1] < 0))
-
-    return LabelEpochsResult(
-        labels=tuple(values[c] for c in ordered.tolist()),
-        epoch_bounds=np.column_stack([t[first], t[last + 1]]),
-        epoch_intervals=np.column_stack([first, last]).astype(np.intp),
-        interval_labels=interval_labels,
-        interval_supported=support.interval_mask,
-        unsupported_labels=tuple(values[c] for c in unsupported.tolist()),
-        max_gap=max_gap,
-        input_epochs=windows,
-        missing_label=missing_label,
-        n_declared_breaks=0 if breaks is None else int(breaks[1:].sum()),
+    ordered = epoch_codes[np.sort(first_epoch)].tolist()
+    unsupported = sorted(set(range(len(values))) - set(ordered))
+    settings = {
+        "labels": [values[c] for c in ordered],
+        "unsupported_labels": [values[c] for c in unsupported],
+        "max_gap": None if max_gap is None else float(max_gap),
+        "epochs": None if windows is None else windows.tolist(),
+        "missing_label": missing_label,
+        "n_declared_breaks": 0 if breaks is None else int(breaks[1:].sum()),
+    }
+    return Intervals(
+        [
+            Interval(float(t[i]), float(t[j + 1]), (("label", values[code]),))
+            for i, j, code in zip(
+                first.tolist(), last.tolist(), epoch_codes.tolist(), strict=True
+            )
+        ],
+        record_type=Interval,
+        fields=("label",),
+        analysis_settings=settings,
     )

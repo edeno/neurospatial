@@ -933,7 +933,7 @@ class TestComputeVTESession:
                     stop_time=2.0,
                     start_region="start",
                     end_region=None,
-                    outcome="timeout",
+                    outcome="returned",
                 ),
             ]
         )

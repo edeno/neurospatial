@@ -2,6 +2,178 @@
 
 ## [Unreleased]
 
+### Trials from positions or port visits
+
+**Added**
+
+- `detect_trials(env, times, positions, *, regions, max_gap, epochs,
+  break_before)`: trials from tracked positions, the runs between
+  consecutive visits to the named regions (wells, ports, start boxes). A
+  trial is `[departure, arrival)`: from the first sample outside the region
+  the animal left to the first sample inside the next one, whichever it is,
+  so single-start (T-maze) and multi-start (W-track alternation) tasks are
+  the same call. `outcome` is `"reached"`, `"returned"` or `"censored"`; no
+  trial spans a tracking gap, an epoch edge or a declared break.
+- `trials_between_visits(visits, *, region="region")`: the same trials from
+  visits you bring, such as a table of port pokes read with
+  `Intervals.from_dataframe` (map port names to region names first).
+  Overlapping visits raise and name both `interval_id`s.
+
+**Changed**
+
+- The behavior detectors take `(env, times, positions, *, ...)` and find
+  each position's bin themselves: `detect_region_visits`,
+  `detect_region_crossings`, `detect_laps`, `detect_goal_directed_runs` and
+  `decision_region_entry_time` (before: `(position_bins, times, env)`). For
+  `detect_region_visits` and `detect_trials` a NaN position is a missing
+  sample, bridged like a deleted row when the samples around it are no more
+  than `max_gap` apart (before, every NaN row ended the run and censored the
+  trial under way); a position outside the environment still ends
+  observation. The other detectors read a NaN position as the unlocated
+  sample a `-1` bin was, and their results are unchanged. `detect_region_visits` takes `regions=` (was
+  `region_names=`).
+- Every detector returns an `Intervals`: `detect_region_visits` gives
+  `Intervals[RegionVisit]`, `detect_laps` `Intervals[Lap]`, and
+  `segment_by_velocity` and `detect_goal_directed_runs` `Intervals[Interval]`
+  (the latter with a `goal_region` field) instead of an `(n, 2)` array, whose
+  `.windows` is that array. Their parameters are in `analysis_settings`.
+- Records name their bounds `start_time`/`stop_time`: `Lap.end_time` and
+  `RegionVisit.end_time` are now `stop_time`, and `RegionVisit.region_name`
+  is `region`. `Trial.outcome` no longer has `"timeout"` (no detector makes
+  it); a task's timeout is a label you add with `with_fields`.
+- `detect_region_visits` and `detect_trials` refuse point regions: a one-bin
+  well misses an animal that stops beside it. Give the well its size with
+  `Regions.add(name, point=..., radius=...)`.
+- `write_laps` takes an `Intervals` only; it stores the `interval_ids` in an
+  `interval_id` column and every field
+  as a column (its `start_times`/`stop_times`/`directions` arrays are
+  removed). `to_pynapple` takes an `Intervals` for interval records and
+  refuses a list of them; lists of region crossings are unchanged.
+
+**Removed**
+
+- `segment_trials` and `detect_runs_between_regions`: use `detect_trials`
+  (there is no `min_duration` or `max_duration`; select by
+  `trials.durations` or label a timeout yourself).
+- `region_transitions` and `RegionTransition`: entry-to-entry intervals
+  mixed time at the first region into travel time; the trials between visits
+  replace them.
+- The `Run` record, `runs_to_direction_labels` and
+  `running_direction_labels`. For inbound/outbound labels, use the reached
+  trials' regions:
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
+
+### Events and readers return Intervals
+
+**Changed**
+
+- Reading NWB interval tables and pynapple `IntervalSet` metadata: list
+  cells (NWB `tags`) become tuples and `""` becomes None; columns that cannot
+  be fields (references to other tables, nested arrays, names `Intervals`
+  uses such as `start`) are left out with a warning naming them.
+- Replay per-event functions read a pynapple `IntervalSet` with its
+  inclusive `end` (the stop is the next float above it), so a spike at `end`
+  belongs to the event, as in pynapple; an `Intervals` event with no duration
+  is refused, naming its id.
+- `events_to_intervals` returns an `Intervals` instead of a DataFrame: the
+  other columns of the start events (including `match_by`) become fields,
+  `durations` replaces the `duration` column, and an `interval_id` column
+  gives the ids, so `intervals_to_events` and back keeps them.
+- `intervals_to_events` and `filter_by_intervals` take an `Intervals` or a
+  pynapple `IntervalSet` (its metadata as fields). A DataFrame raises
+  `TypeError` naming `Intervals.from_dataframe`, which states the columns
+  and which column holds the ids. `intervals_to_events` adds the
+  `interval_id` of each event's interval and copies fields with
+  `preserve_fields=`.
+- `read_intervals(nwbfile, interval_name=...)` returns an `Intervals` for
+  any NWB TimeIntervals table: an `interval_id` column (as `write_trials` and
+  `write_laps` store) or else the table `id` gives the `interval_ids`, the
+  other columns become fields, `""` reads as `None` and NWB `tags` as a
+  tuple. Select rows by field, for example
+  `epochs[epochs.tags.map(lambda tags: "run" in tags)]`. `read_trials` is
+  `read_intervals(nwbfile, interval_name="trials")`.
+- `from_pynapple(IntervalSet)` returns an `Intervals` instead of an
+  `(n, 2)` array: metadata columns become fields (text `""` as `None`) and
+  an `interval_id` column gives the ids, so
+  `from_pynapple(to_pynapple(trials))` keeps ids and fields.
+- The per-event replay functions (`null_events`, `decode_intervals`,
+  `relative_rank_template`, `dataset_values` with intervals,
+  `template_match_dataset_test`, `mean_pairwise_bias`) take an `Intervals`
+  of events, read row by row in time order, so `source_events` and other
+  per-event results index its rows (`events.interval_ids[...]` gives the
+  ids). A zero-duration event is refused, not dropped.
+
+**Removed**
+
+- The `start_column` and `stop_column` arguments of `intervals_to_events`
+  and `filter_by_intervals`, and `preserve_columns` of
+  `intervals_to_events` (now `preserve_fields`). Build the intervals with
+  `Intervals.from_dataframe(table, start_column=..., stop_column=...)`.
+
+### Labels as Intervals
+
+**Changed**
+
+- `labels_to_epochs` returns an `Intervals[Interval]`, one row per epoch
+  with a `label` field, instead of a mapping from label to windows. The
+  epochs are the same. Select a condition with
+  `conditions[conditions.label == "outbound"]` and pass it as `epochs=`;
+  its total time is `.durations.sum()`. `analysis_settings` records the
+  labels with epochs, the `unsupported_labels` (labels with no kept
+  interval), `max_gap`, `epochs`, `missing_label` and `n_declared_breaks`.
+  `to_pynapple` exports it with `interval_id` and `label` columns. The
+  empty string is refused as a label, because NWB reads it back as missing;
+  pass `missing_label=""` if it means "no label".
+- Per-sample lap labels refuse overlapping laps instead of giving a sample
+  in two laps the later lap's direction (last writer wins): `sample_values`
+  raises, naming both `interval_id`s. Select non-overlapping laps first.
+  `detect_laps` never returns overlapping laps; this affects hand-built or
+  merged laps. (Laps with direction `"unknown"` are left out before
+  labelling, so one overlapping a known lap does not raise; its samples take
+  the known lap's direction.)
+- Selecting a condition by a label no recording has
+  (`conditions[conditions.label == "outbond"]`) gives an empty selection, not
+  the `KeyError` listing the labels that `LabelEpochsResult` raised; loop over
+  `conditions.analysis_settings["labels"]` to use the labels found.
+
+**Removed**
+
+- `LabelEpochsResult`, with its `epochs_table()`, `durations` and
+  `summary()`: use `intervals_table()` and the `Intervals` columns. The
+  per-interval provenance (`interval_labels`, `interval_supported`,
+  `epoch_intervals`) is gone.
+- `laps_to_direction_labels(laps, times)`: use
+  `laps[laps.direction != "unknown"].sample_values(times, "direction")`.
+- `goal_pair_direction_labels(times, trials)`: use
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
+  Each label is a `(start_region, end_region)` tuple instead of a
+  `"start→end"` string; `compute_directional_place_fields` and
+  `labels_to_epochs` take tuple labels as they are.
+
+### Trial fields, labels and wells with a size
+
+**Changed**
+
+- A field of an `Intervals` (`trials.outcome`) is now a `pandas.Series`
+  indexed by `interval_id` instead of an array, so it stays one value per
+  trial wherever it is passed. Selecting with a Boolean Series
+  (`trials[trials.outcome == "correct"]`) matches rows by id; a plain
+  Boolean array still selects by position. The Series is a copy: editing it
+  never changes the trials. Indexing a field with a number now looks up a
+  trial id (`left.outcome[4]` is trial 4); use `.iloc[k]` for the k-th row.
+- `path_progress` and `distance_to_goal` refuse well numbers as per-trial
+  targets in 2-D and 3-D environments: a field of numbers, or integers with
+  one per trial (read as one coordinate, they gave wrong progress without an
+  error). The message says to map numbers to region names. In 1-D a number is
+  still a position.
+
+**Added**
+
+- `Intervals.with_fields(**columns)`: the same intervals with your labels
+  (instructed goal, correct/error) added or replaced, ids and times kept.
+- `Regions.add(name, point=..., radius=...)` stores a disc around the point,
+  so a reward well has the size of the place where the animal stops.
+
 ### Tuning curves over a behavioral variable
 
 **Added**
@@ -27,14 +199,21 @@
   `occupancy`, `spike_counts`, `bin_edges`, `variable` and `units`;
   `to_dataframe()` has a `bin_center` column, `peak_location()` is in the
   variable's units and `plot()` labels the axis with the variable's name.
-- Workflow 9 in the workflows guide, "Firing Along the Route to a Goal":
-  trials from a task log, progress to each trial's instructed goal, curves
-  with shared edges per condition, an empty condition, odd/even consistency,
-  pauses and running speed, and the same curves from trials read back from
-  NWB.
+- Workflow 9 in the workflows guide, "Firing Along the Route to a Goal", in
+  four steps: the environment (wells with a size), the trials (one
+  `detect_trials` call for an alternation task, labelled with the task's
+  rule), progress to each trial's instructed goal, and tuning curves with
+  shared edges per condition, including an empty condition and running time
+  only; then what the curves can and cannot show.
 
 **Changed**
 
+- Workflow 9 and the `compute_tuning_curve(s)` Notes now say only what
+  simulations measured: correct trials alone cannot separate goal from
+  choice coding (error trials can, given enough of them); a matching peak in
+  slower and faster trials does not show speed independence; the odd/even
+  correlation can be inflated by firing at stops or with speed, with a
+  circular-shift reference for chance.
 - The error for `min_speed=` without `speed=` names `compute_speed` as a way
   to get a speed array.
 
@@ -110,19 +289,20 @@ trial in one call.
   timeout is a rule of the task. Pass your task's value to keep timeouts.
 - `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
   window `[start_time, stop_time)`.
-- `time_to_goal`, `goal_pair_direction_labels` and `compute_vte_session`
-  take an `Intervals` and read fields, so trials
-  read back from NWB or a task log work too. `time_to_goal` now treats
-  trials as half-open (the arrival sample is NaN, not 0) and, like
-  `goal_pair_direction_labels`, needs strictly increasing `times` and
-  refuses overlapping trials instead of letting the later one win.
+- `time_to_goal` and `compute_vte_session` take an `Intervals` and read
+  fields, so trials read back from NWB or a task log work too.
+  `time_to_goal` now treats trials as half-open (the arrival sample is NaN,
+  not 0), needs strictly increasing `times` and refuses overlapping trials
+  instead of letting the later one win.
   `compute_vte_session` results follow the row order of the trials (sorted
   by time). Every trial consumer now reads a trial as `[start, stop)`:
   `compute_vte_session` no longer includes the stop (arrival) sample, and a
   VTE trial without duration has status `"no_samples"` without a clock
   warning.
-- `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` become
-  the table `id` and every field a column, with `None` stored as `""`.
+- `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` are
+  stored in an `interval_id` column (the table `id` stays the row number, so
+  pynapple's `load_file` reads a selection of trials too) and every field a
+  column, with `None` stored as `""`.
   `read_trials` returns an `Intervals` with those ids and fields, reading
   `""` back as `None`, so a trial that reached no end region stays missing.
 - `to_pynapple(intervals)` exports an `Intervals` with `interval_id` and the

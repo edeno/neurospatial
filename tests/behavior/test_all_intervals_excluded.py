@@ -102,7 +102,7 @@ def _vte_session(env, times, positions, **kwargs):
 
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
-        env.bin_at(p), t, env, region_name="mid_area", **kw
+        env, t, p, region_name="mid_area", **kw
     ),
     "segment_by_velocity": lambda env, t, p, **kw: segment_by_velocity(
         t, p, min_speed=1.0, min_duration=0.0, **kw
@@ -215,13 +215,14 @@ def test_disabling_the_gap_gate_is_silent(coarse_track, name):
 
 def test_detect_region_crossings_recovers_crossings_without_gap_gate(coarse_track):
     env, times, positions = coarse_track
-    bins = env.bin_at(positions)
     with pytest.warns(UserWarning, match="excluded ALL"):
-        assert detect_region_crossings(bins, times, env, region_name="mid_area") == []
+        assert (
+            detect_region_crossings(env, times, positions, region_name="mid_area") == []
+        )
     assert (
         len(
             detect_region_crossings(
-                bins, times, env, region_name="mid_area", max_gap=None
+                env, times, positions, region_name="mid_area", max_gap=None
             )
         )
         > 0

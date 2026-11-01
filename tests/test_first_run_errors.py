@@ -262,7 +262,7 @@ def test_invalid_coordinate_dimensions_name_the_call(bad_shape):
 def test_rewritten_sites_teach(site, recording, tmp_path):
     from neurospatial._results import resolve_unit_ids
     from neurospatial.animation.core import animate_fields
-    from neurospatial.behavior import detect_laps, segment_trials
+    from neurospatial.behavior import detect_laps, detect_trials
     from neurospatial.decoding import bin_spikes_in_time, decode_position
     from neurospatial.decoding.likelihood import log_poisson_likelihood
     from neurospatial.decoding.posterior import normalize_to_posterior
@@ -275,7 +275,6 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     from neurospatial.layout.helpers.track_graphs import maze_track_graph
 
     r = recording
-    bins = r.env.bin_at(r.positions)
     env = r.env
     region_builder = Regions(env.regions.values())
     region_builder.add("home", point=tuple(env.bin_centers[0]))
@@ -350,11 +349,11 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
             frame_times=np.array([0.0, 0.1]),
             backend="unknown",
         ),
-        "lap_reference": lambda: detect_laps(bins, r.times, env, method="reference"),
-        "lap_start": lambda: detect_laps(bins, r.times, env, method="region"),
-        "trials_empty": lambda: segment_trials(
-            bins, r.times, env, start_region="home", end_regions=[]
+        "lap_reference": lambda: detect_laps(
+            env, r.times, r.positions, method="reference"
         ),
+        "lap_start": lambda: detect_laps(env, r.times, r.positions, method="region"),
+        "trials_empty": lambda: detect_trials(env, r.times, r.positions, regions=[]),
     }
     if site.startswith("files_"):
         path = tmp_path / "environment"
@@ -382,11 +381,8 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     "site",
     [
         "crossing",
-        "run_source",
-        "run_target",
         "lap",
-        "trial_start",
-        "trial_end",
+        "trials",
         "goal",
         "boundary",
         "distance",
@@ -398,9 +394,8 @@ def test_segmentation_unknown_region(site, recording):
         detect_goal_directed_runs,
         detect_laps,
         detect_region_crossings,
-        detect_runs_between_regions,
+        detect_trials,
         distance_to_boundary,
-        segment_trials,
     )
 
     r = recording
@@ -408,28 +403,16 @@ def test_segmentation_unknown_region(site, recording):
     region_builder = Regions(env.regions.values())
     region_builder.add("known", point=tuple(env.bin_centers[0]))
     env = env.with_regions(region_builder)
-    bins = env.bin_at(r.positions)
     calls = {
         "crossing": lambda: detect_region_crossings(
-            bins, r.times, env, region_name="home"
-        ),
-        "run_source": lambda: detect_runs_between_regions(
-            bins, r.times, env, source="home", target="known"
-        ),
-        "run_target": lambda: detect_runs_between_regions(
-            bins, r.times, env, source="known", target="home"
+            env, r.times, r.positions, region_name="home"
         ),
         "lap": lambda: detect_laps(
-            bins, r.times, r.env, method="region", start_region="home"
+            r.env, r.times, r.positions, method="region", start_region="home"
         ),
-        "trial_start": lambda: segment_trials(
-            bins, r.times, env, start_region="home", end_regions=["known"]
-        ),
-        "trial_end": lambda: segment_trials(
-            bins, r.times, env, start_region="known", end_regions=["home"]
-        ),
+        "trials": lambda: detect_trials(env, r.times, r.positions, regions=["home"]),
         "goal": lambda: detect_goal_directed_runs(
-            bins, r.times, env, goal_region="home"
+            env, r.times, r.positions, goal_region="home"
         ),
         "boundary": lambda: distance_to_boundary(
             env, r.positions, boundary_type="region", region_name="home"

@@ -533,3 +533,65 @@ def test_empty_selection_survives_pickling_a_result() -> None:
         unit = clone[0]  # rebuilds a result from the stored spike_window
         assert unit.spike_window.shape == (0, 2)
         assert np.isnan(unit.firing_rate).all()
+
+
+def test_detector_outputs_as_epochs() -> None:
+    """Every detector's Intervals restricts an analysis exactly as its windows do.
+
+    A zero-duration row (a visit seen in one sample) holds no time, so passing
+    the Intervals equals passing ``.windows``, which leaves such rows out.
+    """
+    from shapely.geometry import box
+
+    from neurospatial import Intervals, Regions
+    from neurospatial.behavior import (
+        detect_goal_directed_runs,
+        detect_laps,
+        detect_region_visits,
+        detect_trials,
+        segment_by_velocity,
+    )
+
+    # A 100 cm corridor: rest at each end, run back and forth at 25 cm/s, 10 Hz.
+    xs = np.linspace(0.0, 100.0, 401)
+    env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+    regions = Regions()
+    regions.add("start", polygon=box(-5.0, -5.0, 5.0, 5.0))
+    regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
+    env = env.with_regions(regions).with_metadata(units="cm")
+    leg = np.linspace(0.0, 100.0, 41)
+    x = np.r_[np.zeros(10), leg, np.full(10, 100.0), leg[::-1], np.zeros(10)]
+    times = np.arange(x.size) / 10.0
+    positions = np.c_[x, np.zeros_like(x)]
+    spike_times = np.sort(np.random.default_rng(0).uniform(0.0, times[-1], 200))
+
+    outputs: dict[str, Intervals] = {
+        "visits": detect_region_visits(
+            env, times, positions, regions=["start", "goal"]
+        ),
+        "trials": detect_trials(env, times, positions, regions=["start", "goal"]),
+        "movement": segment_by_velocity(times, positions, min_speed=5.0),
+        "approaches": detect_goal_directed_runs(
+            env, times, positions, goal_region="goal"
+        ),
+        "laps": detect_laps(env, times, positions),
+    }
+    for name, intervals in outputs.items():
+        assert isinstance(intervals, Intervals), name
+        by_intervals = compute_spatial_rates(
+            env, [spike_times], times, positions, epochs=intervals, bandwidth=None
+        )
+        by_windows = compute_spatial_rates(
+            env,
+            [spike_times],
+            times,
+            positions,
+            epochs=intervals.windows,
+            bandwidth=None,
+        )
+        np.testing.assert_array_equal(
+            by_intervals.occupancy, by_windows.occupancy, err_msg=name
+        )
+        np.testing.assert_array_equal(
+            by_intervals.firing_rates, by_windows.firing_rates, err_msg=name
+        )

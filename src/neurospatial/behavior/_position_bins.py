@@ -94,3 +94,54 @@ def validated_position_bins(
         allow_missing=True,
     )
     return bins.astype(np.int64, copy=False)
+
+
+def sample_bins(
+    env: Environment, times: ArrayLike, positions: ArrayLike, *, call: str
+) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
+    """Validated ``times`` and each position's bin, ``-1`` outside or missing.
+
+    The behavior detectors take ``(env, times, positions)`` and bin the
+    positions here, so users never handle bin indices. A NaN position (lost
+    tracking) or one outside the environment is bin ``-1``, an unobserved
+    sample.
+
+    Parameters
+    ----------
+    env : Environment
+        Allocentric environment the positions were recorded in.
+    times : array-like, shape (n_samples,)
+        Finite, strictly increasing timestamps in seconds.
+    positions : array-like, shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where missing.
+    call : str
+        Public function name, used in messages.
+
+    Returns
+    -------
+    times : ndarray of float64, shape (n_samples,)
+    bins : ndarray of int64, shape (n_samples,)
+
+    Raises
+    ------
+    ValueError
+        If times are invalid, the arrays do not match, or the positions do
+        not have the environment's number of coordinates.
+    """
+    from neurospatial._validation import validate_times_positions
+
+    t, p = validate_times_positions(times, positions, call=call)
+    if p.ndim == 1:  # a 1-D track: one coordinate per sample
+        p = p[:, np.newaxis]
+    if p.shape[1] != env.n_dims:
+        raise ValueError(
+            _format_error(
+                f"{call}(): positions have {p.shape[1]} coordinate(s) per sample; "
+                f"the environment has {env.n_dims}.",
+                why="positions are located in the environment's bins.",
+                fix="pass positions in the environment's coordinates, shape "
+                "(n_samples, n_dims).",
+            )
+        )
+    bins = np.asarray(env.bin_at(p), dtype=np.int64)
+    return t, bins

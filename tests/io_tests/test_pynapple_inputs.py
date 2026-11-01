@@ -12,6 +12,7 @@ import importlib.util
 import re
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from neurospatial import Environment
@@ -392,7 +393,7 @@ def test_filter_by_intervals_accepts_an_intervalset(nap, trials):
 def test_intervals_to_events_accepts_an_intervalset(trials):
     from neurospatial.events import intervals_to_events
 
-    starts = intervals_to_events(trials, preserve_columns=["kind"])
+    starts = intervals_to_events(trials, preserve_fields=["kind"])
     both = intervals_to_events(trials, which="both")
 
     assert starts["timestamp"].tolist() == [5.0, 50.0]
@@ -400,6 +401,65 @@ def test_intervals_to_events_accepts_an_intervalset(trials):
     # Each stop is the half-open stop holding the inclusive end.
     stops = both.loc[both["boundary"] == "stop", "timestamp"].to_numpy()
     np.testing.assert_array_equal(stops, np.nextafter([20.0, 80.0], np.inf))
+
+
+def test_intervals_to_events_reads_interval_ids_from_the_metadata(nap):
+    from neurospatial.events import intervals_to_events
+
+    iset = nap.IntervalSet(
+        start=[5.0, 50.0], end=[20.0, 80.0], metadata={"interval_id": [8, 3]}
+    )
+
+    events = intervals_to_events(iset)
+
+    assert events["interval_id"].tolist() == [8, 3]
+
+
+def test_from_pynapple_reads_an_intervalset_as_intervals(nap, trials):
+    """Metadata become fields; a sample at pynapple's inclusive end is inside."""
+    from neurospatial import Intervals
+    from neurospatial.io import from_pynapple
+
+    intervals = from_pynapple(trials)
+
+    assert isinstance(intervals, Intervals)
+    assert intervals.fields == ("kind",)
+    assert intervals.kind.tolist() == ["a", "b"]
+    assert intervals.interval_ids.tolist() == [0, 1]
+    np.testing.assert_array_equal(intervals.start, [5.0, 50.0])
+    times = np.array([3.0, 10.0, 20.0, 30.0, 80.0, 81.0])
+    ids = intervals.sample_interval_ids(times)
+    assert ids.tolist() == [-1, 0, 0, -1, 1, -1]
+    np.testing.assert_array_equal(times[ids >= 0], nap.Ts(times).restrict(trials).t)
+
+
+def test_from_pynapple_reads_missing_text_as_none(nap):
+    """An IntervalSet loaded from NWB holds "" where a value is missing."""
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[0.0, 5.0], end=[2.0, 7.0], metadata={"goal": ["left", ""]}
+    )
+
+    assert from_pynapple(iset).goal.tolist() == ["left", None]
+
+
+def test_to_pynapple_then_from_pynapple_keeps_ids_and_fields():
+    from neurospatial import Intervals
+    from neurospatial.io import from_pynapple, to_pynapple
+
+    trials = Intervals.from_arrays(
+        [4.0, 0.0, 10.0],
+        [6.0, 2.5, 12.0],
+        interval_ids=[7, 3, 9],
+        outcome=["timeout", "reached", None],
+        n_licks=[2, 5, 0],
+    )
+
+    back = from_pynapple(to_pynapple(trials))
+
+    pd.testing.assert_frame_equal(back.intervals_table(), trials.intervals_table())
+    np.testing.assert_array_equal(back.windows, trials.windows)
 
 
 def test_pairwise_bias_matrix_accepts_a_one_row_intervalset(nap, group):
@@ -577,3 +637,30 @@ def test_decoding_metrics_refuse_permuted_position_frames(nap, session):
     )
     with pytest.raises(ValueError, match=r"decoded_positions=tsdframe"):
         decoding_error(env, swapped, actual, metric="euclidean")
+
+
+def test_interval_set_with_list_metadata_reads_and_filters(nap):
+    """Array-valued metadata (NWB tags loaded by pynapple) becomes tuples."""
+    from neurospatial.events import filter_by_intervals
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(start=[0.0, 10.0], end=[5.0, 15.0])
+    tags = np.empty(2, dtype=object)  # one array per row, as pynapple loads tags
+    tags[0], tags[1] = np.array(["run", "maze"]), np.array(["sleep"])
+    iset.set_info(tags=tags)
+    events = pd.DataFrame({"timestamp": [1.0, 5.0, 7.0, 12.0]})
+    assert filter_by_intervals(events, iset)["timestamp"].tolist() == [1.0, 5.0, 12.0]
+    intervals = from_pynapple(iset)
+    assert intervals.tags.tolist() == [("run", "maze"), ("sleep",)]
+
+
+def test_interval_set_metadata_that_cannot_be_a_field_is_left_out(nap):
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(start=[0.0, 10.0], end=[5.0, 15.0])
+    with pytest.warns(UserWarning, match="metadata"):
+        iset.set_info(**{"trial type": ["a", "b"]})
+    iset.set_info(goal=["left", "right"])
+    with pytest.warns(UserWarning, match=r"\['trial type'\].*left out"):
+        intervals = from_pynapple(iset)
+    assert intervals.fields == ("goal",)

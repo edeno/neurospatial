@@ -743,3 +743,50 @@ def test_regions_table_reads_a_published_snapshot_and_an_empty_collection():
     empty = regions_table(Regions())
     assert empty.empty
     assert list(empty.columns) == ["kind", "n_dims", "area", "center", "metadata"]
+
+
+def test_add_with_radius_stores_a_disc():
+    regions = Regions()
+    well = regions.add(
+        "well", point=(10.0, 20.0), radius=5.0, metadata={"role": "reward"}
+    )
+    assert well.kind == "polygon"
+    assert well.data.area == pytest.approx(np.pi * 25.0, rel=0.01)
+    assert well.data.centroid.coords[0] == pytest.approx((10.0, 20.0))
+    assert dict(well.metadata) == {
+        "role": "reward",
+        "center": (10.0, 20.0),
+        "radius": 5.0,
+    }
+
+
+def test_add_with_radius_covers_the_bins_within_it():
+    xy = np.stack(np.meshgrid(np.arange(0.0, 50.0), np.arange(0.0, 50.0)), -1)
+    env = Environment.from_samples(xy.reshape(-1, 2), bin_size=1.0)
+    regions = Regions()
+    regions.add("well", point=(25.0, 25.0), radius=5.0)
+    env = env.with_regions(regions)
+    centers = env.bin_centers[env.bins_in_region("well")]
+    assert np.all(np.hypot(*(centers - 25.0).T) <= 5.0)
+    assert len(centers) > 60  # about pi * 25 bins, not the one bin of a point
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"radius": 5.0, "polygon": shp.box(0, 0, 1, 1)}, "point="),
+        ({"point": (0.0, 0.0), "radius": 0.0}, "finite number > 0"),
+        ({"point": (0.0, 0.0), "radius": np.nan}, "finite number > 0"),
+        ({"point": (0.0, 0.0, 0.0), "radius": 1.0}, "2-D point"),
+    ],
+)
+def test_add_with_bad_radius_is_refused(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        Regions().add("well", **kwargs)
+
+
+def test_add_with_radius_refuses_metadata_it_sets():
+    with pytest.raises(ValueError, match=r"\['center', 'radius'\] are set by radius="):
+        Regions().add(
+            "well", point=(0.0, 0.0), radius=1.0, metadata={"center": 1, "radius": 2}
+        )

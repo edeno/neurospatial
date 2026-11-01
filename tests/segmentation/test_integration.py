@@ -2,9 +2,9 @@
 
 Tests the full pipeline combining:
 - Trajectory metrics (turn angles, step lengths, home range, MSD)
-- Region-based segmentation (crossings, runs)
+- Region-based segmentation (crossings)
 - Lap detection (circular track analysis)
-- Trial segmentation (task-based epochs)
+- Trials between regions (task-based epochs)
 - Trajectory similarity (pattern comparison, goal-directed behavior)
 """
 
@@ -14,13 +14,13 @@ import numpy as np
 from shapely.geometry import Point
 
 from neurospatial import Environment, Regions
+from neurospatial.behavior import detect_trials
 from neurospatial.behavior.segmentation import (
     Lap,
     Trial,
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    segment_trials,
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
@@ -63,9 +63,9 @@ class TestFullTrajectoryAnalysisWorkflow:
         )
         env = env.with_regions(region_builder)
         laps = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            traj_positions,
             method="region",
             start_region="start",
             direction="both",
@@ -74,13 +74,13 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Should detect ~3 laps
         assert len(laps) >= 2, "Should detect at least 2 complete laps"
         assert all(isinstance(lap, Lap) for lap in laps)
-        assert all(lap.start_time < lap.end_time for lap in laps)
+        assert all(lap.start_time < lap.stop_time for lap in laps)
 
         # Step 2: Compute trajectory metrics for each lap
         lap_metrics = []
         for lap in laps[:2]:  # Analyze first 2 complete laps
             # Get lap segment
-            lap_mask = (times >= lap.start_time) & (times <= lap.end_time)
+            lap_mask = (times >= lap.start_time) & (times <= lap.stop_time)
             lap_bins = position_bins[lap_mask]
             lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
@@ -90,7 +90,7 @@ class TestFullTrajectoryAnalysisWorkflow:
 
             lap_metrics.append(
                 {
-                    "duration": lap.end_time - lap.start_time,
+                    "duration": lap.stop_time - lap.start_time,
                     "mean_turn_angle": np.abs(np.nanmean(turn_angles)),
                     "mean_step_length": np.mean(step_lengths),
                     "bins": lap_bins,
@@ -168,14 +168,8 @@ class TestFullTrajectoryAnalysisWorkflow:
         position_bins = env.bin_at(traj_positions)
 
         # Step 1: Segment into trials
-        trials = segment_trials(
-            position_bins,
-            times,
-            env,
-            start_region="start",
-            end_regions=["left", "right"],
-            min_duration=5.0,
-            max_duration=15.0,
+        trials = detect_trials(
+            env, times, traj_positions, regions=["start", "left", "right"]
         )
 
         # Should detect 3 trials
@@ -190,10 +184,10 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 2: Detect region crossings
         left_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="left", direction="entry"
+            env, times, traj_positions, region_name="left", direction="entry"
         )
         right_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="right", direction="entry"
+            env, times, traj_positions, region_name="right", direction="entry"
         )
 
         assert len(left_crossings) >= 1, "Should detect left entries"
@@ -203,19 +197,19 @@ class TestFullTrajectoryAnalysisWorkflow:
         if len(trials) > 0:
             trial = trials[0]
             trial_mask = (times >= trial.start_time) & (times <= trial.stop_time)
-            trial_bins = position_bins[trial_mask]
+            trial_positions = traj_positions[trial_mask]
             trial_times = times[trial_mask]
 
             # Detect goal-directed behavior toward trial end_region
             if trial.end_region:
                 goal_runs = detect_goal_directed_runs(
-                    trial_bins,
-                    trial_times,
                     env,
+                    trial_times,
+                    trial_positions,
                     goal_region=trial.end_region,
                     directedness_threshold=0.3,  # Lower for synthetic data
                     min_progress=5.0,
-                )
+                ).windows
 
                 # Should detect at least one goal-directed run
                 # (Note: may be 0 if trajectory is too discretized)
@@ -290,13 +284,13 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 1: Detect goal-directed runs (should only find in phase 2)
         goal_runs = detect_goal_directed_runs(
-            position_bins,
-            all_times,
             env,
+            all_times,
+            all_positions,
             goal_region="goal",
             directedness_threshold=0.7,
             min_progress=10.0,
-        )
+        ).windows
 
         # The straight approach in phase 2 is a goal-directed run, from the
         # last sample in its first bin (the departure) to the first sample in
@@ -340,14 +334,12 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
     env = Environment.from_samples(positions, bin_size=5.0)
 
     times = np.linspace(0, 10, 20)
-    position_bins = env.bin_at(
-        np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
-    )
+    walk = np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
 
     with pytest.raises(ValueError, match=r"(?s)not found.*goal_region="):
         detect_goal_directed_runs(
-            position_bins,
-            times,
             env,
+            times,
+            walk,
             goal_region="nonexistent",
         )

@@ -14,10 +14,7 @@ def capture_segmentation_outputs(pause, laps):
         detect_goal_directed_runs,
         detect_laps,
         detect_region_crossings,
-        detect_runs_between_regions,
-        running_direction_labels,
         segment_by_velocity,
-        segment_trials,
     )
     from neurospatial.behavior.decisions import (
         compute_decision_analysis,
@@ -34,61 +31,34 @@ def capture_segmentation_outputs(pause, laps):
     trials = Intervals([Trial(0.0, p.times[-1], "source", "target", "reached")])
     return {
         "detect_region_crossings": detect_region_crossings(
-            p.position_bins, p.times, p.env, region_name="target"
-        ),
-        "detect_runs_between_regions": detect_runs_between_regions(
-            p.position_bins,
-            p.times,
-            p.env,
-            source="source",
-            target="target",
-            max_duration=2000,
+            p.env, p.times, p.positions, region_name="target"
         ),
         "segment_by_velocity": segment_by_velocity(
             p.times, p.positions, min_speed=5.0, min_duration=0.1
-        ),
+        ).windows,
         "detect_laps_region": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="region",
             start_region="start",
         ),
         "detect_laps_auto": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="auto",
         ),
         "detect_laps_reference": detect_laps(
-            lap_recording.position_bins,
-            lap_recording.times,
             lap_recording.env,
+            lap_recording.times,
+            lap_recording.positions,
             method="reference",
             reference_lap=reference,
         ),
-        # The snapshot holds the trial records; the Intervals adds ids.
-        "segment_trials": list(
-            segment_trials(
-                p.position_bins,
-                p.times,
-                p.env,
-                start_region="source",
-                end_regions=["target"],
-                max_duration=2000,
-            )
-        ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
-            p.position_bins, p.times, p.env, goal_region="target"
-        ),
-        "running_direction_labels": running_direction_labels(
-            p.position_bins,
-            p.times,
-            p.env,
-            start_region="source",
-            end_regions="target",
-            max_duration=2000,
-        ),
+            p.env, p.times, p.positions, goal_region="target"
+        ).windows,
         "detect_boundary_crossings": detect_boundary_crossings(
             p.position_bins, labels, p.times
         ),
@@ -142,6 +112,10 @@ def capture_segmentation_outputs(pause, laps):
 
 def structural_snapshot(value):
     """Keep array types/shapes and sparse indices without pickled objects."""
+    from neurospatial import Intervals
+
+    if isinstance(value, Intervals):
+        return [structural_snapshot(record) for record in value]
     if dataclasses.is_dataclass(value):
         return {
             "dataclass": type(value).__name__,

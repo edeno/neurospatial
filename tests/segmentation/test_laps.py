@@ -25,15 +25,14 @@ class TestDetectLaps:
 
         # Create environment
         env = Environment.from_samples(positions, bin_size=3.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 100, n_samples)
 
         from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             method="auto",
             min_overlap=0.7,
             direction="both",
@@ -49,10 +48,10 @@ class TestDetectLaps:
         # Verify lap structure
         for lap in laps:
             assert hasattr(lap, "start_time")
-            assert hasattr(lap, "end_time")
+            assert hasattr(lap, "stop_time")
             assert hasattr(lap, "direction")
             assert hasattr(lap, "overlap_score")
-            assert lap.end_time > lap.start_time
+            assert lap.stop_time > lap.start_time
             assert 0.0 <= lap.overlap_score <= 1.0
 
     def test_detect_laps_direction_clockwise(self):
@@ -65,7 +64,6 @@ class TestDetectLaps:
         positions = np.column_stack([x, y])
 
         env = Environment.from_samples(positions, bin_size=3.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 60, n_samples)
 
         from neurospatial.behavior.segmentation import detect_laps
@@ -74,17 +72,17 @@ class TestDetectLaps:
         # template is the first circuit, itself the first lap, so both laps
         # are found; requesting the opposite direction must find none.
         laps_cw = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             method="auto",
             min_overlap=0.6,
             direction="clockwise",
         )
         laps_ccw = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             method="auto",
             min_overlap=0.6,
             direction="counter-clockwise",
@@ -116,9 +114,9 @@ class TestDetectLaps:
         from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             method="reference",
             reference_lap=reference_bins,
             min_overlap=0.6,
@@ -140,7 +138,6 @@ class TestDetectLaps:
         positions = np.column_stack([x, y])
 
         env = Environment.from_samples(positions, bin_size=3.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 60, n_samples)
 
         # Add start region at theta=0 position
@@ -153,9 +150,9 @@ class TestDetectLaps:
         from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
-            position_bins,
-            times,
             env,
+            times,
+            positions,
             method="region",
             start_region="start",
             min_overlap=0.0,  # Not used for region method
@@ -167,7 +164,7 @@ class TestDetectLaps:
         assert len(laps) == 2
         assert laps[0].start_time == times[0]
         for lap in laps:
-            assert lap.end_time > lap.start_time
+            assert lap.stop_time > lap.start_time
 
     def test_detect_laps_overlap_threshold(self):
         """Test that min_overlap filters low-quality laps."""
@@ -179,19 +176,14 @@ class TestDetectLaps:
         positions = np.column_stack([x, y])
 
         env = Environment.from_samples(positions, bin_size=3.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 40, n_samples)
 
         from neurospatial.behavior.segmentation import detect_laps
 
         # Low threshold should accept more laps
-        laps_low = detect_laps(
-            position_bins, times, env, method="auto", min_overlap=0.5
-        )
+        laps_low = detect_laps(env, times, positions, method="auto", min_overlap=0.5)
         # High threshold should accept fewer laps
-        laps_high = detect_laps(
-            position_bins, times, env, method="auto", min_overlap=0.9
-        )
+        laps_high = detect_laps(env, times, positions, method="auto", min_overlap=0.9)
 
         assert len(laps_low) >= len(laps_high)
 
@@ -202,12 +194,11 @@ class TestDetectLaps:
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        laps = detect_laps(position_bins, times, env, method="auto")
+        laps = detect_laps(env, times, np.empty((0, 2)), method="auto")
 
         assert len(laps) == 0
 
@@ -216,12 +207,11 @@ class TestDetectLaps:
         # Straight line trajectory (no laps)
         positions = np.column_stack([np.linspace(0, 100, 100), np.ones(100) * 50])
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 20, 100)
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        laps = detect_laps(position_bins, times, env, method="auto", min_overlap=0.8)
+        laps = detect_laps(env, times, positions, method="auto", min_overlap=0.8)
 
         # Straight line should not produce laps
         assert len(laps) == 0
@@ -231,20 +221,18 @@ class TestDetectLaps:
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
         from neurospatial.behavior.segmentation import detect_laps
 
         with pytest.raises(ValueError, match="method must be one of"):
-            detect_laps(position_bins, times, env, method="invalid")
+            detect_laps(env, times, positions, method="invalid")
 
     def test_detect_laps_validation_reference_required(self):
         """Test that reference method requires reference_lap parameter."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
         from neurospatial.behavior.segmentation import detect_laps
@@ -252,14 +240,13 @@ class TestDetectLaps:
         with pytest.raises(
             ValueError, match=r"reference_lap.*required when method='reference'"
         ):
-            detect_laps(position_bins, times, env, method="reference")
+            detect_laps(env, times, positions, method="reference")
 
     def test_detect_laps_validation_region_required(self):
         """Test that region method requires start_region parameter."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
         from neurospatial.behavior.segmentation import detect_laps
@@ -267,7 +254,7 @@ class TestDetectLaps:
         with pytest.raises(
             ValueError, match=r"start_region.*required when method='region'"
         ):
-            detect_laps(position_bins, times, env, method="region")
+            detect_laps(env, times, positions, method="region")
 
     def test_detect_laps_integration_workflow(self):
         """Test complete lap detection workflow with multiple methods."""
@@ -291,17 +278,17 @@ class TestDetectLaps:
         from neurospatial.behavior.segmentation import detect_laps
 
         # Test all three methods
-        laps_auto = detect_laps(position_bins, times, env, method="auto")
+        laps_auto = detect_laps(env, times, positions, method="auto")
 
         # Get reference from first lap
         template_size = n_samples // 5
         reference = position_bins[:template_size]
         laps_ref = detect_laps(
-            position_bins, times, env, method="reference", reference_lap=reference
+            env, times, positions, method="reference", reference_lap=reference
         )
 
         laps_region = detect_laps(
-            position_bins, times, env, method="region", start_region="start"
+            env, times, positions, method="region", start_region="start"
         )
 
         # All methods should detect laps
@@ -312,7 +299,7 @@ class TestDetectLaps:
         # Verify temporal ordering
         for laps in [laps_auto, laps_ref, laps_region]:
             for i in range(len(laps) - 1):
-                assert laps[i].end_time <= laps[i + 1].start_time
+                assert laps[i].stop_time <= laps[i + 1].start_time
 
 
 class TestLapRoundTrip:
@@ -337,10 +324,9 @@ class TestLapRoundTrip:
             sampling_frequency=30.0,
             speed_mean=15.0,
         )
-        position_bins = env.bin_at(positions)
 
         laps = detect_laps(
-            position_bins, times, env, method="auto", min_overlap=0.7, direction="both"
+            env, times, positions, method="auto", min_overlap=0.7, direction="both"
         )
 
         # The simulator's laps are one-way traversals of the corridor; a lap
@@ -352,7 +338,7 @@ class TestLapRoundTrip:
         # Each circuit starts and ends at the start of the corridor.
         start_x = positions[0, 0]
         for lap in laps:
-            for time in (lap.start_time, lap.end_time):
+            for time in (lap.start_time, lap.stop_time):
                 x = positions[np.searchsorted(times, time), 0]
                 assert abs(x - start_x) <= 2 * 4.0  # within the start zone
 
@@ -388,9 +374,9 @@ class TestLapDirection:
         regions.add("start", polygon=Point(300.0, 330.0).buffer(5.0))  # top
         env = env.with_regions(regions)
         laps = detect_laps(
-            env.bin_at(positions),
-            np.linspace(0, 60, 300),
             env,
+            np.linspace(0, 60, 300),
+            positions,
             method="region",
             start_region="start",
         )
@@ -418,17 +404,17 @@ class TestRegionLaps:
         ]
         positions = circle[order]
         times = np.arange(order.size) * 0.25
-        return env, env.bin_at(positions), times
+        return env, positions, times
 
     def test_boundary_jitter_does_not_split_laps(self):
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times = self._circle_with_jitter()
-        laps = detect_laps(bins, times, env, method="region", start_region="start")
+        env, positions, times = self._circle_with_jitter()
+        laps = detect_laps(env, times, positions, method="region", start_region="start")
 
         # The recording starts in the region (samples 0-1), so the first lap
         # runs from the first sample to the entry at 79.
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (times[0], times[79]),
             (times[79], times[161]),
             (times[161], times[243]),
@@ -455,7 +441,7 @@ class TestTemplateLaps:
             50 + self.RADIUS * np.cos(theta), 50 + self.RADIUS * np.sin(theta)
         ]
         env = Environment.from_samples(positions, bin_size=self.BIN)
-        return env, env.bin_at(positions), times, bounds
+        return env, positions, times, bounds
 
     def _check(self, laps, bounds):
         assert len(laps) == len(self.DURATIONS)
@@ -467,32 +453,35 @@ class TestTemplateLaps:
             assert lap.start_time == pytest.approx(bounds[k], abs=tolerance)
             end_tolerance = self.BIN / speeds[min(k + 1, 4)] + 1.0 / self.FS
             if k + 1 < len(self.DURATIONS):
-                assert lap.end_time == pytest.approx(bounds[k + 1], abs=end_tolerance)
+                assert lap.stop_time == pytest.approx(bounds[k + 1], abs=end_tolerance)
             assert lap.direction == "counter-clockwise"
         assert laps[0].start_time == 0.0
         # Laps tile the recording: each ends where the next begins.
-        assert all(a.end_time == b.start_time for a, b in itertools.pairwise(laps))
+        assert all(a.stop_time == b.start_time for a, b in itertools.pairwise(laps))
 
     def test_auto_laps_at_varying_speed(self):
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times, bounds = self._ring()
-        laps = detect_laps(bins, times, env, method="auto")
+        env, positions, times, bounds = self._ring()
+        laps = detect_laps(env, times, positions, method="auto")
         self._check(laps, bounds)
         assert laps[0].overlap_score == 1.0  # the first circuit is the template
 
     def test_reference_lap_from_a_fast_lap_finds_slow_laps(self):
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times, bounds = self._ring()
+        env, positions, times, bounds = self._ring()
+        bins = env.bin_at(positions)
         fast = bins[(times >= bounds[2]) & (times < bounds[3])]  # the 5 s lap
         # The reference starts a quarter lap later; laps then start there.
         quarter = (times >= bounds[2] + 1.25) & (times < bounds[3])
         rotated = np.r_[bins[quarter], fast[: len(fast) - quarter.sum()]]
-        laps = detect_laps(bins, times, env, method="reference", reference_lap=fast)
+        laps = detect_laps(
+            env, times, positions, method="reference", reference_lap=fast
+        )
         self._check(laps, bounds)
         rotated_laps = detect_laps(
-            bins, times, env, method="reference", reference_lap=rotated
+            env, times, positions, method="reference", reference_lap=rotated
         )
         # Start line a quarter turn on: four complete laps between passes.
         assert len(rotated_laps) == 4
@@ -502,32 +491,33 @@ class TestTemplateLaps:
         """Half a lap out and back through the start line is not a lap."""
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times, _ = self._ring()
+        env, positions, times, _ = self._ring()
+        bins = env.bin_at(positions)
         theta = np.r_[np.linspace(0, np.pi, 60), np.linspace(np.pi, -0.5, 60)]
         half = np.c_[50 + self.RADIUS * np.cos(theta), 50 + self.RADIUS * np.sin(theta)]
         laps = detect_laps(
-            env.bin_at(half),
-            np.arange(theta.size) / self.FS,
             env,
+            np.arange(theta.size) / self.FS,
+            half,
             method="reference",
             reference_lap=bins[times < 10.0],
         )
-        assert laps == []
+        assert len(laps) == 0
 
     @pytest.mark.parametrize("min_overlap", [0.0, -0.5, 1.5, np.nan])
     def test_min_overlap_outside_unit_interval_raises(self, min_overlap):
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times, _ = self._ring()
+        env, positions, times, _ = self._ring()
         with pytest.raises(ValueError, match=r"min_overlap must be in \(0, 1\]"):
-            detect_laps(bins, times, env, min_overlap=min_overlap)
+            detect_laps(env, times, positions, min_overlap=min_overlap)
 
     def test_unknown_direction_raises(self):
         from neurospatial.behavior.segmentation import detect_laps
 
-        env, bins, times, _ = self._ring()
+        env, positions, times, _ = self._ring()
         with pytest.raises(ValueError, match="direction must be one of"):
-            detect_laps(bins, times, env, direction="cw")  # type: ignore[arg-type]
+            detect_laps(env, times, positions, direction="cw")  # type: ignore[arg-type]
 
 
 def _ring_arc(theta0, theta1, n_samples, radius=30.0):
@@ -557,9 +547,7 @@ class TestRegionLapsGoRoundTheLoop:
         from neurospatial.behavior.segmentation import detect_laps
 
         times = np.arange(len(positions)) / self.FS
-        laps = detect_laps(
-            env.bin_at(positions), times, env, method="region", start_region="start"
-        )
+        laps = detect_laps(env, times, positions, method="region", start_region="start")
         return laps, times
 
     @staticmethod
@@ -584,7 +572,7 @@ class TestRegionLapsGoRoundTheLoop:
         assert end_lap1 < 301 <= end_excursion < 301 + 240 <= end_lap2
         # The recording starts in the start region, so the first lap starts at
         # the first sample; the second lap starts when the excursion returns.
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[end_lap1]),
             (times[end_excursion], times[end_lap2]),
         ]
@@ -603,7 +591,7 @@ class TestRegionLapsGoRoundTheLoop:
         ]
         laps, _ = self._detect(env, positions)
         assert len(self._entries(env, positions)) == 2
-        assert laps == []
+        assert len(laps) == 0
 
     def test_laps_at_varying_speeds_in_both_directions(self):
         """Two counter-clockwise laps (10 s, 4 s), then a clockwise one (6 s)."""
@@ -616,7 +604,7 @@ class TestRegionLapsGoRoundTheLoop:
         laps, times = self._detect(env, positions)
         entries = self._entries(env, positions)
         assert len(entries) == 3
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[entries[0]]),
             (times[entries[0]], times[entries[1]]),
             (times[entries[1]], times[entries[2]]),
@@ -634,7 +622,7 @@ class TestRegionLapsGoRoundTheLoop:
         positions = _ring_arc(np.pi, 6.5 * np.pi, 826)
         laps, times = self._detect(env, positions)
         first, second, third = self._entries(env, positions)
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (times[first], times[second]),
             (times[second], times[third]),
         ]
@@ -649,12 +637,11 @@ class TestRegionLapsGoRoundTheLoop:
         regions.add("start", polygon=Point(0.0, 0.0).buffer(5.0))
         env = env.with_regions(regions)
         xs = np.r_[x, x[::-1][1:]]
-        bins = env.bin_at(np.c_[xs, np.zeros_like(xs)])
         with pytest.raises(ValueError, match="does not cut a loop"):
             detect_laps(
-                bins,
-                np.arange(xs.size) / 30.0,
                 env,
+                np.arange(xs.size) / 30.0,
+                np.c_[xs, np.zeros_like(xs)],
                 method="region",
                 start_region="start",
             )
@@ -672,9 +659,9 @@ class TestRegionLapsGoRoundTheLoop:
         positions = _ring_arc(0, 4 * np.pi, 601)
         with pytest.raises(ValueError, match="method='auto'"):
             detect_laps(
-                env.bin_at(positions),
-                np.arange(601) / 30.0,
                 env,
+                np.arange(601) / 30.0,
+                positions,
                 method="region",
                 start_region="start",
             )
@@ -701,7 +688,7 @@ class TestRegionLapsGoRoundTheLoop:
         ]
         laps, times = self._detect(env, positions)
         end_lap1, end_excursion, end_lap2 = self._entries(env, positions)
-        assert [(lap.start_time, lap.end_time) for lap in laps] == [
+        assert [(lap.start_time, lap.stop_time) for lap in laps] == [
             (0.0, times[end_lap1]),
             (times[end_excursion], times[end_lap2]),
         ]
@@ -731,7 +718,7 @@ class TestTemplateLapsSkipTurnBacks:
         for lap, (start, stop, duration) in zip(laps, expected, strict=True):
             tolerance = self.BIN / (circumference / duration) + 1.0 / self.FS
             assert lap.start_time == pytest.approx(start, abs=tolerance)
-            assert lap.end_time == pytest.approx(stop, abs=tolerance)
+            assert lap.stop_time == pytest.approx(stop, abs=tolerance)
             assert lap.direction == "counter-clockwise"
 
     @pytest.mark.parametrize("method", ["auto", "reference"])
@@ -748,7 +735,7 @@ class TestTemplateLapsSkipTurnBacks:
         bins = env.bin_at(positions)
         times = np.arange(len(positions)) / self.FS
         kwargs = {"reference_lap": bins[:300]} if method == "reference" else {}
-        laps = detect_laps(bins, times, env, method=method, **kwargs)
+        laps = detect_laps(env, times, positions, method=method, **kwargs)
         self._assert_laps(laps, [(0.0, 10.0, 10.0), (18.0, 28.0, 10.0)])
 
     def test_two_excursions_then_laps_at_varying_speed(self):
@@ -765,9 +752,8 @@ class TestTemplateLapsSkipTurnBacks:
             _ring_arc(0, 2 * np.pi, 151)[1:],
             _ring_arc(0, 2 * np.pi, 601)[1:],
         ]
-        bins = env.bin_at(positions)
         times = np.arange(len(positions)) / self.FS
-        laps = detect_laps(bins, times, env, method="auto")
+        laps = detect_laps(env, times, positions, method="auto")
         self._assert_laps(
             laps, [(0.0, 10.0, 10.0), (18.0, 23.0, 5.0), (23.0, 43.0, 20.0)]
         )
@@ -786,6 +772,5 @@ class TestTemplateLapsSkipTurnBacks:
         positions = np.r_[
             _ring_arc(0, turn, 121), _ring_arc(turn, 0, 121)[1:], lap[1:], lap[1:]
         ]
-        bins = env.bin_at(positions)
-        laps = detect_laps(bins, np.arange(len(positions)) / self.FS, env)
+        laps = detect_laps(env, np.arange(len(positions)) / self.FS, positions)
         self._assert_laps(laps, [(8.0, 18.0, 10.0), (18.0, 28.0, 10.0)])

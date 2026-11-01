@@ -403,7 +403,7 @@ def t_track_trials():
     trials = Intervals(
         [
             Trial(0.0, 10.0, "start", "well_left", "reached"),
-            Trial(10.0, 20.0, "start", None, "timeout"),
+            Trial(10.0, 20.0, "start", None, "returned"),
             Trial(20.0, 30.0, "start", "well_right", "reached"),
         ]
     )
@@ -540,9 +540,14 @@ def test_target_forms(t_track_trials):
             start="start",
             goal=[{"x": 1}, None, "well_left"],
         )
-    # A list of numbers is one point, checked against the environment.
-    with pytest.raises(ValueError, match="has 3 coordinates"):
+    # One integer per trial reads as well numbers, not one point.
+    with pytest.raises(TypeError, match="one integer per interval"):
         path_progress(track, times, positions, trials, start="start", goal=[1, 2, 3])
+    # Float coordinates are one point, checked against the environment.
+    with pytest.raises(ValueError, match="has 3 coordinates"):
+        path_progress(
+            track, times, positions, trials, start="start", goal=[1.0, 2.0, 3.0]
+        )
 
 
 def test_one_dimensional_points_need_no_radius():
@@ -582,3 +587,47 @@ def test_numeric_series_aligns_by_interval_id():
     np.testing.assert_allclose(remaining, [40.0, 40.0, 40.0, 40.0], atol=1.0)
     with pytest.raises(ValueError, match="one value per interval"):
         path_progress(env, times, positions, start=[49.0], goal=goals)
+
+
+@pytest.mark.parametrize("n_trials", [2, 3])
+def test_integer_goal_entries_refused_in_2d(n_trials):
+    """Well numbers are not points: two of them once read as one 2-D point."""
+    from neurospatial.simulation.mazes import make_w_maze
+
+    track = make_w_maze().env_track
+    times = np.arange(0.0, 30.0, 0.5)
+    positions = np.column_stack(
+        [np.zeros(times.size), np.linspace(69.0, 0.0, times.size)]
+    )
+    trials = Intervals.from_arrays(
+        np.arange(n_trials) * 10.0,
+        np.arange(1, n_trials + 1) * 10.0,
+        goal_well=[1, 3, 1][:n_trials],
+    )
+    with pytest.raises(TypeError, match=r"(?s)is the number 1,.*map the numbers"):
+        path_progress(
+            track, times, positions, trials, start="well_2", goal=trials.goal_well
+        )
+
+
+@pytest.mark.parametrize("n_trials", [2, 3])
+def test_integer_array_per_interval_refused_in_2d(n_trials):
+    """A plain integer array with one value per trial is not one point."""
+    from neurospatial.behavior import distance_to_goal
+    from neurospatial.simulation.mazes import make_w_maze
+
+    track = make_w_maze().env_track
+    times = np.arange(0.0, 30.0, 0.5)
+    positions = np.column_stack(
+        [np.zeros(times.size), np.linspace(69.0, 0.0, times.size)]
+    )
+    trials = Intervals.from_arrays(
+        np.arange(n_trials) * 10.0, np.arange(1, n_trials + 1) * 10.0
+    )
+    wells = [1, 3, 1][:n_trials]
+    for call in (distance_to_goal, path_progress):
+        kwargs = {"start": "well_2"} if call is path_progress else {}
+        with pytest.raises(TypeError, match=r"(?s)one integer per interval.*map"):
+            call(track, times, positions, trials, goal=wells, **kwargs)
+        with pytest.raises(TypeError, match=r"(?s)one integer per interval.*map"):
+            call(track, times, positions, trials, goal=np.asarray(wells), **kwargs)

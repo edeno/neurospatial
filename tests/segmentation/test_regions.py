@@ -33,15 +33,14 @@ class TestDetectRegionCrossings:
             [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
         )
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="both",
             max_gap=None,
@@ -70,15 +69,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([20.0, 40.0, 50.0, 30.0, 50.0])
         y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="entry",
             max_gap=None,
@@ -104,15 +102,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([50.0, 55.0, 30.0, 50.0, 20.0])
         y_traj = np.full(5, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="exit",
             max_gap=None,
@@ -138,15 +135,14 @@ class TestDetectRegionCrossings:
         x_traj = np.array([10.0, 15.0, 20.0, 15.0, 10.0])
         y_traj = np.array([10.0, 10.0, 10.0, 10.0, 10.0])
         trajectory = np.column_stack([x_traj, y_traj])
-        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins,
-            times,
             env,
+            times,
+            trajectory,
             region_name="target",
             direction="both",
             max_gap=None,
@@ -154,196 +150,6 @@ class TestDetectRegionCrossings:
 
         # Should have no crossings
         assert len(crossings) == 0
-
-
-class TestDetectRunsBetweenRegions:
-    """Test detect_runs_between_regions function."""
-
-    def test_detect_successful_runs(self):
-        """Test detection of successful runs from source to target."""
-        # Create 2D environment
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        # Add source and target regions at opposite ends
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
-        env = env.with_regions(region_builder)
-
-        # Create trajectory: start in source, travel to target
-        x_traj = np.linspace(10.0, 90.0, 50)
-        y_traj = np.ones(50) * 50.0
-        trajectory = np.column_stack([x_traj, y_traj])
-        times = np.linspace(0, 5.0, 50)
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.5,
-            max_duration=10.0,
-        )
-
-        # Should detect at least one successful run
-        assert len(runs) > 0
-        # Verify run attributes
-        for run in runs:
-            assert hasattr(run, "start_time")
-            assert hasattr(run, "end_time")
-            assert hasattr(run, "bins")
-            assert hasattr(run, "success")
-            if run.success:
-                assert run.end_time - run.start_time >= 0.5  # min_duration
-
-    def test_detect_failed_runs_timeout(self):
-        """A trajectory that never reaches the target must produce a
-        failed run when ``max_duration`` is exceeded.
-
-        Construct a trajectory that leaves the source region and then
-        stalls in the middle of the arena — never touching the target.
-        The detector should yield at least one ``Run`` whose
-        ``success`` flag is ``False`` (timeout).
-        """
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
-        env = env.with_regions(region_builder)
-
-        # Trajectory leaves source (10, 50), moves to mid-arena (50, 50)
-        # over 1.5 s, then dwells there. ``max_duration=1.0`` < dwell
-        # time ⇒ at least one timeout failure must be reported.
-        x_traj = np.concatenate([np.linspace(10.0, 50.0, 30), np.full(70, 50.0)])
-        y_traj = np.full(100, 50.0)
-        trajectory = np.column_stack([x_traj, y_traj])
-        times = np.linspace(0, 20.0, 100)
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.5,
-            max_duration=1.0,  # Will timeout — trajectory dwells past this
-        )
-
-        assert len(runs) >= 1, "Expected at least one run to be reported."
-        # At least one run must be a documented failure (not success).
-        # No real run can succeed because the trajectory never reaches
-        # ``target``.
-        assert any(not r.success for r in runs), (
-            "Trajectory never reached target; at least one failed run "
-            f"should be reported, got runs={runs}."
-        )
-        assert not any(r.success for r in runs), (
-            "No run can succeed since the trajectory never touches "
-            f"`target`; got runs={runs}."
-        )
-
-    def test_min_duration_filter(self):
-        """Test that runs shorter than min_duration are filtered."""
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
-        env = env.with_regions(region_builder)
-
-        # Very fast run (0.1 seconds)
-        x_traj = np.linspace(10.0, 90.0, 10)
-        y_traj = np.ones(10) * 50.0
-        trajectory = np.column_stack([x_traj, y_traj])
-        times = np.linspace(0, 0.1, 10)
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=1.0,  # Require at least 1 second
-            max_duration=10.0,
-        )
-
-        # Short run should be filtered out
-        assert len(runs) == 0
-
-    def test_timeout_run_bins_consistent_with_velocity_filter(self):
-        """Timeout run's stored bins span exactly the velocity-filtered slice.
-
-        The stored ``run.bins`` and the slice used for the optional velocity
-        filter must describe the same samples, including at the timeout
-        boundary. This pins the unified slice so the path and filter cannot
-        diverge by an off-by-one.
-        """
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        region_builder.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
-        env = env.with_regions(region_builder)
-
-        # Leave source, move steadily toward (but never reaching) target,
-        # so the run times out partway with a non-trivial moving path.
-        x_traj = np.concatenate([np.full(5, 10.0), np.linspace(10.0, 60.0, 45)])
-        y_traj = np.full(50, 50.0)
-        trajectory = np.column_stack([x_traj, y_traj])
-        times = np.linspace(0, 10.0, 50)
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.5,
-            max_duration=2.0,  # Times out before reaching target
-            min_speed=1.0,  # Activate the velocity filter
-        )
-
-        assert len(runs) >= 1
-        run = runs[0]
-        assert run.success is False, "Run should time out without reaching target"
-
-        # The stored bins must correspond to a contiguous trajectory slice
-        # whose endpoints match start_time / end_time. Recover that slice from
-        # the timestamps and confirm the stored bins equal it exactly.
-        start_i = int(np.searchsorted(times, run.start_time))
-        end_i = int(np.searchsorted(times, run.end_time))
-        expected = position_bins[start_i : end_i + 1]
-        np.testing.assert_array_equal(run.bins, expected)
 
 
 class TestSegmentByVelocity:
@@ -366,7 +172,7 @@ class TestSegmentByVelocity:
         # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
             times, trajectory, min_speed=2.0, min_duration=0.5, hysteresis=2.0
-        )
+        ).windows
 
         # Should detect at least one movement period
         assert len(segments) > 0
@@ -393,10 +199,10 @@ class TestSegmentByVelocity:
 
         wide = segment_by_velocity(
             times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=2.0
-        )
+        ).windows
         narrow = segment_by_velocity(
             times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=1.01
-        )
+        ).windows
 
         # Wide hysteresis band ⇒ fewer (or equal) transitions, hence
         # fewer segments. A strict ``<`` would over-fit this noise; the
@@ -421,7 +227,7 @@ class TestSegmentByVelocity:
             trajectory,
             min_speed=5.0,
             min_duration=1.0,  # Require 1 second
-        )
+        ).windows
 
         # Brief movement should be filtered
         # All segments should have duration >= min_duration
@@ -456,7 +262,7 @@ class TestSegmentByVelocity:
             min_duration=0.5,
             hysteresis=2.0,
             smooth_window=0.5,  # multi-sample window -> noticeable edge effect
-        )
+        ).windows
 
         assert len(segments) == 1, (
             f"Constant-speed run should be one epoch, got {len(segments)}"
@@ -477,19 +283,24 @@ class TestSegmentByVelocity:
             f"end_time={end_time:.3f}, expected near {times[-1]:.3f}."
         )
 
-    def test_returns_epoch_array(self):
-        """Movement epochs come back as a float (n_epochs, 2) [start, stop) array."""
+    def test_returns_epoch_intervals(self):
+        """Movement epochs come back as Intervals of [start, stop) windows."""
         # Rest 0-5 s, move at 20 cm/s 5-10 s, rest 10-15 s, sampled at 100 Hz.
         times = np.arange(1501) / 100.0
         x = np.clip(20.0 * (times - 5.0), 0.0, 100.0)
 
+        from neurospatial import Interval, Intervals
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        segments = segment_by_velocity(
+        epochs = segment_by_velocity(
             times, x[:, None], min_speed=5.0, smooth_window=0.0
         )
-
-        assert isinstance(segments, np.ndarray)
+        assert isinstance(epochs, Intervals)
+        assert epochs.record_type is Interval
+        assert epochs.fields == ()
+        assert epochs.interval_ids.tolist() == [0]
+        assert epochs.analysis_settings["min_speed"] == 5.0
+        segments = epochs.windows
         assert segments.dtype == np.float64
         assert segments.shape == (1, 2)
         # The centered-secant speed is 10 cm/s at 5.00 s (x goes 0 -> 0.2 cm
@@ -528,44 +339,34 @@ class TestRegionSegmentationIntegration:
         trajectory = np.column_stack([x_traj, y_traj])
         times = np.linspace(0, 20, len(trajectory))
 
+        from neurospatial.behavior import detect_trials
         from neurospatial.behavior.segmentation import (
             detect_region_crossings,
-            detect_runs_between_regions,
             segment_by_velocity,
         )
 
         # Map to bins
-        position_bins = env.bin_at(trajectory)
 
         # 1. Detect region crossings
         source_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="source", direction="both"
+            env, times, trajectory, region_name="source", direction="both"
         )
         target_crossings = detect_region_crossings(
-            position_bins, times, env, region_name="target", direction="both"
+            env, times, trajectory, region_name="target", direction="both"
         )
 
-        # 2. Detect runs between regions
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.5,
-            max_duration=20.0,
-        )
+        # 2. Detect trials between the regions
+        trials = detect_trials(env, times, trajectory, regions=["source", "target"])
 
         # 3. Segment by velocity
         movement_segments = segment_by_velocity(
             times, trajectory, min_speed=2.0, min_duration=0.5
-        )
+        ).windows
 
         # All functions should execute successfully
         assert isinstance(source_crossings, list)
         assert isinstance(target_crossings, list)
-        assert isinstance(runs, list)
+        assert trials.end_region.tolist() == ["target"]
         assert movement_segments.shape[1:] == (2,)
 
         # Should detect source exit and target entry
@@ -573,61 +374,6 @@ class TestRegionSegmentationIntegration:
 
         # Should detect at least one movement segment
         assert len(movement_segments) > 0
-
-
-class TestRunRecord:
-    """Run records source, target and outcome; success is derived."""
-
-    def test_fields_and_derived_success(self):
-        from neurospatial.behavior.segmentation import Run
-
-        run = Run(1.0, 2.5, "home", "reward", "reached", np.array([3, 4, 5]))
-        assert run.source_region == "home"
-        assert run.target_region == "reward"
-        assert run.success is True
-        assert run.bins.dtype == np.int64
-        assert not run.bins.flags.writeable
-        for outcome in ("timeout", "returned", "censored"):
-            assert Run(1.0, 2.5, "home", "reward", outcome, run.bins).success is False
-
-    @pytest.mark.parametrize(
-        ("args", "match"),
-        [
-            ((3.0, 2.0, "home", "reward", "reached", [1]), "start_time <= end_time"),
-            ((0.0, 2.0, "home", "reward", "done", [1]), "outcome must be one of"),
-            ((0.0, 2.0, "home", "reward", "reached", [1.5]), "integer"),
-        ],
-    )
-    def test_invalid_records_raise(self, args, match):
-        from neurospatial.behavior.segmentation import Run
-
-        with pytest.raises(ValueError, match=match):
-            Run(*args)
-
-    def test_run_cut_off_by_recording_end_is_censored(self):
-        """A run still under way when the recording ends has an unknown result."""
-        from shapely.geometry import box
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        xs = np.linspace(0.0, 100.0, 401)
-        env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
-        regions = Regions(env.regions.values())
-        regions.add("home", polygon=box(-5.0, -5.0, 5.0, 5.0))
-        regions.add("reward", polygon=box(95.0, -5.0, 105.0, 5.0))
-        env = env.with_regions(regions)
-        # Leave home at 10 cm/s; the recording stops at 60 cm, 5.9 s later.
-        x = np.r_[np.zeros(5), np.linspace(1.0, 60.0, 60)]
-        times = np.arange(x.size) / 10.0
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
-
-        (run,) = detect_runs_between_regions(
-            bins, times, env, source="home", target="reward", max_gap=None
-        )
-
-        assert run.outcome == "censored"
-        assert run.end_time == times[-1]
-        assert (run.source_region, run.target_region) == ("home", "reward")
 
 
 def _w_track():
@@ -660,48 +406,51 @@ def _w_track():
     return env, env.bin_at(np.c_[x, np.zeros_like(x)]), times
 
 
-class TestRunsEndOnSourceReentry:
-    """A source re-entry ends the attempt; runs never overlap."""
+class TestTrialsOnWTrack:
+    """Each trial runs from leaving one well to arriving at the next."""
 
-    @pytest.mark.parametrize(
-        ("source", "target", "expected"),
-        [
-            ("center", "left", [(0.7, 2.7, "reached"), (6.5, 11.5, "returned")]),
-            ("center", "right", [(0.7, 5.7, "returned"), (6.5, 8.5, "reached")]),
-            ("left", "center", [(3.7, 5.7, "reached")]),
-            ("right", "center", [(9.5, 11.5, "reached")]),
-        ],
-    )
-    def test_w_track_runs(self, source, target, expected):
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
+    def test_w_track_trials(self):
+        from neurospatial.behavior import detect_trials
 
         env, bins, times = _w_track()
-        runs = detect_runs_between_regions(
-            bins, times, env, source=source, target=target
+        x = env.bin_centers[bins]
+        trials = detect_trials(env, times, x, regions=["center", "left", "right"])
+        got = list(
+            zip(
+                trials.start,
+                trials.stop,
+                trials.start_region,
+                trials.end_region,
+                strict=True,
+            )
         )
-        got = [(run.start_time, run.end_time, run.outcome) for run in runs]
+        expected = [
+            (0.7, 2.7, "center", "left"),
+            (3.7, 5.7, "left", "center"),
+            (6.5, 8.5, "center", "right"),
+            (9.5, 11.5, "right", "center"),
+        ]
         assert len(got) == len(expected)
-        for (s, e, o), (es, ee, eo) in zip(got, expected, strict=True):
-            assert (s, e, o) == pytest.approx((es, ee, eo))
+        for (s, e, a, b), (es, ee, ea, eb) in zip(got, expected, strict=True):
+            assert (s, e) == pytest.approx((es, ee))
+            assert (a, b) == (ea, eb)
+        assert set(trials.outcome) == {"reached"}
 
-    @pytest.mark.parametrize("success_only", [True, False])
-    def test_w_track_running_direction_labels(self, success_only):
-        from neurospatial.behavior.segmentation import running_direction_labels
+    def test_w_track_direction_labels_from_trials(self):
+        """Inbound/outbound labels are the trials' start and end regions."""
+        from neurospatial.behavior import detect_trials
 
         env, bins, times = _w_track()
-        labels = running_direction_labels(
-            bins,
-            times,
-            env,
-            start_region="center",
-            end_regions=["left", "right"],
-            success_only=success_only,
+        trials = detect_trials(
+            env, times, env.bin_centers[bins], regions=["center", "left", "right"]
         )
+        reached = trials[trials.outcome == "reached"]
+        labels = reached.sample_values(times, ("start_region", "end_region"))
         expected = np.full(times.size, None, dtype=object)
-        expected[7:27] = "outbound"  # [0.7, 2.7) center -> left
-        expected[37:57] = "inbound"  # [3.7, 5.7) left -> center
-        expected[65:85] = "outbound"  # [6.5, 8.5) center -> right
-        expected[95:115] = "inbound"  # [9.5, 11.5) right -> center
+        expected[7:27] = [("center", "left")] * 20
+        expected[37:57] = [("left", "center")] * 20
+        expected[65:85] = [("center", "right")] * 20
+        expected[95:115] = [("right", "center")] * 20
         assert labels.tolist() == expected.tolist()
 
 
@@ -719,10 +468,13 @@ class TestCrossingAndLapRecords:
         regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
         env = env.with_regions(regions)
         x = np.array([90.0, 92.0, 96.0, 98.0, 92.0])
-        bins = env.bin_at(np.c_[x, np.zeros_like(x)])
 
         crossings = detect_region_crossings(
-            bins, np.arange(5.0), env, region_name="goal", max_gap=None
+            env,
+            np.arange(5.0),
+            np.c_[x, np.zeros_like(x)],
+            region_name="goal",
+            max_gap=None,
         )
 
         assert [(c.time, c.direction, c.region) for c in crossings] == [
@@ -743,7 +495,7 @@ class TestCrossingAndLapRecords:
     @pytest.mark.parametrize(
         ("args", "match"),
         [
-            ((4.0, 1.0, "clockwise", 0.9), "start_time <= end_time"),
+            ((4.0, 1.0, "clockwise", 0.9), "start_time <= stop_time"),
             ((0.0, 1.0, "cw", 0.9), "direction must be one of"),
             ((0.0, 1.0, "clockwise", 1.5), r"overlap_score must be in \[0, 1\]"),
         ],
@@ -758,5 +510,5 @@ class TestCrossingAndLapRecords:
         from neurospatial.behavior.segmentation import Lap
 
         lap = Lap(np.int64(0), np.float32(2.5), "unknown", np.nan)
-        assert (type(lap.start_time), type(lap.end_time)) == (float, float)
+        assert (type(lap.start_time), type(lap.stop_time)) == (float, float)
         assert np.isnan(lap.overlap_score)

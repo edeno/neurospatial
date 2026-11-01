@@ -202,11 +202,7 @@ class TestDecisionRegionEntryTime:
                 np.linspace(0, 60, n_samples),  # y moves from 0 to 60
             ]
         )
-        position_bins = env.bin_at(positions)
-
-        entry_time = decision_region_entry_time(
-            position_bins, times, env, region="center"
-        )
+        entry_time = decision_region_entry_time(env, times, positions, region="center")
 
         # The center bin spans y in [52.5, 57.5); y = 60 k / 99 first reaches
         # it at sample k = 87.
@@ -227,38 +223,34 @@ class TestDecisionRegionEntryTime:
                 np.linspace(0, 30, n_samples),  # Only goes to y=30, not center
             ]
         )
-        position_bins = env.bin_at(positions)
-
         with pytest.raises(ValueError, match="never enters"):
-            decision_region_entry_time(position_bins, times, env, region="center")
+            decision_region_entry_time(env, times, positions, region="center")
 
-    def test_validates_bins_and_times(self, t_maze_environment):
-        from neurospatial._exceptions import BinIndexOutOfRangeError
+    def test_validates_positions_and_times(self, t_maze_environment):
         from neurospatial.behavior.decisions import decision_region_entry_time
 
         env = t_maze_environment
-        bins = env.bin_at(np.column_stack([np.full(5, 50.0), np.linspace(40, 56, 5)]))
+        positions = np.column_stack([np.full(5, 50.0), np.linspace(40, 56, 5)])
         times = np.arange(5) / 10
-        with pytest.raises(
-            ValueError, match="position_bins and times as 1-D arrays of the same length"
-        ):
-            decision_region_entry_time(bins, times[:4], env, region="center")
+
+        def entry(t, p):
+            return decision_region_entry_time(env, t, p, region="center")
+
+        with pytest.raises(ValueError, match="must have the same length"):
+            entry(times[:4], positions)
         with pytest.raises(ValueError, match="decreases"):
-            decision_region_entry_time(bins, times[::-1], env, region="center")
+            entry(times[::-1], positions)
         with pytest.raises(ValueError, match="strictly increasing"):
-            decision_region_entry_time(
-                bins, np.r_[0.0, times[:4]], env, region="center"
-            )
-        with pytest.raises(ValueError, match="finite"):
-            decision_region_entry_time(
-                bins, np.r_[times[:4], np.nan], env, region="center"
-            )
-        with pytest.raises(TypeError, match="position_bins= takes integer bin indices"):
-            decision_region_entry_time(bins.astype(float), times, env, region="center")
-        with pytest.raises(BinIndexOutOfRangeError, match="Bin index 999 "):
-            decision_region_entry_time(
-                np.r_[bins[:4], 999], times, env, region="center"
-            )
+            entry(np.r_[0.0, times[:4]], positions)
+        with pytest.raises(ValueError, match="non-finite"):
+            entry(np.r_[times[:4], np.nan], positions)
+        with pytest.raises(ValueError, match="3 coordinate"):
+            entry(times, np.zeros((5, 3)))
+        # A lost sample (NaN) is in no region: the only sample inside is lost.
+        lost = positions.copy()
+        lost[-1] = np.nan
+        with pytest.raises(ValueError, match="never enters"):
+            entry(times, lost)
 
 
 # =============================================================================

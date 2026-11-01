@@ -21,6 +21,25 @@ _STEP_WHY = (
 )
 
 
+def _event_rows(intervals: Any) -> NDArray[np.float64]:
+    """Every event's ``(start, stop)``, one row per event, unvalidated.
+
+    An :class:`~neurospatial.Intervals` gives all its rows in its own (time)
+    order, so row ``i`` is ``intervals[i]``; its ``windows`` would drop
+    zero-duration rows and lose that correspondence. A pynapple
+    ``IntervalSet``'s inclusive ``end`` becomes the next float above it.
+    Anything else is read as an array.
+    """
+    from neurospatial._interval_table import Intervals
+    from neurospatial._pynapple import interval_rows, is_pynapple_type
+
+    if isinstance(intervals, Intervals):
+        return np.column_stack([intervals.start, intervals.stop]).reshape(-1, 2)
+    if is_pynapple_type(intervals, "IntervalSet"):
+        return interval_rows(intervals)
+    return np.asarray(intervals, dtype=np.float64)
+
+
 def _checked_intervals(
     intervals: Any,
     operation: str,
@@ -33,8 +52,8 @@ def _checked_intervals(
 
     Parameters
     ----------
-    intervals : array_like, shape (n_events, 2)
-        The windows, in seconds.
+    intervals : array_like of shape (n_events, 2), Intervals or IntervalSet
+        The windows, in seconds, read by :func:`_event_rows`.
     operation, name : str
         The calling function and argument, named in the error.
     allow_empty : bool, default=False
@@ -45,11 +64,23 @@ def _checked_intervals(
     Returns
     -------
     NDArray[np.float64], shape (n_events, 2)
-        The windows, in input order.
+        The windows, in input order (an ``Intervals``' row order).
     """
-    windows = np.asarray(intervals, dtype=np.float64)
+    windows = _event_rows(intervals)
     if allow_empty and windows.size == 0:
         return windows.reshape(0, 2)
+    ids = getattr(intervals, "interval_ids", None)
+    if ids is not None and windows.ndim == 2 and np.any(windows[:, 1] <= windows[:, 0]):
+        empty = np.asarray(ids)[windows[:, 1] <= windows[:, 0]]
+        raise ValueError(
+            _format_error(
+                f"{operation}: {name} has events with no duration (interval_id "
+                f"{empty[:5].tolist()}).",
+                why="each event's spikes are those at start <= t < stop, so an "
+                "event with stop == start holds none.",
+                fix=f"select the events with duration: {name}[{name}.durations > 0].",
+            )
+        )
     if (
         windows.ndim != 2
         or windows.shape[1] != 2
@@ -63,7 +94,8 @@ def _checked_intervals(
                 f"with start < stop, got shape {windows.shape}.",
                 why="each row is one event, and spikes at start <= t < stop "
                 "belong to it",
-                fix="pass an array of shape (n_events, 2)"
+                fix="pass an Intervals of the events or an array of shape "
+                "(n_events, 2)"
                 + (f", such as {example}" if example else " in seconds"),
             )
         )

@@ -1262,7 +1262,7 @@ def compute_vte_session(
     decision_region : str
         Name of decision region in env.regions.
     trials : Intervals
-        Trials from segment_trials(), read_trials() or a task log. Each
+        Trials from detect_trials(), read_trials() or a task log. Each
         trial's samples are those in ``[start_time, stop_time)``; the sample
         at ``stop_time`` (the arrival) is outside it.
     window_duration : float, default=1.0

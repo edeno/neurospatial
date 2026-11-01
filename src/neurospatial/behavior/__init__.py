@@ -12,14 +12,15 @@ trajectory : Speed, movement and body heading, step lengths, turn angles,
     MSD, home range, curvature
 epochs : Restrict times / arrays / spike trains to time intervals (epochs);
     convert per-sample labels to epochs
-segmentation : Laps, trials, region crossings, runs
+segmentation : Laps, region crossings, movement and goal-directed runs
 navigation : Path efficiency, goal-directed metrics, path progress,
     distance to regions, boundaries and rewards
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
 resampling : Distance resampling
-visits : Observed region visits and entry-to-entry transitions
+visits : Observed region visits
+trials : Trials between visits to named regions
 """
 
 from neurospatial.behavior.decisions import (
@@ -37,7 +38,6 @@ from neurospatial.behavior.decisions import (
     pre_decision_speed_stats,
 )
 from neurospatial.behavior.epochs import (
-    LabelEpochsResult,
     in_epochs,
     labels_to_epochs,
     restrict,
@@ -57,7 +57,6 @@ from neurospatial.behavior.navigation import (
     distance_to_reward,
     goal_bias,
     goal_direction,
-    goal_pair_direction_labels,
     goal_vector,
     graph_turn_sequence,
     heading_direction_labels,
@@ -81,17 +80,11 @@ from neurospatial.behavior.reward import (
 from neurospatial.behavior.segmentation import (
     Crossing,
     Lap,
-    Run,
     Trial,
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    detect_runs_between_regions,
-    laps_to_direction_labels,
-    running_direction_labels,
-    runs_to_direction_labels,
     segment_by_velocity,
-    segment_trials,
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
@@ -109,11 +102,10 @@ from neurospatial.behavior.trajectory import (
     mean_square_displacement,
     smooth_positions,
 )
+from neurospatial.behavior.trials import detect_trials, trials_between_visits
 from neurospatial.behavior.visits import (
-    RegionTransition,
     RegionVisit,
     detect_region_visits,
-    region_transitions,
 )
 from neurospatial.behavior.vte import (
     VTESessionResult,
@@ -142,7 +134,6 @@ __all__ = [  # noqa: RUF022
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
     # epochs module
-    "LabelEpochsResult",
     "in_epochs",
     "labels_to_epochs",
     "restrict",
@@ -171,7 +162,6 @@ __all__ = [  # noqa: RUF022
     "distance_to_reward",
     "goal_bias",
     "goal_direction",
-    "goal_pair_direction_labels",
     "goal_vector",
     "graph_turn_sequence",
     "heading_direction_labels",
@@ -186,23 +176,18 @@ __all__ = [  # noqa: RUF022
     # segmentation module
     "Crossing",
     "Lap",
-    "Run",
     "Trial",
     "detect_goal_directed_runs",
     "detect_laps",
     "detect_region_crossings",
-    "detect_runs_between_regions",
-    "laps_to_direction_labels",
-    "running_direction_labels",
-    "runs_to_direction_labels",
     "segment_by_velocity",
-    "segment_trials",
     "trajectory_similarity",
     # visits module
-    "RegionTransition",
     "RegionVisit",
     "detect_region_visits",
-    "region_transitions",
+    # trials module
+    "detect_trials",
+    "trials_between_visits",
     # resampling module
     "ResampledPathResult",
     "resample_by_distance",

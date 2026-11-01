@@ -158,7 +158,7 @@ def test_distance_to_goal_per_interval_goals(simple_environment_with_regions):
         [
             Trial(0.0, 2.0, "start", "goal1", "reached"),
             Trial(2.0, 4.0, "start", "goal2", "reached"),
-            Trial(4.0, 5.0, "start", None, "timeout"),
+            Trial(4.0, 5.0, "start", None, "returned"),
         ]
     )
     distances = distance_to_goal(
@@ -259,7 +259,7 @@ def test_time_to_goal_failed_trials():
                 stop_time=4.0,
                 start_region="start",
                 end_region=None,  # Failed trial
-                outcome="timeout",
+                outcome="returned",
             ),
         ]
     )

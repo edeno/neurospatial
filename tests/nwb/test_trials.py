@@ -34,7 +34,7 @@ def detected() -> Intervals[Trial]:
             Trial(25.0, 40.0, "start_zone", None, "censored"),
             Trial(1.5, 6.2, "start_zone", "reward_right", "reached"),
             Trial(10.0, 18.5, "start_zone", "reward_left", "reached"),
-            Trial(19.0, 24.0, "start_zone", None, "timeout"),
+            Trial(19.0, 24.0, "start_zone", None, "returned"),
         ],
         interval_ids=[8, 2, 5, 6],
     )
@@ -54,16 +54,22 @@ def _write_and_read(nwbfile, tmp_path, name: str = "trials.nwb"):
 
 
 class TestWriteTrials:
-    def test_fields_are_columns_and_ids_are_the_table_id(self, empty_nwb, detected):
+    def test_fields_are_columns_and_ids_an_interval_id_column(
+        self, empty_nwb, detected
+    ):
         from neurospatial.io.nwb import write_trials
 
         write_trials(empty_nwb, detected)
 
         table = empty_nwb.trials.to_dataframe()
-        assert table.index.tolist() == [2, 5, 6, 8]
+        # The table id is the row number every NWB reader expects; the
+        # stable ids are their own column.
+        assert table.index.tolist() == [0, 1, 2, 3]
+        assert table["interval_id"].tolist() == [2, 5, 6, 8]
         assert list(table.columns) == [
             "start_time",
             "stop_time",
+            "interval_id",
             "start_region",
             "end_region",
             "outcome",
@@ -282,11 +288,11 @@ class TestReadTrials:
         assert back.rewarded.tolist() == [False, True, True]
 
     def test_detected_and_reloaded_schema_match(self, tmp_path):
-        """Trials from segment_trials and from NWB support the same calls."""
+        """Trials from detect_trials and from NWB support the same calls."""
         from shapely.geometry import box
 
         from neurospatial import Environment, Regions
-        from neurospatial.behavior import segment_trials
+        from neurospatial.behavior import detect_trials
         from neurospatial.io.nwb import write_trials
 
         x = np.r_[
@@ -299,10 +305,8 @@ class TestReadTrials:
         regions.add("home", polygon=box(-1, -5, 10, 5))
         regions.add("goal", polygon=box(90, -5, 101, 5))
         env = env.with_regions(regions)
-        detected = segment_trials(
-            env.bin_at(positions), times, env, start_region="home", end_regions="goal"
-        )
-        assert len(detected) == 1
+        detected = detect_trials(env, times, positions, regions=["home", "goal"])
+        assert detected.outcome.tolist() == ["reached", "reached"]
 
         nwbfile = create_roundtrip_nwb()
         write_trials(nwbfile, detected)
@@ -334,7 +338,7 @@ def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
     """pandas 3 reads NWB text as string dtype; "" must still become None."""
     from neurospatial.io.nwb import read_trials, write_trials
 
-    trials = Intervals([Trial(0.0, 5.0, "home", None, "timeout")])
+    trials = Intervals([Trial(0.0, 5.0, "home", None, "returned")])
     write_trials(empty_nwb, trials)
     # The string dtype is the default from pandas 3 and opt-in before it.
     string_dtype = (
@@ -370,7 +374,7 @@ def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
     detected = Intervals(
         [
             Trial(0.0, 10.0, "start", "well_left", "reached"),
-            Trial(10.0, 20.0, "start", None, "timeout"),
+            Trial(10.0, 20.0, "start", None, "returned"),
             Trial(20.0, 30.0, "start", "well_right", "reached"),
         ]
     )
@@ -426,3 +430,27 @@ def test_imported_and_reloaded_trials_give_the_same_tuning_curves(empty_nwb):
     np.testing.assert_array_equal(after.occupancy, before.occupancy)
     assert after.analysis_settings["epoch_interval_ids"] == [0, 2, 4, 6]
     assert before.occupancy.sum() == pytest.approx(16.0)
+
+
+@pytest.mark.pynapple
+def test_pynapple_loads_a_written_selection_with_its_ids(tmp_path):
+    """A selection's ids are not 0..n-1; pynapple still builds the IntervalSet."""
+    nap = pytest.importorskip("pynapple")
+    from neurospatial.io import from_pynapple
+    from neurospatial.io.nwb import write_trials
+
+    trials = Intervals.from_arrays(
+        [0.0, 10.0, 20.0, 30.0], [5.0, 15.0, 25.0, 35.0], goal=["a", "b", "a", "b"]
+    )
+    selected = trials[trials.goal == "b"]  # ids 1 and 3
+    nwbfile = create_roundtrip_nwb()
+    write_trials(nwbfile, selected)
+    path = tmp_path / "selected.nwb"
+    with pynwb.NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+
+    loaded = nap.load_file(str(path))["trials"]
+    assert isinstance(loaded, nap.IntervalSet)
+    back = from_pynapple(loaded)
+    assert back.interval_ids.tolist() == [1, 3]
+    assert back.goal.tolist() == ["b", "b"]

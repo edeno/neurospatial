@@ -264,3 +264,56 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
                 )
             )
     return rows
+
+
+def intervals_from_interval_set(intervals: Any) -> Any:
+    """A pynapple ``IntervalSet`` as :class:`~neurospatial.Intervals`.
+
+    Metadata columns become fields, with text ``""`` as ``None`` (the empty
+    string is not a field value; an IntervalSet loaded from an NWB table
+    holds ``""`` where a value is missing). An ``interval_id`` metadata
+    column (as ``to_pynapple`` writes) becomes the ids. Each inclusive
+    pynapple ``end`` becomes the next float above it, the half-open stop
+    holding the same timestamps.
+
+    Parameters
+    ----------
+    intervals : pynapple.IntervalSet
+
+    Returns
+    -------
+    Intervals of Interval
+    """
+    import warnings
+
+    import pandas as pd
+
+    from neurospatial._interval_table import Intervals, readable_fields
+    from neurospatial._stacklevel import _external_stacklevel
+
+    rows = interval_rows(intervals)
+    table = pd.DataFrame({"start_time": rows[:, 0], "stop_time": rows[:, 1]})
+    metadata = getattr(intervals, "metadata", None)
+    if metadata is not None:
+        for column in metadata.columns:
+            table[str(column)] = metadata[column].to_numpy()
+    table, dropped = readable_fields(
+        table, keep=("start_time", "stop_time", "interval_id")
+    )
+    if dropped:
+        warnings.warn(
+            f"IntervalSet metadata {dropped} cannot be Intervals fields (not an "
+            "identifier, a name Intervals uses, or values without a hashable "
+            "form) and were left out. Fix: rename or convert those columns in "
+            "iset.metadata to keep them.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    id_column = None
+    if "interval_id" in table.columns:
+        ids = table["interval_id"].to_numpy()
+        if ids.dtype.kind in "iu" and len(np.unique(ids)) == len(ids):
+            id_column = "interval_id"
+        else:
+            table = table.drop(columns="interval_id")
+    return Intervals.from_dataframe(table, id_column=id_column)

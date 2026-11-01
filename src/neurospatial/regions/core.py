@@ -572,6 +572,40 @@ def _require_region(value: object, *, key: str | None) -> Region:
     )
 
 
+def _disc_center_and_radius(
+    point: Any, radius: Any
+) -> tuple[NDArray[np.float64], float]:
+    """The 2-D centre and radius of a disc region, checked."""
+    from neurospatial._validation import is_finite_real
+
+    if point is None:
+        raise ValueError(
+            _format_error(
+                "radius= gives a point region a size, but no point= was given.",
+                fix="pass point=(x, y) with radius=, or a polygon without radius=.",
+            )
+        )
+    center = np.asarray(
+        point.coords[0] if isinstance(point, Point) else point, dtype=np.float64
+    ).reshape(-1)
+    if center.shape != (2,) or not np.isfinite(center).all():
+        raise ValueError(
+            _format_error(
+                f"radius= needs a finite 2-D point; got point={point!r}.",
+                why="the region is stored as a disc polygon in the plane.",
+                fix="pass point=(x, y).",
+            )
+        )
+    if not is_finite_real(radius, positive=True):
+        raise ValueError(
+            _format_error(
+                f"radius must be a finite number > 0; got {radius!r}.",
+                fix="pass the well's radius in the regions' units, e.g. radius=5.0.",
+            )
+        )
+    return center, float(radius)
+
+
 class Regions(MutableMapping[str, Region]):
     """A small `dict`-like container mapping *name → Region*.
 
@@ -803,6 +837,7 @@ class Regions(MutableMapping[str, Region]):
         *,
         point: PointCoords | None = None,
         polygon: Polygon | None = None,
+        radius: float | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> Region:
         """Create and insert a new Region.
@@ -815,6 +850,14 @@ class Regions(MutableMapping[str, Region]):
             Point coordinates or Shapely Point object. Mutually exclusive with polygon.
         polygon : Polygon or None, optional
             Shapely Polygon object. Mutually exclusive with point.
+        radius : float or None, optional
+            With a 2-D ``point``: store a disc of this radius around it (a
+            polygon), in the regions' coordinate units. Give a reward well or
+            port the size of the place where the animal stops, so detecting
+            visits and computing progress agree on where the well is; a point
+            region is one bin. The centre and radius are recorded in
+            ``metadata``. Shapely approximates the circle by a polygon, so
+            the area is slightly less than ``pi * radius**2``.
         metadata : Mapping[str, Any] or None, optional
             Optional metadata dictionary to attach to the region.
 
@@ -826,10 +869,17 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         ValueError
-            If both or neither of point/polygon are specified.
+            If both or neither of point/polygon are specified, or ``radius``
+            is given without a 2-D ``point`` or is not a finite number > 0.
         KeyError
             If name already exists in the collection.
 
+        Examples
+        --------
+        >>> regions = Regions()
+        >>> well = regions.add("well_1", point=(-34.5, 69.0), radius=5.0)
+        >>> well.kind, dict(well.metadata)
+        ('polygon', {'center': (-34.5, 69.0), 'radius': 5.0})
         """
         self._mutable_store()
         if (point is None) == (polygon is None):
@@ -839,7 +889,24 @@ class Regions(MutableMapping[str, Region]):
             msg = f"Duplicate region name {name!r}."
             raise KeyError(msg)
 
-        if point is not None:
+        if radius is not None:
+            center, size = _disc_center_and_radius(point, radius)
+            taken = sorted({"center", "radius"} & set(metadata or {}))
+            if taken:
+                raise ValueError(
+                    _format_error(
+                        f"metadata keys {taken} are set by radius=.",
+                        why="a disc region records its centre and radius in metadata.",
+                        fix="rename those metadata keys.",
+                    )
+                )
+            region = Region(
+                name,
+                "polygon",
+                Point(center).buffer(size),
+                {**(metadata or {}), "center": center.tolist(), "radius": size},
+            )
+        elif point is not None:
             region = Region(name, "point", point, metadata or {})
         else:
             region = Region(name, "polygon", polygon, metadata or {})

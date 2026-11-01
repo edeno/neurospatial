@@ -1,8 +1,8 @@
-"""Export of decode results and behavior records with ``to_pynapple``.
+"""Export of decode results, intervals and crossings with ``to_pynapple``.
 
 Membership is checked against neurospatial's own half-open windows: pynapple's
 ``restrict`` must select exactly the samples that ``in_epochs`` selects with
-the records' ``[start_time, end_time)`` windows, including samples that sit
+the intervals' ``[start_time, stop_time)`` windows, including samples that sit
 exactly on a window boundary.
 """
 
@@ -13,12 +13,11 @@ import importlib.util
 import numpy as np
 import pytest
 
+from neurospatial import Intervals
 from neurospatial.behavior import (
     Crossing,
     Lap,
-    RegionTransition,
     RegionVisit,
-    Run,
     Trial,
     in_epochs,
     labels_to_epochs,
@@ -150,11 +149,13 @@ def test_posterior_export_refusals(continuous_recording, gapped_decode):
 # Samples on and between record boundaries, including exactly at each stop.
 SAMPLES = np.array([0.0, 0.5, 1.0, 2.0, 2.5, np.nextafter(3.0, 0.0), 3.0, 3.5, 4.0])
 
-LAPS = [  # deliberately out of time order; the first two touch at 1.0
-    Lap(3.0, 4.0, "unknown", np.nan),
-    Lap(0.0, 1.0, "clockwise", 0.8),
-    Lap(1.0, 2.5, "counter-clockwise", 0.6),
-]
+LAPS = Intervals(
+    [  # deliberately out of time order; the first two touch at 1.0
+        Lap(3.0, 4.0, "unknown", np.nan),
+        Lap(0.0, 1.0, "clockwise", 0.8),
+        Lap(1.0, 2.5, "counter-clockwise", 0.6),
+    ]
+)
 
 
 def _assert_same_membership(iset, windows) -> None:
@@ -177,6 +178,7 @@ def test_laps_become_an_interval_set_with_metadata():
     windows = [[0.0, 1.0], [1.0, 2.5], [3.0, 4.0]]
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     assert list(iset.direction) == ["clockwise", "counter-clockwise", "unknown"]
+    assert list(iset.interval_id) == [1, 2, 0]  # ids in input order
     np.testing.assert_array_equal(iset.overlap_score, [0.8, 0.6, np.nan])
     _assert_same_membership(iset, windows)
     clockwise = iset[iset.direction == "clockwise"]
@@ -185,66 +187,31 @@ def test_laps_become_an_interval_set_with_metadata():
 
 @needs_pynapple
 @pytest.mark.pynapple
-@pytest.mark.parametrize(
-    ("records", "expected"),
-    [
-        (
-            [
-                Run(0.5, 2.0, "home", "goal", "returned", np.array([1, 2])),
-                Run(2.0, 3.0, "home", "goal", "reached", np.array([3])),
-            ],
-            {
-                "source_region": ["home", "home"],
-                "target_region": ["goal", "goal"],
-                "outcome": ["returned", "reached"],
-            },
-        ),
-        (
-            [
-                RegionVisit(0, 0, "reward", 0, 5, 0.0, 1.0, True, True),
-                RegionVisit(1, 1, "reward", 9, 12, 2.0, 3.0, False, True),
-            ],
-            {
-                "visit_id": [0, 1],
-                "run_id": [0, 1],
-                "region_name": ["reward", "reward"],
-                "start_index": [0, 9],
-                "stop_index": [5, 12],
-                "entry_observed": [True, False],
-                "exit_observed": [True, True],
-            },
-        ),
-        (
-            [RegionTransition(0, 1, 0, "home", "reward", 0, 9, 0.5, 2.5)],
-            {
-                "source_visit_id": [0],
-                "target_visit_id": [1],
-                "run_id": [0],
-                "source_region": ["home"],
-                "target_region": ["reward"],
-                "start_index": [0],
-                "end_index": [9],
-            },
-        ),
-    ],
-    ids=["runs", "visits", "transitions"],
-)
-def test_records_keep_every_field_as_metadata(records, expected):
-    import dataclasses
+def test_visits_keep_every_field_as_metadata():
+    visits = Intervals(
+        [
+            RegionVisit(0, 0, "reward", 0, 5, 0.0, 1.0, True, True),
+            RegionVisit(1, 1, "reward", 9, 12, 2.0, 3.0, False, True),
+        ]
+    )
 
-    iset = to_pynapple(records)
+    iset = to_pynapple(visits)
 
-    windows = [[r.start_time, r.end_time] for r in records]
+    windows = visits.windows.tolist()
     np.testing.assert_array_equal(_half_open(iset.values), windows)
+    expected = {
+        "visit_id": [0, 1],
+        "run_id": [0, 1],
+        "region": ["reward", "reward"],
+        "start_index": [0, 9],
+        "stop_index": [5, 12],
+        "entry_observed": [True, False],
+        "exit_observed": [True, True],
+    }
     for name, column in expected.items():
         assert list(iset.metadata[name]) == column, name
-    # Every scalar field is exported, so nothing about a record is lost.
-    fields = {f.name for f in dataclasses.fields(records[0]) if f.init} - {
-        "start_time",
-        "end_time",
-        "bins",
-    }
-    assert set(iset.metadata_columns) == fields
+    # Every field is exported, so nothing about a visit is lost.
+    assert list(iset.metadata_columns) == ["interval_id", *visits.fields]
     _assert_same_membership(iset, windows)
 
 
@@ -252,17 +219,17 @@ def test_records_keep_every_field_as_metadata(records, expected):
 @pytest.mark.pynapple
 def test_label_epochs_become_an_interval_set_with_labels():
     times = np.arange(9) * 0.5
-    result = labels_to_epochs(times, ["a", "a", "b", "b", "a", "a", "a", "b", "b"])
+    epochs = labels_to_epochs(times, ["a", "a", "b", "b", "a", "a", "a", "b", "b"])
 
-    iset = to_pynapple(result)
+    iset = to_pynapple(epochs)
 
-    windows = np.concatenate([result["a"], result["b"]])
-    windows = windows[np.argsort(windows[:, 0])]
+    windows = [[0.0, 1.0], [1.0, 2.0], [2.0, 3.5], [3.5, 4.0]]
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     assert list(iset.label) == ["a", "b", "a", "b"]
-    _assert_same_membership(iset, windows)
+    assert list(iset.interval_id) == [0, 1, 2, 3]
+    _assert_same_membership(iset, np.array(windows))
     np.testing.assert_array_equal(
-        _half_open(iset[iset.label == "a"].values), result["a"]
+        _half_open(iset[iset.label == "a"].values), [[0.0, 1.0], [2.0, 3.5]]
     )
 
 
@@ -273,7 +240,7 @@ def test_empty_inputs_that_carry_their_type():
     # what it holds: an IntervalSet with a label column.
     nothing = to_pynapple(labels_to_epochs(np.arange(4) * 0.5, [None] * 4))
     assert len(nothing) == 0
-    assert list(nothing.metadata_columns) == ["label"]
+    assert list(nothing.metadata_columns) == ["interval_id", "label"]
     # An empty list with values is an empty time series, not empty records.
     assert len(to_pynapple([], [])) == 0
 
@@ -281,18 +248,22 @@ def test_empty_inputs_that_carry_their_type():
 @needs_pynapple
 @pytest.mark.pynapple
 def test_records_without_duration_are_dropped_with_a_warning():
-    laps = [
-        Lap(0.0, 1.0, "clockwise", 0.5),
-        Lap(2.0, 2.0, "unknown", 0.1),
-        Lap(3.0, 4.0, "counter-clockwise", 0.7),
-    ]
-    with pytest.warns(UserWarning, match=r"dropped 1 of 3 Lap record\(s\) without"):
+    laps = Intervals(
+        [
+            Lap(0.0, 1.0, "clockwise", 0.5),
+            Lap(2.0, 2.0, "unknown", 0.1),
+            Lap(3.0, 4.0, "counter-clockwise", 0.7),
+        ]
+    )
+    with pytest.warns(
+        UserWarning, match=r"dropped 1 of 3 interval record\(s\) without"
+    ):
         iset = to_pynapple(laps)
     np.testing.assert_array_equal(_half_open(iset.values), [[0.0, 1.0], [3.0, 4.0]])
     # The remaining records keep their own metadata.
     assert list(iset.direction) == ["clockwise", "counter-clockwise"]
-    with pytest.warns(UserWarning, match=r"dropped 1 of 1 Lap"):
-        assert len(to_pynapple([laps[1]])) == 0
+    with pytest.warns(UserWarning, match=r"dropped 1 of 1 interval"):
+        assert len(to_pynapple(laps[[1]])) == 0
 
 
 @needs_pynapple
@@ -303,7 +274,7 @@ def test_intervals_export_ids_and_fields():
 
     trials = Intervals(
         [
-            Trial(2.0, 3.0, "home", None, "timeout"),
+            Trial(2.0, 3.0, "home", None, "returned"),
             Trial(0.0, 1.0, "home", "left", "reached"),
             Trial(4.0, 4.0, "home", None, "censored"),
         ],
@@ -317,8 +288,11 @@ def test_intervals_export_ids_and_fields():
     np.testing.assert_array_equal(iset.end, stop_to_pynapple_end(timed.stop))
     assert list(iset.metadata_columns) == ["interval_id", *trials.fields]
     assert list(iset.interval_id) == [3, 7]
-    assert list(iset.end_region) == ["left", None]
-    assert list(iset.outcome) == ["reached", "timeout"]
+    # pynapple keeps a missing text value as None or, with pandas 3, NaN.
+    import pandas as pd
+
+    assert [None if pd.isna(v) else v for v in iset.end_region] == ["left", None]
+    assert list(iset.outcome) == ["reached", "returned"]
     _assert_same_membership(iset, timed.windows)
 
     # An empty selection keeps its columns.
@@ -327,21 +301,31 @@ def test_intervals_export_ids_and_fields():
     assert list(none.metadata_columns) == ["interval_id", *trials.fields]
 
 
-def test_trial_records_are_refused_with_the_fix():
-    trials = [Trial(0.0, 1.0, "home", "left", "reached")]
-    with pytest.raises(TypeError, match=r"neurospatial\.Intervals\(trials\)"):
-        to_pynapple(trials)
+@pytest.mark.parametrize(
+    "records",
+    [
+        [Trial(0.0, 1.0, "home", "left", "reached")],
+        list(LAPS),
+        [RegionVisit(0, 0, "a", 0, 5, 0.0, 2.0, True, True)],
+    ],
+    ids=["trials", "laps", "visits"],
+)
+def test_lists_of_interval_records_are_refused_with_the_fix(records):
+    with pytest.raises(TypeError, match=r"neurospatial\.Intervals\(records\)"):
+        to_pynapple(records)
 
 
-def test_interval_record_refusals():
-    visits = [
-        RegionVisit(0, 0, "a", 0, 5, 0.0, 2.0, True, True),
-        RegionVisit(1, 0, "b", 3, 6, 1.0, 3.0, True, True),
-    ]
-    with pytest.raises(ValueError, match=r"1 RegionVisit record\(s\) overlap"):
+def test_interval_refusals():
+    visits = Intervals(
+        [
+            RegionVisit(0, 0, "a", 0, 5, 0.0, 2.0, True, True),
+            RegionVisit(1, 0, "b", 3, 6, 1.0, 3.0, True, True),
+        ]
+    )
+    with pytest.raises(ValueError, match=r"1 interval record\(s\) overlap"):
         to_pynapple(visits)
-    with pytest.raises(TypeError, match="Lap records mixed with Trial"):
-        to_pynapple([LAPS[0], Trial(0.0, 1.0, "home", None, "returned")])
+    with pytest.raises(TypeError, match="Crossing records mixed with Lap"):
+        to_pynapple([Crossing(1.0, "entry", 4, "reward"), LAPS[0]])
     with pytest.raises(TypeError, match="epochs with behavior records"):
         to_pynapple(LAPS, epochs=(0.0, 5.0))
     with pytest.raises(TypeError, match="values with behavior records"):
@@ -352,7 +336,7 @@ def test_interval_record_refusals():
 
 @needs_pynapple
 @pytest.mark.pynapple
-def test_detected_visits_transitions_and_crossings_round_trip():
+def test_detected_visits_and_crossings_round_trip():
     """Detector output exports with membership matching the half-open windows."""
     import pynapple as nap
     from shapely.geometry import box
@@ -361,7 +345,6 @@ def test_detected_visits_transitions_and_crossings_round_trip():
     from neurospatial.behavior import (
         detect_region_crossings,
         detect_region_visits,
-        region_transitions,
     )
 
     env = Environment.from_grid_mask(
@@ -373,19 +356,20 @@ def test_detected_visits_transitions_and_crossings_round_trip():
         regions.add(name, polygon=box(left, 0, left + 1, 1))
         env = env.with_regions(regions)
     times = np.array([0.0, 0.2, 0.7, 1.2, 2.0, 2.5, 3.0, 4.0])
-    bins = np.array([1, 0, 0, 1, 3, 3, 4, 5])
+    positions = env.bin_centers[[1, 0, 0, 1, 3, 3, 4, 5]]
     visits = detect_region_visits(
-        bins, times, env, region_names=["A", "B", "C"], max_gap=None
+        env, times, positions, regions=["A", "B", "C"], max_gap=None
     )
 
     # The visit to C is its last sample alone: no time to export.
-    with pytest.warns(UserWarning, match=r"dropped 1 of 3 RegionVisit"):
+    with pytest.warns(UserWarning, match=r"dropped 1 of 3 interval"):
         iset = to_pynapple(visits)
-    timed = [v for v in visits if v.end_time > v.start_time]
-    assert list(iset.region_name) == ["A", "B"]
+    timed = [v for v in visits if v.stop_time > v.start_time]
+    assert list(iset.region) == ["A", "B"]
+    assert list(iset.interval_id) == [0, 1]
     samples = nap.Ts(t=times)
     for i, visit in enumerate(timed):
-        window = (visit.start_time, visit.end_time)
+        window = (visit.start_time, visit.stop_time)
         np.testing.assert_array_equal(
             samples.restrict(iset[i]).t, times[in_epochs(times, window)]
         )
@@ -395,19 +379,52 @@ def test_detected_visits_transitions_and_crossings_round_trip():
             times[visit.start_index : visit.stop_index],
         )
 
-    transitions = to_pynapple(region_transitions(visits))
-    assert list(
-        zip(transitions.source_region, transitions.target_region, strict=True)
-    ) == [
-        ("A", "B"),
-        ("B", "C"),
-    ]
-
-    crossings = detect_region_crossings(bins, times, env, region_name="B", max_gap=None)
+    crossings = detect_region_crossings(
+        env, times, positions, region_name="B", max_gap=None
+    )
     group = to_pynapple(crossings, epochs=(times[0], np.nextafter(times[-1], 5)))
     assert list(group.direction) == ["entry", "exit"]
     np.testing.assert_array_equal(group[0].t, [2.0])
     np.testing.assert_array_equal(group[1].t, [3.0])
+
+
+@needs_pynapple
+@pytest.mark.pynapple
+def test_each_detector_output_exports_with_its_fields():
+    """Trials, movement epochs and goal-directed runs export like any Intervals."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment, Regions
+    from neurospatial.behavior import (
+        detect_goal_directed_runs,
+        detect_trials,
+        segment_by_velocity,
+    )
+
+    xs = np.linspace(0.0, 100.0, 401)
+    env = Environment.from_samples(np.c_[xs, np.zeros_like(xs)], bin_size=2.0)
+    regions = Regions()
+    regions.add("start", polygon=box(-5.0, -5.0, 5.0, 5.0))
+    regions.add("goal", polygon=box(95.0, -5.0, 105.0, 5.0))
+    env = env.with_regions(regions).with_metadata(units="cm")
+    # Rest at the start, run to the goal and back at 25 cm/s, 10 Hz.
+    x = np.r_[np.zeros(20), np.linspace(0, 100, 41), np.linspace(100, 0, 41)[1:]]
+    times = np.arange(x.size) / 10.0
+    positions = np.c_[x, np.zeros_like(x)]
+    outputs = {
+        "trials": detect_trials(env, times, positions, regions=["start", "goal"]),
+        "movement": segment_by_velocity(times, positions, min_speed=5.0),
+        "approaches": detect_goal_directed_runs(
+            env, times, positions, goal_region="goal"
+        ),
+    }
+    for name, intervals in outputs.items():
+        assert len(intervals) > 0, name
+        iset = to_pynapple(intervals)
+        assert list(iset.metadata_columns) == ["interval_id", *intervals.fields]
+        np.testing.assert_array_equal(iset.start, intervals.start)
+        _assert_same_membership(iset, intervals.windows)
+    assert list(to_pynapple(outputs["approaches"]).goal_region) == ["goal"]
 
 
 # ---------------------------------------------------------------------------

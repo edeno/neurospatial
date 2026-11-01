@@ -81,6 +81,7 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
+    from neurospatial._interval_table import Intervals
     from neurospatial.decoding import DecodingResult
     from neurospatial.environment import Environment
 
@@ -599,7 +600,7 @@ class ShuffledDataset(ReadOnlyArraysMixin, ResultMixin):
 @reads_pynapple_samples
 def dataset_values(
     env: Environment | Mapping[str, Environment],
-    events: Sequence[DecodingResult] | NDArray[np.float64],
+    events: Sequence[DecodingResult] | NDArray[np.float64] | Intervals[Any],
     *,
     replay_method: ReplayMethod | RankOrderMethod,
     null: str | None = None,
@@ -632,10 +633,11 @@ def dataset_values(
         The environment the events were decoded on; for a rank-order method
         with a mapping of rate maps, one environment or a mapping keyed
         like it.
-    events : sequence of DecodingResult, or NDArray[np.float64]
+    events : sequence of DecodingResult, NDArray[np.float64], or Intervals
         The decoded events, each with ``times``, decoded on one set of rate
-        maps. A rank-order method also takes the events as intervals,
-        shape (n_events, 2), start and stop in seconds; decoded events give
+        maps. A rank-order method also takes the events as intervals, an
+        array of shape (n_events, 2), start and stop in seconds, or an
+        ``Intervals`` (rows in its time order); decoded events give
         the window ``times[0] - dt / 2`` to ``times[-1] + dt / 2``, as
         :func:`~neurospatial.replay.compare_replay_methods` does.
     replay_method : ReplayMethod or RankOrderMethod
@@ -1955,10 +1957,17 @@ def _event_windows(
     operation: str,
 ) -> list[tuple[float, float]]:
     """Each event's (start, stop): given as intervals, or a decode's window."""
-    if isinstance(events, np.ndarray) or (
-        isinstance(events, Sequence)
-        and len(events)
-        and not hasattr(events[0], "posterior")
+    from neurospatial._interval_table import Intervals
+    from neurospatial._pynapple import is_pynapple_type
+
+    if (
+        isinstance(events, (np.ndarray, Intervals))
+        or is_pynapple_type(events, "IntervalSet")
+        or (
+            isinstance(events, Sequence)
+            and len(events)
+            and not hasattr(events[0], "posterior")
+        )
     ):
         from neurospatial.replay._inputs import _checked_intervals
 
@@ -2591,7 +2600,7 @@ def distribution_test(
 @reads_pynapple_samples
 def relative_rank_template(
     spike_times: Any,
-    intervals: NDArray[np.float64],
+    intervals: NDArray[np.float64] | Intervals[Any],
     *,
     spike_statistic: Literal["mean", "first", "median"] = "mean",
     min_active_cells: int = 2,
@@ -2609,7 +2618,7 @@ def relative_rank_template(
     ----------
     spike_times : array, sequence of arrays, or spike group
         The session's spike times, one train per cell, in seconds.
-    intervals : NDArray[np.float64], shape (n_frames, 2)
+    intervals : NDArray[np.float64] of shape (n_frames, 2), or Intervals
         Start and stop of each frame, in seconds; spikes at ``start <= t <
         stop`` count.
     spike_statistic : {"mean", "first", "median"}, default="mean"

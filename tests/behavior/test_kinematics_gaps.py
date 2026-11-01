@@ -357,7 +357,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[-1]]))
     env = env.with_regions(region_builder)
-    entry = decision_region_entry_time(bins, times, env, region="decision")
+    entry = decision_region_entry_time(env, times, positions, region="decision")
     duration = 6.0
     selected = (times >= entry - duration) & (times < entry)
     assert np.sum(selected) >= 3

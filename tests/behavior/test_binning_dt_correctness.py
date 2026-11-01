@@ -30,11 +30,10 @@ from neurospatial.behavior.navigation import (
 )
 from neurospatial.behavior.segmentation import (
     detect_region_crossings,
-    detect_runs_between_regions,
     segment_by_velocity,
-    segment_trials,
 )
 from neurospatial.behavior.trajectory import mean_square_displacement
+from neurospatial.behavior.trials import detect_trials
 
 from .conftest import duplicate_timestamps, nonfinite_timestamps
 
@@ -60,289 +59,46 @@ class TestSafeGatherRegions:
         # Surrounding samples are outside the region; the middle sample is -1
         # (out of env). A wrapped -1 -> last_bin would be *inside* the region,
         # creating a spurious entry+exit crossing.
-        position_bins = np.array(
-            [outside_bin, outside_bin, -1, outside_bin, outside_bin],
-            dtype=np.int64,
-        )
-        times = np.linspace(0.0, 1.0, len(position_bins))
+        positions = env.bin_centers[[outside_bin] * 5]
+        positions[2] = np.nan  # lost tracking: bin -1
+        times = np.linspace(0.0, 1.0, len(positions))
 
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name=region_name
+            env, times, positions, region_name=region_name
         )
 
         assert crossings == []
 
-    def test_detect_runs_between_regions_excludes_out_of_env_from_target(
-        self,
-    ):
+    @staticmethod
+    def _grid_with_corner_regions():
         x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
+        xx, yy = np.meshgrid(x, x)
         env = Environment.from_samples(
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
-        last_bin = env.n_bins - 1
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
-        )
-        env = env.with_regions(region_builder)
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        # The last bin: a wrapped -1 would read as inside the goal.
+        regions.add("goal", polygon=Point(*env.bin_centers[-1]).buffer(6.0))
+        return env.with_regions(regions)
 
-        # Start inside source, exit, then a single out-of-env (-1) sample.
-        # A wrapped -1 -> last_bin would be inside 'target', wrongly marking
-        # the run success=True.
-        source_bin = 0
-        neutral_bin = 100  # not in source, not in target
+    def test_detect_trials_out_of_env_sample_does_not_reach_the_goal(self):
+        env = self._grid_with_corner_regions()
+        neutral_bin = 100  # in neither region
         from neurospatial.ops.mapping import regions_to_mask
 
-        assert not regions_to_mask(env, ["target"])[neutral_bin]
-        assert not regions_to_mask(env, ["source"])[neutral_bin]
+        assert not regions_to_mask(env, ["start", "goal"])[neutral_bin]
+        # Leave the start, then one sample outside the environment.
+        positions = env.bin_centers[[0, 0, neutral_bin, neutral_bin, neutral_bin]]
+        positions[-1] = [500.0, 500.0]
+        times = np.linspace(0.0, 1.0, len(positions))
 
-        position_bins = np.array(
-            [source_bin, source_bin, neutral_bin, neutral_bin, -1],
-            dtype=np.int64,
-        )
-        times = np.linspace(0.0, 1.0, len(position_bins))
-
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.0,
-            max_duration=100.0,
+        trials = detect_trials(
+            env, times, positions, regions=["start", "goal"], max_gap=None
         )
 
-        # The out-of-env sample must not count as reaching the target.
-        assert all(not run.success for run in runs)
-
-    def test_detect_runs_speed_filter_ignores_out_of_env_bin(self):
-        """min_speed filter must not treat a -1 sample as bin_centers[-1].
-
-        A run whose valid samples sit on a single bin has zero true speed and
-        should be dropped by ``min_speed > 0``. With the old code the off-env
-        (-1) sample wrapped to ``bin_centers[-1]`` (a far corner), injecting a
-        large displacement that inflated the mean speed above the threshold and
-        wrongly kept the run.
-        """
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
-        )
-        last_bin = env.n_bins - 1
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
-        )
-        env = env.with_regions(region_builder)
-
-        # Source bin, then a single neutral bin held constant (zero true speed),
-        # with one off-env (-1) sample. The wrapped -1 -> last_bin sits near the
-        # opposite corner, so the buggy speed estimate is large.
-        neutral_bin = 100
-        from neurospatial.ops.mapping import regions_to_mask
-
-        assert not regions_to_mask(env, ["target"])[neutral_bin]
-        assert not regions_to_mask(env, ["source"])[neutral_bin]
-
-        position_bins = np.array(
-            [0, neutral_bin, neutral_bin, -1, neutral_bin],
-            dtype=np.int64,
-        )
-        # Small dt so a wrapped -1 displacement would read as a high speed.
-        times = np.linspace(0.0, 0.4, len(position_bins))
-
-        # True speed over valid samples is 0 (all neutral_bin). With min_speed
-        # above 0, the run must be filtered out -- and the off-env sample must
-        # not raise or inflate the speed.
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.0,
-            max_duration=100.0,
-            min_speed=10.0,
-        )
-
-        assert runs == []
-
-    def test_detect_runs_speed_filter_drops_run_with_no_usable_speed(self):
-        """min_speed set + no usable consecutive valid pair => run is DROPPED.
-
-        Repro of the reported bug: a run slice like ``[source, -1, neutral]``
-        has no consecutive on-environment pair from which to estimate speed.
-        The run must not silently pass a speed gate it never satisfied -- it is
-        dropped, not kept.
-        """
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
-        )
-        last_bin = env.n_bins - 1
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
-        )
-        env = env.with_regions(region_builder)
-
-        neutral_bin = 100
-        from neurospatial.ops.mapping import regions_to_mask
-
-        assert not regions_to_mask(env, ["target"])[neutral_bin]
-        assert not regions_to_mask(env, ["source"])[neutral_bin]
-
-        # Exit source, then an off-env (-1) sample between the only two
-        # on-env samples => no consecutive valid pair, no usable speed.
-        position_bins = np.array(
-            [0, neutral_bin, -1, neutral_bin],
-            dtype=np.int64,
-        )
-        times = np.linspace(0.0, 0.4, len(position_bins))
-
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.0,
-            max_duration=100.0,
-            min_speed=10.0,
-        )
-
-        assert runs == []
-
-    def test_detect_runs_speed_filter_fully_valid_runs(self):
-        """A fully-valid fast run passes; a fully-valid slow run is filtered."""
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
-        )
-        last_bin = env.n_bins - 1
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
-        )
-        env = env.with_regions(region_builder)
-
-        # Exit source at the first step, then traverse distinct neutral bins
-        # (a steady move each frame) so the run has a well-defined mean speed.
-        from neurospatial.ops.mapping import regions_to_mask
-
-        neutral_bins = [200, 201, 202]
-        for b in neutral_bins:
-            assert not regions_to_mask(env, ["source"])[b]
-            assert not regions_to_mask(env, ["target"])[b]
-
-        position_bins = np.array([0, *neutral_bins], dtype=np.int64)
-        # The run begins at the source-exit sample, so its path is the neutral
-        # bins only (index 0 is the last in-source sample, excluded). Mean speed
-        # is taken over the consecutive neutral->neutral pairs.
-        run_path_bins = np.array(neutral_bins, dtype=np.int64)
-        step_dists = np.linalg.norm(
-            np.diff(env.bin_centers[run_path_bins], axis=0), axis=1
-        )
-
-        # dt of 0.1 s per step; mean speed = mean(step_dists / 0.1).
-        times = np.array([0.0, 0.1, 0.2, 0.3])
-        mean_speed = float(np.mean(step_dists / 0.1))
-        slow_threshold = mean_speed * 0.5
-        high_threshold = mean_speed * 2.0
-
-        fast_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.0,
-            max_duration=100.0,
-            min_speed=slow_threshold,
-        )
-        assert len(fast_runs) == 1  # mean speed above threshold => kept
-
-        slow_runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.0,
-            max_duration=100.0,
-            min_speed=high_threshold,
-        )
-        assert slow_runs == []  # mean speed below threshold => filtered
-
-    def test_segment_trials_out_of_env_not_counted_in_end_region(self):
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
-        )
-        last_bin = env.n_bins - 1
-        region_builder = Regions(env.regions.values())
-        region_builder.add("start", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "goal", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0)
-        )
-        env = env.with_regions(region_builder)
-
-        start_bin = 0
-        neutral_bin = 100
-
-        # Trajectory with an out-of-env (-1) sample in the middle. The same
-        # trajectory with the -1 sample removed must produce identical trials.
-        bins_with_oob = np.array(
-            [start_bin, neutral_bin, -1, neutral_bin, start_bin, neutral_bin],
-            dtype=np.int64,
-        )
-        times_with_oob = np.linspace(0.0, 5.0, len(bins_with_oob))
-
-        keep = bins_with_oob != -1
-        bins_without_oob = bins_with_oob[keep]
-        times_without_oob = times_with_oob[keep]
-
-        trials_with = segment_trials(
-            bins_with_oob,
-            times_with_oob,
-            env,
-            start_region="start",
-            end_regions=["goal"],
-            min_duration=0.1,
-            max_duration=100.0,
-            max_gap=None,
-        )
-        trials_without = segment_trials(
-            bins_without_oob,
-            times_without_oob,
-            env,
-            start_region="start",
-            end_regions=["goal"],
-            min_duration=0.1,
-            max_duration=100.0,
-            max_gap=None,
-        )
-
-        # No trial should reach the goal because of the wrapped -1 sample.
-        assert all(t.end_region != "goal" for t in trials_with)
-        # Same end-region outcomes with and without the out-of-env sample.
-        assert [t.end_region for t in trials_with] == [
-            t.end_region for t in trials_without
-        ]
+        assert trials.outcome.tolist() == ["censored"]
+        assert trials.stop.tolist() == [times[-2]]
 
 
 class TestSafeGatherVoronoiLabels:
@@ -455,42 +211,13 @@ class TestDtGuards:
         with pytest.raises(ValueError, match="times"):
             segment_by_velocity(times, positions, min_speed=2.0)
 
-    def test_detect_runs_between_regions_duplicate_timestamp_raises(self):
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
-        )
-        region_builder = Regions(env.regions.values())
-        region_builder.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
-        region_builder.add(
-            "target",
-            polygon=Point(*env.bin_centers[env.n_bins - 1]).buffer(6.0),
-        )
-        env = env.with_regions(region_builder)
-
-        source_bin = 0
-        mid_bin = 100
-        position_bins = np.array(
-            [source_bin, source_bin, mid_bin, mid_bin, mid_bin],
-            dtype=np.int64,
-        )
-        # Duplicate frame time inside the run slice.
-        times = np.array([0.0, 1.0, 2.0, 2.0, 3.0])
+    def test_detect_trials_duplicate_timestamp_raises(self):
+        env = TestSafeGatherRegions._grid_with_corner_regions()
+        positions = env.bin_centers[[0, 0, 100, 100, 100]]
+        times = np.array([0.0, 1.0, 2.0, 2.0, 3.0])  # a repeated frame time
 
         with pytest.raises(ValueError, match="times"):
-            detect_runs_between_regions(
-                position_bins,
-                times,
-                env,
-                source="source",
-                target="target",
-                min_duration=0.0,
-                max_duration=100.0,
-                min_speed=1.0,
-                max_gap=None,
-            )
+            detect_trials(env, times, positions, regions=["start", "goal"])
 
     def test_approach_rate_duplicate_timestamp_raises(self):
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])

@@ -22,7 +22,6 @@ from neurospatial.behavior import (
     compute_step_lengths,
     compute_vte_session,
     detect_laps,
-    detect_runs_between_regions,
     distance_to_boundary,
     distance_to_goal,
     distance_to_reward,
@@ -161,7 +160,7 @@ def _polar_regions_env(env: Environment) -> Environment:
             "graph_turn_sequence()",
         ),
         (
-            lambda env: detect_laps(np.arange(4), np.arange(4.0), env),
+            lambda env: detect_laps(env, np.arange(4.0), np.zeros((4, env.n_dims))),
             "detect_laps()",
         ),
         (
@@ -221,17 +220,6 @@ def _polar_regions_env(env: Environment) -> Environment:
                 np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="dtw"
             ),
             "trajectory_similarity(method='dtw')",
-        ),
-        (
-            lambda env: detect_runs_between_regions(
-                np.array([0, 8, 9]),
-                np.array([0.0, 0.1, 0.2]),
-                _polar_regions_env(env),
-                source="near",
-                target="far",
-                min_speed=1.0,
-            ),
-            "detect_runs_between_regions(min_speed=...)",
         ),
         (
             lambda env: border_score(env, _rates(env)),
@@ -462,13 +450,6 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
         ),
         lambda env: trajectory_similarity(
             np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="jaccard"
-        ),
-        lambda env: detect_runs_between_regions(
-            np.array([0, 8, 9]),
-            np.array([0.0, 0.1, 0.2]),
-            _polar_regions_env(env),
-            source="near",
-            target="far",
         ),
     ],
 )

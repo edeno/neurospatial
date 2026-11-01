@@ -321,8 +321,12 @@ class Intervals(Generic[R]):
     subset is the same trial in the full table.
 
     ``[]`` selects by position, ``sel(interval_id=...)`` by id, as for unit
-    containers. Fields are read as arrays by name (``trials.outcome``) and
-    select conditions with ``trials[trials.outcome == "reached"]``. The
+    containers. Fields are read by name (``trials.outcome``) as a
+    ``pandas.Series`` indexed by ``interval_id`` and select conditions with
+    ``trials[trials.outcome == "reached"]``; :meth:`with_fields` adds your
+    own labels. Because a field is labelled by id, ``trials.outcome[4]`` is
+    the outcome of trial id 4; for the first row use
+    ``trials.outcome.iloc[0]``. The
     container passes as ``epochs=`` (its :attr:`windows`) to any analysis.
 
     Parameters
@@ -373,10 +377,10 @@ class Intervals(Generic[R]):
     is refused (NWB writes ``None`` as ``""``). Samples outside every interval
     get ``NaN`` (float values) or ``None`` (others), never ``0`` or ``""``.
 
-    **Per-interval arrays** are in row order, the order of the container
-    (sorted by time). An array built in the order of input records that were
-    not sorted is misaligned; a ``pandas.Series`` indexed by ``interval_id``
-    is aligned by id.
+    **Per-interval values** are a ``pandas.Series`` indexed by
+    ``interval_id`` (a field is one), aligned by id, or an array in row
+    order (sorted by time). An array built in the order of input records
+    that were not sorted is misaligned.
 
     Examples
     --------
@@ -570,7 +574,26 @@ class Intervals(Generic[R]):
         keep = self._stop > self._start
         return _read_only(np.column_stack([self._start[keep], self._stop[keep]]))
 
-    def __getattr__(self, name: str) -> NDArray[Any]:
+    def __getattr__(self, name: str) -> pd.Series:
+        """One field as a Series indexed by ``interval_id``, in row order.
+
+        The Series holds its own copy: editing it never changes the
+        intervals. Its index makes it one value per interval wherever it is
+        passed (selection, ``with_fields``, per-trial targets).
+        """
+        import pandas as pd
+
+        column = self._field_array(name)
+        # The column's own dtype: pandas 3 would read strings with None as
+        # its string dtype and turn the None into NaN.
+        return pd.Series(
+            np.array(column),
+            index=pd.Index(np.array(self._ids), name="interval_id"),
+            name=name,
+            dtype=column.dtype,
+        )
+
+    def _field_array(self, name: str) -> NDArray[Any]:
         """One field as a read-only array, shape ``(n,)``, in row order."""
         if name.startswith("_"):
             raise AttributeError(name)
@@ -607,12 +630,25 @@ class Intervals(Generic[R]):
 
         A slice, an integer array or a Boolean mask of length ``n`` returns
         an :class:`Intervals` with the selected rows in time order and their
-        ``interval_ids``.
+        ``interval_ids``. A Boolean ``pandas.Series`` indexed by
+        ``interval_id`` (``trials.outcome == "correct"``) selects by id.
         """
         n = len(self)
         if isinstance(key, (bool, np.bool_)):
             msg = "Select Intervals with a Boolean mask of length n, not one bool."
             raise TypeError(msg)
+        if hasattr(key, "reindex") and hasattr(key, "index"):
+            aligned = self._per_row(key, name="the selection")
+            if aligned.dtype != bool:
+                raise TypeError(
+                    _format_error(
+                        "A pandas Series selects Intervals only as a Boolean mask "
+                        f"indexed by interval_id; got dtype {aligned.dtype}.",
+                        fix="select by id with sel(interval_id=...), or by "
+                        "position with series.to_numpy().",
+                    )
+                )
+            key = aligned
         if isinstance(key, (numbers.Integral, np.integer)):
             return self._records[int(key)]
         if isinstance(key, slice):
@@ -831,13 +867,19 @@ class Intervals(Generic[R]):
     def _per_row(self, values: Any, *, name: str) -> NDArray[Any]:
         """``values`` as one entry per row, in row order."""
         if isinstance(values, str):
-            column: NDArray[Any] = getattr(self, values)
-            return column
+            return self._field_array(values)
         if isinstance(values, tuple) and all(isinstance(v, str) for v in values):
-            columns = [getattr(self, v).tolist() for v in values]
+            columns = [self._field_array(v).tolist() for v in values]
             return _object_array(list(zip(*columns, strict=True)))
         index = getattr(values, "index", None)
         if index is not None and hasattr(values, "reindex"):
+            if not index.is_unique:
+                repeated = index[index.duplicated()].unique()[:5].tolist()
+                msg = (
+                    f"{name} is a Series indexed by interval_id, but ids "
+                    f"{repeated} repeat; give one value per interval_id."
+                )
+                raise ValueError(msg)
             unknown = np.setdiff1d(np.asarray(index), self._ids)
             absent = np.setdiff1d(self._ids, np.asarray(index))
             if unknown.size or absent.size:
@@ -911,12 +953,69 @@ class Intervals(Generic[R]):
             "stop_time": np.array(self._stop),
         }
         for name in self._fields:
-            data[name] = np.array(getattr(self, name))
-        table = pd.DataFrame(
-            data, index=pd.Index(np.array(self._ids), name="interval_id")
-        )
+            column = self._field_array(name)
+            data[name] = pd.Series(np.array(column), dtype=column.dtype)
+        table = pd.DataFrame(data)
+        table.index = pd.Index(np.array(self._ids), name="interval_id")
         table.attrs["analysis_settings"] = self.analysis_settings
         return table
+
+    def with_fields(self, **columns: Any) -> Intervals[Interval]:
+        """These intervals with fields added or replaced, same ids and times.
+
+        For labels from your task: the instructed goal, correct or error, a
+        condition name.
+
+        Parameters
+        ----------
+        **columns : pandas.Series or array-like, shape (n,)
+            One value per interval: a Series indexed by ``interval_id`` (as a
+            field is) is aligned by id; an array is in row order (sorted by
+            time). A name that is already a field replaces it.
+
+        Returns
+        -------
+        Intervals of Interval
+            The same ``interval_ids``, bounds and ``analysis_settings``, with
+            the existing fields followed by the new ones. Consumers read
+            fields by name, so the record class does not matter.
+
+        Raises
+        ------
+        ValueError
+            If a column does not have one value per interval, a name is
+            reserved (``interval_id``, ``start_time``, ``stop_time``, a method
+            name or one starting with ``_``), or a value is ``""``.
+
+        Examples
+        --------
+        >>> from neurospatial import Intervals
+        >>> trials = Intervals.from_arrays(
+        ...     [0.0, 10.0], [8.0, 17.0], end_region=["well_1", "well_3"]
+        ... )
+        >>> labelled = trials.with_fields(outcome=["correct", "error"])
+        >>> labelled.fields
+        ('end_region', 'outcome')
+        >>> labelled[labelled.outcome == "error"].interval_ids.tolist()
+        [1]
+        """
+        data = {name: self._field_array(name) for name in self._fields}
+        for name, values in columns.items():
+            _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
+            if isinstance(values, str):
+                msg = (
+                    f"with_fields({name}={values!r}) needs one value per "
+                    f"interval; to copy a field, pass it: {name}=intervals.<field>."
+                )
+                raise TypeError(msg)
+            column = self._per_row(values, name=name)
+            if column.dtype.kind == "O":
+                # A task log's missing label (NaN, pd.NA) is a missing value.
+                column = _object_array([_missing_as_none(v) for v in column])
+            data[name] = column
+        labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
+        labelled._settings = deepcopy(self._settings)
+        return labelled
 
     @classmethod
     def from_arrays(
@@ -1077,7 +1176,7 @@ def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]
             f"{owner}: {name} must be an Intervals, got {type(value).__name__}.",
             why="consumers read fields (for example outcome) by name, so trials "
             "detected, loaded from a task log or read from NWB work the same way.",
-            fix=f"pass the Intervals from segment_trials() or read_trials(), or "
+            fix=f"pass the Intervals from detect_trials() or read_trials(), or "
             f"wrap records with neurospatial.Intervals({name}).",
         )
     )
@@ -1214,3 +1313,67 @@ def _from_columns(
         settings={},
     )
     return intervals
+
+
+def _hashable_cell(value: Any) -> Any:
+    """A table cell as a field value: ``""`` and NaN missing, lists as tuples."""
+    value = _missing_as_none(value)
+    if isinstance(value, str) and value == "":
+        return None
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return tuple(_hashable_cell(v) for v in value)
+    return value
+
+
+def readable_fields(
+    table: pd.DataFrame, *, keep: Iterable[str] = ()
+) -> tuple[pd.DataFrame, list[str]]:
+    """The columns of a stored table that can be fields, and the others' names.
+
+    For readers of files written elsewhere (NWB tables, pynapple metadata):
+    text cells keep ``""`` as missing (``None``) and list cells become
+    tuples. A column that still cannot be a field (references to other
+    tables, a name that is not an identifier or is taken by ``Intervals``)
+    is left out, so the rest still reads; the caller warns with its names.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+    keep : iterable of str
+        Columns kept as they are (the bounds and ids).
+
+    Returns
+    -------
+    table : pandas.DataFrame
+        The kept columns, converted.
+    dropped : list of str
+        Columns left out.
+    """
+    import pandas as pd
+
+    kept = set(keep)
+    out = {}
+    dropped: list[str] = []
+    for column in table.columns:
+        name = str(column)
+        values = table[column]
+        if name in kept:
+            out[name] = values
+            continue
+        try:
+            _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
+        except ValueError:
+            dropped.append(name)
+            continue
+        if pd.api.types.is_numeric_dtype(values.dtype):
+            out[name] = values
+            continue
+        cells = [_hashable_cell(v) for v in values]
+        try:
+            for cell in cells:
+                hash(cell)
+        except TypeError:
+            dropped.append(name)
+            continue
+        out[name] = pd.Series(cells, index=table.index, dtype=object)
+    return pd.DataFrame(out, index=table.index), dropped

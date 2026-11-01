@@ -35,17 +35,17 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Mean Square Displacement](#mean-square-displacement)
 2. [Region-Based Segmentation](#region-based-segmentation)
    - [Detecting Region Crossings](#detecting-region-crossings)
-   - [Observed Region Visits and Transitions](#observed-region-visits-and-transitions)
-   - [Detecting Runs Between Regions](#detecting-runs-between-regions)
+   - [Observed Region Visits](#observed-region-visits)
    - [Velocity-Based Segmentation](#velocity-based-segmentation)
+   - [Labels to analysis epochs](#labels-to-analysis-epochs)
    - [Joined Recordings](#joined-recordings)
 3. [Lap Detection](#lap-detection)
    - [Auto Template Detection](#auto-template-detection)
    - [Reference Method](#reference-method)
    - [Region Method](#region-method)
    - [Direction Detection](#direction-detection)
-4. [Trial Segmentation](#trial-segmentation)
-   - [T-maze Trials](#t-maze-trials)
+4. [Trials](#trials)
+   - [From positions or port events to trials](#from-positions-or-port-events-to-trials)
    - [Y-maze Trials](#y-maze-trials)
    - [Radial Arm Maze](#radial-arm-maze)
    - [Intervals](#intervals)
@@ -610,7 +610,9 @@ $$
 
 ### Detecting Region Crossings
 
-Detect when the animal enters or exits named regions.
+Detect when the animal enters or exits named regions. Like every detector on
+this page, it takes the environment, the timestamps and the positions, and
+finds each position's bin itself.
 
 <!-- docs-test: run setup=docs_trajectory_region_crossings -->
 ```python
@@ -618,15 +620,15 @@ from neurospatial.behavior.segmentation import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
-    position_bins, times, env, region_name="goal", direction="both"
+    env, times, positions, region_name="goal", direction="both"
 )
 
 # Filter by direction
 entries = detect_region_crossings(
-    position_bins, times, env, region_name="goal", direction="entry"
+    env, times, positions, region_name="goal", direction="entry"
 )
 exits = detect_region_crossings(
-    position_bins, times, env, region_name="goal", direction="exit"
+    env, times, positions, region_name="goal", direction="exit"
 )
 
 # Analyze crossing events
@@ -647,26 +649,27 @@ for crossing in crossings:
 
 ---
 
-### Observed Region Visits and Transitions
+### Observed Region Visits
 
-Use `detect_region_visits` when you want an observation-based event table across
-several regions, without assigning task trials, rewards, or behavioral success.
-It retains visits that start inside a region or end before an exit is observed,
-with `entry_observed` and `exit_observed` flags identifying those censored bounds.
-The selected regions must have disjoint bin-center memberships; overlaps raise
-an error instead of choosing a region by its order in the argument.
+Use `detect_region_visits` when you want the time the animal spent at each of
+several regions (reward wells, ports, arms), without task trials, rewards or
+success. A visit runs from the first sample inside a region to the first
+sample outside it. Visits that start inside a region or end before an exit is
+observed are kept, with `entry_observed` and `exit_observed` flags marking
+those censored bounds. The regions must not share bins; overlaps raise an
+error instead of choosing a region by its order in the argument. Point
+regions are refused: give a well its size with `regions.add(name,
+point=..., radius=...)` (see [Trials](#from-positions-or-port-events-to-trials)).
 
 <!-- docs-test: run -->
 ```python
-from neurospatial import Regions
-
 import numpy as np
-import pandas as pd
 from shapely.geometry import box
-from neurospatial import Environment
-from neurospatial.behavior import detect_region_visits, region_transitions
 
-# A known corridor: A, travel, travel, B, travel, C.
+from neurospatial import Environment, Regions
+from neurospatial.behavior import detect_region_visits, trials_between_visits
+
+# A known corridor of 1 cm bins: A, travel, travel, B, travel, C.
 env = Environment.from_grid_mask(
     active_mask=np.ones((6, 1), dtype=bool),
     grid_edges=(np.arange(7, dtype=float), np.array([0.0, 1.0])),
@@ -677,108 +680,53 @@ for name, left in [("A", 0), ("B", 3), ("C", 5)]:
     region_builder.add(name, polygon=box(left, 0, left + 1, 1))
 env = env.with_regions(region_builder)
 
-position_bins = np.array([0, 1, 0, 1, 3, 4, 5])
-times = np.arange(len(position_bins), dtype=float) / 10.0
+# Positions at bin centres, sampled at 10 Hz.
+x = np.array([0.5, 1.5, 0.5, 1.5, 3.5, 4.5, 5.5])
+positions = np.column_stack([x, np.full_like(x, 0.5)])
+times = np.arange(len(x)) / 10.0
 visits = detect_region_visits(
-    position_bins, times, env, region_names=["A", "B", "C"], max_gap=0.5
+    env, times, positions, regions=["A", "B", "C"], max_gap=0.5
 )
-transitions = region_transitions(visits)
-visit_table = pd.DataFrame(visits)
-transition_table = pd.DataFrame(transitions)
-print(visit_table[["region_name", "duration", "entry_observed", "exit_observed"]])
-print(transition_table[["source_region", "target_region", "duration"]])
+print(visits.intervals_table()[["region", "entry_observed", "exit_observed"]])
 assert not visits[0].entry_observed  # Starting inside is not an observed entry.
-assert [(t.source_region, t.target_region) for t in transitions] == [
-    ("A", "B"), ("B", "C")
-]
+
+# The trials are the time between consecutive visits.
+trials = trials_between_visits(visits)
+print(trials.intervals_table())
+assert trials.outcome.tolist() == ["returned", "reached", "reached"]
 ```
 
-`RegionVisit` and `RegionTransition` are immutable scalar records. Their visit
-and run identifiers are local to this detection call, while their sample
-indices refer to the original arrays. A visit's `[start_index:stop_index]`
-slice contains its inside-region samples. A transition's `start_index` and
-`end_index` are entry samples: include both when plotting its path with
-`position_bins[start_index:end_index + 1]`.
+`detect_region_visits` returns an [`Intervals`](#intervals) of `RegionVisit`
+records, one row per visit with its `region`. Visit and run identifiers are
+local to this call, while `start_index` and `stop_index` refer to the original
+arrays: `positions[start_index:stop_index]` are the visit's inside-region
+samples. The animal leaves `A` and comes back before going on to `B`, so
+there are two visits to `A`, and the first trial is `"returned"`. The visit
+to `C` is seen in a single sample: it is kept as an observation with zero
+duration, not in `visits.windows`.
 
-`region_transitions` pairs consecutive visits in the same observed run when both
-entries were observed and the names differ. For `A, A, B`, only the last
-`A -> B` is retained; the visits themselves remain separate. Build transitions
-before filtering visits, since omitted visit identifiers are not bridged.
-Entry-to-entry `duration` includes source dwell time. Use
-`detect_runs_between_regions` below for source-exit to target-entry intervals.
-
-A sample at bin `-1` (outside the environment, or a missing sample) is not
-located. As in `env.occupancy`, an interval with either sample at `-1` is not
-observed, so it breaks observation continuity like a gap longer than `max_gap`,
-a declared break (`break_before`, see [Joined Recordings](#joined-recordings))
+A NaN position (lost tracking) or one outside the environment is not located.
+As in `env.occupancy`, an interval with either sample unlocated is not
+observed, so it breaks observation like a gap longer than `max_gap`, a
+declared break (`break_before`, see [Joined Recordings](#joined-recordings))
 or an epoch edge; none of them fabricates an exit or an entry. The same rule
-holds for crossings, runs, laps, trials and the home range. To bridge short
-tracking dropouts instead, delete the missing rows before binning: a deleted
-row is bridged when the samples on either side are no more than `max_gap`
-apart. Valid bins outside all selected regions are observed travel. Singleton
-observations are retained as zero-duration, doubly censored visits. Empty event
-lists remain empty; check for an empty list before grouping a DataFrame made
-from it.
+holds for crossings, laps and trials. To bridge short tracking dropouts
+instead, delete the missing rows: a deleted row is bridged when the samples on
+either side are no more than `max_gap` apart. Positions outside all selected
+regions are observed travel.
 
 Epochs are half-open `[start, stop)` for events: entry exactly at `stop` is
 excluded. A fully observed sampling interval ending at that boundary can still
 contribute dwell time, with a censored visit end. Visit duration uses complete
 sampling intervals and never extrapolates across a gap or fractional epoch
-boundary. Shared entry timestamps can terminate one transition and start the
-next; use half-open intervals when turning transitions into analysis epochs.
-
----
-
-### Detecting Runs Between Regions
-
-Detect runs from a source region to a target region, tracking success and failure.
-
-```python
-from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-# Detect runs from start to goal (bin indices, from env.bin_at(positions))
-runs = detect_runs_between_regions(
-    env.bin_at(positions),
-    times,
-    env,
-    source="start",
-    target="goal",
-    min_duration=1.0,
-    max_duration=10.0,
-    min_speed=5.0,  # optional: drop runs whose mean speed is below 5 cm/s
-)
-
-# Success rate among runs whose result was observed: a censored run was
-# cut off by a tracking gap, epoch edge or the end of the recording.
-observed = [r for r in runs if r.outcome != "censored"]
-successful = [r for r in observed if r.success]  # outcome == "reached"
-
-print(f"Success rate: {len(successful) / len(observed):.1%}")
-print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in successful]):.2f}s")
-```
-
-**Returns**: List of `Run` objects
-- `start_time`: First sample outside the source region
-- `end_time`: When the run ended (see `outcome`)
-- `source_region`, `target_region`: Region names
-- `outcome`: `"reached"` (entered the target within `max_duration`),
-  `"timeout"`, `"returned"` (went back to the source first) or `"censored"`
-  (observation stopped first, so the result is unknown)
-- `success`: Shorthand for `outcome == "reached"`
-- `bins`: Bin sequence for the run
-
-**Applications**:
-- **T-maze alternation**: Runs from start to left/right arms
-- **Goal-directed navigation**: Efficiency of paths to goal
-- **Learning curves**: Improvement in success rate over trials
-- **Strategy analysis**: Compare path patterns for successful vs failed runs
+boundary.
 
 ---
 
 ### Velocity-Based Segmentation
 
 Find movement epochs, stretches where the smoothed speed stays above a
-threshold, as an `(n_epochs, 2)` array of `[start, stop)` times.
+threshold, as an [`Intervals`](#intervals) of `[start, stop)` windows.
 
 ```python
 from neurospatial.behavior.segmentation import segment_by_velocity
@@ -793,9 +741,9 @@ movement_epochs = segment_by_velocity(
     smooth_window=0.1,  # seconds (Gaussian SD of the velocity smoothing)
 )
 
-# movement_epochs is an (n_epochs, 2) array of [start, stop) times in
-# seconds; pass it as epochs= to restrict another analysis to movement.
-total_movement_time = np.sum(movement_epochs[:, 1] - movement_epochs[:, 0])
+# movement_epochs holds [start, stop) windows in seconds; pass it as epochs=
+# to restrict another analysis to movement (.windows is the (n, 2) array).
+total_movement_time = movement_epochs.durations.sum()
 print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1]:.1%})")
 ```
 
@@ -820,27 +768,39 @@ print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1
 
 ### Labels to analysis epochs
 
-Direction and trial functions such as `laps_to_direction_labels` and
-`goal_pair_direction_labels` give one label per frame. `labels_to_epochs`
-turns them into `[start, stop)` windows for each label, which you pass as
-`epochs=` to a rate map, decoder or other analysis:
+`sample_values` gives each frame the field of the lap or trial it falls in:
+`laps[laps.direction != "unknown"].sample_values(times, "direction")` for lap
+direction, and
+`trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`
+for the route of each reached trial, a tuple such as `("home", "left")`.
+Frames outside every selected row are `None`, and overlapping rows raise,
+because a frame would belong to two of them. `labels_to_epochs`
+turns such labels into an `Intervals`, one `[start, stop)` epoch per row with a
+`label` field. Select one label, `conditions[conditions.label == "clockwise"]`,
+and pass it as `epochs=` to a rate map, decoder or other analysis:
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial.behavior import Lap, labels_to_epochs, laps_to_direction_labels
+from neurospatial import Intervals
+from neurospatial.behavior import Lap, labels_to_epochs
 
 times = np.arange(0, 10, 0.5)  # 2 Hz frames, for a short printout
-laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
-labels = laps_to_direction_labels(laps, times)  # None outside every lap
+laps = Intervals(
+    [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
+)
+labels = laps[laps.direction != "unknown"].sample_values(times, "direction")
+assert labels[7] == "clockwise" and labels[8] is None  # 3.5 s and 4.0 s
 conditions = labels_to_epochs(times, labels)
-print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
-assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
-assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+print(conditions.intervals_table())
+clockwise = conditions[conditions.label == "clockwise"]
+assert clockwise.windows.tolist() == [[0.0, 4.0]]
+assert conditions.label.tolist() == ["clockwise", "counter-clockwise"]
+assert conditions.windows.tolist() == [[0.0, 4.0], [6.0, 9.5]]
 ```
 
 The time between two frames takes the label of the frame at its start. A lap
-covers `[start_time, end_time)`, so its last frame, whose interval leaves the
+covers `[start_time, stop_time)`, so its last frame, whose interval leaves the
 lap, is labeled `None`, and each window is exactly its lap: 0–4 s and
 6–9.5 s. Pass `valid=` to leave out frames with lost tracking.
 [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs)
@@ -854,7 +814,7 @@ in between. If the clock has no pause at the join, nothing in `times` tells
 the detectors that the recordings are separate: a trial that ends one
 recording seems to finish at wherever the animal was put down for the next.
 Mark the first sample of each later recording with `break_before`, and the
-region, run, lap and trial detectors analyze each recording on its own:
+region, lap and trial detectors analyze each recording on its own:
 
 <!-- docs-test: run -->
 ```python
@@ -862,7 +822,7 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment, Regions
-from neurospatial.behavior import detect_region_visits, segment_trials
+from neurospatial.behavior import detect_region_visits, detect_trials
 
 # A 100 cm linear track with a home zone and a reward zone at its ends
 track = np.c_[np.linspace(0.0, 100.0, 101), np.zeros(101)]
@@ -878,18 +838,16 @@ x = np.r_[np.linspace(5.0, 50.0, 90), np.full(60, 95.0)]
 positions = np.c_[x, np.zeros_like(x)]
 times = np.arange(x.size) / 30  # seconds, no time between the recordings
 new_recording = np.arange(x.size) == 90  # first sample of recording 2
-position_bins = env.bin_at(positions)
 
-trial_options = {"start_region": "home", "end_regions": ["reward"], "min_duration": 0.5}
-joined = segment_trials(position_bins, times, env, **trial_options)
-split = segment_trials(
-    position_bins, times, env, break_before=new_recording, **trial_options
+joined = detect_trials(env, times, positions, regions=["home", "reward"])
+split = detect_trials(
+    env, times, positions, regions=["home", "reward"], break_before=new_recording
 )
 print(f"without break_before: {joined[0].outcome}, ends at {joined[0].stop_time:.2f} s")
 print(f"with break_before:    {split[0].outcome}, ends at {split[0].stop_time:.2f} s")
 
 (visit,) = detect_region_visits(
-    position_bins, times, env, region_names=["reward"], break_before=new_recording
+    env, times, positions, regions=["reward"], break_before=new_recording
 )
 print(f"reward visit entry observed: {visit.entry_observed}")
 assert joined[0].outcome == "reached" and split[0].outcome == "censored"
@@ -907,7 +865,7 @@ longer than `max_gap`; it does not need the clock to pause.
 
 Build `break_before` from your recording or epoch IDs, for example
 `np.r_[False, recording_id[1:] != recording_id[:-1]]`, and pass the same array
-to every call. The region, run, velocity, lap and trial detectors on this page
+to every call. The region, velocity, lap and trial detectors on this page
 take it, as do `compute_home_range`, the goal-directed metrics,
 `heading_direction_labels`, `heading_from_body_orientation`,
 `Environment.occupancy`, `Environment.bin_sequence`,
@@ -930,17 +888,17 @@ from neurospatial.behavior.segmentation import detect_laps
 
 # Auto-detect laps; the first circuit is the template and the first lap
 laps = detect_laps(
-    position_bins,
-    times,
     env,
+    times,
+    positions,
     method="auto",
     min_overlap=0.8,  # Jaccard similarity threshold
     direction="both",  # or "clockwise", "counter-clockwise"
 )
 
-# Analyze lap properties
-for i, lap in enumerate(laps):
-    print(f"Lap {i+1}: {lap.start_time:.1f}-{lap.end_time:.1f}s, "
+# laps is an Intervals of Lap records: fields direction and overlap_score
+for lap_id, lap in zip(laps.interval_ids, laps):
+    print(f"Lap {lap_id}: {lap.start_time:.1f}-{lap.stop_time:.1f}s, "
           f"direction={lap.direction}, overlap={lap.overlap_score:.3f}")
 ```
 
@@ -967,13 +925,13 @@ for i, lap in enumerate(laps):
 Use a user-provided reference lap as template.
 
 ```python
-# Provide reference lap from previous session
-reference_lap = np.array([10, 15, 20, 25, 30, 35], dtype=np.int64)
+# The bins of one typical lap, for example from a previous session
+reference_lap = env.bin_at(lap_positions)
 
 laps = detect_laps(
-    position_bins,
-    times,
     env,
+    times,
+    positions,
     method="reference",
     reference_lap=reference_lap,
     min_overlap=0.7,
@@ -999,7 +957,7 @@ lap runs from the entry before its trip to the entry that ends it; if the
 recording starts inside the start region, the first lap starts at the first
 sample. Region laps have `overlap_score = NaN` (no template). The region method
 needs a loop of connected bins: in an open arena use `method="auto"` or
-`"reference"`, and on a back-and-forth track use `segment_trials`.
+`"reference"`, and on a back-and-forth track use [`detect_trials`](#from-positions-or-port-events-to-trials).
 
 ```python
 from neurospatial import Regions
@@ -1012,9 +970,9 @@ env = env.with_regions(region_builder)
 
 # Detect laps as trips round the loop between start-region entries
 laps = detect_laps(
-    position_bins,
-    times,
     env,
+    times,
+    positions,
     method="region",
     start_region="start",
     direction="both",
@@ -1042,18 +1000,10 @@ on where the lap starts
 **Filtering by Direction**:
 ```python
 # Only counter-clockwise laps
-ccw_laps = detect_laps(
-    position_bins, times, env,
-    method="auto",
-    direction="counter-clockwise"
-)
+ccw_laps = detect_laps(env, times, positions, direction="counter-clockwise")
 
 # Only clockwise laps
-cw_laps = detect_laps(
-    position_bins, times, env,
-    method="auto",
-    direction="clockwise"
-)
+cw_laps = detect_laps(env, times, positions, direction="clockwise")
 ```
 
 **Applications**:
@@ -1063,59 +1013,167 @@ cw_laps = detect_laps(
 
 ---
 
-## Trial Segmentation
+## Trials
 
-Segment behavioral tasks into discrete trials based on region entries.
+### From positions or port events to trials
 
-### T-maze Trials
+On a task the animal alternates between being at a place and running between
+places. Time at a reward well, a nose-poke port or a start box is a **visit**;
+the run from leaving one of them to arriving at the next is a **trial**. A
+trial is the half-open window `[departure, arrival)`: it starts at the first
+sample outside the region the animal left and stops at the first sample inside
+the next one, whichever it is. A task with one start (a T-maze) and a task
+where every well is a start (a W-track alternation) therefore need the same
+call.
 
+**Give each well its size.** Define a well with the size of the place where
+the animal stops: `regions.add("well_1", point=(10.0, 30.0), radius=5.0)`. A
+point region is a single bin, and an animal that stops beside the well, not on
+its bin, is never inside it, so its trials would end late or run on to the
+next well. `detect_trials` refuses point regions and says how to fix them.
+
+**From tracked positions**, `detect_trials(env, times, positions,
+regions=[...])` finds the visits and returns the trials between them:
+
+<!-- docs-test: run -->
 ```python
-from neurospatial import Regions
+import numpy as np
+from shapely.geometry import box
 
-from neurospatial.behavior.segmentation import segment_trials
+from neurospatial import Environment, Regions
+from neurospatial.behavior import detect_trials
 
-# Define regions
-region_builder = Regions(env.regions.values())
-region_builder.add("start", polygon=Point(50, 10).buffer(8))
-region_builder.add("left", polygon=Point(20, 90).buffer(8))
-region_builder.add("right", polygon=Point(80, 90).buffer(8))
-env = env.with_regions(region_builder)
+# A 100 x 40 cm arena with three reward wells along the top, 5 cm in radius.
+env = Environment.from_polygon(box(0, 0, 100, 40), bin_size=2.0, units="cm")
+wells = {"well_1": (10.0, 30.0), "well_2": (50.0, 30.0), "well_3": (90.0, 30.0)}
+regions = Regions()
+for name, center in wells.items():
+    regions.add(name, point=center, radius=5.0)
+env = env.with_regions(regions)
 
-# Segment into trials
-trials = segment_trials(
-    position_bins,
-    times,
-    env,
-    start_region="start",
-    end_regions=["left", "right"],
-    min_duration=1.0,
-    max_duration=15.0,  # the task's timeout; omit it when the task has none
-)
+# The animal alternates: centre, left, centre, right, centre. It rests 2 s
+# at each well and runs between them along the bottom of the arena at 40 cm/s.
+fps = 30.0
+wells_in_order = ["well_2", "well_1", "well_2", "well_3", "well_2"]
+parts = []
+for here, there in zip(wells_in_order[:-1], wells_in_order[1:]):
+    (x0, y0), (x1, y1) = wells[here], wells[there]
+    corners = np.array([[x0, y0], [x0, 10.0], [x1, 10.0], [x1, y1]])
+    legs = np.r_[0.0, np.cumsum(np.hypot(*np.diff(corners, axis=0).T))]
+    along = np.arange(0.0, legs[-1], 40.0 / fps)
+    path = np.column_stack([np.interp(along, legs, corners[:, k]) for k in (0, 1)])
+    parts += [np.tile(wells[here], (int(2 * fps), 1)), path]
+parts.append(np.tile(wells[wells_in_order[-1]], (int(2 * fps), 1)))
+positions = np.vstack(parts)
+times = np.arange(len(positions)) / fps
 
-# Each field is an array with one entry per trial; select conditions with it
-left_trials = trials[trials.end_region == "left"]
-right_trials = trials[trials.end_region == "right"]
+trials = detect_trials(env, times, positions, regions=list(wells))
+print(trials.intervals_table())
+assert trials.start_region.tolist() == wells_in_order[:-1]
+assert trials.end_region.tolist() == wells_in_order[1:]
 
-print(f"Left choices: {len(left_trials)}")
-print(f"Right choices: {len(right_trials)}")
-print(f"Timeouts: {np.sum(trials.outcome == 'timeout')}")
-print(f"Censored (result unknown): {np.sum(trials.outcome == 'censored')}")
+# A single-start task is the same call: select the trials that leave the start.
+outbound = trials[trials.start_region == "well_2"]
+print(outbound.end_region.tolist())
 ```
 
-**Returns**: an `Intervals` of `Trial` records, one row per trial in time
-order, each the half-open window `[start_time, stop_time)` (see
-[Intervals](#intervals)):
-- `start`: Departure from the start region (the last sample inside it)
-- `stop`: When the trial ended (see `outcome`); the sample at `stop`, such as
-  the arrival, is outside the trial
-- `end_region`: Name of the end region reached (None unless `outcome == "reached"`)
-- `outcome`: `"reached"`, `"timeout"`, `"returned"` (went back to the start
-  region first) or `"censored"` (observation stopped first: a tracking gap
-  longer than `max_gap`, an epochs edge, a declared break or the end of the
-  recording). Leave censored trials out of fraction-correct measures, and
-  select successful trials with `trials[trials.outcome == "reached"]`.
-- `max_duration` defaults to `None` (no timeout): a timeout is a rule of the
-  task, so pass the task's own value when it has one.
+Each trial has a `start_region`, an `end_region` and an `outcome`:
+
+- `"reached"`: the animal arrived at another region, named in `end_region`.
+- `"returned"`: it came back to the region it left (`end_region` is `None`),
+  for example an aborted run.
+- `"censored"`: observation stopped first (a tracking gap longer than
+  `max_gap`, an `epochs` edge, a declared break or the end of the recording);
+  `stop` is the last observed time and the result is unknown. Leave censored
+  trials out of fraction-correct measures.
+
+No trial spans a break in observation, and the time before the first visit is
+in no trial. There is no minimum or maximum duration: a timeout or a "too
+short" rule belongs to your task, so apply it yourself, for example
+`trials[trials.durations < 15.0]`. For the visits themselves (time at each
+well), use [`detect_region_visits`](#observed-region-visits).
+
+**From port events.** When the visits come from hardware, such as nose-poke or
+beam-break times in a task log, bring them as a table with one row per visit
+and build the trials with `trials_between_visits`. Map the port names to the
+environment's region names first, so the trials can be used with it (for
+example `path_progress(..., goal=trials.end_region)`):
+
+<!-- docs-test: run -->
+```python
+import pandas as pd
+
+from neurospatial import Intervals
+from neurospatial.behavior import trials_between_visits
+
+# One row per port visit: poke in and poke out, on the recording clock.
+pokes = pd.DataFrame(
+    {
+        "start_time": [0.0, 6.1, 12.8, 19.0, 25.7],
+        "stop_time": [2.0, 8.1, 14.8, 21.0, 27.7],
+        "port": ["Poke_2", "Poke_1", "Poke_2", "Poke_3", "Poke_2"],
+    }
+)
+port_to_well = {"Poke_1": "well_1", "Poke_2": "well_2", "Poke_3": "well_3"}
+pokes["port"] = pokes["port"].map(port_to_well)
+port_trials = trials_between_visits(Intervals.from_dataframe(pokes), region="port")
+print(port_trials.intervals_table())
+assert port_trials.start.tolist() == [2.0, 8.1, 14.8, 21.0]
+```
+
+Visits that overlap (two sensors of one port, for example) raise an error that
+names both rows; merge or drop them first.
+
+**Your labels.** The meaning of a trial (instructed goal, correct or error,
+inbound or outbound) is your task's. Add it with `with_fields`, one value per
+trial. On a W-track alternation, an outbound trial is correct when it goes to
+the outer well the animal did not visit last, and an inbound trial when it
+returns to the centre:
+
+<!-- docs-test: run setup=docs_trials_from_positions -->
+```python
+correct, last_outer = [], None
+for start, end in zip(trials.start_region, trials.end_region):
+    if start == "well_2":  # outbound
+        correct.append(end is not None and end != last_outer)
+        last_outer = end if end is not None else last_outer
+    else:  # inbound
+        correct.append(end == "well_2")
+labelled = trials.with_fields(
+    direction=np.where(trials.start_region == "well_2", "outbound", "inbound"),
+    correct=correct,
+)
+print(labelled.intervals_table()[["start_region", "end_region", "direction", "correct"]])
+
+# Inbound/outbound labels per sample, for directional place fields
+direction_of_sample = labelled.sample_values(times, "direction")  # None outside
+route_of_sample = trials[trials.outcome == "reached"].sample_values(
+    times, ("start_region", "end_region")
+)
+```
+
+To attach columns of a task log with one row per trial, find each trial's log
+row with `log.sample_interval_ids(trials.start)`.
+
+**Lost tracking ends a trial.** A NaN position (lost tracking) is not
+observed: the trial under way becomes `"censored"`, and the next trial starts
+only after the animal is seen leaving a region again. For short dropouts, such
+as a few frames where the tracker lost the head, delete those rows instead of
+keeping them as NaN: a deleted row is bridged when the samples around it are
+no more than `max_gap` (1 s by default) apart.
+
+<!-- docs-test: run setup=docs_trials_from_positions -->
+```python
+lost = positions.copy()
+middle = 0.5 * (trials.start[1] + trials.stop[1])  # during the second run
+lost[(times >= middle) & (times < middle + 0.5)] = np.nan  # 0.5 s lost
+print(detect_trials(env, times, lost, regions=list(wells)).outcome.tolist())
+
+tracked = ~np.isnan(lost).any(axis=1)  # delete the lost rows to bridge them
+bridged = detect_trials(env, times[tracked], lost[tracked], regions=list(wells))
+print(bridged.outcome.tolist())
+assert bridged.outcome.tolist() == ["reached"] * 4
+```
 
 ---
 
@@ -1134,18 +1192,14 @@ region_builder.add("arm_b", polygon=Point(20, 30).buffer(8))
 region_builder.add("arm_c", polygon=Point(80, 30).buffer(8))
 env = env.with_regions(region_builder)
 
-# Segment into arm visits
-trials = segment_trials(
-    position_bins,
-    times,
-    env,
-    start_region="center",
-    end_regions=["arm_a", "arm_b", "arm_c"],
-    min_duration=0.5,
+# Trials between the centre and the arms, in both directions
+trials = detect_trials(
+    env, times, positions, regions=["center", "arm_a", "arm_b", "arm_c"]
 )
 
-# Compute spontaneous alternation score
-arms = trials.end_region[trials.outcome == "reached"].tolist()
+# Compute spontaneous alternation score from the arms entered from the centre
+entered = trials[(trials.start_region == "center") & (trials.outcome == "reached")]
+arms = entered.end_region.tolist()
 alternations = sum(1 for i in range(len(arms)-1) if arms[i] != arms[i+1])
 alternation_rate = alternations / (len(arms) - 1)
 
@@ -1173,20 +1227,16 @@ for i in range(8):
     region_builder.add(f"arm_{i}", polygon=Point(x, y).buffer(8))
 env = env.with_regions(region_builder)
 
-# Segment into arm choices
-trials = segment_trials(
-    position_bins,
-    times,
-    env,
-    start_region="center",
-    end_regions=[f"arm_{i}" for i in range(8)],
-    min_duration=0.5,
+# Trials between the centre and the arms
+trials = detect_trials(
+    env, times, positions, regions=["center", *(f"arm_{i}" for i in range(8))]
 )
 
 # Analyze working memory errors (re-entries)
 visited_arms = []
 errors = 0
-for trial in trials[trials.outcome == "reached"]:
+choices = trials[(trials.start_region == "center") & (trials.outcome == "reached")]
+for trial in choices:
     if trial.end_region in visited_arms:
         errors += 1  # Re-entry error
     visited_arms.append(trial.end_region)
@@ -1204,8 +1254,9 @@ print(f"Working memory errors: {errors}")
 
 ### Intervals
 
-`segment_trials` returns an `Intervals`: a table of trials with one row per
-trial. The same object holds trials read back from an NWB file
+`detect_trials` returns an `Intervals`: a table of trials with one row per
+trial. The other detectors on this page return one too (visits, laps,
+movement epochs, goal-directed runs). The same object holds trials read back from an NWB file
 ([`read_trials`](interoperability.md#trials-round-trip)) or from your own task log
 (`Intervals.from_dataframe`), so the analysis below does not depend on where
 the trials came from.
@@ -1215,9 +1266,19 @@ the trials came from.
   outside the trial and belongs to whatever comes next.
 - **Fields** are the columns that describe each trial (`start_region`,
   `end_region`, `outcome` for detected trials; any column of a task log).
-  `trials.outcome` is an array with one entry per row, so a condition is a
-  comparison: `trials[trials.outcome == "reached"]`. A missing value is
+  `trials.outcome` is a pandas Series indexed by `interval_id`, one value per
+  trial, so a condition is a comparison: `trials[trials.outcome ==
+  "reached"]`, and a value always stays with its trial, even in a selection
+  made in another order. Because the Series is labelled by trial id,
+  `left.outcome[4]` is trial 4's outcome, not the fifth row's; use
+  `left.outcome.iloc[0]` for the first row of a selection. A missing value is
   `None`, never `""`.
+- **Your labels.** `trials.with_fields(instructed_goal=goals,
+  outcome=outcomes)` adds fields from your task log or rule, one value per
+  trial (a Series by `interval_id`, or an array in time order), keeping the
+  ids. Well or port numbers are not region names: map them,
+  `trials.goal_well.map({1: "well_1", 2: "well_2"})`, before passing them as
+  a start or goal.
 - **Stable ids.** `trials[0]` is the first trial in time; `interval_ids` name
   the trials and stay with them through every selection, NWB and pynapple:
   `trials.sel(interval_id=12)` is trial 12 in any subset that contains it.
@@ -1233,7 +1294,7 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment, Regions, compute_spatial_rate
-from neurospatial.behavior import segment_trials
+from neurospatial.behavior import detect_trials
 from neurospatial.simulation import generate_poisson_spikes
 
 # Three out-and-back runs on a 100 cm track, 20 s each, tracked at 30 Hz.
@@ -1252,29 +1313,27 @@ outbound = phase < 0.5
 rate = 0.5 + 20.0 * outbound * np.exp(-0.5 * ((x - 60.0) / 8.0) ** 2)
 spike_times = generate_poisson_spikes(rate, times, seed=4)
 
-trials = segment_trials(
-    env.bin_at(positions), times, env, start_region="home", end_regions="goal"
-)
+trials = detect_trials(env, times, positions, regions=["home", "goal"])
 print(trials)
 print(trials.intervals_table())
 
 # A condition is a selection by field; the rows keep their interval_ids.
-reached = trials[trials.outcome == "reached"]
-outward = compute_spatial_rate(env, spike_times, times, positions, epochs=reached)
+out = trials[(trials.end_region == "goal") & (trials.outcome == "reached")]
+outward = compute_spatial_rate(env, spike_times, times, positions, epochs=out)
 peak = env.bin_centers[np.nanargmax(outward.firing_rate), 0]
 print(f"outbound field peak: {peak:.0f} cm")
 assert abs(peak - 60.0) <= 5.0
 
 # Per-sample labels: each sample gets its trial's id or field, missing outside.
-trial_of_sample = trials.sample_interval_ids(times)  # -1 outside every trial
+trial_of_sample = out.sample_interval_ids(times)  # -1 outside every trial
 goal_of_sample = trials.sample_values(times, "end_region")  # None outside
 # Per-trial samples: one slice of times per trial.
-for trial_id, samples in zip(trials.interval_ids, trials.sample_slices(times)):
+for trial_id, samples in zip(out.interval_ids, out.sample_slices(times)):
     print(f"trial {trial_id}: {np.ptp(positions[samples, 0]):.0f} cm covered")
 assert np.all(trial_of_sample[~outbound] == -1)
 
 # A condition with no trials is a valid, empty selection: NaN, with a warning.
-none = trials[trials.outcome == "timeout"]
+none = trials[trials.outcome == "censored"]
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     empty = compute_spatial_rate(env, spike_times, times, positions, epochs=none)
@@ -1282,15 +1341,16 @@ assert np.isnan(empty.firing_rate).all()
 print(caught[0].message)
 ```
 
-The trials are the outbound runs: each starts at the last sample in the home
-zone and stops at the first sample in the goal zone, so the rate map with
-`epochs=reached` uses only outward running and recovers the field at 60 cm.
+The trials alternate between outbound (home to goal) and inbound runs. Each
+starts at the first sample outside the zone the animal left and stops at the
+first sample in the next zone, so the rate map with `epochs=out` uses only
+outward running and recovers the field at 60 cm.
 `sample_interval_ids` is `-1` and `sample_values` is `None` for samples
 outside every trial (`NaN` for numeric fields), never a value that could be
 mistaken for a measurement. `sample_slices` gives each trial's samples, for
 per-trial measures such as path length or mean speed.
 
-A condition that has no trials in a session (here, no timeouts) is not an
+A condition that has no trials in a session (here, no censored trials) is not an
 error: the rate map is NaN in every bin and occupancy is zero, with a warning
 that says the selection is empty. The peri-event histograms return NaN with
 `n_events == 0` in that case. Windows that do contain time but no events or
@@ -1304,7 +1364,7 @@ sample, and never overlaps another row.
 
 **Overlap.** Rows may overlap, for example visits to two overlapping regions.
 Functions that give each sample one trial (`sample_interval_ids`,
-`sample_values`, `goal_pair_direction_labels`, `time_to_goal`) refuse
+`sample_values`, `time_to_goal`) refuse
 overlapping rows and name them; select a non-overlapping subset first.
 
 **Your own task log.** A log with one row per trial, start and stop times on
@@ -1495,7 +1555,7 @@ times = np.arange(len(positions), dtype=float)
 trials = Intervals(
     [
         Trial(0.0, 15.0, "start", "well_left", "reached"),
-        Trial(15.0, 30.0, "start", None, "timeout"),
+        Trial(15.0, 30.0, "start", None, "returned"),
         Trial(30.0, 45.0, "start", "well_left", "reached"),
     ]
 )
@@ -1571,16 +1631,16 @@ from neurospatial.behavior.segmentation import detect_goal_directed_runs
 
 # Detect efficient paths toward goal
 goal_runs = detect_goal_directed_runs(
-    position_bins,
-    times,
     env,
+    times,
+    positions,
     goal_region="goal",
     directedness_threshold=0.7,
     min_progress=20.0,  # cm
 )
 
-# goal_runs is an (n_runs, 2) array of [departure, arrival) times in seconds
-for start, stop in goal_runs:
+# goal_runs is an Intervals of [departure, arrival) windows in seconds
+for start, stop in goal_runs.windows:
     print(f"Goal-directed run: {start:.1f}-{stop:.1f} s ({stop - start:.1f} s)")
 ```
 
@@ -1610,9 +1670,9 @@ Analyze learning and performance across laps.
 ```python
 # Step 1: Detect laps
 laps = detect_laps(
-    position_bins,
-    times,
     env,
+    times,
+    positions,
     method="auto",
     min_overlap=0.8,
     direction="both"
@@ -1621,7 +1681,7 @@ laps = detect_laps(
 # Step 2: Compute metrics per lap using continuous positions
 lap_metrics = []
 for lap in laps:
-    mask = (times >= lap.start_time) & (times <= lap.end_time)
+    mask = (times >= lap.start_time) & (times < lap.stop_time)
     lap_positions = positions[mask]  # Use continuous positions
 
     # Radians per frame, NaN at the lap's first and last frames
@@ -1631,7 +1691,7 @@ for lap in laps:
     step_lengths = compute_step_lengths(lap_positions, metric="euclidean")
 
     lap_metrics.append({
-        "duration": lap.end_time - lap.start_time,
+        "duration": lap.stop_time - lap.start_time,
         "mean_turn": np.abs(np.nanmean(turn_angles)),
         "mean_step": np.mean(step_lengths),
         "path_length": np.sum(step_lengths),
@@ -1646,14 +1706,13 @@ print(f"First lap duration: {durations[0]:.1f}s")
 print(f"Last lap duration: {durations[-1]:.1f}s")
 print(f"Learning improvement: {(durations[0] - durations[-1]) / durations[0]:.1%}")
 
-# Step 4: Compare lap similarity
-for i in range(len(laps)-1):
-    mask1 = (times >= laps[i].start_time) & (times <= laps[i].end_time)
-    mask2 = (times >= laps[i+1].start_time) & (times <= laps[i+1].end_time)
-
+# Step 4: Compare lap similarity (trajectory_similarity takes bin sequences)
+position_bins = env.bin_at(positions)
+lap_slices = laps.sample_slices(times)
+for i in range(len(laps) - 1):
     similarity = trajectory_similarity(
-        position_bins[mask1],
-        position_bins[mask2],
+        position_bins[lap_slices[i]],
+        position_bins[lap_slices[i + 1]],
         env,
         method="jaccard"
     )
@@ -1672,21 +1731,16 @@ for i in range(len(laps)-1):
 Analyze choice behavior and learning in T-maze.
 
 ```python
-# Step 1: Segment trials
-trials = segment_trials(
-    position_bins,
-    times,
-    env,
-    start_region="start",
-    end_regions=["left", "right"],
-    min_duration=1.0,
-)
+# Step 1: Trials between the start box and the arms
+trials = detect_trials(env, times, positions, regions=["start", "left", "right"])
+choices = trials[trials.start_region == "start"]
 
-# Step 2: Separate by outcome
-left_trials = trials[trials.end_region == "left"]
+# Step 2: Separate by choice
+left_trials = choices[choices.end_region == "left"]
 
 # Step 3: Analyze path similarity within choice type; each slice holds one
 # trial's samples, start_time <= t < stop_time
+position_bins = env.bin_at(positions)
 left_slices = left_trials.sample_slices(times)
 left_similarities = [
     trajectory_similarity(
@@ -1698,14 +1752,14 @@ left_similarities = [
 print(f"Left choice stereotypy: {np.mean(left_similarities):.3f}")
 
 # Step 4: Detect goal-directed behavior in the first 5 trials
-reached = trials[trials.outcome == "reached"]
+reached = choices[choices.outcome == "reached"]
 for trial_id, trial, samples in zip(
     reached.interval_ids[:5], reached[:5], reached[:5].sample_slices(times)
 ):
     goal_runs = detect_goal_directed_runs(
-        position_bins[samples],
-        times[samples],
         env,
+        times[samples],
+        positions[samples],
         goal_region=trial.end_region,
         directedness_threshold=0.5,
         min_progress=10.0,
@@ -1795,12 +1849,16 @@ if transition_idx is not None:
 - **Reference**: Cross-session comparisons, control for atypical first lap
 - **Region**: Well-controlled tasks with explicit start zones
 
-### Trial Duration Filters
+### Trial Durations
 
-- **min_duration**: Exclude brief entries (false starts, pass-throughs)
-- **max_duration**: The task's timeout, if it has one (default `None`, no
-  timeout)
-- Start with permissive thresholds, refine based on task demands
+- Trials have no duration limits: keep every departure and arrival, then
+  apply your task's rules, for example a timeout as a field with
+  `with_fields`
+- Size wells and zones with `radius=` or polygons that cover where the animal
+  rests, so jitter at a region's edge is not read as leaving it. Very short
+  `"returned"` trials (tens to hundreds of milliseconds) are that jitter; if a
+  few remain, look at `trials[trials.outcome == "returned"].durations` and drop
+  those below a threshold well under your shortest real run
 
 ### Directedness Thresholds
 
@@ -1822,7 +1880,7 @@ if transition_idx is not None:
 - Traja: [https://github.com/traja-team/traja](https://github.com/traja-team/traja)
 - Sims, D. W., et al. (2014). "Hierarchical random walks in trace fossils and the origin of optimal search behavior." *PNAS*, 111(30), 11073-11078.
 
-**Trial Segmentation**:
+**Trials**:
 - Olton, D. S., & Samuelson, R. J. (1976). "Remembrance of places passed: Spatial memory in rats." *Journal of Experimental Psychology: Animal Behavior Processes*, 2(2), 97-116.
 - Wood, E. R., et al. (2000). "Hippocampal neurons encode information about different types of memory episodes occurring in the same location." *Neuron*, 27(3), 623-633.
 

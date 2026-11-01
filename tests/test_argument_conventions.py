@@ -135,7 +135,6 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # Values sampled at the times being converted.
     ("to_pynapple", "values"),
     # Records written to the file.
-    ("write_laps", "laps"),
     ("write_region_crossings", "crossings"),
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
@@ -207,7 +206,7 @@ REQUIRED_DATA_NAMES = {
     *("entry_time", "reward_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("template_epochs", "match_epochs"),
-    *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
+    *("laps", "visits", "labels", "direction_labels", "voronoi_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).
     "window",

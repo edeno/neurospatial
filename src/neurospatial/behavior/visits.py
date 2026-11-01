@@ -1,7 +1,9 @@
-"""Observed visits and entry-to-entry transitions between named regions.
+"""Observed visits to named regions, from tracked positions.
 
-These events describe tracking observations, without assigning task trials,
-rewards, intended goals, or success. Recording boundaries remain explicit.
+A visit is time at a region, from the first sample inside it to the first
+sample outside. Visits describe tracking observations, without task trials,
+rewards, goals or success; :mod:`neurospatial.behavior.trials` builds trials
+from them. Recording boundaries remain explicit.
 """
 
 from __future__ import annotations
@@ -25,21 +27,16 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._validation import (
-    format_times_positions_error,
-    times_positions_problems,
-)
-from neurospatial.behavior._position_bins import validated_position_bins
+from neurospatial.behavior._position_bins import sample_bins
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
+    from neurospatial._interval_table import Intervals
     from neurospatial.environment import Environment
 
 __all__ = [
-    "RegionTransition",
     "RegionVisit",
     "detect_region_visits",
-    "region_transitions",
 ]
 
 
@@ -92,14 +89,14 @@ class RegionVisit:
     visit_id, run_id : int
         Chronological visit and continuous-observation identifiers, local to
         one detection call. Run identifiers also count runs without visits.
-    region_name : str
-        Original name from ``env.regions``.
+    region : str
+        Name of the region in ``env.regions``.
     start_index, stop_index : int
         Bounds of the inside-region samples in the original input arrays:
-        ``position_bins[start_index:stop_index]``. Stop is exclusive. Invalid
-        samples in a bridged gap inside the visit lie within these bounds.
-    start_time, end_time : float
-        Observed bounds in seconds. Start is the first inside sample. End is
+        ``positions[start_index:stop_index]``. Stop is exclusive.
+    start_time, stop_time : float
+        Observed bounds in seconds; the visit is the half-open window
+        ``[start_time, stop_time)``. Start is the first inside sample. Stop is
         the first outside sample for an observed exit, otherwise the last
         continuous observation boundary. A complete interval ending exactly
         at an epoch stop can supply that boundary without creating an exit.
@@ -108,25 +105,23 @@ class RegionVisit:
         and the requested half-open epochs. False denotes censoring, not a
         failed visit. Starting inside a region never invents an entry.
     duration : float
-        ``end_time - start_time`` in seconds, using start-sample allocation.
+        ``stop_time - start_time`` in seconds, using start-sample allocation.
         This is only observed dwell time when a boundary is censored; a
         singleton observation has zero duration.
 
     Notes
     -----
     Records contain only plain Python scalars and are immutable; construction
-    checks ``start_index < stop_index`` and ``start_time <= end_time``.
-    ``pandas.DataFrame(visits)`` converts a nonempty list into an event
-    table, including censoring flags.
+    checks ``start_index < stop_index`` and ``start_time <= stop_time``.
     """
 
     visit_id: int
     run_id: int
-    region_name: str
+    region: str
     start_index: int
     stop_index: int
     start_time: float
-    end_time: float
+    stop_time: float
     entry_observed: bool
     exit_observed: bool
     duration: float = field(init=False)
@@ -135,9 +130,9 @@ class RegionVisit:
         _store_plain_scalars(
             self,
             ints=("visit_id", "run_id", "start_index", "stop_index"),
-            floats=("start_time", "end_time"),
+            floats=("start_time", "stop_time"),
             bools=("entry_observed", "exit_observed"),
-            strings=("region_name",),
+            strings=("region",),
         )
         if not self.start_index < self.stop_index:
             msg = (
@@ -146,212 +141,100 @@ class RegionVisit:
                 f"{self.stop_index}."
             )
             raise ValueError(msg)
-        if not self.start_time <= self.end_time:
+        if not self.start_time <= self.stop_time:
             msg = (
-                "RegionVisit needs start_time <= end_time; got "
-                f"{self.start_time} and {self.end_time}."
+                "RegionVisit needs start_time <= stop_time; got "
+                f"{self.start_time} and {self.stop_time}."
             )
             raise ValueError(msg)
-        object.__setattr__(self, "duration", self.end_time - self.start_time)
+        object.__setattr__(self, "duration", self.stop_time - self.start_time)
 
 
 @dataclass(frozen=True)
-class RegionTransition:
-    """Consecutive observed entries into two different named regions.
+class _ObservedVisits:
+    """Visits of one detection call, with the end time of each observed run."""
 
-    Attributes
-    ----------
-    source_visit_id, target_visit_id : int
-        Identifiers of the original visits, retained without renumbering.
-    run_id : int
-        Shared continuous-observation identifier, local to the detection call.
-    source_region, target_region : str
-        Names of the source and destination regions.
-    start_index, end_index : int
-        Original sample indices of the source and target entries. Both samples
-        belong to the transition path; use ``slice(start_index, end_index + 1)``
-        for plotting arrival. These are not compressed visit-list indices.
-    start_time, end_time : float
-        Source and target entry timestamps in seconds. Adjacent transitions
-        may share an entry timestamp. As analysis epochs, use the half-open
-        ``[start_time, end_time)`` interval to avoid double counting that event.
-    duration : float
-        Entry-to-entry duration in seconds, including source-region dwell.
-        This is not departure-to-arrival travel time or a task-trial outcome.
-    """
-
-    source_visit_id: int
-    target_visit_id: int
-    run_id: int
-    source_region: str
-    target_region: str
-    start_index: int
-    end_index: int
-    start_time: float
-    end_time: float
-    duration: float = field(init=False)
-
-    def __post_init__(self) -> None:
-        _store_plain_scalars(
-            self,
-            ints=(
-                "source_visit_id",
-                "target_visit_id",
-                "run_id",
-                "start_index",
-                "end_index",
-            ),
-            floats=("start_time", "end_time"),
-            strings=("source_region", "target_region"),
-        )
-        problems = []
-        if not self.source_visit_id < self.target_visit_id:
-            problems.append("source_visit_id < target_visit_id")
-        if not self.start_index < self.end_index:
-            problems.append("start_index < end_index")
-        if not self.start_time < self.end_time:
-            problems.append("start_time < end_time")
-        if self.source_region == self.target_region:
-            problems.append("different regions")
-        if problems:
-            msg = (
-                "RegionTransition pairs an earlier entry with a later entry into "
-                f"another region; it needs {', '.join(problems)}. Got visits "
-                f"{self.source_visit_id} -> {self.target_visit_id}, regions "
-                f"{self.source_region!r} -> {self.target_region!r}, indices "
-                f"{self.start_index} -> {self.end_index}, times "
-                f"{self.start_time} -> {self.end_time}."
-            )
-            raise ValueError(msg)
-        object.__setattr__(self, "duration", self.end_time - self.start_time)
+    visits: list[RegionVisit]
+    run_end_times: dict[int, float]
+    settings: dict[str, Any]
 
 
-@reads_pynapple_samples
-def detect_region_visits(
-    position_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
+def _observed_visits(
     env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
-    region_names: Sequence[str],
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    break_before: ArrayLike | None = None,
-) -> list[RegionVisit]:
-    """Detect observed visits to disjoint named regions.
+    regions: Sequence[str],
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    call: str,
+    result: str,
+) -> _ObservedVisits:
+    """Detect visits, keeping each run's end for trials censored by it.
 
-    Parameters
-    ----------
-    position_bins : ndarray of integers, shape (n_samples,)
-        Sample-aligned bins from ``env.bin_at(positions)``. Bin ``-1`` (a
-        position outside the environment, or a missing sample) is not
-        located: as in ``env.occupancy``, an interval with either sample at
-        ``-1`` is not observed, so it ends the run and censors the visits
-        around it. To bridge missing samples instead, delete their rows
-        before binning; a deleted row is bridged when the samples around it
-        are no more than ``max_gap`` apart. A valid bin outside every
-        selected region is observed travel, not an observation break.
-    times : ndarray, shape (n_samples,)
-        Finite, strictly increasing timestamps in seconds.
-    env : Environment
-        Environment containing the named polygon regions.
-    region_names : sequence of str
-        Nonempty, unique region names. Bin-center membership follows
-        ``regions_to_mask``: regions that only share edges, such as
-        quadrants, split the bins on those edges and never share a bin.
-        Selected regions that overlap in area may not share active bins;
-        ambiguous membership raises rather than using the order of names as
-        a priority rule.
-    max_gap : float or None, default=1.0
-        Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
-        ``None`` bridges every gap. The default is calibrated for typical video
-        and DeepLabCut tracking; choose a value longer than routine dropped or
-        low-confidence frames and shorter than real tracking losses or pickups.
-    epochs : (start, stop), array-like of shape (n, 2), or None
-        Half-open event windows on the same clock as ``times``. IntervalSet-like
-        inputs are also accepted. Only fully contained sampling intervals
-        contribute duration. An entry at an epoch stop is excluded; the
-        interval ending at that stop can still contribute observed dwell.
-    break_before : ArrayLike of bool, shape (n_samples,), optional
-        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
-        ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored.
-
-    Returns
-    -------
-    list[RegionVisit]
-        Chronological immutable scalar records, including censored visits at
-        recording boundaries. Original sample indices are preserved. Empty
-        when no selected region was observed. No raw input arrays are retained.
-
-    Raises
-    ------
-    ValueError
-        For invalid shapes, clocks, gap thresholds, duplicate/empty names,
-        overlapping selected-region bins, or a ``break_before`` that is not a
-        Boolean array with one entry per sample.
-    TypeError
-        If ``position_bins`` is not an integer array or names are not strings.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, env.n_bins)`` and is not ``-1``.
-    RegionNotFoundError
-        If a selected region does not exist.
-
-    Notes
-    -----
-    An entry is observed only when a preceding continuous sample was outside
-    that region. An exit is observed at the first following outside sample.
-    These are sampled crossing times, without sub-frame interpolation. A visit
-    starting inside a region after a gap or a declared break is left-censored,
-    not a new entry. An unlocated sample (bin ``-1``), like a gap longer than
-    ``max_gap``, censors both adjacent runs, so it never fabricates an exit.
-
-    Use :func:`region_transitions` before filtering visits to obtain consecutive
-    entry-to-entry pairs. Use ``detect_runs_between_regions`` instead when the
-    desired interval starts at source exit.
+    NaN positions are missing samples, bridged like deleted rows: they are
+    dropped before detection, so the samples around them are joined when
+    no more than ``max_gap`` apart. A position outside the environment is
+    observed but not located and ends the run. Sample indices refer to the
+    original arrays.
     """
-    bins = validated_position_bins(
-        position_bins, env, call="detect_region_visits", times=times
+    from neurospatial._exceptions import _format_error
+
+    clock, bins = sample_bins(env, times, positions, call=call)
+    samples = np.asarray(positions, dtype=np.float64)
+    tracked = (
+        np.isfinite(samples.reshape(clock.size, -1)).all(axis=1)
+        if clock.size
+        else np.zeros(0, dtype=bool)
     )
-    clock = np.asarray(times, dtype=np.float64)
-    problems = times_positions_problems(clock, None)[0]
-    if problems:
-        raise ValueError(
-            format_times_positions_error(
-                problems, False, call="detect_region_visits", positions=False
-            )
-        )
+    kept = np.flatnonzero(tracked)
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
-    if isinstance(region_names, str):
-        msg = "region_names must be a sequence of names, for example ['left', 'right']."
+    if isinstance(regions, str):
+        msg = f"{call}(): regions must be a sequence of names, for example ['left', 'right']."
         raise TypeError(msg)
-    names = list(region_names)
+    names = list(regions)
     if not names:
-        msg = "region_names must contain at least one named region."
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                f"{call}(): regions is empty.",
+                why="visits are found by the regions the animal enters.",
+                fix="pass the names of regions in env.regions, for example "
+                "regions=['well_1', 'well_2'].",
+            )
+        )
     if any(not isinstance(name, str) for name in names):
-        msg = "region_names must contain strings from env.regions."
+        msg = f"{call}(): regions must contain strings from env.regions."
         raise TypeError(msg)
     if len(set(names)) != len(names):
-        msg = "region_names must not contain duplicate names."
+        msg = f"{call}(): regions must not contain duplicate names."
         raise ValueError(msg)
-    breaks = validate_break_before(
-        break_before, clock.size, call="detect_region_visits"
-    )
+    breaks = validate_break_before(break_before, clock.size, call=call)
+    if breaks is not None:
+        # A break declared at a dropped row applies to the next kept sample.
+        declared = np.cumsum(np.asarray(breaks, dtype=np.intp))
+        breaks = np.r_[False, declared[kept[1:]] > declared[kept[:-1]]]
+    clock, bins = clock[kept], bins[kept]
 
     # Resolve every bin's exclusive label before looking at this trajectory:
     # unvisited overlap is still ambiguous geometry, not a name-order policy.
     labels = np.full(env.n_bins, -1, dtype=np.intp)
     for label, name in enumerate(names):
         mask = _require_region_mask(
-            env,
-            name,
-            operation="detect_region_visits()",
-            argument="region_names",
-            in_list=True,
+            env, name, operation=f"{call}()", argument="regions", in_list=True
         )
+        if env.regions[name].kind == "point":
+            raise ValueError(
+                _format_error(
+                    f"{call}(): region {name!r} is a point, one bin.",
+                    why="an animal that stops beside a well, not on its bin, is "
+                    "never inside a point region, so visits and the trials "
+                    "between them would be missed or end late.",
+                    fix=f"give it the size of the place where the animal stops: "
+                    f"regions.add({name!r}, point=..., radius=5.0), or a polygon.",
+                )
+            )
         overlap = mask & (labels >= 0)
         if overlap.any():
             other = sorted({names[index] for index in labels[overlap]})
@@ -362,6 +245,12 @@ def detect_region_visits(
             raise ValueError(msg)
         labels[mask] = label
 
+    settings: dict[str, Any] = {
+        "regions": names,
+        "max_gap": None if max_gap is None else float(max_gap),
+        "epochs": None if windows is None else windows.tolist(),
+        "break_before_given": breaks is not None,
+    }
     # A sample at bin -1 is not located; as in env.occupancy, an interval
     # with either sample there is not observed (the complete-case rule).
     valid = bins >= 0
@@ -369,13 +258,13 @@ def detect_region_visits(
     if windows is not None:
         selected &= times_in_intervals(windows, clock)
     if not selected.any():
-        return []
+        return _ObservedVisits([], {}, settings)
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
     gates = start_allocation(
         clock, bins, None, max_gap=max_gap, epochs=windows, break_before=breaks
     ).gates
-    warn_excluded_intervals(gates, result="every visit ends at its first sample")
+    warn_excluded_intervals(gates, result=result)
     continuous = gates.mask
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
@@ -384,93 +273,153 @@ def detect_region_visits(
     sample_labels[valid] = labels[bins[valid]]
 
     visits: list[RegionVisit] = []
+    run_end_times: dict[int, float] = {}
     for run_id, (run_start, run_stop) in enumerate(zip(starts, stops, strict=True)):
         run_end_time = clock[run_stop - 1]
         if run_stop < len(clock) and continuous[run_stop - 1]:
             run_end_time = clock[run_stop]
+        run_end_times[run_id] = float(run_end_time)
         run_labels = sample_labels[run_start:run_stop]
         changes = np.flatnonzero(np.r_[True, np.diff(run_labels) != 0, True])
         for first, stop in pairwise(changes):
             label = int(run_labels[first])
             if label < 0:
                 continue
-            start_index, stop_index = int(run_start + first), int(run_start + stop)
-            exit_observed = bool(stop_index < run_stop)
+            start, stop_k = int(run_start + first), int(run_start + stop)
+            exit_observed = bool(stop_k < run_stop)
+            # Back to the original arrays: dropped rows inside the visit, up
+            # to its first outside sample, are within its index bounds.
+            start_index = int(kept[start])
+            stop_index = (
+                int(kept[stop_k]) if exit_observed else int(kept[stop_k - 1]) + 1
+            )
             visits.append(
                 RegionVisit(
                     visit_id=len(visits),
                     run_id=run_id,
-                    region_name=names[label],
+                    region=names[label],
                     start_index=start_index,
                     stop_index=stop_index,
-                    start_time=float(clock[start_index]),
-                    end_time=float(
-                        clock[stop_index] if exit_observed else run_end_time
-                    ),
-                    entry_observed=bool(start_index > run_start),
+                    start_time=float(clock[start]),
+                    stop_time=float(clock[stop_k] if exit_observed else run_end_time),
+                    entry_observed=bool(start > run_start),
                     exit_observed=exit_observed,
                 )
             )
-    return visits
+    return _ObservedVisits(visits, run_end_times, settings)
 
 
-def region_transitions(visits: Sequence[RegionVisit]) -> list[RegionTransition]:
-    """Pair consecutive observed entries into different regions in one run.
+@reads_pynapple_samples
+def detect_region_visits(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    regions: Sequence[str],
+    max_gap: float | None = DEFAULT_MAX_GAP,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> Intervals[RegionVisit]:
+    """Detect observed visits to named regions, such as reward wells.
+
+    A visit is the time the animal is inside a region: from the first sample
+    inside to the first sample outside. For the runs between visits (trials
+    from one well to the next), use :func:`detect_trials`.
 
     Parameters
     ----------
-    visits : sequence of RegionVisit
-        Chronological records from one :func:`detect_region_visits` call.
-        Build transitions before filtering visits. Omitted visits are never
-        bridged: paired visit identifiers must also be consecutive.
+    env : Environment
+        Allocentric environment holding the named regions, each with an
+        area (a polygon, or ``regions.add(name, point=..., radius=...)``).
+    times : ndarray, shape (n_samples,)
+        Finite, strictly increasing timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN position is a
+        missing sample (lost tracking, a low-confidence frame), the same as
+        a deleted row: it is bridged when the samples around it are no more
+        than ``max_gap`` apart, and a longer gap ends the run. A position
+        outside the environment is observed but not located: as in
+        ``env.occupancy``, it ends the run and censors the visits around it.
+    regions : sequence of str
+        Nonempty, unique region names. Bin-center membership follows
+        ``regions_to_mask``: regions that only share edges, such as
+        quadrants, split the bins on those edges and never share a bin.
+        Regions that overlap in area may not share active bins; ambiguous
+        membership raises rather than using the order of names as a
+        priority rule. Point regions are refused (see Raises).
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, or None
+        Half-open event windows on the same clock as ``times``. Only fully
+        contained sampling intervals contribute duration. An entry at an
+        epoch stop is excluded; the interval ending at that stop can still
+        contribute observed dwell.
+        When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
+        ``time_support``.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
-    list[RegionTransition]
-        Entry-to-entry pairs with both entries observed, in one continuous run,
-        and different source/destination names. A destination's censored exit
-        does not invalidate its observed entry. ``A, A, B`` yields only the
-        final ``A -> B``, without merging the two A visits. Durations include
-        source dwell time. An empty input produces an empty list.
+    Intervals of RegionVisit
+        One row per visit in time order, ``interval_ids`` the visit ids, with
+        the fields ``region``, ``entry_observed``, ``exit_observed``, sample
+        indices and ``run_id``. Censored visits at recording boundaries are
+        kept; a visit seen in one sample has zero duration (an observation
+        with no time, absent from ``windows``). ``analysis_settings`` records
+        the regions, ``max_gap`` and ``epochs``.
 
     Raises
     ------
     ValueError
-        If records are duplicated or are not in their original chronological
-        visit order. Identifiers are local to a call; do not concatenate
-        unrelated recordings as if they shared event identity.
+        For invalid times or positions, gap thresholds, duplicate or empty
+        names, overlapping selected-region bins, a point region (one bin: an
+        animal stopped beside it is never inside; give it a ``radius``), or a
+        ``break_before`` that is not a Boolean array with one entry per
+        sample.
+    TypeError
+        If names are not strings.
+    RegionNotFoundError
+        If a selected region does not exist.
+
+    Notes
+    -----
+    An entry is observed only when a preceding continuous sample was outside
+    that region. An exit is observed at the first following outside sample.
+    These are sampled crossing times, without sub-frame interpolation. A visit
+    starting inside a region after a gap or a declared break is left-censored,
+    not a new entry. An unlocated sample, like a gap longer than ``max_gap``,
+    censors both adjacent runs, so it never fabricates an exit.
 
     See Also
     --------
-    detect_region_visits : Detect visits and censoring from tracking.
+    detect_trials : The runs between consecutive visits.
+    trials_between_visits : Trials from visits you bring (for example port
+        events).
     """
-    visits = list(visits)
-    if any(not isinstance(visit, RegionVisit) for visit in visits):
-        msg = "visits must contain RegionVisit records from detect_region_visits()."
-        raise TypeError(msg)
-    pairs = list(pairwise(visits))
-    if any(
-        target.visit_id <= source.visit_id or target.start_time < source.start_time
-        for source, target in pairs
-    ):
-        msg = "visits must retain their original chronological visit order without duplicates."
-        raise ValueError(msg)
-    return [
-        RegionTransition(
-            source_visit_id=source.visit_id,
-            target_visit_id=target.visit_id,
-            run_id=source.run_id,
-            source_region=source.region_name,
-            target_region=target.region_name,
-            start_index=source.start_index,
-            end_index=target.start_index,
-            start_time=source.start_time,
-            end_time=target.start_time,
-        )
-        for source, target in pairs
-        if source.run_id == target.run_id
-        and target.visit_id == source.visit_id + 1
-        and source.region_name != target.region_name
-        and source.entry_observed
-        and target.entry_observed
-    ]
+    from neurospatial._interval_table import Intervals
+
+    observed = _observed_visits(
+        env,
+        times,
+        positions,
+        regions=regions,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        call="detect_region_visits",
+        result="every visit ends at its first sample",
+    )
+    return Intervals(
+        observed.visits,
+        record_type=RegionVisit,
+        interval_ids=[v.visit_id for v in observed.visits],
+        analysis_settings=observed.settings,
+    )

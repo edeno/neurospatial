@@ -55,11 +55,7 @@ import pandas as pd
 from matplotlib.patches import Circle
 
 from neurospatial import Environment, Regions
-from neurospatial.behavior import (
-    detect_region_visits,
-    path_progress,
-    region_transitions,
-)
+from neurospatial.behavior import detect_region_visits, detect_trials, path_progress
 from neurospatial.encoding import compute_spatial_rates
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -283,43 +279,45 @@ plt.show()
 #
 # ## 4. Which arm ends are visited in succession?
 #
-# Detect visits to the 8 cm arm-end zones, then pair entries into different
-# zones. Each interval starts at entry into the first zone and ends at entry
-# into the next. It includes any waiting after the first entry, so it is not
-# a departure-to-arrival running time or a task-defined trial. Changing the
-# zone radius changes these entry times.
+# Detect visits to the 8 cm arm-end zones and the runs between them. A visit is
+# the time inside a zone; a run starts at the first sample outside the zone
+# the rat left and ends at the first sample inside the next zone it enters.
+# Waiting at a zone is part of the visit, not of the run, so a run's duration
+# is travel time. Changing the zone radius changes these departure and
+# arrival times. These runs are movements between places, not task-defined
+# trials: the task log says what the rat was asked to do.
 #
-# Do not join visits across missing tracking. A visit already in progress when
-# recording starts has no observed entry and cannot start a pair. If the rat
-# re-enters the same zone before visiting another, use its last entry as the
-# start of the next pair.
+# A run is not joined across missing tracking: a gap longer than `max_gap`
+# ends it as `"censored"`. A run that comes back to the zone it left is
+# `"returned"`.
 
 # %%
-position_bins = env.bin_at(positions)
 visits = detect_region_visits(
-    position_bins, times, env, region_names=arm_end_names, max_gap=max_gap
+    env, times, positions, regions=arm_end_names, max_gap=max_gap
 )
-transitions = region_transitions(visits)
-if not transitions:
+runs = detect_trials(env, times, positions, regions=arm_end_names, max_gap=max_gap)
+between = runs[runs.outcome == "reached"]
+if len(between) == 0:
     raise ValueError(
         "No movement between arm-end zones; inspect the tracking and regions."
     )
-visit_table = pd.DataFrame(visits)
-transition_table = pd.DataFrame(transitions)
-counts = transition_table.groupby(["source_region", "target_region"]).size()
-print(f"{len(visits)} visits; {visit_table.entry_observed.sum()} observed entries")
-print(f"{len(transitions)} consecutive entries into different arm-end zones")
+counts = between.intervals_table().groupby(["start_region", "end_region"]).size()
+print(f"{len(visits)} visits; {visits.entry_observed.sum()} observed entries")
+print(pd.Series(runs.outcome).value_counts().to_string())
 print(counts.sort_values(ascending=False).rename("count").to_string())
 
 # %% [markdown]
-# Most pairs in this recording link arm ends 4 and 5. These counts describe
-# observed movement; without trial and reward labels, they cannot tell us which
-# options were available or why the rat visited an arm.
+# Most runs in this recording link arm ends 4 and 5. Most of the few
+# `"returned"` ones last under a second: they are head movements across a
+# zone's edge while the rat stays at the arm end, not runs (a larger zone
+# radius removes them). These counts describe observed movement; without trial and
+# reward labels, they cannot tell us which options were available or why the
+# rat visited an arm.
 #
-# ## 5. How does position change between arm-end entries?
+# ## 5. How does position change between arm ends?
 #
-# Plot the first three intervals on a common scale with `path_progress`, from
-# the zone the interval starts in to the zone it ends in. Progress is 0 in the
+# Plot the first three runs on a common scale with `path_progress`, from the
+# zone the run starts in to the zone it ends in. Progress is 0 in the
 # starting zone and 1 in the destination zone. On a track whose arms branch
 # without loops, as here, progress along the route between the two zones is
 # the fraction of the route's length covered. A detour into another arm keeps
@@ -330,36 +328,37 @@ print(counts.sort_values(ascending=False).rename("count").to_string())
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 5))
-for transition in transitions[:3]:
-    # The interval's samples and the arrival sample that ends it.
-    selected = np.arange(transition.start_index, transition.end_index + 1)
+for run in between[:3]:
+    # The run's samples and the arrival sample that ends it.
+    first, arrival = np.searchsorted(times, [run.start_time, run.stop_time])
+    selected = np.arange(first, arrival + 1)
     progress = path_progress(
         env,
         times[selected],
         positions[selected],
-        start=transition.source_region,
-        goal=transition.target_region,
+        start=run.start_region,
+        goal=run.end_region,
     )
     ax.plot(
-        times[selected] - transition.start_time,
+        times[selected] - run.start_time,
         progress,
-        label=f"{transition.source_region} to {transition.target_region}",
+        label=f"{run.start_region} to {run.end_region}",
     )
 ax.set(
-    xlabel="Time since entry into first zone (s)",
+    xlabel="Time since leaving the first zone (s)",
     ylabel="Progress from first zone to next",
-    title="Position change between arm-end entries",
+    title="Position change on runs between arm ends",
     ylim=(-0.03, 1.05),
 )
 ax.legend()
 plt.show()
 
 # %% [markdown]
-# Each curve starts at 0 in the first zone, where the rat may wait, and ends
-# at 1 on entry into the next. Rising portions are movement along the route
-# toward the next zone; flat portions are waiting or a detour into a side arm.
-# The intervals differ in duration and include waiting, so compare their
-# shapes, not their lengths.
+# Each curve starts just above 0, at the first sample outside the first zone,
+# and ends at 1 on entry into the next. Rising portions are movement along the
+# route toward the next zone; flat portions are a pause on the way or a detour
+# into a side arm. The runs differ in duration, so compare their shapes, not
+# their lengths.
 #
 # ## Use your own recording
 #

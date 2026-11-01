@@ -32,6 +32,12 @@ Point coordinates have shape `(n_dims,)`. Polygon regions use a Shapely
 `Polygon` and require a 2D environment. Region coordinates must use the same
 units and frame as the environment.
 
+**Give reward wells and ports a size.** A point region is one bin: an animal
+that stops beside the well, not on its bin, is never "at" it. Pass the size of
+the place where the animal stops, `regions.add("well_1", point=(-34.5, 69.0),
+radius=5.0)`, to store a disc (a polygon); its centre and radius are kept in
+the region's metadata.
+
 A region is checked when it is built. Coordinates must be finite, and a
 polygon must enclose a positive area without crossing itself. A hand-drawn
 outline that loops over itself (a "bowtie") is refused with the reason and a

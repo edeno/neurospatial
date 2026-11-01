@@ -71,8 +71,7 @@ NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.
 encoding      f(env, spike_times, times, positions[, headings][, object_positions], *, params)
 directional   f(spike_times, times, headings, *, params)      # heading is not a position: no env
 egocentric    f(positions, headings, targets)
-segmentation  f(position_bins, times, env, *, region_params)
-behavior      f(env, times, positions, ...) or f(times, positions, ...)
+behavior      f(env, times, positions, *, ...) or f(times, positions, *, ...)  # detectors bin positions inside
 events        f(spike_times, event_times, window, *, bin_size)
 ```
 
