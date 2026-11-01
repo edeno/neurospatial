@@ -59,6 +59,7 @@ from neurospatial.stats import _binomial_rate
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Intervals
     from neurospatial.decoding import DecodingResult, JointDecodingResult
     from neurospatial.environment import Environment
     from neurospatial.replay.methods import (
@@ -1502,7 +1503,7 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
 @reads_pynapple_samples
 def null_events(
     spike_times: Any,
-    intervals: NDArray[np.float64],
+    intervals: NDArray[np.float64] | Intervals[Any],
     *,
     kind: Literal["cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson"],
     n_copies: int = 1,
@@ -1534,8 +1535,11 @@ def null_events(
     ----------
     spike_times : array, sequence of arrays, or spike group
         The session's spike times, one train per cell, in seconds.
-    intervals : NDArray[np.float64], shape (n_events, 2)
-        Start and stop of each real candidate event, in seconds.
+    intervals : NDArray[np.float64] of shape (n_events, 2), or Intervals
+        Start and stop of each real candidate event, in seconds. An
+        ``Intervals`` is read row by row in its time order, so
+        ``source_events`` are positions in it (``intervals.interval_ids[
+        null.source_events]`` gives each copy's event id).
     kind : {"cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson"}
         How each null event is made.
     n_copies : int, default=1
@@ -1904,7 +1908,7 @@ def simulated_null_events(
 def decode_intervals(
     env: Environment,
     spike_times: Any,
-    intervals: NDArray[np.float64],
+    intervals: NDArray[np.float64] | Intervals[Any],
     encoding_models: Any,
     *,
     dt: float,
@@ -1924,9 +1928,10 @@ def decode_intervals(
         The environment of the rate maps.
     spike_times : array, sequence of arrays, or spike group
         Spike times of each cell, in seconds.
-    intervals : NDArray[np.float64], shape (n_events, 2)
+    intervals : NDArray[np.float64] of shape (n_events, 2), or Intervals
         Start and stop of each event, in seconds; a trailing part shorter
-        than ``dt`` is dropped.
+        than ``dt`` is dropped. The results follow the rows in order (for an
+        ``Intervals``, its time order).
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
         Each cell's rate map on ``env``, in Hz.
     dt : float

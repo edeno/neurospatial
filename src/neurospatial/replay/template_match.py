@@ -66,6 +66,7 @@ from neurospatial.stats.shuffle import _shuffle_p_values, _shuffle_zscore
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Intervals
     from neurospatial.environment import Environment
     from neurospatial.replay.methods import (
         ReplayCriterion,
@@ -726,7 +727,9 @@ class TemplateMatchDatasetResult(ReadOnlyArraysMixin, ResultMixin):
 def template_match_dataset_test(
     env: Environment | Mapping[str, Environment],
     spike_times: Any,
-    intervals: NDArray[np.float64] | Mapping[str, NDArray[np.float64]],
+    intervals: NDArray[np.float64]
+    | Intervals[Any]
+    | Mapping[str, NDArray[np.float64] | Intervals[Any]],
     encoding_models: Any,
     *,
     template_match_method: TemplateMatchMethod,
@@ -762,7 +765,7 @@ def template_match_dataset_test(
     spike_times : array, sequence of arrays, or spike group
         Spike times in seconds, one train per cell, in the order of the rows
         of ``encoding_models``.
-    intervals : array of shape (n_events, 2), or Mapping
+    intervals : array of shape (n_events, 2), Intervals, or Mapping
         The events, ``(start, stop)`` in seconds. For ``"best_match"`` with
         several templates, a mapping of each template's words, keyed like
         ``encoding_models`` (Lee & Wilson cut each template's cells into
