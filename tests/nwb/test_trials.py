@@ -381,3 +381,38 @@ def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
     np.testing.assert_array_equal(reloaded_remaining, remaining)
     assert np.isnan(progress[10:20]).all()  # the trial without a destination
     assert np.isfinite(progress[:10]).all()
+
+
+def test_imported_and_reloaded_trials_give_the_same_tuning_curves(empty_nwb):
+    """A task log's trials and the same trials read back from NWB select alike."""
+    from neurospatial.encoding import compute_tuning_curves
+    from neurospatial.io.nwb import read_trials, write_trials
+
+    times = np.arange(400) / 10.0
+    progress = (np.arange(400) % 40) / 40.0
+    log = pd.DataFrame(
+        {
+            "start_time": np.arange(10) * 4.0,
+            "stop_time": np.arange(1, 11) * 4.0,
+            "instructed_goal": ["well_1", "well_3"] * 5,
+            "outcome": ["correct"] * 7 + ["error"] * 3,
+        }
+    )
+    imported = Intervals.from_dataframe(log)
+    write_trials(empty_nwb, imported)
+    reloaded = read_trials(empty_nwb)
+    spikes = [times[progress >= 0.5] + 0.05, times[::3] + 0.02]
+
+    def left_correct(trials):
+        chosen = trials[
+            (trials.instructed_goal == "well_1") & (trials.outcome == "correct")
+        ]
+        return compute_tuning_curves(
+            spikes, times, progress, bin_edges=np.linspace(0, 1, 11), epochs=chosen
+        )
+
+    before, after = left_correct(imported), left_correct(reloaded)
+    np.testing.assert_array_equal(after.firing_rates, before.firing_rates)
+    np.testing.assert_array_equal(after.occupancy, before.occupancy)
+    assert after.analysis_settings["epoch_interval_ids"] == [0, 2, 4, 6]
+    assert before.occupancy.sum() == pytest.approx(16.0)
