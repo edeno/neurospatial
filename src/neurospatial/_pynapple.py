@@ -20,9 +20,12 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     _is_pynapple_object,
+    as_intervals,
+    intersect_intervals,
     pynapple_end_to_stop,
     stop_to_pynapple_end,
 )
+from neurospatial._results import EMPTY_SELECTION
 from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
@@ -203,8 +206,10 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
     - if the function takes ``epochs`` and it is ``None``, the
       ``time_support`` of pynapple ``positions`` / ``headings`` (converted to
       half-open rows) becomes ``epochs``, so a recording gap shorter than
-      ``max_gap`` is not counted as observed time. An explicit ``epochs=``
-      wins; two samples with different supports are refused.
+      ``max_gap`` is not counted as observed time; two samples with
+      different supports are then refused. An explicit ``epochs=`` is
+      intersected with every such support: only time inside both is
+      analyzed, so a sample restricted to trials keeps that restriction.
 
     Every other call runs the function unchanged. The signature, docstring
     and ``__wrapped__`` are the function's own.
@@ -240,8 +245,13 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
             if name in _SUPPORT_ARGUMENTS and support is not None:
                 supports[name] = interval_rows(support)
             bound.arguments[name] = _plain_sample(name, value)
-        if takes_epochs and bound.arguments.get("epochs") is None and supports:
-            bound.arguments["epochs"] = _shared_support(supports)
+        if takes_epochs and supports:
+            given_epochs = bound.arguments.get("epochs")
+            bound.arguments["epochs"] = (
+                _shared_support(supports)
+                if given_epochs is None
+                else _epochs_within_supports(given_epochs, supports)
+            )
         return func(*bound.args, **bound.kwargs)
 
     wrapper.__reads_pynapple_samples__ = True  # type: ignore[attr-defined]
@@ -264,6 +274,27 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
                 )
             )
     return rows
+
+
+def _epochs_within_supports(
+    epochs: Any, supports: dict[str, NDArray[np.float64]]
+) -> NDArray[np.float64]:
+    """The explicit ``epochs`` intersected with every pynapple time support.
+
+    A pynapple sample is defined only on its ``time_support`` (a ``Tsd``
+    restricted to trials holds no samples between them), so time outside it
+    is not observed whatever ``epochs`` says. No overlap gives an empty
+    selection, which the analysis reports as excluding all data.
+    """
+    rows = as_intervals(epochs, name="epochs")
+    assert rows is not None  # epochs is not None here
+    for support in supports.values():
+        if rows.shape[0] == 0:
+            break
+        merged = as_intervals(support, name="time_support")
+        assert merged is not None
+        rows = intersect_intervals(rows, merged)
+    return rows if rows.shape[0] else EMPTY_SELECTION
 
 
 def intervals_from_interval_set(intervals: Any) -> Any:

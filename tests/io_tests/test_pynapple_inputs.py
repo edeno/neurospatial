@@ -258,12 +258,23 @@ def test_tsdframe_positions_record_the_adopted_epochs(gapped, session):
     )
 
 
-def test_explicit_epochs_win_over_the_time_support(gapped, session):
+def test_explicit_epochs_intersect_the_time_support(gapped, session):
+    """Only time inside both the epochs and the sample's support is used."""
     env = session[0]
+    times, positions = gapped.t, gapped.to_numpy()
 
-    narrowed = env.occupancy(gapped.t, gapped, epochs=(0.0, 10.0))
+    narrowed = env.occupancy(times, gapped, epochs=(0.0, 10.0))
+    across_gap = env.occupancy(times, gapped, epochs=(10.0, 30.0))
+    # By hand: [10, 20] and [20.5, 30) of the support, without the 0.5 s gap.
+    by_hand = env.occupancy(times, positions, epochs=[(10.0, 20.0), (20.5, 30.0)])
 
     assert narrowed.sum() == pytest.approx(10.0)
+    assert across_gap.sum() == pytest.approx(19.5, abs=0.02)
+    np.testing.assert_allclose(across_gap, by_hand, atol=0.011)
+    # Epochs outside the support leave nothing, as for the arrays route.
+    with pytest.warns(UserWarning, match="occupancy is zero"):
+        nothing = env.occupancy(times, gapped, epochs=(20.1, 20.4))
+    assert nothing.sum() == 0.0
 
 
 def test_decode_session_uses_the_positions_time_support(gapped, session):
@@ -664,7 +675,6 @@ def test_interval_set_metadata_that_cannot_be_a_field_is_left_out(nap):
     with pytest.warns(UserWarning, match=r"\['trial type'\].*left out"):
         intervals = from_pynapple(iset)
     assert intervals.fields == ("goal",)
-
 
 
 def test_from_pynapple_reads_integral_float_interval_ids(nap):
