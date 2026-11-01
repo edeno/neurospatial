@@ -1373,7 +1373,8 @@ trials on another clock.
 time: it is not in `trials.windows` (the windows `epochs=` uses), contains no
 sample, and never overlaps another row.
 
-**Overlap.** Rows may overlap, for example visits to two overlapping regions.
+**Overlap.** Rows may overlap, for example in a task log whose cue periods
+overlap, or in a table you build from two sources.
 Functions that give each sample one trial (`sample_interval_ids`,
 `sample_values`, `time_to_goal`) refuse
 overlapping rows and name them; select a non-overlapping subset first.
