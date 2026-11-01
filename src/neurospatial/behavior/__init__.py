@@ -38,7 +38,6 @@ from neurospatial.behavior.decisions import (
     pre_decision_speed_stats,
 )
 from neurospatial.behavior.epochs import (
-    LabelEpochsResult,
     in_epochs,
     labels_to_epochs,
     restrict,
@@ -137,7 +136,6 @@ __all__ = [  # noqa: RUF022
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
     # epochs module
-    "LabelEpochsResult",
     "in_epochs",
     "labels_to_epochs",
     "restrict",

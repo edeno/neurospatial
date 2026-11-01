@@ -219,17 +219,17 @@ def test_visits_keep_every_field_as_metadata():
 @pytest.mark.pynapple
 def test_label_epochs_become_an_interval_set_with_labels():
     times = np.arange(9) * 0.5
-    result = labels_to_epochs(times, ["a", "a", "b", "b", "a", "a", "a", "b", "b"])
+    epochs = labels_to_epochs(times, ["a", "a", "b", "b", "a", "a", "a", "b", "b"])
 
-    iset = to_pynapple(result)
+    iset = to_pynapple(epochs)
 
-    windows = np.concatenate([result["a"], result["b"]])
-    windows = windows[np.argsort(windows[:, 0])]
+    windows = [[0.0, 1.0], [1.0, 2.0], [2.0, 3.5], [3.5, 4.0]]
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     assert list(iset.label) == ["a", "b", "a", "b"]
-    _assert_same_membership(iset, windows)
+    assert list(iset.interval_id) == [0, 1, 2, 3]
+    _assert_same_membership(iset, np.array(windows))
     np.testing.assert_array_equal(
-        _half_open(iset[iset.label == "a"].values), result["a"]
+        _half_open(iset[iset.label == "a"].values), [[0.0, 1.0], [2.0, 3.5]]
     )
 
 
@@ -240,7 +240,7 @@ def test_empty_inputs_that_carry_their_type():
     # what it holds: an IntervalSet with a label column.
     nothing = to_pynapple(labels_to_epochs(np.arange(4) * 0.5, [None] * 4))
     assert len(nothing) == 0
-    assert list(nothing.metadata_columns) == ["label"]
+    assert list(nothing.metadata_columns) == ["interval_id", "label"]
     # An empty list with values is an empty time series, not empty records.
     assert len(to_pynapple([], [])) == 0
 

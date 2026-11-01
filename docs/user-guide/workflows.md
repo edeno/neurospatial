@@ -73,42 +73,44 @@ env = Environment.from_samples(
     np.linspace(0, 100, 201)[:, None], bin_size=5.0, units="cm"
 )
 
-# Direction labels -> half-open [start, stop) windows for each direction,
-# using only frames where the animal was tracked.
+# Direction labels -> one half-open [start, stop) epoch per row, with its
+# label, using only frames where the animal was tracked.
 valid = np.isfinite(positions).all(axis=1)
 conditions = labels_to_epochs(times, direction, valid=valid)
+runs = {label: conditions[conditions.label == label] for label in ["outbound", "inbound"]}
 
 # One rate map per direction: the original arrays, restricted by epochs=.
 maps = {
     label: compute_spatial_rates(
         env, spike_times, times, positions,
-        unit_ids=unit_ids, epochs=conditions[label],
+        unit_ids=unit_ids, epochs=epochs,
         bandwidth=5.0, min_occupancy=0.5,
     )
-    for label in conditions
+    for label, epochs in runs.items()
 }
 
-print({label: round(seconds, 2) for label, seconds in conditions.durations.items()})
-print({label: len(conditions[label]) for label in conditions})
-table = conditions.epochs_table()
+print({label: round(float(epochs.durations.sum()), 2) for label, epochs in runs.items()})
+print({label: len(epochs) for label, epochs in runs.items()})
+table = conditions.intervals_table()
 print(table.head())
-shortened = np.isclose(table["start"], 101.0)  # the run the dropout shortened
-print(table.loc[shortened, ["label", "start", "stop", "duration"]])
-assert abs(conditions.durations["outbound"] - 99.0) < 1e-6
-assert abs(conditions.durations["inbound"] - 99.93) < 0.01
-assert len(conditions["outbound"]) == len(conditions["inbound"]) == 20
-assert [101.0, 105.0] in np.round(conditions["outbound"], 6).tolist()
+shortened = np.isclose(table["start_time"], 101.0)  # the run the dropout shortened
+print(table.loc[shortened])
+assert abs(runs["outbound"].durations.sum() - 99.0) < 1e-6
+assert abs(runs["inbound"].durations.sum() - 99.93) < 0.01
+assert len(runs["outbound"]) == len(runs["inbound"]) == 20
+assert [101.0, 105.0] in np.round(runs["outbound"].windows, 6).tolist()
 ```
 
-`labels_to_epochs` turns one label per frame into time windows for each
-label. The time between two frames, `[times[k], times[k + 1])`, gets the label
+`labels_to_epochs` turns one label per frame into time windows, one row per
+epoch with a `label` field; `conditions[conditions.label == "outbound"]`
+selects one direction. The time between two frames, `[times[k], times[k + 1])`, gets the label
 of the frame at its start. An untracked frame (`valid` False) is skipped as if
 its row were deleted, so a time between frames is kept when the tracked
 frames around it are no more than `max_gap` (1.0 s by default) apart, and carries the
 label of the tracked frame that starts it. Kept stretches with the same label
 join into one epoch; a tracking loss longer than `max_gap` or a change of
 label ends it, so the same label after a long dropout starts a new epoch. The
-table lists each epoch with its label, start, stop and duration.
+table lists each epoch with its `interval_id`, start, stop and label.
 
 Here the dropout starts exactly at the beginning of an outbound run
 (t = 100 s), so it shortens that run to 101–105 s instead of splitting it;
@@ -119,7 +121,7 @@ the recording, because the final frame starts no interval. A dropout in the
 middle of a run would split that run into two epochs.
 
 The rate maps use the original `times`, `positions` and `spike_times` with
-`epochs=conditions[label]`. `compute_spatial_rates` then counts spikes and
+`epochs=` set to one direction's epochs. `compute_spatial_rates` then counts spikes and
 dwell time over exactly the same windows: a spike counts only if it falls in a
 window where the animal was tracked in that direction. Slicing the arrays to
 outbound frames yourself would leave the spikes to be filtered separately,
@@ -140,10 +142,10 @@ from neurospatial.behavior import compute_speed, in_epochs
 
 speed = compute_speed(times, positions)  # cm/s; NaN where tracking was lost
 coverage = {}
-for label in conditions:
-    inside = in_epochs(times, conditions[label])
+for label, epochs in runs.items():
+    inside = in_epochs(times, epochs)
     coverage[label] = {
-        "duration_s": round(conditions.durations[label], 2),
+        "duration_s": round(float(epochs.durations.sum()), 2),
         "occupied_bins": int(maps[label].spatial_support.sum()),
         "mean_speed_cm_s": round(float(np.nanmean(speed[inside])), 1),
     }
@@ -241,15 +243,18 @@ from neurospatial.encoding import SpikeTrains
 
 lap = (times // 10).astype(int)
 fold = np.where(lap % 2 == 0, "train", "test")
-out_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["outbound"])
-in_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["inbound"])
+out_folds = labels_to_epochs(times, fold, valid=valid, epochs=runs["outbound"])
+in_folds = labels_to_epochs(times, fold, valid=valid, epochs=runs["inbound"])
+out_train = out_folds[out_folds.label == "train"]
+out_test = out_folds[out_folds.label == "test"]
+in_test = in_folds[in_folds.label == "test"]
 
 cells = SpikeTrains(spike_times, unit_ids=unit_ids)
 decoder = BayesianDecoder(env, dt=0.25, bandwidth=5.0).fit(
-    cells, times, positions, epochs=out_folds["train"],
+    cells, times, positions, epochs=out_train,
 )
-within = decoder.predict(cells, times, epochs=out_folds["test"])
-transfer = decoder.predict(cells, times, epochs=in_folds["test"])
+within = decoder.predict(cells, times, epochs=out_test)
+transfer = decoder.predict(cells, times, epochs=in_test)
 within_error = within.error_against(times, positions)  # cm, one per time bin
 transfer_error = transfer.error_against(times, positions)
 assert np.isfinite(within_error).all() and np.isfinite(transfer_error).all()
@@ -258,7 +263,7 @@ for name, error in [("Held-out outbound laps", within_error),
     print(f"{name}: median error {np.median(error):.1f} cm, "
           f"errors over 10 cm in {100 * np.mean(error > 10):.1f}% of time bins")
 print("Training coverage:", int(decoder.spatial_support.sum()), "of", env.n_bins, "bins")
-assert within.times.min() >= out_folds["test"][0, 0]
+assert within.times.min() >= out_test.start[0]
 assert abs(np.median(within_error) - 5.0) < 0.5
 assert abs(np.median(transfer_error) - 5.0) < 0.5
 assert abs(100 * np.mean(within_error > 10) - 4.5) < 1.0
@@ -355,9 +360,10 @@ conditions = labels_to_epochs(times, labels, valid=valid)
 maps = {
     label: compute_spatial_rates(
         env, spike_times, times, positions, unit_ids=unit_ids,
-        epochs=conditions[label], bandwidth=5.0, min_occupancy=0.5,
+        epochs=conditions[conditions.label == label],
+        bandwidth=5.0, min_occupancy=0.5,
     )
-    for label in conditions
+    for label in ["outbound", "inbound"]
 }
 comparison = compare_spatial_rates(maps["outbound"], maps["inbound"])
 comparison.summary_table()

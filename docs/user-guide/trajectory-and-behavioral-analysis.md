@@ -770,8 +770,9 @@ print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1
 
 Direction and trial functions such as `laps_to_direction_labels` and
 `goal_pair_direction_labels` give one label per frame. `labels_to_epochs`
-turns them into `[start, stop)` windows for each label, which you pass as
-`epochs=` to a rate map, decoder or other analysis:
+turns them into an `Intervals`, one `[start, stop)` epoch per row with a
+`label` field. Select one label, `conditions[conditions.label == "clockwise"]`,
+and pass it as `epochs=` to a rate map, decoder or other analysis:
 
 <!-- docs-test: run -->
 ```python
@@ -785,9 +786,11 @@ laps = Intervals(
 )
 labels = laps_to_direction_labels(laps, times)  # None outside every lap
 conditions = labels_to_epochs(times, labels)
-print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
-assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
-assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+print(conditions.intervals_table())
+clockwise = conditions[conditions.label == "clockwise"]
+assert clockwise.windows.tolist() == [[0.0, 4.0]]
+assert conditions.label.tolist() == ["clockwise", "counter-clockwise"]
+assert conditions.windows.tolist() == [[0.0, 4.0], [6.0, 9.5]]
 ```
 
 The time between two frames takes the label of the frame at its start. A lap

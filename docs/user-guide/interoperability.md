@@ -481,12 +481,14 @@ likelihood instead of excluding the bin, and its uniform prior is flat over
 bins rather than over space. neurospatial gives a bin where any rate is missing
 zero probability, and its default prior is proportional to bin size.
 
-**Trials, laps, region visits and movement epochs.** The detectors return
+**Trials, laps, region visits and movement epochs.** The detectors and
+`labels_to_epochs` return
 [`Intervals`](trajectory-and-behavioral-analysis.md#intervals), and any
 `Intervals` becomes an `IntervalSet` with one interval per row, with
 `interval_id` and every field as metadata columns (`start_region`,
 `end_region` and `outcome` for trials; `direction` for laps; `region`,
-`entry_observed` and `exit_observed` for visits). A list of records is
+`entry_observed` and `exit_observed` for visits; `label` for
+`labels_to_epochs`). A list of records is
 refused: pass the `Intervals` the detector returned. Select rows the way you
 would in pynapple:
 
@@ -501,7 +503,8 @@ spikes_on_left_trials = tsgroup.restrict(left)
 laps = to_pynapple(detect_laps(env, times, positions))
 clockwise = laps[laps.direction == "clockwise"]
 
-conditions = to_pynapple(labels_to_epochs(times, task_phase))  # label column
+conditions = to_pynapple(labels_to_epochs(times, task_phase))
+sampling = conditions[conditions.label == "sampling"]  # one task phase
 ```
 
 A row covers `[start, stop)`. The exported interval ends one float below the

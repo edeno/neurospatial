@@ -180,9 +180,9 @@ def to_pynapple(
     - a decode result: a ``TsdFrame`` of ``quantity``, the MAP track by
       default.
     - an :class:`~neurospatial.Intervals` (trials, laps, visits, movement
-      epochs): an ``IntervalSet``, one interval per row, with
-      ``interval_id`` and the fields as metadata columns.
-    - a ``LabelEpochsResult``: an ``IntervalSet`` with a ``label`` column.
+      epochs, ``labels_to_epochs`` conditions): an ``IntervalSet``, one
+      interval per row, with ``interval_id`` and the fields as metadata
+      columns.
     - a list of ``Crossing`` records: a ``TsGroup`` with one ``Tsd`` of
       ``bin_index`` per region and direction.
 
@@ -193,15 +193,13 @@ def to_pynapple(
 
     Parameters
     ----------
-    data : array-like, decode result, Intervals, crossings or LabelEpochsResult
+    data : array-like, decode result, Intervals or crossings
         Finite, strictly increasing timestamps in seconds (with ``values``);
         a :class:`~neurospatial.decoding.DecodingResult` or
         :class:`~neurospatial.decoding.DecodingSummary` (any object with
         ``.times`` and ``.map_position``); an :class:`~neurospatial.Intervals`;
-        a non-empty list of ``Crossing`` records; or a
-        :class:`~neurospatial.behavior.LabelEpochsResult`. Timestamps are
-        never sorted here: pynapple would sort them without reordering
-        ``values``.
+        or a non-empty list of ``Crossing`` records. Timestamps are never
+        sorted here: pynapple would sort them without reordering ``values``.
     values : NDArray[np.float64] or None, default=None
         Values sampled at ``data``, shape ``(n,)`` or ``(n, n_columns)``.
         Required with timestamps; must be ``None`` for every other ``data``.
@@ -299,10 +297,8 @@ default="map_position"
     interval, so it is dropped with a warning. pynapple merges overlapping
     intervals and then drops all metadata, so overlapping rows are refused:
     export them (for example visits to overlapping regions) in separate
-    calls. A ``LabelEpochsResult`` becomes one interval per epoch, with its
-    label in a ``label`` column. An empty list carries no record type, so it
-    is refused rather than guessed; skip the export when no crossings were
-    detected.
+    calls. An empty list carries no record type, so it is refused rather
+    than guessed; skip the export when no crossings were detected.
 
     **Region crossings.** pynapple time series carry no per-sample labels, so
     crossings become a ``TsGroup`` with one ``Tsd`` of ``bin_index`` per
@@ -344,8 +340,7 @@ default="map_position"
                 _format_error(
                     "to_pynapple(data) without values expects a decode result "
                     "(e.g. a neurospatial.decoding.DecodingResult), an "
-                    "Intervals, a list of region crossings or a "
-                    "LabelEpochsResult; got "
+                    "Intervals or a list of region crossings; got "
                     f"{type(data).__name__!r}.",
                     why="only those inputs carry their own values; timestamps "
                     "need the values sampled at them.",
@@ -546,20 +541,14 @@ def _records_to_pynapple(
 ) -> Any:
     """Export intervals or crossings, or return None if ``data`` is neither.
 
-    An ``Intervals`` and a ``LabelEpochsResult`` become an ``IntervalSet``,
-    region crossings a ``TsGroup``. An empty list or tuple is refused, unless
+    An ``Intervals`` becomes an ``IntervalSet``, region crossings a
+    ``TsGroup``. An empty list or tuple is refused, unless
     ``values`` are given: then it is an empty time series, not records. A list
     of interval records is refused: pass the ``Intervals`` the detector
     returned.
     """
     from neurospatial._interval_table import Interval, Intervals
-    from neurospatial.behavior import (
-        Crossing,
-        LabelEpochsResult,
-        Lap,
-        RegionVisit,
-        Trial,
-    )
+    from neurospatial.behavior import Crossing, Lap, RegionVisit, Trial
 
     if isinstance(data, Intervals):
         _refuse_record_arguments(values, columns, quantity, epochs)
@@ -568,15 +557,8 @@ def _records_to_pynapple(
             {name: np.array(data._field_array(name)) for name in data.fields}
         )
         return _intervals_to_pynapple(
-            np.array(data.start), np.array(data.stop), metadata, "interval"
+            np.array(data.start), np.array(data.stop), metadata
         )
-    if isinstance(data, LabelEpochsResult):
-        _refuse_record_arguments(values, columns, quantity, epochs)
-        labels = np.empty(len(data.labels), dtype=object)
-        labels[:] = data.labels  # element-wise, so tuple labels stay whole
-        bounds = np.array(data.epoch_bounds)
-        metadata = {"label": labels[data.epoch_labels]}
-        return _intervals_to_pynapple(bounds[:, 0], bounds[:, 1], metadata, "epoch")
     if not isinstance(data, (list, tuple)) or (not data and values is not None):
         return None
     if not data:
@@ -652,7 +634,6 @@ def _intervals_to_pynapple(
     starts: NDArray[np.float64],
     stops: NDArray[np.float64],
     metadata: dict[str, NDArray[Any]],
-    kind: str,
 ) -> Any:
     """Build an ``IntervalSet`` of half-open records with metadata columns."""
     from neurospatial._intervals import stop_to_pynapple_end
@@ -665,7 +646,7 @@ def _intervals_to_pynapple(
     if not timed.all():
         n_empty = int(np.count_nonzero(~timed))
         warnings.warn(
-            f"to_pynapple dropped {n_empty} of {starts.size} {kind} record(s) "
+            f"to_pynapple dropped {n_empty} of {starts.size} interval record(s) "
             "without duration (stop == start), such as a visit seen "
             "in one sample before a tracking loss. A half-open "
             "[start, stop) window then holds no time, and a pynapple "
@@ -680,7 +661,7 @@ def _intervals_to_pynapple(
         i = int(overlap[0]) + 1
         raise ValueError(
             _format_error(
-                f"{overlap.size} {kind} record(s) overlap an earlier one (first "
+                f"{overlap.size} interval record(s) overlap an earlier one (first "
                 f"[{starts[i]!r}, {stops[i]!r}) in time order).",
                 why="pynapple merges overlapping intervals and then drops every "
                 "interval's metadata.",

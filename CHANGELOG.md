@@ -105,6 +105,28 @@
   `intervals_to_events` (now `preserve_fields`). Build the intervals with
   `Intervals.from_dataframe(table, start_column=..., stop_column=...)`.
 
+### Labels as Intervals
+
+**Changed**
+
+- `labels_to_epochs` returns an `Intervals[Interval]`, one row per epoch
+  with a `label` field, instead of a mapping from label to windows. The
+  epochs are the same. Select a condition with
+  `conditions[conditions.label == "outbound"]` and pass it as `epochs=`;
+  its total time is `.durations.sum()`. `analysis_settings` records the
+  labels with epochs, the `unsupported_labels` (labels with no kept
+  interval), `max_gap`, `epochs`, `missing_label` and `n_declared_breaks`.
+  `to_pynapple` exports it with `interval_id` and `label` columns. The
+  empty string is refused as a label, because NWB reads it back as missing;
+  pass `missing_label=""` if it means "no label".
+
+**Removed**
+
+- `LabelEpochsResult`, with its `epochs_table()`, `durations` and
+  `summary()`: use `intervals_table()` and the `Intervals` columns. The
+  per-interval provenance (`interval_labels`, `interval_supported`,
+  `epoch_intervals`) is gone.
+
 ### Trial fields, labels and wells with a size
 
 **Changed**
