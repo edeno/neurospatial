@@ -40,6 +40,16 @@ EMPTY_SELECTION: NDArray[np.float64] = np.empty((0, 2), dtype=np.float64)
 EMPTY_SELECTION.setflags(write=False)
 
 
+def _is_copied_empty_selection(value: object) -> bool:
+    """A float ``(0, 2)`` array: the empty selection after pickle or deepcopy."""
+    return (
+        isinstance(value, np.ndarray)
+        and value is not EMPTY_SELECTION
+        and value.shape == (0, 2)
+        and value.dtype == np.float64
+    )
+
+
 def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     """Return a read-only copy that no caller-held view can alias."""
     if array is EMPTY_SELECTION and dtype in (None, np.float64):
@@ -290,7 +300,18 @@ class ReadOnlyArraysMixin:
                 object.__setattr__(self, name, owned)
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        """Restore from pickle or deepcopy, keeping the arrays read-only.
+
+        Analyses refuse windows without rows unless they are the empty
+        selection, so a stored ``(0, 2)`` window array is the empty selection;
+        it is restored as that object, which a copy would no longer be. Any
+        other float ``(0, 2)`` array holds no values, so restoring it as the
+        same read-only empty array changes nothing.
+        """
+        state = {
+            name: EMPTY_SELECTION if _is_copied_empty_selection(value) else value
+            for name, value in state.items()
+        }
         self.__dict__.update(state)
         for value in state.values():
             mark_read_only(value)

@@ -506,3 +506,30 @@ def test_epochs_accept_intervals_and_empty() -> None:
             env, trains, times, positions, spike_window=none, method="binned"
         )
     assert windowless.spike_window.shape == (0, 2)
+
+
+def test_empty_selection_survives_pickling_a_result() -> None:
+    import copy
+    import pickle
+
+    from neurospatial import Intervals
+
+    times = np.arange(0.0, 20.0, 0.1)
+    positions = np.column_stack(
+        [np.linspace(0.0, 50.0, times.size), np.zeros(times.size)]
+    )
+    env = Environment.from_samples(positions, bin_size=5.0)
+    none = Intervals.from_arrays([1.0], [2.0])[[]]
+    with pytest.warns(UserWarning, match="spike_window selects no time"):
+        rates = compute_spatial_rates(
+            env,
+            [np.array([1.0, 5.0])],
+            times,
+            positions,
+            spike_window=none,
+            method="binned",
+        )
+    for clone in (pickle.loads(pickle.dumps(rates)), copy.deepcopy(rates)):
+        unit = clone[0]  # rebuilds a result from the stored spike_window
+        assert unit.spike_window.shape == (0, 2)
+        assert np.isnan(unit.firing_rate).all()
