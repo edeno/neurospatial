@@ -86,6 +86,25 @@ they are not additions to the six accepted continuous-behavior workstreams.
   * `cost_to_goal()` - with terrain/learned cost weighting
 * [ ] Correlate with firing, behavior, running speed.
 
+### **2.5 Optimal-transport comparisons (POT)**
+
+POT, a core dependency since the Euclidean `compute_field_emd` moved to its
+network simplex (2026-10-31), also offers these. Each is a new method that
+needs its own validation; none is approved.
+
+* [ ] Unbalanced transport for maps whose total firing differs
+  (`ot.unbalanced`): separates "the field moved" from "the cell fired more",
+  instead of normalizing both maps or refusing unequal mass.
+* [ ] Decoding error as the transport distance from each time bin's
+  posterior to the true position, so a posterior on the wrong arm costs by
+  how far its mass sits. Check prior use in the decoding literature first.
+* [ ] Remapping between sessions or conditions as a comparison of whole
+  population maps (sliced or Gromov–Wasserstein transport).
+
+Not a use: the geodesic `compute_field_emd` is already a minimum-cost flow
+along graph edges (about two variables per edge); POT would need all-pairs
+shortest paths and one variable per bin pair.
+
 ---
 
 # **3. Event + Spatio-Temporal Analysis Module**
