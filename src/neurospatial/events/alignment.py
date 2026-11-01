@@ -317,13 +317,13 @@ def _peri_event_histograms(
             warn_empty_selection(names, n_events=n_input_events, result="the histogram")
         missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
         return _PeriEventCounts(
-            missing,
-            missing.copy(),
-            np.full(n_bins, np.nan, dtype=np.float64),
-            event_indices,
-            n_input_events,
-            events_per_bin,
-            event_ids,
+            histograms=missing,
+            sem=missing.copy(),
+            mean_sem=np.full(n_bins, np.nan, dtype=np.float64),
+            event_indices=event_indices,
+            n_dropped=n_input_events,
+            events_per_bin=events_per_bin,
+            event_ids=event_ids,
         )
 
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
@@ -340,13 +340,13 @@ def _peri_event_histograms(
     # units, the same estimand as each unit's SEM.
     _, mean_sem = _mean_and_sem(count_sum / len(trains), covered)
     return _PeriEventCounts(
-        histograms,
-        sem,
-        mean_sem,
-        event_indices,
-        n_input_events - n_events,
-        events_per_bin,
-        event_ids,
+        histograms=histograms,
+        sem=sem,
+        mean_sem=mean_sem,
+        event_indices=event_indices,
+        n_dropped=n_input_events - n_events,
+        events_per_bin=events_per_bin,
+        event_ids=event_ids,
     )
 
 
