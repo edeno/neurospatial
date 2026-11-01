@@ -190,8 +190,8 @@ def test_laps_become_an_interval_set_with_metadata():
 def test_visits_keep_every_field_as_metadata():
     visits = Intervals(
         [
-            RegionVisit(0, 0, "reward", 0, 5, 0.0, 1.0, True, True),
-            RegionVisit(1, 1, "reward", 9, 12, 2.0, 3.0, False, True),
+            RegionVisit(0, "reward", 0, 5, 0.0, 1.0, True, True),
+            RegionVisit(1, "reward", 9, 12, 2.0, 3.0, False, True),
         ]
     )
 
@@ -200,7 +200,6 @@ def test_visits_keep_every_field_as_metadata():
     windows = visits.windows.tolist()
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     expected = {
-        "visit_id": [0, 1],
         "run_id": [0, 1],
         "region": ["reward", "reward"],
         "start_index": [0, 9],
@@ -306,7 +305,7 @@ def test_intervals_export_ids_and_fields():
     [
         [Trial(0.0, 1.0, "home", "left", "reached")],
         list(LAPS),
-        [RegionVisit(0, 0, "a", 0, 5, 0.0, 2.0, True, True)],
+        [RegionVisit(0, "a", 0, 5, 0.0, 2.0, True, True)],
     ],
     ids=["trials", "laps", "visits"],
 )
@@ -318,8 +317,8 @@ def test_lists_of_interval_records_are_refused_with_the_fix(records):
 def test_interval_refusals():
     visits = Intervals(
         [
-            RegionVisit(0, 0, "a", 0, 5, 0.0, 2.0, True, True),
-            RegionVisit(1, 0, "b", 3, 6, 1.0, 3.0, True, True),
+            RegionVisit(0, "a", 0, 5, 0.0, 2.0, True, True),
+            RegionVisit(0, "b", 3, 6, 1.0, 3.0, True, True),
         ]
     )
     with pytest.raises(ValueError, match=r"1 interval record\(s\) overlap"):

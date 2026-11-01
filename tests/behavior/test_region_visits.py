@@ -349,7 +349,6 @@ def test_millisecond_times_warn_instead_of_splitting_every_visit(region_env):
 
 
 _VISIT = {
-    "visit_id": 0,
     "run_id": 0,
     "region": "A",
     "start_index": 1,
@@ -363,7 +362,6 @@ _VISIT = {
 
 def test_records_store_plain_python_scalars():
     visit = RegionVisit(
-        visit_id=np.int64(0),
         run_id=np.intp(2),
         region=np.str_("A"),
         start_index=np.int32(1),
@@ -374,7 +372,6 @@ def test_records_store_plain_python_scalars():
         exit_observed=np.bool_(False),
     )
     expected = {
-        "visit_id": int,
         "run_id": int,
         "region": str,
         "start_index": int,
@@ -400,6 +397,10 @@ def test_records_store_plain_python_scalars():
         ({"start_index": 1.5}, TypeError, "start_index"),
         ({"entry_observed": 1}, TypeError, "entry_observed"),
         ({"region": 3}, TypeError, "region"),
+        ({"start_time": -np.inf}, ValueError, "finite start_time"),
+        ({"stop_time": np.inf}, ValueError, "finite start_time"),
+        ({"run_id": -1}, ValueError, "run_id"),
+        ({"start_index": -1}, ValueError, "start_index"),
     ],
 )
 def test_visit_rejects_inconsistent_fields(changes, error, match):
