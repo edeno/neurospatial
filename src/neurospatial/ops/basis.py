@@ -151,9 +151,12 @@ def basis_at_positions(
     Each sample gets the basis values of the bin that contains it, so the
     rows stay aligned with ``times`` and stack directly with other per-sample
     features (speed, task phase) in a design matrix. A sample outside the
-    environment or with a missing coordinate gets a row of NaN, never zeros:
-    drop those rows (NeMoS and most GLM fitters drop NaN rows) rather than
-    treating them as "far from every basis function".
+    environment or with a missing coordinate gets a row of NaN, never zeros,
+    because it is not "far from every basis function". Drop those rows, and
+    the same rows of the response, before fitting: scikit-learn's
+    ``PoissonRegressor.fit`` and statsmodels' ``GLM`` raise on NaN. For
+    example ``keep = ~np.isnan(X).any(axis=1)``, then fit ``X[keep]`` and
+    ``y[keep]``.
 
     Parameters
     ----------
