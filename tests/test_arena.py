@@ -185,17 +185,22 @@ def test_known_arena_query_shape_and_nonfinite_rows(arena):
 @pytest.mark.parametrize(
     "arena", [a for a in arenas() if isinstance(a, (MaskArena, TrackArena))]
 )
-def test_roundtrip_arrays_stay_owned_and_readonly(arena, operation):
+def test_roundtrip_arrays_stay_independent_and_readonly(arena, operation):
+    def arrays(a):
+        return [
+            *getattr(a, "edges", ()),
+            getattr(a, "active_mask", None),
+            getattr(a, "segments", None),
+        ]
+
     restored = operation(arena)
-    arrays = [
-        *getattr(restored, "edges", ()),
-        getattr(restored, "active_mask", None),
-        getattr(restored, "segments", None),
-    ]
-    for array in arrays:
-        if array is not None:
-            assert array.flags.owndata
-            assert not array.flags.writeable
+    # Whether NumPy rebuilds an array as its own buffer or (pickle, Python
+    # 3.14+) as a view of the pickle's bytes is NumPy's choice; the record's
+    # contract is read-only arrays that do not alias the original's.
+    for before, after in zip(arrays(arena), arrays(restored), strict=True):
+        if after is not None:
+            assert not after.flags.writeable
+            assert not np.shares_memory(before, after)
 
 
 def test_affine_maps_domain_walls_and_track_width():

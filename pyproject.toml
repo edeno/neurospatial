@@ -17,6 +17,7 @@ dependencies = [
     "numpy>=2.2.0",
     "pandas>=2.3.0",
     "scikit-image>=0.25.0",
+    "scikit-image>=0.26.0; python_version >= '3.14'",  # first release with Python 3.14 wheels
     "scikit-learn>=1.6.0",
     "scipy>=1.15.3",  # 1.15.0-1.15.2 linprog is O(columns^2) after the solve (scipy#22655)
     "shapely>=2.1.0",
