@@ -150,6 +150,10 @@ filterwarnings = [
     # Once JAX is loaded it warns at every fork, including a subprocess such
     # as ffmpeg, whose child execs at once.
     "ignore:os.fork\\(\\) was called:RuntimeWarning",
+    # napari's dependencies still use pydantic's json_encoders.
+    "ignore:`json_encoders` is deprecated:DeprecationWarning",
+    # pynwb 4 defines the event types ndx-events also defines; it keeps its own.
+    "ignore:ndx-events.extensions defines a different specification",
     # pytest-benchmark disables timing under xdist and says so at startup.
     "ignore:Benchmarks are automatically disabled because xdist plugin is active:pytest_benchmark.logger.PytestBenchmarkWarning",
 ]

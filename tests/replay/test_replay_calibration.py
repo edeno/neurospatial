@@ -229,7 +229,7 @@ class TestDetectionRates:
             by={"n_active_cells": [0, 10, np.inf]},
             groups=["session"],
         )
-        few = rates[rates["n_active_cells"].astype(str) == "[0.0, 10.0)"]
+        few = rates[rates["n_active_cells"] == pd.Interval(0.0, 10.0, closed="left")]
         # s1's event 0 (4 cells) is replay; s2's event 1 (4 cells) is replay.
         assert few["n_replay"].tolist() == [1, 1]
         assert few["n_events"].tolist() == [1, 1]
@@ -307,7 +307,7 @@ class TestDetectionRates:
         cell = rates[
             (rates["method"] == "a")
             & (rates["null_kind"] == "poisson")
-            & (rates["n_spikes"].astype(str) == "[0.0, 20.0)")
+            & (rates["n_spikes"] == pd.Interval(0.0, 20.0, closed="left"))
         ]
         assert cell["n_replay"].item() == 1
         assert cell["n_events"].item() == 1
