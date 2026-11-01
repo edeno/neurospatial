@@ -538,6 +538,31 @@ def test_linear_allocated_occupancy_clips_a_step_beyond_the_edges():
     )
 
 
+def test_starts_and_stops_stacked_as_two_rows_are_ambiguous() -> None:
+    from neurospatial._intervals import as_intervals
+
+    starts, stops = np.array([0.0, 10.0]), np.array([5.0, 15.0])
+    # Read as rows, [[0, 10], [5, 15]] would merge into one window [0, 15).
+    with pytest.raises(
+        ValueError, match=re.escape("pass np.column_stack([starts, stops])")
+    ):
+        as_intervals(np.vstack([starts, stops]), name="epochs")
+    np.testing.assert_array_equal(
+        as_intervals(np.column_stack([starts, stops]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    # Rows that do not overlap, or whose transpose is not two ordered
+    # windows, are read as rows.
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 30.0], [5.0, 10.0]]), name="epochs"),
+        [[0.0, 30.0]],
+    )
+
+
 @pytest.mark.parametrize(
     ("value", "detail"),
     [
@@ -571,26 +596,44 @@ def test_timedelta_epochs_name_the_conversion() -> None:
         as_intervals(table, name="epochs")
 
 
-def test_starts_and_stops_stacked_as_two_rows_are_ambiguous() -> None:
+def test_a_table_is_read_by_its_start_and_stop_column_names() -> None:
+    pd = pytest.importorskip("pandas")
     from neurospatial._intervals import as_intervals
 
-    starts, stops = np.array([0.0, 10.0]), np.array([5.0, 15.0])
-    # Read as rows, [[0, 10], [5, 15]] would merge into one window [0, 15).
-    with pytest.raises(
-        ValueError, match=re.escape("pass np.column_stack([starts, stops])")
-    ):
-        as_intervals(np.vstack([starts, stops]), name="epochs")
-    np.testing.assert_array_equal(
-        as_intervals(np.column_stack([starts, stops]), name="epochs"),
-        [[0.0, 5.0], [10.0, 15.0]],
-    )
-    # Rows that do not overlap, or whose transpose is not two ordered
-    # windows, are read as rows.
-    np.testing.assert_array_equal(
-        as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]), name="epochs"),
-        [[0.0, 5.0], [10.0, 15.0]],
+    table = pd.DataFrame(
+        {
+            "outcome": ["correct", "error"],
+            "stop_time": [5.0, 15.0],
+            "trial": [3, 4],
+            "start_time": [0.0, 10.0],
+        }
     )
     np.testing.assert_array_equal(
-        as_intervals(np.array([[0.0, 30.0], [5.0, 10.0]]), name="epochs"),
-        [[0.0, 30.0]],
+        as_intervals(table, name="epochs"), [[0.0, 5.0], [10.0, 15.0]]
     )
+
+
+def test_a_table_without_bound_columns_gets_a_table_hint() -> None:
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame({"a": [0.0, 10.0, 20.0], "b": [5.0, 15.0, 25.0]})
+    np.testing.assert_array_equal(
+        as_intervals(table, name="epochs"), [[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]]
+    )
+    with pytest.raises(ValueError, match="start_time and stop_time") as exc:
+        as_intervals(table.T, name="epochs")
+    assert "column_stack" not in str(exc.value)
+
+
+@pytest.mark.nwb
+def test_an_nwb_time_intervals_table_points_to_read_intervals() -> None:
+    epoch = pytest.importorskip("pynwb.epoch")
+    from neurospatial._intervals import as_intervals
+
+    table = epoch.TimeIntervals(name="trials", description="trials")
+    table.add_interval(start_time=0.0, stop_time=1.0)
+    table.add_interval(start_time=2.0, stop_time=3.0)
+    with pytest.raises(ValueError, match="read_intervals") as exc:
+        as_intervals(table, name="epochs")
+    assert "Intervals.from_dataframe" in str(exc.value)
