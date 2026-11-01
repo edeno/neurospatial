@@ -1549,12 +1549,12 @@ bin means the same stretch of route on every trial in the condition. On correct
 trials the instructed goal and the well reached are the same, so conditions A
 and B below cannot tell a cell that codes the goal it was given from one that
 codes the turn it is about to make. Grouping all trials by either field does
-not settle it: errors only shrink the other kind of difference. Error trials
-do: on an error trial, a goal cell fires as on correct trials with the same
-instruction, and a choice cell as on correct trials to the well it reached. In
-simulation, a 15 versus 5 Hz difference on the centre arm needed about 6 error
-trials per instructed goal for a reliable call; this session has 2 and 3, too
-few. When the task defines the goal as the arm opposite the last one visited,
+not settle it: both kinds of cell still differ between the groups, only by
+less. Error trials settle it: compare error trials instructed left with those
+instructed right on the centre arm. A goal cell shows the same difference as on
+correct trials, a choice cell the opposite. In simulation, a 15 versus 5 Hz
+difference on the centre arm was called correctly in about 95% of sessions with
+6 error trials per instructed goal; this session has 2 and 3, too few. When the task defines the goal as the arm opposite the last one visited,
 firing that depends on the previous trial cannot be told apart from goal
 coding.
 
@@ -1716,11 +1716,14 @@ odd vs even trials: r = 0.95 over 20 bins
 The two halves agree closely (r = 0.95). This describes how reproducible the
 curve's shape is, whatever drives it; it is not a test of route tuning. In
 simulation, a cell that fires only when the animal stops reached r ≈ 0.8 from
-the one pause bin, and a cell that follows only running speed r ≈ 0.7. Compute
-r on the running curve (`min_speed`, below) to remove stops. To judge r against
-chance, recompute it after shifting the spike train in time relative to the
-behavior (a circular shift): for an untuned cell with 13 trials, r exceeded 0.4
-in about 5% of simulated sessions.
+the one pause bin, and a cell that follows only running speed r ≈ 0.7 when
+speed rose and fell along each run. Compute r on the running curve
+(`min_speed`, below) to remove stops; it does not remove the speed effect. To
+judge r against chance, shift the spike train by a random offset, wrapping
+spikes past the end of the session to its start, recompute r, and repeat many
+times; call r unusual if it beats 95% of the shifted values. In simulation the
+95th percentile was about 0.4 with 13 trials, and an untuned cell passed in 2
+to 6% of sessions.
 
 ### Pauses and running speed
 
@@ -1775,13 +1778,17 @@ Neither curve shows that the tuning is independent of speed: a pooled curve
 averages over whatever speeds the animal ran. Where speed changes along the
 route, as it does when the animal slows into the choice point and the goal, a
 cell that follows only speed gives a curve that rises and falls with progress,
-and `min_speed` does not remove that. The figure compares the slower and faster
-halves of the trials with the same edges. Compare them bin by bin against their
-Poisson error, not by where they peak: a cell whose rate scales with speed keeps
-its peak in place, and with a dozen trials the peak of a cell that depends only
-on progress moves a bin by chance in a quarter to two thirds of sessions. A
-clear difference means firing depends on more than progress; no difference,
-with six or seven trials per half, rules out only large effects. Separating
+and `min_speed` does not remove that. The figure overlays the running curves of
+the slower and faster halves of the trials, binned with the same edges. Compare
+them with one test across all bins, not by where they peak: for each bin, z is
+the difference in rate divided by its Poisson standard error, and the sum of
+z² is compared with a chi-square distribution. A cell whose rate scales with
+speed keeps its peak in place, and the peak of a cell that depends only on
+progress moved one bin by chance in about a quarter of simulated sessions with
+13 trials, and in up to two thirds with about 40. In simulation this test
+flagged 0 to 10% of cells that depend only on progress. A clear difference
+means firing depends on more than progress; no difference, with six or seven
+trials per half, rules out only large effects. Separating
 speed from progress needs a model with both.
 
 ### Trials from NWB give the same curves

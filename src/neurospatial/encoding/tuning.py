@@ -854,12 +854,14 @@ def compute_tuning_curve(
     **What is estimated.** The time-weighted mean firing rate in each bin
     of the variable, pooling spikes and time over all analyzed intervals: a
     bin's rate is its spike count divided by the seconds spent in it. It
-    does not show that the cell fires consistently from trial to trial, nor
-    that the tuning is independent of running speed. Where speed changes
-    along the variable, a cell that follows only speed gives a curve shaped
-    by the variable, and ``min_speed`` (which removes stops) does not
-    change that; compare curves for slower and faster trials bin by bin
-    against their Poisson error, or fit a model with both.
+    does not show that the cell fires consistently from trial to trial
+    (compare curves from odd and even trials, against circularly shifted
+    spike trains for chance), nor that the tuning is independent of running
+    speed. Where speed changes along the variable, a cell that follows only
+    speed gives a curve that rises and falls along the variable as speed
+    does, and ``min_speed`` (which removes stops) does not change that;
+    compare curves for slower and faster trials with one test across bins,
+    or fit a model with both.
 
     **Bins.** Bin ``k`` holds values ``bin_edges[k] <= v < bin_edges[k + 1]``
     and the last bin also holds ``bin_edges[-1]``, as in ``numpy.histogram``,
@@ -1090,12 +1092,14 @@ def compute_tuning_curves(
     **What is estimated.** The time-weighted mean firing rate in each bin
     of the variable, pooling spikes and time over all analyzed intervals: a
     bin's rate is its spike count divided by the seconds spent in it. It
-    does not show that the cell fires consistently from trial to trial, nor
-    that the tuning is independent of running speed. Where speed changes
-    along the variable, a cell that follows only speed gives a curve shaped
-    by the variable, and ``min_speed`` (which removes stops) does not
-    change that; compare curves for slower and faster trials bin by bin
-    against their Poisson error, or fit a model with both.
+    does not show that the cell fires consistently from trial to trial
+    (compare curves from odd and even trials, against circularly shifted
+    spike trains for chance), nor that the tuning is independent of running
+    speed. Where speed changes along the variable, a cell that follows only
+    speed gives a curve that rises and falls along the variable as speed
+    does, and ``min_speed`` (which removes stops) does not change that;
+    compare curves for slower and faster trials with one test across bins,
+    or fit a model with both.
 
     **Bins.** Bin ``k`` holds values ``bin_edges[k] <= v < bin_edges[k + 1]``
     and the last bin also holds ``bin_edges[-1]``, as in ``numpy.histogram``,
