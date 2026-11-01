@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Mapping
 
 import numpy as np
@@ -26,6 +27,11 @@ def test_region_point_creation(coords):
 
 
 BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+# shapely 2.1.0 warns while building a ring with a NaN vertex; the test is that
+# Region refuses it.
+with np.errstate(invalid="ignore"), warnings.catch_warnings():
+    warnings.simplefilter("ignore", RuntimeWarning)
+    NAN_VERTEX_POLYGON = shp.Polygon([(0, 0), (np.nan, 0), (1, 1)])
 
 
 @pytest.mark.parametrize(
@@ -60,7 +66,7 @@ BOWTIE = shp.Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
         (
             "bad",
             "polygon",
-            shp.Polygon([(0, 0), (np.nan, 0), (1, 1)]),
+            NAN_VERTEX_POLYGON,
             ValueError,
             "NaN or infinite vertex",
         ),

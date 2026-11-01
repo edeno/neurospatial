@@ -697,8 +697,11 @@ def circular_linear_correlation(
 
     # Project the centered linear variable onto the span of the centered
     # cos/sin columns. cos and sin lie in [-1, 1], so an absolute singular
-    # value cutoff (RMS spread 1e-10) decides which directions exist.
+    # value cutoff (RMS spread 1e-10) decides which directions exist. r^2 does
+    # not depend on the scale of x; scaling it to at most 1 keeps the sums of
+    # squares finite for very large values.
     x = linear_values - linear_values.mean()
+    x /= np.max(np.abs(x))
     basis = np.column_stack([np.cos(angles), np.sin(angles)])
     basis -= basis.mean(axis=0)
     u, singular_values, _ = np.linalg.svd(basis, full_matrices=False)

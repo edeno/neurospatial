@@ -1785,9 +1785,10 @@ class TestFuzzEdgeCases:
         positions = np.array([0.0, max_float / 3, max_float * 2 / 3, max_float])
 
         rho, pvalue = circular_linear_correlation(angles, positions)
-        # Correlation in [0, 1] (always non-negative for this metric)
-        assert 0 <= rho <= 1 or np.isnan(rho)
-        assert 0 <= pvalue <= 1 or np.isnan(pvalue)
+        # The same correlation as for positions 0..3: the scale does not matter.
+        expected = circular_linear_correlation(angles, np.arange(4.0))
+        assert rho == pytest.approx(expected[0], rel=1e-12)
+        assert pvalue == pytest.approx(expected[1], rel=1e-9)
 
     def test_circular_linear_correlation_with_tiny_positions(self) -> None:
         """Circular-linear correlation handles denormalized position values."""
