@@ -245,9 +245,11 @@ rather than a shifted row.
 ## 5. Model inputs and trial-blocked cross-validation
 
 For a model, every input is one value per sample. `sample_values` gives each
-sample its trial's field (None between trials), and from the trial bounds the
-time since departure and the fraction of the trial elapsed. `basis_at_positions`
-evaluates a spatial basis at each position, with NaN rows outside the track:
+sample its trial's value; between trials it is NaN for float values (such as
+`trials.start`) and None for any other (labels, integers). From the trial
+bounds come the time since departure and the fraction of the trial elapsed.
+`basis_at_positions` evaluates a spatial basis at each position, with NaN rows
+outside the track:
 
 ```python
 from sklearn.model_selection import GroupKFold
