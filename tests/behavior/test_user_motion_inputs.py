@@ -195,7 +195,7 @@ def test_your_speed_decides_who_is_moving(session):
 
 def test_your_motion_stays_inside_the_time_support(session):
     """Samples outside epochs, lost frames and lone samples stay excluded."""
-    r, positions, support, _, _ = session
+    r, positions, _, _, _ = session
     speed = np.full(len(r.times), 20.0)
     headings = np.zeros(len(r.times))
     alignment = instantaneous_goal_alignment(
