@@ -1289,6 +1289,73 @@ def start_allocated_occupancy(
     return np.bincount(bins, weights=weights, minlength=n_bins).astype(np.float64)
 
 
+def linear_allocated_occupancy(
+    values: NDArray[np.float64],
+    dt: NDArray[np.float64],
+    edges: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Spread each valid interval's duration over the 1-D bins it crosses.
+
+    Between two samples the value is taken to change at constant speed, so
+    an interval's time is split over the bins in proportion to the part of
+    the range between its two end values that lies in each bin. An interval
+    whose ends are equal puts all its time in the bin of that value. Bins are
+    half-open ``[left, right)``: time beyond the edges, at ``edges[-1]`` or
+    at a non-finite end is not counted.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n_samples,)
+        The variable at each sample (for example distance from an event).
+    dt : ndarray, shape (n_samples - 1,)
+        ``np.diff(times)``.
+    edges : ndarray, shape (n_bins + 1,)
+        Strictly increasing bin edges, in the units of ``values``.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Intervals to count.
+
+    Returns
+    -------
+    ndarray, shape (n_bins,)
+        Seconds in each bin.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    first = values[:-1][interval_mask]
+    second = values[1:][interval_mask]
+    dt = np.asarray(dt, dtype=np.float64)[interval_mask]
+    low, high = np.minimum(first, second), np.maximum(first, second)
+    covered = high - low
+    n_bins = edges.size - 1
+    with np.errstate(invalid="ignore"):
+        moving = covered > 0
+    # A moving interval overlaps bins j with edges[j] < high and edges[j+1] > low.
+    first_bin = np.maximum(np.searchsorted(edges, low[moving], side="right") - 1, 0)
+    last_bin = np.minimum(
+        np.searchsorted(edges, high[moving], side="left") - 1, n_bins - 1
+    )
+    n_crossed = np.maximum(last_bin - first_bin + 1, 0)
+    crossing = np.repeat(np.flatnonzero(moving), n_crossed)
+    group_start = np.repeat(np.cumsum(n_crossed) - n_crossed, n_crossed)
+    crossed_bin = np.repeat(first_bin, n_crossed) + (
+        np.arange(crossing.size) - group_start
+    )
+    overlap = np.minimum(high[crossing], edges[crossed_bin + 1]) - np.maximum(
+        low[crossing], edges[crossed_bin]
+    )
+    seconds = np.bincount(
+        crossed_bin,
+        weights=dt[crossing] * overlap / covered[crossing],
+        minlength=n_bins,
+    ).astype(np.float64)
+    still_bin = value_frame_bins(low[~moving], edges, closed_last=False)
+    inside = still_bin >= 0
+    seconds += np.bincount(
+        still_bin[inside], weights=dt[~moving][inside], minlength=n_bins
+    )
+    return seconds
+
+
 def value_frame_bins(
     values: NDArray[np.float64], edges: NDArray[np.float64], *, closed_last: bool
 ) -> NDArray[np.intp]:

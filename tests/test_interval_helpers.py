@@ -478,3 +478,60 @@ def test_windows_protocol_keeps_pynapple_inclusive_end():
         as_intervals(iset, name="epochs")[:, 1],
         pynapple_end_to_stop(np.array([2.0, 7.0])),
     )
+
+
+def test_linear_allocated_occupancy_by_hand():
+    """Constant speed between samples, worked by hand on 1 cm bins [0, 4).
+
+    0.5 -> 2.5 cm in 4 s moves at 0.5 cm/s: 1 s in [0, 1) (0.5 cm), 2 s in
+    [1, 2) and 1 s in [2, 3). Then 3 s standing at 2.5 cm all go to [2, 3).
+    The 10 s step back to 0 cm is masked out.
+    """
+    from neurospatial._intervals import linear_allocated_occupancy
+
+    edges = np.arange(5.0)
+    values = np.array([0.5, 2.5, 2.5, 0.0])
+    dt = np.array([4.0, 3.0, 10.0])
+    mask = np.array([True, True, False])
+    np.testing.assert_array_equal(
+        linear_allocated_occupancy(values, dt, edges, mask), [1.0, 2.0, 4.0, 0.0]
+    )
+    # Reversing the direction of travel splits the time the same way.
+    np.testing.assert_array_equal(
+        linear_allocated_occupancy(values[1::-1], dt[:1], edges, mask[:1]),
+        [1.0, 2.0, 1.0, 0.0],
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (2.0, [0.0, 0.0, 3.0, 0.0]),  # an inner edge starts its bin
+        (0.0, [3.0, 0.0, 0.0, 0.0]),  # the first edge is inside
+        (4.0, [0.0, 0.0, 0.0, 0.0]),  # the last edge is outside (half-open)
+        (-1.0, [0.0, 0.0, 0.0, 0.0]),
+        (np.nan, [0.0, 0.0, 0.0, 0.0]),
+    ],
+)
+def test_linear_allocated_occupancy_standing_still(value, expected):
+    """A zero-length step puts all its time in the half-open bin of its value."""
+    from neurospatial._intervals import linear_allocated_occupancy
+
+    np.testing.assert_array_equal(
+        linear_allocated_occupancy(
+            np.array([value, value]), np.array([3.0]), np.arange(5.0), np.array([True])
+        ),
+        expected,
+    )
+
+
+def test_linear_allocated_occupancy_clips_a_step_beyond_the_edges():
+    """-2 -> 6 cm in 8 s: 1 s in each of the four 1 cm bins, the rest outside."""
+    from neurospatial._intervals import linear_allocated_occupancy
+
+    np.testing.assert_array_equal(
+        linear_allocated_occupancy(
+            np.array([-2.0, 6.0]), np.array([8.0]), np.arange(5.0), np.array([True])
+        ),
+        [1.0, 1.0, 1.0, 1.0],
+    )
