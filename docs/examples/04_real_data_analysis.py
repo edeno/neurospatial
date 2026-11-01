@@ -318,26 +318,28 @@ print(counts.sort_values(ascending=False).rename("count").to_string())
 #
 # ## 5. How does position change between arm-end entries?
 #
-# Plot the first three intervals on a common scale. At each sample,
-# `path_progress` divides the shortest track distance already covered from the
-# starting bin by that distance plus the shortest track distance still left to
-# the destination bin. Zero marks the start and one marks arrival. A detour into
-# another arm keeps the distance left to the destination large, so progress
-# falls while the rat is off the route; it does not by itself show that the
-# route was efficient.
+# Plot the first three intervals on a common scale with `path_progress`, from
+# the zone the interval starts in to the zone it ends in. Progress is 0 in the
+# starting zone and 1 in the destination zone. On a track whose arms branch
+# without loops, as here, progress along the route between the two zones is
+# the fraction of the route's length covered. A detour into another arm keeps
+# the value of the junction where that arm leaves the route: the curve is
+# flat while the rat is off the route, so a detour neither adds nor removes
+# progress. A sample off the track (no bin) is NaN and leaves a gap in the
+# curve.
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 5))
 for transition in transitions[:3]:
+    # The interval's samples and the arrival sample that ends it.
     selected = np.arange(transition.start_index, transition.end_index + 1)
     progress = path_progress(
-        position_bins[selected],
         env,
-        start_bins=np.full(selected.size, position_bins[transition.start_index]),
-        goal_bins=np.full(selected.size, position_bins[transition.end_index]),
-        metric="geodesic",
+        times[selected],
+        positions[selected],
+        start=transition.source_region,
+        goal=transition.target_region,
     )
-    np.testing.assert_allclose(progress[[0, -1]], [0.0, 1.0])
     ax.plot(
         times[selected] - transition.start_time,
         progress,
@@ -345,18 +347,19 @@ for transition in transitions[:3]:
     )
 ax.set(
     xlabel="Time since entry into first zone (s)",
-    ylabel="Relative distance from start",
+    ylabel="Progress from first zone to next",
     title="Position change between arm-end entries",
-    ylim=(0, 1.05),
+    ylim=(-0.03, 1.05),
 )
 ax.legend()
 plt.show()
 
 # %% [markdown]
-# The flat portions show little change in distance from the starting bin;
-# the rising portions show movement farther from it. The intervals differ in
-# duration and include waiting. Their endpoints are 0 and 1 by construction,
-# rather than evidence for a particular movement strategy.
+# Each curve starts at 0 in the first zone, where the rat may wait, and ends
+# at 1 on entry into the next. Rising portions are movement along the route
+# toward the next zone; flat portions are waiting or a detour into a side arm.
+# The intervals differ in duration and include waiting, so compare their
+# shapes, not their lengths.
 #
 # ## Use your own recording
 #
