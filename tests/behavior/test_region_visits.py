@@ -1,18 +1,18 @@
-"""Observed region events preserve timing, identity, and recording boundaries."""
+"""Observed region visits preserve timing, identity, and recording boundaries."""
 
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError
 
 import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial.behavior import (
-    RegionTransition,
     RegionVisit,
     detect_region_visits,
-    region_transitions,
+    detect_trials,
+    trials_between_visits,
 )
 
 
@@ -30,210 +30,205 @@ def region_env() -> Environment:
     return env
 
 
-def test_sampled_crossings_dwell_and_transition_identity(region_env):
+def _at(env: Environment, bins) -> np.ndarray:
+    """Positions at the centers of ``bins``; NaN (lost tracking) where -1."""
+    bins = np.asarray(bins, dtype=int)
+    positions = env.bin_centers[np.maximum(bins, 0)].copy()
+    positions[bins < 0] = np.nan
+    return positions.reshape(-1, env.n_dims)
+
+
+def _visits(env, bins, times, **options):
+    return detect_region_visits(
+        env, np.asarray(times, dtype=float), _at(env, bins), **options
+    )
+
+
+def test_sampled_crossings_dwell_and_trials_between(region_env):
     times = np.array([0.0, 0.2, 0.7, 1.2, 2.0, 2.5, 3.0, 4.0])
     bins = np.array([1, 0, 0, 1, 3, 3, 4, 5])
-    visits = detect_region_visits(
-        bins, times, region_env, region_names=["A", "B", "C"], max_gap=None
-    )
-    assert [(v.visit_id, v.run_id, v.region_name) for v in visits] == [
-        (0, 0, "A"),
-        (1, 0, "B"),
-        (2, 0, "C"),
+    visits = _visits(region_env, bins, times, regions=["A", "B", "C"], max_gap=None)
+    assert isinstance(visits, Intervals)
+    assert visits.record_type is RegionVisit
+    assert visits.interval_ids.tolist() == [0, 1, 2]
+    assert visits.run_id.tolist() == [0, 0, 0]
+    assert visits.region.tolist() == ["A", "B", "C"]
+    assert list(zip(visits.start_index, visits.stop_index, strict=True)) == [
+        (1, 3),
+        (4, 6),
+        (7, 8),
     ]
-    assert [(v.start_index, v.stop_index) for v in visits] == [(1, 3), (4, 6), (7, 8)]
-    np.testing.assert_allclose([v.duration for v in visits], [1.0, 1.0, 0.0])
-    assert all(v.entry_observed for v in visits)
-    assert [v.exit_observed for v in visits] == [True, True, False]
+    np.testing.assert_allclose(visits.durations, [1.0, 1.0, 0.0])
+    assert visits.entry_observed.all()
+    assert visits.exit_observed.tolist() == [True, True, False]
     # For this gap-free record, visit dwell equals start-allocated region occupancy.
-    occupancy = region_env.occupancy(times, region_env.bin_centers[bins], max_gap=None)
-    np.testing.assert_allclose([v.duration for v in visits], occupancy[[0, 3, 5]])
+    occupancy = region_env.occupancy(times, _at(region_env, bins), max_gap=None)
+    np.testing.assert_allclose(visits.durations, occupancy[[0, 3, 5]])
 
-    transitions = region_transitions(visits)
-    assert [(t.source_region, t.target_region) for t in transitions] == [
+    # Trials are the time between visits: departure to the next arrival.
+    trials = trials_between_visits(visits)
+    assert list(zip(trials.start_region, trials.end_region, strict=True)) == [
         ("A", "B"),
         ("B", "C"),
     ]
-    assert [(t.source_visit_id, t.target_visit_id) for t in transitions] == [
-        (0, 1),
-        (1, 2),
-    ]
-    assert [(t.start_index, t.end_index) for t in transitions] == [(1, 4), (4, 7)]
-    np.testing.assert_allclose([t.duration for t in transitions], [1.8, 2.0])
-    assert transitions[0].end_time == transitions[1].start_time
-    assert isinstance(transitions[0], RegionTransition)
-    table = pd.DataFrame(transitions)
-    assert table["source_visit_id"].tolist() == [0, 1]
-    assert table["duration"].tolist() == [1.8, 2.0]
-    assert pd.DataFrame(visits)["exit_observed"].tolist() == [True, True, False]
-
-
-def test_initial_visit_is_censored_without_invented_entry(region_env):
-    visits = detect_region_visits(
-        np.array([0, 0, 1, 3, 4]),
-        np.arange(5) / 10,
-        region_env,
-        region_names=["A", "B"],
+    np.testing.assert_allclose(trials.start, [1.2, 3.0])
+    np.testing.assert_allclose(trials.stop, [2.0, 4.0])
+    detected = detect_trials(
+        region_env, times, _at(region_env, bins), regions=["A", "B", "C"], max_gap=None
     )
-    first, second = visits
-    assert first.start_index == 0
-    assert not first.entry_observed
-    assert first.exit_observed
-    assert first.end_time == 0.2
-    assert second.entry_observed
-    assert region_transitions(visits) == []
+    assert list(detected) == list(trials)
+    table = visits.intervals_table()
+    assert table["exit_observed"].tolist() == [True, True, False]
 
 
-def test_reentries_preserved_and_last_source_entry_is_paired(region_env):
-    visits = detect_region_visits(
-        np.array([1, 0, 1, 0, 1, 3]),
-        np.arange(6) / 10,
-        region_env,
-        region_names=["A", "B"],
-    )
-    assert [v.region_name for v in visits] == ["A", "A", "B"]
-    (transition,) = region_transitions(visits)
-    assert (transition.source_visit_id, transition.target_visit_id) == (1, 2)
-    assert (transition.start_index, transition.end_index) == (3, 5)
-
-
-def test_unlocated_bins_censor_like_a_long_gap(region_env):
-    """An interval touching bin -1 is not observed, as in env.occupancy.
-
-    The visit around the unlocated sample is split into two censored visits,
-    exactly as a gap longer than ``max_gap`` splits it, and no exit is
-    fabricated at the unlocated sample.
-    """
-    bins = np.array([1, 0, -1, 0, 1, 3])
-    times = np.arange(6) / 10
-    visits = detect_region_visits(bins, times, region_env, region_names=["A", "B"])
-    long_gap = detect_region_visits(
-        bins, times, region_env, region_names=["A", "B"], max_gap=0.15
-    )
-    assert visits == long_gap
-    assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
-    assert not visits[0].exit_observed
-    assert not visits[1].entry_observed
-
-
-def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
-    region_env,
-):
-    visits = detect_region_visits(
-        np.array([1, 0, -1, 0, 1, 3]),
-        np.arange(6) / 10,
-        region_env,
-        region_names=["A", "B"],
-        max_gap=0.15,
-    )
-    assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
-    assert not visits[0].exit_observed
-    assert visits[0].end_time == 0.1
-    assert not visits[1].entry_observed
-    assert visits[1].start_index == 3
-    assert visits[2].entry_observed
-    assert region_transitions(visits) == []
-
-
-@pytest.mark.parametrize("bad_bin", [-10, 6, 999])
-def test_bins_outside_the_environment_range_raise(region_env, bad_bin):
-    """Only -1 marks a missing sample; other indices name no bin."""
-    from neurospatial._exceptions import BinIndexOutOfRangeError
-
-    with pytest.raises(BinIndexOutOfRangeError, match=f"Bin index {bad_bin} "):
-        detect_region_visits(
-            np.array([1, 0, bad_bin, 0, 1, 3]),
-            np.arange(6) / 10,
-            region_env,
-            region_names=["A", "B"],
-        )
-
-
-def test_float_bins_raise(region_env):
-    with pytest.raises(TypeError, match="position_bins= takes integer bin indices"):
-        detect_region_visits(
-            np.array([1.0, 0.9, 0.0]),
-            np.arange(3) / 10,
-            region_env,
-            region_names=["A", "B"],
-        )
-
-
-def test_time_gap_breaks_pairing_and_max_gap_equality_passes(region_env):
-    bins = np.array([1, 0, 1, 1, 3, 1])
-    times = np.array([0.0, 1.0, 2.0, 4.0, 5.0, 6.0])
-    visits = detect_region_visits(
-        bins, times, region_env, region_names=["A", "B"], max_gap=1.0
-    )
-    assert [v.run_id for v in visits] == [0, 1]
-    assert all(v.entry_observed for v in visits)
-    assert region_transitions(visits) == []
-    continuous = detect_region_visits(
-        bins, times, region_env, region_names=["A", "B"], max_gap=None
-    )
-    assert len(region_transitions(continuous)) == 1
-
-
-def test_singleton_observations_are_zero_duration_censored_visits(region_env):
+def test_singleton_visit_kept_without_windows(region_env):
+    """A visit seen in one sample is an observation with no time."""
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        visits = detect_region_visits(
-            np.array([0, 3, 5]),
-            np.array([0.0, 2.0, 4.0]),
+        visits = _visits(
             region_env,
-            region_names=["A", "B", "C"],
+            [0, 3, 5],
+            [0.0, 2.0, 4.0],
+            regions=["A", "B", "C"],
             max_gap=0.5,
         )
     assert len(visits) == 3
-    assert all(not v.entry_observed and not v.exit_observed for v in visits)
-    assert [v.duration for v in visits] == [0.0, 0.0, 0.0]
-    assert region_transitions(visits) == []
+    assert not visits.entry_observed.any()
+    assert not visits.exit_observed.any()
+    assert visits.durations.tolist() == [0.0, 0.0, 0.0]
+    assert visits.windows.shape == (0, 2)
+
+
+def test_initial_visit_is_censored_without_invented_entry(region_env):
+    first, second = _visits(
+        region_env, [0, 0, 1, 3, 4], np.arange(5) / 10, regions=["A", "B"]
+    )
+    assert first.start_index == 0
+    assert not first.entry_observed
+    assert first.exit_observed
+    assert first.stop_time == 0.2
+    assert second.entry_observed
+
+
+def test_reentries_are_separate_visits(region_env):
+    visits = _visits(
+        region_env, [1, 0, 1, 0, 1, 3], np.arange(6) / 10, regions=["A", "B"]
+    )
+    assert visits.region.tolist() == ["A", "A", "B"]
+    trials = trials_between_visits(visits)
+    assert trials.outcome.tolist() == ["returned", "reached"]
+    np.testing.assert_allclose(trials.start, [0.2, 0.4])
+    np.testing.assert_allclose(trials.stop, [0.3, 0.5])
+
+
+def test_lost_tracking_censors_like_a_long_gap(region_env):
+    """An interval touching a NaN position is not observed, as in env.occupancy.
+
+    The visit around the lost sample is split into two censored visits,
+    exactly as a gap longer than ``max_gap`` splits it, and no exit is
+    fabricated at the lost sample.
+    """
+    bins = [1, 0, -1, 0, 1, 3]
+    times = np.arange(6) / 10
+    visits = _visits(region_env, bins, times, regions=["A", "B"])
+    long_gap = _visits(region_env, bins, times, regions=["A", "B"], max_gap=0.15)
+    assert list(visits) == list(long_gap)
+    assert list(zip(visits.run_id, visits.region, strict=True)) == [
+        (0, "A"),
+        (1, "A"),
+        (1, "B"),
+    ]
+    assert not visits[0].exit_observed
+    assert visits[0].stop_time == 0.1
+    assert not visits[1].entry_observed
+    assert visits[1].start_index == 3
+    assert visits[2].entry_observed
+    # The visit before the loss has no departure; the one after it does.
+    trials = detect_trials(region_env, times, _at(region_env, bins), regions=["A", "B"])
+    assert list(zip(trials.start_region, trials.end_region, strict=True)) == [
+        ("A", "B")
+    ]
+    assert trials.start.tolist() == [0.4]
+
+
+def test_positions_outside_the_environment_are_not_located(region_env):
+    """A position beyond the environment ends observation like a NaN row."""
+    times = np.arange(6) / 10
+    outside = _at(region_env, [1, 0, 0, 0, 1, 3])
+    outside[2] = [50.0, 50.0]
+    lost = _at(region_env, [1, 0, -1, 0, 1, 3])
+    assert list(
+        detect_region_visits(region_env, times, outside, regions=["A"])
+    ) == list(detect_region_visits(region_env, times, lost, regions=["A"]))
+
+
+def test_positions_need_the_environment_dimensions(region_env):
+    with pytest.raises(ValueError, match="3 coordinate"):
+        detect_region_visits(
+            region_env, np.arange(2.0), np.zeros((2, 3)), regions=["A"]
+        )
+
+
+def test_time_gap_splits_runs_and_max_gap_equality_passes(region_env):
+    bins = [1, 0, 1, 1, 3, 1]
+    times = np.array([0.0, 1.0, 2.0, 4.0, 5.0, 6.0])
+    visits = _visits(region_env, bins, times, regions=["A", "B"], max_gap=1.0)
+    assert visits.run_id.tolist() == [0, 1]
+    assert visits.entry_observed.all()
+    gap = detect_trials(
+        region_env, times, _at(region_env, bins), regions=["A", "B"], max_gap=1.0
+    )
+    # The animal leaves A on the last sample before the 2 s gap: no observed
+    # time outside A, so no trial; the arrival at B after it starts none.
+    assert len(gap) == 0
+    continuous = detect_trials(
+        region_env, times, _at(region_env, bins), regions=["A", "B"], max_gap=None
+    )
+    assert continuous.outcome.tolist() == ["reached"]
 
 
 def test_epoch_stop_closes_exposure_without_creating_entry_or_exit(region_env):
-    visits = detect_region_visits(
-        np.array([1, 0, 3]),
-        np.array([0.0, 1.0, 2.0]),
+    (visit,) = _visits(
         region_env,
-        region_names=["A", "B"],
+        [1, 0, 3],
+        [0.0, 1.0, 2.0],
+        regions=["A", "B"],
         max_gap=None,
         epochs=(0, 2),
     )
-    (visit,) = visits
-    assert visit.region_name == "A"
+    assert visit.region == "A"
     assert visit.entry_observed
     assert not visit.exit_observed
     assert (visit.start_index, visit.stop_index) == (1, 2)
-    assert (visit.start_time, visit.end_time, visit.duration) == (1.0, 2.0, 1.0)
-    assert region_transitions(visits) == []
+    assert (visit.start_time, visit.stop_time, visit.duration) == (1.0, 2.0, 1.0)
 
 
 def test_disjoint_epochs_keep_original_indices_and_censor_each_restart(region_env):
-    visits = detect_region_visits(
-        np.array([1, 0, 0, 3, 1, 3, 4, 0, 4, 5]),
-        np.arange(10, dtype=float),
+    visits = _visits(
         region_env,
-        region_names=["A", "B", "C"],
+        [1, 0, 0, 3, 1, 3, 4, 0, 4, 5],
+        np.arange(10, dtype=float),
+        regions=["A", "B", "C"],
         max_gap=None,
         epochs=[(0, 3), (5, 9)],
     )
-    assert [(v.region_name, v.start_index, v.run_id) for v in visits] == [
+    assert list(zip(visits.region, visits.start_index, visits.run_id, strict=True)) == [
         ("A", 1, 0),
         ("B", 5, 1),
         ("A", 7, 1),
     ]
-    assert visits[0].end_time == 3.0
+    assert visits[0].stop_time == 3.0
     assert not visits[0].exit_observed
     assert not visits[1].entry_observed
-    assert region_transitions(visits) == []
+    assert visits.analysis_settings["epochs"] == [[0.0, 3.0], [5.0, 9.0]]
 
 
 def test_fractional_epoch_limits_do_not_interpolate_dwell(region_env):
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        (visit,) = detect_region_visits(
-            np.array([0, 0, 0]),
-            np.array([0.0, 1.0, 2.0]),
+        (visit,) = _visits(
             region_env,
-            region_names=["A"],
+            [0, 0, 0],
+            [0.0, 1.0, 2.0],
+            regions=["A"],
             max_gap=None,
             epochs=(0.5, 1.5),
         )
@@ -248,32 +243,31 @@ def test_selected_region_overlap_rejected_even_when_unvisited(region_env):
     region_builder.add("overlap", polygon=box(0.4, 0, 1.4, 1))
     region_env = region_env.with_regions(region_builder)
     with pytest.raises(ValueError, match=r"overlap.*A.*active bin"):
-        detect_region_visits(
-            np.array([4]),
-            np.array([0.0]),
-            region_env,
-            region_names=["A", "overlap"],
-        )
+        _visits(region_env, [4], [0.0], regions=["A", "overlap"])
+
+
+def test_point_regions_refused(region_env):
+    region_builder = Regions(region_env.regions.values())
+    region_builder.add("well", point=(1.5, 0.5))
+    region_env = region_env.with_regions(region_builder)
+    with pytest.raises(ValueError, match=r"(?s)'well' is a point.*radius="):
+        _visits(region_env, [1, 1], [0.0, 1.0], regions=["A", "well"])
 
 
 def test_region_name_order_does_not_change_events(region_env):
-    bins, times = np.array([1, 0, 1, 3]), np.arange(4) / 10
-    assert detect_region_visits(
-        bins, times, region_env, region_names=["A", "B"]
-    ) == detect_region_visits(bins, times, region_env, region_names=["B", "A"])
+    bins, times = [1, 0, 1, 3], np.arange(4) / 10
+    assert list(_visits(region_env, bins, times, regions=["A", "B"])) == list(
+        _visits(region_env, bins, times, regions=["B", "A"])
+    )
 
 
 @pytest.mark.parametrize(
     ("bins", "times"), [([], []), ([1, 1], [0.0, 0.1]), ([-1], [0.0])]
 )
-def test_no_observed_region_returns_empty_list(region_env, bins, times):
-    assert (
-        detect_region_visits(
-            np.asarray(bins), np.asarray(times), region_env, region_names=["A"]
-        )
-        == []
-    )
-    assert region_transitions([]) == []
+def test_no_observed_region_returns_no_visits(region_env, bins, times):
+    visits = _visits(region_env, bins, times, regions=["A"])
+    assert len(visits) == 0
+    assert visits.record_type is RegionVisit
 
 
 @pytest.mark.parametrize(
@@ -289,68 +283,46 @@ def test_invalid_clock_rejected(region_env, times, problem):
     with pytest.raises(
         ValueError, match=rf"detect_region_visits\(\):\n- times.*{problem}"
     ):
+        _visits(region_env, [0, 0], times, regions=["A"])
+
+
+def test_times_and_positions_must_be_aligned(region_env):
+    with pytest.raises(ValueError, match="must have the same length"):
         detect_region_visits(
-            np.array([0, 0]), np.asarray(times), region_env, region_names=["A"]
+            region_env, np.arange(3.0), _at(region_env, [0, 0]), regions=["A"]
         )
-
-
-@pytest.mark.parametrize(
-    ("bins", "times"),
-    [
-        (np.array([0, 0, 1]), np.array([0.0, 0.1])),
-        (np.array([0, 0]), np.array([0.0, 0.1, 0.2])),
-        (np.array([[0, 0], [1, 1]]), np.array([0.0, 0.1])),
-        (np.array([0, 1]), np.array([[0.0, 0.1]])),
-    ],
-)
-def test_bins_and_times_must_be_aligned_1d(region_env, bins, times):
-    with pytest.raises(ValueError, match="1-D arrays of the same length"):
-        detect_region_visits(bins, times, region_env, region_names=["A"])
 
 
 @pytest.mark.parametrize("gap", [0, -1, np.nan, np.inf])
 def test_invalid_gap_rejected(region_env, gap):
     with pytest.raises(ValueError, match="max_gap"):
-        detect_region_visits(
-            np.array([], dtype=int),
-            np.array([]),
-            region_env,
-            region_names=["A"],
-            max_gap=gap,
-        )
+        _visits(region_env, [], [], regions=["A"], max_gap=gap)
 
 
-@pytest.mark.parametrize("names", [[], ["A", "A"]])
-def test_invalid_region_selection_rejected(region_env, names):
-    with pytest.raises(ValueError, match="region_names"):
-        detect_region_visits(
-            np.array([], dtype=int), np.array([]), region_env, region_names=names
-        )
+@pytest.mark.parametrize(
+    ("names", "match"), [([], "regions is empty"), (["A", "A"], "duplicate")]
+)
+def test_invalid_region_selection_rejected(region_env, names, match):
+    with pytest.raises(ValueError, match=match):
+        _visits(region_env, [], [], regions=names)
+
+
+def test_one_region_name_must_be_in_a_list(region_env):
+    with pytest.raises(TypeError, match="sequence of names"):
+        _visits(region_env, [0], [0.0], regions="A")
 
 
 def test_invalid_epochs_are_validated_even_for_empty_data(region_env):
     with pytest.raises(ValueError, match="epochs"):
-        detect_region_visits(
-            np.array([], dtype=int),
-            np.array([]),
-            region_env,
-            region_names=["A"],
-            epochs=(2, 1),
-        )
-
-
-def test_noninteger_bins_not_silently_truncated(region_env):
-    with pytest.raises(TypeError, match="integer bin indices"):
-        detect_region_visits(
-            np.array([0.1, 1.0]), np.array([0.0, 0.1]), region_env, region_names=["A"]
-        )
+        _visits(region_env, [], [], regions=["A"], epochs=(2, 1))
 
 
 def test_records_do_not_alias_inputs_and_are_immutable(region_env):
-    bins, times = np.array([1, 0, 1, 3]), np.arange(4) / 10
-    visits = detect_region_visits(bins, times, region_env, region_names=["A", "B"])
+    times = np.arange(4) / 10
+    positions = _at(region_env, [1, 0, 1, 3])
+    visits = detect_region_visits(region_env, times, positions, regions=["A", "B"])
     original = tuple(visits)
-    bins[:] = -1
+    positions[:] = np.nan
     times[:] = 99
     assert tuple(visits) == original
     assert isinstance(visits[0], RegionVisit)
@@ -358,51 +330,22 @@ def test_records_do_not_alias_inputs_and_are_immutable(region_env):
         visits[0].entry_observed = False
 
 
-def test_filtered_visits_do_not_invent_new_consecutive_pairs(region_env):
-    visits = detect_region_visits(
-        np.array([1, 0, 1, 3, 1, 5]),
-        np.arange(6) / 10,
-        region_env,
-        region_names=["A", "B", "C"],
-    )
-    assert len(region_transitions(visits)) == 2
-    assert region_transitions([visits[0], visits[2]]) == []
-    with pytest.raises(ValueError, match="chronological"):
-        region_transitions(visits[::-1])
-    with pytest.raises(ValueError, match="duplicates"):
-        region_transitions([visits[0], visits[0]])
-    with pytest.raises(ValueError, match="chronological"):
-        region_transitions([visits[0], replace(visits[1], start_time=-1)])
-
-
 def test_millisecond_times_warn_instead_of_splitting_every_visit(region_env):
     times = np.array([0.0, 0.2, 0.7, 1.2, 2.0, 2.5, 3.0, 4.0]) * 1000.0
-    bins = np.array([1, 0, 0, 1, 3, 3, 4, 5])
     with pytest.warns(UserWarning, match="probably not in seconds"):
-        detect_region_visits(bins, times, region_env, region_names=["A", "B", "C"])
+        _visits(region_env, [1, 0, 0, 1, 3, 3, 4, 5], times, regions=["A", "B", "C"])
 
 
 _VISIT = {
     "visit_id": 0,
     "run_id": 0,
-    "region_name": "A",
+    "region": "A",
     "start_index": 1,
     "stop_index": 3,
     "start_time": 0.1,
-    "end_time": 0.3,
+    "stop_time": 0.3,
     "entry_observed": True,
     "exit_observed": True,
-}
-_TRANSITION = {
-    "source_visit_id": 0,
-    "target_visit_id": 1,
-    "run_id": 0,
-    "source_region": "A",
-    "target_region": "B",
-    "start_index": 1,
-    "end_index": 4,
-    "start_time": 0.1,
-    "end_time": 0.4,
 }
 
 
@@ -410,34 +353,29 @@ def test_records_store_plain_python_scalars():
     visit = RegionVisit(
         visit_id=np.int64(0),
         run_id=np.intp(2),
-        region_name=np.str_("A"),
+        region=np.str_("A"),
         start_index=np.int32(1),
         stop_index=np.int64(3),
         start_time=np.float64(0.25),
-        end_time=np.float64(0.5),
+        stop_time=np.float64(0.5),
         entry_observed=np.bool_(True),
         exit_observed=np.bool_(False),
     )
     expected = {
         "visit_id": int,
         "run_id": int,
-        "region_name": str,
+        "region": str,
         "start_index": int,
         "stop_index": int,
         "start_time": float,
-        "end_time": float,
+        "stop_time": float,
         "entry_observed": bool,
         "exit_observed": bool,
         "duration": float,
     }
     assert {name: type(getattr(visit, name)) for name in expected} == expected
     assert visit.duration == 0.25
-    transition = RegionTransition(
-        **{**_TRANSITION, "end_index": np.int64(4), "end_time": np.float64(0.4)}
-    )
-    assert type(transition.end_index) is int
-    assert type(transition.end_time) is float
-    assert transition.duration == pytest.approx(0.3)
+    assert pd.DataFrame([visit])["region"].tolist() == ["A"]
 
 
 @pytest.mark.parametrize(
@@ -445,11 +383,11 @@ def test_records_store_plain_python_scalars():
     [
         ({"stop_index": 1}, ValueError, "start_index < stop_index"),
         ({"stop_index": 0}, ValueError, "start_index < stop_index"),
-        ({"end_time": 0.05}, ValueError, "start_time <= end_time"),
-        ({"end_time": np.nan}, ValueError, "start_time <= end_time"),
+        ({"stop_time": 0.05}, ValueError, "start_time <= stop_time"),
+        ({"stop_time": np.nan}, ValueError, "start_time <= stop_time"),
         ({"start_index": 1.5}, TypeError, "start_index"),
         ({"entry_observed": 1}, TypeError, "entry_observed"),
-        ({"region_name": 3}, TypeError, "region_name"),
+        ({"region": 3}, TypeError, "region"),
     ],
 )
 def test_visit_rejects_inconsistent_fields(changes, error, match):
@@ -458,19 +396,5 @@ def test_visit_rejects_inconsistent_fields(changes, error, match):
 
 
 def test_singleton_visit_is_valid():
-    visit = RegionVisit(**{**_VISIT, "stop_index": 2, "end_time": 0.1})
+    visit = RegionVisit(**{**_VISIT, "stop_index": 2, "stop_time": 0.1})
     assert visit.duration == 0.0
-
-
-@pytest.mark.parametrize(
-    ("changes", "match"),
-    [
-        ({"end_index": 1}, "start_index < end_index"),
-        ({"end_time": 0.1}, "start_time < end_time"),
-        ({"target_visit_id": 0}, "source_visit_id < target_visit_id"),
-        ({"target_region": "A"}, "different regions"),
-    ],
-)
-def test_transition_rejects_inconsistent_fields(changes, match):
-    with pytest.raises(ValueError, match=match):
-        RegionTransition(**{**_TRANSITION, **changes})

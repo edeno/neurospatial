@@ -131,7 +131,8 @@ def sample_bins(
     from neurospatial._validation import validate_times_positions
 
     t, p = validate_times_positions(times, positions, call=call)
-    p = p.reshape(len(p), -1)
+    if p.ndim == 1:  # a 1-D track: one coordinate per sample
+        p = p[:, np.newaxis]
     if p.shape[1] != env.n_dims:
         raise ValueError(
             _format_error(

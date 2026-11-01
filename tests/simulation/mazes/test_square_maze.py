@@ -164,13 +164,9 @@ class TestMakeSquareMaze:
             env, duration=600.0, speed_units="cm", seed=2026
         )
         visits = detect_region_visits(
-            env.bin_at(positions),
-            times,
-            env,
-            region_names=["NE", "NW", "SE", "SW"],
-            max_gap=None,
+            env, times, positions, regions=["NE", "NW", "SE", "SW"], max_gap=None
         )
-        total = sum(visit.duration for visit in visits)
+        total = visits.durations.sum()
         assert total == pytest.approx(times[-1] - times[0])
 
     def test_rest_box_has_no_landmarks(self):
