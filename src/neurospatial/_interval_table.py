@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 import numbers
 import warnings
-from collections.abc import Hashable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_type_hints, overload
@@ -70,7 +70,9 @@ def _checked_value(owner: str, name: str, value: Any) -> Any:
                 fix=f"pass None for a missing {name}.",
             )
         )
-    if not isinstance(value, Hashable):
+    try:
+        hash(value)  # a tuple holding a list is Hashable but cannot hash
+    except TypeError:
         raise TypeError(
             _format_error(
                 f"{owner} field {name!r} holds a {type(value).__name__}, which is "
@@ -80,7 +82,7 @@ def _checked_value(owner: str, name: str, value: Any) -> Any:
                 fix=f"store {name} as a hashable value, for example a tuple "
                 "instead of a list or array.",
             )
-        )
+        ) from None
     return value
 
 
@@ -605,7 +607,8 @@ class Intervals(Generic[R]):
         if isinstance(key, (numbers.Integral, np.integer)):
             return self._records[int(key)]
         if isinstance(key, slice):
-            return self._subset(np.arange(n)[key])
+            # Rows stay in time order whatever the step.
+            return self._subset(np.sort(np.arange(n)[key]))
         raw = np.asarray(key)
         if raw.size == 0:
             return self._subset(np.empty(0, dtype=np.intp))
@@ -823,15 +826,17 @@ class Intervals(Generic[R]):
             return _object_array(list(zip(*columns, strict=True)))
         index = getattr(values, "index", None)
         if index is not None and hasattr(values, "reindex"):
-            aligned = values.reindex(self._ids)
             unknown = np.setdiff1d(np.asarray(index), self._ids)
-            if unknown.size or aligned.index.size != len(self):
+            absent = np.setdiff1d(self._ids, np.asarray(index))
+            if unknown.size or absent.size:
                 msg = (
-                    f"{name} is a Series indexed by interval_id, but ids "
-                    f"{unknown[:5].tolist()} are not in these intervals."
+                    f"{name} is a Series indexed by interval_id, but it has ids "
+                    f"{unknown[:5].tolist()} that are not in these intervals and "
+                    f"lacks ids {absent[:5].tolist()} that are; give one value "
+                    "per interval_id."
                 )
                 raise ValueError(msg)
-            values = aligned.to_numpy()
+            values = values.reindex(self._ids).to_numpy()
         array = np.asarray(values)
         if array.dtype.kind in "OUS":
             array = _object_array(list(values))
@@ -1017,13 +1022,7 @@ class Intervals(Generic[R]):
         for name in df.columns:
             if name in used:
                 continue
-            series = df[name]
-            if series.dtype.kind in "biuf":
-                columns[str(name)] = series.to_numpy()
-            else:
-                columns[str(name)] = _object_array(
-                    [_missing_as_none(v) for v in series.tolist()]
-                )
+            columns[str(name)] = _table_column(df[name])
         return _from_columns(
             df[start_column].to_numpy(dtype=np.float64),
             df[stop_column].to_numpy(dtype=np.float64),
@@ -1057,6 +1056,27 @@ def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]
             f"wrap records with neurospatial.Intervals({name}).",
         )
     )
+
+
+def _table_column(series: pd.Series) -> NDArray[Any]:
+    """One table column as a field: numbers as numbers, anything else as objects.
+
+    NumPy numeric and Boolean columns keep their dtype (a float NaN stays
+    NaN). A nullable pandas column (``Int64``, ``boolean``) keeps its NumPy
+    dtype when complete; with a missing value it becomes objects with
+    ``None``, as do text columns of any dtype.
+    """
+    dtype = series.dtype
+    if isinstance(dtype, np.dtype) and dtype.kind in "biuf":
+        return np.asarray(series.to_numpy())
+    numpy_dtype = getattr(dtype, "numpy_dtype", None)
+    if (
+        numpy_dtype is not None
+        and numpy_dtype.kind in "biuf"
+        and not series.isna().any()
+    ):
+        return np.asarray(series.to_numpy(dtype=numpy_dtype))
+    return _object_array([_missing_as_none(v) for v in series.tolist()])
 
 
 def _missing_as_none(value: Any) -> Any:

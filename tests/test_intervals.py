@@ -296,3 +296,46 @@ def test_repr(trials: Intervals[Trial]) -> None:
     assert repr(trials[[]]) == (
         "Intervals[Trial]: 0 intervals; fields: start_region, end_region, outcome"
     )
+
+
+def test_negative_step_slice_keeps_time_order(trials: Intervals[Trial]) -> None:
+    reversed_rows = trials[::-1]
+    assert reversed_rows.interval_ids.tolist() == trials.interval_ids.tolist()
+    assert reversed_rows[0].start_time == 0.0
+    np.testing.assert_array_equal(
+        reversed_rows.sample_interval_ids(np.arange(0.0, 31.0)),
+        trials.sample_interval_ids(np.arange(0.0, 31.0)),
+    )
+
+
+def test_series_by_id_must_cover_every_interval(trials: Intervals[Trial]) -> None:
+    times = np.array([1.0, 11.0])
+    partial = pd.Series({3: "a", 5: "b", 7: "c"})  # no value for id 9
+    with pytest.raises(ValueError, match=r"lacks ids \[9\]"):
+        trials.sample_values(times, partial)
+    extra = pd.Series({3: "a", 5: "b", 7: "c", 9: "d", 4: "e"})
+    with pytest.raises(ValueError, match=r"ids \[4\] that are not"):
+        trials.sample_values(times, extra)
+
+
+def test_from_dataframe_nullable_columns() -> None:
+    log = pd.DataFrame(
+        {
+            "start_time": [0.0, 2.0, 4.0],
+            "stop_time": [1.0, 3.0, 5.0],
+            "rewarded": pd.array([True, None, False], dtype="boolean"),
+            "lick_count": pd.array([3, None, 1], dtype="Int64"),
+            "complete": pd.array([1, 2, 3], dtype="Int64"),
+            "goal": pd.array(["left", None, "right"], dtype="string"),
+        }
+    )
+    intervals = Intervals.from_dataframe(log)
+    assert intervals.rewarded.tolist() == [True, None, False]
+    assert intervals.lick_count.tolist() == [3, None, 1]
+    assert intervals.complete.dtype == np.int64
+    assert intervals.goal.tolist() == ["left", None, "right"]
+
+
+def test_unhashable_value_inside_a_tuple_is_refused() -> None:
+    with pytest.raises(TypeError, match="not hashable"):
+        Interval(0.0, 1.0, {"path": (1, [2, 3])})
