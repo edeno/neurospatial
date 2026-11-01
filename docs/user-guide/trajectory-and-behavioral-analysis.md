@@ -705,15 +705,18 @@ there are two visits to `A`, and the first trial is `"returned"`. The visit
 to `C` is seen in a single sample: it is kept as an observation with zero
 duration, not in `visits.windows`.
 
-A NaN position (lost tracking) or one outside the environment is not located.
-As in `env.occupancy`, an interval with either sample unlocated is not
-observed, so it breaks observation like a gap longer than `max_gap`, a
-declared break (`break_before`, see [Joined Recordings](#joined-recordings))
-or an epoch edge; none of them fabricates an exit or an entry. The same rule
-holds for crossings, laps and trials. To bridge short tracking dropouts
-instead, delete the missing rows: a deleted row is bridged when the samples on
-either side are no more than `max_gap` apart. Positions outside all selected
-regions are observed travel.
+`detect_region_visits` and `detect_trials` treat a NaN position (lost
+tracking, a low-confidence frame) as a missing sample, the same as a deleted
+row: as in `env.occupancy`, it is bridged when the samples on either side are
+no more than `max_gap` apart. `detect_region_crossings` and `detect_laps` do
+not: for them a NaN row breaks observation, so delete the rows of short
+dropouts before calling them. A position outside the environment is observed
+but not located, and it breaks observation in every detector. Any break in
+observation, such as a gap longer than `max_gap`, a declared break
+(`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch
+edge, never fabricates an exit or an entry: the visit around it is kept with
+`exit_observed` or `entry_observed` set to `False`. Positions outside all
+selected regions are observed travel.
 
 Epochs are half-open `[start, stop)` for events: entry exactly at `stop` is
 excluded. A fully observed sampling interval ending at that boundary can still
