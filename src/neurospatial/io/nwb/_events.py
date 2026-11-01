@@ -1012,7 +1012,7 @@ def write_trials(
     columns = {
         name: (
             _TRIAL_FIELD_DESCRIPTIONS.get(name, f"Field {name!r} of each trial"),
-            _field_column(getattr(trials, name), name),
+            _field_column(trials._field_array(name), name),
         )
         for name in trials.fields
     }
