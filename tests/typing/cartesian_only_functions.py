@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.behavior import (
         detect_laps,
-        distance_to_region,
+        distance_to_goal,
         graph_turn_sequence,
         path_progress,
         trajectory_similarity,
@@ -65,11 +65,11 @@ if TYPE_CHECKING:
         graph_turn_sequence(polar, bins)  # type: ignore[arg-type]
         detect_laps(bins, values, cartesian)
         detect_laps(bins, values, polar)  # type: ignore[arg-type]
-        # The behavior geodesic is a path through allocentric space.
-        path_progress(bins, cartesian, start_bins=bins, goal_bins=bins)
-        path_progress(bins, polar, start_bins=bins, goal_bins=bins)  # type: ignore[arg-type]
-        distance_to_region(bins, cartesian, target_bins=bins)
-        distance_to_region(bins, polar, target_bins=bins)  # type: ignore[arg-type]
+        # Both read positions as the animal's allocentric positions.
+        path_progress(cartesian, values, values, start="start", goal="goal")
+        path_progress(polar, values, values, start="start", goal="goal")  # type: ignore[arg-type]
+        distance_to_goal(cartesian, values, values, goal="goal")
+        distance_to_goal(polar, values, values, goal="goal")  # type: ignore[arg-type]
 
     def _graph_modes_accept_polar(
         polar: Environment[EgocentricPolarSystem],

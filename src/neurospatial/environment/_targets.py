@@ -185,7 +185,7 @@ def _validate_target_bins(
     coordinates : CartesianSystem or EgocentricPolarSystem
         The environment's coordinate descriptor, for the fix.
     operation : str
-        The call named in errors, e.g. ``"path_progress()"``.
+        The call named in errors, e.g. ``"cost_to_goal()"``.
     argument : str
         The parameter name, e.g. ``"goal_bins"``.
     allow_missing : bool, default=False
@@ -235,9 +235,9 @@ def _validate_sample_targets(
     coordinates : CartesianSystem or EgocentricPolarSystem
         The environment's coordinate descriptor, for the fix.
     operation : str
-        The call named in errors, e.g. ``"distance_to_region()"``.
+        The call named in errors, e.g. ``"cost_to_goal()"``.
     argument : str
-        The parameter name, e.g. ``"target_bins"``.
+        The parameter name, e.g. ``"goal_bins"``.
 
     Returns
     -------

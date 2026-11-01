@@ -121,6 +121,9 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     ("translate_3d", "tx"),
     ("translate_3d", "ty"),
     ("translate_3d", "tz"),
+    # The trials or other intervals that select samples and their targets.
+    ("path_progress", "intervals"),
+    ("distance_to_goal", "intervals"),
     # The control period of a reactivation comparison (rest before the task).
     ("compare_reactivation_methods", "control_epochs"),
     # Covariance of the fitted coefficients, for the Wald test.

@@ -345,3 +345,39 @@ def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
     with string_dtype:
         back = read_trials(empty_nwb)
     assert back.end_region.tolist() == [None]
+
+
+def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
+    """Route functions read fields, so NWB-reloaded trials behave identically."""
+    from neurospatial.behavior import distance_to_goal, path_progress
+    from neurospatial.io.nwb import read_trials, write_trials
+    from neurospatial.simulation.mazes import make_t_maze
+
+    track = make_t_maze().env_track
+    stem = np.column_stack([np.zeros(10), np.linspace(-40.0, 45.0, 10)])
+    positions = np.vstack([stem, stem, stem])
+    times = np.arange(30.0)
+    detected = Intervals(
+        [
+            Trial(0.0, 10.0, "start", "well_left", "reached"),
+            Trial(10.0, 20.0, "start", None, "timeout"),
+            Trial(20.0, 30.0, "start", "well_right", "reached"),
+        ]
+    )
+    write_trials(empty_nwb, detected)
+    reloaded = read_trials(empty_nwb)
+
+    def route(trials):
+        return (
+            path_progress(
+                track, times, positions, trials, start="start", goal=trials.end_region
+            ),
+            distance_to_goal(track, times, positions, trials, goal=trials.end_region),
+        )
+
+    progress, remaining = route(detected)
+    reloaded_progress, reloaded_remaining = route(reloaded)
+    np.testing.assert_array_equal(reloaded_progress, progress)
+    np.testing.assert_array_equal(reloaded_remaining, remaining)
+    assert np.isnan(progress[10:20]).all()  # the trial without a destination
+    assert np.isfinite(progress[:10]).all()
