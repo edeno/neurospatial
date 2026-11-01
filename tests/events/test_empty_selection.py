@@ -7,6 +7,7 @@ import pytest
 
 from neurospatial import Intervals
 from neurospatial.events import (
+    align_continuous_to_events,
     peri_event_distance_histogram,
     peri_event_histogram,
     population_peri_event_histogram,
@@ -76,4 +77,29 @@ def test_empty_selection_still_validates_the_recording():
             (-10.0, 10.0),
             bin_size=2.0,
             epochs=none,
+        )
+
+
+def test_continuous_alignment_empty_selection():
+    signal = np.sin(TIMES)
+    selected = align_continuous_to_events(
+        TIMES, signal, EVENTS, (-1.0, 1.0), dt=0.05, epochs=TRIALS
+    )
+    assert selected.n_events == 3
+
+    none = TRIALS[TRIALS.cue == "up"]
+    with pytest.warns(UserWarning, match="epochs selects no time") as record:
+        result = align_continuous_to_events(
+            TIMES, signal, EVENTS, (-1.0, 1.0), dt=0.05, epochs=none
+        )
+    assert len(record) == 1
+    assert result.n_events == 0
+    assert result.event_status.tolist() == ["outside_epochs"] * EVENTS.size
+    assert np.isnan(result.means).all()
+    assert result.values.shape[0] == 0
+
+    elsewhere = Intervals.from_arrays([40.0], [45.0])
+    with pytest.raises(ValueError, match="All 3 events were excluded"):
+        align_continuous_to_events(
+            TIMES, signal, EVENTS, (-1.0, 1.0), dt=0.05, epochs=elsewhere
         )
