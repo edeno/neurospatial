@@ -610,3 +610,38 @@ def test_out_of_range_fraction_is_of_analyzed_samples(runs):
             times[::3], times, values, bin_edges=EDGES, epochs=[(0.0, 10.0)]
         )
 
+
+def test_epochs_one_selected_trial_records_its_id(runs, trials):
+    """sel with a list keeps an Intervals, so its id is recorded."""
+    times, progress = runs
+    spikes = times[::3] + 0.01
+    one = trials.sel(interval_id=[3])
+    by_list = compute_tuning_curve(spikes, times, progress, bin_edges=EDGES, epochs=one)
+    record = trials.sel(interval_id=3)
+    by_record = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=record
+    )
+    assert by_list.analysis_settings["epoch_interval_ids"] == [3]
+    # A record carries no id, so none is recorded.
+    assert by_record.analysis_settings["epoch_interval_ids"] is None
+    np.testing.assert_array_equal(by_list.occupancy, by_record.occupancy)
+    assert by_list.occupancy.sum() == pytest.approx(2.0)
+
+
+def test_overlapping_epochs_count_shared_time_once(runs):
+    """Overlapping trials [0, 1.5) and [1, 2) analyze [0, 2) once."""
+    times, progress = runs
+    spikes = np.array([0.25, 1.25, 1.75, 2.5])
+    overlapping = Intervals.from_arrays([0.0, 1.0], [1.5, 2.0], interval_ids=[4, 9])
+    by_trials = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=overlapping
+    )
+    by_window = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=[(0.0, 2.0)]
+    )
+    # Twenty 0.1-s samples of one run, one per 0.05 of progress: two per bin.
+    np.testing.assert_allclose(by_trials.occupancy, np.full(10, 0.2), rtol=1e-12)
+    np.testing.assert_array_equal(by_trials.occupancy, by_window.occupancy)
+    np.testing.assert_array_equal(by_trials.spike_counts, by_window.spike_counts)
+    assert by_trials.spike_counts.sum() == 3.0
+    assert by_trials.analysis_settings["epoch_interval_ids"] == [4, 9]
