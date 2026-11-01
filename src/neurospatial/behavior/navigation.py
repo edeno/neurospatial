@@ -869,7 +869,7 @@ def path_progress(
     between bin centres). On a straight track from start to goal it is the
     fraction of the track covered: 0, 0.25, 0.5, 0.75, 1 at the start, a
     quarter, half and three quarters of the way, and the goal. This is the
-    harmonic, or committor, coordinate of start and goal [1]_. It works in
+    harmonic, or committor, coordinate of start and goal. It works in
     1-D, 2-D and 3-D, uses the environment's own connectivity and walls, and
     has no threshold to choose.
 
@@ -1003,11 +1003,6 @@ def path_progress(
     ``intervals`` for one start and goal, and plot
     ``progress[s.start : s.stop + 1]`` for each ``s`` in
     ``trials.sample_slices(times)``.
-
-    References
-    ----------
-    .. [1] E, W., & Vanden-Eijnden, E. (2006). Towards a theory of transition
-       paths. Journal of Statistical Physics, 123(3), 503-523.
 
     Examples
     --------
