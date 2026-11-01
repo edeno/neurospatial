@@ -154,8 +154,10 @@ filterwarnings = [
     # pynwb 4 defines the event types ndx-events also defines; it keeps its own.
     "ignore:ndx-events.extensions defines a different specification",
     # POT 0.9.7's ot/datasets.py has an invalid escape, reported when the
-    # module is first compiled (Python 3.14 words it '"\\d" is an invalid...').
+    # module is first compiled: a DeprecationWarning before Python 3.12, a
+    # SyntaxWarning after (3.14 words it '"\\d" is an invalid...').
     "ignore:.*invalid escape sequence:SyntaxWarning",
+    "ignore:.*invalid escape sequence:DeprecationWarning",
     # pytest-benchmark disables timing under xdist and says so at startup.
     "ignore:Benchmarks are automatically disabled because xdist plugin is active:pytest_benchmark.logger.PytestBenchmarkWarning",
 ]
