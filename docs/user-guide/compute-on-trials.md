@@ -187,7 +187,10 @@ print(tensor.shape, row_ids[:4])
 Progress from the start well to the goal well (0 to 1) puts every run on one
 axis whatever its speed. One tuning curve per trial, on shared bin edges,
 gives a trial × progress matrix for a stability plot. Select each trial by
-its id:
+its id, as a list: `east.sel(interval_id=[trial_id])` is a one-row
+`Intervals`, so each curve records which trial it came from in
+`analysis_settings["epoch_interval_ids"]` (a single id, without the list,
+gives the bare trial record, which carries no id):
 
 ```python
 progress = path_progress(track, times, positions, east, start="west", goal="east")
@@ -195,7 +198,7 @@ edges = np.linspace(0.0, 1.0, 11)
 per_trial = np.array([
     compute_tuning_curve(
         spike_times[0], times, progress, bin_edges=edges, variable="progress",
-        epochs=east.sel(interval_id=trial_id),
+        epochs=east.sel(interval_id=[trial_id]),
     ).firing_rate
     for trial_id in east.interval_ids
 ])  # (n_trials, n_bins), Hz; NaN where a trial spent no time
