@@ -193,7 +193,7 @@ def in_epochs(
     --------
     restrict : Slice times and aligned arrays to the epochs.
     neurospatial.events.filter_by_intervals : Keep the rows of an events
-        DataFrame that fall in an intervals DataFrame.
+        DataFrame that fall in Intervals.
 
     Notes
     -----
@@ -290,7 +290,7 @@ def restrict(
     in_epochs : The boolean mask this function slices by.
     restrict_spike_trains : Restrict ragged per-unit spike trains.
     neurospatial.events.filter_by_intervals : Keep the rows of an events
-        DataFrame that fall in an intervals DataFrame.
+        DataFrame that fall in Intervals.
 
     Examples
     --------

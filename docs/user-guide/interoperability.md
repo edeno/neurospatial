@@ -398,7 +398,10 @@ A pynapple object is defined only on its `time_support`: the recording epochs,
 with gaps between them for artifacts, sleep boxes or lost tracking.
 `from_pynapple` returns that support as `epochs`, a `(n_epochs, 2)` array of
 half-open `[start, stop)` rows in seconds, so you can pass it to the analysis and keep
-the gaps out of occupancy and rates:
+the gaps out of occupancy and rates. An `IntervalSet` itself, such as trials,
+comes back as `Intervals`: its metadata columns become fields and an
+`interval_id` column, which `to_pynapple` writes, becomes the ids, so trials
+keep their ids through pynapple and back.
 
 ```python
 from neurospatial.encoding import compute_spatial_rates
@@ -410,7 +413,7 @@ times, positions, epochs = from_pynapple(tsdframe)   # TsdFrame / Tsd
 # acquisition intervals; by default it runs from the first to the last spike.
 trains, unit_ids, recorded = from_pynapple(tsgroup)  # TsGroup
 spike_times, unit_epochs = from_pynapple(ts)         # one unit's Ts
-run_epochs = from_pynapple(intervalset)              # IntervalSet -> (n, 2)
+trials = from_pynapple(intervalset)                  # IntervalSet -> Intervals
 
 rates = compute_spatial_rates(
     env, trains, times, positions,
@@ -600,8 +603,9 @@ env.occupancy(tsdframe.t, tsdframe.values, epochs=tsdframe.time_support)
 
 **An `IntervalSet`** is accepted wherever neurospatial takes intervals:
 `epochs=`, `spike_window=`, `filter_by_intervals`, `intervals_to_events`
-(its metadata columns can be preserved), `mean_pairwise_bias`, and, as a
-one-row set, the `interval=` of the one-event replay functions. Each inclusive
+(its metadata columns are fields that `preserve_fields=` copies onto the
+events), the per-event replay functions such as `mean_pairwise_bias`, and, as
+a one-row set, the `interval=` of the one-event replay functions. Each inclusive
 `end` becomes the next float above it, so a point at `end` stays inside, as in
 pynapple. Pass the set itself rather than `iset.as_dataframe()`: that table's
 `end` column is inclusive, but read as a stop it would be treated as
@@ -773,9 +777,10 @@ with NWBHDF5IO("session.nwb", "r") as io:
     file = io.read()
     units = read_units(file)  # Or unit_ids=[7, 11] to select table labels.
     pos = read_position(file)
-    epoch_table = read_intervals(file, interval_name="epochs")
-    chosen = epoch_table["tags"].map(lambda tags: "run" in tags)
-    epochs = epoch_table.loc[chosen, ["start_time", "stop_time"]].to_numpy(dtype=float)
+    all_epochs = read_intervals(file, interval_name="epochs")
+
+# NWB tags are a tuple per epoch; keep the run epochs, selected by field.
+epochs = all_epochs[all_epochs.tags.map(lambda tags: "run" in tags)]
 
 # Eager arrays and interval metadata remain usable after the file closes.
 position_units = pos.units
