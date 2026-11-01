@@ -365,6 +365,10 @@ class TestMethodValidation:
             ("alternative", "up", "alternative"),
             ("alpha", 1.5, "alpha"),
             ("n_shuffles", 0, "n_shuffles"),
+            # Options are refused where they are written, not when the
+            # method first runs.
+            ("null_options", {"unit_identity": {"active_only": True}}, "not among"),
+            ("null_options", {"unit_identity": 3}, "mappings of options"),
         ],
     )
     def test_invalid_fields_are_refused(self, field, value, match):

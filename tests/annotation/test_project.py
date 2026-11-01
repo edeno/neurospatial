@@ -329,3 +329,8 @@ def test_display_preflight_allows_native_incomplete_and_complete_cardinalities()
             _validate_shapes_for_display(
                 [AnnotationShape(np.zeros((count, 2)), shape_type=shape_type)]
             )
+
+
+def test_video_path_of_another_type_is_refused():
+    with pytest.raises(TypeError, match="video_path must be a str, Path or None"):
+        AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), video_path=3)

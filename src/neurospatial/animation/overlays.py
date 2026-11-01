@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
@@ -4647,7 +4647,7 @@ def _check_spatial_dimensions(item: Any, env: Any, *, name: str) -> None:
 
 
 def _convert_overlays_to_data(
-    overlays: list[OverlayProtocol],
+    overlays: Sequence[object],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
@@ -4748,7 +4748,7 @@ def _convert_overlays_to_data(
         cleanup.callback(readers.close)
         for overlay in overlays:
             if not isinstance(overlay, OverlayProtocol):
-                msg = (  # type: ignore[unreachable]  # runtime check of user input; OverlayProtocol is a Protocol, which validate_instance cannot take
+                msg = (
                     f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
                     "Ensure your overlay has a 'convert_to_data()' method."
                 )

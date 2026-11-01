@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._validation import is_integer_at_least
+from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
@@ -838,11 +838,13 @@ class VideoCalibration:
                     "(frame.shape[1], frame.shape[0])",
                 )
             )
-        object.__setattr__(
-            self,
-            "frame_size_px",
-            (int(size[0]), int(size[1])),  # type: ignore[call-overload]
+        width, height = (
+            validate_integer_at_least(
+                n, 1, name="frame_size_px", owner="VideoCalibration"
+            )
+            for n in size
         )
+        object.__setattr__(self, "frame_size_px", (width, height))
         object.__setattr__(self, "transform_cm_to_px", transform.inverse())
 
     def __eq__(self, other: object) -> bool:

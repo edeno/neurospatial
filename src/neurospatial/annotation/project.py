@@ -257,9 +257,13 @@ class AnnotationProject:
         frame_index = validate_integer_at_least(
             frame_index, 0, name="frame_index", owner="AnnotationProject"
         )
-        if video_path is not None and not isinstance(video_path, (str, Path)):
-            msg = "video_path must be a string, Path, or None."  # type: ignore[unreachable]  # runtime check of user input (a str | Path union)
-            raise ValueError(msg)
+        given_path: object = video_path  # as the caller passed it
+        if given_path is not None and not isinstance(given_path, (str, Path)):
+            msg = (
+                "AnnotationProject: video_path must be a str, Path or None, got "
+                f"{type(given_path).__name__}."
+            )
+            raise TypeError(msg)
         if mode not in get_args(AnnotationMode):
             msg = f"Unknown annotation mode {mode!r}."
             raise ValueError(msg)
@@ -307,7 +311,7 @@ class AnnotationProject:
         for name, stored_value in (
             ("frame", frame),
             ("shapes", shapes_tuple),
-            ("video_path", None if video_path is None else str(video_path)),
+            ("video_path", None if given_path is None else str(given_path)),
             ("frame_index", int(frame_index)),
             ("mode", mode),
             ("bin_size", None if bin_size is None else float(bin_size)),

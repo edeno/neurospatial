@@ -689,15 +689,22 @@ class ReplayMethod:
         object.__setattr__(
             self, "nulls", (given,) if isinstance(given, str) else tuple(given)
         )
-        options = self.null_options
-        # Well-formed options are frozen here; replay_significance refuses the rest.
-        if isinstance(options, Mapping) and all(  # type: ignore[redundant-expr]  # options as given, before replay_significance validates them
-            isinstance(value, Mapping) for value in options.values()
-        ):
-            options = MappingProxyType(
-                {name: MappingProxyType(dict(value)) for name, value in options.items()}
-            )
-        object.__setattr__(self, "null_options", options)
+        from neurospatial.replay.significance import _checked_null_options
+
+        # Refused where they are written, as replay_significance would refuse them.
+        _checked_null_options(
+            self.null_options, self.nulls, owner=f"ReplayMethod {self.name!r}"
+        )
+        object.__setattr__(
+            self,
+            "null_options",
+            MappingProxyType(
+                {
+                    name: MappingProxyType(dict(value))
+                    for name, value in self.null_options.items()
+                }
+            ),
+        )
         object.__setattr__(self, "criteria", tuple(self.criteria))
         object.__setattr__(self, "notes", tuple(self.notes))
         self._check_score()

@@ -94,7 +94,11 @@ video export, and units outside the standard registry.
   `Environment.combine` components that are not a mapping, `null_options`
   that is not a mapping, non-Axes `axes` in `plot_peri_event_response`,
   `BodypartData` masks that are not a dict, `ReactivationWindows(allow_shorter=)`,
-  and record fields such as `AnnotationShape.metadata`.
+  `AnnotationProject(video_path=)`, and record fields such as
+  `AnnotationShape.metadata`.
+- `ReplayMethod` refuses `null_options` for a null it does not run, or that
+  is not a mapping of options, when it is created, as `replay_significance`
+  would refuse them; such a method used to fail only when it first ran.
 
 **Development**
 
@@ -102,8 +106,11 @@ video export, and units outside the standard registry.
   its type (`validate_choice`, `validate_integer_at_least`,
   `validate_bool`, `validate_instance`, `validate_mapping`,
   `validate_callable`, plus `is_integer` and `is_real_number`), so a type
-  checker accepts the runtime check; 85 of 92 `type: ignore` comments are
-  gone, the rest say why, and the messages of those checks follow one form.
+  checker accepts the runtime check; 89 of 92 `type: ignore` comments are
+  gone, and the messages of those checks follow one form. The three left
+  re-read state that can change while a generator is suspended or a read
+  is awaited, or mark a dataclass field that accepts a wider input than it
+  stores.
   A dead check (`shuffle_place_fields_circular_2d` testing a `grid_shape`
   that is never None) is gone.
 
