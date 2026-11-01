@@ -1772,7 +1772,7 @@ Trials written to an NWB file and read back are the same table, with the same
 fields and ids, so the analysis does not change. Save the file with
 `pynwb.NWBHDF5IO` as usual; here the file stays in memory.
 
-<!-- docs-test: run setup=workflows_route_curves -->
+<!-- nwb-docs-test: run -->
 ```python
 from datetime import datetime, timezone
 
