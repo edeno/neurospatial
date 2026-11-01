@@ -352,16 +352,12 @@ def test_single_vs_population_agree(runs):
     assert population.sel(unit_id="b").unit_id == "b"
 
 
-def test_variable_and_units_travel_with_the_result(runs):
-    """Exports and the plot name the variable and its units."""
-    import matplotlib as mpl
-
-    mpl.use("Agg")
-    import matplotlib.pyplot as plt
-
+@pytest.fixture
+def distance_curves(runs):
+    """Two units' curves against a variable with a name and units."""
     times, progress = runs
     distance = 100.0 * (1.0 - progress)
-    curves = compute_tuning_curves(
+    return compute_tuning_curves(
         [times[::3] + 0.01, times[::5] + 0.01],
         times,
         distance,
@@ -370,30 +366,36 @@ def test_variable_and_units_travel_with_the_result(runs):
         variable="distance to goal",
         units="cm",
     )
-    assert isinstance(curves, TuningCurvesResult)
 
-    frame = curves.to_dataframe()
+
+def test_variable_and_units_travel_with_the_result(distance_curves):
+    """Exports and the plot name the variable and its units."""
+    import matplotlib as mpl
+
+    mpl.use("Agg")
+    import matplotlib.pyplot as plt
+
+    assert isinstance(distance_curves, TuningCurvesResult)
+
+    frame = distance_curves.to_dataframe()
     assert len(frame) == 2 * 10
     np.testing.assert_allclose(frame["bin_center"][:10], np.arange(5, 100, 10))
     assert frame.attrs["units"]["bin_center"] == "cm"
     assert frame.attrs["variable"] == "distance to goal"
 
-    table = curves.summary_table()
+    table = distance_curves.summary_table()
     assert list(table.columns[:2]) == ["peak_firing_rate", "peak_location"]
     assert table.attrs["units"]["peak_location"] == "cm"
 
-    dataset = curves.to_xarray()
-    assert dataset["firing_rate"].dims == ("unit_id", "bin")
-    np.testing.assert_allclose(dataset["bin_center"], np.arange(5, 100, 10))
-    assert dataset.attrs["variable"] == "distance to goal"
-
-    ax = curves.plot(0)
+    ax = distance_curves.plot(0)
     assert ax.get_xlabel() == "distance to goal (cm)"
     assert ax.get_ylabel() == "Firing rate (Hz)"
     plt.close(ax.figure)
 
-    summary = curves[0].summary()
-    assert summary["peak_location"] == pytest.approx(curves[0].peak_location()[0])
+    summary = distance_curves[0].summary()
+    assert summary["peak_location"] == pytest.approx(
+        distance_curves[0].peak_location()[0]
+    )
 
 
 @pytest.mark.pynapple
@@ -446,3 +448,11 @@ def test_pynapple_values_use_their_time_support(runs):
     # series' support keeps it out.
     assert from_series.occupancy.sum() == pytest.approx(3.0)
     assert from_array.occupancy.sum() == pytest.approx(3.5)
+
+
+def test_to_xarray_names_the_variable(distance_curves):
+    pytest.importorskip("xarray")
+    dataset = distance_curves.to_xarray()
+    assert dataset["firing_rate"].dims == ("unit_id", "bin")
+    np.testing.assert_allclose(dataset["bin_center"], np.arange(5, 100, 10))
+    assert dataset.attrs["variable"] == "distance to goal"
