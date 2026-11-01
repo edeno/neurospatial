@@ -222,10 +222,12 @@ def events_to_intervals(
     Returns
     -------
     Intervals of Interval
-        One row per pair, ``[start, stop)``, sorted by start, ids ``0`` to
-        ``n - 1`` in that order. The other columns of ``start_events``
-        (including ``match_by``) become fields; ``durations`` gives
-        ``stop - start``.
+        One row per pair, ``[start, stop)``, sorted by time. The other
+        columns of ``start_events`` (including ``match_by``) become fields;
+        ``durations`` gives ``stop - start``. An ``interval_id`` column of
+        ``start_events`` (as :func:`intervals_to_events` writes) gives the
+        ids, so a round trip keeps them; otherwise the ids are ``0`` to
+        ``n - 1`` in time order.
 
     Raises
     ------
@@ -385,8 +387,9 @@ def events_to_intervals(
             result[col] = extra[col].to_numpy()
     if max_duration is not None:
         result = result[result["stop_time"] - result["start_time"] <= max_duration]
-    result = result.sort_values("start_time", kind="stable").reset_index(drop=True)
-    return Intervals.from_dataframe(result)
+    result = result.sort_values(["start_time", "stop_time"], kind="stable")
+    id_column = "interval_id" if "interval_id" in result.columns else None
+    return Intervals.from_dataframe(result.reset_index(drop=True), id_column=id_column)
 
 
 def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
