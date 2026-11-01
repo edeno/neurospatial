@@ -2025,8 +2025,8 @@ def detect_goal_directed_runs(
         are not a metric length.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
+        between consecutive samples (a dropped frame; a NaN row is not
+        bridged here, see Notes). Longer gaps are excluded as tracking losses;
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
@@ -2083,12 +2083,13 @@ def detect_goal_directed_runs(
     Notes
     -----
     A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart. A sample in a part of the
+    located (bin -1), so an interval with either sample unlocated is not
+    observed and splits the recording, like a gap longer than ``max_gap``,
+    an ``epochs`` edge or a ``break_before``; each resulting stretch is
+    analyzed on its own, so no approach spans a pause. A NaN row is not
+    bridged here (``env.occupancy`` does bridge it): to bridge missing
+    samples, delete their rows, and a deleted row is bridged when the
+    samples around it are no more than ``max_gap`` apart. A sample in a part of the
     environment that is not connected to the goal has no distance to it and
     splits the recording the same way: no approach includes it, and the
     approaches before and after it are scored on their own.
