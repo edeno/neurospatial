@@ -29,7 +29,8 @@ trial in one call.
   occupancy zero, with a warning that says the selection is empty, and
   `peri_event_histogram`, `population_peri_event_histogram` and
   `peri_event_distance_histogram` return NaN results with `n_events == 0`
-  and a warning instead of raising. Windows with duration that keep no
+  and a warning instead of raising; `align_continuous_to_events` marks every
+  event `"outside_epochs"` and returns NaN summaries with `n_events == 0`. Windows with duration that keep no
   event still raise (usually another clock), and a plain array without rows
   is still refused. `spike_words` reads `epochs=` the same way, and
   `bin_spikes_in_time` says the selection is empty instead of reporting a
@@ -51,7 +52,10 @@ trial in one call.
   `goal_pair_direction_labels`, needs strictly increasing `times` and
   refuses overlapping trials instead of letting the later one win.
   `compute_vte_session` results follow the row order of the trials (sorted
-  by time).
+  by time). Every trial consumer now reads a trial as `[start, stop)`:
+  `compute_vte_session` and `trials_to_region_arrays` no longer include the
+  stop (arrival) sample, and a VTE trial without duration has status
+  `"no_samples"` without a clock warning.
 - `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` become
   the table `id` and every field a column, with `None` stored as `""`.
   `read_trials` returns an `Intervals` with those ids and fields, reading

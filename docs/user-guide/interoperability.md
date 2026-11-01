@@ -1038,8 +1038,8 @@ condition by field and pass it as `epochs=`, exactly as with trials from
 behavioral records as NWB tables. A session with zero records writes no table:
 NWB best practice is not to write empty tables (nwbinspector reports them, and
 some of its checks crash on them, so `dandi validate` exits with an error). The
-writer warns instead, and reading that table back raises `KeyError`,
-so treat a missing table as zero trials, laps, crossings or events. Laps found
+writer writes nothing, without a warning, and reading that table back raises
+`KeyError`, so treat a missing table as zero trials, laps, crossings or events. Laps found
 without a template lap (`detect_laps(..., method="region")`) have no overlap
 score, so their table has no `overlap_score` column.
 
