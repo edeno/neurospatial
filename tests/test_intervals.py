@@ -307,8 +307,9 @@ def test_boolean_series_selection_aligns_by_id() -> None:
     )
     # Rows are in time order (ids 9, 2, 5); a mask built in another order
     # selects by id.
-    mask = pd.Series([True, False, True], index=[5, 2, 9])
-    assert log[mask].interval_ids.tolist() == [9, 5]
+    # By id this keeps id 5; by position it would keep the first row (id 9).
+    mask = pd.Series([True, False, False], index=[5, 2, 9])
+    assert log[mask].interval_ids.tolist() == [5]
     assert log[log.goal == "a"].interval_ids.tolist() == [2, 5]
     # A plain Boolean array still selects by position.
     assert log[np.array([True, False, False])].interval_ids.tolist() == [9]
@@ -335,6 +336,26 @@ def test_with_fields_adds_and_replaces() -> None:
         trials.with_fields(label=["", "a"])
     with pytest.raises(ValueError, match="one entry per interval"):
         trials.with_fields(label=["a"])
+
+
+def test_series_selection_must_be_boolean_with_unique_ids() -> None:
+    log = Intervals.from_arrays([0.0, 10.0], [8.0, 17.0], n=[1, 2])
+    with pytest.raises(TypeError, match="Boolean mask"):
+        log[log.n - 1]
+    with pytest.raises(ValueError, match=r"ids \[0\] repeat"):
+        log[pd.Series([True, False, True], index=[0, 0, 1])]
+
+
+def test_with_fields_reads_missing_labels_as_none() -> None:
+    trials = Intervals.from_arrays([0.0, 10.0], [8.0, 17.0], interval_ids=[3, 4])
+    labelled = trials.with_fields(
+        goal=pd.Series(["a", np.nan], index=[3, 4]),
+        cue=pd.Series(["x", pd.NA], index=[3, 4], dtype="string"),
+    )
+    assert labelled.goal.tolist() == ["a", None]
+    assert labelled.cue.tolist() == ["x", None]
+    with pytest.raises(TypeError, match="one value per interval"):
+        trials.with_fields(goal="a")
 
 
 def test_with_fields_keeps_analysis_settings() -> None:
