@@ -59,7 +59,7 @@ running_direction_labels
 Classes
 -------
 Trial
-    One trial: start_time, end_time, start_region, end_region (None unless
+    One trial: start_time, stop_time, start_region, end_region (None unless
     reached) and outcome ('reached', 'timeout', 'returned' or 'censored')
 Crossing
     One region entry or exit
@@ -275,14 +275,16 @@ unknown.
 _OUTCOMES: tuple[str, ...] = ("reached", "timeout", "returned", "censored")
 
 
-def _checked_interval(record: str, start: object, end: object) -> tuple[float, float]:
+def _checked_interval(
+    record: str, start: object, end: object, *, end_name: str = "end_time"
+) -> tuple[float, float]:
     """Return ``(start, end)`` as finite Python floats with ``start <= end``."""
     start_f, end_f = float(start), float(end)  # type: ignore[arg-type]
     if not (np.isfinite(start_f) and np.isfinite(end_f)) or start_f > end_f:
         raise ValueError(
             _format_error(
-                f"{record} needs finite start_time <= end_time; got "
-                f"start_time={start_f!r}, end_time={end_f!r}.",
+                f"{record} needs finite start_time <= {end_name}; got "
+                f"start_time={start_f!r}, {end_name}={end_f!r}.",
                 why="an event interval runs forward in time on one clock.",
                 fix="pass the interval's start and end times in seconds, start first.",
             )
@@ -445,8 +447,10 @@ class Trial:
     start_time : float
         Time when trial started: the last sample in the start region before
         the animal left it (seconds).
-    end_time : float
-        Time when the trial ended (seconds); see ``outcome``.
+    stop_time : float
+        Time when the trial ended (seconds); see ``outcome``. The trial is
+        the half-open window ``[start_time, stop_time)``, so the sample at
+        ``stop_time`` (for example the arrival) is outside it.
     start_region : str
         Name of the region where trial started.
     end_region : str or None
@@ -455,14 +459,14 @@ class Trial:
         How the trial ended:
 
         - ``'reached'``: entered an end region within ``max_duration``;
-          ``end_time`` is the first sample inside it.
-        - ``'timeout'``: ``max_duration`` elapsed first; ``end_time`` is the
+          ``stop_time`` is the first sample inside it.
+        - ``'timeout'``: ``max_duration`` elapsed first; ``stop_time`` is the
           last sample at or before ``start_time + max_duration``.
         - ``'returned'``: re-entered the start region first (an aborted
-          trial); ``end_time`` is the first sample back inside it.
+          trial); ``stop_time`` is the first sample back inside it.
         - ``'censored'``: observation stopped first (a tracking gap longer
           than ``max_gap``, an ``epochs`` edge, a ``break_before`` or the end
-          of the recording); ``end_time`` is the last observed sample, and
+          of the recording); ``stop_time`` is the last observed sample, and
           the trial's result is unknown. Leave censored trials out of
           success rates rather than counting them as errors.
     success : bool
@@ -470,16 +474,18 @@ class Trial:
     """
 
     start_time: float
-    end_time: float
+    stop_time: float
     start_region: str
     end_region: str | None
     outcome: Outcome
 
     def __post_init__(self) -> None:
         """Check the record and store plain Python floats."""
-        start, end = _checked_interval("Trial", self.start_time, self.end_time)
+        start, stop = _checked_interval(
+            "Trial", self.start_time, self.stop_time, end_name="stop_time"
+        )
         object.__setattr__(self, "start_time", start)
-        object.__setattr__(self, "end_time", end)
+        object.__setattr__(self, "stop_time", stop)
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
@@ -2788,7 +2794,7 @@ def _segment_trials_contiguous(
     return [
         Trial(
             start_time=float(times[first]),
-            end_time=float(times[last]),
+            stop_time=float(times[last]),
             start_region=start_region,
             end_region=None if end_region is None else names[end_region],
             outcome=outcome,

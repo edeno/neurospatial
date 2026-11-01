@@ -37,14 +37,14 @@ def basic_trials() -> list[Trial]:
     return [
         Trial(
             start_time=10.0,
-            end_time=20.0,
+            stop_time=20.0,
             start_region="home",
             end_region="goal_left",
             outcome="reached",
         ),
         Trial(
             start_time=30.0,
-            end_time=45.0,
+            stop_time=45.0,
             start_region="home",
             end_region="goal_right",
             outcome="reached",
@@ -63,7 +63,7 @@ def failed_trial() -> Trial:
     """A trial that timed out (no end region reached)."""
     return Trial(
         start_time=50.0,
-        end_time=65.0,
+        stop_time=65.0,
         start_region="home",
         end_region=None,  # Failed trial - did not reach end
         outcome="timeout",
@@ -76,14 +76,14 @@ def overlapping_trials() -> list[Trial]:
     return [
         Trial(
             start_time=10.0,
-            end_time=30.0,
+            stop_time=30.0,
             start_region="home",
             end_region="goal_left",
             outcome="reached",
         ),
         Trial(
             start_time=20.0,  # Overlaps with first trial
-            end_time=40.0,
+            stop_time=40.0,
             start_region="center",
             end_region="goal_right",
             outcome="reached",
@@ -193,7 +193,7 @@ class TestGoalPairDirectionLabels:
         trials = [
             Trial(
                 start_time=10.0,
-                end_time=20.0,
+                stop_time=20.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -213,7 +213,7 @@ class TestGoalPairDirectionLabels:
         trials = [
             Trial(
                 start_time=10.0,
-                end_time=20.0,
+                stop_time=20.0,
                 start_region="A",
                 end_region="B",
                 outcome="reached",
@@ -236,7 +236,7 @@ class TestGoalPairDirectionLabels:
         trials = [
             Trial(
                 start_time=10.0,
-                end_time=20.0,
+                stop_time=20.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -259,14 +259,14 @@ class TestGoalPairDirectionLabels:
         trials = [
             Trial(
                 start_time=10.0,
-                end_time=20.0,
+                stop_time=20.0,
                 start_region="center",
                 end_region="arm1",
                 outcome="reached",
             ),
             Trial(
                 start_time=30.0,
-                end_time=40.0,
+                stop_time=40.0,
                 start_region="center",
                 end_region="arm2",
                 outcome="reached",

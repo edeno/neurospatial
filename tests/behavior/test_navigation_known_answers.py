@@ -486,7 +486,7 @@ class TestTrialHelpersOnAnotherClock:
         return [
             Trial(
                 start_time=1.0 * scale,
-                end_time=4.0 * scale,
+                stop_time=4.0 * scale,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",

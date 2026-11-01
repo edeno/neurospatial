@@ -414,6 +414,7 @@ class _Column:
 
 
 _INTERVAL_TIMES = {"start_times": "start_time", "stop_times": "end_time"}
+_TRIAL_TIMES = {"start_times": "start_time", "stop_times": "stop_time"}
 _LAP_COLUMNS = (
     _Column(
         "direction",
@@ -1034,7 +1035,7 @@ def write_trials(
             "end_regions": end_regions,
             "outcomes": outcomes,
         },
-        times=_INTERVAL_TIMES,
+        times=_TRIAL_TIMES,
         columns=_TRIAL_COLUMNS,
         needs="write_trials needs either 'trials' (from segment_trials) or "
         "both 'start_times' and 'stop_times'.",

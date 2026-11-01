@@ -87,7 +87,7 @@ class TestVTEDecisionAnalysisIntegration:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=4.0,
+                stop_time=4.0,
                 start_region="start",
                 end_region="end",
                 outcome="reached",
@@ -182,7 +182,7 @@ class TestVTERoundTrip:
         trials = [
             Trial(
                 start_time=i * 3.0,
-                end_time=i * 3.0 + 2.5,
+                stop_time=i * 3.0 + 2.5,
                 start_region="start",
                 end_region="end",
                 outcome="reached",

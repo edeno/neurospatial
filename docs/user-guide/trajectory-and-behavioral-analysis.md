@@ -883,15 +883,15 @@ joined = segment_trials(position_bins, times, env, **trial_options)
 split = segment_trials(
     position_bins, times, env, break_before=new_recording, **trial_options
 )
-print(f"without break_before: {joined[0].outcome}, ends at {joined[0].end_time:.2f} s")
-print(f"with break_before:    {split[0].outcome}, ends at {split[0].end_time:.2f} s")
+print(f"without break_before: {joined[0].outcome}, ends at {joined[0].stop_time:.2f} s")
+print(f"with break_before:    {split[0].outcome}, ends at {split[0].stop_time:.2f} s")
 
 (visit,) = detect_region_visits(
     position_bins, times, env, region_names=["reward"], break_before=new_recording
 )
 print(f"reward visit entry observed: {visit.entry_observed}")
 assert joined[0].outcome == "reached" and split[0].outcome == "censored"
-assert split[0].end_time == times[89]
+assert split[0].stop_time == times[89]
 assert not visit.entry_observed
 ```
 
@@ -1102,7 +1102,7 @@ print(f"Censored (result unknown): {sum(t.outcome == 'censored' for t in trials)
 
 **Returns**: List of `Trial` objects
 - `start_time`: Departure from the start region (the last sample inside it)
-- `end_time`: When the trial ended (see `outcome`)
+- `stop_time`: When the trial ended (see `outcome`)
 - `end_region`: Name of the end region reached (None unless `outcome == "reached"`)
 - `outcome`: `"reached"`, `"timeout"`, `"returned"` (went back to the start
   region first) or `"censored"` (observation stopped first: a tracking gap
@@ -1468,8 +1468,8 @@ right_trials = [t for t in trials if t.end_region == "right"]
 # Step 3: Analyze path similarity within choice type
 left_similarities = []
 for i in range(len(left_trials)-1):
-    mask1 = (times >= left_trials[i].start_time) & (times <= left_trials[i].end_time)
-    mask2 = (times >= left_trials[i+1].start_time) & (times <= left_trials[i+1].end_time)
+    mask1 = (times >= left_trials[i].start_time) & (times <= left_trials[i].stop_time)
+    mask2 = (times >= left_trials[i+1].start_time) & (times <= left_trials[i+1].stop_time)
 
     sim = trajectory_similarity(
         position_bins[mask1],
@@ -1484,7 +1484,7 @@ print(f"Left choice stereotypy: {np.mean(left_similarities):.3f}")
 # Step 4: Detect goal-directed behavior
 for trial in trials[:5]:  # First 5 trials
     if trial.end_region:
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
+        mask = (times >= trial.start_time) & (times <= trial.stop_time)
         trial_bins = position_bins[mask]
         trial_times = times[mask]
 

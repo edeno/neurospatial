@@ -29,14 +29,14 @@ class TestWriteTrialsFromTrialObjects:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=5.0,
+                stop_time=5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
             ),
             Trial(
                 start_time=10.0,
-                end_time=15.0,
+                stop_time=15.0,
                 start_region="home",
                 end_region=None,
                 outcome="timeout",
@@ -58,7 +58,7 @@ class TestWriteTrialsFromTrialObjects:
         trials = [
             Trial(
                 start_time=1.5,
-                end_time=6.2,
+                stop_time=6.2,
                 start_region="start_zone",
                 end_region="reward_left",
                 outcome="reached",
@@ -89,7 +89,7 @@ class TestWriteTrialsFromTrialObjects:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=15.0,
+                stop_time=15.0,
                 start_region="home",
                 end_region=None,  # Timeout trial
                 outcome="timeout",
@@ -133,7 +133,7 @@ class TestWriteTrialsFromTrialObjects:
                 "trials must be a list of Trial objects; got ndarray",
             ),
             (
-                [{"start_time": 0.0, "end_time": 5.0}],
+                [{"start_time": 0.0, "stop_time": 5.0}],
                 r"trials\[0\] is a dict, not a Trial",
             ),
         ],
@@ -251,7 +251,7 @@ class TestWriteTrialsValidation:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=5.0,
+                stop_time=5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -385,7 +385,7 @@ class TestWriteTrialsOverwrite:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=5.0,
+                stop_time=5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -406,7 +406,7 @@ class TestWriteTrialsOverwrite:
         return [
             Trial(
                 start_time=start + 10.0 * i,
-                end_time=start + 10.0 * i + 5.0,
+                stop_time=start + 10.0 * i + 5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -540,14 +540,14 @@ class TestReadTrials:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=5.0,
+                stop_time=5.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
             ),
             Trial(
                 start_time=10.0,
-                end_time=15.0,
+                stop_time=15.0,
                 start_region="home",
                 end_region="goal",
                 outcome="reached",
@@ -580,14 +580,14 @@ class TestReadTrials:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=5.0,
+                stop_time=5.0,
                 start_region="home",
                 end_region="goal_left",
                 outcome="reached",
             ),
             Trial(
                 start_time=10.0,
-                end_time=20.0,
+                stop_time=20.0,
                 start_region="home",
                 end_region=None,
                 outcome="timeout",
@@ -616,21 +616,21 @@ class TestReadTrials:
         trials = [
             Trial(
                 start_time=1.5,
-                end_time=6.2,
+                stop_time=6.2,
                 start_region="start_zone",
                 end_region="reward_right",
                 outcome="reached",
             ),
             Trial(
                 start_time=10.0,
-                end_time=18.5,
+                stop_time=18.5,
                 start_region="start_zone",
                 end_region="reward_left",
                 outcome="reached",
             ),
             Trial(
                 start_time=25.0,
-                end_time=40.0,
+                stop_time=40.0,
                 start_region="start_zone",
                 end_region=None,
                 outcome="censored",

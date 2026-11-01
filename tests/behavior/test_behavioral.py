@@ -74,7 +74,7 @@ def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
     # Create single trial from t=0 to t=10
     trial = Trial(
         start_time=0.0,
-        end_time=10.0,
+        stop_time=10.0,
         start_region="start",
         end_region="goal1",
         outcome="reached",
@@ -162,7 +162,7 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
     # Create failed trial (end_region=None, success=False)
     trial = Trial(
         start_time=0.0,
-        end_time=10.0,
+        stop_time=10.0,
         start_region="start",
         end_region=None,  # Failed trial - no end region
         outcome="timeout",
@@ -198,7 +198,7 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
     # Create trial with polygon regions
     trial = Trial(
         start_time=0.0,
-        end_time=10.0,
+        stop_time=10.0,
         start_region="start_zone",
         end_region="goal_zone",
         outcome="reached",
@@ -763,14 +763,14 @@ def test_time_to_goal_successful_trials():
     trials = [
         Trial(
             start_time=1.0,
-            end_time=4.0,
+            stop_time=4.0,
             start_region="start",
             end_region="goal",
             outcome="reached",
         ),
         Trial(
             start_time=6.0,
-            end_time=9.0,
+            stop_time=9.0,
             start_region="start",
             end_region="goal",
             outcome="reached",
@@ -813,7 +813,7 @@ def test_time_to_goal_failed_trials():
     trials = [
         Trial(
             start_time=1.0,
-            end_time=4.0,
+            stop_time=4.0,
             start_region="start",
             end_region=None,  # Failed trial
             outcome="timeout",
@@ -840,7 +840,7 @@ def test_time_to_goal_outside_trials():
     trials = [
         Trial(
             start_time=2.0,
-            end_time=4.0,
+            stop_time=4.0,
             start_region="start",
             end_region="goal",
             outcome="reached",
@@ -872,7 +872,7 @@ def test_time_to_goal_countdown():
     trials = [
         Trial(
             start_time=2.0,
-            end_time=7.0,
+            stop_time=7.0,
             start_region="start",
             end_region="goal",
             outcome="reached",
@@ -905,7 +905,7 @@ def test_time_to_goal_after_goal_reached():
     trials = [
         Trial(
             start_time=1.0,
-            end_time=3.0,
+            stop_time=3.0,
             start_region="start",
             end_region="goal",
             outcome="reached",

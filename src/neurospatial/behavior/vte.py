@@ -1553,10 +1553,10 @@ def _measure_trial(
     """Unscored metrics of one trial, or the status saying why it has none."""
     from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
 
-    span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.end_time:.3f}] s"
-    # The trial's samples, start_time <= t <= end_time, are contiguous.
+    span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.stop_time:.3f}] s"
+    # The trial's samples, start_time <= t <= stop_time, are contiguous.
     first = int(np.searchsorted(times, trial.start_time, side="left"))
-    stop = int(np.searchsorted(times, trial.end_time, side="right"))
+    stop = int(np.searchsorted(times, trial.stop_time, side="right"))
     if stop <= first:
         warnings.warn(
             f"{span} has no samples between its start and end times, so its VTE "

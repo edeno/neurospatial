@@ -48,7 +48,7 @@ _DECODE_QUANTITIES = get_args(_DecodeQuantity)
 
 # Record fields that become IntervalSet bounds, or that hold an array per
 # record and so cannot be an IntervalSet metadata column.
-_NOT_METADATA = frozenset({"start_time", "end_time", "bins"})
+_NOT_METADATA = frozenset({"start_time", "stop_time", "end_time", "bins"})
 
 
 def _require_pynapple() -> Any:
@@ -597,7 +597,8 @@ def _records_to_pynapple(
     ]
     metadata = {name: np.array([getattr(r, name) for r in data]) for name in names}
     starts = np.array([r.start_time for r in data], dtype=np.float64)
-    stops = np.array([r.end_time for r in data], dtype=np.float64)
+    stop_field = "stop_time" if first is Trial else "end_time"
+    stops = np.array([getattr(r, stop_field) for r in data], dtype=np.float64)
     return _intervals_to_pynapple(starts, stops, metadata, first.__name__)
 
 

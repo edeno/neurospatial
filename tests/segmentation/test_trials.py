@@ -90,7 +90,7 @@ class TestSegmentTrials:
         assert [trial.end_region for trial in trials] == ["left", "right", "left"]
         assert [trial.outcome for trial in trials] == ["reached"] * 3
         for trial in trials:
-            assert trial.end_time > trial.start_time
+            assert trial.stop_time > trial.start_time
             assert trial.start_region == "start"
 
     def test_segment_trials_duration_filter_min(self):
@@ -172,7 +172,7 @@ class TestSegmentTrials:
         assert trials[0].outcome == "timeout"
         assert trials[0].end_region is None
         assert trials[0].start_region == "start"
-        assert trials[0].end_time - trials[0].start_time == 20.0
+        assert trials[0].stop_time - trials[0].start_time == 20.0
 
     def test_segment_trials_successful_completion(self):
         """Test successful trial completion within duration bounds."""
@@ -212,7 +212,7 @@ class TestSegmentTrials:
         assert trials[0].success, "Trial should be successful"
         assert trials[0].end_region == "goal"
         assert trials[0].start_region == "start", "start_region should be 'start'"
-        assert 5.0 <= (trials[0].end_time - trials[0].start_time) <= 50.0
+        assert 5.0 <= (trials[0].stop_time - trials[0].start_time) <= 50.0
 
     def test_segment_trials_empty_trajectory(self):
         """Test handling of empty trajectory."""
@@ -277,7 +277,7 @@ class TestSegmentTrials:
 
         assert len(trials) == 1
         assert trials[0].outcome == "timeout"
-        assert trials[0].end_time - trials[0].start_time == 20.0
+        assert trials[0].stop_time - trials[0].start_time == 20.0
 
     def test_segment_trials_parameter_validation(self):
         """Test parameter validation."""
@@ -444,7 +444,7 @@ class TestSegmentTrials:
         assert aborted.end_region is None
         assert aborted.start_region == "start"
         # Aborted trial ended at the re-entry sample, well under max_duration.
-        assert (aborted.end_time - aborted.start_time) < 50.0
+        assert (aborted.stop_time - aborted.start_time) < 50.0
         # Trial 2 is the successful one.
         assert trials[1].outcome == "reached"
         assert trials[1].success is True
@@ -629,7 +629,7 @@ class TestSegmentTrials:
         assert trials[0].success is False
         assert trials[0].end_region is None
         assert trials[0].start_region == "start"
-        assert trials[0].end_time == times[-1]
+        assert trials[0].stop_time == times[-1]
 
     def test_segment_trials_in_progress_at_end_respects_min_duration(self):
         """In-progress trial shorter than min_duration at end is dropped."""
@@ -669,7 +669,7 @@ class TestSegmentTrials:
 
         # The trial runs from the last sample in the start region (9 s) to
         # the end of the recording (12 s) and is censored there.
-        assert [(t.start_time, t.end_time, t.outcome) for t in long_enough] == [
+        assert [(t.start_time, t.stop_time, t.outcome) for t in long_enough] == [
             (9.0, 12.0, "censored")
         ]
         assert too_short == []
@@ -727,7 +727,7 @@ class TestSegmentTrials:
         # where the next trial starts after a single sample inside.
         assert [t.outcome for t in trials] == ["returned", "reached"]
         assert trials[1].end_region == "goal"
-        assert trials[0].end_time <= trials[1].start_time
+        assert trials[0].stop_time <= trials[1].start_time
 
 
 class TestTrialRecord:
@@ -747,13 +747,13 @@ class TestTrialRecord:
 
         trial = Trial(np.float32(0.5), np.int64(2), "start", None, "timeout")
         assert type(trial.start_time) is float
-        assert type(trial.end_time) is float
+        assert type(trial.stop_time) is float
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),
         [
-            ({"start_time": 2.0, "end_time": 1.0}, "start_time <= end_time"),
-            ({"end_time": np.nan}, "start_time <= end_time"),
+            ({"start_time": 2.0, "stop_time": 1.0}, "start_time <= stop_time"),
+            ({"stop_time": np.nan}, "start_time <= stop_time"),
             ({"outcome": "success"}, "outcome must be one of"),
             ({"outcome": "timeout"}, "does not match"),
             ({"end_region": None}, "does not match"),
@@ -764,7 +764,7 @@ class TestTrialRecord:
 
         fields = {
             "start_time": 0.0,
-            "end_time": 1.0,
+            "stop_time": 1.0,
             "start_region": "start",
             "end_region": "left",
             "outcome": "reached",
@@ -801,7 +801,7 @@ class TestTrialEnds:
             max_gap=None,
             **options,
         )
-        return [(t.start_time, t.end_time, t.end_region, t.outcome) for t in trials]
+        return [(t.start_time, t.stop_time, t.end_region, t.outcome) for t in trials]
 
     def test_goal_entry_after_the_deadline_is_a_timeout(self):
         """Arrival 10.5 s after departure with max_duration=10 is a timeout.

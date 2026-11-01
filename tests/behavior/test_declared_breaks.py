@@ -254,7 +254,7 @@ def test_trial_spanning_break_ends_failed_at_recording_end(pause):
     )
     assert not split.success
     assert split.end_region is None
-    assert split.end_time == r.times[BREAK - 1]
+    assert split.stop_time == r.times[BREAK - 1]
 
 
 def test_visit_after_break_is_left_censored(pause):

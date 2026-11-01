@@ -245,13 +245,14 @@ def test_records_keep_every_field_as_metadata(records, expected):
 
     iset = to_pynapple(records)
 
-    windows = [[r.start_time, r.end_time] for r in records]
+    windows = [[r.start_time, getattr(r, "stop_time", None) or r.end_time] for r in records]
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     for name, column in expected.items():
         assert list(iset.metadata[name]) == column, name
     # Every scalar field is exported, so nothing about a record is lost.
     fields = {f.name for f in dataclasses.fields(records[0]) if f.init} - {
         "start_time",
+        "stop_time",
         "end_time",
         "bins",
     }

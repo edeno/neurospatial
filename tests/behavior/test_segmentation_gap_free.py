@@ -68,6 +68,13 @@ def gap_free_goldens():
         "goal_labels"
     ]
     labels["array"] = str(np.dtype(np.int_))
+    # Trial renamed end_time to stop_time; the values are unchanged.
+    for trial in goldens["segment_trials"]:
+        fields = trial["fields"]
+        trial["fields"] = {
+            ("stop_time" if key == "end_time" else key): value
+            for key, value in fields.items()
+        }
     running = goldens["running_direction_labels"]
     running["values"] = [
         None if label == "other" else label for label in running["values"]

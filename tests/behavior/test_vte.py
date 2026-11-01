@@ -870,14 +870,14 @@ class TestComputeVTESession:
         trials = [
             Trial(
                 start_time=t1_times[0],
-                end_time=t1_times[-1],
+                stop_time=t1_times[-1],
                 start_region="start",
                 end_region="center",
                 outcome="reached",
             ),
             Trial(
                 start_time=t2_times[0],
-                end_time=t2_times[-1],
+                stop_time=t2_times[-1],
                 start_region="start",
                 end_region="center",
                 outcome="reached",
@@ -926,7 +926,7 @@ class TestComputeVTESession:
         trials = [
             Trial(
                 start_time=0.0,
-                end_time=2.0,
+                stop_time=2.0,
                 start_region="start",
                 end_region=None,
                 outcome="timeout",
@@ -1000,7 +1000,7 @@ class TestComputeVTESession:
             trials.append(
                 Trial(
                     start_time=trial_times[0],
-                    end_time=trial_times[-1],
+                    stop_time=trial_times[-1],
                     start_region="start",
                     end_region="center",
                     outcome="reached",
@@ -1068,7 +1068,7 @@ def test_compute_vte_session_env_first(t_maze_environment):
     trials = [
         Trial(
             start_time=times[0],
-            end_time=times[-1],
+            stop_time=times[-1],
             start_region="start",
             end_region="center",
             outcome="reached",
@@ -1291,7 +1291,7 @@ def test_session_break_before_ends_the_window(t_maze_environment):
     keep = (times < trials[1].start_time) | (times >= times[first])
     shortened = [
         trials[0],
-        Trial(times[first], trials[1].end_time, "start", "center", "reached"),
+        Trial(times[first], trials[1].stop_time, "start", "center", "reached"),
         trials[2],
     ]
     alone = compute_vte_session(
@@ -1391,7 +1391,7 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
     trials = [
         Trial(
             start_time=0.0,
-            end_time=10.0,
+            stop_time=10.0,
             start_region="start",
             end_region="left",
             outcome="reached",
@@ -1423,12 +1423,12 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
 
     times, positions, trials = _t_maze_session([2.0, 4.0, 8.0])
     # Trial 1 never reaches the center: it stays low on the stem.
-    in_trial_1 = (times >= trials[1].start_time) & (times <= trials[1].end_time)
+    in_trial_1 = (times >= trials[1].start_time) & (times <= trials[1].stop_time)
     positions[in_trial_1, 1] = np.linspace(10.0, 30.0, in_trial_1.sum())
     # A trial on a millisecond clock has no samples on the seconds clock.
     ms_trial = Trial(
         start_time=1000.0,
-        end_time=2000.0,
+        stop_time=2000.0,
         start_region="start",
         end_region="center",
         outcome="reached",
@@ -1638,7 +1638,7 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
     trials = [
         Trial(
             start_time=t[0],
-            end_time=t[-1],
+            stop_time=t[-1],
             start_region="start",
             end_region="center",
             outcome="reached",

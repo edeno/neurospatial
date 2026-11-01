@@ -576,7 +576,7 @@ def _warn_if_no_trial_overlaps(
     times : ndarray, shape (n_samples,)
         Sample times in seconds.
     trials : list of Trial
-        Trials with ``start_time`` and ``end_time`` in seconds.
+        Trials with ``start_time`` and ``stop_time`` in seconds.
     call : str
         Public function name for the message.
     result : str
@@ -589,7 +589,7 @@ def _warn_if_no_trial_overlaps(
     if len(trials) == 0 or len(times) == 0:
         return
     starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
-    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.stop_time for trial in trials], dtype=np.float64)
     # Each trial's first sample at or after its start; it is inside the trial
     # when it is not after the trial's end.
     ordered = np.sort(times)
@@ -733,7 +733,7 @@ def _trial_sample_bounds(
     times : ndarray, shape (n_samples,)
         Strictly increasing sample times in seconds.
     trials : list of Trial
-        Trials with finite ``start_time <= end_time`` in seconds.
+        Trials with finite ``start_time <= stop_time`` in seconds.
 
     Returns
     -------
@@ -742,7 +742,7 @@ def _trial_sample_bounds(
         ``start_time <= t <= end_time``.
     """
     starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
-    ends = np.array([trial.end_time for trial in trials], dtype=np.float64)
+    ends = np.array([trial.stop_time for trial in trials], dtype=np.float64)
     first: NDArray[np.intp] = np.searchsorted(times, starts, side="left")
     stop: NDArray[np.intp] = np.searchsorted(times, ends, side="right")
     return first, stop
@@ -2050,7 +2050,7 @@ def time_to_goal(
     -------
     NDArray[np.float64], shape (n_samples,)
         Time in seconds until goal arrival, for samples with
-        ``start_time <= t <= end_time`` of a successful trial. NaN outside
+        ``start_time <= t <= stop_time`` of a successful trial. NaN outside
         successful trials.
 
     Raises
@@ -2089,7 +2089,7 @@ def time_to_goal(
         # trials (cut off by a gap, an epoch edge, a break or the end of the
         # recording) never reached it.
         if trial.success:
-            ttg[first:stop] = np.maximum(trial.end_time - times[first:stop], 0.0)
+            ttg[first:stop] = np.maximum(trial.stop_time - times[first:stop], 0.0)
 
     return ttg
 
@@ -2182,7 +2182,7 @@ def graph_turn_sequence(
     Examples
     --------
     >>> for trial in trials:  # doctest: +SKIP
-    ...     mask = (times >= trial.start_time) & (times <= trial.end_time)
+    ...     mask = (times >= trial.start_time) & (times <= trial.stop_time)
     ...     turn_seq = graph_turn_sequence(env, position_bins[mask])
     ...     print(f"Trial: {turn_seq}")  # "left" or "right"
 
@@ -2299,7 +2299,7 @@ def goal_pair_direction_labels(
         Timestamps for the entire session (seconds).
     trials : list[Trial]
         Trial segmentation from ``segment_trials()``. Each completed trial
-        labels ``[start_time, end_time)``; trials with ``end_region=None``
+        labels ``[start_time, stop_time)``; trials with ``end_region=None``
         label nothing.
 
     Returns
@@ -2340,7 +2340,7 @@ def goal_pair_direction_labels(
     intervals = [
         (
             trial.start_time,
-            trial.end_time,
+            trial.stop_time,
             f"{trial.start_region}\u2192{trial.end_region}",
         )
         for trial in trials
