@@ -612,3 +612,9 @@ def test_with_fields_keeps_the_record_class_rules(trials: Intervals[Trial]) -> N
     )
     assert relabelled.end_region.tolist() == ["left", None, "right", None]
     assert relabelled.goal.tolist() == ["a", "b", "a", "b"]
+
+
+def test_interval_refuses_the_names_intervals_reserves() -> None:
+    for name in ("sel", "windows", "interval_id", "durations"):
+        with pytest.raises(ValueError, match="already an attribute"):
+            Interval(0.0, 1.0, {name: 1})

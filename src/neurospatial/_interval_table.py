@@ -103,7 +103,10 @@ class Interval:
         Window bounds in seconds, finite, ``start_time <= stop_time``. A
         sample at ``stop_time`` is outside the window.
     items : mapping or sequence of (str, value) pairs, optional
-        The fields. Values must be hashable; a missing value is ``None``. The
+        The fields. Names are identifiers not used by :class:`Intervals`
+        or ``Interval`` (``sel``, ``windows``, ``interval_id``, ``items``,
+        ...), so a record that builds can always join an ``Intervals``.
+        Values must be hashable; a missing value is ``None``. The
         empty string is refused, because NWB stores a missing string as
         ``""`` and reads it back as ``None``.
 
@@ -143,7 +146,7 @@ class Interval:
                 )
                 raise TypeError(msg)
             name, value = pair
-            _check_field_name(name, owner="Interval", reserved=_INTERVAL_MEMBERS)
+            _check_field_name(name, owner="Interval", reserved=_MEMBERS)
             items.append((name, _checked_value("Interval", name, value)))
         names = [name for name, _ in items]
         repeated = sorted({name for name in names if names.count(name) > 1})
@@ -167,9 +170,6 @@ class Interval:
         names = [key for key, _ in object.__getattribute__(self, "items")]
         msg = f"Interval has no field {name!r}; its fields are {names}."
         raise AttributeError(msg)
-
-
-_INTERVAL_MEMBERS = frozenset({*_TIME_FIELDS, "items", "fields"})
 
 
 def _check_field_name(name: object, *, owner: str, reserved: Iterable[str]) -> None:
@@ -1305,12 +1305,18 @@ class Intervals(Generic[R]):
         return f"{name}: {n} interval{'s' if n != 1 else ''}{span}; fields: {fields}"
 
 
-# interval_id names the stable ids (the index of intervals_table and the
-# pynapple metadata column), so no field may take it.
-_MEMBERS = frozenset(name for name in dir(Intervals) if not name.startswith("_")) | {
-    *_TIME_FIELDS,
-    "interval_id",
-}
+# One set of names no field may take, for Interval records and Intervals
+# alike, so a record that builds is never refused by the container: the
+# public attributes of both classes, the bounds, and interval_id, which
+# names the stable ids (the index of intervals_table and the pynapple
+# metadata column). Interval reads it when a record is made, after the
+# module has loaded.
+_MEMBERS = frozenset(
+    name
+    for cls in (Intervals, Interval)
+    for name in dir(cls)
+    if not name.startswith("_")
+) | {*_TIME_FIELDS, "interval_id"}
 
 
 def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]:
