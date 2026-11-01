@@ -456,3 +456,30 @@ def test_to_xarray_names_the_variable(distance_curves):
     assert dataset["firing_rate"].dims == ("unit_id", "bin")
     np.testing.assert_allclose(dataset["bin_center"], np.arange(5, 100, 10))
     assert dataset.attrs["variable"] == "distance to goal"
+
+
+def test_per_trial_curves_weighted_by_occupancy_equal_the_pooled_curve(runs, trials):
+    # One curve per trial on shared edges (select each trial by id): the
+    # occupancy-weighted mean over trials is total spikes over total time,
+    # which is the pooled curve.
+    times, progress = runs
+    spikes = np.sort(np.random.default_rng(3).uniform(0, 20, 300))
+    pooled = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=trials, max_gap=None
+    )
+    per_trial = [
+        compute_tuning_curve(
+            spikes,
+            times,
+            progress,
+            bin_edges=EDGES,
+            epochs=trials.sel(interval_id=i),
+            max_gap=None,
+        )
+        for i in trials.interval_ids
+    ]
+    occupancy = np.array([curve.occupancy for curve in per_trial])
+    rates = np.array([curve.firing_rate for curve in per_trial])
+    weighted = np.nansum(occupancy * rates, axis=0) / occupancy.sum(axis=0)
+    np.testing.assert_allclose(weighted, pooled.firing_rate, rtol=1e-12)
+    np.testing.assert_allclose(occupancy.sum(axis=0), pooled.occupancy, rtol=1e-12)

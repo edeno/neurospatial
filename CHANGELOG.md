@@ -27,6 +27,16 @@ by its trial.
   PSTH tables gain an `n_events` column per bin, and every PSTH and
   continuous table records `align` in `df.attrs`.
 
+### One row per trial
+
+**Added**
+
+- A single `Interval` (one trial, from `sel(interval_id=...)` or iterating
+  an `Intervals`) is accepted wherever `epochs=` is, through its `windows`.
+  One curve per trial is `compute_tuning_curve(..., bin_edges=edges,
+  epochs=trials.sel(interval_id=i))` for each id; on shared edges the
+  occupancy-weighted mean of these curves is the pooled curve (tested).
+
 ### Spatial bases at the animal's positions
 
 **Added**

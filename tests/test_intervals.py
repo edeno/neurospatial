@@ -437,3 +437,14 @@ def test_ids_beyond_int64_are_refused() -> None:
         Intervals.from_arrays(
             [0.0], [1.0], interval_ids=np.array([2**64 - 1], dtype=np.uint64)
         )
+
+
+def test_one_interval_restricts_an_analysis_like_its_row():
+    trials = Intervals.from_arrays([1.0, 4.0, 6.0], [3.0, 5.0, 6.0])
+    one = trials.sel(interval_id=1)
+    np.testing.assert_array_equal(one.windows, [[4.0, 5.0]])
+    np.testing.assert_array_equal(one.windows, trials[trials.interval_ids == 1].windows)
+    # Without duration it holds no time: an empty selection, as for Intervals.
+    assert trials.sel(interval_id=2).windows.shape == (0, 2)
+    with pytest.raises(ValueError, match="windows"):
+        trials.with_fields(windows=[1, 2, 3])
