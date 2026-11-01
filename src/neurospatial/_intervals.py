@@ -1474,6 +1474,23 @@ def _all_excluded_message(
     result: str,
 ) -> str:
     """The warning for a selection that excludes every interval."""
+    empty = [
+        name
+        for name, value in (
+            ("epochs", gates.epochs),
+            ("spike_window", gates.spike_window),
+        )
+        if value is not None and value.shape[0] == 0
+    ]
+    if empty:
+        # A deliberate empty selection, such as a condition with no trials:
+        # nothing is wrong with the clock, so say what happened.
+        verb = "select" if len(empty) > 1 else "selects"
+        return (
+            f"{' and '.join(empty)} {verb} no time (an Intervals with no windows, "
+            f"such as a condition with no trials), so {result}. Fix: select "
+            "intervals with duration, or leave this condition out."
+        )
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():

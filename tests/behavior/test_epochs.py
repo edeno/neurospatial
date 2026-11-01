@@ -492,16 +492,16 @@ def test_epochs_accept_intervals_and_empty() -> None:
     np.testing.assert_array_equal(rates.firing_rates, same.firing_rates)
 
     none = trials[trials.outcome == "missing"]
-    with pytest.warns(UserWarning, match="occupancy is zero in every bin"):
+    with pytest.warns(UserWarning, match="epochs selects no time.*occupancy is zero"):
         occupancy = env.occupancy(times, positions, epochs=none)
     np.testing.assert_array_equal(occupancy, 0.0)
-    with pytest.warns(UserWarning, match="the rate map is empty"):
+    with pytest.warns(UserWarning, match="epochs selects no time.*rate map is empty"):
         empty = compute_spatial_rates(
             env, trains, times, positions, epochs=none, method="binned"
         )
     assert np.isnan(empty.firing_rates).all()
     # A stored empty spike_window is normalized again without error.
-    with pytest.warns(UserWarning, match="the rate map is empty"):
+    with pytest.warns(UserWarning, match="spike_window selects no time"):
         windowless = compute_spatial_rates(
             env, trains, times, positions, spike_window=none, method="binned"
         )
