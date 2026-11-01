@@ -817,11 +817,14 @@ def align_continuous_to_events(
     events observed there (``counts``).
 
     For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, nothing after the trial's
-    stop is sampled (it would be the next trial); aligned at the stop, nothing
-    before the trial's start. The other side is sampled as for any event, so
-    the time at the well before a departure, or after an arrival, stays in the
-    window. "complete" asks only that the cut window was observed, each cell
+    from the alignment point: aligned at the start, nothing at or after the
+    trial's stop is sampled (it would be the next trial); aligned at the stop,
+    nothing before the trial's start. The other side is sampled as for any
+    event, so the time at the well before a departure, or after an arrival,
+    stays in the window. That side is not cut at the neighbouring trial: when
+    the time at the well is shorter than the window, it reaches into the
+    previous trial (aligned at the start) or the next one (aligned at the
+    stop), and those samples are used for both trials. "complete" asks only that the cut window was observed, each cell
     is averaged over the trials still under way at that time (``counts``),
     and the rows are labelled by ``interval_id``. Late cells therefore
     describe only the longer trials; to compare the same trials throughout,

@@ -437,7 +437,8 @@ or None
         - histogram: Mean spike count per bin across events
         - sem: Standard error of the mean across events
         - n_events: Number of retained events
-        - n_events_dropped: Events whose windows leave the recording
+        - n_events_dropped: Events not analyzed: windows leaving the
+          recording, or trials holding no whole bin
         - event_indices: Positions of retained events in the original input;
           use ``event_times[result.event_indices]`` for a matching raster cohort
         - window: The input window
@@ -468,8 +469,11 @@ or None
     from the alignment point: aligned at the start, no bin at or after the
     trial's stop counts (it would be the next trial); aligned at the stop, no
     bin before the trial's start. The other side counts as for any event, so
-    the time at the well before a departure or after an arrival stays in. A
-    bin counts for a trial only when it lies wholly inside the trial's
+    the time at the well before a departure or after an arrival stays in.
+    That side is not cut at the neighbouring trial: when the time at the well
+    is shorter than the window, it reaches into the previous trial (aligned
+    at the start) or the next one (aligned at the stop), and a spike there
+    counts for both trials. A bin counts for a trial only when it lies wholly inside the trial's
     window, so each bin is the mean over the trials under way for all of it
     (``events_per_bin``), NaN where there are none. Late bins therefore
     describe only the longer trials, so a change late in the curve can come
@@ -606,7 +610,8 @@ or None
         - mean_sem: SEM across events of the population average, shape
           (n_bins,)
         - n_events: Number of retained events
-        - n_events_dropped: Events whose windows leave the recording
+        - n_events_dropped: Events not analyzed: windows leaving the
+          recording, or trials holding no whole bin
         - event_indices: Positions of retained events in the original input;
           use ``event_times[result.event_indices]`` for a matching raster cohort
         - n_units: Number of units
@@ -640,8 +645,11 @@ or None
     from the alignment point: aligned at the start, no bin at or after the
     trial's stop counts (it would be the next trial); aligned at the stop, no
     bin before the trial's start. The other side counts as for any event, so
-    the time at the well before a departure or after an arrival stays in. A
-    bin counts for a trial only when it lies wholly inside the trial's
+    the time at the well before a departure or after an arrival stays in.
+    That side is not cut at the neighbouring trial: when the time at the well
+    is shorter than the window, it reaches into the previous trial (aligned
+    at the start) or the next one (aligned at the stop), and a spike there
+    counts for both trials. A bin counts for a trial only when it lies wholly inside the trial's
     window, so each bin is the mean over the trials under way for all of it
     (``events_per_bin``), NaN where there are none. Late bins therefore
     describe only the longer trials, so a change late in the curve can come

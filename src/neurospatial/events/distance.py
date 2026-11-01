@@ -362,8 +362,8 @@ or None
     ------
     ValueError
         If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
-        or not finite, ``event_times`` is empty, or no event falls on tracked
-        time inside windows with duration.
+        or not finite, ``event_times`` is empty or an ``Intervals``, or no
+        event falls on tracked time inside windows with duration.
 
     Warns
     -----

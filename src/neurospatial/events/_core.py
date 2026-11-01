@@ -697,7 +697,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         (matching ``histogram``); ``firing_rate_sem`` is the same in Hz.
         NaN with a single event (SEM is undefined).
     n_events : int
-        Number of events used in analysis, at least 1.
+        Number of events used in analysis; 0 when none was (an empty
+        selection), with every value NaN.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -709,7 +710,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         rates.unit_ids[i]``); ``None`` for a standalone single-unit
         computation unless supplied explicitly.
     n_events_dropped : int
-        Number of events excluded because their windows leave the recording.
+        Number of input events not analyzed: their windows leave ``epochs``
+        or ``spike_window``, or, for intervals, they hold no whole bin.
     event_indices : NDArray[np.intp], shape (n_events,), or None
         Original input positions of retained events, in input order. Use
         ``event_times[result.event_indices]`` to align a raster to the same
@@ -945,7 +947,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         For the spread across units use
         ``histograms.std(axis=0, ddof=1) / np.sqrt(n_units)``.
     n_events : int
-        Number of events used in analysis, at least 1.
+        Number of events used in analysis; 0 when none was (an empty
+        selection), with every value NaN.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -960,7 +963,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         provided. Labelled tables align by unit identity; an unnamed default
         RangeIndex uses unit order. Mismatched or duplicate labels raise ValueError.
     n_events_dropped : int
-        Number of events excluded because their windows leave the recording.
+        Number of input events not analyzed: their windows leave ``epochs``
+        or ``spike_window``, or, for intervals, they hold no whole bin.
     event_indices : NDArray[np.intp], shape (n_events,), or None
         Original input positions of retained events, in input order. Use
         ``event_times[result.event_indices]`` to align a raster to the same
