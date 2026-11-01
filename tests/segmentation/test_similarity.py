@@ -329,7 +329,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="nonexistent",
                 directedness_threshold=0.7,
                 min_progress=10.0,
-            ).windows
+            )
 
         # Invalid threshold
         from shapely.geometry import Point
@@ -349,7 +349,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="goal",
                 directedness_threshold=1.5,  # invalid
                 min_progress=10.0,
-            ).windows
+            )
 
         # Negative min_progress
         with pytest.raises(ValueError, match=r"min_progress must be finite and nonneg"):
@@ -360,7 +360,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="goal",
                 directedness_threshold=0.7,
                 min_progress=-10.0,  # invalid
-            ).windows
+            )
 
     def test_detect_goal_directed_runs_empty_trajectory(self):
         """Empty trajectory should return empty list."""

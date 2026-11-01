@@ -342,4 +342,4 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
             times,
             walk,
             goal_region="nonexistent",
-        ).windows
+        )

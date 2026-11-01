@@ -823,7 +823,10 @@ def _windows_as_intervals(
 ) -> Intervals[Interval]:
     """``[start, stop)`` rows, shape (n, 2), as Intervals with constant fields."""
     return Intervals(
-        [Interval(float(start), float(stop), fields) for start, stop in rows],
+        [
+            Interval(float(start), float(stop), tuple(fields.items()))
+            for start, stop in rows
+        ],
         record_type=Interval,
         fields=tuple(fields),
         analysis_settings=settings,

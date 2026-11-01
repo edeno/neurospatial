@@ -117,7 +117,7 @@ def test_segment_by_velocity_parameters_are_checked(options, match):
     times = np.arange(20) / 10.0
     positions = np.c_[times * 20.0, np.zeros(20)]
     with pytest.raises(ValueError, match=match):
-        segment_by_velocity(times, positions, **options).windows
+        segment_by_velocity(times, positions, **options)
 
 
 class TestMinProgressUnits:
@@ -157,7 +157,7 @@ class TestMinProgressUnits:
         with pytest.raises(ValueError, match="needs min_progress"):
             detect_goal_directed_runs(
                 env, times, np.c_[x, np.zeros_like(x)], goal_region="goal"
-            ).windows
+            )
         runs = detect_goal_directed_runs(
             env,
             times,

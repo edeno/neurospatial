@@ -289,9 +289,8 @@ class TestSegmentByVelocity:
         times = np.arange(1501) / 100.0
         x = np.clip(20.0 * (times - 5.0), 0.0, 100.0)
 
-        from neurospatial.behavior.segmentation import segment_by_velocity
-
         from neurospatial import Interval, Intervals
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         epochs = segment_by_velocity(
             times, x[:, None], min_speed=5.0, smooth_window=0.0
