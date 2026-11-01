@@ -27,6 +27,16 @@ by its trial.
   PSTH tables gain an `n_events` column per bin, and every PSTH and
   continuous table records `align` in `df.attrs`.
 
+### Spatial bases at the animal's positions
+
+**Added**
+
+- `ops.basis_at_positions(env, basis, positions)` evaluates a spatial basis
+  (`spatial_basis`, `geodesic_rbf_basis`, ...) at each sample, shape
+  `(n_samples, n_basis)`, with NaN rows outside the environment or where a
+  coordinate is missing, so the rows stay aligned with `times` and stack
+  with other per-sample features. The basis examples use it.
+
 ### Trials from positions or port visits
 
 **Added**
