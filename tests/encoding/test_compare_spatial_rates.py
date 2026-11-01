@@ -148,7 +148,7 @@ def test_generated_unit_ids_are_refused(make, side) -> None:
 
 def test_finite_rate_in_an_unoccupied_bin_is_not_support(make) -> None:
     rates_a = make([1, 2, 3, 4, 100], [1, 1, 1, 1, 0])
-    rates_b = make([1, 2, 3, 4, -50])
+    rates_b = make([1, 2, 3, 4, 50])
 
     result = compare_spatial_rates(rates_a, rates_b)
 

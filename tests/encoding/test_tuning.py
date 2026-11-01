@@ -541,3 +541,17 @@ def test_computed_settings_agree_with_fields(runs):
     assert curves[0].analysis_settings["bin_edges"] == EDGES.tolist()
     with pytest.raises(ValueError, match="disagrees with the recorded"):
         dataclasses.replace(curves, bandwidth=0.2)
+
+
+@pytest.mark.parametrize("name", ["firing_rate", "occupancy", "spike_counts"])
+def test_negative_rates_occupancy_and_counts_are_refused(name):
+    fields = {
+        "firing_rate": np.ones(10),
+        "occupancy": np.ones(10),
+        "spike_counts": np.full(10, 0.5),  # smoothed counts may be fractional
+    }
+    TuningCurveResult(**fields, bin_edges=EDGES)
+    fields[name] = fields[name].copy()
+    fields[name][3] = -0.25
+    with pytest.raises(ValueError, match=rf"{name} has 1 negative value"):
+        TuningCurveResult(**fields, bin_edges=EDGES)

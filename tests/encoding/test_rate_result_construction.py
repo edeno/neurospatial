@@ -356,6 +356,29 @@ def test_compute_records_the_threshold_it_applied(
     assert not result.spatial_support[(occupancy > 0) & (occupancy < 0.3)].any()
 
 
+def test_refuses_negative_rates_occupancy_and_counts(population: Any) -> None:
+    """Rates, occupancy and spike counts are never below zero; NaN stays missing."""
+    rates_field = "firing_rates"
+    arrays = {rates_field: population.firing_rates, "occupancy": population.occupancy}
+    if getattr(population, "spike_counts", None) is not None:
+        arrays["spike_counts"] = population.spike_counts
+    for name, array in arrays.items():
+        negative = np.array(array, dtype=np.float64)
+        negative.flat[0] = -1e-3
+        with pytest.raises(ValueError, match=rf"{name} has 1 negative value"):
+            dataclasses.replace(population, **{name: negative})
+    missing = np.array(population.firing_rates, dtype=np.float64)
+    missing.flat[0] = np.nan
+    assert np.isnan(
+        dataclasses.replace(population, firing_rates=missing).firing_rates.flat[0]
+    )
+    single = population[0]
+    rate = np.array(single.firing_rate, dtype=np.float64)
+    rate[0] = -1.0
+    with pytest.raises(ValueError, match=r"firing_rate has 1 negative value"):
+        dataclasses.replace(single, firing_rate=rate)
+
+
 @pytest.mark.parametrize("min_occupancy", [-1.0, np.nan, np.inf, "abc", None])
 def test_refuses_a_threshold_that_is_not_seconds(
     population: Any, min_occupancy: Any

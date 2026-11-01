@@ -256,6 +256,7 @@ def _check_spike_counts(result: _DirectionalRateMixin) -> None:
                 fix="pass the spike_counts of the same computation, or None.",
             )
         )
+    result._refuse_negative("spike_counts", counts)
 
 
 def _check_dispersion(result: _DirectionalRateMixin) -> None:
@@ -666,6 +667,7 @@ class _DirectionalRateMixin:
     if TYPE_CHECKING:
         # Provided by the rate-result base the host inherits after this class.
         def _get_rates(self) -> ArrayLike: ...
+        def _refuse_negative(self, name: str, values: Any) -> None: ...
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return {"units": "radians", "bin_size": self.bin_size}

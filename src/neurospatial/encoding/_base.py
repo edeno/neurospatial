@@ -745,6 +745,8 @@ class _RateResultMixin(SpatialResultMixin):
                     fix=fix,
                 )
             )
+        self._refuse_negative(self._RATES_FIELD, rates)
+        self._refuse_negative("occupancy", occupancy)
         method = self.method
         if method not in self._ESTIMATORS:
             raise ValueError(
@@ -776,6 +778,26 @@ class _RateResultMixin(SpatialResultMixin):
         object.__setattr__(
             self, "spike_window", as_intervals(self.spike_window, name="spike_window")
         )
+
+    def _refuse_negative(self, name: str, values: Any) -> None:
+        """Refuse a rate, occupancy or count below zero (NaN is missing)."""
+        from neurospatial._exceptions import _format_error
+
+        array = np.asarray(values)
+        negative = array < 0
+        n_negative = int(np.count_nonzero(negative))
+        if n_negative:
+            raise ValueError(
+                _format_error(
+                    f"{type(self).__name__}: {name} has {n_negative} negative "
+                    f"value(s); the smallest is {array[negative].min():g}.",
+                    why="Why: firing rates, occupancy and spike counts are "
+                    "never below zero; a negative value means the array is "
+                    "not a rate map (for example a difference or a z-score).",
+                    fix=f"pass the {name} of a rate computation; keep "
+                    "differences and normalized maps as plain arrays.",
+                )
+            )
 
     def _checked_counts(self) -> Any:
         """Spikes outside the analyzed intervals: one count per unit, or None."""

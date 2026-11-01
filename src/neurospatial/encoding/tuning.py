@@ -267,6 +267,7 @@ class _TuningCurveMixin:
         def _accounting_columns(self) -> dict[str, Any]: ...
         def _analysis_attrs(self) -> dict[str, Any]: ...
         def _check_recorded_settings(self, fields: Mapping[str, Any]) -> None: ...
+        def _refuse_negative(self, name: str, values: Any) -> None: ...
 
     @property
     def method(self) -> str:
@@ -295,6 +296,7 @@ class _TuningCurveMixin:
                         fix="pass the counts of the same computation, or None.",
                     )
                 )
+            self._refuse_negative("spike_counts", counts)
             object.__setattr__(self, "spike_counts", counts)
         n_outside = self.n_samples_outside_range
         if n_outside is not None:
