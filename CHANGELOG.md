@@ -323,8 +323,8 @@ trial in one call.
   half-open `[start, stop)` window, sorted by time, with an `interval_id`
   that stays with the row through selection, pickling, NWB and pynapple, and
   a fixed field schema that empty selections keep. `[]` selects by
-  position and `sel(interval_id=...)` by id; fields read as arrays
-  (`trials.outcome`). `sample_interval_ids`, `sample_values` and
+  position and `sel(interval_id=...)` by id; a field reads as a
+  `pandas.Series` indexed by `interval_id` (`trials.outcome`). `sample_interval_ids`, `sample_values` and
   `sample_slices` assign samples to rows (overlapping rows are refused where
   a sample would get two rows; outside every row values are `NaN` or `None`,
   never 0 or `""`). `intervals_table()` gives a DataFrame, and
