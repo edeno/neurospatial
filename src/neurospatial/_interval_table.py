@@ -324,7 +324,9 @@ class Intervals(Generic[R]):
     containers. Fields are read by name (``trials.outcome``) as a
     ``pandas.Series`` indexed by ``interval_id`` and select conditions with
     ``trials[trials.outcome == "reached"]``; :meth:`with_fields` adds your
-    own labels. The
+    own labels. Because a field is labelled by id, ``trials.outcome[4]`` is
+    the outcome of trial id 4; for the first row use
+    ``trials.outcome.iloc[0]``. The
     container passes as ``epochs=`` (its :attr:`windows`) to any analysis.
 
     Parameters
