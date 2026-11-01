@@ -330,7 +330,7 @@ trial in one call.
   never 0 or `""`). `intervals_table()` gives a DataFrame, and
   `Intervals.from_arrays` / `Intervals.from_dataframe` build one from your
   own arrays or task log. A row without duration stays in the table but holds
-  no time.
+  no time. `interval_id` cannot be a field name: it names the ids.
 - Every `epochs=` and `spike_window=` argument accepts an `Intervals` (any
   object with a `windows` attribute). One with no windows, such as a
   condition with no trials, is an empty selection: rate maps are NaN and
@@ -361,7 +361,8 @@ trial in one call.
 - `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` are
   stored in an `interval_id` column (the table `id` stays the row number, so
   pynapple's `load_file` reads a selection of trials too) and every field a
-  column, with `None` stored as `""`.
+  column, with `None` stored as `""`. A field named `id` is refused, since
+  NWB reserves it for the row ids.
   `read_trials` returns an `Intervals` with those ids and fields, reading
   `""` back as `None`, so a trial that reached no end region stays missing.
 - `to_pynapple(intervals)` exports an `Intervals` with `interval_id` and the
@@ -373,19 +374,6 @@ trial in one call.
   `stop_times`, `start_regions`, `end_regions`, `outcomes`): build an
   `Intervals` with `Intervals.from_arrays` or `Intervals.from_dataframe`.
 - `to_pynapple` of a list of `Trial` records: pass the `Intervals`.
-
-**Fixed**
-
-- `Intervals.sample_interval_ids` returns `-1` for every sample when there are
-  no rows (it raised `IndexError`); `interval_ids` beyond int64 are refused
-  instead of wrapping to negative values; `interval_id` cannot be a field
-  name (it names the ids, and a field of that name overwrote them in the
-  pynapple export); `write_trials` refuses a field named `id`, which NWB
-  reserves for the row ids; and rates computed with an empty selection as
-  `spike_window` read back from NWB.
-- `ReactivationWindows(clock="wall").split` no longer fails on epochs without
-  rows, and `PopulationPeriEventResult.summary()` no longer warns for units
-  without a defined rate.
 
 ### Your own speed and headings
 
