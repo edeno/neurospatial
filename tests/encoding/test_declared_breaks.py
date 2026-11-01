@@ -173,7 +173,6 @@ def test_break_removes_exactly_its_interval_and_spikes(recording, name):
     [{"time_allocation": "linear"}, {"method": "glm"}],
     ids=["linear", "glm"],
 )
-@pytest.mark.filterwarnings("ignore:MRF-GAM REML:UserWarning")
 def test_spatial_estimators_honor_breaks(recording, options):
     r = recording
     kwargs = options if "method" in options else {**FAMILIES["spatial"], **options}

@@ -180,11 +180,10 @@ def test_selected_unit_label_and_supplied_axes_are_preserved():
     assert_allclose(raster_ax.collections[0].get_colors()[0], [1, 0.64705882, 0, 1])
 
 
-def test_one_event_has_undefined_sem_but_draws_response():
+def test_one_event_has_nan_sem_but_draws_response():
     events = np.array([1.0])
     spikes = np.array([1.0])
-    with pytest.warns(UserWarning, match="SEM|sem|one event|single event|1 event"):
-        result = peri_event_histogram(spikes, events, (-0.5, 0.5), bin_size=0.25)
+    result = peri_event_histogram(spikes, events, (-0.5, 0.5), bin_size=0.25)
 
     raster_ax, histogram_ax = plot_peri_event_response(spikes, events, result)
 
@@ -234,7 +233,9 @@ def test_population_result_requires_explicit_unit_selection():
     spikes = np.array([1.0])
     population = population_peri_event_histogram([spikes, spikes], events, (-0.5, 0.5))
 
-    with pytest.raises(TypeError, match=r"single-unit.*Select a population unit"):
+    with pytest.raises(
+        TypeError, match=r"result must be a PeriEventResult.*\.sel\(unit_id"
+    ):
         plot_peri_event_response(spikes, events, population)
 
 

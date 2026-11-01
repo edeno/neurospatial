@@ -12,7 +12,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -26,7 +25,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
-from neurospatial._validation import is_integer_at_least
+from neurospatial._validation import is_integer_at_least, validate_callable
 from neurospatial.replay._inputs import (
     _CORRELATION_WHY,
     _FIT_WHY,
@@ -513,10 +512,10 @@ def replay_significance(
     least as extreme as the event (a Monte Carlo p-value; Davison & Hinkley
     1997; Phipson & Smyth 2010). Shuffles whose score is undefined (NaN),
     such as the weighted correlation of a shuffle whose decoded position does
-    not change, are left out of ``n``, ``k`` and the z-score, with a warning
-    that names the null; ``n_shuffles_used`` reports how many each null
-    kept. Counting them as less extreme than the event would make the
-    p-value too small.
+    not change, are left out of ``n``, ``k`` and the z-score;
+    ``n_shuffles_used`` reports how many each null kept, so a count below
+    ``n_shuffles`` means some shuffles were undefined. Counting them as less
+    extreme than the event would make the p-value too small.
     Requiring every null to reject an event, and reporting the largest
     p-value, follows Davidson et al. (2009), who called an event significant
     replay when all three p-values were below 0.01, and Tirole et al. (2022)
@@ -1070,7 +1069,7 @@ def _shuffle_tests(
     ``observed`` and ``null_statistics`` are the tested statistic (the
     absolute score when it is tested); ``score`` is the event's score,
     reported when a null has no defined shuffle. ``ShuffleTestResult.from_null``
-    warns when it leaves out undefined shuffles.
+    leaves out undefined shuffles; ``n_shuffles_used`` counts the rest.
     """
     from neurospatial.stats.shuffle import ShuffleTestResult
 
@@ -1164,35 +1163,32 @@ def _max_over_templates(
     results: dict[str, ReplaySignificanceResult] = {}
     scores: dict[str, float] = {}
     undefined: _UndefinedNullError | None = None
-    with warnings.catch_warnings():
-        # Undefined shuffles are counted, and warned about, after the maximum.
-        warnings.filterwarnings("ignore", message=".*undefined \\(NaN\\) score")
-        for name in names:
-            try:
-                results[name] = replay_significance(
-                    envs[name],
-                    posteriors[name],
-                    times,
-                    score=score,
-                    score_options=score_options,
-                    nulls=nulls,
-                    null_options=null_options,
-                    spike_counts=spike_counts,
-                    encoding_models=models[name],
-                    dt=dt,
-                    prior=priors[name],
-                    pseudo_event_pool=pseudo_event_pool,
-                    alternative="greater",
-                    use_absolute=use_absolute,
-                    empty_time_bins=empty_time_bins,
-                    n_shuffles=n_shuffles,
-                    rng=streams[name],
-                )
-            except _UndefinedNullError as error:  # noqa: PERF203  # an undefined template score is kept per template
-                undefined = error
-                scores[name] = error.score
-            else:
-                scores[name] = float(results[name].observed.score)
+    for name in names:
+        try:
+            results[name] = replay_significance(
+                envs[name],
+                posteriors[name],
+                times,
+                score=score,
+                score_options=score_options,
+                nulls=nulls,
+                null_options=null_options,
+                spike_counts=spike_counts,
+                encoding_models=models[name],
+                dt=dt,
+                prior=priors[name],
+                pseudo_event_pool=pseudo_event_pool,
+                alternative="greater",
+                use_absolute=use_absolute,
+                empty_time_bins=empty_time_bins,
+                n_shuffles=n_shuffles,
+                rng=streams[name],
+            )
+        except _UndefinedNullError as error:  # noqa: PERF203  # an undefined template score is kept per template
+            undefined = error
+            scores[name] = error.score
+        else:
+            scores[name] = float(results[name].observed.score)
     statistics = {
         name: float(_statistic(np.asarray([value]), use_absolute)[0])
         for name, value in scores.items()
@@ -2010,12 +2006,12 @@ def _scorer_for(
             )
             raise TypeError(msg)
         return spec.scorer(env, posterior, times, **options)
-    if not callable(score):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            f"{_OPERATION}: score must be a function such as "
-            f"detect_trajectory_radon, got {type(score).__name__}."
-        )
-        raise TypeError(msg)
+    validate_callable(
+        score,
+        name="score",
+        owner=_OPERATION,
+        hint="give a function such as detect_trajectory_radon",
+    )
     return _CallScorer(score, env, posterior, times, options)
 
 

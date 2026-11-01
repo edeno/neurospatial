@@ -1034,7 +1034,7 @@ class _MockWidget:
 
 
 class TestInitialEdgeValidation:
-    """Invalid ``initial_edges`` entries warn rather than vanish silently.
+    """Invalid ``initial_edges`` entries raise rather than vanish silently.
 
     Driven through the headless ``_apply_initial_edges`` helper (the same path
     ``annotate_track_graph`` uses) so no napari viewer is launched.
@@ -1049,39 +1049,39 @@ class TestInitialEdgeValidation:
         state.add_node(10.0, 0.0)
         return state
 
-    def test_annotate_track_graph_warns_on_invalid_initial_edge(self):
-        """An out-of-range initial edge warns and is not added."""
+    def test_out_of_range_initial_edge_raises(self):
+        """An initial edge to a missing node raises and names the edge."""
         from neurospatial.annotation.track_graph import _apply_initial_edges
 
         state = self._two_node_state()
 
         # Node index 5 does not exist (only nodes 0 and 1).
-        with pytest.warns(UserWarning, match="invalid initial edge"):
+        with pytest.raises(ValueError, match=r"Invalid initial edge \(0, 5\)"):
             _apply_initial_edges(state, [(0, 5)])
 
         assert state.edges == []
 
-    def test_self_loop_initial_edge_warns(self):
-        """A self-loop initial edge warns and is not added."""
+    def test_self_loop_initial_edge_raises(self):
+        """A self-loop initial edge raises and is not added."""
         from neurospatial.annotation.track_graph import _apply_initial_edges
 
         state = self._two_node_state()
 
-        with pytest.warns(UserWarning, match="invalid initial edge"):
+        with pytest.raises(ValueError, match="self-loops"):
             _apply_initial_edges(state, [(0, 0)])
 
         assert state.edges == []
 
-    def test_duplicate_initial_edge_warns(self):
-        """A duplicate initial edge warns and is not added twice."""
+    def test_duplicate_initial_edge_raises(self):
+        """A duplicate initial edge raises and is not added twice."""
         from neurospatial.annotation.track_graph import _apply_initial_edges
 
         state = self._two_node_state()
 
-        with pytest.warns(UserWarning, match="invalid initial edge"):
+        with pytest.raises(ValueError, match="duplicate"):
             _apply_initial_edges(state, [(0, 1), (1, 0)])
 
-        # Only the first (valid) edge survives; the reversed duplicate is dropped.
+        # The first (valid) edge was added; the reversed duplicate was refused.
         assert state.edges == [(0, 1)]
 
     def test_valid_initial_edges_added_without_warning(self):
@@ -1287,8 +1287,8 @@ def test_native_edges_and_labels_follow_graph_history(monkeypatch, edit):
         elif edit == "geometry":
             paths = [path.copy() for path in edges.data]
             paths[0][0] += 3
-            with pytest.warns(UserWarning, match="Move nodes"):
-                edges.data = paths
+            edges.data = paths
+            assert "Move nodes" in captured["viewer"].status
             assert state._snapshot() == before
             np.testing.assert_array_equal(edges.data[0], [[5, 5], [5, 10]])
         else:
@@ -1461,8 +1461,8 @@ def test_native_fractional_edge_coordinates_preserve_exact_layer_contract(
             original = paths[0].copy()
             paths[0][0, 0] = np.nextafter(paths[0][0, 0], np.float32(np.inf))
             assert paths[0][0, 0] != original[0, 0]
-            with pytest.warns(UserWarning, match="Move nodes"):
-                edges.data = paths
+            edges.data = paths
+            assert "Move nodes" in captured["viewer"].status
             np.testing.assert_array_equal(edges.data[0], original)
             assert state._snapshot() == before
             assert len(state.undo_stack) == depth

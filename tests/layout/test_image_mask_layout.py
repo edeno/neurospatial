@@ -120,7 +120,7 @@ _MASK = np.array([[True, False], [True, True]])
         (
             {"image_mask": _MASK.tolist(), "pixel_size": 1.0},
             TypeError,
-            "must be a numpy array",
+            "image_mask must be a ndarray",
         ),
         (
             {"image_mask": np.ones(3, dtype=bool), "pixel_size": 1.0},

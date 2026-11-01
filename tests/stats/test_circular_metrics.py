@@ -105,13 +105,12 @@ class TestValidateCircularInput:
         with pytest.raises(ValueError, match="All angles are NaN"):
             _valid_angles(angles, "rad", min_samples=3)
 
-    def test_partial_nan_warns_and_removes(self) -> None:
-        """Partial NaN should warn and remove NaN values."""
+    def test_partial_nan_is_removed(self) -> None:
+        """Partial NaN is removed."""
         from neurospatial.stats.circular import _valid_angles
 
         angles = np.array([0.0, np.nan, np.pi, np.nan, 2 * np.pi])
-        with pytest.warns(UserWarning, match="Removed.*NaN"):
-            result, _ = _valid_angles(angles, "rad", min_samples=3)
+        result, _ = _valid_angles(angles, "rad", min_samples=3)
         assert len(result) == 3
         assert not np.any(np.isnan(result))
 
@@ -168,14 +167,13 @@ class TestValidatePairedInput:
         with pytest.raises(ValueError, match="must have same length"):
             _validate_paired_input(arr1, arr2, "positions", "phases")
 
-    def test_nan_pairs_removed_with_warning(self) -> None:
-        """NaN in either array should remove that pair with warning."""
+    def test_nan_pairs_removed(self) -> None:
+        """NaN in either array removes that pair."""
         from neurospatial.stats.circular import _validate_paired_input
 
         arr1 = np.array([1.0, np.nan, 3.0, 4.0, 5.0])
         arr2 = np.array([1.0, 2.0, np.nan, 4.0, 5.0])
-        with pytest.warns(UserWarning, match="Removed 2 pairs"):
-            result1, result2 = _validate_paired_input(arr1, arr2, "a", "b")
+        result1, result2 = _validate_paired_input(arr1, arr2, "a", "b")
         assert len(result1) == 3
         assert len(result2) == 3
 
@@ -185,10 +183,7 @@ class TestValidatePairedInput:
 
         arr1 = np.array([1.0, np.nan, np.nan])
         arr2 = np.array([np.nan, 2.0, 3.0])
-        with (
-            pytest.warns(UserWarning, match="Removed 3 pairs containing NaN"),
-            pytest.raises(ValueError, match="at least 3 valid pairs"),
-        ):
+        with pytest.raises(ValueError, match="at least 3 valid pairs"):
             _validate_paired_input(arr1, arr2, "a", "b", min_samples=3)
 
 
@@ -454,14 +449,13 @@ class TestCircularLinearCorrelation:
             circular_linear_correlation(phases, positions)
 
     def test_degenerate_case_constant_linear_variable(self) -> None:
-        """Constant linear variable (no variation) should return r=0 with warning."""
+        """Constant linear variable (no variation) gives an undefined (NaN) r."""
         from neurospatial.stats.circular import circular_linear_correlation
 
         phases = np.linspace(0, 2 * np.pi, 50)
         positions = np.ones(50) * 50.0  # Constant position
 
-        with pytest.warns(RuntimeWarning, match="[Dd]egenerate|constant|variation"):
-            r, _p = circular_linear_correlation(phases, positions)
+        r, _p = circular_linear_correlation(phases, positions)
         assert r == 0.0 or np.isnan(r)
 
     def test_negative_slope_still_positive_correlation(self) -> None:
@@ -483,14 +477,13 @@ class TestCircularLinearCorrelation:
         assert r > 0.7, f"Expected r > 0.7 for perfect relationship, got r={r}"
 
     def test_nan_handling(self) -> None:
-        """NaN values in either array should be removed with warning."""
+        """NaN values in either array are removed pairwise."""
         from neurospatial.stats.circular import circular_linear_correlation
 
         positions = np.array([0.0, 10.0, np.nan, 30.0, 40.0, 50.0, 60.0])
         phases = np.array([0.0, 0.5, 1.0, np.nan, 2.0, 2.5, 3.0])
 
-        with pytest.warns(UserWarning, match="[Rr]emoved.*pairs"):
-            r, p = circular_linear_correlation(phases, positions)
+        r, p = circular_linear_correlation(phases, positions)
         # Should still work with remaining valid pairs
         assert 0 <= r <= 1
         assert 0 <= p <= 1
@@ -667,21 +660,19 @@ class TestCircularCircularCorrelation:
         angles1 = np.full(50, constant)
         angles2 = np.random.default_rng(0).uniform(0, 2 * np.pi, 50)
 
-        with pytest.warns(RuntimeWarning, match="constant"):
-            r, p = circular_circular_correlation(angles1, angles2)
+        r, p = circular_circular_correlation(angles1, angles2)
         assert np.isnan(r)
         assert np.isnan(p)
 
     def test_nan_handling(self) -> None:
-        """NaN values should be removed with warning."""
+        """NaN values are removed pairwise."""
         from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = np.concatenate([rng.uniform(0, 2 * np.pi, 48), [np.nan, np.nan]])
         angles2 = rng.uniform(0, 2 * np.pi, 50)
 
-        with pytest.warns(UserWarning, match="[Rr]emoved.*pairs"):
-            r, p = circular_circular_correlation(angles1, angles2)
+        r, p = circular_circular_correlation(angles1, angles2)
         # Should still work with remaining valid pairs
         assert -1 <= r <= 1
         assert 0 <= p <= 1
@@ -1822,10 +1813,7 @@ class TestFuzzEdgeCases:
 
         angles = np.array([0.0, np.nan, np.pi])
 
-        with (
-            pytest.warns(UserWarning, match="Removed 1 NaN values from angles"),
-            pytest.raises((ValueError, FloatingPointError)),
-        ):
+        with pytest.raises((ValueError, FloatingPointError)):
             rayleigh_test(angles)
 
     def test_circular_linear_rejects_inf_values(self) -> None:
@@ -1850,10 +1838,7 @@ class TestFuzzEdgeCases:
         angles = np.array([0.0, np.pi / 2, np.pi])
         positions_nan = np.array([0.0, np.nan, 1.0])
 
-        with (
-            pytest.warns(UserWarning, match="Removed 1 pairs containing NaN"),
-            pytest.raises((ValueError, FloatingPointError)),
-        ):
+        with pytest.raises((ValueError, FloatingPointError)):
             circular_linear_correlation(angles, positions_nan)
 
     # -------------------------------------------------------------------------
@@ -1891,8 +1876,7 @@ class TestFuzzEdgeCases:
         angles = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
         positions = np.full(4, 5.0)  # All same position
 
-        with pytest.warns(RuntimeWarning, match="linear_values are constant"):
-            rho, _pvalue = circular_linear_correlation(angles, positions)
+        rho, _pvalue = circular_linear_correlation(angles, positions)
         # With no position variation, correlation is undefined/zero
         assert np.isnan(rho) or rho == 0.0
 
@@ -1903,8 +1887,7 @@ class TestFuzzEdgeCases:
         angles = np.full(10, np.pi / 2)  # All same angle
         positions = np.linspace(0, 100, 10)
 
-        with pytest.warns(RuntimeWarning, match="angles are constant"):
-            rho, _pvalue = circular_linear_correlation(angles, positions)
+        rho, _pvalue = circular_linear_correlation(angles, positions)
         # With no angle variation, correlation should be undefined or zero
         assert np.isnan(rho) or np.abs(rho) < 1e-10
 

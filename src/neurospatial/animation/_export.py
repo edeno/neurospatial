@@ -7,7 +7,6 @@ import re
 import secrets
 import shutil
 import tempfile
-import warnings
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,8 +18,7 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import check_writable
+from neurospatial._validation import check_writable, validate_bool
 
 _VIDEO_CODECS = {
     ".mp4": "libx264",
@@ -310,7 +308,9 @@ def _video_output_params(
     """Resolve the encoder, its ffmpeg options and imageio's quality fallback.
 
     Encoders without a known constant-quality option keep imageio's default
-    variable-quality setting unless a bitrate is given.
+    variable-quality setting unless a bitrate is given. When both ``bitrate``
+    and ``crf`` are passed, the video is encoded at the constant bitrate and
+    ``crf`` is ignored.
     """
     codec = _CODEC_ALIASES.get(codec, codec) if codec else _VIDEO_CODECS[container]
     if container == ".webm" and codec not in _WEBM_CODECS:
@@ -346,14 +346,6 @@ def _video_output_params(
         if codec in _PRESET_CODECS and preset not in _PRESETS:
             msg = f"preset must be one of {', '.join(_PRESETS)}."
             raise ValueError(msg)
-    if crf is not None and bitrate is not None:
-        warnings.warn(
-            f"bitrate={bitrate!r} and crf={crf!r} were both passed; the video is "
-            "encoded at the constant bitrate, so crf is ignored. Pass only crf= "
-            "for constant quality, or only bitrate= for a fixed bitrate.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     params: list[str] = []
     if codec in _PRESET_CODECS or preset is not None:
         params += ["-preset", preset or "medium"]
@@ -451,9 +443,7 @@ def prepare_export(
         if image_format not in ("png", "jpeg"):
             msg = f"image_format must be 'png' or 'jpeg', got {image_format!r}."
             raise ValueError(msg)
-        if not isinstance(embed, bool):
-            msg = "embed must be True or False."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        embed = validate_bool(embed, name="embed", owner="animation export")
         if embed and frames_dir is not None:
             msg = (
                 "frames_dir applies only with embed=False, which writes frames "

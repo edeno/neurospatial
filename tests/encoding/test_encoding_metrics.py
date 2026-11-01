@@ -952,7 +952,7 @@ class TestBatchScoresFailuresMask:
         assert result.n_failures == 0
         assert not result.failures.any()
 
-    def test_batch_border_scores_warns_and_flags_failed_neurons(
+    def test_batch_border_scores_flags_failed_neurons_without_warning(
         self,
         env_2d_grid,
     ):
@@ -964,7 +964,7 @@ class TestBatchScoresFailuresMask:
         1. Continue computing the remaining neurons.
         2. Set failures[0]=True (and not flag the others).
         3. Set scores[0]=NaN (and leave the others finite).
-        4. Emit a UserWarning that mentions the failure count.
+        4. Emit no warning (the mask is the record).
         """
         from neurospatial.encoding import _metrics
 
@@ -989,12 +989,9 @@ class TestBatchScoresFailuresMask:
         original = border_mod.border_score
         try:
             border_mod.border_score = fake_border_score
-            with pytest.warns(
-                UserWarning, match=r"raised an exception for 1 of 3 neurons"
-            ):
-                result = _metrics.batch_border_scores(
-                    env, firing_rates, boundary_source="analysis"
-                )
+            result = _metrics.batch_border_scores(
+                env, firing_rates, boundary_source="analysis"
+            )
         finally:
             border_mod.border_score = original
 

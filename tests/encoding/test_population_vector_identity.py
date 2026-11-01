@@ -139,9 +139,6 @@ def test_exact_selection_accepts_the_same_units_in_any_order(make, maps):
     np.testing.assert_array_equal(exact, population_vector_correlation(first, second))
 
 
-@pytest.mark.filterwarnings(
-    "ignore:.*no time was spent with the nearest object:UserWarning"
-)
 def test_unvisited_bins_are_nan_never_zero(make, maps):
     """An unsupported bin is missing whatever finite rate the map holds there."""
     first, second = maps

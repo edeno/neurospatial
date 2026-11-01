@@ -36,13 +36,12 @@ not ``n_bins²``, so these methods scale to large/fine grids. The eigenbasis is
 geometry-only, so it is built once per environment and reused across every
 bandwidth, mode, and neuron. (A near-full-rank request — a light bandwidth on a
 large grid — genuinely needs most modes, so ``env.diffuse`` solves the full
-dense basis once there, with the same large-matrix ``UserWarning`` as
-``compute_kernel``, and reuses it for later calls.)
+dense basis once there and reuses it for later calls.)
 
 ``gaussian_kde`` still builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix
 (Euclidean, boundary-ignoring), costing O(n_bins²) memory and time; it is cached
 per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``) and reused across
-neurons, and warns above ``LARGE_KERNEL_THRESHOLD`` bins. For very large
+neurons. For very large
 environments prefer ``diffusion_kde`` (matrix-free and boundary-aware).
 
 References
@@ -228,8 +227,7 @@ def smooth_rate_map(
     ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
     eigenbasis is geometry-only, so it is built once per environment and reused
     across bandwidths, modes, and neurons. ``gaussian_kde`` still builds a dense
-    ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²), warns above
-    ``LARGE_KERNEL_THRESHOLD`` bins).
+    ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²) memory).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
     (default) -- it is boundary-aware and matrix-free, so it scales to large/fine
@@ -390,6 +388,12 @@ def smooth_rate_maps_batch(
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
         raise ValueError(msg)
+    method = validate_choice(
+        method,
+        ("diffusion_kde", "gaussian_kde", "binned"),
+        name="method",
+        owner="smooth_rate_maps_batch()",
+    )
     if backend == "jax":
         from neurospatial.encoding._backend import _enable_jax_float64
 
@@ -424,12 +428,9 @@ def smooth_rate_maps_batch(
         return _gaussian_kde_batch(
             env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
-    if method == "binned":
-        return _binned_batch(
-            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
-        )
-    msg = f"Unknown method: {method}"  # type: ignore[unreachable]  # runtime check of user input
-    raise ValueError(msg)
+    return _binned_batch(
+        env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
+    )
 
 
 # =============================================================================

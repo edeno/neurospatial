@@ -1010,9 +1010,6 @@ class TestComputeObjectVectorRatesResultMethods:
         np.testing.assert_array_equal(result.preferred_distances(), expected_dist)
         np.testing.assert_array_equal(result.preferred_directions(), expected_dir)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_classify_method_works(self, trajectory_data, spike_times_list):
         """Test that classify method works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -1032,9 +1029,6 @@ class TestComputeObjectVectorRatesResultMethods:
         assert len(is_egocentric_object_vector_cell) == len(spike_times_list)
         assert is_egocentric_object_vector_cell.dtype == bool
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_method_works(self, trajectory_data, spike_times_list):
         """Test that summary_table (per-unit) and to_dataframe (dense) work."""
         import pandas as pd

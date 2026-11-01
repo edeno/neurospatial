@@ -575,11 +575,11 @@ def decoding_correlation(
         - Otherwise, the mean of the per-dimension correlations over the
           dimensions in which both the decoded and actual positions vary.
           A dimension that does not vary (e.g. a horizontal track built as
-          a 2-D arena) has no correlation; it is left out with a warning.
+          a 2-D arena) has no correlation; it is left out of the mean
+          silently, so check that the dimensions you expect vary.
 
-        NaN, with a warning when the positions do not vary, if fewer than 2
-        time bins have finite positions and a positive weight, or if no
-        dimension varies.
+        NaN if fewer than 2 time bins have finite positions and a positive
+        weight, or if no dimension varies.
 
     Raises
     ------
@@ -690,26 +690,8 @@ def decoding_correlation(
     w = weights[valid] / weights[valid].sum()
 
     varies = (np.ptp(decoded_valid, axis=0) > 0) & (np.ptp(actual_valid, axis=0) > 0)
-    if not np.all(varies):
-        constant = np.flatnonzero(~varies).tolist()
-        where = (
-            "along the track"
-            if env.is_linearized_track
-            else f"in dimension(s) {constant} of {env.n_dims}"
-        )
-        warnings.warn(
-            f"decoding_correlation(): the decoded or actual positions do not "
-            f"vary {where}, so they have no correlation there"
-            + (
-                "; it is left out of the mean."
-                if np.any(varies)
-                else ", and the result is NaN."
-            ),
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-        if not np.any(varies):
-            return float(np.nan)
+    if not np.any(varies):
+        return float(np.nan)
     decoded_centered = decoded_valid[:, varies] - w @ decoded_valid[:, varies]
     actual_centered = actual_valid[:, varies] - w @ actual_valid[:, varies]
 

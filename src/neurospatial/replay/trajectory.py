@@ -1184,14 +1184,10 @@ def regression_line_score(
     150 cm/s, score 0.9 within 10.5 cm
     """
     from neurospatial._units import default_length
+    from neurospatial._validation import validate_bool
 
     operation = "regression_line_score()"
-    if not isinstance(wrap_band, (bool, np.bool_)):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            f"{operation} needs wrap_band=True or wrap_band=False, got "
-            f"{wrap_band!r}; True takes band past a track end from the other end."
-        )
-        raise TypeError(msg)
+    wrap_band = validate_bool(wrap_band, name="wrap_band", owner=operation)
     posterior, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=True
     )
@@ -2125,28 +2121,19 @@ def _check_line_options(
     operation: str,
 ) -> None:
     """Refuse line-search options that are invalid or contradict each other."""
-    from neurospatial._validation import validate_choice
+    from neurospatial._validation import (
+        validate_bool,
+        validate_choice,
+        validate_integer_at_least,
+    )
 
-    if not isinstance(wrap, (bool, np.bool_)):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            f"{operation} needs wrap=True or wrap=False, got {wrap!r}; True "
-            "treats the track as a closed loop."
-        )
-        raise TypeError(msg)
+    wrap = validate_bool(wrap, name="wrap", owner=operation)
     validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
     validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
     validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
     for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
-        if count is not None and (
-            isinstance(count, (bool, np.bool_))
-            or not isinstance(count, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or count < smallest
-        ):
-            msg = (
-                f"{operation} needs {name} to be an integer >= {smallest}, got "
-                f"{count!r}."
-            )
-            raise ValueError(msg)
+        if count is not None:
+            validate_integer_at_least(count, smallest, name=name, owner=operation)
     if off_track == "bin_median" and (wrap or line_ends == "on_track"):
         setting = "wrap=True" if wrap else "line_ends='on_track'"
         raise ValueError(

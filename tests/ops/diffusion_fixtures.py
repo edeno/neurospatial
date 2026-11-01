@@ -196,7 +196,7 @@ GEOMETRIES: dict[str, tuple[Callable[[], tuple], float, float]] = {
 def build_perf_grid(n: int = 60, domain: float = 120.0) -> Environment:
     """Large 2D grid for the perf baseline (dense-``expm`` reference).
 
-    Default 60x60 = 3600 bins -- above the 3000-bin dense-kernel warn threshold,
+    Default 60x60 = 3600 bins -- large for a dense kernel,
     yet the dense ``expm`` still completes in ~1 minute so a pre-refactor
     baseline can be captured. (A true 10k-bin dense ``expm`` is ~O(n_bins^3):
     extrapolating the measured 2500-bin cost puts it near ~25 min and several GB

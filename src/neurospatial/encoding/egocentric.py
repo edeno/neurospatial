@@ -167,7 +167,7 @@ def _object_vector_summary_frame(
     from neurospatial.encoding._metrics import _information_bias, _information_screen
 
     bias = _information_bias(result)
-    return polar_summary_frame(
+    frame = polar_summary_frame(
         result,
         index=index,
         extra={
@@ -187,6 +187,12 @@ def _object_vector_summary_frame(
         },
         thresholds=OBJECT_VECTOR_THRESHOLDS,
     )
+    frame.attrs["unsampled_direction_arcs"] = _unsampled_direction_arcs(
+        result.occupancy,
+        n_distance_bins=result.n_distance_bins,
+        n_direction_bins=result.n_direction_bins,
+    )
+    return frame
 
 
 @_copy_analysis_settings
@@ -349,6 +355,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
+        ``df.attrs["unsampled_direction_arcs"]`` lists the direction arcs
+        ``(low, high)`` in degrees, in that frame, with no occupancy at any
+        distance (for example when the object sits at a wall); direction
+        tuning is then measured over the sampled arc only, and compute
+        functions do not warn about it.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
@@ -614,8 +625,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         -------
         float
             Expected untuned information in bits/spike. NaN for a silent unit
-            and, with a ``UserWarning``, when the unit has fewer spikes than
-            the map has effectively independent bins.
+            and, without a warning, when the unit has fewer spikes than the
+            map has effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -652,7 +664,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning.
+        polar bins, and units with fewer spikes than K have no estimable bias, so
+        the boolean is False for them without a warning (False includes "too few
+        spikes to tell").
         The default grid covers the arena, so K grows with it: with the object
         at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
         rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -1196,8 +1210,9 @@ class ObjectVectorRatesResult(
         -------
         ndarray, shape (n_neurons,)
             Expected untuned information in bits/spike. NaN for silent units
-            and, with one ``UserWarning``, for units with fewer spikes than
-            the maps have effectively independent bins.
+            and, without a warning, for units with fewer spikes than
+            the maps have effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -1234,7 +1249,9 @@ class ObjectVectorRatesResult(
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning.
+        polar bins, and units with fewer spikes than K have no estimable bias, so
+        the boolean is False for them without a warning (False includes "too few
+        spikes to tell").
         The default grid covers the arena, so K grows with it: with the object
         at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
         rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -1348,6 +1365,11 @@ class ObjectVectorRatesResult(
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
+        ``df.attrs["unsampled_direction_arcs"]`` lists the direction arcs
+        ``(low, high)`` in degrees, in that frame, with no occupancy at any
+        distance (for example when the object sits at a wall); direction
+        tuning is then measured over the sampled arc only, and compute
+        functions do not warn about it.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
@@ -2113,6 +2135,49 @@ def _object_vector_grid(
     )
 
 
+def _unsampled_direction_arcs(
+    occupancy: ArrayLike, *, n_distance_bins: int, n_direction_bins: int
+) -> list[tuple[float, float]]:
+    """Direction arcs (degrees) with no occupancy at any distance.
+
+    Parameters
+    ----------
+    occupancy : array-like
+        Seconds in each polar bin, ``n_distance_bins * n_direction_bins``
+        values, distance-major.
+    n_distance_bins, n_direction_bins : int
+        Polar grid shape.
+
+    Returns
+    -------
+    list of (float, float)
+        Contiguous unsampled arcs ``[low, high)`` in degrees, in
+        ``[-180, 180]``; an arc across the +/-180 seam is reported once.
+        Empty when every direction, or no direction, was sampled.
+    """
+    occupancy = np.asarray(_to_numpy(occupancy), dtype=np.float64).reshape(
+        n_distance_bins, n_direction_bins
+    )
+    sampled: NDArray[np.bool_] = np.asarray((occupancy > 0).any(axis=0))
+    if sampled.all() or not sampled.any():
+        return []
+    # Start just after a sampled bin so an arc across the seam is reported once.
+    width = 360.0 / n_direction_bins
+    first = int(np.flatnonzero(sampled)[0])
+    order = np.roll(np.arange(n_direction_bins), -first)
+    arcs: list[tuple[float, float]] = []
+    start: int | None = None
+    for k in [*order.tolist(), first]:
+        if not sampled[k] and start is None:
+            start = k
+        elif sampled[k] and start is not None:
+            low = -180.0 + width * start
+            high = -180.0 + width * k if k > start else 180.0 + width * k
+            arcs.append((low, high))
+            start = None
+    return arcs
+
+
 def _warn_if_directions_unsampled(
     occupancy: ArrayLike,
     *,
@@ -2132,27 +2197,12 @@ def _warn_if_directions_unsampled(
     """
     if extended_landmarks:
         return
-    occupancy = np.asarray(_to_numpy(occupancy), dtype=np.float64).reshape(
-        n_distance_bins, n_direction_bins
+    found = _unsampled_direction_arcs(
+        occupancy, n_distance_bins=n_distance_bins, n_direction_bins=n_direction_bins
     )
-    sampled: NDArray[np.bool_] = np.asarray((occupancy > 0).any(axis=0))
-    if sampled.all() or not sampled.any():
+    if not found:
         return
-    # Contiguous unsampled arcs, starting just after a sampled bin so an arc
-    # across the +/-180 degree seam is reported once.
-    width = 360.0 / n_direction_bins
-    first = int(np.flatnonzero(sampled)[0])
-    order = np.roll(np.arange(n_direction_bins), -first)
-    arcs: list[str] = []
-    start: int | None = None
-    for k in [*order.tolist(), first]:
-        if not sampled[k] and start is None:
-            start = k
-        elif sampled[k] and start is not None:
-            low = -180.0 + width * start
-            high = -180.0 + width * k if k > start else 180.0 + width * k
-            arcs.append(f"[{low:g}, {high:g})")
-            start = None
+    arcs = [f"[{low:g}, {high:g})" for low, high in found]
     warnings.warn(
         _format_error(
             f"{context}: no time was spent with the nearest object in the "
@@ -3249,15 +3299,6 @@ def _object_vector_rates(
         backend=resolved_backend,
     )
 
-    _warn_if_directions_unsampled(
-        counts.occupancy,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        direction_frame="allocentric" if headings is None else "egocentric",
-        units=units,
-        extended_landmarks=(object_names is not None and object_positions.ndim == 3),
-        context=context,
-    )
     _warn_if_peak_at_range_edge(
         firing_rates,
         n_distance_bins=n_distance_bins,
@@ -3632,7 +3673,9 @@ def is_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning.
+    polar bins, and units with fewer spikes than K have no estimable bias, so
+    the boolean is False for them without a warning (False includes "too few
+    spikes to tell").
     The default grid covers the arena, so K grows with it: with the object
     at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
     rings x 12 directions) were occupied in 10 minutes. In 40 untuned
@@ -3894,7 +3937,9 @@ def is_egocentric_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning.
+    polar bins, and units with fewer spikes than K have no estimable bias, so
+    the boolean is False for them without a warning (False includes "too few
+    spikes to tell").
     The default grid covers the arena, so K grows with it: with the object
     at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
     rings x 12 directions) were occupied in 10 minutes. In 40 untuned

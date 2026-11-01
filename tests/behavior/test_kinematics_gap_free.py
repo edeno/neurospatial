@@ -55,16 +55,6 @@ from ._kinematics_snapshots import (
 from ._segmentation_snapshots import structural_snapshot
 from .test_segmentation_gap_free import assert_snapshot_equal
 
-# The recordings include a trial that never enters the decision region, so the
-# session has one usable trial and no variation to z-score; the snapshots
-# compare outputs, and the VTE warnings about both are expected.
-pytestmark = [
-    pytest.mark.filterwarnings(
-        r"ignore:Trial \d+ spanning .* never enters decision region:UserWarning"
-    ),
-    pytest.mark.filterwarnings("ignore:No variation in :UserWarning"),
-]
-
 
 @pytest.fixture(scope="session")
 def kinematic_outputs(continuous_recording):

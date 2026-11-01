@@ -235,8 +235,10 @@ class TestValidateRegionOverlap:
         issues = validate_region_overlap(regions)
         assert len(issues) == 0
 
-    def test_heavily_overlapping_regions_warns(self, overlapping_regions):
-        """Heavily overlapping regions should warn."""
+    def test_heavily_overlapping_regions_are_reported_not_warned(
+        self, overlapping_regions
+    ):
+        """Heavy overlap is returned as an issue; nested regions never warn."""
         r1, r2 = overlapping_regions
         regions = Regions([r1, r2])
 
@@ -246,21 +248,17 @@ class TestValidateRegionOverlap:
                 regions, overlap_threshold=DEFAULT_OVERLAP_THRESHOLD
             )
 
-            assert len(issues) > 0
-            assert "overlap" in issues[0].lower()
-            assert len(w) >= 1
+        assert len(issues) > 0
+        assert "overlap" in issues[0].lower()
+        assert len(w) == 0
 
     def test_threshold_controls_sensitivity(self, overlapping_regions):
-        """Higher threshold should not warn for moderate overlap."""
+        """A higher threshold does not report moderate overlap."""
         r1, r2 = overlapping_regions
         regions = Regions([r1, r2])
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            # With threshold at 95%, moderate overlap should not warn
-            validate_region_overlap(regions, overlap_threshold=0.95)
-
-            assert len(w) == 0
+        # With threshold at 95%, moderate overlap is not an issue
+        assert validate_region_overlap(regions, overlap_threshold=0.95) == []
 
     def test_single_region_no_issues(self, region_inside_boundary):
         """Single region should have no overlap issues."""
@@ -269,7 +267,7 @@ class TestValidateRegionOverlap:
         assert len(issues) == 0
 
     def test_validate_region_overlap_valid_polygons_unchanged(self):
-        """Valid overlapping polygons still produce the overlap warning/issue.
+        """Valid overlapping polygons still produce the overlap issue.
 
         Guards against the try/except swallowing the normal overlap path.
         """
@@ -285,8 +283,7 @@ class TestValidateRegionOverlap:
         )
         regions = Regions([large, small])
 
-        with pytest.warns(UserWarning, match="overlap"):
-            issues = validate_region_overlap(regions, overlap_threshold=0.5)
+        issues = validate_region_overlap(regions, overlap_threshold=0.5)
 
         assert len(issues) > 0
         assert any("overlap" in issue.lower() for issue in issues)
@@ -317,9 +314,12 @@ class TestValidateAnnotations:
             warnings.simplefilter("always")
             issues = validate_annotations(regions, boundary_region)
 
-            # Should detect overlap and outside boundary issues
+            # Should detect overlap and outside boundary issues; only the
+            # boundary problem warns, overlap is reported in the issues alone.
             assert len(issues) >= 2
-            assert len(w) >= 2
+            assert any("overlap" in issue.lower() for issue in issues)
+            assert len(w) >= 1
+            assert not any("overlap" in str(warning.message) for warning in w)
 
     def test_no_boundary_only_checks_overlap(self, overlapping_regions):
         """Without boundary, only overlap is checked."""
@@ -602,7 +602,7 @@ class TestMultiPolygonHandling:
         regions = Regions([r1, r2])
 
         # Should complete without error
-        issues = validate_region_overlap(regions, warn_overlap=False)
+        issues = validate_region_overlap(regions)
         # The overlap is partial, may or may not trigger depending on threshold
         assert isinstance(issues, list)
 
@@ -667,6 +667,6 @@ class TestEdgeCaseGeometries:
             # Default threshold is 0.5, small is 100% inside large
             issues = validate_region_overlap(regions, overlap_threshold=0.5)
 
-            # Small is 100% overlapping with large, should warn
+            # Small is 100% overlapping with large: reported, not warned
             assert len(issues) > 0
-            assert len(w) >= 1
+            assert len(w) == 0

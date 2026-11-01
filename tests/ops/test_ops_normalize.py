@@ -214,5 +214,5 @@ class TestCombineFieldsValidation:
     def test_unknown_mode_rejected(self):
         from neurospatial.ops.normalize import combine_fields
 
-        with pytest.raises(ValueError, match="Unknown mode"):
+        with pytest.raises(ValueError, match="mode must be one of"):
             combine_fields([np.ones(3), np.ones(3)], mode="median")  # type: ignore[arg-type]

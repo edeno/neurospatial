@@ -53,7 +53,7 @@ class TestVideoOverlayCacheSize:
     def test_cache_size_zero_raises_error(self, sample_video_array: np.ndarray):
         """Test that cache_size=0 raises ValueError."""
         with pytest.raises(
-            ValueError, match=r"WHAT: cache_size must be a positive integer"
+            ValueError, match=r"cache_size must be a positive integer"
         ) as exc_info:
             VideoOverlay(source=sample_video_array, cache_size=0)
 
@@ -64,7 +64,7 @@ class TestVideoOverlayCacheSize:
     def test_cache_size_negative_raises_error(self, sample_video_array: np.ndarray):
         """Test that negative cache_size raises ValueError."""
         with pytest.raises(
-            ValueError, match=r"WHAT: cache_size must be a positive integer"
+            ValueError, match=r"cache_size must be a positive integer"
         ) as exc_info:
             VideoOverlay(source=sample_video_array, cache_size=-10)
 
@@ -519,7 +519,7 @@ class TestVideoOverlayPrefetching:
 
         with pytest.raises(
             ValueError,
-            match=r"WHAT: prefetch_ahead must be a non-negative integer, got",
+            match=r"prefetch_ahead must be an integer of at least 0",
         ) as exc_info:
             VideoOverlay(source=video_array, prefetch_ahead=-5)
 

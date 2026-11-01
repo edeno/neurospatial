@@ -22,7 +22,6 @@ Examples
 
 from __future__ import annotations
 
-import warnings
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 # Re-export TrackGraphResult from helpers module for public API
+from neurospatial._exceptions import _format_error
 from neurospatial.annotation._track_helpers import (
     TrackGraphResult,
     prepare_track_graph_result,
@@ -62,12 +62,11 @@ def _apply_initial_edges(
     state: TrackBuilderState,
     initial_edges: list[tuple[int, int]],
 ) -> None:
-    """Add caller-supplied ``initial_edges`` to ``state``, warning on invalid ones.
+    """Add caller-supplied ``initial_edges`` to ``state``.
 
     ``TrackBuilderState.add_edge`` returns ``False`` when an edge references a
-    non-existent node, is a self-loop, or duplicates an existing edge. Rather
-    than silently discarding such entries, emit a ``UserWarning`` naming the
-    offending edge so the caller knows it was ignored.
+    non-existent node, is a self-loop, or duplicates an existing edge. Such an
+    entry raises rather than being dropped.
 
     Parameters
     ----------
@@ -75,17 +74,22 @@ def _apply_initial_edges(
         The builder state to add edges to.
     initial_edges : list of tuple of int
         Edge connections as ``(node_i, node_j)`` tuples.
+
+    Raises
+    ------
+    ValueError
+        If an edge references a non-existent node, is a self-loop, or
+        duplicates an existing edge.
     """
     for node1, node2 in initial_edges:
         if not state.add_edge(node1, node2):
-            warnings.warn(
-                f"Ignoring invalid initial edge ({node1}, {node2}): "
-                f"edges must reference existing nodes "
-                f"(0..{len(state.nodes) - 1}), must not be self-loops, "
-                f"and must not duplicate an existing edge.",
-                UserWarning,
-                stacklevel=2,
+            msg = _format_error(
+                f"Invalid initial edge ({node1}, {node2}).",
+                why=f"edges must reference existing nodes (0..{len(state.nodes) - 1}), "
+                "must not be self-loops, and must not duplicate an existing edge.",
+                fix="remove or correct that entry in initial_edges.",
             )
+            raise ValueError(msg)
 
 
 def _same_paths(
@@ -142,8 +146,7 @@ def annotate_track_graph(
     initial_edges : list of tuple, optional
         Pre-existing edge connections as (node_i, node_j) tuples. Any entry
         that references a non-existent node, is a self-loop, or duplicates
-        another edge is invalid and is ignored with a ``UserWarning`` rather
-        than silently discarded.
+        another edge is invalid and raises ``ValueError``.
     initial_node_labels : list of str, optional
         Labels for initial nodes (e.g., ["start", "junction", "goal"]).
 
@@ -156,7 +159,8 @@ def annotate_track_graph(
     Raises
     ------
     ValueError
-        If neither video_path nor image is provided.
+        If neither video_path nor image is provided, or if an entry of
+        ``initial_edges`` is invalid.
     IndexError
         If frame_index is out of range for the video.
     ImportError
@@ -398,7 +402,6 @@ def annotate_track_graph(
                 "was restored."
             )
             viewer.status = message
-            warnings.warn(message, UserWarning, stacklevel=2)
         widget.sync_from_state()
 
     edges_layer.events.data.connect(_sync_edges_to_state)

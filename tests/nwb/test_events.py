@@ -628,14 +628,10 @@ class TestWriteRegionCrossings:
         [{"crossings": []}, {"times": [], "regions": [], "directions": []}],
         ids=["records", "arrays"],
     )
-    def test_zero_crossings_write_nothing_and_warn(self, empty_nwb, kwargs):
+    def test_zero_crossings_write_nothing(self, empty_nwb, kwargs):
         from neurospatial.io.nwb import write_region_crossings
 
-        with pytest.warns(
-            UserWarning,
-            match="write_region_crossings wrote nothing: there are no region crossings",
-        ):
-            write_region_crossings(empty_nwb, **kwargs)
+        write_region_crossings(empty_nwb, **kwargs)
 
         assert "behavior" not in empty_nwb.processing
 

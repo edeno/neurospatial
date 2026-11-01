@@ -58,10 +58,7 @@ def scene(env):
         TimeSeriesOverlay(np.sin(CLOCK * 5), CLOCK, label="LFP"),
         SpikeRasterOverlay([np.array([0.1, 0.9]), np.array([0.2])]),
     ]
-    with (
-        pytest.warns(UserWarning, match="no calibration"),
-        pytest.warns(UserWarning, match="Partial temporal overlap"),
-    ):
+    with pytest.warns(UserWarning, match="Partial temporal overlap"):
         animation = Animation(env, fields, frame_times=CLOCK, overlays=overlays)
     yield animation
     animation.close()

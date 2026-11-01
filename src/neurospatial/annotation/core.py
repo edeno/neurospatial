@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from neurospatial._validation import check_writable, validate_finite_scalar
+from neurospatial._validation import (
+    check_writable,
+    validate_finite_scalar,
+    validate_instance,
+)
 from neurospatial.annotation._types import (
     AnnotationConfig,
     MultipleBoundaryStrategy,
@@ -54,6 +58,8 @@ class AnnotationResult(NamedTuple):
     walls : dict of str to LineString
         Each drawn wall by name, as drawn. Pass them to
         ``OpenArena(polygon, walls=walls)`` to build another environment.
+        When no environment is built (``mode="regions"``, or no boundary was
+        drawn), they are kept here unattached to any environment.
     landmarks : Landmarks
         The drawn landmarks; attach them with ``env.with_landmarks``.
     calibration : VideoCalibration or None
@@ -183,7 +189,8 @@ def annotate_video(
         Named tuple containing:
         - environment: Environment or None
         - regions: Regions collection
-        - walls: dict of wall name to LineString
+        - walls: dict of wall name to LineString; kept here unattached
+          when no environment is built
         - landmarks: Landmarks collection
 
     Raises
@@ -381,6 +388,8 @@ def annotate_project(
         If the project is corrupt, has an unsupported version, requires a
         missing bin size, or autosave settings are invalid. Invalid geometry
         must be edited before export.
+    TypeError
+        If ``project`` is neither an ``AnnotationProject`` nor a path.
     FileExistsError
         If ``project_path`` names an existing file other than the project
         being resumed, and ``overwrite`` is False.
@@ -409,11 +418,14 @@ def annotate_project(
         draft = AnnotationProject.load(source)
         if project_path is None:
             project_path = source
-    elif isinstance(project, AnnotationProject):
-        draft = project
     else:
-        msg = "project must be an AnnotationProject or a project file path."  # type: ignore[unreachable]  # runtime check of user input
-        raise TypeError(msg)
+        draft = validate_instance(
+            project,
+            AnnotationProject,
+            name="project",
+            owner="annotate_project()",
+            hint="pass an AnnotationProject or a project file path",
+        )
     project_saved = (
         source is not None
         and project_path is not None
@@ -1089,14 +1101,6 @@ def _process_annotation_results(
         )
         # Attach regions and landmarks to environment
         environment = environment.with_regions(regions).with_landmarks(landmarks)
-    elif walls:
-        warnings.warn(
-            f"{len(walls)} wall(s) were drawn but no environment was built, so "
-            "result.walls holds them unattached. Draw an environment boundary "
-            "with mode='both' or mode='environment' to apply them.",
-            UserWarning,
-            stacklevel=3,
-        )
 
     logger.debug(
         "Annotation complete: environment=%s, regions=%d, walls=%d, landmarks=%d",

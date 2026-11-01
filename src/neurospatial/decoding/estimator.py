@@ -464,16 +464,18 @@ warn_on_drop
         >>> bool(np.all(result.times >= 10.0))
         True
         """
+        from neurospatial._validation import validate_instance
         from neurospatial.encoding.spatial import SpatialRatesResult
 
-        if not isinstance(rates, SpatialRatesResult):
-            msg = (  # type: ignore[unreachable]  # runtime check of user input
-                f"BayesianDecoder.from_rates expects SpatialRatesResult, got {type(rates).__name__}.\n"
-                "Why: the decoder needs spatial rate maps, their environment and unit identities.\n"
-                "Fix: call rates = compute_spatial_rates(env, spike_times, times, positions), "
-                "then BayesianDecoder.from_rates(rates)."
-            )
-            raise TypeError(msg)
+        rates = validate_instance(
+            rates,
+            SpatialRatesResult,
+            name="rates",
+            owner="BayesianDecoder.from_rates()",
+            hint="the decoder needs spatial rate maps, their environment and unit "
+            "identities; call rates = compute_spatial_rates(env, spike_times, times, "
+            "positions), then BayesianDecoder.from_rates(rates)",
+        )
         models = np.asarray(rates.firing_rates)
         dtype = np.float32 if models.dtype == np.float32 else np.float64
         settings = rates.analysis_settings or {}

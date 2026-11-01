@@ -5,8 +5,6 @@ release them when the view closes. Readers a custom adapter returns are
 borrowed and stay open.
 """
 
-import warnings
-
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
@@ -87,7 +85,6 @@ def file_video(monkeypatch):
         monkeypatch.setattr("neurospatial._video_io._VideoReader", open_reader)
         return VideoOverlay("video.mp4"), opened
 
-    warnings.filterwarnings("ignore", "VideoOverlay has no calibration")
     return make
 
 

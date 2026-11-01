@@ -482,12 +482,6 @@ def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
     assert sum(flags) == 0
 
 
-@pytest.mark.filterwarnings(
-    "ignore:.*no time was spent with the nearest object:UserWarning"
-)
-@pytest.mark.filterwarnings(
-    "ignore:.*no time was spent with the nearest object:UserWarning"
-)
 @pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_heading_interpretation_uses_shared_thresholds(
     significance_recording, monkeypatch

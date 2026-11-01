@@ -112,9 +112,6 @@ def test_fit_keeps_requested_defaults_when_encoder_resolves_them(recording):
         replace(decoder, bandwidth=decoder.analysis_settings["bandwidth"])
 
 
-# The tiny design drives the REML penalty to its search bound; the test is
-# about what from_rates keeps, not about the penalty's identifiability.
-@pytest.mark.filterwarnings("ignore:MRF-GAM REML:UserWarning")
 @pytest.mark.parametrize("pooled", [True, False])
 def test_from_rates_keeps_automatic_penalty_choice(recording, pooled):
     env, spikes, times, positions = recording

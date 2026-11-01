@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_callable, validate_instance
+
 __all__ = ["SnapshotAdapter"]
 
 _SnapshotRole = Literal["locator", "track", "arena", "binning"]
@@ -76,9 +78,16 @@ class SnapshotAdapter:
         if self.role not in _ROLES:
             msg = f"SnapshotAdapter.role must be one of {_ROLES!r}."
             raise ValueError(msg)
-        if not isinstance(self.provider_type, type):
-            msg = "SnapshotAdapter.provider_type must be a Python type."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
-        if not callable(self.snapshot) or not callable(self.decode):  # type: ignore[redundant-expr]  # runtime check of user input
-            msg = "SnapshotAdapter.snapshot and decode must be callable."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        validate_instance(
+            self.provider_type,
+            type,
+            name="provider_type",
+            owner="SnapshotAdapter",
+            hint="pass the Python class the adapter snapshots",
+        )
+        for field_name in ("snapshot", "decode"):
+            validate_callable(
+                getattr(self, field_name),
+                name=field_name,
+                owner="SnapshotAdapter",
+            )

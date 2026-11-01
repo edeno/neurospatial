@@ -252,10 +252,10 @@ def test_a_shown_animation_draws_without_warnings(apparatus, walk):
     assert [str(w.message) for w in caught] == []
 
 
-def test_an_event_marker_without_a_gpu_shape_warns(apparatus, walk):
+def test_an_event_marker_without_a_gpu_shape_raises(apparatus, walk):
     t, path, fields = walk
     events = EventOverlay(event_times=t[[10]], event_positions=path[[10]], markers="p")
-    with pytest.warns(UserWarning, match="no marker 'p'"):
+    with pytest.raises(ValueError, match="no marker 'p'"):
         apparatus.animate_fields(
             fields, frame_times=t, backend="fastplotlib", overlays=[events]
         )
@@ -483,14 +483,13 @@ def test_a_series_without_values_at_the_start_is_drawn_from_its_first_value(
     assert np.nanmin(x) == pytest.approx(1.0, abs=0.01)  # the window's left
 
 
-def test_uneven_frames_are_each_reached_and_gaps_warned(apparatus, walk):
+def test_uneven_frames_are_each_reached(apparatus, walk):
     _, _, fields = walk
     # Two bursts of 2 ms decoding bins, 5 s apart.
     times = np.concatenate([np.arange(60) * 0.002, 5.0 + np.arange(60) * 0.002])
-    with pytest.warns(UserWarning, match="unevenly spaced"):
-        animation = apparatus.animate_fields(
-            fields, frame_times=times, backend="fastplotlib"
-        ).native
+    animation = apparatus.animate_fields(
+        fields, frame_times=times, backend="fastplotlib"
+    ).native
     step = animation.widget.ranges["time"].step
     assert step <= np.diff(times).min()  # stepping never passes over a frame
     jittered = np.cumsum(np.random.default_rng(0).uniform(0.9, 1.1, len(times)) / 30.0)
@@ -1359,13 +1358,12 @@ def test_video_follows_the_slider_and_stands_upright_without_calibration(
     frames[:, :10, :, 0] = 255  # top rows red
     frames[60:, :, :, 2] = 255  # later frames also blue
     overlay = VideoOverlay(source=frames, times=t, alpha=1.0)
-    with pytest.warns(UserWarning, match="no calibration"):
-        animation = apparatus.animate_fields(
-            np.zeros((len(t), apparatus.n_bins)),
-            frame_times=t,
-            backend="fastplotlib",
-            overlays=[overlay],
-        ).native
+    animation = apparatus.animate_fields(
+        np.zeros((len(t), apparatus.n_bins)),
+        frame_times=t,
+        backend="fastplotlib",
+        overlays=[overlay],
+    ).native
     animation.show()
     plot = animation._plot
     top = _pixel(animation.figure, plot, 10, 35)
@@ -1385,7 +1383,7 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
     frames = np.zeros((len(times), 20, 40, 3), dtype=np.uint8)
     frames[:, 0, :, 1] = (np.arange(len(times)) % 256)[:, None]  # its own green
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # no calibration; partial overlap
+        warnings.simplefilter("ignore")  # partial overlap
         animation = apparatus.animate_fields(
             np.zeros((5, apparatus.n_bins)),
             frame_times=frame_times,
@@ -1511,22 +1509,19 @@ def test_every_field_with_a_video_stands_upright(apparatus, walk, video):
 def test_recording_gaps_do_not_slow_playback(apparatus):
     # Two bursts of 100 Hz frames, 9 s apart.
     times = np.concatenate([np.arange(100) * 0.01, 10.0 + np.arange(100) * 0.01])
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # the gap is warned about
-        animation = apparatus.animate_fields(
-            np.zeros((200, apparatus.n_bins)),
-            frame_times=times,
-            backend="fastplotlib",
-            speed=1.0,
-            max_playback_fps=100,
-        ).native
+    animation = apparatus.animate_fields(
+        np.zeros((200, apparatus.n_bins)),
+        frame_times=times,
+        backend="fastplotlib",
+        speed=1.0,
+        max_playback_fps=100,
+    ).native
     steps = animation.widget.ui_sliders._fps["time"]
     assert steps * animation.widget.ranges["time"].step == pytest.approx(1.0)
-    # 100 frames a second cannot each be shown in 60 steps: slower, warned.
-    with pytest.warns(UserWarning, match="plays at speed 0.6"):
-        animation = apparatus.animate_fields(
-            np.zeros((200, apparatus.n_bins)), frame_times=times, backend="fastplotlib"
-        ).native
+    # 100 frames a second cannot each be shown in 60 steps: slower.
+    animation = apparatus.animate_fields(
+        np.zeros((200, apparatus.n_bins)), frame_times=times, backend="fastplotlib"
+    ).native
     steps = animation.widget.ui_sliders._fps["time"]
     assert steps * animation.widget.ranges["time"].step == pytest.approx(0.6)
 

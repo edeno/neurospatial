@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import warnings
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field
@@ -60,6 +59,7 @@ from neurospatial._validation import (
     times_positions_problems,
     timestamps_of,
     validate_finite,
+    validate_integer_at_least,
 )
 from neurospatial._video_io import _validate_frame_processing
 from neurospatial.animation._resources import _OwnedReaders
@@ -1464,6 +1464,9 @@ class EventOverlay(_Overlay):
         -------
         EventData
             Internal data container with event positions and frame indices.
+            Events outside the frame time range are left out of it, which is
+            normal when animating a subset of the recording; ``event_times`` holds
+            the events that were drawn.
         """
         frame_times = _validate_frame_times(frame_times, n_frames)
         support = None
@@ -1530,15 +1533,6 @@ class EventOverlay(_Overlay):
 
             # Events retain their identity when tracking is unavailable. Only
             # the display clock filters events; source support controls location.
-            n_outside = np.sum(~in_range_mask)
-            if n_outside > 0:
-                warnings.warn(
-                    f"EventOverlay '{event_name}': {n_outside} events are outside "
-                    f"the frame time range [{frame_t_min:.3f}, {frame_t_max:.3f}] "
-                    "and will be excluded.",
-                    UserWarning,
-                    stacklevel=_external_stacklevel(),
-                )
 
             # Get filtered event times
             filtered_times = event_times_arr[in_range_mask]
@@ -2626,7 +2620,9 @@ class VideoOverlay(_Overlay):
         whose border cells are inactive, that is smaller than the arena the
         camera saw, so a video of the whole arena needs a calibration there.
         Created using calibrate_from_scale_bar() or calibrate_from_landmarks().
-        Default is None.
+        Without one the video is scaled to fit the environment bounds and may
+        not align accurately with the spatial data; ``overlay.calibration is
+        None`` records that no calibration was given. Default is None.
     times : ndarray of shape (n_frames,), dtype float64, optional
         Timestamps for each video frame, in seconds. If None, video frames
         are aligned to animation frames by sample index. Must be monotonically
@@ -2654,11 +2650,11 @@ class VideoOverlay(_Overlay):
         Temporal interpolation method for aligning video to animation frames.
 
         - "nearest" (default): Use nearest video frame (no interpolation)
-        - "linear": **Not yet implemented** - emits warning and uses nearest
+        - "linear": **Not implemented**; raises ``NotImplementedError``
 
-        Currently only "nearest" is supported. Linear interpolation for video
-        would require blending adjacent frames, which is expensive. A warning
-        is emitted if "linear" is requested. Default is "nearest".
+        Only "nearest" is supported. Linear interpolation for video would
+        require blending adjacent frames, which is expensive. Default is
+        "nearest".
     cache_size : int, optional
         Number of video frames to keep in memory cache for file-based video.
         Larger values reduce disk I/O but use more memory. Only applies to
@@ -2781,6 +2777,10 @@ class VideoOverlay(_Overlay):
             If alpha is not in [0.0, 1.0].
             If source is an array with wrong shape, dtype, or channels.
             If downsample is not a positive integer.
+            If cache_size is not a positive integer.
+            If prefetch_ahead is not a non-negative integer.
+        NotImplementedError
+            If ``interp="linear"``.
         """
         # Validate alpha bounds
         if not 0.0 <= self.alpha <= 1.0:
@@ -2792,52 +2792,47 @@ class VideoOverlay(_Overlay):
             raise ValueError(msg)
 
         # Validate downsample
-        if not isinstance(self.downsample, int) or self.downsample < 1:  # type: ignore[redundant-expr]  # runtime check of user input
-            msg = (
-                f"WHAT: downsample must be a positive integer >= 1, got {self.downsample}.\n"
-                f"WHY: Downsample factor controls spatial resolution reduction.\n"
-                f"Fix: Use downsample=1 (full resolution) or downsample=2 (half resolution)."
-            )
-            raise ValueError(msg)
+        self.downsample = validate_integer_at_least(
+            self.downsample,
+            1,
+            name="downsample",
+            owner="VideoOverlay",
+            hint="use downsample=1 for full resolution or 2 for half resolution",
+        )
 
         # Validate cache_size
-        if not isinstance(self.cache_size, int) or self.cache_size < 1:  # type: ignore[redundant-expr]  # runtime check of user input
-            msg = (
-                f"WHAT: cache_size must be a positive integer >= 1, got {self.cache_size}.\n"
-                f"WHY: cache_size controls how many video frames are kept in memory.\n"
-                f"Fix: Use cache_size=100 (default) or increase for faster playback "
-                f"with more memory usage."
-            )
-            raise ValueError(msg)
+        self.cache_size = validate_integer_at_least(
+            self.cache_size,
+            1,
+            name="cache_size",
+            owner="VideoOverlay",
+            hint="it sets how many video frames are kept in memory; "
+            "use 100 (default) or more for faster playback",
+        )
 
         # Validate prefetch_ahead
-        if not isinstance(self.prefetch_ahead, int) or self.prefetch_ahead < 0:  # type: ignore[redundant-expr]  # runtime check of user input
-            msg = (
-                f"WHAT: prefetch_ahead must be a non-negative integer, "
-                f"got {self.prefetch_ahead}.\n"
-                f"WHY: prefetch_ahead controls how many frames to load in background.\n"
-                f"Fix: Use prefetch_ahead=0 (default) to disable, or e.g. 5 to preload "
-                f"5 upcoming frames during playback."
-            )
-            raise ValueError(msg)
+        self.prefetch_ahead = validate_integer_at_least(
+            self.prefetch_ahead,
+            0,
+            name="prefetch_ahead",
+            owner="VideoOverlay",
+            hint="use 0 (default) to disable background loading, or e.g. 5 "
+            "to preload 5 upcoming frames during playback",
+        )
 
         # Validate source array if it's a numpy array
         if isinstance(self.source, np.ndarray):
             self._validate_source_array(self.source)
 
-        # Warn if linear interpolation is requested (not implemented for video)
         if self.interp == "linear":
-            import warnings
-
-            warnings.warn(
-                "WHAT: VideoOverlay interp='linear' is not yet implemented.\n"
-                "WHY: Linear interpolation for video would require blending adjacent "
-                "frames, which is computationally expensive and rarely needed.\n"
-                "Fix: Using nearest-neighbor frame selection instead. Set interp='nearest' "
-                "explicitly to suppress this warning.",
-                UserWarning,
-                stacklevel=2,
+            msg = _format_error(
+                "VideoOverlay interp='linear' is not implemented.",
+                why="Linear interpolation for video would require blending "
+                "adjacent frames, which is computationally expensive and "
+                "rarely needed.",
+                fix="Use interp='nearest' (the default) to show the nearest frame.",
             )
+            raise NotImplementedError(msg)
 
     def _validate_source_array(self, arr: NDArray[np.uint8]) -> None:
         """Validate source array has correct shape and dtype.
@@ -2912,21 +2907,8 @@ class VideoOverlay(_Overlay):
             "VideoOverlay",
             why="It places camera frames in arena coordinates.",
         )
-        import warnings
-
         # Validate environment supports video overlays
         _validate_video_env(env)
-
-        # Warn if no calibration provided
-        if self.calibration is None:
-            warnings.warn(
-                "VideoOverlay has no calibration. Video will be scaled to fit "
-                "environment bounds but may not align accurately with spatial data. "
-                "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
-                "or calibrate_from_landmarks().",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
 
         with ExitStack() as cleanup:
             # Determine video source: array or file path

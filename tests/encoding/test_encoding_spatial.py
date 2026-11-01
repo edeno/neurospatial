@@ -3862,9 +3862,6 @@ class TestComputeSpatialRatesResultMethods:
         scores = result.border_scores(min_area=200.0, boundary_source="analysis")
         assert scores.shape == (len(multiple_place_cell_spikes),)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_result_has_label_cell_types_method(
         self,
         trajectory_env: Environment,

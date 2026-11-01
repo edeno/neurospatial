@@ -8,8 +8,6 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._stacklevel import _external_stacklevel
-
 # Above this many frames an animation's color range is estimated from a
 # sample of about 50,000 frames rather than read in full.
 _EXACT_RANGE_MAX_FRAMES = 200_000
@@ -92,7 +90,7 @@ def frame_extremes(
     """Each frame's smallest and largest finite value; NaN for none.
 
     Very long recordings (over 200,000 frames) use every n-th frame, about
-    50,000 of them, with a warning. Frames are read 10,000 at a time, so a
+    50,000 of them; pass explicit ``vmin``/``vmax`` for an exact range. Frames are read 10,000 at a time, so a
     memory-mapped recording is never loaded whole.
 
     Parameters
@@ -103,23 +101,11 @@ def frame_extremes(
     Returns
     -------
     lows, highs : ndarray of shape (n_used_frames,)
-
-    Warns
-    -----
-    UserWarning
-        When only every n-th frame is used.
     """
     n_frames = len(fields)
     stride = 1
     if n_frames > _EXACT_RANGE_MAX_FRAMES:
         stride = n_frames // 50_000
-        warnings.warn(
-            f"Estimating colormap range from {n_frames:,} frames using "
-            f"sample_stride={stride} (every {stride}th frame). For exact "
-            "range, pass explicit vmin/vmax parameters.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     frames = range(0, n_frames, stride)
     lows, highs = [np.empty(0)], [np.empty(0)]
     with warnings.catch_warnings():

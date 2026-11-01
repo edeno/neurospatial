@@ -105,8 +105,7 @@ def test_unavailable_border_score_is_undetermined_not_an_error(
         positions,
         bandwidth=5,
     )
-    with pytest.warns(UserWarning, match="border_score cannot be computed"):
-        labels = rates.label_cell_types()
+    labels = rates.label_cell_types()
     table = rates.summary_table()
     np.testing.assert_array_equal(labels, ["undetermined", "undetermined"])
     np.testing.assert_array_equal(table["cell_type"], labels)

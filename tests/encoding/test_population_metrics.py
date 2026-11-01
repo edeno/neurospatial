@@ -137,10 +137,9 @@ class TestPopulationCoverage:
         # Every map exceeds the explicitly requested spatial-map-mean cutoff.
         firing_rates = np.ones((5, n_bins)) * 15.0
 
-        with pytest.warns(UserWarning, match="spatial-map-mean filter"):
-            result = population_coverage(
-                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
-            )
+        result = population_coverage(
+            simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
+        )
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
@@ -512,7 +511,9 @@ class TestPlotPopulationCoverage:
     ) -> None:
         """Test error when result is not PopulationCoverageResult."""
         env, _ = env_and_result
-        with pytest.raises(TypeError, match="result must be PopulationCoverageResult"):
+        with pytest.raises(
+            TypeError, match="result must be a PopulationCoverageResult"
+        ):
             plot_population_coverage(env, {"coverage_fraction": 0.5})  # type: ignore[arg-type]
 
     def test_title_contains_coverage_info(

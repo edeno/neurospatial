@@ -24,8 +24,10 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
+    is_finite_real,
     is_integer_at_least,
     validate_alpha,
+    validate_finite_scalar,
     validate_integer_at_least,
 )
 from neurospatial.replay._inputs import _checked_intervals
@@ -263,18 +265,12 @@ class TemplateMatchMethod:
             )
             raise ValueError(msg)
         validate_alpha(self.alpha, owner=prefix)
-        rate = self.min_peak_rate
-        if rate is not None and (
-            isinstance(rate, bool)
-            or not isinstance(rate, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-            or not np.isfinite(rate)
-            or rate <= 0
-        ):
-            msg = (
-                f"{prefix}: min_peak_rate must be a positive rate in Hz or None, "
-                f"got {rate!r}."
-            )
-            raise ValueError(msg)
+        validate_finite_scalar(
+            self.min_peak_rate,
+            name=f"{prefix}: min_peak_rate",
+            positive=True,
+            none_allowed=True,
+        )
 
     @property
     def criteria(self) -> tuple[ReplayCriterion, ...]:
@@ -339,11 +335,7 @@ def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
         )
         raise ValueError(msg)
     probability = method.trial_probability
-    if (
-        isinstance(probability, bool)  # type: ignore[redundant-expr]  # runtime check of user input
-        or not isinstance(probability, (int, float, np.integer, np.floating))
-        or not 0 < probability < 1
-    ):
+    if not (is_finite_real(probability, positive=True) and probability < 1):
         msg = f"{prefix}: trial_probability must be in (0, 1), got {probability!r}."
         raise ValueError(msg)
 

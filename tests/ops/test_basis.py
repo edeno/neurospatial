@@ -610,10 +610,10 @@ class TestEstimateSpectralRadius:
         with pytest.raises(ValueError, match="malformed input"):
             _estimate_spectral_radius(laplacian)
 
-    def test_estimate_spectral_radius_arpack_failure_warns_and_bounds(
+    def test_estimate_spectral_radius_arpack_failure_returns_bound(
         self, monkeypatch, simple_2d_env
     ):
-        """An ARPACK convergence failure warns and returns the max-degree bound."""
+        """An ARPACK convergence failure returns the max-degree bound, silently."""
         import scipy.sparse.linalg
         from scipy.sparse.linalg import ArpackNoConvergence
 
@@ -627,8 +627,7 @@ class TestEstimateSpectralRadius:
 
         monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
 
-        with pytest.warns(UserWarning, match="did not converge"):
-            radius = _estimate_spectral_radius(laplacian)
+        radius = _estimate_spectral_radius(laplacian)
 
         expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
         assert radius == pytest.approx(expected_bound)

@@ -19,7 +19,6 @@ arrows, poses, events and the time panels' windows) comes from the scene's
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from itertools import pairwise
@@ -28,7 +27,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._exceptions import _format_error
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _head_direction_color, _rate_opacity
@@ -100,16 +99,22 @@ _MARKERS = {
 
 
 def _marker(code: str) -> str:
-    """A Matplotlib marker code as a pygfx marker; circles, with a warning, if none."""
+    """A Matplotlib marker code as a pygfx marker.
+
+    Raises
+    ------
+    ValueError
+        If the fastplotlib backend has no such marker.
+    """
     marker = _MARKERS.get(code)
     if marker is None:
-        warnings.warn(
-            f"The fastplotlib backend has no marker {code!r}; drawing circles. "
-            f"Use one of {sorted(_MARKERS)}.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
+        msg = _format_error(
+            f"The fastplotlib backend has no marker {code!r}.",
+            why="Only the marker codes it can draw are accepted, so the "
+            "overlay is not silently shown with a different shape.",
+            fix=f"Use one of {sorted(_MARKERS)}.",
         )
-        return "circle"
+        raise ValueError(msg)
     return marker
 
 
@@ -1071,7 +1076,7 @@ def _playback(
     """The time each step moves, and the steps a second, to play at ``speed``.
 
     Every field frame is visited: if that needs more than ``max_steps`` a
-    second, playback is slower, with a warning. Overlays with their own
+    second, playback is slower. Overlays with their own
     samples are stepped through as finely as the speed allows. The step is
     then shortened a little so the speed comes out exactly.
 
@@ -1093,15 +1098,6 @@ def _playback(
     steps_per_second : int
     """
     played = min(speed, max_steps * frame_step)
-    if played < speed:
-        warnings.warn(
-            f"Playing every frame at speed {speed:g} needs "
-            f"{speed / frame_step:.0f} steps a second; the controls take at most "
-            f"{max_steps}, so it plays at speed {played:.2g}. Raise "
-            "max_playback_fps (up to 100), lower speed, or subsample the frames.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     step = min(frame_step, max(overlay_interval, played / max_steps))
     steps_per_second = min(max(int(np.ceil(played / step - 1e-9)), 1), max_steps)
     return played / steps_per_second, steps_per_second
@@ -1124,26 +1120,17 @@ def playback_step(frame_times: NDArray[np.float64]) -> float:
     """Seconds that play and the step buttons move: short enough to reach
     every frame, unless frames are much closer than the typical interval.
 
-    Warns when the frames are unevenly spaced enough for playback to hold
-    one frame through a gap or pass over frames.
+    Uneven spacing is normal in behaviour recordings: when the frames are
+    unevenly spaced enough, a long gap plays as one held frame and frames
+    closer than the step can be passed over. Step frame by frame with the
+    Left and Right arrow keys, jump between events with N given an
+    EpochOverlay, or set ``animation.frame``.
     """
     if len(frame_times) < 2:
         return 1.0
     intervals = np.diff(frame_times)
     typical = float(np.median(intervals))
-    step = max(float(intervals.min()), typical / 2)
-    if intervals.min() < typical / 2 or intervals.max() > 10 * typical:
-        warnings.warn(
-            f"frame_times are unevenly spaced (intervals from {intervals.min():.3g} "
-            f"to {intervals.max():.3g} s). Play and the step buttons move "
-            f"{step:.3g} s at a time, so a long gap plays as one held frame and "
-            f"frames closer than {step:.3g} s can be passed over. Step "
-            "frame by frame with the Left and Right arrow keys, jump between "
-            "events with N given an EpochOverlay, or set animation.frame.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    return step
+    return max(float(intervals.min()), typical / 2)
 
 
 class _Frame(NamedTuple):
@@ -1207,8 +1194,8 @@ class FastplotlibAnimation:
         speed allows.
     max_playback_fps : int, default=60
         The most steps a second Play takes (fastplotlib allows 100). When
-        visiting every frame at ``speed`` needs more, it plays slower and
-        warns.
+        visiting every frame at ``speed`` needs more, it plays at the slower
+        speed these steps allow, below ``speed``.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     layout : {"horizontal", "vertical", "grid"}, optional

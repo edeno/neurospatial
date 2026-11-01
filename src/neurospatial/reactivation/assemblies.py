@@ -191,12 +191,6 @@ _COMPONENT_THRESHOLDS = (
 _SURROGATE_THRESHOLDS = ("bin_shuffle", "circular_shift")
 MemberRule = Literal["abs_z", "positive_z", "otsu", "inverse_sqrt_n"]
 _MEMBER_RULES = ("abs_z", "positive_z", "otsu", "inverse_sqrt_n")
-_THRESHOLD_NAMES = {
-    "marchenko_pastur": "Marchenko-Pastur bound",
-    "tracy_widom": "Marchenko-Pastur bound plus the Tracy-Widom term",
-    "bin_shuffle": "bin-shuffle threshold",
-    "circular_shift": "circular-shift threshold",
-}
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -391,6 +385,10 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         Largest eigenvalue of each surrogate count matrix for the
         ``"bin_shuffle"`` and ``"circular_shift"`` thresholds, in the order
         drawn; empty for the analytical thresholds.
+    excluded_unit_ids : ndarray, shape (n_excluded,)
+        Labels (from ``unit_ids``) of the neurons left out of detection
+        because their count is the same in every time bin; each has weight 0
+        in every pattern. Empty when every neuron varies.
 
     Other Parameters
     ----------------
@@ -439,6 +437,11 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     )
     surrogate_max_eigenvalues: NDArray[np.float64] = field(
         default_factory=lambda: np.zeros(0), kw_only=True, compare=False
+    )
+    excluded_unit_ids: NDArray[Any] = field(
+        default_factory=lambda: np.zeros(0, dtype=np.intp),
+        kw_only=True,
+        compare=False,
     )
     _unit_ids_generated: bool = field(
         default=False, repr=False, compare=False, kw_only=True
@@ -751,6 +754,11 @@ def marchenko_pastur_threshold(
 
     Notes
     -----
+    With more neurons than time bins (``n_neurons > n_time_bins``) the
+    threshold is unreliable; this usually means the count matrix is
+    transposed, as :func:`detect_assemblies` warns, and otherwise that the
+    recording is short.
+
     **Marchenko-Pastur Distribution**:
 
     For a random matrix with i.i.d. entries, the eigenvalues of its
@@ -818,15 +826,6 @@ def marchenko_pastur_threshold(
 
     # Aspect ratio
     q = n_neurons / n_time_bins
-
-    if q > 1:
-        warnings.warn(
-            f"n_neurons ({n_neurons}) > n_time_bins ({n_time_bins}). "
-            "Marchenko-Pastur threshold may be unreliable. "
-            "Consider using more time bins or fewer neurons.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
 
     # Upper bound of Marchenko-Pastur distribution
     threshold = (1 + np.sqrt(q)) ** 2
@@ -1006,17 +1005,21 @@ def detect_assemblies(
 
     **Excluded neurons and components**: A neuron with the same count in
     every time bin has no correlation with any other neuron. It is excluded
-    from every method (with a warning), gets weight 0 in every pattern, and
-    the thresholds use the number of varying neurons. (The Lopes-dos-Santos
-    Python code counts silent neurons in the Marchenko-Pastur ratio; a
-    silent neuron only adds an eigenvalue of 0, so here it does not loosen
-    the bound.) Surrogate matrices shuffle the z-scored counts of the
+    from every method, gets weight 0 in every pattern (its label is in
+    ``result.excluded_unit_ids``), and the thresholds use the number of
+    varying neurons. (The Lopes-dos-Santos Python code counts silent neurons
+    in the Marchenko-Pastur ratio; a silent neuron only adds an eigenvalue of
+    0, so here it does not loosen the bound.) Surrogate matrices shuffle the z-scored counts of the
     varying neurons, so their correlation matrices are computed exactly like
     the data's; the percentile uses NumPy's linear interpolation. With
     ``n_components="auto"`` and no eigenvalue above the threshold, the result
-    has no patterns and a warning says so. Requested components beyond the
-    numerical rank of the counts carry no variance and are dropped with a
-    warning, so a result can hold fewer patterns than ``n_components``.
+    has no patterns (``n_significant == 0``; ``eigenvalues`` and ``threshold``
+    show how far the largest fell short): the counts show no correlation
+    structure beyond independent neurons, and ``n_components=`` fits
+    exploratory patterns anyway. Requested components beyond the numerical
+    rank of the counts carry no variance and are dropped, so a result can hold
+    fewer patterns than ``n_components``; components beyond
+    ``min(n_varying_neurons, n_time_bins)`` are not fitted.
 
     **Sign convention**: ICA and PCA determine a pattern only up to its sign.
     Each pattern is scaled to unit length and flipped so that its
@@ -1153,6 +1156,7 @@ def detect_assemblies(
         unit_ids=found.labels,
         component_threshold=component_threshold,
         surrogate_max_eigenvalues=found.surrogate_max,
+        excluded_unit_ids=np.delete(found.labels, found.retained),
         _unit_ids_generated=unit_ids_generated,
     )
 
@@ -1265,16 +1269,6 @@ def _detect(
                 "fire, or select the units that fire in this period",
             )
         )
-    if np.any(constant):
-        warnings.warn(
-            f"detect_assemblies(): {int(constant.sum())} of {n_neurons} neurons "
-            f"have the same count in every time bin (units "
-            f"{labels[constant].tolist()}), so they have no correlation with "
-            "other neurons. They are excluded from detection and get weight 0 "
-            "in every pattern.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
 
     # Work internally in (n_neurons, n_time_bins): the assembly structure is a
     # correlation over neurons, so z-score each neuron over time and correlate
@@ -1308,8 +1302,6 @@ def _detect(
         n_components,
         n_significant,
         eigenvalues,
-        threshold,
-        component_threshold,
         min(n_retained, n_time_bins),
     )
 
@@ -1324,14 +1316,6 @@ def _detect(
         # NMF needs non-negative input, so it factorizes the raw counts.
         patterns, explained_var = _detect_nmf(retained_counts, n_comp, seed)
     n_found = patterns.shape[0]
-    if n_found < n_comp:
-        warnings.warn(
-            f"detect_assemblies(): {n_comp - n_found} of the {n_comp} requested "
-            f"components carry no variance (the counts span only {n_found} "
-            "dimensions), so they define no pattern and are dropped.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
 
     # Order patterns by explained variance, highest first. PCA eigenvectors
     # already are; ICA sources and NMF components come in arbitrary order.
@@ -1408,8 +1392,6 @@ def _n_components(
     n_components: int | Literal["auto"],
     n_significant: int,
     eigenvalues: NDArray[np.float64],
-    threshold: float,
-    component_threshold: str,
     max_rank: int,
 ) -> int:
     """Number of components to fit.
@@ -1422,10 +1404,6 @@ def _n_components(
         Number of eigenvalues above ``threshold``.
     eigenvalues : ndarray, shape (n_neurons,)
         Correlation eigenvalues, descending.
-    threshold : float
-        Eigenvalue threshold, named in the warning when none exceeds it.
-    component_threshold : str
-        The rule that set ``threshold``.
     max_rank : int
         ``min(n_varying_neurons, n_time_bins)``, the most components the
         factorization can give.
@@ -1438,18 +1416,6 @@ def _n_components(
     n_neurons = eigenvalues.size
     if n_components == "auto":
         n_comp = n_significant
-        if n_comp == 0:
-            warnings.warn(
-                f"detect_assemblies(): no eigenvalue of the correlation matrix "
-                f"exceeds the {_THRESHOLD_NAMES[component_threshold]} "
-                f"{threshold:.3f} (largest "
-                f"{eigenvalues[0]:.3f}), so the counts show no correlation "
-                "structure beyond what independent neurons would give. The "
-                "result has no patterns; pass n_components= to fit exploratory "
-                "patterns anyway.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
     else:
         n_comp = int(n_components)
         if n_comp < 1:
@@ -1461,14 +1427,8 @@ def _n_components(
 
     # The factorization can yield at most min(n_retained, n_time_bins)
     # components. Requesting more (short recordings, excluded neurons) would
-    # index past the SVD output; clamp with a warning.
+    # index past the SVD output; clamp.
     if n_comp > max_rank:
-        warnings.warn(
-            f"n_components ({n_comp}) exceeds the achievable rank "
-            f"min(n_varying_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         n_comp = max_rank
     return n_comp
 
@@ -2075,15 +2035,12 @@ def assembly_activation(
         weight, or with ``unit_ids``, if the pattern's labels were generated
         or the labels of the two sides differ.
 
-    Warns
-    -----
-    UserWarning
-        If a neuron with nonzero weight has the same count in every bin of
-        this period. Its z-score is undefined; it contributes 0, so it
-        cannot take part in co-activation.
-
     Notes
     -----
+    A neuron with nonzero weight that has the same count in every bin of
+    this period has no z-score; it contributes 0, so it cannot take part in
+    co-activation. No warning is raised.
+
     **Activation strength**:
 
     With the pattern's weights :math:`w` scaled to unit length and the
@@ -2188,16 +2145,7 @@ def assembly_activation(
     weights = _unit_weights(pattern.weights, call=call)
 
     if z_score_input:
-        spike_counts_z, constant = _z_scores(spike_counts)
-        silent_members = constant & (weights != 0)
-        if np.any(silent_members):
-            warnings.warn(
-                f"{call}: units {np.asarray(pattern.unit_ids)[silent_members].tolist()} "
-                "have nonzero weight but the same count in every time bin of "
-                "spike_counts, so they contribute 0 to the activation strength.",
-                UserWarning,
-                stacklevel=2,
-            )
+        spike_counts_z, _ = _z_scores(spike_counts)
     else:
         spike_counts_z = spike_counts
 
@@ -2257,15 +2205,13 @@ def pairwise_activation(
         [-1, 1] per pair of the columns, or the labels are given alone or
         name different units.
 
-    Warns
-    -----
-    UserWarning
-        If some template pairs are NaN, or a neuron with a defined template
-        correlation has the same count in every bin of ``spike_counts`` (its
-        z-score is undefined; it contributes 0).
-
     Notes
     -----
+    A NaN template pair (a neuron constant in the template period) gets
+    weight 0. A neuron with a defined template correlation that has the same
+    count in every bin of ``spike_counts`` has no z-score; it contributes 0.
+    No warning is raised for either.
+
     With :math:`C` the template's correlation matrix and :math:`P = C` with
     :math:`P_{ii} = 0`,
 
@@ -2386,13 +2332,6 @@ def pairwise_activation(
         labels, order = None, np.arange(n_neurons)
 
     undefined = np.isnan(template)
-    if np.any(undefined):
-        warnings.warn(
-            f"{call}: {int(undefined.sum())} of {n_pairs} template pairs are NaN "
-            "(a neuron constant in the template) and get weight 0.",
-            UserWarning,
-            stacklevel=2,
-        )
     first, second = np.triu_indices(n_neurons, k=1)
     weights = np.where(undefined, 0.0, template)
     projector = np.zeros((n_neurons, n_neurons))
@@ -2400,19 +2339,7 @@ def pairwise_activation(
     projector[second, first] = weights
 
     if z_score_input:
-        spike_counts_z, constant = _z_scores(spike_counts)
-        silent = constant & np.any(projector != 0, axis=0)
-        if np.any(silent):
-            # Name the caller's columns, not their place in template order.
-            columns = np.sort(order[silent])
-            named = "" if labels is None else f" (units {labels[columns].tolist()})"
-            warnings.warn(
-                f"{call}: neuron columns {columns.tolist()}{named} have the "
-                "same count in every time bin of spike_counts, so they "
-                "contribute 0 to the activation strength.",
-                UserWarning,
-                stacklevel=2,
-            )
+        spike_counts_z, _ = _z_scores(spike_counts)
     else:
         spike_counts_z = spike_counts
     activation: NDArray[np.float64] = np.sum(
@@ -2590,11 +2517,6 @@ def pairwise_correlations(
         If ``spike_counts`` is not 2-D or holds NaN, infinite or negative
         values.
 
-    Warns
-    -----
-    UserWarning
-        If some neurons are constant over the period, naming their columns.
-
     Notes
     -----
     Returns only the upper triangle (excluding diagonal) to avoid
@@ -2608,6 +2530,11 @@ def pairwise_correlations(
     each period's column labels to :func:`explained_variance_reactivation`
     (``template_unit_ids=``, ``match_unit_ids=``, ``control_unit_ids=``),
     which pairs the correlations by cell.
+
+    A neuron whose count is the same in every time bin is constant over the
+    period; its pairs are NaN and no warning is raised.
+    :func:`explained_variance_reactivation` drops those pairs; to keep the
+    same pairs in every period, select units that fire in all periods.
 
     A constant neuron's pairs stay NaN rather than 0: a correlation of 0
     would claim the neuron fires independently of the others, while a
@@ -2643,17 +2570,7 @@ def pairwise_correlations(
     ... )
     """
     spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
-    correlations, constant = _pairwise_correlations(spike_counts)
-    if np.any(constant):
-        warnings.warn(
-            f"pairwise_correlations(): neuron columns "
-            f"{np.flatnonzero(constant).tolist()} have the same count in every "
-            "time bin, so their correlations are undefined and returned as NaN. "
-            "explained_variance_reactivation() drops those pairs; to keep the "
-            "same pairs in every period, select units that fire in all periods.",
-            UserWarning,
-            stacklevel=2,
-        )
+    correlations, _ = _pairwise_correlations(spike_counts)
     return correlations
 
 
@@ -2732,15 +2649,13 @@ def assembly_reactivation(
         given, the pattern's labels were generated, or a period's labels
         differ from the pattern's.
 
-    Warns
-    -----
-    UserWarning
-        If neurons with nonzero weight have the same count in every bin of
-        either period (they are excluded from both periods, named in the
-        warning).
-
     Notes
     -----
+    Neurons with nonzero weight that have the same count in every bin of
+    either period are excluded from both periods, without a warning. When
+    every neuron with nonzero weight is excluded, the comparison is undefined
+    and every statistic is NaN.
+
     **Terms.** Peyrache et al. (2009, 2010) call R(t) itself the
     "reactivation strength"; van de Ven et al. (2016) call R(t) the
     "expression strength" and the after-minus-before difference the
@@ -2883,32 +2798,9 @@ def assembly_reactivation(
     # both so the two means use the same neurons.
     excluded = (control_constant | match_constant) & (weights != 0)
     if np.any(excluded):
-        names = np.asarray(pattern.unit_ids)
-        warnings.warn(
-            f"{call}: units {names[excluded].tolist()} have nonzero weight but "
-            "the same count in every time bin of "
-            + " and ".join(
-                period
-                for period, constant in (
-                    ("control_counts", control_constant & excluded),
-                    ("match_counts", match_constant & excluded),
-                )
-                if constant.any()
-            )
-            + ", so they have no z-score there. They are excluded from both "
-            "periods.",
-            UserWarning,
-            stacklevel=2,
-        )
         weights = np.where(excluded, 0.0, weights)
         norm = np.linalg.norm(weights)
         if norm == 0:
-            warnings.warn(
-                f"{call}: every unit with nonzero weight is excluded, so the "
-                "comparison is undefined (NaN).",
-                UserWarning,
-                stacklevel=2,
-            )
             return AssemblyReactivationResult(
                 mean_activation_difference=np.nan,
                 control_mean_activation=np.nan,
@@ -3023,12 +2915,17 @@ def explained_variance_reactivation(
     Warns
     -----
     UserWarning
-        If fewer than 3 pairs remain, or EV is undefined (a correlation
-        vector is constant, or the controls explain the template or match
-        correlations completely).
+        If fewer than 3 pairs remain.
 
     Notes
     -----
+    EV is NaN, without a warning, when it is undefined: a correlation vector
+    is the same for every valid pair, or the control correlations are a
+    perfect linear function of the template or match correlations (or of each
+    other), so the partial correlation has no value. Check that each period's
+    correlations come from :func:`pairwise_correlations` on that period's own
+    counts.
+
     **Explained Variance (EV)**:
 
     With a control, EV is the squared *partial* correlation between template
@@ -3252,19 +3149,6 @@ def explained_variance_reactivation(
         if n_controls == 1
         else np.nan
     )
-
-    if np.isnan(ev):
-        warnings.warn(
-            "explained_variance_reactivation(): EV is undefined (NaN). A "
-            "correlation vector is the same for every valid pair, or the "
-            "control correlations are a perfect linear function of the "
-            "template or match correlations (or of each other), so the "
-            "partial correlation has no value. Check that each period's "
-            "correlations come from pairwise_correlations() on that period's "
-            "own counts.",
-            UserWarning,
-            stacklevel=2,
-        )
 
     return ExplainedVarianceResult(
         explained_variance=float(ev),

@@ -4430,7 +4430,6 @@ class TestDegreeDefaults:
     [(np.full(12, np.nan), np.zeros(12)), (np.zeros(12), np.ones(12))],
     ids=["never-visited", "silent"],
 )
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 @pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_undefined_tuning_metrics_are_nan(rate, occupancy) -> None:
     """A map with no finite or no positive rate has undefined tuning, not an error."""

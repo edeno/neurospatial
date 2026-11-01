@@ -66,9 +66,7 @@ _MISTAKES = {
         "pos=(x, y)",
     ),
     "maze graph without pos": (
-        lambda: Environment.maze(
-            kind="t", track_graph=_graph_without_positions(), bin_size=2.0
-        ),
+        lambda: Environment.maze(track_graph=_graph_without_positions(), bin_size=2.0),
         ValueError,
         "pos=(x, y)",
     ),

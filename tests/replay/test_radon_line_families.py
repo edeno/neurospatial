@@ -209,7 +209,7 @@ class TestClosedLoop:
 
     def test_wrap_must_be_a_bool(self, loop):
         posterior = np.full((3, loop.n_bins), 1.0 / loop.n_bins)
-        with pytest.raises(TypeError, match="wrap=True or wrap=False"):
+        with pytest.raises(TypeError, match="wrap must be True or False"):
             detect_trajectory_radon(
                 loop,
                 posterior,

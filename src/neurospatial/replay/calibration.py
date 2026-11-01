@@ -47,7 +47,11 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import validate_choice, validate_integer_at_least
+from neurospatial._validation import (
+    is_finite_real,
+    validate_choice,
+    validate_integer_at_least,
+)
 from neurospatial.replay._compare import _tolerance
 from neurospatial.replay._inputs import _checked_intervals
 from neurospatial.stats import _binomial_rate
@@ -490,9 +494,7 @@ def _check_rate_options(
         msg = f"{operation}: confidence must be in (0, 1), got {confidence}."
         raise ValueError(msg)
     if expected_rate is not None and not (
-        isinstance(expected_rate, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-        and not isinstance(expected_rate, bool)
-        and 0 < expected_rate < 1
+        is_finite_real(expected_rate, positive=True) and expected_rate < 1
     ):
         msg = (
             f"{operation}: expected_rate must be a rate in (0, 1) or None, got "

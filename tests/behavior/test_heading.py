@@ -343,14 +343,13 @@ class TestHeadingFromVelocity:
                 min_speed=10.0,
             )
 
-        # Opt-in escape hatch: warns and returns the all-NaN array.
-        with pytest.warns(UserWarning, match="speed"):
-            headings = heading_from_velocity(
-                positions=positions,
-                times=np.arange(len(positions)) * 0.1,
-                min_speed=10.0,
-                allow_all_nan=True,
-            )
+        # Opt-in escape hatch: returns the all-NaN array.
+        headings = heading_from_velocity(
+            positions=positions,
+            times=np.arange(len(positions)) * 0.1,
+            min_speed=10.0,
+            allow_all_nan=True,
+        )
         assert np.all(np.isnan(headings))
 
     def test_still_recording_fix_does_not_suggest_lowering_zero_min_speed(self):

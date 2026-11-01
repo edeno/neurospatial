@@ -13,7 +13,7 @@ import pytest
 from numpy.testing import assert_allclose
 from numpy.typing import NDArray
 
-from neurospatial import Environment, _constants
+from neurospatial import Environment
 
 # Import will fail until we implement the module
 from neurospatial.encoding._smoothing import (
@@ -1185,93 +1185,6 @@ def test_clearing_the_cache_releases_gaussian_kernels(simple_env: Environment) -
     rebuilt = _get_gaussian_kernel(env, bandwidth=2.0)
     assert rebuilt is not kernel
     np.testing.assert_array_equal(rebuilt, kernel)
-
-
-class TestGaussianKernelMemoryWarning:
-    """The dense gaussian-KDE kernel WARNS (never raises) above a bin threshold.
-
-    Mirrors the diffusion-kernel warning in ``ops/smoothing.py``: the
-    ``(n_bins, n_bins)`` Gaussian weight matrix is O(n_bins**2) memory, so
-    above ``LARGE_KERNEL_THRESHOLD`` ``_get_gaussian_kernel`` emits a loud
-    ``UserWarning`` (with a GB estimate) and proceeds -- there is no hard limit.
-    Tests run FAST by monkeypatching the threshold to a tiny value where
-    ``_get_gaussian_kernel`` reads it
-    (``neurospatial._constants.LARGE_KERNEL_THRESHOLD``).
-    """
-
-    def test_warns_and_returns_above_threshold(
-        self, simple_env: Environment, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Above the (patched) threshold: warn (naming GB) and still return."""
-        from neurospatial.encoding import _smoothing
-
-        # Patch the threshold below the env's bin count so it trips.
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
-
-        with pytest.warns(
-            UserWarning, match=r"Computing a dense Gaussian-KDE kernel for"
-        ) as record:
-            kernel = _smoothing._get_gaussian_kernel(simple_env, bandwidth=5.0)
-
-        msg = str(record[0].message)
-        assert str(simple_env.n_bins) in msg
-        assert "GB" in msg
-        # Points to the matrix-free alternative (diffusion_kde), not the stale
-        # claim that every method builds a dense kernel.
-        assert "diffusion_kde" in msg
-        # Must have actually built and returned the kernel (no raise).
-        assert kernel.shape == (simple_env.n_bins, simple_env.n_bins)
-
-    def test_below_threshold_no_warn(
-        self,
-        simple_env: Environment,
-        spike_counts_center: np.ndarray,
-        uniform_occupancy: np.ndarray,
-    ) -> None:
-        """Below the (default, large) threshold, ordinary gaussian_kde is unaffected.
-
-        Regression guard: a normal small-env ``compute_spatial_rate``-style
-        gaussian smoothing call must still succeed with no warning.
-        """
-        # Single and batch gaussian paths both run without raising or warning.
-        single = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            uniform_occupancy,
-            method="gaussian_kde",
-            bandwidth=5.0,
-        )
-        assert np.asarray(single).shape == (simple_env.n_bins,)
-
-        batch = smooth_rate_maps_batch(
-            simple_env,
-            spike_counts_center[None, :],
-            uniform_occupancy,
-            method="gaussian_kde",
-            bandwidth=5.0,
-        )
-        assert np.asarray(batch).shape == (1, simple_env.n_bins)
-
-    def test_batch_path_warns_and_computes(
-        self,
-        simple_env: Environment,
-        spike_counts_center: np.ndarray,
-        uniform_occupancy: np.ndarray,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The batch gaussian path warns (naming GB) and still computes rates."""
-
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
-
-        with pytest.warns(UserWarning, match="GB"):
-            batch = smooth_rate_maps_batch(
-                simple_env,
-                spike_counts_center[None, :],
-                uniform_occupancy,
-                method="gaussian_kde",
-                bandwidth=5.0,
-            )
-        assert np.asarray(batch).shape == (1, simple_env.n_bins)
 
 
 # =============================================================================

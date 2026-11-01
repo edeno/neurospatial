@@ -224,18 +224,18 @@ class TestParameterValidation:
                 boundary_source="analysis",
             )
 
-    def test_preferred_view_location_outside_warns(self, env):
-        """preferred_view_location outside environment emits warning."""
+    def test_preferred_view_location_outside_is_accepted(self, env):
+        """preferred_view_location outside the environment is allowed, silently."""
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
 
-        with pytest.warns(UserWarning, match=r"outside.*environment"):
-            SpatialViewCellModel(
-                env=env,
-                preferred_view_location=np.array([200.0, 200.0]),
-                boundary_source="analysis",
-            )
+        model = SpatialViewCellModel(
+            env=env,
+            preferred_view_location=np.array([200.0, 200.0]),
+            boundary_source="analysis",
+        )
+        np.testing.assert_array_equal(model.preferred_view_location, [200.0, 200.0])
 
 
 class TestFiringRateComputation:

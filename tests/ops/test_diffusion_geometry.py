@@ -16,7 +16,7 @@ from environment_helpers import (
 from scipy import linalg
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, _constants
+from neurospatial import Environment
 from neurospatial.environment._cache import MRF_EIGENBASIS
 from neurospatial.environment._fields import (
     diffusion_eigenbasis,
@@ -687,23 +687,6 @@ def test_compute_diffusion_kernels_rejects_graphs_that_sum_edges(graph_type):
         nx.Graph(graph), volumes=np.ones(4), bandwidth=1.0, mode="average"
     )
     np.testing.assert_allclose(kernel.sum(axis=1), 1.0)
-
-
-def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
-    monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
-    graph = nx.path_graph(3)
-    nx.set_edge_attributes(graph, 1.0, "A")
-    nx.set_edge_attributes(graph, 1.0, "distance")
-    with pytest.warns(UserWarning, match="dense diffusion kernel") as direct:
-        compute_diffusion_kernels(
-            graph, volumes=np.ones(3), bandwidth=1.0, mode="average"
-        )
-    with pytest.warns(UserWarning, match="dense diffusion kernel") as via_env:
-        face_env.compute_kernel(bandwidth=1.0, cache=False, mode="density")
-    dense = [
-        w for w in [*direct, *via_env] if "dense diffusion kernel" in str(w.message)
-    ]
-    assert [w.filename for w in dense] == [__file__, __file__]
 
 
 def test_mesh_skew_warning_is_raised_once_per_geometry_at_the_callers_line():

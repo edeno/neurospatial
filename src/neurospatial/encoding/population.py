@@ -27,7 +27,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import validate_choice
+from neurospatial._validation import validate_choice, validate_instance
 from neurospatial.encoding._comparison import (
     _TOPOLOGIES,
     _UNIT_SELECTIONS,
@@ -126,7 +126,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         """Validate, own the arrays and prevent replacing per-unit fields."""
         place_fields = tuple(
             fields
-            if isinstance(fields, PlaceFieldsResult)  # type: ignore[redundant-expr]  # runtime check of user input
+            if isinstance(fields, PlaceFieldsResult)  # type: ignore[redundant-expr]  # accepts bare bin-index sequences, which are wrapped, not rejected
             else PlaceFieldsResult(fields=list(fields))
             for fields in self.place_fields
         )
@@ -562,6 +562,11 @@ def plot_population_coverage(
     matplotlib.axes.Axes
         The matplotlib axes containing the coverage plot.
 
+    Raises
+    ------
+    TypeError
+        If ``result`` is not a :class:`PopulationCoverageResult`.
+
     Notes
     -----
     For 1-D environments (``env.n_dims == 1``) and linearized tracks, plots the
@@ -576,13 +581,13 @@ def plot_population_coverage(
     ...     env, result, show_field_count=True
     ... )  # doctest: +SKIP
     """
-    # Validate result type
-    if not isinstance(result, PopulationCoverageResult):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            f"result must be PopulationCoverageResult, got {type(result).__name__}. "
-            f"Use population_coverage() to compute the result first."
-        )
-        raise TypeError(msg)
+    result = validate_instance(
+        result,
+        PopulationCoverageResult,
+        name="result",
+        owner="plot_population_coverage()",
+        hint="use population_coverage() to compute the result first",
+    )
 
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap

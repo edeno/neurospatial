@@ -289,8 +289,7 @@ def test_pooled_false_all_zero_spike(open_field_env):
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(UserWarning, match="no unit has any spikes"):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
 
     assert fit.penalty is None  # scalar, not a vector
     assert fit.reml_objective is None
@@ -325,15 +324,14 @@ def test_fixed_penalty_precedence(open_field_env, simulate_place_fields):
 # ---------------------------------------------------------------------------
 def test_reml_boundary_diagnostic_pooled(open_field_env, simulate_flat_weak_signal):
     """A spatially flat / weak signal drives the pooled lambda to the UPPER search
-    bound: reml_at_boundary is True (scalar) with one warning naming the upper
-    boundary; a well-structured field is interior (False)."""
+    bound: reml_at_boundary is True (scalar), recorded without a warning; a
+    well-structured field is interior (False)."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 2, seed=11)
     basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
-    with pytest.warns(UserWarning, match="upper"):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=True)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=True)
     assert fit.reml_at_boundary is True
     assert np.isfinite(fit.penalty)  # the applied lambda is still the finite bound
     log_lam = float(np.log(float(fit.penalty)))
@@ -354,72 +352,17 @@ def test_reml_boundary_diagnostic_interior(open_field_env, simulate_place_fields
 
 def test_reml_boundary_diagnostic_per_unit(open_field_env, simulate_flat_weak_signal):
     """pooled=False on flat data: reml_at_boundary is a (n_units,) bool vector, all
-    at the boundary, with EXACTLY ONE aggregate boundary warning (not one/unit)."""
+    at the boundary, recorded without a warning."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 3, seed=13)
     basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
-    with pytest.warns(
-        UserWarning,
-        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
-    ) as rec:
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
     boundary = np.asarray(fit.reml_at_boundary)
     assert boundary.shape == (3,)
     assert boundary.dtype == np.bool_
     assert np.all(boundary)
-    # One aggregate warning naming the upper side + all units, not one per unit.
-    bnd_warnings = [w for w in rec if "search bound" in str(w.message)]
-    assert len(bnd_warnings) == 1
-    assert "upper" in str(bnd_warnings[0].message)
-
-
-def test_reml_boundary_side_lower(open_field_env, simulate_place_fields):
-    """`_reml_boundary_side` labels a small lambda 'lower' (under-smoothing) and a
-    large one 'upper' -- the lower branch is otherwise only hit by the flat-signal
-    upper case."""
-    from neurospatial.encoding._glm import _LOG_PENALTY_BOUNDS, _reml_boundary_side
-
-    lower, upper = _LOG_PENALTY_BOUNDS
-    assert _reml_boundary_side(float(np.exp(lower + 0.1))) == "lower"
-    assert _reml_boundary_side(float(np.exp(upper - 0.1))) == "upper"
-
-
-def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_signal):
-    """The per-unit boundary warning names the caller's unit_ids when supplied,
-    and falls back to positional 'unit index/indices' when they are not."""
-    env = open_field_env
-    counts_full, occ_full = simulate_flat_weak_signal(env, 2, seed=21)
-    basis = env.get_mrf_basis(occ_full, rank=20)
-    counts, occ = _restrict(counts_full, occ_full, basis)
-
-    # Labels supplied -> the warning carries them, not bare indices.
-    with pytest.warns(
-        UserWarning,
-        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
-    ) as rec:
-        fit_mrf_gam(
-            basis,
-            counts,
-            occ,
-            penalty=None,
-            pooled=False,
-            unit_ids=["cell-A", "cell-B"],
-        )
-    msg = "\n".join(str(w.message) for w in rec)
-    assert "cell-A" in msg
-    assert "cell-B" in msg
-    assert "unit index" not in msg  # labels replace the positional fallback
-
-    # No labels -> positional "unit indices".
-    with pytest.warns(
-        UserWarning,
-        match=r"MRF-GAM REML: the selected smoothing penalty lambda is near",
-    ) as rec2:
-        fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
-    msg2 = "\n".join(str(w.message) for w in rec2)
-    assert "unit indices" in msg2
 
 
 def test_unit_ids_misalignment_rejected(open_field_env, simulate_place_fields):

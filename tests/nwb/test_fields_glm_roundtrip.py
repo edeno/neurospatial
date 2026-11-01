@@ -158,11 +158,9 @@ class TestGlmRoundTrip:
         spike_times = [np.sort(rng.uniform(times[0], times[-1], 40)) for _ in range(3)]
 
         # 40 spikes per unit leave the REML penalty at its upper search bound.
-        with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
-            result = compute_spatial_rates(
-                env, spike_times, times, positions, method="glm"
-            )
+        result = compute_spatial_rates(env, spike_times, times, positions, method="glm")
         assert result.method == "glm"
+        assert np.asarray(result.reml_at_boundary).any()
 
         write_spatial_rates(empty_nwb, result)
         back = read_spatial_rates(empty_nwb, env=env)

@@ -86,10 +86,9 @@ def test_invalid_metadata_is_rejected_without_modifying_source(kwargs):
     assert (env.name, env.units, env.frame) == ("training", "cm", "world")
 
 
-def test_custom_unit_labels_keep_the_advisory_warning():
+def test_custom_unit_labels_are_accepted_silently():
     env = _environment()
-    with pytest.warns(UserWarning, match="standard"):
-        updated = env.with_metadata(units="lab distance")
+    updated = env.with_metadata(units="lab distance")
     assert updated.units == "lab distance"
 
 

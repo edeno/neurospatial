@@ -165,11 +165,13 @@ def shapes_to_regions(
         How to handle multiple environment boundaries:
 
         - "last": Use the last drawn boundary (default). A warning is emitted.
-        - "first": Use the first drawn boundary. A warning is emitted.
+        - "first": Use the first drawn boundary, without a warning because
+          you asked for it.
         - "error": Raise ValueError if multiple boundaries are drawn.
     validate : bool, default=True
-        Whether to emit advisory warnings about small areas, overlap and
-        regions outside the boundary. Invalid polygon geometry always raises,
+        Whether to emit advisory warnings about small areas and
+        regions outside the boundary. Overlapping regions are legitimate
+        (nested zones) and never warn; ``validate_region_overlap`` lists them. Invalid polygon geometry always raises,
         including when this is False; simplification does not repair it.
     min_area : float, default=1e-6
         Minimum polygon area threshold for validation. Polygons with area
@@ -312,13 +314,6 @@ def _drafts_to_regions(
             )
         if multiple_boundaries == "first":
             env_boundary = env_boundaries[0]
-            warnings.warn(
-                f"Multiple environment boundaries ({len(env_boundaries)}) were drawn. "
-                f"Using the first one ('{env_boundary.name}') as specified by "
-                "multiple_boundaries='first'.",
-                UserWarning,
-                stacklevel=2,
-            )
         else:  # "last" (default)
             env_boundary = env_boundaries[-1]
             warnings.warn(
@@ -331,24 +326,16 @@ def _drafts_to_regions(
     elif len(env_boundaries) == 1:
         env_boundary = env_boundaries[0]
 
-    # Validate region overlap and containment
+    # Validate region containment
     if validate:
         from neurospatial.annotation.validation import (
-            validate_region_overlap,
             validate_region_within_boundary,
         )
-
-        regions_container = Regions(regions_list)
-
-        # Check for heavy overlap between regions
-        validate_region_overlap(regions_container)
 
         # Check if regions are within boundary
         if env_boundary is not None:
             for region in regions_list:
                 validate_region_within_boundary(region, env_boundary)
-
-        return regions_container, env_boundary, holes_list
 
     return Regions(regions_list), env_boundary, holes_list
 

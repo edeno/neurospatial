@@ -362,10 +362,9 @@ class TestPeriEventHistogram:
         window = (-0.5, 0.5)
         bin_size = 0.1
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(
-                spike_times, event_times, window, bin_size=bin_size
-            )
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
 
         assert isinstance(result, PeriEventResult)
         assert result.n_events == 1
@@ -405,10 +404,9 @@ class TestPeriEventHistogram:
         window = (-1.0, 1.0)
         bin_size = 0.5
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(
-                spike_times, event_times, window, bin_size=bin_size
-            )
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
 
         # Window is 2.0s, bin_size 0.5s → 4 bins
         # Centers at: -0.75, -0.25, 0.25, 0.75
@@ -437,10 +435,9 @@ class TestPeriEventHistogram:
         # [0.4, 0.7). It must NOT be counted in any in-window bin.
         spike_times = np.array([10.45])
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(
-                spike_times, event_times, window, bin_size=bin_size
-            )
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
 
         # All bin centers must lie strictly within the window.
         assert result.bin_centers[-1] <= window[1]
@@ -460,10 +457,9 @@ class TestPeriEventHistogram:
         window = (-0.5, 0.5)
         bin_size = 0.1
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(
-                spike_times, event_times, window, bin_size=bin_size
-            )
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
 
         # First bin has 10 spikes in 0.1s → 100 Hz
         rates = result.firing_rate
@@ -512,8 +508,7 @@ class TestPeriEventHistogram:
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(spike_times, event_times, window)
+        result = peri_event_histogram(spike_times, event_times, window)
 
         assert np.all(np.isnan(result.sem))
 
@@ -551,8 +546,7 @@ class TestPeriEventHistogram:
         event_times = np.array([50.0])
         window = (-0.5, 0.5)
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(spike_times, event_times, window)
+        result = peri_event_histogram(spike_times, event_times, window)
 
         assert np.all(result.histogram == 0)
 
@@ -602,10 +596,9 @@ class TestPeriEventHistogram:
         window = (-1.0, 1.0)
         bin_size = 0.1
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = peri_event_histogram(
-                spike_times, event_times, window, bin_size=bin_size
-            )
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
 
         n_bins = len(result.bin_centers)
         assert len(result.histogram) == n_bins
@@ -677,10 +670,9 @@ class TestPopulationPeriEventHistogram:
         window = (-1.0, 1.0)
         bin_size = 0.5
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = population_peri_event_histogram(
-                spike_trains, event_times, window, bin_size=bin_size
-            )
+        result = population_peri_event_histogram(
+            spike_trains, event_times, window, bin_size=bin_size
+        )
 
         assert isinstance(result, PopulationPeriEventResult)
         assert result.n_units == 2
@@ -719,10 +711,9 @@ class TestPopulationPeriEventHistogram:
         window = (-0.5, 0.5)
         bin_size = 0.1
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = population_peri_event_histogram(
-                spike_trains, event_times, window, bin_size=bin_size
-            )
+        result = population_peri_event_histogram(
+            spike_trains, event_times, window, bin_size=bin_size
+        )
 
         rates = result.firing_rates
         assert rates.shape == result.histograms.shape
@@ -767,8 +758,7 @@ class TestPopulationPeriEventHistogram:
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.warns(UserWarning, match="single event"):
-            result = population_peri_event_histogram(spike_trains, event_times, window)
+        result = population_peri_event_histogram(spike_trains, event_times, window)
 
         assert result.n_units == 2
         assert np.all(result.histograms[1] == 0)

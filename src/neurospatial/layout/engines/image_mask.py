@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_instance
 from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
@@ -93,9 +94,13 @@ class ImageMaskLayout(_GridMixin):
         """
         self._begin_build()
 
-        if not isinstance(image_mask, np.ndarray):
-            msg = "image_mask must be a numpy array."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        image_mask = validate_instance(
+            image_mask,
+            np.ndarray,
+            name="image_mask",
+            owner="ImageMaskLayout.build()",
+            hint="pass a 2D boolean NumPy array",
+        )
         if image_mask.ndim != 2:
             msg = "image_mask must be a 2D array."
             raise ValueError(msg)

@@ -111,7 +111,6 @@ Kramer, M.A. & Eden, U.T. (2016). Case Studies in Neural Data Analysis. MIT Pres
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -121,7 +120,6 @@ from numpy.typing import NDArray
 from neurospatial._angles import to_radians, wrap_angle
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
-from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -360,13 +358,6 @@ def _valid_angles(
         angles = angles[~nan_mask]
         if weights is not None:
             weights = weights[~nan_mask]
-        if len(angles):
-            warnings.warn(
-                f"Removed {n_nan} NaN values from angles. "
-                f"Proceeding with {len(angles)} valid samples.",
-                category=UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
 
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
@@ -448,13 +439,6 @@ def _validate_paired_input(
     # Remove pairs where either is NaN
     nan_mask = np.isnan(arr1) | np.isnan(arr2)
     if np.any(nan_mask):
-        n_removed = np.sum(nan_mask)
-        warnings.warn(
-            f"Removed {n_removed} pairs containing NaN values. "
-            f"Proceeding with {len(arr1) - n_removed} valid pairs.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         arr1 = arr1[~nan_mask]
         arr2 = arr2[~nan_mask]
 
@@ -490,7 +474,7 @@ def rayleigh_test(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles are dropped with a warning.
+        Sample of angles. NaN angles are dropped and the statistic uses the rest.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -618,7 +602,8 @@ def circular_linear_correlation(
     angles : ndarray of shape (n_samples,)
         Circular variable (e.g., spike phases) in radians or degrees.
     linear_values : ndarray of shape (n_samples,)
-        Linear variable (e.g., positions, time).
+        Linear variable (e.g., positions, time). A pair with a NaN in either
+        array is dropped and the correlation uses the remaining pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
 
@@ -627,9 +612,8 @@ def circular_linear_correlation(
     r : float
         Correlation coefficient in [0, 1]. It has no sign, so it cannot tell
         phase precession from procession; for slope and direction use
-        ``compute_phase_precession``. NaN, with a ``RuntimeWarning``, when
-        the correlation is undefined: constant ``linear_values`` or
-        constant angles.
+        ``compute_phase_precession``. NaN when the correlation is undefined:
+        constant ``linear_values`` or constant angles.
     pval : float
         P-value from the large-sample chi-squared approximation (see Notes).
         NaN when ``r`` is undefined.
@@ -687,12 +671,6 @@ def circular_linear_correlation(
     n = len(angles)
 
     if np.ptp(linear_values) == 0:
-        warnings.warn(
-            "linear_values are constant, so the circular-linear correlation is "
-            "undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     # Project the centered linear variable onto the span of the centered
@@ -707,12 +685,6 @@ def circular_linear_correlation(
     u, singular_values, _ = np.linalg.svd(basis, full_matrices=False)
     rank = int(np.sum(singular_values > 1e-10 * np.sqrt(n)))
     if rank == 0:
-        warnings.warn(
-            "angles are constant, so the circular-linear correlation is "
-            "undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     projection = u[:, :rank].T @ x
@@ -777,7 +749,8 @@ def circular_circular_correlation(
         First circular variable in radians or degrees.
     angles2 : ndarray of shape (n_samples,)
         Second circular variable in radians or degrees. Must have same
-        length as ``angles1``.
+        length as ``angles1``. A pair with a NaN in either array is dropped
+        and the correlation uses the remaining pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles (applies to both arrays).
 
@@ -788,7 +761,7 @@ def circular_circular_correlation(
         - r > 0: positive association (angles increase together)
         - r < 0: negative association (angles move in opposite directions)
         - r = 0: no circular correlation
-        NaN, with a ``RuntimeWarning``, when either variable is constant.
+        NaN when either variable is constant.
     pval : float
         Two-sided p-value from the large-sample normal approximation. NaN
         when ``r`` is undefined or the statistic's variance is zero.
@@ -867,12 +840,6 @@ def circular_circular_correlation(
     l02 = np.mean(sin_dev2**2)
     # A spread below 1e-10 rad RMS is rounding error around a constant angle.
     if min(l20, l02) <= 1e-20:
-        warnings.warn(
-            "One or both circular variables are constant, so the "
-            "circular-circular correlation is undefined. Returning r=NaN, p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return np.nan, np.nan
 
     # Jammalamadaka & Sarma coefficient
@@ -888,12 +855,6 @@ def circular_circular_correlation(
     l22 = np.mean(sin_dev1**2 * sin_dev2**2)
 
     if l22 == 0:
-        warnings.warn(
-            "Cannot compute the p-value: no pair varies in both variables at "
-            "once, so the statistic's variance is zero. Returning p=NaN.",
-            category=RuntimeWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return rho, np.nan
 
     # Test statistic follows standard normal under null hypothesis
@@ -918,8 +879,8 @@ def circular_mean(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped with a
-        warning.
+        Sample of angles. NaN angles (and their weights) are dropped and the
+        statistic uses the rest.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -967,8 +928,8 @@ def circular_variance(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped with a
-        warning.
+        Sample of angles. NaN angles (and their weights) are dropped and the
+        statistic uses the rest.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -1013,8 +974,8 @@ def mean_resultant_length(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped with a
-        warning.
+        Sample of angles. NaN angles (and their weights) are dropped and the
+        statistic uses the rest.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -1195,8 +1156,8 @@ def _wald_test_magnitude(
     Returns
     -------
     float
-        P-value from chi-squared distribution with 2 df; NaN, with a
-        warning, when ``cov_matrix`` is singular.
+        P-value from chi-squared distribution with 2 df; NaN when
+        ``cov_matrix`` is singular.
 
     Raises
     ------
@@ -1225,11 +1186,6 @@ def _wald_test_magnitude(
     try:
         wald_stat = float(beta @ np.linalg.solve(cov_matrix, beta))
     except np.linalg.LinAlgError:
-        warnings.warn(
-            "Covariance matrix is singular. Cannot compute p-value; returning NaN.",
-            stacklevel=_external_stacklevel(),
-            category=UserWarning,
-        )
         return np.nan
 
     return float(chi2.sf(wald_stat, df=2))
@@ -1373,8 +1329,7 @@ def circular_basis_metrics(
         Computed as atan2(beta_sin, beta_cos).
     pvalue : float
         Wald-test p-value for H0: amplitude = 0 (no modulation). NaN if
-        ``cov_matrix`` is not provided, and NaN with a warning if it is
-        singular.
+        ``cov_matrix`` is not provided or is singular.
 
     Raises
     ------
@@ -1458,7 +1413,7 @@ def is_modulated(
         - p-value < alpha (statistically significant)
         - magnitude >= min_magnitude (practically meaningful)
         False otherwise, including when ``cov_matrix`` is singular (the
-        p-value is then NaN, with a warning).
+        p-value is then NaN).
 
     Raises
     ------

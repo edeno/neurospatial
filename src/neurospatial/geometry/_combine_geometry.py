@@ -16,7 +16,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
-from neurospatial._validation import validate_finite_scalar
+from neurospatial._validation import validate_bool, validate_finite_scalar
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -830,9 +830,9 @@ def combine_binnings(
         If ``auto_bridge`` is True outside 2-D while an arena has walls,
         because a bridge's wall crossings cannot be certified there.
     """
-    if type(auto_bridge) is not bool:
-        msg = "auto_bridge must be boolean."  # type: ignore[unreachable]  # runtime check of user input
-        raise TypeError(msg)
+    auto_bridge = validate_bool(
+        auto_bridge, name="auto_bridge", owner="Environment.combine()"
+    )
     validate_finite_scalar(
         max_mnn_distance, name="max_mnn_distance", positive=False, none_allowed=True
     )

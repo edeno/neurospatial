@@ -286,11 +286,9 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
         assert table["cell_type"].iloc[0] == "undetermined"
 
-        # label_cell_types agrees with the table and says why.
+        # label_cell_types agrees with the table; the reason is in the table.
         population = compute_spatial_rates(env, [spike_times], times, positions)
-        with pytest.warns(UserWarning, match="grid_score cannot be computed") as caught:
-            labels = population.label_cell_types(boundary_source="analysis")
-        assert "Hexagonal" in str(caught[0].message)
+        labels = population.label_cell_types(boundary_source="analysis")
         np.testing.assert_array_equal(labels, ["undetermined"])
 
     def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:

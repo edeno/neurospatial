@@ -27,7 +27,7 @@ from neurospatial._intervals import as_intervals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_trains
 from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
-from neurospatial._validation import validate_finite_scalar
+from neurospatial._validation import validate_choice, validate_finite_scalar
 
 
 def validate_dt(dt: float) -> float:
@@ -212,6 +212,12 @@ def bin_spikes_in_time(
     >>> result.posterior.shape == (len(bin_centers), env.n_bins)
     True
     """
+    orient = validate_choice(
+        orient,
+        ("time_x_neuron", "neuron_x_time"),
+        name="orient",
+        owner="bin_spikes_in_time()",
+    )
     dt = validate_dt(dt)
     trains = as_spike_trains(spike_times)
     if epochs is not None:
@@ -280,7 +286,4 @@ def bin_spikes_in_time(
     bin_centers = left + dt / 2.0
     if orient == "neuron_x_time":
         counts = counts.T
-    elif orient != "time_x_neuron":
-        msg = f"orient must be 'time_x_neuron' or 'neuron_x_time', got {orient!r}."  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
     return counts, bin_centers

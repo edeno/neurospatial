@@ -1,6 +1,5 @@
 """Scientific event support and transactional decoder ownership regressions."""
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -146,15 +145,7 @@ def test_video_conversion_closes_acquired_reader_on_validation_failure(
     else:
         overlay.times = None
     frames = np.arange(2.0) if failure == "frame_count" else np.arange(3.0)
-    with (
-        pytest.raises((ValueError, AttributeError)),
-        pytest.warns(
-            UserWarning,
-            match=r"VideoOverlay has no calibration\. Video will be scaled to",
-        )
-        if overlay.calibration is None
-        else nullcontext(),
-    ):
+    with pytest.raises((ValueError, AttributeError)):
         overlay.convert_to_data(frames, len(frames), env)
     assert len(readers) == 1
     assert readers[0].close_count == 1

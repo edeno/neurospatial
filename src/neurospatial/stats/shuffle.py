@@ -66,6 +66,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
+    is_finite_real,
     is_integer_at_least,
     validate_choice,
     validate_draw_count,
@@ -109,11 +110,7 @@ def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None
     problems = []
     if not is_integer_at_least(n_shuffles, 1):
         problems.append(f"n_shuffles={n_shuffles!r} must be a positive integer")
-    if (
-        not isinstance(min_shift, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-        or not np.isfinite(min_shift)
-        or min_shift < 0
-    ):
+    if not is_finite_real(min_shift, positive=False):
         problems.append(f"min_shift={min_shift!r} must be finite and non-negative")
     if problems:
         raise ValueError(
@@ -525,8 +522,9 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             The score of the original (non-shuffled) data.
         null_scores : NDArray[np.float64], shape (n_shuffles,)
             The score of each shuffle. NaN scores (shuffles whose score is
-            undefined) are left out of the p-value and z-score, with a
-            warning; ``n_shuffles_used`` counts the rest.
+            undefined) are left out of the p-value and z-score;
+            ``n_shuffles_used`` counts the rest, so a value below
+            ``n_shuffles`` means some shuffles were undefined.
         shuffle_type : str
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
         alternative : {"greater", "less", "two-sided"}, default="greater"
@@ -557,14 +555,6 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         null = np.asarray(null_scores, dtype=np.float64)
         undefined = np.isnan(null)
         defined = null[~undefined]
-        if undefined.any() and defined.size:
-            warnings.warn(
-                f"{shuffle_type}: {int(undefined.sum())} of {null.size} shuffles "
-                f"have an undefined (NaN) score and are left out; the p-value "
-                f"counts the other {defined.size} (n_shuffles_used).",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         p_value = compute_shuffle_pvalue(
             observed_score, defined, alternative=alternative
         )
@@ -1092,14 +1082,10 @@ def shuffle_spikes_isi(
         If ``spike_times`` is not a sorted, finite 1-D array, or
         ``n_shuffles`` is not a positive integer.
 
-    Warns
-    -----
-    UserWarning
-        With fewer than three spikes there is at most one ISI, so every
-        shuffle equals the input.
-
     Notes
     -----
+    - With fewer than three spikes there is at most one ISI, so every
+      shuffle equals the input; a null built from such a unit is degenerate
     - Preserves the first spike time exactly
     - Preserves the ISI distribution (same ISI values, different order)
     - Preserves the last spike time, up to floating-point rounding
@@ -1133,13 +1119,6 @@ def shuffle_spikes_isi(
         spike_times, call="shuffle_spikes_isi()", require_sorted=True
     )
     validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_spikes_isi()")
-    if spike_times.size < 3:
-        warnings.warn(
-            f"shuffle_spikes_isi: {spike_times.size} spike(s) give at most one "
-            "inter-spike interval, so every shuffle equals the input.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     return _isi_permutations(spike_times, n_shuffles, np.random.default_rng(rng))
 
 

@@ -838,18 +838,14 @@ def test_pooled_flag_recorded(open_field_env, simulate_place_fields):
 def test_all_zero_spike_population(open_field_env):
     """counts.sum() == 0, penalty=None -> REML skipped, penalty is None,
     reml_objective is None, fields floor to _RATE_FLOOR, deviance finite, a
-    warning is emitted, no raise."""
+    no warning, no raise."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
     basis = env.get_mrf_basis(occ_full, rank=15)
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(
-        UserWarning,
-        match=r"MRF-GAM fit: no unit has any spikes; lambda is unidentified",
-    ):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None)
 
     assert fit.penalty is None
     assert fit.reml_objective is None
@@ -867,11 +863,7 @@ def test_all_zero_spike_fixed_penalty(open_field_env):
     counts = np.zeros((basis.live_bins.size, 2), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
-    with pytest.warns(
-        UserWarning,
-        match=r"MRF-GAM fit: no unit has any spikes; lambda is unidentified",
-    ):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=3.0)
+    fit = fit_mrf_gam(basis, counts, occ, penalty=3.0)
 
     assert fit.penalty == 3.0
     assert fit.reml_objective is None
@@ -951,10 +943,8 @@ def test_no_neurons(open_field_env):
     assert fit.rank == basis.B.shape[1]
 
 
-def test_zero_occupancy_empty_basis(open_field_env):
-    """A (0, 0) basis (zero total occupancy) -> coefficients (0, n_units),
-    log_rate (0, n_units), zero deviance, penalty/reml None, converged True,
-    warns; no fit runs and nothing raises."""
+def test_zero_occupancy_empty_basis_raises(open_field_env):
+    """A (0, 0) basis (zero total occupancy) has no live bins to fit."""
     env = open_field_env
     occ_full = np.zeros(env.n_bins)
     basis = env.get_mrf_basis(occ_full, rank=None)
@@ -962,15 +952,8 @@ def test_zero_occupancy_empty_basis(open_field_env):
     counts = np.zeros((0, 3), dtype=np.int64)
     occ = np.zeros(0)
 
-    with pytest.warns(UserWarning, match=r"MRF-GAM fit: zero total occupancy"):
-        fit = fit_mrf_gam(basis, counts, occ, penalty=None)
-
-    assert fit.coefficients.shape == (0, 3)
-    assert fit.log_rate.shape == (0, 3)
-    np.testing.assert_array_equal(fit.deviance, np.zeros(3))
-    assert fit.penalty is None
-    assert fit.reml_objective is None
-    assert fit.converged is True
+    with pytest.raises(ValueError, match=r"zero total occupancy"):
+        fit_mrf_gam(basis, counts, occ, penalty=None)
 
 
 def test_dead_component_fits_live_bins(two_component_env, simulate_place_fields):

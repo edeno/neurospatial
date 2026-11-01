@@ -401,12 +401,10 @@ class TestVideoOverlay:
 
         assert overlay.interp == "nearest"
 
-    def test_interp_linear(self, sample_video_array: np.ndarray):
-        """Test VideoOverlay with linear interpolation."""
-        with pytest.warns(UserWarning, match="interp='linear' is not yet implemented"):
-            overlay = VideoOverlay(source=sample_video_array, interp="linear")
-
-        assert overlay.interp == "linear"
+    def test_interp_linear_is_refused(self, sample_video_array: np.ndarray):
+        """Linear interpolation is not implemented for video and raises."""
+        with pytest.raises(NotImplementedError, match="interp='linear'"):
+            VideoOverlay(source=sample_video_array, interp="linear")
 
     def test_all_parameters(
         self, sample_video_array: np.ndarray, sample_calibration: VideoCalibration
@@ -415,17 +413,16 @@ class TestVideoOverlay:
         times = np.linspace(0.0, 1.0, len(sample_video_array))
         crop = (0, 0, 8, 8)
 
-        with pytest.warns(UserWarning, match="interp='linear' is not yet implemented"):
-            overlay = VideoOverlay(
-                source=sample_video_array,
-                calibration=sample_calibration,
-                times=times,
-                alpha=0.3,
-                z_order="above",
-                crop=crop,
-                downsample=2,
-                interp="linear",
-            )
+        overlay = VideoOverlay(
+            source=sample_video_array,
+            calibration=sample_calibration,
+            times=times,
+            alpha=0.3,
+            z_order="above",
+            crop=crop,
+            downsample=2,
+            interp="nearest",
+        )
 
         assert overlay.calibration is sample_calibration
         assert_array_equal(overlay.times, times)
@@ -433,7 +430,7 @@ class TestVideoOverlay:
         assert overlay.z_order == "above"
         assert overlay.crop == crop
         assert overlay.downsample == 2
-        assert overlay.interp == "linear"
+        assert overlay.interp == "nearest"
 
 
 class TestVideoOverlayValidation:
@@ -508,7 +505,7 @@ class TestVideoOverlayValidation:
         """Test that downsample <= 0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
         with pytest.raises(
-            ValueError, match=r"WHAT: downsample must be a positive integer"
+            ValueError, match=r"downsample must be a positive integer"
         ) as exc_info:
             VideoOverlay(source=data, downsample=0)
 
@@ -519,7 +516,7 @@ class TestVideoOverlayValidation:
         """Test that negative downsample raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
         with pytest.raises(
-            ValueError, match=r"WHAT: downsample must be a positive integer"
+            ValueError, match=r"downsample must be a positive integer"
         ) as exc_info:
             VideoOverlay(source=data, downsample=-1)
 
@@ -530,25 +527,20 @@ class TestVideoOverlayValidation:
         """Test that float downsample raises ValueError (must be integer)."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
         with pytest.raises(
-            ValueError, match=r"WHAT: downsample must be a positive integer"
+            ValueError, match=r"downsample must be a positive integer"
         ) as exc_info:
             VideoOverlay(source=data, downsample=1.5)  # type: ignore[arg-type]
 
         error_msg = str(exc_info.value)
         assert "downsample" in error_msg.lower()
 
-    def test_interp_linear_emits_warning(self):
-        """Test that interp='linear' emits UserWarning (not implemented for video)."""
+    def test_interp_linear_raises_and_suggests_nearest(self):
+        """interp='linear' raises NotImplementedError that names the fix."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.warns(UserWarning, match=r"WHAT: VideoOverlay interp") as record:
+        with pytest.raises(NotImplementedError, match=r"interp='linear'") as exc_info:
             VideoOverlay(source=data, interp="linear")
 
-        # Verify warning message explains the limitation
-        assert len(record) >= 1
-        warning_msg = str(record[0].message)
-        assert "linear" in warning_msg.lower()
-        # Should suggest using nearest
-        assert "nearest" in warning_msg.lower()
+        assert "interp='nearest'" in str(exc_info.value)
 
     def test_interp_nearest_no_warning(self):
         """Test that interp='nearest' (default) does not emit warning."""
@@ -2024,13 +2016,12 @@ class TestConvertVideoOverlay:
         frame_times = np.linspace(0.0, 1.0, 5)
         n_frames = 5
 
-        with pytest.warns(UserWarning, match="no calibration"):
-            overlay_data = _convert_on_frames(
-                overlays=[overlay],
-                frame_times=frame_times,
-                n_frames=n_frames,
-                env=mock_env_2d,
-            )
+        overlay_data = _convert_on_frames(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_2d,
+        )
 
         # Should have video data in the result
         assert hasattr(overlay_data, "videos")
@@ -2048,34 +2039,35 @@ class TestConvertVideoOverlay:
         frame_times = np.linspace(0.0, 0.9, 10)
         n_frames = 10
 
-        with pytest.warns(UserWarning, match="no calibration"):
-            overlay_data = _convert_on_frames(
-                overlays=[overlay],
-                frame_times=frame_times,
-                n_frames=n_frames,
-                env=mock_env_2d,
-            )
+        overlay_data = _convert_on_frames(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_2d,
+        )
 
         # Check that frame_indices were computed
         video_data = overlay_data.videos[0]
         assert video_data.frame_indices is not None
         assert len(video_data.frame_indices) == n_frames
 
-    def test_video_overlay_warns_without_calibration(
+    def test_video_overlay_without_calibration_scales_to_fit(
         self, mock_env_2d, sample_video_array
     ):
-        """Test that VideoOverlay without calibration emits warning."""
+        """No calibration is the documented scale-to-fit default, not a warning."""
         overlay = VideoOverlay(source=sample_video_array, calibration=None)
         frame_times = np.linspace(0.0, 1.0, 5)
         n_frames = 5
 
-        with pytest.warns(UserWarning, match="calibration"):
-            _convert_on_frames(
-                overlays=[overlay],
-                frame_times=frame_times,
-                n_frames=n_frames,
-                env=mock_env_2d,
-            )
+        overlay_data = _convert_on_frames(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_2d,
+        )
+
+        assert overlay.calibration is None
+        assert len(overlay_data.videos) == 1
 
 
 def test_conversion_keeps_an_overlays_samples_and_checks_them_against_frames():

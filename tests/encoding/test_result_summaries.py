@@ -84,7 +84,6 @@ TABLE_COLUMNS = {
 
 
 @pytest.mark.parametrize("family", FAMILIES)
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_summary_table_column_order_and_attrs(rate_family_results, family):
     result = rate_family_results[family]
     frame = result.summary_table()
@@ -104,7 +103,6 @@ def test_summary_table_column_order_and_attrs(rate_family_results, family):
 
 
 @pytest.mark.parametrize("family", FAMILIES)
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_thresholds_attrs_match_resolved_defaults(rate_family_results, family):
     from neurospatial.encoding.directional import HEAD_DIRECTION_THRESHOLDS
     from neurospatial.encoding.egocentric import OBJECT_VECTOR_THRESHOLDS
@@ -165,7 +163,6 @@ def test_total_occupancy_is_shared_not_summed(rate_family_results, family):
 
 
 @pytest.mark.parametrize("family", FAMILIES)
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_singular_summary_headline_metrics(rate_family_results, family):
     result = rate_family_results[family][0]
     summary = result.summary()
@@ -183,7 +180,6 @@ def test_singular_summary_headline_metrics(rate_family_results, family):
 
 
 @pytest.mark.parametrize("family", FAMILIES)
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_summary_table_single_matches_batch(rate_family_results, family):
     result = rate_family_results[family]
     batch = result.summary_table()
@@ -194,7 +190,6 @@ def test_summary_table_single_matches_batch(rate_family_results, family):
 
 
 @pytest.mark.parametrize("family", ["view", "allocentric", "egocentric", "directional"])
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_singular_verdict_matches_table_and_classify(rate_family_results, family):
     result = rate_family_results[family]
     predicate = {
@@ -212,7 +207,6 @@ def test_singular_verdict_matches_table_and_classify(rate_family_results, family
 
 
 @pytest.mark.parametrize("family", ["spatial", "view", "allocentric", "egocentric"])
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_summary_table_shows_both_terms_of_the_information_screen(
     rate_family_results, family
 ):
@@ -238,8 +232,6 @@ def test_summary_table_shows_both_terms_of_the_information_screen(
 
 
 @pytest.mark.parametrize("pooled", [True, False])
-@pytest.mark.filterwarnings("ignore:MRF-GAM REML:UserWarning")
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_glm_summary_table_single_matches_batch(rate_family_inputs, pooled):
     from neurospatial import compute_spatial_rates
 

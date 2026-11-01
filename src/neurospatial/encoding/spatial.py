@@ -782,11 +782,17 @@ def _screen_outcomes(
     """Fixed-threshold outcome of each test; a NaN score fails its test.
 
     ``information`` is the bias-corrected spatial information the place
-    screen compares with its cutoff, shape (n_units,). A grid score at its
+    screen compares with its cutoff, shape (n_units,). A unit with fewer
+    spikes than its map has independent bins has no defined bias, so its
+    information test is unknown (NaN outcome, label ``"undetermined"``), not
+    failed. A grid score at its
     cutoff passes only when the unit's map has a hexagonal first ring of
     autocorrelogram peaks (see :func:`_grid_spacings`); the ring is read
     from ``result``'s maps for those units alone.
     """
+    from neurospatial.encoding._metrics import _information_bias_terms
+
+    too_few = _information_bias_terms(result).too_few
     with np.errstate(invalid="ignore"):
         grid = scores["grid_score"] >= min_grid_score
     if grid.any():
@@ -797,12 +803,14 @@ def _screen_outcomes(
         "grid_score": grid,
         "border_score": scores["border_score"] >= min_border_score,
     }
-    return {
+    outcomes = {
         name: _test_outcome(
             values, unknown=name in unavailable and name not in inapplicable
         )
         for name, values in passed.items()
     }
+    outcomes["spatial_information"][too_few] = np.nan
+    return outcomes
 
 
 def _glm_summary_columns(
@@ -1316,9 +1324,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         float
-            Expected untuned information in bits/spike. NaN for a silent unit,
-            and, with a ``UserWarning``, when the unit has fewer spikes than
-            the map has effectively independent bins (see Notes).
+            Expected untuned information in bits/spike. NaN for a silent unit
+            and, without a warning, when the unit has fewer spikes than the
+            map has effectively independent bins: the bias is then
+            undetermined, not zero (see Notes).
 
         Notes
         -----
@@ -1888,8 +1897,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         cutoff: the information an untuned cell shows from Poisson noise alone
         is subtracted first (derivation in
         :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
-        spikes than the map has effectively independent bins fail, with a
-        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        spikes than the map has effectively independent bins have no estimable
+        information bias, so the boolean is False for them, without a warning:
+        False includes "too few spikes to tell". ``label_cell_types()`` and
+        ``summary_table()`` mark them "undetermined". For 40 untuned Poisson units
+        per spike count in a 100 x 100 cm
         arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
         information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
@@ -2442,8 +2454,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         -------
         ndarray, shape (n_neurons,)
             Expected untuned information in bits/spike. NaN for silent units
-            and, with one ``UserWarning``, for units with fewer spikes than
-            the maps have effectively independent bins.
+            and, without a warning, for units with fewer spikes than
+            the maps have effectively independent bins: the bias is then
+            undetermined, not zero.
 
         Examples
         --------
@@ -2722,8 +2735,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               environment but cannot be computed (no regular grid of
               rectangular cells for the grid score; no measured walls, or
               walls without observed bins, for the physical border score), so
-              any label is possible. A ``UserWarning`` gives the reason, as
-              ``summary_table()`` records it in ``attrs['unavailable_metrics']``.
+              any label is possible. ``summary_table()`` records the reason in
+              ``attrs['unavailable_metrics']``; no warning is raised.
 
             Grid and border cells are defined on 2-D maps, so on a 1-D track
             neither applies and a tuned cell is ``"place"``. A neuron whose
@@ -2816,21 +2829,6 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         scores, unavailable, inapplicable = _screen_scores(
             self, boundary_source=boundary_source, **given
         )
-        unknown = {
-            name: reason
-            for name, reason in unavailable.items()
-            if name not in inapplicable
-        }
-        if unknown:
-            reasons = " ".join(f"{name}: {reason}" for name, reason in unknown.items())
-            warnings.warn(
-                "label_cell_types: "
-                + " and ".join(unknown)
-                + " cannot be computed on this environment, so cells are "
-                f"labeled 'undetermined'. Reason: {reasons}",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         from neurospatial.encoding._metrics import _debiased_information
 
         return _cell_type_labels(
@@ -2903,8 +2901,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         cutoff: the information an untuned cell shows from Poisson noise alone
         is subtracted first (derivation in
         :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
-        spikes than the map has effectively independent bins fail, with a
-        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        spikes than the map has effectively independent bins have no estimable
+        information bias, so the boolean is False for them, without a warning:
+        False includes "too few spikes to tell". ``label_cell_types()`` and
+        ``summary_table()`` mark them "undetermined". For 40 untuned Poisson units
+        per spike count in a 100 x 100 cm
         arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
         information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
@@ -3148,7 +3149,6 @@ def _compute_glm_spatial_rates(
         The raw (always-NumPy, float64) fit result; the caller reads the GAM
         result fields off it.
     """
-    from neurospatial._stacklevel import _external_stacklevel
     from neurospatial.encoding._backend import _to_backend
     from neurospatial.encoding._glm import _RATE_FLOOR, fit_mrf_gam
 
@@ -3160,22 +3160,9 @@ def _compute_glm_spatial_rates(
     basis = env.get_mrf_basis(occupancy, rank=rank)
     live_bins = np.asarray(basis.live_bins, dtype=np.intp)
 
-    # Dead-component warning is owned here (not by ``fit_mrf_gam``): it needs env's
-    # TOTAL component count, which the basis (live-only) does not carry. Warn only
-    # when there ARE units and there is at least one live component but fewer than
-    # the total: the fully-dead (zero total occupancy) case is already covered by
-    # ``fit_mrf_gam``'s own warning, and a no-neuron call has no rates to floor.
-    n_components = int(env.get_diffusion_geometry().n_components)
-    if n_units and 0 < basis.n_live_components < n_components:
-        n_dead = n_components - basis.n_live_components
-        warnings.warn(
-            f"MRF-GAM fit: {n_dead} of {n_components} environment components were "
-            f"never occupied (dead); their bins are set to _RATE_FLOOR "
-            f"({_RATE_FLOOR:.0e} Hz). Fit runs on the live bins only.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
+    # Bins of components the animal never occupied are not in the basis; they
+    # keep ``_RATE_FLOOR`` and are outside ``spatial_support`` (zero occupancy),
+    # so metrics and peaks read them as unsupported, not as zero firing.
     # Boundary in: unit-major (n_units, n_bins) -> bin-major (n_live_bins,
     # n_units), restricted to live bins (the ONLY live-bin restriction).
     counts_fit = spike_counts.T[live_bins, :]  # (n_live_bins, n_units)
@@ -5271,8 +5258,10 @@ def detect_place_fields(
         against noise.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
-        rates (Hz). The default disables exclusion. This is not the
-        recording-time mean firing rate and does not identify cell type.
+        rates (Hz). The default disables exclusion. A map above the bound
+        returns no fields and no warning; ``excluded_reason`` is
+        ``"mean_rate_above_threshold"``. This is not the recording-time mean
+        firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, separate two fields that merge at the ``threshold`` level,
         with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
@@ -5483,7 +5472,6 @@ def _search_place_fields(
     detect_subfields: bool,
 ) -> _FieldSearch:
     """Segment one validated rate map into candidate fields around its peaks."""
-    from neurospatial._stacklevel import _external_stacklevel
 
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
@@ -5493,15 +5481,6 @@ def _search_place_fields(
     if np.isfinite(max_mean_rate):
         mean_rate = np.nanmean(firing_rate)
         if mean_rate > max_mean_rate:
-            warnings.warn(
-                f"detect_place_fields: map excluded by the spatial-map-mean filter "
-                f"(unweighted mean {float(mean_rate):.2f} Hz > max_mean_rate "
-                f"{max_mean_rate} Hz). Returning empty field list. This is not "
-                "a recording-time mean or a cell-type verdict. Pass "
-                "max_mean_rate=np.inf to disable the filter.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
             return _FieldSearch([], [], finite, "mean_rate_above_threshold")
 
     min_peak = max(
@@ -5672,8 +5651,10 @@ def has_place_field(
         see :func:`detect_place_fields`.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
-        rates (Hz). The default disables exclusion. This is not the
-        recording-time mean firing rate and does not identify cell type.
+        rates (Hz). The default disables exclusion. A map above the bound
+        returns no fields and no warning; ``excluded_reason`` is
+        ``"mean_rate_above_threshold"``. This is not the recording-time mean
+        firing rate and does not identify cell type.
     detect_subfields : bool, default=True
         If True, separate two fields that merge at ``threshold`` (the
         FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
@@ -6823,8 +6804,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_spatial_info: float | None,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
-        from neurospatial._stacklevel import _external_stacklevel
-
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         min_info = (
             PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
@@ -6842,45 +6821,19 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
 
         debiased = self.observed_scores[:, 0] - self.spatial_information_bias
         _warn_unknown_bias(passed[:, 0], debiased, kind="place")
+        # Significant information with an unknown bias is undetermined below.
+        unknown_bias = passed[:, 0] & np.isnan(debiased)
         met = np.ones_like(passed)
         # Significant information is a place cell only beyond the untuned bias.
         met[:, 0] = debiased >= min_info
         # A significant grid score is a grid cell only with a lattice to show.
         met[:, 1] = np.isfinite(self.grid_spacing)
         undetermined = cannot_reject & met
-        if undetermined.any():
-            names = [
-                name
-                for k, name in enumerate(self.statistics)
-                if undetermined[:, k].any()
-            ]
-            # With every test of a unit at one floor, Holm's first step needs
-            # m p < level for the unit's m scored tests; uncorrected and BH
-            # tests need p < level (see _adjusted).
-            m = 1
-            if correction == "holm":
-                scored = np.isfinite(self.observed_scores).sum(axis=1)
-                m = int(scored[undetermined.any(axis=1)].max())
-            needed = _smallest_null_count(lambda p: p * m < level, m / level)
-            cutoff = (
-                f"p < {level}"
-                if correction is None
-                else f"correction={correction!r} at alpha={level}"
-            )
-            warnings.warn(
-                f"{int(undetermined.any(axis=1).sum())} of {len(self)} units "
-                f"have a test ({', '.join(names)}) with too few finite null "
-                f"scores to pass {cutoff}, so that test is undetermined.\n"
-                "Why: with n finite null scores the smallest p-value is "
-                "1 / (n + 1); shifted maps without a defined score (a silent "
-                "shift, or a border map with no field) are left out of n.\n"
-                f"Fix: run more shuffles, so that each test has at least {needed} "
-                "finite null scores; summary_table() reports them as "
-                "<statistic>_n_finite_null.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-        outcomes = np.where(undetermined, np.nan, (passed & met).astype(np.float64))
+        undetermined_bias = np.zeros_like(undetermined)
+        undetermined_bias[:, 0] = unknown_bias
+        outcomes = np.where(
+            undetermined | undetermined_bias, np.nan, (passed & met).astype(np.float64)
+        )
         for k, name in enumerate(self.statistics):
             if (
                 name in self.unavailable_metrics
@@ -6907,7 +6860,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         names the smallest n whose floor p-value ``1 / (n + 1)`` passes,
         evaluated as the adjusted p-values are.
         """
-        from neurospatial._stacklevel import _external_stacklevel
 
         n_finite = self._n_finite_null()
         at_floor = np.isfinite(adjusted) & (self.p_values <= 1.0 / (1.0 + n_finite))
@@ -7002,7 +6954,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             ``"undetermined"`` when a grid or border test applies to the
             environment but its score could not be computed, or when a test
             has too few finite null scores to pass and its other requirement
-            holds; a ``UserWarning`` gives the reason. Too few means
+            holds; ``summary_table()`` gives the reason (``attrs["unavailable_metrics"]``
+            and the ``<statistic>_n_finite_null`` columns). No warning is
+            raised. Too few means
             ``1 / (n_finite + 1) >= alpha``, or, with a ``correction``, that
             the test fails the correction even with every test at its
             smallest p-value ``1 / (n_finite + 1)``: under Holm, a unit's
@@ -7011,21 +6965,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             grid and border do not apply, so a significant cell is
             ``"place"``.
         """
-        unknown = {
-            name: reason
-            for name, reason in self.unavailable_metrics.items()
-            if name not in self.inapplicable_metrics
-        }
-        if unknown:
-            reasons = " ".join(f"{name}: {reason}" for name, reason in unknown.items())
-            warnings.warn(
-                "label_cell_types: "
-                + " and ".join(unknown)
-                + " could not be computed on this environment, so cells are "
-                f"labeled 'undetermined'. Reason: {reasons}",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
         return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 
     def summary_table(

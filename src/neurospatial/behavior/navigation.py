@@ -1722,6 +1722,14 @@ def distance_to_boundary(
     )
 
     # Input validation
+    from neurospatial._validation import validate_choice
+
+    boundary_type = validate_choice(
+        boundary_type,
+        ("edge", "region"),
+        name="boundary_type",
+        owner="distance_to_boundary()",
+    )
     paths = metric_paths(metric, env, call="distance_to_boundary")
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
@@ -1740,7 +1748,7 @@ def distance_to_boundary(
     if boundary_type == "edge":
         boundary_bins = env.boundary_bins
 
-    elif boundary_type == "region":
+    else:
         # Region boundary bins: boundary of the named region
         # region_name is already validated as not None by the earlier check
         assert region_name is not None  # for type checker
@@ -1753,10 +1761,6 @@ def distance_to_boundary(
         boundary_bins = np.asarray(
             _find_region_boundary_bins(env, region_name), dtype=np.intp
         )
-
-    else:
-        msg = f"boundary_type must be 'edge' or 'region', got '{boundary_type}'."  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
 
     if len(boundary_bins) == 0:
         raise ValueError(
@@ -2526,7 +2530,7 @@ def heading_direction_labels(
 
     call = "heading_direction_labels"
     min_speed = validated_min_speed(min_speed, call=call)
-    _validate_n_directions(n_directions, call=call)
+    n_directions = _validate_n_directions(n_directions, call=call)
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
@@ -2674,7 +2678,7 @@ def headings_to_direction_labels(
 
     call = "headings_to_direction_labels"
     min_speed = validated_min_speed(min_speed, call=call)
-    _validate_n_directions(n_directions, call=call)
+    n_directions = _validate_n_directions(n_directions, call=call)
     headings_arr = np.asarray(headings, dtype=np.float64)
     speeds_arr = np.asarray(speeds, dtype=np.float64)
     for name, values in (("headings", headings_arr), ("speeds", speeds_arr)):
@@ -2721,20 +2725,17 @@ def headings_to_direction_labels(
     )
 
 
-def _validate_n_directions(n_directions: int, *, call: str) -> None:
-    """Raise unless ``n_directions`` is a positive integer."""
-    if (
-        isinstance(n_directions, bool)
-        or not isinstance(n_directions, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-        or n_directions <= 0
-    ):
-        raise ValueError(
-            _format_error(
-                f"{call}() got n_directions={n_directions!r}.",
-                why="n_directions is the number of direction sectors.",
-                fix="pass a positive integer, e.g. 8 for 45° sectors",
-            )
-        )
+def _validate_n_directions(n_directions: object, *, call: str) -> int:
+    """Return ``n_directions`` as an int, raising unless it is a positive integer."""
+    from neurospatial._validation import validate_integer_at_least
+
+    return validate_integer_at_least(
+        n_directions,
+        1,
+        name="n_directions",
+        owner=f"{call}()",
+        hint="it is the number of direction sectors, e.g. 8 for 45° sectors",
+    )
 
 
 def _direction_sector_labels(

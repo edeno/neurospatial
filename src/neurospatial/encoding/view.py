@@ -557,8 +557,9 @@ class ViewRateResult(SingleUnitRateMixin):
         -------
         float
             Expected untuned information in bits/spike. NaN for a silent unit
-            and, with a ``UserWarning``, when the unit has fewer spikes than
-            the map has effectively independent bins.
+            and, without a warning, when the unit has fewer spikes than the
+            map has effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -596,7 +597,9 @@ class ViewRateResult(SingleUnitRateMixin):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
         Units with fewer spikes than the view map has effectively independent
-        bins fail, with a warning. In 40 untuned Poisson units per spike count
+        bins have no estimable information bias, so the boolean is False for
+        them without a warning (False includes "too few spikes to tell"). In 40
+        untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
         bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
         passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
@@ -1032,8 +1035,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         -------
         ndarray, shape (n_neurons,)
             Expected untuned information in bits/spike. NaN for silent units
-            and, with one ``UserWarning``, for units with fewer spikes than
-            the maps have effectively independent bins.
+            and, without a warning, for units with fewer spikes than
+            the maps have effectively independent bins: the bias is then
+            undetermined, not zero.
         """
         from neurospatial.encoding._metrics import _information_bias
 
@@ -1068,7 +1072,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
         Units with fewer spikes than the view map has effectively independent
-        bins fail, with a warning. In 40 untuned Poisson units per spike count
+        bins have no estimable information bias, so the boolean is False for
+        them without a warning (False includes "too few spikes to tell"). In 40
+        untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
         bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
         passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
@@ -2368,7 +2374,9 @@ def is_spatial_view_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
     Units with fewer spikes than the view map has effectively independent
-    bins fail, with a warning. In 40 untuned Poisson units per spike count
+    bins have no estimable information bias, so the boolean is False for
+    them without a warning (False includes "too few spikes to tell"). In 40
+    untuned Poisson units per spike count
     in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
     bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
     passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,

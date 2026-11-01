@@ -402,8 +402,7 @@ def test_jax_all_zero_spike_effectively_floors(open_field_env):
     basis = env.get_mrf_basis(occ, rank=20)
     c, o = _restrict(counts.T, occ, basis)
 
-    with pytest.warns(UserWarning, match="no unit has any spikes"):
-        fit = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
+    fit = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
     rate = np.maximum(np.exp(fit.log_rate), _RATE_FLOOR)
     assert np.all(rate >= _RATE_FLOOR)  # the contract: a floor (minimum), not a target
     assert np.all(rate < 1e-6)  # scientifically zero for a silent unit
@@ -447,10 +446,8 @@ def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
     basis, c, o = _rank_deficient_case(open_field_env)
 
     # The flat over-smoothed regime puts lambda at the REML upper search bound.
-    with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
-        fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
-    with pytest.warns(UserWarning, match="smoothing penalty lambda is near the"):
-        fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
+    fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
+    fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
     assert fit_jax.penalty == fit_np.penalty  # same lambda (both float64 REML)
     np.testing.assert_array_equal(
         np.asarray(fit_jax.coefficients), np.asarray(fit_np.coefficients)

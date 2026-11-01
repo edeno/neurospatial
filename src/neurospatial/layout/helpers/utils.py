@@ -127,7 +127,10 @@ def _infer_dimension_ranges_from_samples(
         Buffer to add to the min and max of the inferred range in each
         dimension. If a float, applied to all dimensions. If a sequence,
         specifies buffer per dimension. Useful for ensuring extent if data
-        is collinear or a margin around the data is desired.
+        is collinear or a margin around the data is desired. A dimension
+        whose samples are all equal (for example a constant coordinate on a
+        single lane) with a buffer of 0 is extended by 0.5 on each side of
+        that value, so the range has a nonzero width.
 
     Returns
     -------
@@ -185,12 +188,6 @@ def _infer_dimension_ranges_from_samples(
         # Exact comparisons: a tolerance relative to the coordinates would
         # read a short extent far from the origin as a point.
         if d_min == d_max and buffer == 0.0:
-            warnings.warn(
-                f"Dimension {dim_idx} has zero extent and no buffer specified. "
-                "Extending it by 0.5 on each side of the point.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
             buffer = 0.5
         d_min -= buffer
         d_max += buffer

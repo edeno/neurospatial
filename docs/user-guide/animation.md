@@ -150,9 +150,8 @@ real time; `speed=0.1` plays a 150 ms replay event over 1.5 s. The frame rate
 of a file is the sampling rate of `frame_times` times `speed`, so every row is
 shown once: 2 ms replay bins at `speed=0.1` give a 50 frame/s file. When that
 rate would exceed `max_playback_fps` (default 60), the file is written at
-`max_playback_fps` with the same `speed`, skipping rows between output frames,
-and a warning says so. Raise `max_playback_fps` or lower `speed` to keep every
-row.
+`max_playback_fps` with the same `speed`, skipping rows between output frames.
+Raise `max_playback_fps` or lower `speed` to keep every row.
 
 Output frame *k* is at `start + k * speed / fps`. An export of the whole
 recording runs from the first to the last time in `frame_times`, so the last

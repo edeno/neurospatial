@@ -425,21 +425,18 @@ class TestUndefinedShuffles:
         env, _ = track
         return np.eye(env.n_bins)[[1, 3, 5, 7, 9, 11, 13, 15]]
 
-    def test_counts_used_shuffles_and_names_the_null(self, track, posterior):
+    def test_counts_used_shuffles(self, track, posterior):
         env, _ = track
         times = np.arange(len(posterior)) * DT
-        with pytest.warns(
-            UserWarning, match=r"column_cycle: \d+ of 200 shuffles have an undefined"
-        ):
-            result = replay_significance(
-                env,
-                posterior,
-                times,
-                score=_parity_score,
-                nulls="column_cycle",
-                n_shuffles=200,
-                rng=0,
-            )
+        result = replay_significance(
+            env,
+            posterior,
+            times,
+            score=_parity_score,
+            nulls="column_cycle",
+            n_shuffles=200,
+            rng=0,
+        )
         test = result.shuffles["column_cycle"]
         finite = np.isfinite(test.null_scores)
         used = result.n_shuffles_used["column_cycle"]
@@ -451,7 +448,7 @@ class TestUndefinedShuffles:
         expected = (np.sum(test.null_scores[finite] >= observed) + 1) / (used + 1)
         assert test.p_value == pytest.approx(expected)
 
-    def test_compare_reports_used_shuffles_and_context(self, track, posterior):
+    def test_compare_reports_used_shuffles(self, track, posterior):
         env, _ = track
         times = np.arange(len(posterior)) * DT
         method = ReplayMethod(
@@ -462,10 +459,9 @@ class TestUndefinedShuffles:
             n_shuffles=200,
         )
         event = DecodingResult(posterior=posterior, env=env, times=times)
-        with pytest.warns(UserWarning, match=r"event 0, method 'parity'.*column_cycle"):
-            table = compare_replay_methods(
-                env, [event], replay_methods=[method, SILVA_2015], rng=0
-            )
+        table = compare_replay_methods(
+            env, [event], replay_methods=[method, SILVA_2015], rng=0
+        )
         rows = table.set_index("method")
         assert 0 < rows.loc["parity", "n_shuffles_used"] < 200
         assert np.isnan(rows.loc["silva_2015", "n_shuffles_used"])

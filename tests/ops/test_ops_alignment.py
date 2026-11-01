@@ -110,9 +110,8 @@ class TestMapProbabilities:
         src_probs = np.array([])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        with pytest.warns(UserWarning, match="zero bins"):
-            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
-        np.testing.assert_allclose(tgt_probs, [0, 0])
+        with pytest.raises(ValueError, match="source_env with zero bins"):
+            map_probabilities(src_env, tgt_env, src_probs)
 
     def test_empty_target(self):
         """Test with empty target environment."""
@@ -121,9 +120,8 @@ class TestMapProbabilities:
         src_probs = np.array([1.0])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        with pytest.warns(UserWarning, match="zero bins"):
-            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
-        assert tgt_probs.size == 0
+        with pytest.raises(ValueError, match="target_env with zero bins"):
+            map_probabilities(src_env, tgt_env, src_probs)
 
     def test_shape_mismatch(self):
         """Test error when probability shape doesn't match."""
@@ -180,18 +178,16 @@ class TestMapProbabilities:
         ):
             map_probabilities(src_env, tgt_env, src_probs)
 
-    def test_map_probabilities_empty_env_still_returns_zeros(self):
-        """The legitimate empty-target path still returns zeros with a warning."""
+    def test_map_probabilities_empty_env_is_refused(self):
+        """An empty target is refused: zeros would read as zero probability."""
         src_bins = np.array([[0.0, 0.0]])
         tgt_bins = np.empty((0, 2))
         src_probs = np.array([1.0])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
 
-        with pytest.warns(UserWarning, match="zero bins"):
-            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
-
-        assert tgt_probs.size == 0
+        with pytest.raises(ValueError, match="zero bins"):
+            map_probabilities(src_env, tgt_env, src_probs)
 
 
 class TestMapProbabilitiesValidation:

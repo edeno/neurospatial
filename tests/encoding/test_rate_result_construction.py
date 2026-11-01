@@ -150,7 +150,6 @@ def test_supplied_labels_are_not_marked_generated(labelled_population: Any) -> N
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_every_family_reports_its_estimator(population: Any) -> None:
     """method and bandwidth are fields on every family and reach every export."""
     method, bandwidth = population.method, population.bandwidth
@@ -381,7 +380,6 @@ def test_refuses_a_threshold_that_disagrees_with_the_record(population: Any) -> 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 @pytest.mark.filterwarnings("ignore:ChainedAssignmentError:FutureWarning")
 def test_unit_table_edits_through_the_result_do_not_change_it(
     family: str, recording: dict[str, Any]
@@ -497,7 +495,6 @@ def spikes_with_known_exclusions() -> tuple[list[np.ndarray], list[int]]:
     return trains, outside
 
 
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_spikes_outside_the_analyzed_intervals_are_counted_per_unit(
     family: str,
     recording: dict[str, Any],
@@ -534,7 +531,6 @@ def test_accounting_does_not_vary_settings_between_population_and_units(
         assert unit.analysis_settings == population.analysis_settings
 
 
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_unknown_accounting_is_missing_not_zero(population: Any) -> None:
     unknown = dataclasses.replace(population, n_spikes_outside_intervals=None)
     column = unknown.summary_table()["n_spikes_outside_intervals"]

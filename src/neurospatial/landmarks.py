@@ -23,7 +23,7 @@ from shapely.geometry.base import BaseGeometry
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._validation import validate_finite_scalar
+from neurospatial._validation import validate_finite_scalar, validate_instance
 from neurospatial.regions import _thaw_metadata
 from neurospatial.regions.core import (
     _check_planar_geometry,
@@ -339,11 +339,13 @@ class Landmarks(Mapping[str, Landmark]):
     def __init__(self, landmarks: Iterable[Landmark] = ()) -> None:
         items: dict[str, Landmark] = {}
         for landmark in landmarks:
-            if not isinstance(landmark, Landmark):
-                msg = (  # type: ignore[unreachable]  # runtime check of user input
-                    f"Landmarks holds Landmark records, got {type(landmark).__name__}."
-                )
-                raise TypeError(msg)
+            landmark = validate_instance(
+                landmark,
+                Landmark,
+                name="landmark",
+                owner="Landmarks",
+                hint="it holds Landmark records",
+            )
             if landmark.name in items:
                 msg = f"Two landmarks are named {landmark.name!r}."
                 raise _error(

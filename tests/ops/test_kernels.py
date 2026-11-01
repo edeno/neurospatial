@@ -11,7 +11,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment, _constants
+from neurospatial import Environment
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 
@@ -296,65 +296,9 @@ class TestEnvironmentComputeKernel:
         with pytest.raises(ValueError, match=r"mode must be one of"):
             env.compute_kernel(bandwidth=1.0, mode="bogus")
 
-    def test_compute_kernel_high_bin_warns_and_returns(self, monkeypatch):
-        rng = np.random.default_rng(0)
-        data = rng.uniform(0, 10, (50, 2))
-        env = Environment.from_samples(data, bin_size=1.0)
-        assert env.n_bins > 1
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 1)
-        with pytest.warns(UserWarning, match="GB"):
-            kernel = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
-        assert kernel.shape == (env.n_bins, env.n_bins)
 
-
-class TestKernelHighBinWarning:
-    """The high-bin memory WARNING (there is no hard limit)."""
-
-    def test_high_bin_warns_and_returns(self, monkeypatch):
-        from neurospatial.ops import smoothing
-
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 5)
-        graph = _line_graph(6)
-        with pytest.warns(
-            UserWarning, match=r"Computing a dense diffusion kernel for"
-        ) as record:
-            kernel = smoothing.compute_diffusion_kernels(
-                graph, volumes=np.ones(6), bandwidth=1.0, mode="transition"
-            )
-        message = str(record[0].message)
-        assert "6" in message
-        assert "GB" in message
-        assert "binned" in message
-        assert kernel.shape == (6, 6)
-
-    def test_does_not_raise(self, monkeypatch):
-        from neurospatial.ops import smoothing
-
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 2)
-        graph = _line_graph(8)
-        with pytest.warns(UserWarning, match="GB"):
-            kernel = smoothing.compute_diffusion_kernels(
-                graph, volumes=np.ones(8), bandwidth=0.5, mode="transition"
-            )
-        assert kernel.shape == (8, 8)
-
-    def test_under_threshold_no_warn(self, monkeypatch):
-        import warnings as _warnings
-
-        from neurospatial.ops import smoothing
-
-        monkeypatch.setattr(_constants, "LARGE_KERNEL_THRESHOLD", 5)
-        graph = _line_graph(5)  # 5 is NOT > 5
-        with _warnings.catch_warnings(record=True) as w:
-            _warnings.simplefilter("always")
-            kernel = smoothing.compute_diffusion_kernels(
-                graph, volumes=np.ones(5), bandwidth=1.0, mode="transition"
-            )
-            kernel_warnings = [
-                warning for warning in w if "diffusion kernel" in str(warning.message)
-            ]
-            assert len(kernel_warnings) == 0
-        assert kernel.shape == (5, 5)
+class TestKernelMemoryDocumentation:
+    """The O(n^2) memory cost is documented; large kernels build without a warning."""
 
     def test_docstring_mentions_memory_and_performance(self):
         from neurospatial.ops.smoothing import compute_diffusion_kernels

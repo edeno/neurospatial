@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
@@ -11,7 +10,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._targets import validate_bin_indices
 from neurospatial.geometry import (
     Binning,
@@ -141,7 +139,10 @@ def _bin_center_of(
 
 
 def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int]:
-    """Shortest distance-weighted path between two resolved active bins."""
+    """Shortest distance-weighted path between two resolved active bins.
+
+    Returns an empty list when the bins are in disconnected components.
+    """
     if source_idx == target_idx:
         return [source_idx]
 
@@ -154,11 +155,6 @@ def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int
         )
         return list(path)
     except nx.NetworkXNoPath:
-        warnings.warn(
-            f"No path found between active bin {source_idx} and {target_idx}.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
         return []
 
 

@@ -176,8 +176,7 @@ def test_missing_walls_leave_border_undetermined(ou_2min_env, ou_2min, noise_tra
     assert "border_score" in result.unavailable_metrics
     assert result.inapplicable_metrics == ()
     assert np.isnan(result.p_values[:, 2]).all()
-    with pytest.warns(UserWarning, match="border_score"):
-        labels = result.label_cell_types()
+    labels = result.label_cell_types()
     np.testing.assert_array_equal(labels, ["undetermined", "undetermined"])
     assert result.summary_table()["passes_border_score"].isna().all()
 
@@ -479,7 +478,9 @@ def test_undefined_information_bias_is_not_place(significance_recording):
     )
     with pytest.warns(UserWarning, match="1 of 3 units"):
         passes = rebuilt.summary_table()["passes_spatial_information"]
-    assert passes.tolist() == [False, True, False]
+    # The unknown-bias unit is undetermined, not failed.
+    assert passes.isna().tolist() == [True, False, False]
+    assert passes[1:].tolist() == [True, False]
 
 
 def _synthetic(observed, null, bias=None):
@@ -510,8 +511,7 @@ def test_too_few_finite_null_scores_leave_the_test_undetermined():
         bias=np.array([0.0, 0.0, 0.9]),
     )
     np.testing.assert_allclose(result.p_values[:, 2], [0.1, 1 / 40, 1.0])
-    with pytest.warns(UserWarning, match="1 of 3 units have a test .border_score"):
-        table = result.summary_table()
+    table = result.summary_table()
     np.testing.assert_array_equal(table["border_score_n_finite_null"], [9, 39, 39])
     np.testing.assert_array_equal(
         table["spatial_information_n_finite_null"], [39, 39, 9]
@@ -519,8 +519,7 @@ def test_too_few_finite_null_scores_leave_the_test_undetermined():
     assert table["passes_border_score"].isna().tolist() == [True, False, False]
     # Unit 2's information test cannot reject either, but its bias-corrected
     # information (0.1 bits/spike) rules out a place label regardless.
-    with pytest.warns(UserWarning, match="too few finite null scores"):
-        labels = result.label_cell_types()
+    labels = result.label_cell_types()
     np.testing.assert_array_equal(labels, ["undetermined", "border", "unclassified"])
     # At alpha = 0.2 the nine finite nulls are enough.
     assert result.label_cell_types(alpha=0.2)[0] == "border"
@@ -640,8 +639,7 @@ def test_holm_floor_above_the_first_step_is_undetermined():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert _border_unit(39).label_cell_types()[0] == "border"
-    with pytest.warns(UserWarning, match="at least 60 finite null scores"):
-        table = _border_unit(39).summary_table(correction="holm")
+    table = _border_unit(39).summary_table(correction="holm")
     assert table["cell_type"].iloc[0] == "undetermined"
     for name in ("spatial_information", "grid_score", "border_score"):
         assert table[f"passes_{name}"].isna().all()
@@ -678,8 +676,7 @@ def test_bh_floor_below_alpha_is_never_undetermined():
     with pytest.warns(UserWarning, match="fail correction='fdr_bh'"):
         table = _floor_unit_among_null_units(39).summary_table(correction="fdr_bh")
     assert not table.filter(like="passes_").isna().any().any()
-    with pytest.warns(UserWarning, match="at least 20 finite null scores"):
-        table = _floor_unit_among_null_units(19).summary_table(correction="fdr_bh")
+    table = _floor_unit_among_null_units(19).summary_table(correction="fdr_bh")
     assert table.loc[0, "cell_type"] == "undetermined"
 
 

@@ -1292,9 +1292,6 @@ class TestViewRatesResultViewSpatialInformation:
 class TestViewRatesResultClassify:
     """Test ViewRatesResult.classify() method."""
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_classify_returns_ndarray(
         self,
         simple_env: Environment,
@@ -1317,9 +1314,6 @@ class TestViewRatesResultClassify:
         classification = result.classify()
         assert isinstance(classification, np.ndarray)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_classify_shape(
         self,
         simple_env: Environment,
@@ -1344,9 +1338,6 @@ class TestViewRatesResultClassify:
         assert classification.shape == (n_neurons,)
         assert classification.dtype == np.bool_
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_classify_matches_single_neuron(
         self,
         simple_env: Environment,
@@ -1450,9 +1441,6 @@ class TestViewRatesResultClassify:
 class TestViewRatesResultSummaryTable:
     """Test ViewRatesResult.summary_table() method."""
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_returns_dataframe(
         self,
         simple_env: Environment,
@@ -1477,9 +1465,6 @@ class TestViewRatesResultSummaryTable:
         df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_row_count(
         self,
         simple_env: Environment,
@@ -1503,9 +1488,6 @@ class TestViewRatesResultSummaryTable:
         df = result.summary_table()
         assert len(df) == n_neurons
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_columns_in_order(
         self,
         simple_env: Environment,
@@ -1537,9 +1519,6 @@ class TestViewRatesResultSummaryTable:
             "is_spatial_view_cell",
         ]
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_default_unit_ids(
         self,
         simple_env: Environment,
@@ -1564,9 +1543,6 @@ class TestViewRatesResultSummaryTable:
         expected_ids = list(range(n_neurons))
         assert list(df.index) == expected_ids
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_custom_unit_ids(
         self,
         simple_env: Environment,
@@ -1617,9 +1593,6 @@ class TestViewRatesResultSummaryTable:
         ):
             result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_peak_x_matches_batch_method(
         self,
         simple_env: Environment,
@@ -1644,9 +1617,6 @@ class TestViewRatesResultSummaryTable:
         expected = result.peak_locations()[:, 0]
         np.testing.assert_array_almost_equal(df["peak_x"].values, expected)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_peak_y_matches_batch_method(
         self,
         simple_env: Environment,
@@ -1671,9 +1641,6 @@ class TestViewRatesResultSummaryTable:
         expected = result.peak_locations()[:, 1]
         np.testing.assert_array_almost_equal(df["peak_y"].values, expected)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_peak_rate_matches_batch_method(
         self,
         simple_env: Environment,
@@ -1697,9 +1664,6 @@ class TestViewRatesResultSummaryTable:
         expected = np.nanmax(batch_firing_rates, axis=1)
         np.testing.assert_array_almost_equal(df["peak_firing_rate"].values, expected)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_spatial_information_matches_batch_method(
         self,
         simple_env: Environment,
@@ -1723,9 +1687,6 @@ class TestViewRatesResultSummaryTable:
         expected = result.spatial_information()
         np.testing.assert_array_almost_equal(df["spatial_information"].values, expected)
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*fewer spikes than their rate maps:UserWarning"
-    )
     def test_summary_table_is_view_cell_matches_batch_method(
         self,
         simple_env: Environment,

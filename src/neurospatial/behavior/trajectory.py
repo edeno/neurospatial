@@ -17,7 +17,6 @@ References
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -47,7 +46,6 @@ from neurospatial._observation import (
 )
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     is_finite_real,
     validate_times_positions,
@@ -486,8 +484,8 @@ def heading_from_velocity(
         Controls the degenerate case where **every observed** sample is below
         ``min_speed`` or still (heading undefined everywhere). ``False`` (the
         default) raises ``ValueError`` so the failure is loud; ``True`` returns
-        an all-NaN array with a ``UserWarning`` instead, for batch pipelines
-        that handle NaN explicitly.
+        an all-NaN array instead, for batch pipelines that handle NaN
+        explicitly.
 
     Returns
     -------
@@ -509,12 +507,6 @@ def heading_from_velocity(
         finite and non-negative, or if every observed sample is below
         ``min_speed`` or still and ``allow_all_nan`` is ``False`` (the
         default).
-
-    Warns
-    -----
-    UserWarning
-        If every observed sample is below ``min_speed`` or still and
-        ``allow_all_nan=True`` (an all-NaN heading array is returned).
 
     Notes
     -----
@@ -640,13 +632,6 @@ def heading_from_velocity(
                 f"or too-slow trajectory.\nFix: {fix}"
             )
             raise ValueError(msg)
-        warnings.warn(
-            f"Every observed sample's speed (max {fastest:.4g}) is below "
-            f"min_speed={min_speed} or zero; returning an all-NaN heading "
-            "array because allow_all_nan=True.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     return heading
 
 

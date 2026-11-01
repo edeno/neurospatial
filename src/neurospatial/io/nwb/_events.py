@@ -7,7 +7,6 @@ EventsTables; intervals (trials, laps) in NWB TimeIntervals tables.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import repeat
@@ -20,7 +19,6 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_finite
 from neurospatial.io.nwb._adapters import events_table_to_dataframe, missing_error
 from neurospatial.io.nwb._core import (
@@ -101,34 +99,10 @@ def _build_events_table(
     )
 
 
-def _warn_nothing_written(
-    call: str, records: str, name: str, *, removed: bool, reader: str
-) -> None:
-    """Warn that zero records wrote no table, and how a reader sees that.
-
-    NWB best practice is not to write empty tables (nwbinspector
-    ``check_empty_table``), so a writer given no records adds nothing.
-    """
-    removed_text = f" The existing table '{name}' was removed." if removed else ""
-    warnings.warn(
-        _format_error(
-            f"{call} wrote nothing: there are no {records}.{removed_text}",
-            why="NWB files should not hold empty tables (nwbinspector "
-            "check_empty_table).",
-            fix=f"when reading it back, treat the KeyError {reader} raises for "
-            f"'{name}' as zero {records}.",
-        ),
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
-
-
 def _add_events_table(
     nwbfile: NWBFile,
     events_table: ndx_events.EventsTable,
     *,
-    call: str,
-    records: str,
     processing_module: str,
     module_description: str,
     overwrite: bool,
@@ -150,17 +124,15 @@ def _add_events_table(
             nwbfile, processing_module, module_description
         )
     )
-    removed = module is not None and _clear_for_write(
-        nwbfile,
-        module.data_interfaces,
-        name,
-        overwrite=overwrite,
-        what=f"events table '{name}' in processing/{processing_module}",
-    )
-    if empty:
-        _warn_nothing_written(
-            call, records, name, removed=removed, reader="read_events"
+    if module is not None:
+        _clear_for_write(
+            nwbfile,
+            module.data_interfaces,
+            name,
+            overwrite=overwrite,
+            what=f"events table '{name}' in processing/{processing_module}",
         )
+    if empty:
         return
     module.add(events_table)
 
@@ -686,7 +658,7 @@ def write_laps(
     as a ``TimeIntervals`` table under ``/intervals/<name>``, next to the
     trials table. Read them back with ``read_intervals(nwbfile,
     interval_name="laps")``; pynapple loads the table as an ``IntervalSet``.
-    Zero laps write nothing and warn: NWB files should not hold empty tables
+    Zero laps write nothing, without a warning: NWB files should not hold empty tables
     (nwbinspector ``check_empty_table``). Reading the table back then raises
     ``KeyError``; treat a missing table as zero laps. With ``overwrite=True``,
     zero laps still remove the table they replace.
@@ -737,11 +709,6 @@ def write_laps(
         ``"r+"`` or ``"a"``.
     ImportError
         If pynwb is not installed.
-
-    Warns
-    -----
-    UserWarning
-        If there are no laps; nothing is written.
 
     See Also
     --------
@@ -806,7 +773,7 @@ def write_laps(
 
     table = _build_time_intervals(name, description, start, stop, columns)
 
-    removed = _clear_for_write(
+    _clear_for_write(
         nwbfile,
         nwbfile.intervals,
         name,
@@ -814,9 +781,6 @@ def write_laps(
         what=f"laps table '{name}'",
     )
     if start.size == 0:
-        _warn_nothing_written(
-            "write_laps", "laps", name, removed=removed, reader="read_intervals"
-        )
         return
     nwbfile.add_time_intervals(table)
     logger.debug("Wrote TimeIntervals '%s' with %d laps", name, len(start))
@@ -842,7 +806,7 @@ def write_region_crossings(
     ``EventsTable`` in the ``processing/behavior`` module, with ``region`` and
     ``direction`` columns. Read them back with ``read_events(nwbfile,
     table_name="region_crossings")``.
-    Zero crossings write nothing and warn: NWB files should not hold empty tables
+    Zero crossings write nothing, without a warning: NWB files should not hold empty tables
     (nwbinspector ``check_empty_table``). Reading the table back then raises
     ``KeyError``; treat a missing table as zero crossings. With ``overwrite=True``,
     zero crossings still remove the table they replace.
@@ -890,11 +854,6 @@ def write_region_crossings(
     ImportError
         If ndx-events is not installed.
 
-    Warns
-    -----
-    UserWarning
-        If there are no crossings; nothing is written.
-
     See Also
     --------
     detect_region_crossings : Detect entries into and exits from a region.
@@ -938,8 +897,6 @@ def write_region_crossings(
     _add_events_table(
         nwbfile,
         events_table,
-        call="write_region_crossings",
-        records="region crossings",
         processing_module=DEFAULT_PROCESSING_MODULE,
         module_description="Behavioral data including region crossings and events",
         overwrite=overwrite,
@@ -969,7 +926,7 @@ def write_trials(
 
     Writes trial intervals to the built-in NWB trials table, including
     optional columns for start/end regions and how each trial ended.
-    Zero trials write nothing and warn: NWB files should not hold empty tables
+    Zero trials write nothing, without a warning: NWB files should not hold empty tables
     (nwbinspector ``check_empty_table``). Reading the table back then raises
     ``KeyError``; treat a missing table as zero trials. With ``overwrite=True``,
     zero trials still remove the table they replace.
@@ -1021,11 +978,6 @@ def write_trials(
         from disk.
     ImportError
         If pynwb is not installed.
-
-    Warns
-    -----
-    UserWarning
-        If there are no trials; nothing is written.
 
     Notes
     -----
@@ -1134,13 +1086,6 @@ def write_trials(
         # them; walk the file again to drop it.
         nwbfile.all_children()
     if start.size == 0:
-        _warn_nothing_written(
-            "write_trials",
-            "trials",
-            PREDEFINED_TRIALS,
-            removed=removed,
-            reader="read_trials",
-        )
         return
     logger.debug("Wrote %d trials to NWB file", len(start))
 
@@ -1290,7 +1235,7 @@ def write_events(
 
     Creates an EventsTable in a processing module containing event timestamps
     and any additional columns from the DataFrame. An empty DataFrame writes
-    nothing and warns: NWB files should not hold empty tables (nwbinspector
+    nothing, without a warning: NWB files should not hold empty tables (nwbinspector
     ``check_empty_table``). Reading the table back then raises ``KeyError``;
     treat a missing table as zero events. With ``overwrite=True``, an empty
     DataFrame still removes the table it replaces.
@@ -1322,11 +1267,6 @@ def write_events(
         If timestamps contain non-finite or negative values.
     ImportError
         If ndx-events is not installed.
-
-    Warns
-    -----
-    UserWarning
-        If there are no events; nothing is written.
 
     Notes
     -----
@@ -1374,8 +1314,6 @@ def write_events(
     _add_events_table(
         nwbfile,
         events_table,
-        call="write_events",
-        records="events",
         processing_module=processing_module,
         module_description=f"{processing_module.capitalize()} data",
         overwrite=overwrite,

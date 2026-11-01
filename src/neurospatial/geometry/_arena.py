@@ -27,7 +27,7 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._validation import is_finite_real
+from neurospatial._validation import is_finite_real, validate_integer_at_least
 from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
@@ -448,16 +448,13 @@ class UnknownArena:
     wall_kinds: ClassVar[tuple[BoundaryKind, ...]] = ()
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.n_dims, (bool, np.bool_))
-            or not isinstance(self.n_dims, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or self.n_dims < 1
-        ):
-            msg = "n_dims must be a positive integer."
-            raise _error(
-                msg,
-                "pass the number of coordinate columns",
-            )
+        validate_integer_at_least(
+            self.n_dims,
+            1,
+            name="n_dims",
+            owner="UnknownArena",
+            hint="pass the number of coordinate columns",
+        )
         if self.coordinate_kind not in ("cartesian", "polar") or (
             self.coordinate_kind == "polar" and self.n_dims != 2
         ):

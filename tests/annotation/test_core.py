@@ -345,8 +345,8 @@ class TestProcessAnnotationResults:
         finally:
             viewer.close()
 
-    def test_walls_without_an_environment_are_returned_with_a_warning(self):
-        """Walls drawn in regions mode come back unattached, and say so."""
+    def test_walls_without_an_environment_are_returned_unattached(self):
+        """Walls drawn in regions mode come back in ``result.walls``, no warning."""
         napari = pytest.importorskip("napari")
         from neurospatial.annotation._napari_widget import rebuild_features
 
@@ -355,15 +355,14 @@ class TestProcessAnnotationResults:
             shapes = viewer.add_shapes(name="test")
             shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
             shapes.features = rebuild_features(["wall"], ["divider"])
-            with pytest.warns(UserWarning, match="no environment was built"):
-                result = _process_annotation_results(
-                    shapes,
-                    mode="regions",
-                    bin_size=None,
-                    calibration=None,
-                    simplify_tolerance=None,
-                    multiple_boundaries="last",
-                )
+            result = _process_annotation_results(
+                shapes,
+                mode="regions",
+                bin_size=None,
+                calibration=None,
+                simplify_tolerance=None,
+                multiple_boundaries="last",
+            )
         finally:
             viewer.close()
         assert result.environment is None

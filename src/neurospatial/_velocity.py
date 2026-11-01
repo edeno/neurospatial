@@ -357,12 +357,7 @@ def _local_line_fits(
 
 def validated_smooth_window(smooth_window: float, *, call: str) -> float:
     """A finite ``smooth_window`` of seconds >= 0, as a float."""
-    if (
-        isinstance(smooth_window, (bool, np.bool_))
-        or not isinstance(smooth_window, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-        or not np.isfinite(smooth_window)
-        or smooth_window < 0
-    ):
+    if not is_finite_real(smooth_window, positive=False):
         raise ValueError(
             _format_error(
                 f"{call}() needs smooth_window to be a finite number of seconds "

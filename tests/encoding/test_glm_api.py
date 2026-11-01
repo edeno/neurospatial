@@ -974,8 +974,8 @@ def test_degenerate_zero_occupancy(open_field_env: Environment) -> None:
     env = open_field_env
     occ = np.zeros(env.n_bins)
     counts = np.zeros((2, env.n_bins))
-    with pytest.warns(UserWarning, match="occupancy"):
-        rates, fit = _compute_glm_spatial_rates(
+    with pytest.raises(ValueError, match="zero total occupancy"):
+        _compute_glm_spatial_rates(
             env,
             counts,
             occ,
@@ -984,27 +984,21 @@ def test_degenerate_zero_occupancy(open_field_env: Environment) -> None:
             resolved_backend="numpy",
             dtype=np.float64,
         )
-    rates = np.asarray(rates)
-    assert rates.shape == (2, env.n_bins)
-    assert np.allclose(rates, _floor())
-    assert fit.penalty is None
-    assert fit.reml_objective is None
 
 
 def test_degenerate_all_zero_spike_population(open_field_env: Environment) -> None:
     env = open_field_env
     occ = np.full(env.n_bins, 3.0)
     counts = np.zeros((2, env.n_bins))
-    with pytest.warns(UserWarning, match="no unit has any spikes"):
-        rates, fit = _compute_glm_spatial_rates(
-            env,
-            counts,
-            occ,
-            penalty=None,
-            rank=None,
-            resolved_backend="numpy",
-            dtype=np.float64,
-        )
+    rates, fit = _compute_glm_spatial_rates(
+        env,
+        counts,
+        occ,
+        penalty=None,
+        rank=None,
+        resolved_backend="numpy",
+        dtype=np.float64,
+    )
     rates = np.asarray(rates)
     assert np.allclose(rates, _floor())
     assert fit.penalty is None  # auto, no fixed penalty supplied
@@ -1021,16 +1015,15 @@ def test_degenerate_dead_component(two_component_env: Environment) -> None:
     rng = np.random.default_rng(0)
     counts = np.zeros((1, env.n_bins))
     counts[0, comp_bins[0]] = rng.poisson(5.0, size=comp_bins[0].size)
-    with pytest.warns(UserWarning, match="dead"):
-        rates, _fit = _compute_glm_spatial_rates(
-            env,
-            counts,
-            occ,
-            penalty=None,
-            rank=None,
-            resolved_backend="numpy",
-            dtype=np.float64,
-        )
+    rates, _fit = _compute_glm_spatial_rates(
+        env,
+        counts,
+        occ,
+        penalty=None,
+        rank=None,
+        resolved_backend="numpy",
+        dtype=np.float64,
+    )
     rates = np.asarray(rates)[0]
     # dead-component bins floor; live bins are finite and above the floor somewhere
     assert np.allclose(rates[comp_bins[1]], _floor())
@@ -1073,10 +1066,9 @@ def test_all_zero_spike_fixed_penalty_public(open_field_env: Environment) -> Non
     env = open_field_env
     times, positions, _ = _grid_session(env, [(8.0, 8.0)], seed=13)
     no_spikes = np.array([], dtype=np.float64)
-    with pytest.warns(UserWarning, match="no unit has any spikes"):
-        result = compute_spatial_rate(
-            env, no_spikes, times, positions, method="glm", penalty=3.0
-        )
+    result = compute_spatial_rate(
+        env, no_spikes, times, positions, method="glm", penalty=3.0
+    )
     assert float(result.penalty) == 3.0
     assert result.reml_objective is None
     assert np.allclose(np.asarray(result.firing_rate), _floor())
@@ -1310,31 +1302,47 @@ def _flat_rate_session(env: Environment) -> tuple[np.ndarray, np.ndarray, np.nda
 
 
 @pytest.mark.parametrize("pooled", [True, False], ids=["pooled", "per_unit"])
-def test_reml_bound_warning_points_at_caller(
+def test_reml_bound_is_recorded_without_a_warning(
     open_field_env: Environment, pooled: bool
 ) -> None:
-    """The REML search-bound warning points at the caller's line, not inside
-    neurospatial."""
+    """A penalty at the REML search bound is reported by ``reml_at_boundary``."""
     env = open_field_env
     times, positions, spikes = _flat_rate_session(env)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        compute_spatial_rates(
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_spatial_rates(
             env, [spikes, spikes], times, positions, method="glm", pooled=pooled
         )
-    bound = [w for w in caught if "search bound" in str(w.message)]
-    assert len(bound) == 1
-    assert bound[0].filename == __file__
+    assert np.all(result.reml_at_boundary)
+    assert result.summary_table()["reml_at_boundary"].all()
 
 
-def test_reml_bound_warning_points_at_caller_single_unit(
+def test_reml_bound_is_recorded_without_a_warning_single_unit(
     open_field_env: Environment,
 ) -> None:
     env = open_field_env
     times, positions, spikes = _flat_rate_session(env)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        compute_spatial_rate(env, spikes, times, positions, method="glm")
-    bound = [w for w in caught if "search bound" in str(w.message)]
-    assert len(bound) == 1
-    assert bound[0].filename == __file__
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_spatial_rate(env, spikes, times, positions, method="glm")
+    assert result.reml_at_boundary
+
+
+def test_dead_component_bins_are_unsupported_without_a_warning(
+    two_component_env: Environment,
+) -> None:
+    """Bins of a never-occupied component are outside ``spatial_support``."""
+    env = two_component_env
+    dead = _component_bins(env)[1]
+    rng = np.random.default_rng(0)
+    n_samples = 3000
+    times = np.arange(n_samples) * 0.05
+    live = _component_bins(env)[0]
+    positions = np.asarray(env.bin_centers)[rng.choice(live, n_samples)]
+    spikes = np.sort(rng.choice(times, 200, replace=False))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_spatial_rates(env, [spikes], times, positions, method="glm")
+    assert not np.asarray(result.spatial_support)[dead].any()
+    assert np.asarray(result.spatial_support)[live].any()
+    assert np.isnan(np.asarray(result._supported_rates())[:, dead]).all()

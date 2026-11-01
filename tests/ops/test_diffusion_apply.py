@@ -628,8 +628,7 @@ def test_near_full_rank_diffuse_solves_once(monkeypatch):
     env, source_coord = _build_env("grid_2d")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    # Tiny sigma -> near-full rank -> dense basis (the large-matrix note is
-    # suppressed; this small env is below the warn threshold anyway).
+    # Tiny sigma -> near-full rank -> dense basis.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))

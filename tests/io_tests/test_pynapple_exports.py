@@ -291,19 +291,17 @@ def test_empty_inputs_that_carry_their_type():
 
 @needs_pynapple
 @pytest.mark.pynapple
-def test_records_without_duration_are_dropped_with_a_warning():
+def test_records_without_duration_are_dropped_silently():
     laps = [
         Lap(0.0, 1.0, "clockwise", 0.5),
         Lap(2.0, 2.0, "unknown", 0.1),
         Lap(3.0, 4.0, "counter-clockwise", 0.7),
     ]
-    with pytest.warns(UserWarning, match=r"dropped 1 of 3 Lap record\(s\) without"):
-        iset = to_pynapple(laps)
+    iset = to_pynapple(laps)
     np.testing.assert_array_equal(_half_open(iset.values), [[0.0, 1.0], [3.0, 4.0]])
     # The remaining records keep their own metadata.
     assert list(iset.direction) == ["clockwise", "counter-clockwise"]
-    with pytest.warns(UserWarning, match=r"dropped 1 of 1 Lap"):
-        assert len(to_pynapple([laps[1]])) == 0
+    assert len(to_pynapple([laps[1]])) == 0
 
 
 def test_interval_record_refusals():
@@ -352,8 +350,7 @@ def test_detected_visits_transitions_and_crossings_round_trip():
     )
 
     # The visit to C is its last sample alone: no time to export.
-    with pytest.warns(UserWarning, match=r"dropped 1 of 3 RegionVisit"):
-        iset = to_pynapple(visits)
+    iset = to_pynapple(visits)
     timed = [v for v in visits if v.end_time > v.start_time]
     assert list(iset.region_name) == ["A", "B"]
     samples = nap.Ts(t=times)

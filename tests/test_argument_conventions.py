@@ -444,8 +444,7 @@ def test_warnings_from_sample_functions_point_at_the_caller():
 
     import numpy as np
 
-    from neurospatial.behavior import heading_from_velocity, restrict
-    from neurospatial.events import peri_event_histogram
+    from neurospatial.behavior import restrict
 
     times = np.arange(10.0)
     positions = np.zeros((10, 2))
@@ -453,9 +452,5 @@ def test_warnings_from_sample_functions_point_at_the_caller():
         warnings.simplefilter("always")
         # Sliced samples from two windows lose the gap between them.
         restrict(times, positions, epochs=[(0.0, 3.0), (5.0, 9.0)])
-        # A stationary animal has no heading.
-        heading_from_velocity(times, positions, allow_all_nan=True)
-        # One event has no SEM (warned from a helper of the wrapped function).
-        peri_event_histogram(times, np.array([5.0]), (-1.0, 1.0), bin_size=0.5)
-    assert len(caught) == 3, [str(w.message) for w in caught]
+    assert len(caught) == 1, [str(w.message) for w in caught]
     assert {w.filename for w in caught} == {__file__}

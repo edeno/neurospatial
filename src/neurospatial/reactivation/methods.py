@@ -2100,14 +2100,6 @@ def _event_response_columns(
         after = float(periods["match"].summary[component])
         if method.statistic == "event_response_ratio":
             value = (after - before) / before if before > 0 else np.nan
-            if not before > 0:
-                warnings.warn(
-                    f"component {component}: the control event response is "
-                    f"{before:.3g}, not positive, so the ratio to it is undefined "
-                    "(NaN).",
-                    UserWarning,
-                    stacklevel=2,
-                )
         else:
             value = after - before
         columns: dict[str, Any] = {

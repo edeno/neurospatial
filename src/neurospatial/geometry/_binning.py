@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
@@ -586,12 +587,13 @@ class MissingFaces:
     reason: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.reason, str):
-            msg = (  # type: ignore[unreachable]  # runtime check of user input
-                "MissingFaces.reason must be a string explaining why the faces "
-                f"are missing, got {self.reason!r}."
-            )
-            raise TypeError(msg)
+        validate_instance(
+            self.reason,
+            str,
+            name="reason",
+            owner="MissingFaces",
+            hint="explain why the faces are missing",
+        )
 
     @property
     def available(self) -> bool:
@@ -970,9 +972,13 @@ class Binning:
         return self.grid if isinstance(self.grid, FramedGrid) else None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.kind, str):
-            msg = f"Binning.kind must be a descriptive string, got {self.kind!r}."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        validate_instance(
+            self.kind,
+            str,
+            name="kind",
+            owner="Binning",
+            hint="pass a descriptive string such as 'grid'",
+        )
         self.connections.check_bins(self.bins.n_bins)
         pairs = self.connections.pairs
         if isinstance(self.faces, KnownFaces):

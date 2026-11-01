@@ -561,15 +561,13 @@ def _share_variance_cache(population: Any, unit: Any) -> None:
 
 
 class _InformationBias(NamedTuple):
-    """Untuned-cell information bias of each unit, before any warning."""
+    """Untuned-cell information bias of each unit."""
 
     bias: NDArray[np.float64]
     """Expected untuned information (bits/spike), shape (n_units,); NaN for
     silent units and units in ``too_few``."""
     too_few: NDArray[np.bool_]
     """Units with fewer spikes than independent bins, shape (n_units,)."""
-    effective_bins: float
-    """Independent bins of the worst ``too_few`` unit; NaN when there is none."""
 
 
 def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBias:
@@ -578,7 +576,7 @@ def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBi
     The derivation is in the Notes of the result classes'
     ``spatial_information_bias``. Units with fewer spikes than the map has
     effectively independent bins get NaN. This computation does not warn;
-    :func:`_information_bias` adds the warning.
+    :func:`_information_bias` returns only the bias.
 
     Parameters
     ----------
@@ -601,7 +599,7 @@ def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBi
     support = np.asarray(result.spatial_support, dtype=bool)
     if not support.any():
         return _InformationBias(
-            np.full(len(rates), np.nan), np.zeros(len(rates), dtype=bool), np.nan
+            np.full(len(rates), np.nan), np.zeros(len(rates), dtype=bool)
         )
     dwell = occupancy[support]
     mean_rates = rates[:, support] @ dwell / dwell.sum()
@@ -613,48 +611,21 @@ def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBi
     # ``V / lam`` on average. The second-order bias breaks down once it
     # reaches 1: fewer spikes than independent bins.
     too_few = spiking & ~(variance <= mean_rates)
-    effective_bins = (
-        float(np.nanmax(variance[too_few]) * occupancy[occupancy > 0].sum())
-        if too_few.any()
-        else np.nan
-    )
-    return _InformationBias(
-        np.where(spiking & ~too_few, bias, np.nan), too_few, effective_bins
-    )
+    return _InformationBias(np.where(spiking & ~too_few, bias, np.nan), too_few)
 
 
 def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
-    """:func:`_information_bias_terms`, warning once about too few spikes.
+    """:func:`_information_bias_terms` without the diagnostics.
 
     Returns
     -------
     ndarray, shape (n_units,)
         The bias; NaN for silent units and units with fewer spikes than the
-        map has effectively independent bins, with one warning naming how
-        many.
+        map has effectively independent bins. Such units read as
+        undetermined, not as failures: cell-type labels mark them
+        ``"undetermined"`` and the boolean screens return False for them.
     """
-    from neurospatial._stacklevel import _external_stacklevel
-
-    terms = _information_bias_terms(result, base=base)
-    too_few = terms.too_few
-    if too_few.any():
-        warnings.warn(
-            f"{int(too_few.sum())} of {len(too_few)} units have fewer spikes than "
-            f"their rate maps have independent bins (about {terms.effective_bins:.0f}), "
-            "so their information bias is NaN and they fail the information "
-            "screen.\n"
-            "Why: the bias of plug-in information is an expansion in "
-            "independent bins per spike; with fewer spikes than independent "
-            "bins it breaks down, so the information an untuned cell would "
-            "show is unknown and the cutoff cannot be applied.\n"
-            "Fix: record longer, or use coarser bins or a larger bandwidth "
-            "(fewer independent bins). The family's shuffle test "
-            "(*_significance) still gives these units a p-value, but its cell "
-            "verdict needs the same bias.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    return terms.bias
+    return _information_bias_terms(result, base=base).bias
 
 
 def _debiased_information(
@@ -665,7 +636,7 @@ def _debiased_information(
     The value every information screen compares with its threshold. NaN for
     silent units and units with too few spikes (see :func:`_information_bias`).
     ``bias`` is :func:`_information_bias` of ``result`` when the caller
-    already has it, so its warning is not repeated.
+    already has it, so it is not recomputed.
     """
     from neurospatial.encoding._base import _to_numpy
 
@@ -698,7 +669,7 @@ def _information_screen(
         The cell type's default cutoff.
     bias : ndarray, shape (n_units,), optional
         :func:`_information_bias` of ``result`` when the caller already has
-        it, so its warning is not repeated.
+        it, so it is not recomputed.
 
     Returns
     -------
@@ -729,7 +700,6 @@ def _warn_unknown_bias(
     kind : str
         Cell type of the verdict, such as ``"place"``.
     """
-    from neurospatial._stacklevel import _external_stacklevel
 
     unknown = significant & np.isnan(debiased)
     if unknown.any():
@@ -967,10 +937,8 @@ def batch_grid_scores(
           computation raised an exception that was caught and converted
           to NaN. Use this to distinguish "score is NaN for legitimate
           reasons (e.g., constant firing → unitless autocorrelation)"
-          from "score is NaN because grid_score crashed". A
-          ``UserWarning`` is also emitted when at least one neuron
-          fails so the failure surfaces in logs even if the caller
-          ignores ``failures``.
+          from "score is NaN because grid_score crashed". No warning is
+          emitted; check ``failures`` (or ``n_failures``).
 
     Raises
     ------
@@ -1047,9 +1015,7 @@ def batch_grid_scores(
             return np.nan
         return grid_score(spatial_autocorrelation(env, firing_rate))
 
-    return _score_units(
-        firing_rates, score, caller="batch_grid_scores", scorer="grid_score"
-    )
+    return _score_units(firing_rates, score)
 
 
 def batch_border_scores(
@@ -1104,8 +1070,8 @@ def batch_border_scores(
           minimum size, no observed wall, or a caught exception).
         - ``failures``: boolean mask, ``True`` for neurons whose
           ``border_score`` call raised ``ValueError`` or
-          ``RuntimeError`` and was caught. A ``UserWarning`` is also
-          emitted when at least one neuron fails.
+          ``RuntimeError`` and was caught. No warning is emitted; check
+          ``failures`` (or ``n_failures``).
 
     Raises
     ------
@@ -1174,9 +1140,7 @@ def batch_border_scores(
             boundary_source=boundary_source,
         )
 
-    return _score_units(
-        firing_rates, score, caller="batch_border_scores", scorer="border_score"
-    )
+    return _score_units(firing_rates, score)
 
 
 def _unit_maps(env: Environment, firing_rates: ArrayLike) -> NDArray[np.float64]:
@@ -1194,14 +1158,12 @@ def _unit_maps(env: Environment, firing_rates: ArrayLike) -> NDArray[np.float64]
 def _score_units(
     firing_rates: NDArray[np.float64],
     score: Callable[[NDArray[np.float64]], float],
-    *,
-    caller: str,
-    scorer: str,
 ) -> BatchScoresResult:
     """Score each row of ``firing_rates``, recording failures as NaN.
 
     A ``ValueError`` or ``RuntimeError`` from ``score`` sets that neuron's
-    score to NaN and its failure flag, and the batch warns once. A
+    score to NaN and its failure flag (``BatchScoresResult.failures``); there
+    is no warning. A
     ``NotImplementedError`` (a ``RuntimeError``) is missing scientific
     support, an unavailable measurement rather than a numerical failure, so
     it propagates.
@@ -1212,8 +1174,6 @@ def _score_units(
         Rate map of each neuron.
     score : callable
         Score of one rate map.
-    caller, scorer : str
-        The batch function and the score it computes, named in the warning.
 
     Returns
     -------
@@ -1232,17 +1192,6 @@ def _score_units(
             scores[i] = np.nan
             failures[i] = True
 
-    n_failed = int(failures.sum())
-    if n_failed > 0:
-        warnings.warn(
-            f"{caller}: {scorer} raised an exception for "
-            f"{n_failed} of {n_neurons} neuron"
-            f"{'' if n_neurons == 1 else 's'}; their scores were set to "
-            "NaN. Inspect the `failures` mask on the returned "
-            "BatchScoresResult to identify which neurons failed.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     return BatchScoresResult(scores=scores, failures=failures)
 
 

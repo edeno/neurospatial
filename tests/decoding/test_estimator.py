@@ -1066,6 +1066,13 @@ def test_fit_unit_ids_must_match_group_labels(sim, make_spike_group):
         decoder.fit(spikes[:3], times, positions, unit_ids=[3, 3, 7])
 
 
+def test_from_rates_refuses_a_bare_rate_array():
+    from neurospatial.decoding import BayesianDecoder
+
+    with pytest.raises(TypeError, match=r"rates must be a SpatialRatesResult"):
+        BayesianDecoder.from_rates(np.ones((3, 4)))
+
+
 def test_from_rates_matches_fit(two_epoch_recording):
     from neurospatial.encoding import compute_spatial_rates
 

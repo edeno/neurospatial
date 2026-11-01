@@ -27,7 +27,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._validation import validate_draw_count
+from neurospatial._validation import (
+    validate_bool,
+    validate_draw_count,
+    validate_finite_scalar,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -636,18 +640,17 @@ def shuffle_posterior_circular(
     order = _track_order(
         env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
     )
-    if not isinstance(exclude_zero_shift, (bool, np.bool_)):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            "shuffle_posterior_circular() needs exclude_zero_shift=True or "
-            f"False, got {exclude_zero_shift!r}."
-        )
-        raise TypeError(msg)
+    exclude_zero_shift = validate_bool(
+        exclude_zero_shift,
+        name="exclude_zero_shift",
+        owner="shuffle_posterior_circular()",
+    )
     return _roll_rows_along_track(
         posterior,
         order,
         n_shuffles,
         np.random.default_rng(rng),
-        exclude_zero_shift=bool(exclude_zero_shift),
+        exclude_zero_shift=exclude_zero_shift,
     )
 
 
@@ -814,17 +817,9 @@ def _peak_probabilities(
                 "events, np.vstack(posteriors).mean(axis=0)",
             )
         )
-    if (
-        isinstance(edge_exclusion, bool)
-        or not isinstance(edge_exclusion, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-        or not np.isfinite(edge_exclusion)
-        or edge_exclusion < 0
-    ):
-        msg = (
-            f"{operation}: edge_exclusion must be a finite distance >= 0 in "
-            f"the environment's units, got {edge_exclusion!r}."
-        )
-        raise ValueError(msg)
+    validate_finite_scalar(
+        edge_exclusion, name=f"{operation}: edge_exclusion", positive=False
+    )
     starts, stops = _require_track_extents(
         env, operation, alternative=_POSTERIOR_SHUFFLE_ALTERNATIVE
     )

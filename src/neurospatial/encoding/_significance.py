@@ -16,7 +16,6 @@ from neurospatial._intervals import resolve_time_windows
 from neurospatial._random import _entropy, _stream
 from neurospatial._results import plain_value
 from neurospatial._spikes import as_labelled_spike_trains
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
@@ -235,26 +234,13 @@ def to_shuffle_results(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Return independent per-unit score arrays in caller label order.
 
-    Warns, naming the units, when undefined (NaN) null scores were left out
-    of a unit's p-value; units whose observed score is undefined are not named.
+    A unit's p-value uses only its defined (non-NaN) null scores; the count is
+    each result's ``n_shuffles_used``. Shifted spike trains that leave no spikes
+    in the analyzed bins give undefined scores, so ``n_shuffles_used`` below
+    the requested ``n_shuffles`` marks them, without a warning. A unit with no
+    defined null score gets ``p_value=NaN``.
     """
     p = shuffle_pvalues(observed, null)
-    n_dropped = np.sum(np.isnan(null), axis=0)[:, 0]
-    affected = np.flatnonzero((n_dropped > 0) & np.isfinite(observed[:, 0]))
-    if affected.size:
-        details = ", ".join(
-            f"unit {plain_value(unit_ids[i])!r}: {int(n_dropped[i])}" for i in affected
-        )
-        warnings.warn(
-            f"Dropped {int(n_dropped[affected].sum())} undefined (NaN) null "
-            f"score(s) out of {null.shape[0]} per unit before computing p-values "
-            f"({details}). Each p-value uses only its unit's defined null scores; "
-            "a unit with none gets p_value=NaN. Shifted spike trains that leave no spikes in "
-            "the analyzed bins give undefined scores; more spikes or a longer "
-            "recording reduce them.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
     result = {
         plain_value(label): shuffle_test_result(
             float(observed[i, 0]), null[:, i, 0], float(p[i, 0])

@@ -70,15 +70,12 @@ def test_partial_report_preserves_requested_labels_and_spike_counts():
             19: {"center": session.env.bin_centers[0]},
         },
     )
-    with pytest.warns(
-        UserWarning, match=r"Units \[19\]: ground truth has no place field"
-    ):
-        result = validate_simulation(
-            session,
-            unit_ids=[19, 7, 11],
-            method="binned",
-            bandwidth=0.0,
-        )
+    result = validate_simulation(
+        session,
+        unit_ids=[19, 7, 11],
+        method="binned",
+        bandwidth=0.0,
+    )
     np.testing.assert_array_equal(result.unit_ids, [19, 7, 11])
     np.testing.assert_array_equal(result.spike_counts, [len(train), 0, len(train)])
     assert result.unit_status == ("not_evaluable", "not_evaluable", "passed")
@@ -210,8 +207,7 @@ def _with_border_unit(session):
 
 def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
     session = _with_border_unit(_session())
-    with pytest.warns(UserWarning, match="not place fields"):
-        result = validate_simulation(session, method="binned", bandwidth=0.0)
+    result = validate_simulation(session, method="binned", bandwidth=0.0)
     assert result.unit_status == ("passed", "excluded")
     assert result.skip_reasons == (None, "not_a_place_field")
     assert (result.n_evaluated, result.n_excluded) == (1, 1)
@@ -226,10 +222,7 @@ def test_units_that_are_not_place_cells_do_not_decide_the_verdict():
 
 def test_a_selection_of_only_excluded_units_cannot_pass():
     session = _with_border_unit(_session())
-    with (
-        pytest.warns(UserWarning, match="are not place fields"),
-        pytest.warns(UserWarning, match="No cells could be fully validated"),
-    ):
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
         result = validate_simulation(session, unit_ids=[3])
     assert result.unit_status == ("excluded",)
     assert result.passed is False
@@ -241,10 +234,7 @@ def test_a_selection_of_only_excluded_units_cannot_pass():
 def test_an_unevaluable_place_unit_blocks_a_pass_beside_excluded_units():
     session = _with_border_unit(_session())
     session = replace(session, spike_times=[np.array([]), session.spike_times[1]])
-    with (
-        pytest.warns(UserWarning, match="are not place fields"),
-        pytest.warns(UserWarning, match="No cells could be fully validated"),
-    ):
+    with pytest.warns(UserWarning, match="No cells could be fully validated"):
         result = validate_simulation(session)
     assert result.unit_status == ("not_evaluable", "excluded")
     assert result.passed is False

@@ -143,7 +143,6 @@ def _family_results(trajectory) -> dict[str, object]:
     }
 
 
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_peak_firing_rate_has_one_name_in_every_verb(trajectory) -> None:
     """summary(), summary_table() and the method share the name peak_firing_rate."""
     for name, population in _family_results(trajectory).items():

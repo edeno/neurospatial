@@ -1,7 +1,6 @@
 """Forwarded warnings should identify the scientist's call site."""
 
 import warnings
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +10,7 @@ from neurospatial import Environment
 
 
 @pytest.mark.parametrize("method", ["plot", "plot_field"])
-def test_scale_bar_warning_points_to_user_call(method):
+def test_scale_bar_with_a_tiny_extent_is_omitted_silently(method):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0) * 1e-10,) * 2
     )
@@ -25,7 +24,6 @@ def test_scale_bar_warning_points_to_user_call(method):
                 env.plot_field(
                     np.arange(env.n_bins, dtype=float), ax=ax, scale_bar=True
                 )
-        assert captured
-        assert all(Path(item.filename) == Path(__file__) for item in captured)
+        assert not captured
     finally:
         plt.close(figure)

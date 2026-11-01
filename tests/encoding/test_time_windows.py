@@ -409,7 +409,6 @@ def test_all_excluded_warning_names_epochs(continuous_recording):
 @pytest.mark.parametrize("method", ["binned", "glm"])
 @pytest.mark.parametrize("n_units", [0, 2])
 @pytest.mark.parametrize("warn_on_drop", [False, True])
-@pytest.mark.filterwarnings("ignore:MRF-GAM REML:UserWarning")
 def test_spatial_analysis_mask_is_shared_once(
     continuous_recording, monkeypatch, method, n_units, warn_on_drop
 ):
@@ -469,7 +468,6 @@ def test_single_spatial_mask_is_shared_once(continuous_recording, monkeypatch):
 @pytest.mark.parametrize("method", ["binned", "glm"])
 @pytest.mark.parametrize("plural", [False, True])
 @pytest.mark.parametrize("window", [None, (100.0, 200.0)])
-@pytest.mark.filterwarnings("ignore:MRF-GAM REML:UserWarning")
 def test_spatial_results_record_spike_window(
     continuous_recording, method, plural, window
 ):

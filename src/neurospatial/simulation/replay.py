@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import is_finite_real, validate_integer_at_least
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -279,26 +280,15 @@ def simulate_replay_event(
         if not (np.isfinite(value) and value > 0):
             msg = f"{_OPERATION}: {name} must be positive, got {value!r}."
             raise ValueError(msg)
-    if (
-        isinstance(drop_fraction, bool)
-        or not isinstance(drop_fraction, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-        or not 0.0 <= drop_fraction <= 1.0
-    ):
+    if not is_finite_real(drop_fraction, positive=False) or drop_fraction > 1.0:
         msg = (
             f"{_OPERATION}: drop_fraction must be a fraction from 0 to 1 of the "
             f"event's spikes, got {drop_fraction!r}."
         )
         raise ValueError(msg)
-    if (
-        isinstance(n_noise_spikes, bool)
-        or not isinstance(n_noise_spikes, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-        or n_noise_spikes < 0
-    ):
-        msg = (
-            f"{_OPERATION}: n_noise_spikes must be a non-negative integer, got "
-            f"{n_noise_spikes!r}."
-        )
-        raise ValueError(msg)
+    n_noise_spikes = validate_integer_at_least(
+        n_noise_spikes, 0, name="n_noise_spikes", owner=_OPERATION
+    )
     starts, stops = _require_track_extents(
         env,
         _OPERATION,

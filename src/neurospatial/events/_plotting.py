@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_instance
 from neurospatial.events._core import (
     PeriEventResult,
     _finite_times,
@@ -121,12 +122,14 @@ def plot_peri_event_response(
     import matplotlib.pyplot as plt
     from matplotlib.axes import Axes
 
-    if not isinstance(result, PeriEventResult):
-        msg = (  # type: ignore[unreachable]  # runtime check of user input
-            "result must be a single-unit PeriEventResult. "
-            "Select a population unit with .sel(unit_id=...) and pass that unit's spikes."
-        )
-        raise TypeError(msg)
+    result = validate_instance(
+        result,
+        PeriEventResult,
+        name="result",
+        owner="plot_peri_event_response()",
+        hint="pass a single-unit PeriEventResult; select a population unit with "
+        ".sel(unit_id=...) and pass that unit's spikes",
+    )
     if result.event_indices is None:
         msg = (
             "result.event_indices is unknown; a matching raster cohort cannot be inferred. "

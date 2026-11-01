@@ -36,9 +36,8 @@ class TestPathBetweenErrorPaths:
         assert bin2 >= 0
         assert bin1 != bin2
 
-        # Should warn and return empty path when no path exists
-        with pytest.warns(UserWarning, match="No path found"):
-            path = env.path_between(bins=[bin1, bin2])
+        # The empty path is the answer for disconnected bins (no warning)
+        path = env.path_between(bins=[bin1, bin2])
 
         assert path == []
         assert isinstance(path, list)

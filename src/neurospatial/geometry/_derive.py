@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_instance
 from neurospatial.geometry._affine import _check_homogeneous, linear_scale
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
@@ -114,17 +115,20 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     shapes = None if binning.shapes is None else binning.shapes.subset(keep)
     track = binning.linearization
     if track is not None:
-        if isinstance(track, TrackLinearization):
-            track = TrackLinearization(
-                track.graph,
-                track.edge_order,
-                track.edge_spacing,
-                track.grid_edges,
-                _restricted_mask(track.active_mask, keep),
-            )
-        else:
-            msg = "Track derivation requires an owned TrackLinearization snapshot."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        track = validate_instance(
+            track,
+            TrackLinearization,
+            name="linearization",
+            owner="Track derivation",
+            hint="it requires an owned TrackLinearization snapshot",
+        )
+        track = TrackLinearization(
+            track.graph,
+            track.edge_order,
+            track.edge_spacing,
+            track.grid_edges,
+            _restricted_mask(track.active_mask, keep),
+        )
     return Binning(
         binning.kind,
         bins,
@@ -617,11 +621,17 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         outline = Outline(affine_geometry(outline.geometry, matrix))
     track = binning.linearization
     if track is not None:
-        if isinstance(track, TrackLinearization):
-            track = _track_transform(track, matrix, scale)
-        else:
-            msg = "Track derivation requires an owned TrackLinearization snapshot."  # type: ignore[unreachable]  # runtime check of user input
-            raise TypeError(msg)
+        track = _track_transform(
+            validate_instance(
+                track,
+                TrackLinearization,
+                name="linearization",
+                owner="Track derivation",
+                hint="it requires an owned TrackLinearization snapshot",
+            ),
+            matrix,
+            scale,
+        )
     return Binning(
         binning.kind,
         bins,

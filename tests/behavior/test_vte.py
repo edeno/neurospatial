@@ -933,18 +933,17 @@ class TestComputeVTESession:
             ),
         ]
 
-        # A trial that never enters the decision region must be skipped *and*
-        # warned about (with its timing), not silently dropped.
-        with pytest.warns(UserWarning, match=r"never enters decision region"):
-            result = compute_vte_session(
-                positions=positions,
-                times=times,
-                trials=trials,
-                decision_region="center",
-                env=env,
-                window_duration=0.5,
-                min_speed=1.0,
-            )
+        # A trial that never enters the decision region keeps its place with
+        # a status saying why, not silently dropped; this is not a warning.
+        result = compute_vte_session(
+            positions=positions,
+            times=times,
+            trials=trials,
+            decision_region="center",
+            env=env,
+            window_duration=0.5,
+            min_speed=1.0,
+        )
 
         # The trial keeps its place, but nothing was measured, so no
         # statistic is 0.
@@ -961,43 +960,6 @@ class TestComputeVTESession:
             result.std_speed,
         ):
             assert np.isnan(value)
-
-    def test_skipped_trial_warning_includes_timing(self, t_maze_environment):
-        """The skip warning names the trial's start/end times."""
-        from neurospatial.behavior.segmentation import Trial
-        from neurospatial.behavior.vte import compute_vte_session
-
-        env = t_maze_environment
-
-        times = np.linspace(0, 2, 60)
-        positions = np.column_stack(
-            [np.ones(60) * 50, np.linspace(0, 20, 60)]  # never reaches center
-        )
-        trials = [
-            Trial(
-                start_time=0.0,
-                end_time=2.0,
-                start_region="start",
-                end_region=None,
-                outcome="timeout",
-            ),
-        ]
-
-        with pytest.warns(
-            UserWarning, match=r"s never enters decision region"
-        ) as record:
-            compute_vte_session(
-                positions=positions,
-                times=times,
-                trials=trials,
-                decision_region="center",
-                env=env,
-                window_duration=0.5,
-                min_speed=1.0,
-            )
-
-        messages = [str(w.message) for w in record]
-        assert any("0.000" in m and "2.000" in m for m in messages), messages
 
     def test_vte_classification_consistency(self, t_maze_environment):
         """Test that VTE classification is consistent with metrics."""
@@ -1114,17 +1076,16 @@ def test_compute_vte_session_env_first(t_maze_environment):
     ]
 
     # Positional (env, times, positions) call analyzes the trial. One trial
-    # has no spread to z-score against, which warns.
-    with pytest.warns(UserWarning, match="No variation"):
-        result = compute_vte_session(
-            env,
-            times,
-            positions,
-            decision_region="center",
-            trials=trials,
-            window_duration=0.5,
-            min_speed=1.0,
-        )
+    # has no spread to z-score against, and that is not worth a warning.
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        decision_region="center",
+        trials=trials,
+        window_duration=0.5,
+        min_speed=1.0,
+    )
     assert len(result.trial_results) == 1
 
 
@@ -1180,25 +1141,24 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
     assert abs(trial.head_sweep_magnitude) < 1e-12
 
 
-def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
+def test_session_marks_trial_window_too_short(zig_zag_then_run):
     """A trial that enters the region within 2 samples of its start is skipped
-    with a warning, not silently.
+    with status "too_few_samples", not silently.
     """
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
 
     env, times, positions = zig_zag_then_run
 
-    with pytest.warns(UserWarning, match=r"only 2 observed sample\(s\)"):
-        result = compute_vte_session(
-            env,
-            times,
-            positions,
-            decision_region="decision",
-            trials=[Trial(5.2, 9.9, "start", "decision", "reached")],
-            window_duration=1.0,
-            min_speed=5.0,
-        )
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        decision_region="decision",
+        trials=[Trial(5.2, 9.9, "start", "decision", "reached")],
+        window_duration=1.0,
+        min_speed=5.0,
+    )
 
     (trial,) = result.trial_results
     assert trial.status == "too_few_samples"
@@ -1300,10 +1260,9 @@ def test_session_skips_trial_with_too_few_observed_samples(t_maze_environment):
     entry = _first_center_sample(env, times, positions, after=3.0)
     positions[entry - 15 : entry - 2] = np.nan  # keep 2 of the 15 window rows
 
-    with pytest.warns(UserWarning, match=r"Trial 1 .*only 2 observed sample\(s\)"):
-        result = compute_vte_session(
-            env, times, positions, trials=trials, **_SESSION_KWARGS
-        )
+    result = compute_vte_session(
+        env, times, positions, trials=trials, **_SESSION_KWARGS
+    )
     statuses = [t.status for t in result.trial_results]
     assert statuses == ["ok", "too_few_samples", "ok"]
     assert result.trial_results[1].is_vte is None
@@ -1477,14 +1436,13 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
     trials = [trials[0], ms_trial, trials[1], trials[2]]
     with pytest.warns(
         UserWarning,
-        match=r"has no samples between its start and end times|never enters decision region",
+        match=r"has no samples between its start and end times",
     ) as record:
         result = compute_vte_session(
             t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
         )
     messages = [str(w.message) for w in record]
     assert any("Trial 1 " in m and "no samples" in m and "clock" in m for m in messages)
-    assert any("Trial 2 " in m and "never enters" in m for m in messages)
 
     assert [t.status for t in result.trial_results] == [
         "ok",
@@ -1731,3 +1689,12 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
     assert result.vte_fraction == 0.5
     assert_allclose(result.mean_head_sweep, 1.5 * np.pi, rtol=1e-12)
     assert_allclose(result.std_head_sweep, np.pi * np.sqrt(11) / 2, rtol=1e-12)
+
+
+def test_session_result_refuses_entries_that_are_not_trial_results():
+    from neurospatial.behavior.vte import VTESessionResult
+
+    with pytest.raises(
+        TypeError, match=r"trial_results entry must be a VTETrialResult"
+    ):
+        VTESessionResult(trial_results=(1.0,))

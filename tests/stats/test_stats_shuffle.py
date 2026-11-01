@@ -175,12 +175,11 @@ def test_compute_shuffle_pvalue_finite_unchanged():
 # ---------------------------------------------------------------------------
 
 
-def test_from_null_leaves_out_undefined_scores_with_a_warning():
-    """NaN shuffles are left out of p and z, with a warning naming the null."""
+def test_from_null_leaves_out_undefined_scores():
+    """NaN shuffles are left out of p and z; n_shuffles_used counts the rest."""
 
     null = np.array([np.nan, 1.0, 2.0, 3.0])
-    with pytest.warns(UserWarning, match=r"time_bins: 1 of 4 shuffles"):
-        result = ShuffleTestResult.from_null(2.5, null, shuffle_type="time_bins")
+    result = ShuffleTestResult.from_null(2.5, null, shuffle_type="time_bins")
     defined = null[1:]
     assert result.p_value == compute_shuffle_pvalue(2.5, defined)
     assert result.z_score == compute_shuffle_zscore(2.5, defined)
@@ -233,10 +232,9 @@ def test_shuffle_test_result_plot_with_infinite_nulls():
     mpl.use("Agg")
     import matplotlib.pyplot as plt
 
-    with pytest.warns(UserWarning, match="undefined"):
-        result = ShuffleTestResult.from_null(
-            3.0, np.array([1.0, 2.0, np.inf, np.nan]), shuffle_type="x"
-        )
+    result = ShuffleTestResult.from_null(
+        3.0, np.array([1.0, 2.0, np.inf, np.nan]), shuffle_type="x"
+    )
     ax = result.plot()
     assert "2 non-finite not drawn" in ax.get_title()
     assert "greater" in ax.get_title()
@@ -305,9 +303,8 @@ def test_shuffle_spikes_isi_requires_sorted_finite_1d(spikes):
         shuffle_spikes_isi(spikes)
 
 
-def test_shuffle_spikes_isi_warns_when_null_is_degenerate():
-    with pytest.warns(UserWarning, match="every shuffle equals the input"):
-        draws = list(shuffle_spikes_isi(np.array([0.1, 0.4]), n_shuffles=3))
+def test_shuffle_spikes_isi_with_two_spikes_returns_the_input():
+    draws = list(shuffle_spikes_isi(np.array([0.1, 0.4]), n_shuffles=3))
     assert all(np.array_equal(draw, [0.1, 0.4]) for draw in draws)
 
 
@@ -346,10 +343,9 @@ def test_shuffle_result_z_score_does_not_warn_again():
 
     from neurospatial.stats.shuffle import ShuffleTestResult
 
-    with pytest.warns(UserWarning, match="undefined"):
-        result = ShuffleTestResult.from_null(
-            3.0, np.array([0.0, 1.0, np.nan]), shuffle_type="test"
-        )
+    result = ShuffleTestResult.from_null(
+        3.0, np.array([0.0, 1.0, np.nan]), shuffle_type="test"
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert result.z_score == pytest.approx(5.0)

@@ -35,7 +35,7 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._validation import validate_times_positions
+from neurospatial._validation import validate_choice, validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import _compute_kernel
 from neurospatial.geometry import (
@@ -411,6 +411,9 @@ def _transitions(
     # Dispatch based on mode
     if method is not None:
         # MODEL-BASED MODE
+        method = validate_choice(
+            method, ("random_walk", "diffusion"), name="method", owner="transitions()"
+        )
         # Validate that empirical inputs aren't provided
         if bins is not None or times is not None or positions is not None:
             msg = (
@@ -455,18 +458,15 @@ def _transitions(
         # Dispatch to model-based method
         if method == "random_walk":
             return _random_walk_transitions(graph, normalize=normalize)
-        if method == "diffusion":
-            if bandwidth is None:
-                msg = (
-                    "method='diffusion' requires 'bandwidth' parameter. "
-                    "Provide bandwidth in physical units (sigma)."
-                )
-                raise ValueError(msg)
-            return _diffusion_transitions(
-                cache, binning, bandwidth=bandwidth, normalize=normalize
+        if bandwidth is None:
+            msg = (
+                "method='diffusion' requires 'bandwidth' parameter. "
+                "Provide bandwidth in physical units (sigma)."
             )
-        msg = f"Unknown method '{method}'. Valid options: 'random_walk', 'diffusion'."  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
+            raise ValueError(msg)
+        return _diffusion_transitions(
+            cache, binning, bandwidth=bandwidth, normalize=normalize
+        )
     # EMPIRICAL MODE
     return _empirical_transitions(
         bins=bins,

@@ -523,7 +523,7 @@ class TestShufflePosteriorWeightedCircular:
             (np.ones(19), 0.0, "one finite, non-negative weight per bin"),
             (np.r_[-1.0, np.ones(19)], 0.0, "one finite, non-negative"),
             (np.r_[np.nan, np.ones(19)], 0.0, "one finite, non-negative"),
-            (np.ones(20), -1.0, "edge_exclusion must be a finite distance"),
+            (np.ones(20), -1.0, "edge_exclusion must be finite and nonnegative"),
             (np.r_[1.0, np.zeros(18), 1.0], 2.0, "has weight"),
             (np.ones(20), 10.0, "has weight"),
         ],

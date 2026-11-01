@@ -83,7 +83,6 @@ ObjectVectorCellModel : Object-distance tuned cells
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -127,6 +126,9 @@ class SpatialViewCellModel:
         The spatial environment.
     preferred_view_location : NDArray[np.float64], shape (2,)
         Location in allocentric coordinates that triggers peak firing when viewed.
+        It may lie outside the environment's bins (no warning is given): a
+        gaze stops at the walls, so the cell then fires most where the gaze
+        lands nearest that location.
     view_field_width : float, optional
         Standard deviation of the Gaussian tuning around the preferred
         location, in environment units. Larger values produce broader spatial
@@ -194,11 +196,6 @@ class SpatialViewCellModel:
         unit.
     CartesianOnlyError
         If the environment holds egocentric polar coordinates.
-
-    Warns
-    -----
-    UserWarning
-        If ``preferred_view_location`` is outside the environment's bins.
 
     Examples
     --------
@@ -313,14 +310,6 @@ class SpatialViewCellModel:
             env, self.gaze_model, self.view_distance, context=call
         )
 
-        if not env.contains(location[None, :])[0]:
-            warnings.warn(
-                f"preferred_view_location {location.tolist()} is outside the "
-                "environment's bins. A gaze stops at the walls, so the cell "
-                "fires most where the gaze lands nearest that location.",
-                UserWarning,
-                stacklevel=3,
-            )
         if self.view_field_width is not None:
             object.__setattr__(self, "view_field_width", float(width))
         for name, value in (

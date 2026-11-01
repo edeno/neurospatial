@@ -371,16 +371,15 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         min_speed=5.0,
     )
     assert expected_sweep > 0
-    with pytest.warns(UserWarning, match="No variation"):
-        result = compute_vte_session(
-            env,
-            times,
-            positions,
-            decision_region="decision",
-            trials=[Trial(times[0], times[-1], "source", "target", "reached")],
-            window_duration=duration,
-            max_gap=None,
-        )
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        decision_region="decision",
+        trials=[Trial(times[0], times[-1], "source", "target", "reached")],
+        window_duration=duration,
+        max_gap=None,
+    )
     assert len(result.trial_results) == 1
     assert result.trial_results[0].mean_speed == expected_speed
     assert result.trial_results[0].head_sweep_magnitude == expected_sweep

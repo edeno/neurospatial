@@ -488,13 +488,6 @@ def test_population_calls_reject_duplicate_unit_ids(name, trajectory, spike_trai
 
 
 @pytest.mark.parametrize("name", ALL)
-@pytest.mark.filterwarnings(
-    "ignore:.*no time was spent with the nearest object:UserWarning"
-)
-@pytest.mark.filterwarnings(
-    "ignore:.*no time was spent with the nearest object:UserWarning"
-)
-@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_summary_table_relabel_rejects_duplicates(name, trajectory, spike_trains):
     env, times, positions, headings = trajectory
     result = _compute(name, env, times, positions, headings, spike_trains[:2])

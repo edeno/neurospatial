@@ -1,5 +1,7 @@
 """Expected Skaggs information of an untuned cell, and the screens that subtract it."""
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -72,8 +74,7 @@ def test_screen_rejects_untuned_cells_that_pass_uncorrected(box):
         env, _untuned(times, 60, 40, seed=200), times, positions, bandwidth=5.0
     )
     assert (rates.spatial_information() >= 0.3).mean() > 0.5
-    with pytest.warns(UserWarning, match="fewer spikes than their rate maps"):
-        verdict = rates.classify(min_info=0.3)
+    verdict = rates.classify(min_info=0.3)
     assert not verdict.any()
 
 
@@ -91,11 +92,24 @@ def test_fewer_spikes_than_independent_bins_is_refused(box):
     env, times, positions = box
     trains = [*_untuned(times, 15, 2, seed=300), np.array([])]
     rates = compute_spatial_rates(env, trains, times, positions, bandwidth=5.0)
-    with pytest.warns(UserWarning, match=r"2 of 3 units .* independent bins"):
-        bias = rates.spatial_information_bias()
+    bias = rates.spatial_information_bias()
     assert np.isnan(bias).all()
-    with pytest.warns(UserWarning, match="independent bins"):
-        assert not rates.classify(min_info=0.0).any()
+    assert not rates.classify(min_info=0.0).any()
+
+
+def test_too_few_spikes_is_undetermined_without_a_warning(box):
+    """Units whose bias cannot be estimated read as undetermined, silently."""
+    env, times, positions = box
+    trains = [*_untuned(times, 15, 2, seed=300), np.array([])]
+    rates = compute_spatial_rates(env, trains, times, positions, bandwidth=5.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        labels = rates.label_cell_types(boundary_source="analysis")
+        table = rates.summary_table(boundary_source="analysis")
+    # The silent unit has no spikes to be uncertain about: unclassified.
+    assert labels.tolist() == ["undetermined", "undetermined", "unclassified"]
+    assert table["cell_type"].tolist() == labels.tolist()
+    assert table["passes_spatial_information"].isna().tolist() == [True, True, False]
 
 
 def test_unpenalized_glm_bias_counts_the_basis_modes(box):

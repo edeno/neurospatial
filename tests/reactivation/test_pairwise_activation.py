@@ -76,41 +76,44 @@ def test_undefined_template_pairs_get_weight_zero() -> None:
     rng = np.random.default_rng(3)
     counts = rng.poisson(2.0, (200, 4)).astype(float)
     template = np.array([0.4, np.nan, 0.2, -0.1, np.nan, 0.3])
-    with pytest.warns(UserWarning, match="2 of 6 template pairs are NaN"):
-        activation = pairwise_activation(counts, template)
+    activation = pairwise_activation(counts, template)
     np.testing.assert_allclose(
         activation, pairwise_activation(counts, np.nan_to_num(template))
     )
 
 
-def test_constant_neuron_contributes_nothing_and_warns() -> None:
+def test_constant_neuron_contributes_nothing() -> None:
     counts = np.random.default_rng(4).poisson(2.0, (200, 3)).astype(float)
     counts[:, 2] = 1.0
-    with pytest.warns(UserWarning, match=r"columns \[2\]"):
-        activation = pairwise_activation(counts, np.array([0.3, 0.5, 0.5]))
+    activation = pairwise_activation(counts, np.array([0.3, 0.5, 0.5]))
     np.testing.assert_allclose(
         activation, pairwise_activation(counts, np.array([0.3, 0.0, 0.0]))
     )
 
 
-def test_constant_neuron_warning_names_the_callers_column_and_label() -> None:
-    """Matching by label reorders the columns; the warning still names the
-    column the caller passed and its label."""
+def test_constant_neuron_is_dropped_by_label_when_columns_are_reordered() -> None:
+    """Matching by label reorders the columns; the constant unit's pairs drop."""
     rng = np.random.default_rng(5)
     template = pairwise_correlations(rng.poisson(2.0, (500, 4)).astype(float))
     counts = rng.poisson(2.0, (200, 4)).astype(float)
-    counts[:, 0] = 1.0
-    with pytest.warns(
-        UserWarning, match=r"have the same count in every time bin of spike_counts, so"
-    ) as record:
-        pairwise_activation(
-            counts,
-            template,
-            unit_ids=["a", "b", "c", "d"],
-            template_unit_ids=["d", "c", "b", "a"],
-        )
-    (message,) = [str(warning.message) for warning in record]
-    assert "neuron columns [0] (units ['a'])" in message
+    counts[:, 0] = 1.0  # unit "a"
+    template_labels = ["d", "c", "b", "a"]
+    activation = pairwise_activation(
+        counts,
+        template,
+        unit_ids=["a", "b", "c", "d"],
+        template_unit_ids=template_labels,
+    )
+    # Unit "a" is the template's last unit: its pairs are (0, 3), (1, 3), (2, 3).
+    first, second = np.triu_indices(4, k=1)
+    without_a = np.where((first == 3) | (second == 3), 0.0, template)
+    expected = pairwise_activation(
+        counts,
+        without_a,
+        unit_ids=["a", "b", "c", "d"],
+        template_unit_ids=template_labels,
+    )
+    np.testing.assert_allclose(activation, expected)
 
 
 @pytest.mark.parametrize(

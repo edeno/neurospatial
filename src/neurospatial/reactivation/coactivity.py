@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
@@ -159,15 +158,13 @@ def assembly_member_cofiring(
         column per pattern weight, or only one of the label arguments is
         given.
 
-    Warns
-    -----
-    UserWarning
-        If the pattern has fewer than two members (no pair; the means are
-        NaN), or members are constant in a period (their pairs are NaN
-        there).
-
     Notes
     -----
+    A pattern with fewer than two members has no pair to correlate, so the
+    means are NaN. A member that has the same count in every bin of a period
+    has NaN pairs there, which are left out of both means. No warning is
+    raised for either; ``n_member_pairs`` counts the pairs the means use.
+
     **Event bins and their durations.** With one row per event, each count
     is a number of spikes in an interval whose length varies from event to
     event. Every unit fires more in a longer event, so the counts of every
@@ -238,28 +235,13 @@ def assembly_member_cofiring(
     members = pattern.member_indices
     member_labels = np.asarray(pattern.unit_ids)[members]
     correlations = []
-    for counts, period in zip(periods, ("control_counts", "match_counts"), strict=True):
+    for counts in periods:
         if members.size < 2:
             correlations.append(np.zeros(0))
             continue
-        pairs, constant = _pairwise_correlations(counts[:, members])
-        if np.any(constant):
-            warnings.warn(
-                f"{call}: members {member_labels[constant].tolist()} have the "
-                f"same count in every bin of {period}, so their pairs have no "
-                "correlation there (NaN) and are left out of both means.",
-                UserWarning,
-                stacklevel=2,
-            )
+        pairs, _ = _pairwise_correlations(counts[:, members])
         correlations.append(pairs)
     control, match = correlations
-    if members.size < 2:
-        warnings.warn(
-            f"{call}: the pattern has {members.size} member(s), so it has no "
-            "pair of members to correlate; the means are NaN.",
-            UserWarning,
-            stacklevel=2,
-        )
     both = np.isfinite(control) & np.isfinite(match)
     control_mean = float(control[both].mean()) if both.any() else np.nan
     match_mean = float(match[both].mean()) if both.any() else np.nan

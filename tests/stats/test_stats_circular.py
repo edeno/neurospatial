@@ -186,8 +186,7 @@ def test_rayleigh_test_nan_cofilters_weights(concentrated_angles):
     angles_manual = angles[keep]
     weights_manual = weights[keep]
 
-    with pytest.warns(UserWarning, match="Removed 1 NaN"):
-        z_cofiltered, p_cofiltered = rayleigh_test(angles_with_nan, weights=weights)
+    z_cofiltered, p_cofiltered = rayleigh_test(angles_with_nan, weights=weights)
     z_manual, p_manual = rayleigh_test(angles_manual, weights=weights_manual)
 
     assert_allclose(z_cofiltered, z_manual)
@@ -211,8 +210,7 @@ def test_weighted_metrics_nan_angle_cofilters_weight(func):
     angles_filtered = np.array([0.0, np.pi / 2])
     weights_filtered = np.array([1.0, 1.0])
 
-    with pytest.warns(UserWarning, match="Removed 1 NaN"):
-        result = func(angles_with_nan, weights=weights)
+    result = func(angles_with_nan, weights=weights)
     expected = func(angles_filtered, weights=weights_filtered)
 
     assert np.isfinite(result)
@@ -448,8 +446,7 @@ def test_circular_linear_undefined_is_nan(angles, linear):
     """An undefined correlation is NaN, not r=0, p=1 ("no correlation")."""
     from neurospatial.stats.circular import circular_linear_correlation
 
-    with pytest.warns(RuntimeWarning, match="undefined"):
-        r, p = circular_linear_correlation(angles, linear)
+    r, p = circular_linear_correlation(angles, linear)
     assert np.isnan(r)
     assert np.isnan(p)
 
@@ -491,10 +488,8 @@ def test_circular_circular_exact_identities_and_pvalue():
 def test_nan_angles_dropped_the_same_with_or_without_weights(func):
     """Unit weights must not change how NaN angles are treated."""
     angles = np.array([0.1, np.nan, 0.3, 0.2])
-    with pytest.warns(UserWarning, match="Removed 1 NaN"):
-        unweighted = func(angles)
-    with pytest.warns(UserWarning, match="Removed 1 NaN"):
-        weighted = func(angles, weights=np.ones(4))
+    unweighted = func(angles)
+    weighted = func(angles, weights=np.ones(4))
     expected = func(np.array([0.1, 0.3, 0.2]))
     assert unweighted == pytest.approx(weighted, rel=1e-12)
     assert unweighted == pytest.approx(expected, rel=1e-12)
@@ -573,11 +568,9 @@ def test_wald_rejects_invalid_inputs(beta_sin, cov, match):
 
 def test_singular_covariance_gives_nan_and_not_modulated():
     singular = np.array([[0.01, 0.01], [0.01, 0.01]])
-    with pytest.warns(UserWarning, match="singular"):
-        _, _, p = circular_basis_metrics(0.5, 0.5, singular)
+    _, _, p = circular_basis_metrics(0.5, 0.5, singular)
     assert np.isnan(p)
-    with pytest.warns(UserWarning, match="singular"):
-        assert is_modulated(0.5, 0.5, singular) is False
+    assert is_modulated(0.5, 0.5, singular) is False
 
 
 @pytest.mark.parametrize(

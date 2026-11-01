@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -102,10 +100,7 @@ def test_combine_qualifies_regions_and_starts_unnamed():
 
 
 @pytest.mark.parametrize("derivation", sorted(DERIVATIONS))
-def test_derivations_do_not_repeat_the_units_warning(derivation):
-    with pytest.warns(UserWarning, match="registry"):
-        parent = _parent(units="centimeters")
-    with warnings.catch_warnings():
-        warnings.filterwarnings("error", message=".*registry.*")
-        child = DERIVATIONS[derivation](parent)
+def test_derivations_keep_free_form_units_silently(derivation):
+    parent = _parent(units="centimeters")
+    child = DERIVATIONS[derivation](parent)
     assert child.units == "centimeters"

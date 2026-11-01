@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_instance
 from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
@@ -75,11 +76,13 @@ class MaskedGridLayout(_GridMixin):
 
         """
         self._begin_build()
-        if not isinstance(active_mask, np.ndarray):
-            msg = (  # type: ignore[unreachable]  # runtime check of user input
-                f"active_mask must be a NumPy array, got {type(active_mask).__name__}."
-            )
-            raise TypeError(msg)
+        active_mask = validate_instance(
+            active_mask,
+            np.ndarray,
+            name="active_mask",
+            owner="MaskedGridLayout.build()",
+            hint="pass a boolean NumPy array",
+        )
         if active_mask.dtype != np.bool_:
             msg = (
                 f"active_mask must have boolean dtype (np.bool_), got "

@@ -385,11 +385,10 @@ class TestDetectPlaceFields:
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        # Explicit filtering should exclude the map and warn.
-        with pytest.warns(UserWarning, match=r"spatial-map-mean filter.*15\.00 Hz"):
-            fields = detect_place_fields(
-                env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
-            )
+        # Explicit filtering excludes the map, without a warning.
+        fields = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
+        )
 
         assert len(fields) == 0
 
@@ -1523,8 +1522,8 @@ class TestFieldShapeMetrics:
         assert shape["area"] == pytest.approx(field_size(grid_env, bins))
         assert shape["area"] == pytest.approx(4.0 * len(bins))  # 2 cm x 2 cm bins
 
-    def test_field_shape_metrics_3d_warning(self):
-        """Test that 3D environment raises warning."""
+    def test_field_shape_metrics_3d_raises(self):
+        """A 3-D environment is refused, not returned as NaN."""
         rng = np.random.default_rng(42)
         # Create 3D environment
         data = rng.standard_normal((500, 3)) * 10
@@ -1536,12 +1535,8 @@ class TestFieldShapeMetrics:
 
         from neurospatial.encoding._field_metrics import field_shape_metrics
 
-        with np.testing.suppress_warnings() as sup:
-            sup.filter(UserWarning, "field_shape_metrics currently only supports 2D")
-            shape = field_shape_metrics(env, firing_rate, field_bins)
-
-        # Should return NaN values
-        assert np.isnan(shape["eccentricity"])
+        with pytest.raises(ValueError, match="needs a 2-D environment"):
+            field_shape_metrics(env, firing_rate, field_bins)
 
 
 class TestFieldShiftDistance:
@@ -1836,12 +1831,11 @@ class TestComputeFieldEMD:
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
-        # All zeros should return NaN with warning
+        # All zeros return NaN, by contract and without a warning
         field1 = np.zeros(env.n_bins)
         field2 = np.zeros(env.n_bins)
 
-        with pytest.warns(UserWarning, match="zero total mass"):
-            emd = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd = compute_field_emd(env, field1, field2, metric="euclidean")
         assert np.isnan(emd)
 
     def test_emd_single_bin(self):
@@ -2237,9 +2231,7 @@ class TestFieldStabilityEdgeCases:
         rate_map_1 = np.array([1.0, 2.0, 3.0])
         rate_map_2 = np.array([1.5, 2.5, 3.5])
 
-        with pytest.raises(
-            ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
-        ):
+        with pytest.raises(ValueError, match=r"field_stability\(\) got method="):
             field_stability(rate_map_1, rate_map_2, method="invalid")
 
 
@@ -2683,10 +2675,9 @@ class TestPlaceFieldsResult:
         env, _ = self._build_env_and_rates()
         # Push the spatial-map mean above the explicit 10 Hz cutoff.
         firing_rate = np.full(env.n_bins, 20.0)
-        with pytest.warns(UserWarning, match=r"spatial-map-mean filter"):
-            result = detect_place_fields(
-                env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
-            )
+        result = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
+        )
         assert isinstance(result, PlaceFieldsResult)
         assert result.excluded_reason == "mean_rate_above_threshold"
         assert result.n_excluded == 1

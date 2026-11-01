@@ -16,6 +16,7 @@ import numpy as np
 
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 
 # Module logger for debug output
 logger = logging.getLogger(__name__)
@@ -89,8 +90,8 @@ def boundary_from_positions(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal positions in (x, y) format. NaN/Inf values are automatically
-        filtered with a warning (common in tracking data for lost frames).
+        Animal positions in (x, y) format. NaN/Inf values (lost tracking
+        frames) are dropped before the boundary is inferred.
     method : {"alpha_shape", "convex_hull"}, optional
         Boundary inference algorithm. Overrides config.method if provided.
     config : BoundaryConfig, optional
@@ -110,7 +111,8 @@ def boundary_from_positions(
     Raises
     ------
     ValueError
-        If positions has wrong shape or insufficient points.
+        If positions has wrong shape or insufficient points, or ``method`` is
+        not ``"alpha_shape"`` or ``"convex_hull"``.
 
     Examples
     --------
@@ -136,16 +138,6 @@ def boundary_from_positions(
     n_invalid = (~valid_mask).sum()
     positions = positions[valid_mask]
 
-    if n_invalid > 0:
-        import warnings
-
-        warnings.warn(
-            f"Filtered {n_invalid} positions with NaN/Inf values "
-            f"({n_invalid / (len(positions) + n_invalid) * 100:.1f}% of data).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-
     if len(positions) < 3:
         msg = (
             f"positions must have at least 3 valid points, got {len(positions)} "
@@ -165,7 +157,12 @@ def boundary_from_positions(
 
     # Build effective config
     cfg = config or BoundaryConfig()
-    effective_method = method or cfg.method
+    effective_method = validate_choice(
+        method or cfg.method,
+        ("alpha_shape", "convex_hull"),
+        name="method",
+        owner="boundary_from_positions()",
+    )
     effective_buffer = (
         buffer_fraction if buffer_fraction is not None else cfg.buffer_fraction
     )
@@ -181,12 +178,9 @@ def boundary_from_positions(
     # Dispatch to method
     if effective_method == "convex_hull":
         boundary = _convex_hull_boundary(positions)
-    elif effective_method == "alpha_shape":
+    else:  # "alpha_shape"
         alpha = method_kwargs.get("alpha", cfg.alpha)
         boundary = _alpha_shape_boundary(positions, alpha)
-    else:
-        msg = f"Unknown method: {effective_method}"  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
 
     # Apply buffer (fraction of bbox diagonal)
     if effective_buffer > 0:

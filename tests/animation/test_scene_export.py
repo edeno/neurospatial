@@ -106,10 +106,8 @@ def test_lower_crf_keeps_more_detail(scene, tmp_path):
     assert fine.stat().st_size > 2 * coarse.stat().st_size
 
 
-def test_crf_with_bitrate_warns_at_the_call_site(tmp_path):
-    with pytest.warns(UserWarning, match="crf is ignored") as record:
-        plan = prepare_export(tmp_path / "a.mp4", TIMES, crf=18, bitrate=1000)
-    assert record[0].filename == __file__
+def test_bitrate_takes_precedence_over_crf(tmp_path):
+    plan = prepare_export(tmp_path / "a.mp4", TIMES, crf=18, bitrate=1000)
     assert "-crf" not in plan.output_params
     assert "1000k" in plan.output_params
 

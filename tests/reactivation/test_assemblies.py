@@ -5,7 +5,6 @@ Tests cover cell assembly detection, activation computation, and reactivation an
 
 from __future__ import annotations
 
-import contextlib
 import warnings
 
 import numpy as np
@@ -104,10 +103,10 @@ class TestMarchenkoPasturThreshold:
         threshold = marchenko_pastur_threshold(100, 100)
         assert_allclose(threshold, 4.0, rtol=1e-10)
 
-    def test_warns_when_neurons_exceed_time_bins(self) -> None:
-        """Should warn when n_neurons > n_time_bins."""
-        with pytest.warns(UserWarning, match="n_neurons.*n_time_bins"):
-            marchenko_pastur_threshold(100, 50)
+    def test_more_neurons_than_time_bins_gives_the_formula_value(self) -> None:
+        """n_neurons > n_time_bins still gives (1 + sqrt(q))^2, without a warning."""
+        threshold = marchenko_pastur_threshold(100, 50)
+        assert_allclose(threshold, (1 + np.sqrt(2.0)) ** 2, rtol=1e-10)
 
     def test_invalid_n_neurons(self) -> None:
         """Should raise ValueError for non-positive n_neurons."""
@@ -230,11 +229,11 @@ class TestDetectAssemblies:
     def test_independent_neurons_have_no_significant_dimension(self, seed: int) -> None:
         """Independent Poisson neurons stay below the Marchenko-Pastur bound."""
         counts = np.random.default_rng(seed).poisson(5, (3000, 30)).astype(float)
-        with pytest.warns(UserWarning, match="Marchenko-Pastur bound"):
-            result = detect_assemblies(counts, rng=42)
+        result = detect_assemblies(counts, rng=42)
 
         assert result.n_significant == 0
         assert result.patterns == ()
+        assert result.eigenvalues[0] <= result.threshold
 
     @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_method_is_recorded(
@@ -296,9 +295,9 @@ class TestDetectAssemblies:
         self, random_spike_counts: np.ndarray, method: str
     ) -> None:
         """Without correlation structure there is no pattern, not an exploratory one."""
-        with pytest.warns(UserWarning, match="Marchenko-Pastur bound"):
-            result = detect_assemblies(random_spike_counts, method=method, rng=42)
+        result = detect_assemblies(random_spike_counts, method=method, rng=42)
         assert result.n_significant == 0
+        assert result.eigenvalues[0] <= result.threshold
         assert len(result.patterns) == 0
         assert result.activations.shape == (random_spike_counts.shape[0], 0)
 
@@ -369,10 +368,7 @@ class TestDetectAssemblies:
         from a genuinely short recording.
         """
         spike_counts = rng.poisson(5, (10, 20)).astype(np.float64)  # 10 t, 20 n
-        with (
-            pytest.warns(UserWarning, match="Marchenko-Pastur"),
-            pytest.warns(UserWarning, match="n_time_bins.*n_neurons") as record,
-        ):
+        with pytest.warns(UserWarning, match="n_time_bins.*n_neurons") as record:
             detect_assemblies(spike_counts, rng=42)
         msg = str(record[0].message).lower()
         assert "transpos" in msg or "time-first" in msg
@@ -385,11 +381,11 @@ class TestDetectAssemblies:
         counts = spike_counts_with_assemblies.copy()
         counts[:, 7] = 5.0
         keep = np.arange(counts.shape[1]) != 7
-        with pytest.warns(
-            UserWarning, match=r"same count in every time bin \(units \[7\]\)"
-        ):
-            result = detect_assemblies(counts, method=method, rng=42)
+        result = detect_assemblies(counts, method=method, rng=42)
         without = detect_assemblies(counts[:, keep], method=method, rng=42)
+
+        assert result.excluded_unit_ids.tolist() == [7]
+        assert without.excluded_unit_ids.size == 0
 
         assert result.n_significant == without.n_significant == 3
         # The threshold uses the 49 varying neurons, not all 50.
@@ -576,14 +572,11 @@ class TestAssemblyActivation:
         assert_allclose(activation.mean(), expected, atol=1e-12)
         assert abs(activation.mean()) < 4 * np.sqrt(2 / 5000)
 
-    def test_constant_member_warns_and_contributes_nothing(
-        self, coactivation_counts
-    ) -> None:
+    def test_constant_member_contributes_nothing(self, coactivation_counts) -> None:
         counts, pattern = coactivation_counts
         silent = counts.copy()
         silent[:, 2] = 0.0
-        with pytest.warns(UserWarning, match=r"units \[2\] have nonzero weight"):
-            activation = assembly_activation(silent, pattern)
+        activation = assembly_activation(silent, pattern)
         assert np.all(np.isfinite(activation))
 
     def test_all_zero_weights_raise(self, coactivation_counts) -> None:
@@ -677,8 +670,7 @@ class TestPairwiseCorrelations:
         """A neuron with one count in every bin has no correlation, not r = 0."""
         counts = small_spike_counts.copy()
         counts[:, 3] = 0.0
-        with pytest.warns(UserWarning, match=r"neuron columns \[3\]"):
-            corr = pairwise_correlations(counts)
+        corr = pairwise_correlations(counts)
         first, second = np.triu_indices(counts.shape[1], k=1)
         involves = (first == 3) | (second == 3)
         assert np.all(np.isnan(corr[involves]))
@@ -745,10 +737,7 @@ class TestAssemblyReactivationBasics:
     def test_neuron_constant_in_one_period_is_excluded(self, pattern) -> None:
         pre, post = self._period(0, 2000, 0.5), self._period(1, 2000, 0.5)
         pre[:, 3] = 0.0  # member 3 silent before the task
-        with pytest.warns(
-            UserWarning, match=r"units \[3\] .* control_counts.* excluded"
-        ):
-            result = assembly_reactivation(pre, post, pattern)
+        result = assembly_reactivation(pre, post, pattern)
         keep = np.arange(20) != 3
         reduced = AssemblyPattern(pattern.weights[keep], np.arange(4), 0.2)
         expected = assembly_reactivation(pre[:, keep], post[:, keep], reduced)
@@ -910,8 +899,7 @@ class TestExplainedVarianceUndefined:
         """A member silent in the match period leaves the other pairs' EV intact."""
         match = periods["match"].copy()
         match[:, 2] = 0.0
-        with pytest.warns(UserWarning, match="undefined"):
-            match_correlations = pairwise_correlations(match)
+        match_correlations = pairwise_correlations(match)
         result = explained_variance_reactivation(
             pairwise_correlations(periods["template"]), match_correlations
         )
@@ -926,8 +914,7 @@ class TestExplainedVarianceUndefined:
 
     def test_constant_correlation_vector_is_nan(self) -> None:
         template = np.linspace(-0.5, 0.5, 10)
-        with pytest.warns(UserWarning, match="EV is undefined"):
-            result = explained_variance_reactivation(template, np.full(10, 0.2))
+        result = explained_variance_reactivation(template, np.full(10, 0.2))
         assert np.isnan(result.explained_variance)
         assert np.isnan(result.partial_correlation)
 
@@ -935,10 +922,9 @@ class TestExplainedVarianceUndefined:
         rng = np.random.default_rng(2)
         template = rng.uniform(-0.5, 0.5, 30)
         match = template + 0.1 * rng.standard_normal(30)
-        with pytest.warns(UserWarning, match="EV is undefined"):
-            result = explained_variance_reactivation(
-                template, match, control_correlations=template
-            )
+        result = explained_variance_reactivation(
+            template, match, control_correlations=template
+        )
         assert np.isnan(result.explained_variance)
         assert np.isnan(result.partial_correlation)
 
@@ -1239,17 +1225,7 @@ class TestDetectAssembliesShortRecording:
         spike_counts = rng.poisson(5, (3, 8)).astype(np.float64)
         # Three time bins span at most two dimensions once centered, so the
         # PCA and ICA bases also report a component without variance.
-        no_variance = (
-            contextlib.nullcontext()
-            if method == "nmf"
-            else pytest.warns(UserWarning, match="carry no variance")
-        )
-        with (
-            no_variance,
-            pytest.warns(UserWarning, match="Marchenko-Pastur"),
-            pytest.warns(UserWarning, match="n_time_bins.*n_neurons"),
-            pytest.warns(UserWarning, match="achievable rank"),
-        ):
+        with pytest.warns(UserWarning, match="n_time_bins.*n_neurons"):
             result = detect_assemblies(
                 spike_counts,
                 method=method,
@@ -1269,16 +1245,10 @@ def test_ica_whitens_scores_and_recovers_independent_sources(n_components):
     rng = np.random.default_rng(42)
     sources = rng.poisson([2.0, 7.0], size=(20000, 2))
     counts = sources @ np.array([[1, 2, 3, 0], [3, 1, 0, 2]])
-    # The counts span two dimensions, so a third component has no variance.
-    dropped = (
-        pytest.warns(UserWarning, match="1 of the 3 requested components")
-        if n_components == 3
-        else contextlib.nullcontext()
-    )
-    with dropped:
-        result = detect_assemblies(
-            counts, method="ica", n_components=n_components, rng=0
-        )
+    # The counts span two dimensions, so a third component has no variance
+    # and is dropped.
+    result = detect_assemblies(counts, method="ica", n_components=n_components, rng=0)
+    assert len(result.patterns) == 2
     standardized = zscore(counts, axis=0)
     weights = np.array([pattern.weights for pattern in result.patterns])
     # Unit-length patterns (Lopes-dos-Santos et al., 2013), like PCA's.

@@ -2025,9 +2025,6 @@ class TestObjectVectorRatesResultSummaryTable:
 class TestIsObjectVectorCellFreeFunction:
     """The free is_egocentric_object_vector_cell now delegates to the result method."""
 
-    @pytest.mark.filterwarnings(
-        "ignore:.*no time was spent with the nearest object:UserWarning"
-    )
     def test_ovc_free_function_agrees_with_result_method(
         self,
         ovc_session: tuple[

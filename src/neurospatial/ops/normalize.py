@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_choice
 from neurospatial.ops.diffusion import _HEAT_KERNEL_RANK_TOL
 
 #: Negative entries no larger than this fraction of a field's largest value
@@ -279,6 +280,10 @@ def combine_fields(
             )
             raise ValueError(msg)
 
+    mode = validate_choice(
+        mode, ("mean", "max", "min"), name="mode", owner="combine_fields()"
+    )
+
     # Handle weights parameter
     if weights is not None:
         if mode != "mean":
@@ -320,10 +325,6 @@ def combine_fields(
             max_combined: NDArray[np.float64] = np.maximum.reduce(fields_list)
             return max_combined
 
-        case "min":
+        case _:
             min_combined: NDArray[np.float64] = np.minimum.reduce(fields_list)
             return min_combined
-
-        case _:
-            msg = f"Unknown mode '{mode}'. Valid modes: 'mean', 'max', 'min'."  # type: ignore[unreachable]  # runtime check of user input
-            raise ValueError(msg)

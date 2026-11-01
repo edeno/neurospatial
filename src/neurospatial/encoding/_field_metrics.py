@@ -26,7 +26,9 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_choice
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -375,6 +377,11 @@ def field_stability(
         ("uncorrelated"); skip such cells with ``np.nanmean`` or
         ``np.isfinite`` when averaging across cells.
 
+    Raises
+    ------
+    ValueError
+        If ``method`` is not ``"pearson"`` or ``"spearman"``.
+
     Notes
     -----
     **Interpretation**:
@@ -413,6 +420,9 @@ def field_stability(
     .. [1] Wilson & McNaughton (1993). Dynamics of hippocampal ensemble code.
            Science 261(5124).
     """
+    method = validate_choice(
+        method, ("pearson", "spearman"), name="method", owner="field_stability()"
+    )
     # Remove NaN values
     valid_mask = np.isfinite(rate_map_1) & np.isfinite(rate_map_2)
     map1_clean = rate_map_1[valid_mask]
@@ -433,11 +443,8 @@ def field_stability(
     # Compute correlation
     if method == "pearson":
         correlation, _ = stats.pearsonr(map1_clean, map2_clean)
-    elif method == "spearman":
-        correlation, _ = stats.spearmanr(map1_clean, map2_clean)
     else:
-        msg = f"Unknown method: {method}. Use 'pearson' or 'spearman'."  # type: ignore[unreachable]  # runtime check of user input
-        raise ValueError(msg)
+        correlation, _ = stats.spearmanr(map1_clean, map2_clean)
 
     return float(correlation)
 
@@ -755,10 +762,12 @@ def field_shape_metrics(
         - 'area': float, physical area of the field bins (e.g. cm^2), the
           same as :func:`field_size`
 
-        Returns dict with NaN values if field is empty or environment is not 2D.
+        Returns dict with NaN values if the field is empty.
 
     Raises
     ------
+    ValueError
+        If ``env`` is not 2-D: eccentricity and orientation need a plane.
     CartesianOnlyError
         If ``env`` is polar: eccentricity and orientation come from the
         covariance of Cartesian bin centers.
@@ -841,6 +850,16 @@ def field_shape_metrics(
             "Environment.from_samples(positions, bin_size=...)"
         ),
     )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"field_shape_metrics() needs a 2-D environment, got {env.n_dims}-D.",
+                why="Why: eccentricity and orientation come from the 2 x 2 "
+                "covariance of bin positions",
+                fix="use a 2-D environment, or field_size() for the field's "
+                "extent on a 1-D or 3-D environment",
+            )
+        )
     # Initialize with NaN defaults
     result = {
         "eccentricity": np.nan,
@@ -852,15 +871,6 @@ def field_shape_metrics(
 
     # Validate inputs
     if len(field_bins) == 0:
-        return result
-
-    if env.n_dims != 2:
-        warnings.warn(
-            f"field_shape_metrics currently only supports 2D environments, got {env.n_dims}D. "
-            "Returning NaN values.",
-            category=UserWarning,
-            stacklevel=2,
-        )
         return result
 
     # Get bin positions for field
@@ -970,8 +980,10 @@ def field_shift_distance(
     float
         Distance between field centroids in the environments' spatial units.
         NaN if either field has no finite, positive-rate bins (no centroid),
-        or, for ``"geodesic"``, if a centroid falls outside every bin (a
-        warning says which). ``inf`` for ``"geodesic"`` when the two
+        or, for ``"geodesic"``, if a centroid falls outside every bin (for
+        example the centroid of a curved field lies in a wall; use
+        ``metric="euclidean"`` for such a field). No warning is raised for
+        either case. ``inf`` for ``"geodesic"`` when the two
         centroids lie in parts of the environment with no path between them.
 
     Raises
@@ -1122,14 +1134,6 @@ def field_shift_distance(
     # Same bins and connectivity: measure the path on env_1's graph.
     centroid_bins = env_1.bin_at(np.stack([centroid_1, centroid_2]))
     if np.any(centroid_bins < 0):
-        warnings.warn(
-            "A field centroid falls outside every bin of the environment (for "
-            "example the centroid of a curved field lies in a wall), so it has "
-            "no geodesic position. Returning NaN; use metric='euclidean' for "
-            "this field.",
-            category=UserWarning,
-            stacklevel=2,
-        )
         return np.nan
     return float(env_1.distance_between(bins=centroid_bins))
 
@@ -1186,7 +1190,8 @@ def compute_field_emd(
           whole field 10 cm gives 10.0.
         - With ``normalize=False``: cost in units of (rate x bin measure x
           distance), e.g. Hz x cm^2 x cm in a 2-D environment.
-        - NaN if either distribution has zero total mass (with a warning).
+        - NaN if either distribution has zero total mass on the bins finite
+          in both maps (no warning; NaN is the contract).
         - ``inf`` with ``metric="geodesic"`` when the maps put different
           mass in parts of the environment with no path between them, so
           no transport plan exists.
@@ -1202,11 +1207,6 @@ def compute_field_emd(
         If ``metric="euclidean"`` and ``env`` is polar: the ground distance
         would treat ``(distance, angle)`` bin centers as ``(x, y)``. Use
         ``metric="geodesic"``.
-
-    Warns
-    -----
-    UserWarning
-        If normalized distributions have no mass (all zeros or NaN).
 
     See Also
     --------
@@ -1337,12 +1337,6 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
 
         if sum1 == 0 or sum2 == 0:
-            warnings.warn(
-                "One or both distributions have zero total mass on the bins "
-                "finite in both maps. Returning NaN.",
-                category=UserWarning,
-                stacklevel=2,
-            )
             return np.nan
 
         firing_rate_1 = firing_rate_1 / sum1

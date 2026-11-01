@@ -93,9 +93,7 @@ def _vte_session(env, times, positions, **kwargs):
         result = compute_vte_session(env, times, positions, **options, **kwargs)
         assert len(result.trial_results) == 2
         return result
-    with pytest.warns(UserWarning, match=r"only 0 observed sample\(s\)") as record:
-        result = compute_vte_session(env, times, positions, **options, **kwargs)
-    assert sum("only 0 observed" in str(w.message) for w in record) == 2
+    result = compute_vte_session(env, times, positions, **options, **kwargs)
     assert [t.status for t in result.trial_results] == ["too_few_samples"] * 2
     return result
 

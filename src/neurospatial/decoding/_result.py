@@ -23,6 +23,7 @@ from neurospatial._results import (
     _coord_dim_names,
     read_only_copy,
 )
+from neurospatial._validation import validate_choice
 from neurospatial.decoding.estimates import _UNDECODABLE_BIN, _row_blocks
 
 if TYPE_CHECKING:
@@ -1602,6 +1603,9 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         import matplotlib.pyplot as plt
 
+        quantity = validate_choice(
+            quantity, ("entropy", "map"), name="quantity", owner="plot()"
+        )
         if ax is None:
             _, ax = plt.subplots()
 
@@ -1625,7 +1629,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             ax.plot(x, broken(self.posterior_entropy), **kwargs)
             ax.set_ylabel("Posterior entropy (bits)")
             ax.set_title("Posterior entropy over time")
-        elif quantity == "map":
+        else:
             for i, name in enumerate(_coord_dim_names(self.env)):
                 ax.plot(
                     x, broken(self.map_position[:, i]), label=f"map_{name}", **kwargs
@@ -1633,9 +1637,6 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             ax.set_ylabel("MAP position")
             ax.set_title("MAP position over time")
             ax.legend()
-        else:
-            msg = f"quantity must be 'entropy' or 'map', got {quantity!r}."  # type: ignore[unreachable]  # runtime check of user input
-            raise ValueError(msg)
 
         ax.set_xlabel(x_label)
         return ax

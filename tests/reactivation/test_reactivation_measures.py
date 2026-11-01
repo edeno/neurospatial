@@ -146,11 +146,7 @@ class TestAssemblyReactivation:
         counts = np.random.default_rng(0).poisson(1.0, (300, 3)).astype(float)
         silent = counts.copy()
         silent[:, :2] = 0.0
-        with (
-            pytest.warns(UserWarning, match="excluded from both periods"),
-            pytest.warns(UserWarning, match="comparison is undefined"),
-        ):
-            result = assembly_reactivation(silent, counts, pattern)
+        result = assembly_reactivation(silent, counts, pattern)
         assert np.isnan(result.mean_activation_difference)
         assert np.isnan(result.fraction_above_control_threshold)
 
@@ -367,10 +363,9 @@ class TestSeveralControls:
 
     def test_collinear_controls_are_undefined(self, correlation_vectors) -> None:
         v = correlation_vectors
-        with pytest.warns(UserWarning, match="EV is undefined"):
-            result = explained_variance_reactivation(
-                v["novel"], v["post"], control_correlations=[v["pre"], 2 * v["pre"]]
-            )
+        result = explained_variance_reactivation(
+            v["novel"], v["post"], control_correlations=[v["pre"], 2 * v["pre"]]
+        )
         assert np.isnan(result.explained_variance)
         assert np.isnan(result.p_value)
 

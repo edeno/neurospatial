@@ -21,7 +21,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import read_only_copy
-from neurospatial._validation import check_writable, validate_finite_scalar
+from neurospatial._validation import (
+    check_writable,
+    validate_finite_scalar,
+    validate_integer_at_least,
+)
 from neurospatial.annotation._types import (
     AnnotationMode,
     MultipleBoundaryStrategy,
@@ -240,13 +244,9 @@ class AnnotationProject:
         ):
             msg = "Project frame must be a nonempty RGB uint8 image (height, width, 3)."
             raise ValueError(msg)
-        if (
-            isinstance(frame_index, bool)
-            or not isinstance(frame_index, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or frame_index < 0
-        ):
-            msg = "frame_index must be a nonnegative integer."
-            raise ValueError(msg)
+        frame_index = validate_integer_at_least(
+            frame_index, 0, name="frame_index", owner="AnnotationProject"
+        )
         if video_path is not None and not isinstance(video_path, (str, Path)):
             msg = "video_path must be a string, Path, or None."  # type: ignore[unreachable]  # runtime check of user input
             raise ValueError(msg)

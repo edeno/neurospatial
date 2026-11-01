@@ -466,10 +466,9 @@ class TestMultipleBoundaryStrategies:
         names = ["boundary1", "boundary2"]
         roles = ["environment", "environment"]
 
-        with pytest.warns(UserWarning, match="first"):
-            _, env_boundary, _ = shapes_to_regions(
-                shapes_data, names, roles, multiple_boundaries="first"
-            )
+        _, env_boundary, _ = shapes_to_regions(
+            shapes_data, names, roles, multiple_boundaries="first"
+        )
 
         assert env_boundary is not None
         assert env_boundary.name == "boundary1"

@@ -155,12 +155,10 @@ def compute_diffusion_kernels(
     truncated form that preserves the numerical result, so this peak cannot be
     avoided while using the dense diffusion kernel.
 
-    **There is no hard limit — high-bin kernels warn and proceed.** A
-    ``UserWarning`` estimating the GB cost is issued when
-    ``n_bins > LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
-    regardless of size. The warning names ``n_bins``, the GB estimate, the
-    dense O(n²) reason, and the mitigation (reduce bins by increasing
-    ``bin_size``). It is the sole high-bin guard.
+    **There is no hard limit and no warning.** The kernel is built whatever
+    the size, so check the ``n_bins**2 * 8`` bytes against your memory first
+    (for example, 3,000 bins need 0.07 GB and 20,000 bins need 3.2 GB), or
+    use one of the mitigations below.
 
     Performance: the matrix exponential is also O(n³) in time, so large
     environments are slow as well as memory-hungry.

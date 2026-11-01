@@ -19,7 +19,6 @@ with :func:`~neurospatial.ops.resample_field`.
 from __future__ import annotations
 
 import numbers
-import warnings
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -373,8 +372,8 @@ def map_probabilities(
     Raises
     ------
     ValueError
-        If `source_probs` has incorrect shape or NaN, infinite or negative
-        values; if dims mismatch, `source_transform` included; if `mode` is
+        If either environment has zero bins; if `source_probs` has incorrect
+        shape or NaN, infinite or negative values; if dims mismatch, `source_transform` included; if `mode` is
         unknown; if `n_neighbors`, `eps`, `max_distance` or
         `max_outside_fraction` is invalid; or if more than
         `max_outside_fraction` of the probability lies outside the target
@@ -466,14 +465,18 @@ def map_probabilities(
     n_src = source_env.n_bins
     n_tgt = target_env.n_bins
 
-    # Handle empty environments
     if n_src == 0 or n_tgt == 0:
-        warnings.warn(
-            "One of the environments has zero bins; returning zeros.",
-            category=UserWarning,
-            stacklevel=2,
+        empty = "source_env" if n_src == 0 else "target_env"
+        raise ValueError(
+            _format_error(
+                f"map_probabilities() got {empty} with zero bins.",
+                why="Why: with no bins there is no place to take probability "
+                "from or put it, and zeros would read as zero probability "
+                "instead of missing data.",
+                fix="build both environments from positions that cover the "
+                "space, so each has at least one bin",
+            )
         )
-        return np.zeros(n_tgt, dtype=float)
 
     src_centers = (
         source_env.bin_centers

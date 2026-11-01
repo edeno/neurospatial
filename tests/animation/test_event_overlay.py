@@ -824,8 +824,8 @@ class TestEventOverlayEdgeCases:
         assert len(event_data.event_positions["event"]) == 0
         assert len(event_data.event_frame_indices["event"]) == 0
 
-    def test_events_outside_frame_times_range_warns(self, mock_env):
-        """Test that events outside frame_times range emit warning."""
+    def test_events_outside_frame_times_range_are_excluded(self, mock_env):
+        """Events outside the frame_times range are left out, recorded in event_times."""
         from neurospatial.animation.overlays import EventOverlay
 
         # Events at t=-1 and t=15, but frames only cover 0-10
@@ -840,14 +840,14 @@ class TestEventOverlayEdgeCases:
         frame_times = np.linspace(0.0, 10.0, 11)  # 0 to 10
         n_frames = 11
 
-        with pytest.warns(UserWarning, match="outside"):
-            event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         # Only the event at t=5 should be included
         assert len(event_data.event_positions["event"]) == 1
+        np.testing.assert_array_equal(event_data.event_times["event"], [5.0])
 
-    def test_events_outside_position_times_range_warns(self, mock_env):
-        """Test that events outside position_times range emit warning (trajectory mode)."""
+    def test_events_outside_position_times_range_are_excluded(self, mock_env):
+        """Events outside the frame range are left out in trajectory mode too."""
         from neurospatial.animation.overlays import EventOverlay
 
         positions = np.array([[0.0, 0.0], [100.0, 100.0]])
@@ -865,11 +865,11 @@ class TestEventOverlayEdgeCases:
         frame_times = np.linspace(0.0, 10.0, 11)
         n_frames = 11
 
-        with pytest.warns(UserWarning, match="outside"):
-            event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         # Only the event at t=5 should be included
         assert len(event_data.event_positions["event"]) == 1
+        np.testing.assert_array_equal(event_data.event_times["event"], [5.0])
 
 
 class TestEventOverlayPerformance:

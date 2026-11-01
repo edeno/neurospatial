@@ -174,15 +174,12 @@ class TestWriteEvents:
         assert len(result) == 2
         assert_array_almost_equal(result["timestamp"].values, [10.0, 20.0])
 
-    def test_empty_events_write_nothing_and_warn(self, nwbfile):
+    def test_empty_events_write_nothing(self, nwbfile):
         """NWB files should not hold empty tables, or an empty module for one."""
         from neurospatial.io.nwb import write_events
 
         empty_df = pd.DataFrame({"timestamp": [], "label": []})
-        with pytest.warns(
-            UserWarning, match="write_events wrote nothing: there are no events"
-        ):
-            write_events(nwbfile, empty_df, name="empty_events")
+        write_events(nwbfile, empty_df, name="empty_events")
 
         assert "behavior" not in nwbfile.processing
 
@@ -190,10 +187,9 @@ class TestWriteEvents:
         from neurospatial.io.nwb import write_events
 
         write_events(nwbfile, basic_events_df, name="rewards")
-        with pytest.warns(UserWarning, match="existing table 'rewards' was removed"):
-            write_events(
-                nwbfile, pd.DataFrame({"timestamp": []}), name="rewards", overwrite=True
-            )
+        write_events(
+            nwbfile, pd.DataFrame({"timestamp": []}), name="rewards", overwrite=True
+        )
 
         assert "rewards" not in nwbfile.processing["behavior"].data_interfaces
 

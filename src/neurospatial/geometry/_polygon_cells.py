@@ -14,6 +14,7 @@ from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import validate_integer_at_least
 from neurospatial.geometry._affine import _check_homogeneous
 from neurospatial.geometry._arena import mapped_geometry
 from neurospatial.geometry._arrays import (
@@ -155,12 +156,14 @@ class ClipMapping(ReadOnlyState):
 
     def __post_init__(self) -> None:
         raw = np.asarray(self.parent_bin_indices)
-        if (
-            not isinstance(self.n_parent_bins, (int, np.integer))  # type: ignore[redundant-expr]  # runtime check of user input
-            or isinstance(self.n_parent_bins, (bool, np.bool_))
-            or self.n_parent_bins < 0
-            or self.n_parent_bins > np.iinfo(np.intp).max
-        ):
+        validate_integer_at_least(
+            self.n_parent_bins,
+            0,
+            name="n_parent_bins",
+            owner="ClipMapping",
+            hint="it must also fit a bin index",
+        )
+        if self.n_parent_bins > np.iinfo(np.intp).max:
             msg = "n_parent_bins must be a representable nonnegative integer."
             raise ValueError(msg)
         if (

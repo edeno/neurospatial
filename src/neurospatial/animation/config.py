@@ -23,7 +23,6 @@ video-to-environment coordinate transforms.
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from neurospatial._logging import logger
@@ -214,7 +213,9 @@ def configure_napari_scale_bar(
     viewer : napari.Viewer
         The napari viewer instance.
     units : str | None
-        Unit label (e.g., "cm", "um"). If None, no unit shown.
+        Unit label (e.g., "cm", "um"). If None, no unit shown. A label napari
+        cannot interpret as a physical unit hides the scale bar instead of
+        showing a wrong one; use a recognized unit to display it.
     config : ScaleBarConfig | None
         Configuration object. Note: ``config.length`` is ignored because
         napari auto-sizes based on layer scale and zoom level.
@@ -262,12 +263,6 @@ def configure_napari_scale_bar(
     scale_bar = canvas_overlay(viewer, "scale_bar")
     if units is not None and spatial_unit_label(units) is None:
         scale_bar.visible = False
-        warnings.warn(
-            f"Napari cannot interpret the environment's unit label {units!r}; "
-            "the scale bar is hidden. Use recognized physical units to display it.",
-            UserWarning,
-            stacklevel=2,
-        )
         return
     scale_bar.visible = True
     scale_bar.position = position_map[config.position]

@@ -45,7 +45,9 @@ from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._validation import (
     is_integer_at_least,
     validate_alpha,
+    validate_callable,
     validate_choice,
+    validate_finite_scalar,
     validate_integer_at_least,
 )
 from neurospatial.replay._compare import (
@@ -862,18 +864,11 @@ class ReplayMethod:
                     f"compare or decode again; remove {refused + decoding}."
                 )
                 raise ValueError(msg)
-        distance = self.exclude_end_distance
-        if not (
-            isinstance(distance, (int, float, np.integer, np.floating))  # type: ignore[redundant-expr]  # runtime check of user input
-            and not isinstance(distance, bool)
-            and np.isfinite(distance)
-            and distance >= 0
-        ):
-            msg = (
-                f"ReplayMethod {self.name!r}: exclude_end_distance must be a "
-                f"finite distance >= 0, got {distance!r}."
-            )
-            raise ValueError(msg)
+        validate_finite_scalar(
+            self.exclude_end_distance,
+            name=f"ReplayMethod {self.name!r}: exclude_end_distance",
+            positive=False,
+        )
         if self.segmentation is None and any(
             c.quantity == "segment_template_fraction" for c in self.criteria
         ):
@@ -1059,13 +1054,13 @@ class ReplayMethod:
                 )
                 raise ValueError(msg)
             return
-        if not callable(self.score):
-            msg = (  # type: ignore[unreachable]  # runtime check of user input
-                f"ReplayMethod {self.name!r}: score must be a function "
-                "score(env, posterior, times, **score_options), such as "
-                f"weighted_correlation, or None; got {self.score!r}."
-            )
-            raise TypeError(msg)
+        validate_callable(
+            self.score,
+            name="score",
+            owner=f"ReplayMethod {self.name!r}",
+            hint="give a function score(env, posterior, times, **score_options), "
+            "such as weighted_correlation, or None",
+        )
         options = dict(self.score_options)
         if "n_samples_per_time_bin" in options:
             options["n_samples"] = options.pop("n_samples_per_time_bin")
