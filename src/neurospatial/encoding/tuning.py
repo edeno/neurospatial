@@ -24,6 +24,7 @@ compute_tuning_curves
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -46,6 +47,7 @@ from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import interval_rows, reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings
 from neurospatial._spikes import spike_unit_table
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     refuse_infinite,
     validate_finite_scalar,
@@ -823,6 +825,10 @@ def compute_tuning_curve(
     UserWarning
         When every sampling interval is excluded, for example by an empty
         selection of trials; the rates are then NaN and the occupancy zero.
+        When more than half of the analyzed samples (finite values inside
+        ``epochs`` and ``spike_window``) are outside ``bin_edges``, usually
+        values in other units than the edges; they are counted in
+        ``n_samples_outside_range``.
 
     See Also
     --------
@@ -1059,8 +1065,10 @@ def compute_tuning_curves(
     -----
     UserWarning
         When every sampling interval is excluded (NaN rates, zero
-        occupancy), or when at least five units are all silent for at least
-        60 s and ``spike_window`` was not given.
+        occupancy), when more than half of the analyzed samples are outside
+        ``bin_edges`` (as for :func:`compute_tuning_curve`), or when at least
+        five units are all silent for at least 60 s and ``spike_window`` was
+        not given.
 
     See Also
     --------
@@ -1164,6 +1172,30 @@ def compute_tuning_curves(
         unit_ids=unit_ids,
         owner="compute_tuning_curves",
         single_unit=False,
+    )
+
+
+def _warn_if_mostly_outside(
+    n_outside: int,
+    n_analyzed: int,
+    edges: NDArray[np.float64],
+    edges_source: str,
+    *,
+    call: str,
+) -> None:
+    """Warn when more than half of the analyzed samples are in no bin."""
+    if 2 * n_outside <= n_analyzed:
+        return
+    given = "value_range" if edges_source == "value_range" else "bin_edges"
+    warnings.warn(
+        f"{call}: {n_outside} of {n_analyzed} analyzed samples "
+        f"({n_outside / n_analyzed:.1%}) have a value outside bin_edges "
+        f"[{edges[0]:g}, {edges[-1]:g}], so they are in no bin and the rates "
+        "describe only the rest. Values in other units than the edges (percent "
+        "against 0-1, cm against m) do this. Fix: check the units of values "
+        f"against {given}, or widen {given} to cover the values.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -1274,7 +1306,11 @@ def _tuning_curves(
 
     frame_bins = value_frame_bins(values, edges, closed_last=True)
     in_range = (values >= edges[0]) & (values <= edges[-1])
-    n_outside = int(np.count_nonzero(in_windows & np.isfinite(values) & ~in_range))
+    analyzed = in_windows & np.isfinite(values)
+    n_outside = int(np.count_nonzero(analyzed & ~in_range))
+    _warn_if_mostly_outside(
+        n_outside, int(np.count_nonzero(analyzed)), edges, edges_source, call=call
+    )
 
     if not single_unit:
         # Recording coverage is about time, whether or not the variable is

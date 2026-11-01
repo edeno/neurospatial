@@ -555,3 +555,58 @@ def test_negative_rates_occupancy_and_counts_are_refused(name):
     fields[name][3] = -0.25
     with pytest.raises(ValueError, match=rf"{name} has 1 negative value"):
         TuningCurveResult(**fields, bin_edges=EDGES)
+
+
+def test_warns_when_most_samples_fall_outside_the_bins(runs):
+    """Percent values against 0-1 edges leave almost every sample out."""
+    times, progress = runs
+    percent = 200.0 * progress  # 0-190: a unit mismatch
+    n_inside = int(np.count_nonzero(percent <= 1.0))  # progress 0 only
+    n_outside = percent.size - n_inside
+    edges = np.linspace(0, 1, 11)
+    with pytest.warns(
+        UserWarning,
+        match=rf"{n_outside} of {percent.size} analyzed samples "
+        rf"\({n_outside / percent.size:.1%}\).*outside bin_edges \[0, 1\]",
+    ):
+        curve = compute_tuning_curve(times[::3], times, percent, bin_edges=edges)
+    assert curve.n_samples_outside_range == n_outside
+    with pytest.warns(UserWarning, match="outside bin_edges"):
+        compute_tuning_curves([times[::3]], times, percent, bin_edges=edges)
+
+
+def test_no_out_of_range_warning_for_half_or_for_samples_outside_epochs(runs):
+    """Half outside is not most; values outside epochs are not analyzed."""
+    import warnings
+
+    times, progress = runs
+    half = np.where(np.arange(progress.size) % 2 == 0, progress, progress + 2.0)
+    late = np.where(times < 10.0, progress, progress + 2.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        curve = compute_tuning_curve(times[::3], times, half, bin_edges=EDGES)
+        compute_tuning_curve(
+            times[::3], times, late, bin_edges=EDGES, epochs=[(0.0, 10.0)]
+        )
+    assert curve.n_samples_outside_range == progress.size // 2
+
+
+def test_out_of_range_fraction_is_of_analyzed_samples(runs):
+    """NaN samples and samples outside epochs are not in the denominator.
+
+    In the first 10 s, 60 of 100 values are out of range; the other 100
+    samples are NaN (or outside epochs). Counted, they would make it 30%.
+    """
+    times, progress = runs
+    first = times < 10.0
+    out = first & (np.arange(times.size) % 5 < 3)
+    values = np.where(out, progress + 2.0, progress)
+    with pytest.warns(UserWarning, match=r"60 of 100 analyzed samples \(60\.0%\)"):
+        compute_tuning_curve(
+            times[::3], times, np.where(first, values, np.nan), bin_edges=EDGES
+        )
+    with pytest.warns(UserWarning, match=r"60 of 100 analyzed samples \(60\.0%\)"):
+        compute_tuning_curve(
+            times[::3], times, values, bin_edges=EDGES, epochs=[(0.0, 10.0)]
+        )
+
