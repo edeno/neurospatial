@@ -42,6 +42,16 @@ by its trial.
   epochs=trials.sel(interval_id=i))` for each id; on shared edges the
   occupancy-weighted mean of these curves is the pooled curve (tested).
 
+### Compute on trials and segments guide
+
+**Added**
+
+- A guide, "Compute on trials and segments": restrict to trials, lay them
+  out by time and along the route, tabulate one row per trial, build
+  per-sample model inputs with trial-blocked cross-validation groups, and
+  the same steps with pynapple (`build_tensor`) and NeMoS, stating what each
+  hand-off keeps and drops.
+
 ### Spatial bases at the animal's positions
 
 **Added**
