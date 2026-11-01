@@ -618,3 +618,11 @@ def test_interval_refuses_the_names_intervals_reserves() -> None:
     for name in ("sel", "windows", "interval_id", "durations"):
         with pytest.raises(ValueError, match="already an attribute"):
             Interval(0.0, 1.0, {name: 1})
+
+
+def test_sel_refuses_an_id_array_that_is_not_one_dimensional(
+    trials: Intervals[Trial],
+) -> None:
+    with pytest.raises(ValueError, match="1-D"):
+        trials.sel(interval_id=np.array([[3, 5]]))
+    assert trials.sel(interval_id=[5, 3]).interval_ids.tolist() == [3, 5]

@@ -711,7 +711,7 @@ class Intervals(Generic[R]):
 
         Parameters
         ----------
-        interval_id : int or array-like of int
+        interval_id : int or 1-D array-like of int
             Id(s) from :attr:`interval_ids`.
 
         Returns
@@ -725,6 +725,8 @@ class Intervals(Generic[R]):
         KeyError
             If an id is not in :attr:`interval_ids`; every missing id is
             listed.
+        ValueError
+            If ``interval_id`` is an array with more than one dimension.
         """
         wanted = np.asarray(interval_id)
         if wanted.size and wanted.dtype.kind not in "iu":
@@ -732,6 +734,12 @@ class Intervals(Generic[R]):
                 f"interval_id must be an integer or integer array; got {interval_id!r}."
             )
             raise TypeError(msg)
+        if wanted.ndim > 1:
+            msg = (
+                "interval_id must be one id or a 1-D array of ids; got shape "
+                f"{wanted.shape}. Flatten it first if every id is wanted."
+            )
+            raise ValueError(msg)
         where = {int(i): p for p, i in enumerate(self._ids.tolist())}
         flat = [int(i) for i in wanted.reshape(-1).tolist()]
         missing = [i for i in flat if i not in where]
