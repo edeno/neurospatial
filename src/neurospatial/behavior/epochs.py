@@ -30,9 +30,9 @@ labels_to_epochs
     Turn one label per sample (task phase, running direction, trial type) into
     an ``Intervals`` of half-open ``[start, stop)`` epochs with a ``label``
     field; select one condition (``conditions[conditions.label == "out"]``)
-    and pass it as ``epochs=`` to an analysis. A missing sample is bridged like a deleted row when the
-    gap around it is no longer than ``max_gap``; a longer gap, a declared
-    break or an ``epochs`` edge ends an epoch.
+    and pass it as ``epochs=`` to an analysis. A missing sample is bridged
+    like a deleted row when the gap around it is no longer than ``max_gap``;
+    a longer gap, a declared break or an ``epochs`` edge ends an epoch.
 
 Aligned vs ragged
 -----------------

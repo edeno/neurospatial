@@ -128,7 +128,13 @@
   in two laps the later lap's direction (last writer wins): `sample_values`
   raises, naming both `interval_id`s. Select non-overlapping laps first.
   `detect_laps` never returns overlapping laps; this affects hand-built or
-  merged laps.
+  merged laps. (Laps with direction `"unknown"` are left out before
+  labelling, so one overlapping a known lap does not raise; its samples take
+  the known lap's direction.)
+- Selecting a condition by a label no recording has
+  (`conditions[conditions.label == "outbond"]`) gives an empty selection, not
+  the `KeyError` listing the labels that `LabelEpochsResult` raised; loop over
+  `conditions.analysis_settings["labels"]` to use the labels found.
 
 **Removed**
 

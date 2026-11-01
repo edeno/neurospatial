@@ -363,7 +363,8 @@ maps = {
         epochs=conditions[conditions.label == label],
         bandwidth=5.0, min_occupancy=0.5,
     )
-    for label in ["outbound", "inbound"]
+    # The labels found, so a misspelled label cannot select nothing silently.
+    for label in conditions.analysis_settings["labels"]
 }
 comparison = compare_spatial_rates(maps["outbound"], maps["inbound"])
 comparison.summary_table()
@@ -375,8 +376,10 @@ comparison.summary_table()
   sorting; they must name the same cells in every condition.
 - Labels come from your task, one per frame: from detected laps,
   `laps[laps.direction != "unknown"].sample_values(times, "direction")`;
-  from detected trials or your trial table,
-  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`;
+  from detected trials,
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`
+  (for a trial table without `outcome`, select with
+  `trials.end_region.notna()` instead);
   or from door-state intervals. Samples labeled `None` or `NaN` are left
   out; `sample_values` gives `None` to frames outside every lap or trial;
   pass `missing_label=` if your own labels use another value.
