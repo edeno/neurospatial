@@ -44,7 +44,7 @@ from neurospatial import Environment
 from neurospatial.behavior import (
     compute_step_lengths,
     detect_region_crossings,
-    detect_runs_between_regions,
+    detect_trials,
     path_progress,
     segment_by_velocity,
 )
@@ -116,8 +116,7 @@ times, positions = full_times[keep], full_positions[keep]
 linear_position = track.to_linear(positions)
 projected = track.linear_to_nd(linear_position)
 residual = np.linalg.norm(positions - projected, axis=1)
-position_bins = track.bin_at(positions)
-assert np.all(position_bins >= 0) and np.all(np.diff(times) > 0)
+assert np.all(track.bin_at(positions) >= 0) and np.all(np.diff(times) > 0)
 print(f"Tracking samples: {len(times):,}; spatial bins along the track: {track.n_bins}")
 print(
     f"Distance from tracking to centerline, 95th percentile: {np.percentile(residual, 95):.2f} cm"
@@ -193,33 +192,26 @@ print(f"Running bouts: {len(movement)}")
 # %% [markdown]
 # ## 3. Measure left-to-right traversals
 #
-# A traversal begins at the first sample outside the left end zone and ends
-# at the first sample inside the right end zone. Allow up to 12 s to reach the
-# right zone. A tracking gap ends the observed segment before arrival.
-# End-zone membership uses 2 cm bin centers, so event times depend on both
-# tracking frequency and spatial bin width.
+# A trial runs from leaving one end zone to arriving at the next zone the
+# animal enters: it begins at the first sample outside the zone it left and
+# ends at the first sample inside the next one. `detect_trials` finds them in
+# both directions; the left-to-right traversals are the trials that start in
+# the left zone. A tracking gap ends observation before the arrival. End-zone
+# membership uses 2 cm bin centers, so event times depend on both tracking
+# frequency and spatial bin width.
 
 # %%
 entries = detect_region_crossings(
-    position_bins, times, track, region_name="right", direction="entry", max_gap=0.1
+    track, times, positions, region_name="right", direction="entry", max_gap=0.1
 )
-runs = detect_runs_between_regions(
-    position_bins,
-    times,
-    track,
-    source="left",
-    target="right",
-    min_duration=0.5,
-    max_duration=12.0,
-    max_gap=0.1,
-)
-complete_runs = [run for run in runs if run.success]
+trials = detect_trials(track, times, positions, regions=["left", "right"], max_gap=0.1)
+runs = trials[trials.start_region == "left"]
+complete_runs = runs[runs.outcome == "reached"]
 print(f"Entries into the right end zone: {len(entries)}")
 print(
     f"Left-to-right traversals: {len(complete_runs)} complete; {len(runs) - len(complete_runs)} incomplete"
 )
-for number, run in enumerate(runs, start=1):
-    print(f"  {number}: {run.start_time:.2f}-{run.end_time:.2f} s; {run.outcome}")
+print(runs.intervals_table())
 
 fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True, layout="constrained")
 # Draw each continuous recording period separately, leaving the tracking gap empty.
@@ -229,8 +221,8 @@ for chunk in chunks:
 for run in runs:
     axes[0].axvspan(
         run.start_time,
-        run.end_time,
-        color="#0072B2" if run.success else "#E69F00",
+        run.stop_time,
+        color="#0072B2" if run.outcome == "reached" else "#E69F00",
         alpha=0.2,
     )
 axes[0].set(
@@ -238,7 +230,7 @@ axes[0].set(
     title="Left-to-right traversals: complete (blue), incomplete (orange)",
 )
 axes[1].plot(times[:-1], speed, lw=0.7, color="gray", label="Speed from tracking")
-for start, stop in movement:
+for start, stop in movement.windows:
     axes[1].axvspan(start, stop, color="#009E73", alpha=0.2)
 axes[1].axhline(8.0, color="black", ls="--", label="Running threshold (8 cm/s)")
 axes[1].set(
@@ -258,11 +250,10 @@ plt.show()
 # detection uses 100 ms smoothing, so the green boundaries need not match
 # crossings of the threshold in the displayed trace exactly.
 #
-# Each run records its `outcome`: `"reached"` means that arrival was observed
-# within the time limit, and `run.success` is shorthand for that. `"censored"`
-# means observation stopped first (here, at the tracking gap), so the result
-# is unknown; `"timeout"` and `"returned"` mark a run that ran out of time or
-# went back to the left zone. The outcome does not describe reward or task
+# Each trial records its `outcome`: `"reached"` means the arrival at the other
+# zone was observed. `"censored"` means observation stopped first (here, at
+# the tracking gap), so the result is unknown; `"returned"` marks a run that
+# went back to the zone it left. The outcome does not describe reward or task
 # accuracy. Keep the censored segment when reporting how much behavior could
 # be measured, and leave it out of success rates.
 
@@ -289,7 +280,7 @@ progress = path_progress(track, times, positions, start="left", goal="right")
 
 fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
 for number, run in enumerate(complete_runs, start=1):
-    first, arrival = np.searchsorted(times, [run.start_time, run.end_time])
+    first, arrival = np.searchsorted(times, [run.start_time, run.stop_time])
     shown = slice(first, arrival + 1)  # the run's samples and its arrival
     run_times = times[shown]
     relative_time = (run_times - run_times[0]) / (run_times[-1] - run_times[0])
@@ -330,12 +321,13 @@ plt.show()
 #
 # Choose the running-speed thresholds, smoothing interval, minimum bout length,
 # and gap limit from the tracking noise and behavior in your recording. Report
-# the zone sizes and traversal timeout. Position-defined traversals need task
-# logs before they can be interpreted as rewarded trials or correct choices.
+# the zone sizes. Position-defined traversals need task logs before they can
+# be interpreted as rewarded trials or correct choices; add your task's labels
+# with `trials.with_fields(...)`.
 #
-# Running bouts and traversals provide `start_time` and `end_time` in seconds.
-# Pass the desired windows as `epochs=` for firing-rate analysis, using the same
-# windows for spikes and occupancy. These analysis windows are half-open
+# Running bouts and trials are `Intervals` of `[start, stop)` windows in
+# seconds. Pass the desired ones as `epochs=` for firing-rate analysis, using
+# the same windows for spikes and occupancy. These analysis windows are half-open
 # `[start, stop)`; count arrival events separately if they fall at a window end.
 #
 # Continue with [04: a hippocampal recording](04_real_data_analysis.ipynb), or see
