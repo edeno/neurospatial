@@ -109,11 +109,10 @@ from neurospatial.behavior.trajectory import (
     mean_square_displacement,
     smooth_positions,
 )
+from neurospatial.behavior.trials import detect_trials, trials_between_visits
 from neurospatial.behavior.visits import (
-    RegionTransition,
     RegionVisit,
     detect_region_visits,
-    region_transitions,
 )
 from neurospatial.behavior.vte import (
     VTESessionResult,
@@ -199,10 +198,10 @@ __all__ = [  # noqa: RUF022
     "segment_trials",
     "trajectory_similarity",
     # visits module
-    "RegionTransition",
     "RegionVisit",
     "detect_region_visits",
-    "region_transitions",
+    "detect_trials",
+    "trials_between_visits",
     # resampling module
     "ResampledPathResult",
     "resample_by_distance",
