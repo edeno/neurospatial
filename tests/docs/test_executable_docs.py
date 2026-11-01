@@ -216,7 +216,10 @@ SETUPS["workflows_route_recording"] = "\n".join(
     [SETUPS["workflows_route_environment"], _workflows_block("def run(start, goal")]
 )
 SETUPS["workflows_route_trials"] = "\n".join(
-    [SETUPS["workflows_route_recording"], _workflows_block("trials = detect_trials(track")]
+    [
+        SETUPS["workflows_route_recording"],
+        _workflows_block("trials = detect_trials(track"),
+    ]
 )
 SETUPS["workflows_route_progress"] = "\n".join(
     [SETUPS["workflows_route_trials"], _workflows_block("progress = path_progress(")]

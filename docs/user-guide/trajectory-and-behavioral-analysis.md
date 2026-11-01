@@ -1843,10 +1843,13 @@ if transition_idx is not None:
 ### Trial Durations
 
 - Trials have no duration limits: keep every departure and arrival, then
-  apply your task's rules, for example `trials[trials.durations >= 1.0]` to
-  drop pass-throughs, or a timeout as a field with `with_fields`
-- Size wells and zones with `radius=` or polygons, so jitter at a region's edge
-  is not read as leaving it
+  apply your task's rules, for example a timeout as a field with
+  `with_fields`
+- Size wells and zones with `radius=` or polygons that cover where the animal
+  rests, so jitter at a region's edge is not read as leaving it. Very short
+  `"returned"` trials (tens to hundreds of milliseconds) are that jitter; if a
+  few remain, look at `trials[trials.outcome == "returned"].durations` and drop
+  those below a threshold well under your shortest real run
 
 ### Directedness Thresholds
 

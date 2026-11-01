@@ -307,8 +307,10 @@ print(pd.Series(runs.outcome).value_counts().to_string())
 print(counts.sort_values(ascending=False).rename("count").to_string())
 
 # %% [markdown]
-# Most runs in this recording link arm ends 4 and 5; a few come back to the
-# zone they left. These counts describe observed movement; without trial and
+# Most runs in this recording link arm ends 4 and 5. Most of the few
+# `"returned"` ones last under a second: they are head movements across a
+# zone's edge while the rat stays at the arm end, not runs (a larger zone
+# radius removes them). These counts describe observed movement; without trial and
 # reward labels, they cannot tell us which options were available or why the
 # rat visited an arm.
 #
