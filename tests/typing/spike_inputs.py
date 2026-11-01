@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         compute_directional_rates,
         compute_egocentric_rates,
         compute_object_vector_rates,
+        compute_tuning_curves,
         compute_view_rates,
         egocentric_object_vector_cell_significance,
         head_direction_cell_significance,
@@ -55,6 +56,7 @@ if TYPE_CHECKING:
     ) -> None:
         compute_spatial_rates(env, spikes, times, positions)
         compute_directional_rates(spikes, times, headings)
+        compute_tuning_curves(spikes, times, headings, bin_size=0.1)
         compute_view_rates(
             env, spikes, times, positions, headings, boundary_source="analysis"
         )

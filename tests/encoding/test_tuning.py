@@ -41,14 +41,16 @@ def test_counts_and_occupancy_by_hand():
     times = np.array([0.0, 0.1, 0.3, 0.4, 0.7, 0.8, 1.0, 1.1, 1.2, 1.4])
     values = np.array([0.5, 0.5, 1.5, 1.5, 2.5, 2.5, 0.2, 1.2, 2.2, 2.9])
     # 0.35 lies in [0.3, 0.4), which starts at 1.5; 1.25 in [1.2, 1.4) at 2.2.
-    spikes = np.array([0.35, 1.25])
+    # 0.65 lies in [0.4, 0.7), which starts at 1.5, though its nearest sample
+    # (0.7) is at 2.5: a spike takes the sample before it.
+    spikes = np.array([0.35, 0.65, 1.25])
 
     curve = compute_tuning_curve(spikes, times, values, bin_edges=[0.0, 1.0, 2.0, 3.0])
 
     # bin 0: 0.1 + 0.2 + 0.1; bin 1: 0.1 + 0.3 + 0.1; bin 2: 0.1 + 0.2 + 0.2
     np.testing.assert_allclose(curve.occupancy, [0.4, 0.5, 0.5])
-    np.testing.assert_array_equal(curve.spike_counts, [0.0, 1.0, 1.0])
-    np.testing.assert_allclose(curve.firing_rate, [0.0, 2.0, 2.0])
+    np.testing.assert_array_equal(curve.spike_counts, [0.0, 2.0, 1.0])
+    np.testing.assert_allclose(curve.firing_rate, [0.0, 4.0, 2.0])
 
 
 def test_value_range_is_exclusion_boundary():
@@ -72,6 +74,22 @@ def test_value_range_is_exclusion_boundary():
         compute_tuning_curve(
             np.array([0.15]), times, values, bin_size=0.3, value_range=(0, 1)
         )
+
+
+def test_value_range_ends_exactly_at_its_limits():
+    """A value at either end of value_range is analyzed, whatever lo is."""
+    times = np.arange(3) / 10.0
+    curve = compute_tuning_curve(
+        np.array([]),
+        times,
+        np.array([1.93, 1.93, 0.08]),
+        bin_size=0.05,
+        value_range=(0.08, 1.93),
+    )
+    assert curve.bin_edges[0] == 0.08
+    assert curve.bin_edges[-1] == 1.93
+    assert curve.n_samples_outside_range == 0
+    assert curve.occupancy.sum() == pytest.approx(0.2)
 
 
 def test_derived_edges_on_shared_grid():
@@ -250,6 +268,21 @@ def test_bandwidth_requires_equal_widths(runs):
         )
 
 
+def test_bandwidth_accepts_equal_bins_far_from_zero():
+    """Equal bins of a variable near 1e5 (rounded edges) can be smoothed."""
+    times = np.arange(200) / 10.0
+    values = 100_000.0 + (np.arange(200) % 20) / 2.0
+    curve = compute_tuning_curve(
+        times[::3] + 0.01,
+        times,
+        values,
+        bin_size=0.5,
+        value_range=(100_000, 100_010),
+        bandwidth=1.0,
+    )
+    assert np.isfinite(curve.firing_rate).all()
+
+
 def test_smoothing_divides_smoothed_counts_by_smoothed_occupancy(runs):
     """Counts and occupancy are smoothed apart, then divided."""
     from scipy.ndimage import gaussian_filter1d
@@ -394,11 +427,10 @@ def test_agrees_with_pynapple_where_conventions_coincide():
 
 
 @pytest.mark.pynapple
-def test_pynapple_values_use_their_time_support():
+def test_pynapple_values_use_their_time_support(runs):
     """A restricted Tsd's support is the epochs: short gaps between trials are out."""
     nap = pytest.importorskip("pynapple")
-    times = np.arange(200) / 10.0
-    progress = (np.arange(200) % 20) / 20.0
+    times, progress = runs
     restricted = nap.Tsd(t=times, d=progress).restrict(
         nap.IntervalSet([0.0, 2.0], [1.5, 3.5])
     )

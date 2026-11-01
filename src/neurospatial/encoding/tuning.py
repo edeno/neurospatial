@@ -188,8 +188,8 @@ def tuning_bin_edges(
                     "choosing.",
                 )
             )
-        # The last edge is hi exactly, so a value at hi is in the last bin.
-        return lo + (hi - lo) * np.arange(n + 1) / n, "value_range"
+        # linspace sets both ends exactly, so a value at hi is in the last bin.
+        return np.linspace(lo, hi, n + 1), "value_range"
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         raise ValueError(
@@ -797,8 +797,10 @@ def compute_tuning_curve(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. A selection with no
-        rows gives NaN rates, zero occupancy and a warning. None (default)
+        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
+        ``value_range``, a selection with no rows gives NaN rates, zero
+        occupancy and a warning; with ``bin_size`` alone there are no values
+        to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, so time outside it (such as between trials of
         a restricted series) is not analyzed.
@@ -830,7 +832,8 @@ def compute_tuning_curve(
         ``value_range``, ``bandwidth`` is given with bins of unequal width,
         ``values`` does not have one value per sample or holds an infinite
         value, ``min_speed`` is given without ``speed`` (or the reverse), or
-        no finite value is analyzed to set the range from ``bin_size``.
+        no finite value is analyzed to set the range from ``bin_size`` (as
+        for an empty selection of trials without ``value_range``).
 
     Warns
     -----
@@ -1031,8 +1034,10 @@ def compute_tuning_curves(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. A selection with no
-        rows gives NaN rates, zero occupancy and a warning. None (default)
+        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
+        ``value_range``, a selection with no rows gives NaN rates, zero
+        occupancy and a warning; with ``bin_size`` alone there are no values
+        to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, so time outside it (such as between trials of
         a restricted series) is not analyzed.
@@ -1119,8 +1124,8 @@ def compute_tuning_curves(
 
     Examples
     --------
-    Correct and error trials binned with the same edges, so their curves
-    can be compared bin by bin:
+    Tuning curves over the correct trials; pass the same ``bin_edges`` for
+    the error trials so the two can be compared bin by bin:
 
     >>> import numpy as np
     >>> from neurospatial import Intervals
@@ -1261,8 +1266,10 @@ def _tuning_curves(
         owner=call,
     )
     widths = np.diff(edges)
+    # Edges far from zero carry rounding in proportion to their size.
+    rounding = 4 * float(np.spacing(np.abs(edges).max()))
     if bandwidth is not None and not np.allclose(
-        widths, widths[0], rtol=_TILING_RTOL, atol=0.0
+        widths, widths[0], rtol=_TILING_RTOL, atol=rounding
     ):
         raise ValueError(
             _format_error(
