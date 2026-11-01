@@ -24,9 +24,13 @@
 - The behavior detectors take `(env, times, positions, *, ...)` and find
   each position's bin themselves: `detect_region_visits`,
   `detect_region_crossings`, `detect_laps`, `detect_goal_directed_runs` and
-  `decision_region_entry_time` (before: `(position_bins, times, env)`). A
-  NaN position (lost tracking) is the unlocated sample a `-1` bin was;
-  results are unchanged. `detect_region_visits` takes `regions=` (was
+  `decision_region_entry_time` (before: `(position_bins, times, env)`). For
+  `detect_region_visits` and `detect_trials` a NaN position is a missing
+  sample, bridged like a deleted row when the samples around it are no more
+  than `max_gap` apart (before, every NaN row ended the run and censored the
+  trial under way); a position outside the environment still ends
+  observation. The other detectors read a NaN position as the unlocated
+  sample a `-1` bin was, and their results are unchanged. `detect_region_visits` takes `regions=` (was
   `region_names=`).
 - Every detector returns an `Intervals`: `detect_region_visits` gives
   `Intervals[RegionVisit]`, `detect_laps` `Intervals[Lap]`, and
