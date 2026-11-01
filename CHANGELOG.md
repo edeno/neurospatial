@@ -40,6 +40,62 @@
   (about 1.1 instead of 0.8 smoothing widths). A truly stopped animal now
   reads exactly 0 cm/s instead of picking up movement from either side.
 
+### Dependencies, packaging and development tools
+
+**Changed**
+
+- Dependency floors follow Scientific Python SPEC 0 for the core scientific
+  stack, keeping Python 3.10: `numpy>=2.2`, `scipy>=1.15.3`,
+  `matplotlib>=3.10`, `pandas>=2.3`, `scikit-image>=0.25`,
+  `scikit-learn>=1.6`, `networkx>=3.4`, `joblib>=1.2`, `alphashape>=1.3.1`
+  and `typing_extensions>=4.4`. The old floors were never tested: about 800
+  tests failed at them. A CI job now installs the lowest allowed version of
+  each dependency and runs the suite. SciPy 1.15.0 to 1.15.2 take time
+  quadratic in the number of variables after every `linprog` solve
+  (scipy#22655), so the Euclidean `compute_field_emd` on a 625-bin arena
+  never finished; 1.15.3 solves it in under 2 s.
+- The version comes from the git tag. Pushing a `v*` tag runs the full test
+  suite, builds and checks the sdist and wheel, installs and smoke-tests
+  each, publishes to PyPI with trusted publishing and build attestations,
+  and creates the GitHub release from that version's section of this file.
+- The sdist ships source, tests and documentation only; it was 11.9 MB with
+  agent, CI and coverage files, because the build settings were spelled
+  `tool.hatchling` and so ignored.
+- Development tools are dependency groups: `uv sync` installs them;
+  `pip install -e . --group dev` with pip 25.1 or later. The `docs` and
+  `notebooks` groups replace the extras of the same names
+  (`uv sync --group docs`).
+- Python 3.14 is tested and listed.
+
+**Fixed**
+
+- `Environment.from_file` closes a corrupt `.npz` archive instead of
+  leaving it open.
+- `circular_linear_correlation` and `circular_circular_correlation` refuse
+  infinite values with an error saying to mark missing values as NaN; an
+  infinity used to reach the computation and give a meaningless result.
+  `circular_linear_correlation` also gives the same answer for very large
+  linear values (near the float maximum) as for small ones, instead of
+  overflowing its sums of squares.
+- Summaries, PSTH baselines, decoding error and `plot_field` color limits
+  no longer emit NumPy's "All-NaN slice" or "Mean of empty slice" warning
+  when every value is missing; the result is NaN as before. Geodesic path
+  lengths on an environment without connections no longer warn about an
+  invalid division.
+
+**Development**
+
+- Tests turn every warning into an error unless the test expects it, name
+  the message each `pytest.raises` and `pytest.warns` expects, and use one
+  condition per assert. `pytest.ini` is merged into `pyproject.toml`; its
+  settings used to hide the ones there.
+- mypy runs in strict mode; ruff adds the rules the Scientific Python
+  development guide recommends; pre-commit adds codespell, zizmor,
+  validate-pyproject and workflow schema checks.
+- GitHub Actions are pinned to commit SHAs and updated monthly by
+  Dependabot, run with read-only permissions by default, and are checked by
+  zizmor.
+
 ### Linear track positions name one place
 
 **Fixed**

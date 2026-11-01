@@ -222,6 +222,11 @@ jobs:
           uv pip list
 
       - name: Run tests
-        run: uv run --no-sync pytest -m "not slow and not napari and not gui and not wallclock" -n 4
+        # The oldest allowed releases deprecate APIs of their newest
+        # dependencies (matplotlib 3.10.0 and pyparsing); those warnings are
+        # not this package's, so only DeprecationWarning is let through.
+        run: >-
+          uv run --no-sync pytest -m "not slow and not napari and not gui and not wallclock"
+          -n 4 -W ignore::DeprecationWarning
         env:
           MPLBACKEND: Agg
