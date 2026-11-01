@@ -317,3 +317,55 @@ def test_response_plot_refuses_censored_trials_aligned_at_their_stop():
     )
     with pytest.raises(ValueError, match="censored"):
         plot_peri_event_response(SPIKES, CENSORED, result)
+
+
+def test_psth_records_the_interval_ids_of_the_retained_trials():
+    trials = Intervals.from_arrays(
+        [1.0, 5.0, 9.0], [3.0, 8.5, 9.0], interval_ids=[7, 3, 9]
+    )
+    # Trial 9 has no duration, so it holds no whole bin of (0, 1) and is dropped.
+    single = peri_event_histogram(SPIKES, trials, (0.0, 1.0), bin_size=0.5)
+    population = population_peri_event_histogram(
+        [SPIKES, SPIKES[::2]], trials, (0.0, 1.0), bin_size=0.5, unit_ids=["a", "b"]
+    )
+    for result in (single, population, population[1], population.sel(unit_id="a")):
+        np.testing.assert_array_equal(result.event_ids, [7, 3])
+        assert result.event_ids.dtype == np.int64
+        assert not result.event_ids.flags.writeable
+        assert result.to_dataframe().attrs["event_ids"] == [7, 3]
+    np.testing.assert_array_equal(single.event_indices, [0, 1])
+    plain = peri_event_histogram(SPIKES, trials.start, (0.0, 1.0), bin_size=0.5)
+    assert plain.event_ids is None
+    assert plain.to_dataframe().attrs["event_ids"] is None
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"event_ids": None}, "go together"),
+        ({"align": None, "events_per_bin": None}, "go together"),
+        ({"event_ids": np.array([7])}, "event_ids"),
+        ({"event_ids": np.array([7, 7])}, "event_ids"),
+        ({"event_ids": np.array([7, -3])}, "event_ids"),
+        ({"event_ids": np.array([7.0, 3.0])}, "event_ids"),
+    ],
+)
+def test_psth_result_refuses_inconsistent_event_ids(changes, match):
+    from neurospatial.events import PeriEventResult
+
+    trials = Intervals.from_arrays([1.0, 5.0], [3.0, 8.5], interval_ids=[7, 3])
+    result = peri_event_histogram(SPIKES, trials, (0.0, 1.0), bin_size=0.5)
+    fields = {
+        "histogram": result.histogram,
+        "sem": result.sem,
+        "n_events": result.n_events,
+        "window": result.window,
+        "bin_size": result.bin_size,
+        "event_indices": result.event_indices,
+        "events_per_bin": result.events_per_bin,
+        "align": result.align,
+        "event_ids": result.event_ids,
+    }
+    PeriEventResult(**fields)
+    with pytest.raises(ValueError, match=match):
+        PeriEventResult(**(fields | changes))

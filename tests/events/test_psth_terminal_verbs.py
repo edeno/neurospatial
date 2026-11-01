@@ -123,6 +123,7 @@ def test_single_and_population_summary_tables_share_columns_and_attrs():
             "n_events": 10,
             "n_events_dropped": 0,
             "align": None,
+            "event_ids": None,
         }
     np.testing.assert_allclose(
         pop[1].summary_table().to_numpy(), pop_table.iloc[[1]].to_numpy()

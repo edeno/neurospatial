@@ -230,6 +230,7 @@ class _PeriEventCounts(NamedTuple):
     event_indices: NDArray[np.intp]
     n_dropped: int
     events_per_bin: NDArray[np.int64] | None
+    event_ids: NDArray[np.int64] | None
 
 
 def _peri_event_histograms(
@@ -263,9 +264,13 @@ def _peri_event_histograms(
         intervals, hold no whole bin.
     events_per_bin : NDArray[np.int64], shape (n_bins,), or None
         Retained rows covering each bin, for intervals; None for times.
+    event_ids : NDArray[np.int64], shape (n_events,), or None
+        ``interval_id`` of the retained rows, for intervals; None for times.
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
-    event_times, _, limits = interval_events(event_times, align, call=context)
+    event_times, interval_ids, limits = interval_events(
+        event_times, align, call=context
+    )
     event_times = _finite_times(event_times, "event_times")
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     n_input_events = event_times.size
@@ -293,6 +298,7 @@ def _peri_event_histograms(
         edges, covered = edges[has_bin], covered[has_bin]
     n_events = event_times.size
     events_per_bin = None if limits is None else covered.sum(axis=0)
+    event_ids = None if interval_ids is None else interval_ids[event_indices]
     if n_events == 0:
         names = empty_selection_names(resolved_epochs, resolved_spike_window)
         if n_input_events == 0:
@@ -317,6 +323,7 @@ def _peri_event_histograms(
             event_indices,
             n_input_events,
             events_per_bin,
+            event_ids,
         )
 
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
@@ -339,6 +346,7 @@ def _peri_event_histograms(
         event_indices,
         n_input_events - n_events,
         events_per_bin,
+        event_ids,
     )
 
 
@@ -522,6 +530,7 @@ or None
         event_indices=psth.event_indices,
         events_per_bin=psth.events_per_bin,
         align=None if psth.events_per_bin is None else align,
+        event_ids=psth.event_ids,
     )
 
 
@@ -713,6 +722,7 @@ or None
         event_indices=psth.event_indices,
         events_per_bin=psth.events_per_bin,
         align=None if psth.events_per_bin is None else align,
+        event_ids=psth.event_ids,
     )
 
 
