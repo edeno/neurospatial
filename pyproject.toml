@@ -15,6 +15,7 @@ dependencies = [
     "networkx>=3.4",  # SPEC 0 says 3.5, which needs Python 3.11
     "numpy>=2.2.0",
     "pandas>=2.3.0",
+    "pot>=0.9.7",  # Euclidean field EMD (network simplex); first with Python 3.14 wheels
     "scikit-image>=0.25.0",
     "scikit-image>=0.26.0; python_version >= '3.14'",  # first release with Python 3.14 wheels
     "scikit-learn>=1.6.0",
@@ -152,6 +153,9 @@ filterwarnings = [
     "ignore:`json_encoders` is deprecated:DeprecationWarning",
     # pynwb 4 defines the event types ndx-events also defines; it keeps its own.
     "ignore:ndx-events.extensions defines a different specification",
+    # POT 0.9.7's ot/datasets.py has an invalid escape, reported when the
+    # module is first compiled.
+    "ignore:invalid escape sequence:SyntaxWarning",
     # pytest-benchmark disables timing under xdist and says so at startup.
     "ignore:Benchmarks are automatically disabled because xdist plugin is active:pytest_benchmark.logger.PytestBenchmarkWarning",
 ]

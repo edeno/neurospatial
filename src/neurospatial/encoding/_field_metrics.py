@@ -1254,10 +1254,9 @@ def compute_field_emd(
       sampled or not. About 0.5 s at 3,600 bins and 3 s at 10,000.
       On an open grid the graph path can exceed the straight line by up
       to about 8% (8-connected neighbors).
-    - Euclidean: a transport plan over every pair of bins with mass, which
-      grows with the square of their number; over about a thousand bins it
-      can take minutes, or fail. Use ``metric="geodesic"`` for finely binned
-      maps.
+    - Euclidean: the exact transport plan over every pair of bins with mass,
+      by network simplex (POT [3]_). Memory grows with the square of the
+      number of bins (a 2,500-bin map holds a 50 MB distance matrix).
 
     References
     ----------
@@ -1265,6 +1264,8 @@ def compute_field_emd(
            Distance as a Metric for Image Retrieval. International Journal of
            Computer Vision, 40(2), 99-121.
     .. [2] Villani, C. (2009). Optimal Transport: Old and New. Springer.
+    .. [3] Flamary, R., et al. (2021). POT: Python Optimal Transport. Journal
+           of Machine Learning Research, 22(78), 1-8.
 
     Examples
     --------
@@ -1272,24 +1273,21 @@ def compute_field_emd(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import compute_field_emd
     >>>
-    >>> # Create environment
-    >>> data = np.random.randn(1000, 2) * 20
-    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> from shapely.geometry import box
     >>>
-    >>> # Create two similar firing rate distributions
+    >>> # A 60 x 60 cm open field with 2 cm bins
+    >>> env = Environment.from_polygon(box(-30, -30, 30, 30), bin_size=2.0, units="cm")
+    >>>
+    >>> # The same field, its center moved 4 cm
     >>> field1 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [0, 0], axis=1) ** 2)
-    >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [5, 0], axis=1) ** 2)
+    >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [4, 0], axis=1) ** 2)
     >>>
-    >>> # Compute EMD with Euclidean distance (skipped in the doctest run: the
-    >>> # transport plan over every pair of bins can take minutes on a full
-    >>> # environment -- see "Computation")
-    >>> emd_euclidean = compute_field_emd(  # doctest: +SKIP
-    ...     env, field1, field2, metric="euclidean"
-    ... )
-    >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
+    >>> # The EMD is the distance the field moved, by either metric here
+    >>> emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+    >>> print(f"Euclidean EMD: {emd_euclidean:.1f} cm")
+    Euclidean EMD: 4.0 cm
     """
-    from scipy import sparse
-    from scipy.optimize import linprog
+    import ot
     from scipy.spatial.distance import pdist, squareform
 
     # Validate inputs
@@ -1383,40 +1381,28 @@ def compute_field_emd(
     if metric == "geodesic":
         return _graph_transport_cost(env, active_bins, p - q)
 
-    # Euclidean: a transport plan over every pair of bins with mass.
-    # Variables: T[i,j] = mass moved from bin i (first map) to bin j (second)
-    # Objective: minimize sum(T[i,j] * dist[i,j])
-    # Constraints: sum_j T[i,j] = p[i], sum_i T[i,j] = q[j], T >= 0.
+    # Euclidean: the exact transport plan over every pair of bins with mass,
+    # solved by network simplex (POT). The two maps' totals agree to roundoff
+    # (or to the 1e-6 checked above); the solver needs them equal, so each is
+    # moved as a distribution and the cost scaled back by the total mass.
     dist_matrix = squareform(pdist(env.bin_centers[active_bins], metric="euclidean"))
-    n = len(p)
-    # Sparse construction using Kronecker products (2n^2 nonzeros of a
-    # (2n, n^2) matrix): row i of the first block sums T[i, :], column j of
-    # the second sums T[:, j].
-    ones_row = np.ones((1, n))
-    identity = sparse.eye(n)
-    a_eq = sparse.vstack(
-        [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
-        format="csr",
+    total = float(p.sum())
+    cost, log = ot.emd2(
+        p / total, q / q.sum(), dist_matrix, numItermax=_EMD_MAX_ITERATIONS, log=True
     )
-    b_eq = np.concatenate([p, q])
-    # The row sums and column sums both total the mass, so one constraint is
-    # implied by the others. Keeping it makes the problem infeasible whenever
-    # the two totals differ by roundoff, as normalized maps do; drop it.
-    result = linprog(
-        dist_matrix.ravel(),
-        A_eq=a_eq[:-1],
-        b_eq=b_eq[:-1],
-        bounds=(0, None),
-        method="highs",
-    )
-    if not result.success:
-        warnings.warn(
-            f"Optimal transport optimization failed: {result.message}. Returning NaN.",
-            category=UserWarning,
-            stacklevel=_external_stacklevel(),
+    if log["result_code"] != 1:  # 1: optimal
+        msg = (
+            f"compute_field_emd(metric='euclidean'): the transport solver stopped "
+            f"before the optimum ({log['warning']}).\n"
+            "Fix: use metric='geodesic', or coarser bins."
         )
-        return np.nan
-    return float(result.fun)
+        raise RuntimeError(msg)
+    return float(cost) * total
+
+
+# Network-simplex iterations before POT gives up; its default (100,000) stops
+# short of the optimum on maps of a few thousand bins.
+_EMD_MAX_ITERATIONS = 100_000_000
 
 
 def _graph_transport_cost(
