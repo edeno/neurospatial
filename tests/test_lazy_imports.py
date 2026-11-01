@@ -38,6 +38,8 @@ _EXPECTED_SUBMODULES = (
 # Each headline export must load and cache its canonical owner on demand.
 _EXPECTED_LAZY_ATTRS = {
     "Environment": ("neurospatial.environment", "Environment"),
+    "Interval": ("neurospatial._interval_table", "Interval"),
+    "Intervals": ("neurospatial._interval_table", "Intervals"),
     "Region": ("neurospatial.regions", "Region"),
     "Regions": ("neurospatial.regions", "Regions"),
     "compute_spatial_rate": ("neurospatial.encoding.spatial", "compute_spatial_rate"),

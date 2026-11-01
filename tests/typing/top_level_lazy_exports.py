@@ -18,6 +18,8 @@ if TYPE_CHECKING:
         decode_position,
         peri_event_histogram,
     )
+    from neurospatial._interval_table import Interval as ConcreteInterval
+    from neurospatial._interval_table import Intervals as ConcreteIntervals
     from neurospatial.decoding._result import DecodingResult as ConcreteDecodingResult
     from neurospatial.encoding.spatial import (
         SpatialRateResult as ConcreteSpatialRateResult,
@@ -31,6 +33,11 @@ if TYPE_CHECKING:
     assert_type(neurospatial.SpatialRatesResult, type[ConcreteSpatialRatesResult])
     assert_type(neurospatial.DecodingResult, type[ConcreteDecodingResult])
     assert_type(neurospatial.PeriEventResult, type[ConcretePeriEventResult])
+    assert_type(
+        neurospatial.Intervals.from_arrays([0.0], [1.0]),
+        ConcreteIntervals[ConcreteInterval],
+    )
+    assert_type(neurospatial.Interval, type[ConcreteInterval])
 
     times = np.arange(10, dtype=np.float64)
     positions = np.zeros((10, 2), dtype=np.float64)
