@@ -77,7 +77,7 @@ from numpy.typing import ArrayLike, NDArray
 if TYPE_CHECKING:
     import pandas as pd
 
-    from neurospatial._interval_table import Intervals
+    from neurospatial._interval_table import Interval, Intervals
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
@@ -1236,7 +1236,7 @@ def compute_vte_session(
     positions: NDArray[np.float64],
     *,
     decision_region: str,
-    trials: Intervals[Trial],
+    trials: Intervals[Any],
     window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
@@ -1545,7 +1545,7 @@ def _unscored_trial(
 
 def _measure_trial(
     index: int,
-    trial: Trial,
+    trial: Interval | Trial,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     support: ObservationSupport,

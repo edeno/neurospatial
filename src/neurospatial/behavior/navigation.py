@@ -136,7 +136,6 @@ if TYPE_CHECKING:
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
     from neurospatial.behavior._environment_paths import EnvironmentPaths
-    from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
     from neurospatial.ops._types import DistanceMetric
@@ -2365,7 +2364,7 @@ def _require_trial_outcomes(trials: Intervals[Any]) -> None:
 @reads_pynapple_samples
 def time_to_goal(
     times: NDArray[np.float64],
-    trials: Intervals[Trial],
+    trials: Intervals[Any],
 ) -> NDArray[np.float64]:
     """Compute time remaining until goal arrival for each trial.
 
