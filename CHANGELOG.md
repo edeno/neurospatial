@@ -41,8 +41,8 @@
   well misses an animal that stops beside it. Give the well its size with
   `Regions.add(name, point=..., radius=...)`.
 - `laps_to_direction_labels` and `write_laps` take an `Intervals` only;
-  `write_laps` writes the `interval_ids` as the table's `id` and every field
-  as a column (its `start_times`/`stop_times`/`directions` arrays are
+  `write_laps` stores the `interval_ids` in an `interval_id` column and every
+  field as a column (its `start_times`/`stop_times`/`directions` arrays are
   removed). `to_pynapple` takes an `Intervals` for interval records and
   refuses a list of them; lists of region crossings are unchanged.
 
@@ -82,7 +82,8 @@
   `interval_id` of each event's interval and copies fields with
   `preserve_fields=`.
 - `read_intervals(nwbfile, interval_name=...)` returns an `Intervals` for
-  any NWB TimeIntervals table: the table `id` gives the `interval_ids`, the
+  any NWB TimeIntervals table: an `interval_id` column (as `write_trials` and
+  `write_laps` store) or else the table `id` gives the `interval_ids`, the
   other columns become fields, `""` reads as `None` and NWB `tags` as a
   tuple. Select rows by field, for example
   `epochs[epochs.tags.map(lambda tags: "run" in tags)]`. `read_trials` is
@@ -255,8 +256,10 @@ trial in one call.
   `compute_vte_session` no longer includes the stop (arrival) sample, and a
   VTE trial without duration has status `"no_samples"` without a clock
   warning.
-- `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` become
-  the table `id` and every field a column, with `None` stored as `""`.
+- `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` are
+  stored in an `interval_id` column (the table `id` stays the row number, so
+  pynapple's `load_file` reads a selection of trials too) and every field a
+  column, with `None` stored as `""`.
   `read_trials` returns an `Intervals` with those ids and fields, reading
   `""` back as `None`, so a trial that reached no end region stays missing.
 - `to_pynapple(intervals)` exports an `Intervals` with `interval_id` and the

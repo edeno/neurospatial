@@ -978,8 +978,10 @@ rebuilds it from these arrays when it reads the record.
 ### Trials round trip
 
 `write_trials` writes an [`Intervals`](trajectory-and-behavioral-analysis.md#intervals)
-to the NWB trials table: each trial's `interval_id` becomes the table `id`,
-and every field becomes a column. `read_trials` reads the table back as an
+to the NWB trials table: each trial's `interval_id` is stored in an
+`interval_id` column (the table `id` is the row number, as NWB readers such
+as pynapple expect, so a selection of trials loads there too), and every
+field becomes a column. `read_trials` reads the table back as an
 `Intervals` with the same ids and fields, so trials detected in one session
 and trials loaded from a shared file go through the same analysis. NWB text
 columns cannot hold `None`, so a missing value, such as the end region of a
@@ -1039,7 +1041,7 @@ condition by field and pass it as `epochs=`, exactly as with trials from
 
 `write_trials`, `write_laps`, `write_region_crossings` and `write_events` store
 behavioral records as NWB tables. `write_trials` and `write_laps` take an
-`Intervals` and write its `interval_ids` as the table's `id`. A session with zero records writes no table:
+`Intervals` and store its `interval_ids` in an `interval_id` column. A session with zero records writes no table:
 NWB best practice is not to write empty tables (nwbinspector reports them, and
 some of its checks crash on them, so `dandi validate` exits with an error). The
 writer writes nothing, without a warning, and reading that table back raises

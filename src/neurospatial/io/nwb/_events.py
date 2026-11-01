@@ -241,8 +241,10 @@ def read_intervals(
 
     Reads predefined tables (trials, epochs, invalid_times) and custom
     interval tables. Each row becomes one :class:`~neurospatial.Interval`:
-    the table ``id`` is its ``interval_id`` and every other column a field,
-    in column order. Text ``""`` reads back as ``None`` (NWB text columns
+    its ``interval_id`` comes from the ``interval_id`` column that
+    :func:`write_trials` and :func:`write_laps` store, or else from the table
+    ``id`` (tables written by other software), and every other column is a
+    field, in column order. Text ``""`` reads back as ``None`` (NWB text columns
     cannot hold ``None``, so the writers store a missing value as ``""``); a
     list cell (for example NWB ``tags``) becomes a tuple.
 
@@ -324,9 +326,13 @@ def read_intervals(
 
     table = tables[interval_name].to_dataframe()
     # The table's ids are its index, named "id"; a column cannot share it.
+    # Tables written here carry the stable ids in an interval_id column.
+    stable = "interval_id" if "interval_id" in table.columns else "id"
     table, dropped = readable_fields(
-        table.reset_index(), keep=("id", "start_time", "stop_time")
+        table.reset_index(), keep=("id", "interval_id", "start_time", "stop_time")
     )
+    if stable == "interval_id":
+        table = table.drop(columns="id")
     if dropped:
         warnings.warn(
             f"read_intervals: columns {dropped} of '{interval_name}' cannot be "
@@ -336,7 +342,7 @@ def read_intervals(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return Intervals.from_dataframe(table, id_column="id")
+    return Intervals.from_dataframe(table, id_column=stable)
 
 
 def _records(
@@ -621,8 +627,8 @@ def _interval_columns(
         raise ValueError(
             _format_error(
                 f"{call}: the {what}s have a field 'id'.",
-                why="NWB tables reserve id for the row ids, which hold the "
-                "interval_ids, so the field would overwrite them.",
+                why="NWB tables reserve id for the row numbers, so the field "
+                "would overwrite them.",
                 fix="pass the ids as interval_ids (for a task log, "
                 "Intervals.from_dataframe(log, id_column='id')), or rename "
                 "the field.",
@@ -630,12 +636,21 @@ def _interval_columns(
         )
     start = _checked_event_times(intervals.start, "start_time")
     stop = _checked_event_times(intervals.stop, "stop_time")
+    # The stable ids travel in their own column; the table id stays the row
+    # number every NWB reader (pynapple included) expects.
     columns = {
-        name: (
-            descriptions.get(name, f"Field {name!r} of each {what}"),
-            _field_column(intervals._field_array(name), name),
-        )
-        for name in intervals.fields
+        "interval_id": (
+            f"Stable id of each {what} (neurospatial interval_ids); the table "
+            "id is the row number",
+            np.asarray(intervals.interval_ids, dtype=np.int64),
+        ),
+        **{
+            name: (
+                descriptions.get(name, f"Field {name!r} of each {what}"),
+                _field_column(intervals._field_array(name), name),
+            )
+            for name in intervals.fields
+        },
     }
     return start, stop, columns
 
@@ -709,8 +724,9 @@ def write_laps(
 
     Each lap is an interval with a start and stop time, so laps are stored
     as a ``TimeIntervals`` table under ``/intervals/<name>``, next to the
-    trials table. The laps' ``interval_ids`` are the table's ``id`` and each
-    field a column. Read them back with ``read_intervals(nwbfile,
+    trials table. The laps' ``interval_ids`` are stored in an ``interval_id``
+    column (the table ``id`` is the row number, as every NWB reader expects,
+    so pynapple loads a selection of laps too) and each field is a column. Read them back with ``read_intervals(nwbfile,
     interval_name="laps")``; pynapple loads the table as an ``IntervalSet``.
     Zero laps write nothing, without a warning: NWB files should not hold empty tables
     (nwbinspector ``check_empty_table``). Reading the table back then raises
@@ -803,9 +819,7 @@ def write_laps(
     if "overlap_score" in columns and np.all(np.isnan(columns["overlap_score"][1])):
         del columns["overlap_score"]
 
-    table = _build_time_intervals(
-        name, description, start, stop, columns, ids=laps.interval_ids
-    )
+    table = _build_time_intervals(name, description, start, stop, columns)
 
     _clear_for_write(
         nwbfile,
@@ -953,8 +967,9 @@ def write_trials(
     Write trials to the NWB trials table.
 
     Each row of ``trials`` becomes one row of the built-in NWB trials table:
-    its ``interval_id`` is the table ``id``, and every field is a column, in
-    field order. A missing text value (``None``) is stored as ``""``, which
+    its ``interval_id`` is stored in an ``interval_id`` column (the table
+    ``id`` is the row number, as every NWB reader expects, so pynapple loads
+    a selection of trials too), and every field is a column, in field order. A missing text value (``None``) is stored as ``""``, which
     NWB text columns need, and :func:`read_trials` reads it back as ``None``.
     Zero trials write nothing, without a warning: NWB files should not hold
     empty tables (nwbinspector ``check_empty_table``). Reading the table back
@@ -1033,9 +1048,7 @@ def write_trials(
         trials, _TRIAL_FIELD_DESCRIPTIONS, call="write_trials", what="trial"
     )
 
-    table = _build_time_intervals(
-        PREDEFINED_TRIALS, description, start, stop, columns, ids=trials.interval_ids
-    )
+    table = _build_time_intervals(PREDEFINED_TRIALS, description, start, stop, columns)
     removed = nwbfile.trials is not None
     if removed:
         if not overwrite:
