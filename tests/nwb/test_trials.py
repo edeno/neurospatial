@@ -34,7 +34,7 @@ def detected() -> Intervals[Trial]:
             Trial(25.0, 40.0, "start_zone", None, "censored"),
             Trial(1.5, 6.2, "start_zone", "reward_right", "reached"),
             Trial(10.0, 18.5, "start_zone", "reward_left", "reached"),
-            Trial(19.0, 24.0, "start_zone", None, "timeout"),
+            Trial(19.0, 24.0, "start_zone", None, "returned"),
         ],
         interval_ids=[8, 2, 5, 6],
     )
@@ -282,11 +282,11 @@ class TestReadTrials:
         assert back.rewarded.tolist() == [False, True, True]
 
     def test_detected_and_reloaded_schema_match(self, tmp_path):
-        """Trials from segment_trials and from NWB support the same calls."""
+        """Trials from detect_trials and from NWB support the same calls."""
         from shapely.geometry import box
 
         from neurospatial import Environment, Regions
-        from neurospatial.behavior import segment_trials
+        from neurospatial.behavior import detect_trials
         from neurospatial.io.nwb import write_trials
 
         x = np.r_[
@@ -299,10 +299,8 @@ class TestReadTrials:
         regions.add("home", polygon=box(-1, -5, 10, 5))
         regions.add("goal", polygon=box(90, -5, 101, 5))
         env = env.with_regions(regions)
-        detected = segment_trials(
-            env.bin_at(positions), times, env, start_region="home", end_regions="goal"
-        )
-        assert len(detected) == 1
+        detected = detect_trials(env, times, positions, regions=["home", "goal"])
+        assert detected.outcome.tolist() == ["reached", "reached"]
 
         nwbfile = create_roundtrip_nwb()
         write_trials(nwbfile, detected)
@@ -334,7 +332,7 @@ def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
     """pandas 3 reads NWB text as string dtype; "" must still become None."""
     from neurospatial.io.nwb import read_trials, write_trials
 
-    trials = Intervals([Trial(0.0, 5.0, "home", None, "timeout")])
+    trials = Intervals([Trial(0.0, 5.0, "home", None, "returned")])
     write_trials(empty_nwb, trials)
     # The string dtype is the default from pandas 3 and opt-in before it.
     string_dtype = (
@@ -370,7 +368,7 @@ def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
     detected = Intervals(
         [
             Trial(0.0, 10.0, "start", "well_left", "reached"),
-            Trial(10.0, 20.0, "start", None, "timeout"),
+            Trial(10.0, 20.0, "start", None, "returned"),
             Trial(20.0, 30.0, "start", "well_right", "reached"),
         ]
     )

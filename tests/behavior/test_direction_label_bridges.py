@@ -1,8 +1,8 @@
-"""Tests for the lap/run -> direction-label bridge helpers.
+"""Tests for the lap and trial -> direction-label bridges.
 
-Covers ``laps_to_direction_labels``, ``runs_to_direction_labels``, and
-``running_direction_labels`` and confirms their output is drop-in for
-``compute_directional_place_fields``.
+Covers ``laps_to_direction_labels`` and the inbound/outbound labels of
+trials (``sample_values`` of their start and end regions) and confirms their
+output is drop-in for ``compute_directional_place_fields``.
 """
 
 from __future__ import annotations
@@ -10,12 +10,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from neurospatial.behavior import detect_trials
 from neurospatial.behavior.segmentation import (
     Lap,
-    Run,
     laps_to_direction_labels,
-    running_direction_labels,
-    runs_to_direction_labels,
 )
 from neurospatial.encoding.spatial import compute_directional_place_fields
 
@@ -79,70 +77,26 @@ def test_laps_unknown_direction_are_none():
         laps_to_direction_labels(laps, times, unknown_label="x")  # type: ignore[call-arg]
 
 
-def test_runs_to_direction_labels_scalar_and_sequence():
-    """Scalar label fills all runs; sequence labels per run; None elsewhere."""
-    times = np.linspace(0.0, 10.0, 11)
-    bins = np.array([0, 1], dtype=np.int64)
-    runs = [
-        Run(0.0, 3.0, "home", "reward", "reached", bins),
-        Run(7.0, 10.0, "reward", "home", "timeout", bins),
-    ]
-
-    scalar = runs_to_direction_labels(runs, times)
-    assert scalar[0] == "run"
-    assert scalar[9] == "run"
-    assert scalar[-1] is None  # a run's last sample leaves the run
-    assert scalar[5] is None
-
-    per_run = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
-    assert per_run[0] == "outbound"
-    assert per_run[9] == "inbound"
-    assert per_run[5] is None
-
-    # success_only drops the failed run.
-    filtered = runs_to_direction_labels(runs, times, success_only=True)
-    assert filtered[0] == "run"
-    assert filtered[9] is None
-
-
-def test_runs_to_direction_labels_ndarray_labels():
-    """ndarray labels are treated per-run (not silently broadcast as a scalar)."""
-    times = np.linspace(0.0, 10.0, 11)
-    bins = np.array([0, 1], dtype=np.int64)
-    runs = [
-        Run(0.0, 3.0, "home", "reward", "reached", bins),
-        Run(7.0, 10.0, "reward", "home", "reached", bins),
-    ]
-
-    # Correct-length ndarray must match the list-input result element-by-element.
-    list_labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
-    array_labels = runs_to_direction_labels(
-        runs, times, labels=np.array(["outbound", "inbound"], dtype=object)
+def _trial_direction_labels(fx):
+    """Outbound (home to reward) and inbound labels of the reached trials."""
+    trials = detect_trials(
+        fx["env"],
+        fx["times"],
+        fx["positions"],
+        regions=[fx["start_region"], fx["end_region"]],
     )
-    assert np.array_equal(array_labels, list_labels)
-    assert array_labels[0] == "outbound"
-    assert array_labels[9] == "inbound"
-    assert array_labels[5] is None
-
-    # Wrong-length ndarray must raise the length-mismatch ValueError, not
-    # silently broadcast the whole array into every run's label.
-    with pytest.raises(ValueError, match="one entry per run"):
-        runs_to_direction_labels(
-            runs, times, labels=np.array(["outbound", "inbound", "extra"], dtype=object)
-        )
+    reached = trials[trials.outcome == "reached"]
+    direction = np.where(
+        reached.start_region == fx["start_region"], "outbound", "inbound"
+    )
+    return reached.sample_values(fx["times"], direction.astype(object))
 
 
-def test_running_direction_labels_inbound_outbound(out_and_back_track):
-    """Out-and-back trajectory yields contiguous outbound then inbound runs."""
+def test_trial_direction_labels_inbound_outbound(out_and_back_track):
+    """Out-and-back trajectory yields contiguous outbound then inbound trials."""
     fx = out_and_back_track
 
-    labels = running_direction_labels(
-        fx["position_bins"],
-        fx["times"],
-        fx["env"],
-        start_region=fx["start_region"],
-        end_regions=fx["end_region"],
-    )
+    labels = _trial_direction_labels(fx)
 
     assert labels.shape == (len(fx["times"]),)
     assert labels.dtype == object
@@ -169,13 +123,7 @@ def test_labels_feed_directional_place_fields(out_and_back_track):
     env = fx["env"]
     times = fx["times"]
 
-    labels = running_direction_labels(
-        fx["position_bins"],
-        times,
-        env,
-        start_region=fx["start_region"],
-        end_regions=fx["end_region"],
-    )
+    labels = _trial_direction_labels(fx)
 
     rng = np.random.default_rng(0)
     spike_times = np.sort(rng.uniform(times[0], times[-1], 30))

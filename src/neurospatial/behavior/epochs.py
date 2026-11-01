@@ -828,7 +828,6 @@ def labels_to_epochs(
     See Also
     --------
     neurospatial.behavior.laps_to_direction_labels : Per-sample labels from laps.
-    neurospatial.behavior.running_direction_labels : Per-sample running direction.
 
     Notes
     -----

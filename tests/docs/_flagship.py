@@ -73,9 +73,9 @@ FLAGSHIP = (
         f"neurospatial.behavior.{name}"
         for name in (
             "detect_laps",
-            "segment_trials",
+            "detect_trials",
+            "trials_between_visits",
             "detect_region_crossings",
-            "detect_runs_between_regions",
         )
     ),
 )

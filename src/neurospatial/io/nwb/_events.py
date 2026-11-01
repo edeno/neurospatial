@@ -442,7 +442,7 @@ _CROSSING_COLUMNS = (
 _TRIAL_FIELD_DESCRIPTIONS = {
     "start_region": "Region where trial started",
     "end_region": "Region reached (empty string if none was reached)",
-    "outcome": "How the trial ended: reached (end region entered), timeout, "
+    "outcome": "How the trial ended: reached (another region entered), "
     "returned (back to the start region) or censored (cut off by the recording)",
 }
 
@@ -930,8 +930,8 @@ def write_trials(
     nwbfile : NWBFile
         The NWB file to write to.
     trials : Intervals
-        Trials from :func:`~neurospatial.behavior.segmentation.segment_trials`,
-        or any :class:`~neurospatial.Intervals`, such as a task log read with
+        Trials from :func:`~neurospatial.behavior.detect_trials`, or any
+        :class:`~neurospatial.Intervals`, such as a task log read with
         ``Intervals.from_dataframe``. Fields must hold numbers, Booleans, or
         text with ``None`` for missing values.
     description : str, default "Behavioral trials"
@@ -979,8 +979,8 @@ def write_trials(
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> from neurospatial.behavior.segmentation import segment_trials  # doctest: +SKIP
-    >>> trials = segment_trials(bins, times, env, ...)  # doctest: +SKIP
+    >>> from neurospatial.behavior import detect_trials  # doctest: +SKIP
+    >>> trials = detect_trials(env, times, positions, regions=[...])  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_trials(nwbfile, trials)
@@ -990,7 +990,7 @@ def write_trials(
     --------
     read_trials : Read trials from NWB file.
     read_intervals : Read generic TimeIntervals.
-    segment_trials : Segment trajectory into trials.
+    detect_trials : Trials between visits to named regions.
     """
     from neurospatial._interval_table import require_intervals
 
@@ -1088,7 +1088,7 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     Intervals of Interval
         The trials, sorted by time, with the fields of the table, for
         example ``start_region``, ``end_region`` and ``outcome`` for trials
-        written from :func:`~neurospatial.behavior.segmentation.segment_trials`.
+        written from :func:`~neurospatial.behavior.detect_trials`.
         Select conditions by field (``trials[trials.outcome == "reached"]``)
         and pass them as ``epochs=``.
 

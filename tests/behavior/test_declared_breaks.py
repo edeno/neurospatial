@@ -23,13 +23,11 @@ from neurospatial.behavior import (
     detect_laps,
     detect_region_crossings,
     detect_region_visits,
-    detect_runs_between_regions,
+    detect_trials,
     goal_bias,
     heading_direction_labels,
     instantaneous_goal_alignment,
-    running_direction_labels,
     segment_by_velocity,
-    segment_trials,
 )
 
 # Equal one-unit bins: the home range ranks them by occupancy alone.
@@ -118,35 +116,17 @@ PAUSE_CASES: dict[str, Case] = {
     "detect_region_crossings": lambda r, t, kw: detect_region_crossings(
         r.position_bins, t, r.env, region_name="target", **kw
     ),
-    "detect_runs_between_regions": lambda r, t, kw: detect_runs_between_regions(
-        r.position_bins, t, r.env, source="source", target="target", **kw
-    ),
     "segment_by_velocity": lambda r, t, kw: segment_by_velocity(
         t, r.positions, min_speed=5.0, min_duration=0.1, **kw
     ),
-    "running_direction_labels": lambda r, t, kw: running_direction_labels(
-        r.position_bins,
-        t,
-        r.env,
-        start_region="source",
-        end_regions="target",
-        min_duration=0.1,
-        **kw,
-    ),
-    "segment_trials": lambda r, t, kw: segment_trials(
-        r.position_bins,
-        t,
-        r.env,
-        start_region="source",
-        end_regions=["target"],
-        min_duration=0.1,
-        **kw,
+    "detect_trials": lambda r, t, kw: detect_trials(
+        r.env, t, r.positions, regions=["source", "target"], **kw
     ),
     "detect_goal_directed_runs": lambda r, t, kw: detect_goal_directed_runs(
         r.position_bins, t, r.env, goal_region="target", min_progress=1.0, **kw
     ),
     "detect_region_visits": lambda r, t, kw: detect_region_visits(
-        r.position_bins, t, r.env, region_names=["source", "target"], **kw
+        r.env, t, r.positions, regions=["source", "target"], **kw
     ),
     "heading_direction_labels": lambda r, t, kw: heading_direction_labels(
         t, r.positions, min_speed=5.0, **kw
@@ -205,7 +185,7 @@ def test_declared_break_equals_long_gap(joined, case, name):
     reference = case(r, r.shifted_times, {})
     undeclared = case(r, r.times, {})
 
-    if isinstance(declared, list):
+    if isinstance(declared, (list, Intervals)):
         declared = _shift_reported_times(declared, after=r.times[BREAK])
     # Wall-clock time to the goal includes the pause in the reference.
     time_to_reach = getattr(declared, "time_to_reach_goal", None)
@@ -248,30 +228,28 @@ def test_invalid_break_before_names_function(joined, case, name, bad):
         case(r, r.times, {"break_before": bad(r.times.size)})
 
 
-def test_trial_spanning_break_ends_failed_at_recording_end(pause):
+def test_trial_spanning_break_is_censored_at_recording_end(pause):
     r = pause
-    kwargs = {"start_region": "source", "end_regions": ["target"], "min_duration": 0.1}
-    (joined,) = segment_trials(r.position_bins, r.times, r.env, **kwargs)
-    assert joined.success
-    (split,) = segment_trials(
-        r.position_bins, r.times, r.env, break_before=r.break_before, **kwargs
+    regions = ["source", "target"]
+    (joined,) = detect_trials(r.env, r.times, r.positions, regions=regions)
+    assert joined.outcome == "reached"
+    (split,) = detect_trials(
+        r.env, r.times, r.positions, regions=regions, break_before=r.break_before
     )
-    assert not split.success
+    assert split.outcome == "censored"
     assert split.end_region is None
     assert split.stop_time == r.times[BREAK - 1]
 
 
 def test_visit_after_break_is_left_censored(pause):
     r = pause
-    visits = detect_region_visits(
-        r.position_bins, r.times, r.env, region_names=["target"]
-    )
-    assert [v.entry_observed for v in visits] == [True]
+    visits = detect_region_visits(r.env, r.times, r.positions, regions=["target"])
+    assert visits.entry_observed.tolist() == [True]
     (censored,) = detect_region_visits(
-        r.position_bins,
-        r.times,
         r.env,
-        region_names=["target"],
+        r.times,
+        r.positions,
+        regions=["target"],
         break_before=r.break_before,
     )
     assert censored.start_index == BREAK

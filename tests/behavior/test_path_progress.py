@@ -403,7 +403,7 @@ def t_track_trials():
     trials = Intervals(
         [
             Trial(0.0, 10.0, "start", "well_left", "reached"),
-            Trial(10.0, 20.0, "start", None, "timeout"),
+            Trial(10.0, 20.0, "start", None, "returned"),
             Trial(20.0, 30.0, "start", "well_right", "reached"),
         ]
     )

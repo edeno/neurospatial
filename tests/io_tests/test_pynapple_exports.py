@@ -16,9 +16,7 @@ import pytest
 from neurospatial.behavior import (
     Crossing,
     Lap,
-    RegionTransition,
     RegionVisit,
-    Run,
     Trial,
     in_epochs,
     labels_to_epochs,
@@ -190,17 +188,6 @@ def test_laps_become_an_interval_set_with_metadata():
     [
         (
             [
-                Run(0.5, 2.0, "home", "goal", "returned", np.array([1, 2])),
-                Run(2.0, 3.0, "home", "goal", "reached", np.array([3])),
-            ],
-            {
-                "source_region": ["home", "home"],
-                "target_region": ["goal", "goal"],
-                "outcome": ["returned", "reached"],
-            },
-        ),
-        (
-            [
                 RegionVisit(0, 0, "reward", 0, 5, 0.0, 1.0, True, True),
                 RegionVisit(1, 1, "reward", 9, 12, 2.0, 3.0, False, True),
             ],
@@ -214,20 +201,8 @@ def test_laps_become_an_interval_set_with_metadata():
                 "exit_observed": [True, True],
             },
         ),
-        (
-            [RegionTransition(0, 1, 0, "home", "reward", 0, 9, 0.5, 2.5)],
-            {
-                "source_visit_id": [0],
-                "target_visit_id": [1],
-                "run_id": [0],
-                "source_region": ["home"],
-                "target_region": ["reward"],
-                "start_index": [0],
-                "end_index": [9],
-            },
-        ),
     ],
-    ids=["runs", "visits", "transitions"],
+    ids=["visits"],
 )
 def test_records_keep_every_field_as_metadata(records, expected):
     import dataclasses
@@ -303,7 +278,7 @@ def test_intervals_export_ids_and_fields():
 
     trials = Intervals(
         [
-            Trial(2.0, 3.0, "home", None, "timeout"),
+            Trial(2.0, 3.0, "home", None, "returned"),
             Trial(0.0, 1.0, "home", "left", "reached"),
             Trial(4.0, 4.0, "home", None, "censored"),
         ],
@@ -318,7 +293,7 @@ def test_intervals_export_ids_and_fields():
     assert list(iset.metadata_columns) == ["interval_id", *trials.fields]
     assert list(iset.interval_id) == [3, 7]
     assert list(iset.end_region) == ["left", None]
-    assert list(iset.outcome) == ["reached", "timeout"]
+    assert list(iset.outcome) == ["reached", "returned"]
     _assert_same_membership(iset, timed.windows)
 
     # An empty selection keeps its columns.
@@ -352,7 +327,7 @@ def test_interval_record_refusals():
 
 @needs_pynapple
 @pytest.mark.pynapple
-def test_detected_visits_transitions_and_crossings_round_trip():
+def test_detected_visits_and_crossings_round_trip():
     """Detector output exports with membership matching the half-open windows."""
     import pynapple as nap
     from shapely.geometry import box
@@ -361,7 +336,6 @@ def test_detected_visits_transitions_and_crossings_round_trip():
     from neurospatial.behavior import (
         detect_region_crossings,
         detect_region_visits,
-        region_transitions,
     )
 
     env = Environment.from_grid_mask(
@@ -394,14 +368,6 @@ def test_detected_visits_transitions_and_crossings_round_trip():
             samples.restrict(iset[i]).t,
             times[visit.start_index : visit.stop_index],
         )
-
-    transitions = to_pynapple(region_transitions(visits))
-    assert list(
-        zip(transitions.source_region, transitions.target_region, strict=True)
-    ) == [
-        ("A", "B"),
-        ("B", "C"),
-    ]
 
     crossings = detect_region_crossings(bins, times, env, region_name="B", max_gap=None)
     group = to_pynapple(crossings, epochs=(times[0], np.nextafter(times[-1], 5)))

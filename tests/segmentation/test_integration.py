@@ -2,9 +2,9 @@
 
 Tests the full pipeline combining:
 - Trajectory metrics (turn angles, step lengths, home range, MSD)
-- Region-based segmentation (crossings, runs)
+- Region-based segmentation (crossings)
 - Lap detection (circular track analysis)
-- Trial segmentation (task-based epochs)
+- Trials between regions (task-based epochs)
 - Trajectory similarity (pattern comparison, goal-directed behavior)
 """
 
@@ -14,13 +14,13 @@ import numpy as np
 from shapely.geometry import Point
 
 from neurospatial import Environment, Regions
+from neurospatial.behavior import detect_trials
 from neurospatial.behavior.segmentation import (
     Lap,
     Trial,
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    segment_trials,
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
@@ -168,14 +168,8 @@ class TestFullTrajectoryAnalysisWorkflow:
         position_bins = env.bin_at(traj_positions)
 
         # Step 1: Segment into trials
-        trials = segment_trials(
-            position_bins,
-            times,
-            env,
-            start_region="start",
-            end_regions=["left", "right"],
-            min_duration=5.0,
-            max_duration=15.0,
+        trials = detect_trials(
+            env, times, traj_positions, regions=["start", "left", "right"]
         )
 
         # Should detect 3 trials

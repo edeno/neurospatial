@@ -63,13 +63,13 @@ def rng():
 
 @pytest.fixture
 def failed_trial() -> Trial:
-    """A trial that timed out (no end region reached)."""
+    """A trial that came back to its start (no end region reached)."""
     return Trial(
         start_time=50.0,
         stop_time=65.0,
         start_region="home",
         end_region=None,  # Failed trial - did not reach end
-        outcome="timeout",
+        outcome="returned",
     )
 
 

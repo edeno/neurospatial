@@ -15,11 +15,9 @@ from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    detect_runs_between_regions,
-    running_direction_labels,
-    segment_trials,
     trajectory_similarity,
 )
+from neurospatial.behavior.trials import detect_trials
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial.regions import Regions
 
@@ -203,23 +201,19 @@ def shuttle(strip):
     trip = np.linspace(1, 99, 41)
     xs = np.r_[trip, trip[::-1][1:], trip[1:], trip[::-1][1:]]
     times = np.arange(xs.size) * 0.1
-    bins = env.bin_at(np.c_[xs, np.ones_like(xs)])
+    positions = np.c_[xs, np.ones_like(xs)]
     entry = 81 + int(np.argmax(xs[81:] > 90))
-    return env, times, bins, np.array([60, 100, entry - 1])
+    return env, times, positions, np.array([60, 100, entry - 1])
 
+
+OUTSIDE = [500.0, 500.0]  # beyond the environment: bin -1
 
 SHUTTLE_CALLS = {
-    "detect_region_crossings": lambda env, b, t, **kw: detect_region_crossings(
-        b, t, env, region_name="goal", **kw
+    "detect_region_crossings": lambda env, p, t, **kw: detect_region_crossings(
+        env.bin_at(p), t, env, region_name="goal", **kw
     ),
-    "detect_runs_between_regions": lambda env, b, t, **kw: (
-        detect_runs_between_regions(b, t, env, source="goal", target="start", **kw)
-    ),
-    "running_direction_labels": lambda env, b, t, **kw: running_direction_labels(
-        b, t, env, start_region="start", end_regions="goal", **kw
-    ),
-    "segment_trials": lambda env, b, t, **kw: segment_trials(
-        b, t, env, start_region="start", end_regions="goal", **kw
+    "detect_trials": lambda env, p, t, **kw: detect_trials(
+        env, t, p, regions=["start", "goal"], **kw
     ),
 }
 
@@ -231,31 +225,27 @@ def test_an_outside_sample_ends_the_run_like_a_declared_break(shuttle, name):
     The result equals that of the recording with the outside row deleted and
     a break declared on the row after it, however short the gap would be.
     """
-    env, times, bins, rows = shuttle
-    outside = bins.copy()
-    outside[rows] = -1
+    env, times, positions, rows = shuttle
+    outside = positions.copy()
+    outside[rows] = OUTSIDE
     kept = np.delete(np.arange(times.size), rows)
     breaks = np.isin(kept, rows + 1)
     call = SHUTTLE_CALLS[name]
     with_outside = call(env, outside, times)
-    with_break = call(env, bins[kept], times[kept], break_before=breaks)
-    if name == "running_direction_labels":
-        np.testing.assert_array_equal(with_outside[kept], with_break)
-    else:
-        assert repr(with_outside) == repr(with_break)
+    with_break = call(env, positions[kept], times[kept], break_before=breaks)
+    assert list(with_outside) == list(with_break)
 
 
-def test_an_outside_sample_censors_the_run_it_interrupts(shuttle):
+def test_an_outside_sample_censors_the_trial_it_interrupts(shuttle):
     """The first return no longer reaches "start": it is censored at the outside sample."""
-    env, times, bins, rows = shuttle
+    env, times, positions, rows = shuttle
     k = rows[0]
-    outside = bins.copy()
-    outside[k] = -1
-    runs = detect_runs_between_regions(
-        outside, times, env, source="goal", target="start"
-    )
-    assert [run.outcome for run in runs] == ["censored", "reached"]
-    assert runs[0].end_time == pytest.approx(times[k - 1])
+    outside = positions.copy()
+    outside[k] = OUTSIDE
+    trials = detect_trials(env, times, outside, regions=["start", "goal"])
+    returns = trials[trials.start_region == "goal"]
+    assert returns.outcome.tolist() == ["censored", "reached"]
+    assert returns.stop[0] == pytest.approx(times[k - 1])
 
 
 def test_an_outside_sample_ends_a_lap():

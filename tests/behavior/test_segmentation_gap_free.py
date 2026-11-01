@@ -5,14 +5,10 @@ baseline capture using identical fixture builders, with exact segment/index
 structure and rtol=1e-12 for floating metrics. The ``compute_decision_analysis``
 entry was captured again when each goal region began to be represented by its
 centroid bin (the region bin nearest the centroid of its bins), which moves the
-goal-region boundary. The ``segment_trials`` entry was captured again when
-trials began at departure from the start region instead of entry, and the
-``segment_by_velocity``, ``compute_pre_decision_metrics`` and
-``compute_vte_trial`` entries when speed became the Gaussian-smoothed velocity
-of ``compute_speed``. ``running_direction_labels`` marks samples outside
-every run with ``None`` instead of ``"other"``; its golden is compared with
-that one substitution and is otherwise unchanged. The decision and VTE
-entries (``detect_boundary_crossings``, ``compute_pre_decision_metrics``,
+goal-region boundary. The ``segment_by_velocity``,
+``compute_pre_decision_metrics`` and ``compute_vte_trial`` entries were
+captured again when speed became the Gaussian-smoothed velocity of
+``compute_speed``. The decision and VTE entries (``detect_boundary_crossings``, ``compute_pre_decision_metrics``,
 ``compute_decision_analysis``, ``compute_vte_trial``, ``compute_vte_session``)
 were captured again when boundary crossings became arrays, the boundary
 distance became ``(d2 - d1) / 2``, the chosen goal became the first goal
@@ -28,11 +24,6 @@ was captured again when each approach to the goal became its own row.
 ``compute_decision_analysis`` was captured again when decision boundaries
 began to use the geodesic distance of the path module (the shortest path
 inside the environment between bin centers) instead of the bin graph.
-``detect_runs_between_regions``, ``segment_trials`` and
-``running_direction_labels`` were captured again when a bin center on a
-region's edge began to belong to the region only where a nudge north-east
-moves it inside: the column of centers at x = 10 lies on the source box's east
-edge, so it left the source and the run departs one sample (0.1 s) earlier.
 ``compute_pre_decision_metrics`` and ``compute_vte_trial`` were captured
 again when velocity smoothing began to weight samples by their time
 difference and to renormalize the window at the ends of a run: the window's
@@ -48,10 +39,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from shapely.geometry import box
-
-from neurospatial import Environment, Intervals, Regions
-from neurospatial.behavior import Trial, segment_trials
 
 from ._segmentation_snapshots import capture_segmentation_outputs, structural_snapshot
 
@@ -72,17 +59,6 @@ def gap_free_goldens():
         "goal_labels"
     ]
     labels["array"] = str(np.dtype(np.int_))
-    # Trial renamed end_time to stop_time; the values are unchanged.
-    for trial in goldens["segment_trials"]:
-        fields = trial["fields"]
-        trial["fields"] = {
-            ("stop_time" if key == "end_time" else key): value
-            for key, value in fields.items()
-        }
-    running = goldens["running_direction_labels"]
-    running["values"] = [
-        None if label == "other" else label for label in running["values"]
-    ]
     return goldens
 
 
@@ -130,14 +106,11 @@ def assert_snapshot_equal(actual, expected):
     "name",
     [
         "detect_region_crossings",
-        "detect_runs_between_regions",
         "segment_by_velocity",
         "detect_laps_region",
         "detect_laps_auto",
         "detect_laps_reference",
-        "segment_trials",
         "detect_goal_directed_runs",
-        "running_direction_labels",
         "detect_boundary_crossings",
         "extract_pre_decision_window",
         "compute_pre_decision_metrics",
@@ -155,33 +128,3 @@ def test_gap_free_outputs_unchanged(name, gap_free_outputs, gap_free_goldens):
     assert_snapshot_equal(
         structural_snapshot(gap_free_outputs[name]), gap_free_goldens[name]
     )
-
-
-def test_trials_default_no_timeout():
-    """A slow trial reaches its goal unless the task's timeout is passed."""
-    # About 45 s from home (x < 10) to goal (x > 90) on a 100 cm track, at 10 Hz.
-    x = np.r_[np.full(10, 5.0), np.linspace(5.0, 95.0, 501)]
-    times = np.arange(x.size) / 10.0
-    positions = np.column_stack([x, np.zeros_like(x)])
-    env = Environment.from_samples(positions, bin_size=5.0)
-    regions = Regions(env.regions.values())
-    regions.add("home", polygon=box(-1, -5, 10, 5))
-    regions.add("goal", polygon=box(90, -5, 101, 5))
-    env = env.with_regions(regions)
-    bins = env.bin_at(positions)
-    options = {"start_region": "home", "end_regions": "goal"}
-
-    trials = segment_trials(bins, times, env, **options)
-    assert isinstance(trials, Intervals)
-    assert trials.record_type is Trial
-    assert trials.outcome.tolist() == ["reached"]
-    assert trials.durations[0] > 40.0
-    assert trials.interval_ids.tolist() == [0]
-    settings = trials.analysis_settings
-    assert settings["max_duration"] is None
-    assert settings["end_regions"] == ["goal"]
-    assert settings["break_before"] is False
-
-    timed = segment_trials(bins, times, env, max_duration=15.0, **options)
-    assert timed.outcome.tolist() == ["timeout"]
-    assert timed.analysis_settings["max_duration"] == 15.0

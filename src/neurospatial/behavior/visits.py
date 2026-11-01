@@ -181,8 +181,14 @@ def _observed_visits(
         raise TypeError(msg)
     names = list(regions)
     if not names:
-        msg = f"{call}(): regions must contain at least one named region."
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                f"{call}(): regions is empty.",
+                why="visits are found by the regions the animal enters.",
+                fix="pass the names of regions in env.regions, for example "
+                "regions=['well_1', 'well_2'].",
+            )
+        )
     if any(not isinstance(name, str) for name in names):
         msg = f"{call}(): regions must contain strings from env.regions."
         raise TypeError(msg)

@@ -18,11 +18,9 @@ from neurospatial.behavior import (
     detect_laps,
     detect_region_crossings,
     detect_region_visits,
-    detect_runs_between_regions,
+    detect_trials,
     distance_to_boundary,
     region_reward_field,
-    running_direction_labels,
-    segment_trials,
 )
 
 
@@ -42,23 +40,14 @@ def arena():
 
 
 CALLS = {
-    "segment_trials start": lambda env, t, p, b, empty: segment_trials(
-        b, t, env, start_region=empty, end_regions=["right"]
-    ),
-    "segment_trials end": lambda env, t, p, b, empty: segment_trials(
-        b, t, env, start_region="left", end_regions=["right", empty]
+    "detect_trials": lambda env, t, p, b, empty: detect_trials(
+        env, t, p, regions=["right", empty]
     ),
     "detect_region_crossings": lambda env, t, p, b, empty: detect_region_crossings(
         b, t, env, region_name=empty
     ),
     "detect_region_visits": lambda env, t, p, b, empty: detect_region_visits(
-        b, t, env, region_names=["left", empty]
-    ),
-    "detect_runs_between_regions": lambda env, t, p, b, empty: (
-        detect_runs_between_regions(b, t, env, source="left", target=empty)
-    ),
-    "running_direction_labels": lambda env, t, p, b, empty: running_direction_labels(
-        b, t, env, start_region=empty, end_regions=["right"]
+        env, t, p, regions=["left", empty]
     ),
     "detect_laps": lambda env, t, p, b, empty: detect_laps(
         b, t, env, method="region", start_region=empty
@@ -79,7 +68,7 @@ CALLS = {
         t,
         p,
         decision_region=empty,
-        trials=segment_trials(b, t, env, start_region="left", end_regions=["right"]),
+        trials=detect_trials(env, t, p, regions=["left", "right"]),
     ),
     "region_reward_field": lambda env, t, p, b, empty: region_reward_field(
         env, region_name=empty
@@ -99,21 +88,15 @@ def test_region_covering_no_bins_raises(arena, call, empty):
 
 
 def test_point_region_error_names_the_point_and_a_polygon_fix(arena):
-    env, times, _, bins = arena
-    with pytest.raises(
-        ValueError, match=r"covers no bins, so segment_trials"
-    ) as caught:
-        segment_trials(
-            bins, times, env, start_region="outside_well", end_regions=["right"]
-        )
+    env, times, positions, _ = arena
+    with pytest.raises(ValueError, match=r"covers no bins, so detect_trials") as caught:
+        detect_trials(env, times, positions, regions=["outside_well", "right"])
     message = str(caught.value)
     assert "(45, 10)" in message
     assert "buffer" in message
 
 
 def test_region_with_bins_still_works(arena):
-    env, times, _, bins = arena
-    trials = segment_trials(
-        bins, times, env, start_region="left", end_regions=["right"], min_duration=0.5
-    )
-    assert [t.success for t in trials] == [True]
+    env, times, positions, _ = arena
+    trials = detect_trials(env, times, positions, regions=["left", "right"])
+    assert trials.outcome.tolist() == ["reached"]

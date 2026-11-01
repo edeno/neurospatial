@@ -173,7 +173,7 @@ def to_pynapple(
     - an :class:`~neurospatial.Intervals` (for example trials): an
       ``IntervalSet``, one interval per row, with ``interval_id`` and the
       fields as metadata columns.
-    - a list of ``Lap``, ``Run``, ``RegionVisit`` or ``RegionTransition``
+    - a list of ``Lap`` or ``RegionVisit``
       records: an ``IntervalSet``, one interval per record, with the record
       fields as metadata columns.
     - a ``LabelEpochsResult``: an ``IntervalSet`` with a ``label`` column.
@@ -552,9 +552,7 @@ def _records_to_pynapple(
         Crossing,
         LabelEpochsResult,
         Lap,
-        RegionTransition,
         RegionVisit,
-        Run,
         Trial,
     )
 
@@ -593,11 +591,11 @@ def _records_to_pynapple(
                 "to_pynapple got a list of Trial records.",
                 why="trials are an Intervals, which carries their interval_ids "
                 "and fields to the IntervalSet metadata.",
-                fix="pass the Intervals from segment_trials() or read_trials(), "
+                fix="pass the Intervals from detect_trials() or read_trials(), "
                 "or wrap the records with neurospatial.Intervals(trials).",
             )
         )
-    kinds = (Lap, Run, RegionVisit, RegionTransition, Crossing)
+    kinds = (Lap, RegionVisit, Crossing)
     if first not in kinds:
         return None
     mixed = sorted({type(r).__name__ for r in data} - {first.__name__})

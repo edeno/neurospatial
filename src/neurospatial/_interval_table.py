@@ -1144,7 +1144,7 @@ def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]
             f"{owner}: {name} must be an Intervals, got {type(value).__name__}.",
             why="consumers read fields (for example outcome) by name, so trials "
             "detected, loaded from a task log or read from NWB work the same way.",
-            fix=f"pass the Intervals from segment_trials() or read_trials(), or "
+            fix=f"pass the Intervals from detect_trials() or read_trials(), or "
             f"wrap records with neurospatial.Intervals({name}).",
         )
     )

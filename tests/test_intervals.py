@@ -19,7 +19,7 @@ def trials() -> Intervals[Trial]:
     records = [
         Trial(20.0, 29.0, "home", "left", "reached"),
         Trial(0.0, 8.0, "home", "right", "reached"),
-        Trial(10.0, 17.0, "home", None, "timeout"),
+        Trial(10.0, 17.0, "home", None, "returned"),
         Trial(30.0, 30.0, "home", None, "censored"),
     ]
     return Intervals(records, interval_ids=[7, 3, 5, 9])

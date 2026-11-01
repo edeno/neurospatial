@@ -18,7 +18,6 @@ from neurospatial.behavior.navigation import (
     SubgoalEfficiencyResult,
 )
 from neurospatial.behavior.resampling import ResampledPathResult
-from neurospatial.behavior.segmentation import Run
 from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
 from neurospatial.encoding import RateComparisonResult
@@ -132,17 +131,6 @@ CASES = [
             "msd": np.ones(2),
             "metric": "euclidean",
             "epochs": np.array([[0.0, 1.0]]),
-        },
-    ),
-    (
-        Run,
-        {
-            "start_time": 0.0,
-            "end_time": 1.0,
-            "source_region": "home",
-            "target_region": "goal",
-            "outcome": "reached",
-            "bins": np.array([0, 1]),
         },
     ),
     (

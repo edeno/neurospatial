@@ -11,10 +11,8 @@ from neurospatial.behavior import (
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    detect_runs_between_regions,
-    running_direction_labels,
+    detect_trials,
     segment_by_velocity,
-    segment_trials,
 )
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
@@ -67,39 +65,17 @@ def test_invalid_epochs_raise_without_observed_samples(pause_track):
         )
 
 
-def test_runs_do_not_span_pause(pause_track):
-    r = pause_track
-    runs = detect_runs_between_regions(
-        r.position_bins,
-        r.times,
-        r.env,
-        source="source",
-        target="target",
-        max_duration=2000,
-    )
-    assert len(runs) == 1
-    assert 98 <= runs[0].start_time < 99
-    assert runs[0].end_time <= 99.9
-    assert not runs[0].success
-
-
 def test_trials_do_not_span_pause(pause_track):
     r = pause_track
-    trials = segment_trials(
-        r.position_bins,
-        r.times,
-        r.env,
-        start_region="source",
-        end_regions=["target"],
-        max_duration=2000,
-    )
+    trials = detect_trials(r.env, r.times, r.positions, regions=["source", "target"])
     assert len(trials) == 1
-    # The trial starts when the animal leaves the source, before the pause.
+    # The trial starts when the animal leaves the source, before the pause,
+    # and is censored at the last observed time.
     in_source = r.env.region_mask("source")[r.position_bins]
-    departure = r.times[np.flatnonzero(in_source & (r.times < 100))[-1]]
-    assert trials[0].start_time == departure
-    assert trials[0].stop_time <= 99.9
-    assert not trials[0].success
+    departure = r.times[np.flatnonzero(in_source & (r.times < 100))[-1] + 1]
+    assert trials.start.tolist() == [departure]
+    assert trials.stop.tolist() == [r.times[999]]
+    assert trials.outcome.tolist() == ["censored"]
 
 
 def test_velocity_epochs_do_not_span_pause(pause_track):
@@ -185,51 +161,31 @@ def test_goal_directed_runs_do_not_span_pause(pause_track):
     assert runs[0, 1] == r.times[998]
 
 
-def test_running_labels_inherit_observed_runs(pause_track):
-    r = pause_track
-    labels = running_direction_labels(
-        r.position_bins,
-        r.times,
-        r.env,
-        start_region="source",
-        end_regions="target",
-        max_duration=2000,
-    )
-    assert labels.shape == r.times.shape
-    assert all(label is None for label in labels)
-
-
 @pytest.mark.parametrize("kind", ["trials", "velocity"])
 def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
     r = continuous_pause_track
     # epochs=(0, 100) is half-open: no trial event at the 100 s sample, but
-    # the interval ending there is inside the epoch, so a movement epoch can
-    # run up to 100 s.
+    # the interval ending there is inside the epoch, so a movement epoch, and
+    # a trial censored by the epoch, can run up to 100 s.
     selected = r.times < 100 if kind == "trials" else r.times <= 100
     if kind == "trials":
-        function = segment_trials
-        data = r.position_bins
+        function = detect_trials
         arguments = (r.env,)
-        options = {
-            "start_region": "source",
-            "end_regions": ["target"],
-            "max_duration": 2000,
-        }
+        options = {"regions": ["source", "target"]}
     else:
         function = segment_by_velocity
-        data = r.positions
         arguments = ()
         options = {"min_speed": 5, "min_duration": 0.1}
-    pair = (r.times, data) if kind == "velocity" else (data, r.times)
-    sliced_pair = tuple(array[selected] for array in pair)
-    actual = function(*pair, *arguments, epochs=(0, 100), **options)
-    expected = function(*sliced_pair, *arguments, **options)
+    actual = function(*arguments, r.times, r.positions, epochs=(0, 100), **options)
+    expected = function(*arguments, r.times[selected], r.positions[selected], **options)
     assert len(actual) == len(expected)
     if kind == "velocity":
         np.testing.assert_array_equal(actual, expected)
         return
-    for a, b in zip(actual, expected, strict=True):
-        assert a == b
+    # Sliced data end at 99.9 s; the epoch's observed time runs to 100 s.
+    assert actual.outcome.tolist() == expected.outcome.tolist() == ["censored"]
+    assert actual.start.tolist() == expected.start.tolist()
+    assert (expected.stop[0], actual.stop[0]) == (99.9, 100.0)
 
 
 def test_pre_decision_window_stays_in_run(pause_track):
@@ -409,7 +365,7 @@ def test_no_event_at_an_epoch_stop_sample():
 
     Leave the start well at 1 s and arrive at the goal at 5 s; with
     epochs=(0, 5) the arrival is not observed, so there is no goal entry,
-    the run and the trial are censored at 4 s, the last sample inside.
+    and the trial is censored at 5 s, where the observed time ends.
     """
     env = _corridor_with_wells()
     x = np.array([0.0, 0.0, 20.0, 50.0, 80.0, 98.0, 98.0])
@@ -418,14 +374,10 @@ def test_no_event_at_an_epoch_stop_sample():
     common = {"max_gap": None, "epochs": (0.0, 5.0)}
 
     assert detect_region_crossings(bins, times, env, region_name="goal", **common) == []
-    (run,) = detect_runs_between_regions(
-        bins, times, env, source="start", target="goal", **common
+    (trial,) = detect_trials(
+        env, times, np.c_[x, np.zeros_like(x)], regions=["start", "goal"], **common
     )
-    assert (run.start_time, run.end_time, run.outcome) == (2.0, 4.0, "censored")
-    (trial,) = segment_trials(
-        bins, times, env, start_region="start", end_regions=["goal"], **common
-    )
-    assert (trial.start_time, trial.stop_time, trial.outcome) == (1.0, 4.0, "censored")
+    assert (trial.start_time, trial.stop_time, trial.outcome) == (2.0, 5.0, "censored")
 
     # Without the epoch the same arrival is observed at 5 s.
     (entry,) = detect_region_crossings(

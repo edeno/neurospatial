@@ -14,10 +14,7 @@ def capture_segmentation_outputs(pause, laps):
         detect_goal_directed_runs,
         detect_laps,
         detect_region_crossings,
-        detect_runs_between_regions,
-        running_direction_labels,
         segment_by_velocity,
-        segment_trials,
     )
     from neurospatial.behavior.decisions import (
         compute_decision_analysis,
@@ -35,14 +32,6 @@ def capture_segmentation_outputs(pause, laps):
     return {
         "detect_region_crossings": detect_region_crossings(
             p.position_bins, p.times, p.env, region_name="target"
-        ),
-        "detect_runs_between_regions": detect_runs_between_regions(
-            p.position_bins,
-            p.times,
-            p.env,
-            source="source",
-            target="target",
-            max_duration=2000,
         ),
         "segment_by_velocity": segment_by_velocity(
             p.times, p.positions, min_speed=5.0, min_duration=0.1
@@ -67,27 +56,8 @@ def capture_segmentation_outputs(pause, laps):
             method="reference",
             reference_lap=reference,
         ),
-        # The snapshot holds the trial records; the Intervals adds ids.
-        "segment_trials": list(
-            segment_trials(
-                p.position_bins,
-                p.times,
-                p.env,
-                start_region="source",
-                end_regions=["target"],
-                max_duration=2000,
-            )
-        ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
             p.position_bins, p.times, p.env, goal_region="target"
-        ),
-        "running_direction_labels": running_direction_labels(
-            p.position_bins,
-            p.times,
-            p.env,
-            start_region="source",
-            end_regions="target",
-            max_duration=2000,
         ),
         "detect_boundary_crossings": detect_boundary_crossings(
             p.position_bins, labels, p.times

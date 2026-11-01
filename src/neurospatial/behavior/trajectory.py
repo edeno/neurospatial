@@ -314,8 +314,6 @@ def compute_speed(
     in one place: ``smooth_window=0`` for positions you already smoothed, or
     your own speed from another estimator or sensor. The functions that use
     the direction of movement likewise take ``headings=``.
-    ``detect_runs_between_regions`` is different: its ``min_speed`` drops
-    whole runs by their mean speed between bin centres.
 
     A missing sample is bridged like a deleted row when the valid samples
     around it are within ``max_gap``. Speed is never smoothed across a longer

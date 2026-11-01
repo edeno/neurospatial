@@ -12,14 +12,15 @@ trajectory : Speed, movement and body heading, step lengths, turn angles,
     MSD, home range, curvature
 epochs : Restrict times / arrays / spike trains to time intervals (epochs);
     convert per-sample labels to epochs
-segmentation : Laps, trials, region crossings, runs
+segmentation : Laps, region crossings, movement and goal-directed runs
 navigation : Path efficiency, goal-directed metrics, path progress,
     distance to regions, boundaries and rewards
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
 resampling : Distance resampling
-visits : Observed region visits and entry-to-entry transitions
+visits : Observed region visits
+trials : Trials between visits to named regions
 """
 
 from neurospatial.behavior.decisions import (
@@ -81,17 +82,12 @@ from neurospatial.behavior.reward import (
 from neurospatial.behavior.segmentation import (
     Crossing,
     Lap,
-    Run,
     Trial,
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    detect_runs_between_regions,
     laps_to_direction_labels,
-    running_direction_labels,
-    runs_to_direction_labels,
     segment_by_velocity,
-    segment_trials,
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
@@ -185,21 +181,17 @@ __all__ = [  # noqa: RUF022
     # segmentation module
     "Crossing",
     "Lap",
-    "Run",
     "Trial",
     "detect_goal_directed_runs",
     "detect_laps",
     "detect_region_crossings",
-    "detect_runs_between_regions",
     "laps_to_direction_labels",
-    "running_direction_labels",
-    "runs_to_direction_labels",
     "segment_by_velocity",
-    "segment_trials",
     "trajectory_similarity",
     # visits module
     "RegionVisit",
     "detect_region_visits",
+    # trials module
     "detect_trials",
     "trials_between_visits",
     # resampling module

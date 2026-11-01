@@ -244,7 +244,7 @@ def _require_region_mask(
     name : str
         Region name.
     operation : str
-        Calling function, named in the error, e.g. ``"segment_trials()"``.
+        Calling function, named in the error, e.g. ``"detect_trials()"``.
     argument : str
         Calling function's argument that holds ``name``.
     in_list : bool, default False

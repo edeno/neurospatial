@@ -93,7 +93,7 @@ behavior : Behavioral analysis
     navigation metrics, decision analysis (VTE), reward fields.
 
     >>> from neurospatial.behavior import segmentation, navigation, trajectory
-    >>> from neurospatial.behavior.segmentation import detect_laps, segment_trials
+    >>> from neurospatial.behavior import detect_laps, detect_trials
     >>> from neurospatial.behavior import compute_speed, heading_from_velocity
 
 events : Peri-event analysis

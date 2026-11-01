@@ -262,7 +262,7 @@ def test_invalid_coordinate_dimensions_name_the_call(bad_shape):
 def test_rewritten_sites_teach(site, recording, tmp_path):
     from neurospatial._results import resolve_unit_ids
     from neurospatial.animation.core import animate_fields
-    from neurospatial.behavior import detect_laps, segment_trials
+    from neurospatial.behavior import detect_laps, detect_trials
     from neurospatial.decoding import bin_spikes_in_time, decode_position
     from neurospatial.decoding.likelihood import log_poisson_likelihood
     from neurospatial.decoding.posterior import normalize_to_posterior
@@ -352,9 +352,7 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
         ),
         "lap_reference": lambda: detect_laps(bins, r.times, env, method="reference"),
         "lap_start": lambda: detect_laps(bins, r.times, env, method="region"),
-        "trials_empty": lambda: segment_trials(
-            bins, r.times, env, start_region="home", end_regions=[]
-        ),
+        "trials_empty": lambda: detect_trials(env, r.times, r.positions, regions=[]),
     }
     if site.startswith("files_"):
         path = tmp_path / "environment"
@@ -382,11 +380,8 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     "site",
     [
         "crossing",
-        "run_source",
-        "run_target",
         "lap",
-        "trial_start",
-        "trial_end",
+        "trials",
         "goal",
         "boundary",
         "distance",
@@ -398,9 +393,8 @@ def test_segmentation_unknown_region(site, recording):
         detect_goal_directed_runs,
         detect_laps,
         detect_region_crossings,
-        detect_runs_between_regions,
+        detect_trials,
         distance_to_boundary,
-        segment_trials,
     )
 
     r = recording
@@ -413,21 +407,10 @@ def test_segmentation_unknown_region(site, recording):
         "crossing": lambda: detect_region_crossings(
             bins, r.times, env, region_name="home"
         ),
-        "run_source": lambda: detect_runs_between_regions(
-            bins, r.times, env, source="home", target="known"
-        ),
-        "run_target": lambda: detect_runs_between_regions(
-            bins, r.times, env, source="known", target="home"
-        ),
         "lap": lambda: detect_laps(
             bins, r.times, r.env, method="region", start_region="home"
         ),
-        "trial_start": lambda: segment_trials(
-            bins, r.times, env, start_region="home", end_regions=["known"]
-        ),
-        "trial_end": lambda: segment_trials(
-            bins, r.times, env, start_region="known", end_regions=["home"]
-        ),
+        "trials": lambda: detect_trials(env, r.times, r.positions, regions=["home"]),
         "goal": lambda: detect_goal_directed_runs(
             bins, r.times, env, goal_region="home"
         ),

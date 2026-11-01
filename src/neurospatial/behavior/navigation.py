@@ -52,7 +52,8 @@ Or from the behavior module::
 Typical Workflows
 -----------------
 **Multi-trial analysis** (T-maze, Y-maze, spatial bandit):
-    1. Segment trajectory into trials with ``segment_trials()``
+    1. Find the trials between named regions with ``detect_trials()``,
+       or read them from a task log or NWB
     2. Compute per-sample metrics with the trials as ``intervals``:
        ``path_progress()``, ``distance_to_goal()``, ``time_to_goal()``
 
@@ -70,24 +71,26 @@ Example
 Complete analysis pipeline for a spatial navigation task::
 
     from neurospatial.behavior import (
-        segment_trials,
+        detect_trials,
         path_progress,
         compute_path_efficiency,
         compute_goal_directed_metrics,
     )
 
-    # 1. Segment trajectory into trials
-    trials = segment_trials(
-        position_bins,
-        times,
-        env,
-        start_region="home",
-        end_regions=["goal_left", "goal_right"],
+    # 1. Trials between the home box and the goal wells
+    trials = detect_trials(
+        env, times, positions, regions=["home", "goal_left", "goal_right"]
     )
+    reached = trials[trials.outcome == "reached"]
 
     # 2. Per-sample progress toward each trial's destination
     progress = path_progress(
-        env, times, positions, trials, start="home", goal=trials.end_region
+        env,
+        times,
+        positions,
+        reached,
+        start=reached.start_region,
+        goal=reached.end_region,
     )
 
     # 3. Compute efficiency
@@ -2303,10 +2306,10 @@ def time_to_goal(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session, strictly increasing (seconds).
     trials : Intervals
-        Trials from segment_trials(), read_trials() or a task log, with an
+        Trials from detect_trials(), read_trials() or a task log, with an
         ``outcome`` field. Only trials with ``outcome == "reached"`` are
-        included; timed-out, returned and censored trials, whose arrival was
-        never observed, are not. The arrival is each trial's ``stop``.
+        included; other trials (returned, censored or a task's own
+        outcomes), whose arrival was never observed, are not. The arrival is each trial's ``stop``.
 
     Returns
     -------
@@ -2337,14 +2340,14 @@ def time_to_goal(
     >>> from neurospatial import Intervals
     >>> from neurospatial.behavior import time_to_goal
     >>> trials = Intervals.from_arrays(
-    ...     [1.0, 5.0], [4.0, 8.0], outcome=["reached", "timeout"]
+    ...     [1.0, 5.0], [4.0, 8.0], outcome=["reached", "censored"]
     ... )
     >>> time_to_goal(np.arange(10.0), trials).tolist()
     [nan, 3.0, 2.0, 1.0, nan, nan, nan, nan, nan, nan]
 
     See Also
     --------
-    segment_trials : Segment trajectory into trials
+    detect_trials : Trials between visits to named regions
     path_progress : Normalized progress along path
     """
     from neurospatial._interval_table import require_intervals
@@ -2563,7 +2566,7 @@ def goal_pair_direction_labels(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the entire session (seconds).
     trials : Intervals
-        Trials from ``segment_trials()``, ``read_trials()`` or a task log,
+        Trials from ``detect_trials()``, ``read_trials()`` or a task log,
         with ``start_region`` and ``end_region`` fields. Each completed trial
         labels ``[start, stop)``; trials with ``end_region=None`` label
         nothing.
@@ -2600,11 +2603,10 @@ def goal_pair_direction_labels(
 
     See Also
     --------
-    segment_trials : Segment trajectory into behavioral trials
+    detect_trials : Trials between visits to named regions
     heading_direction_labels : Direction labels from the direction of movement
     headings_to_direction_labels : Direction labels from headings you computed
     laps_to_direction_labels : Direction labels from detected laps
-    runs_to_direction_labels : Direction labels from detected runs
     """
     from neurospatial._interval_table import require_intervals
 
