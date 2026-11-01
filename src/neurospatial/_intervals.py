@@ -247,6 +247,11 @@ def _format_rows(idx: NDArray[np.intp]) -> str:
     return shown + (f" (+{idx.size - 5} more)" if idx.size > 5 else "")
 
 
+_STARTS_STOPS_HINT = (
+    "; if its rows are starts and stops, pass np.column_stack([starts, stops])"
+)
+
+
 def _non_numeric_problem(raw: NDArray[Any], name: str) -> str | None:
     """The problem with window bounds that are not numbers, or None.
 
@@ -379,14 +384,25 @@ def _parse_intervals(
         if rows.shape == (2,):
             rows = rows.reshape(1, 2)
         if rows.ndim != 2 or rows.shape[1] != 2:
-            hint = (
-                "; if its rows are starts and stops, pass "
-                "np.column_stack([starts, stops])"
-                if rows.ndim == 2 and rows.shape[0] == 2
-                else ""
-            )
+            hint = _STARTS_STOPS_HINT if rows.ndim == 2 and rows.shape[0] == 2 else ""
             return None, [
                 f"{name} has shape {rows.shape}; expected (2,) or (n, 2){hint}"
+            ]
+        if (
+            rows.shape == (2, 2)
+            and not isinstance(value, (list, tuple))
+            and rows[0, 0] < rows[1, 0] < rows[0, 1] < rows[1, 1]
+        ):
+            # Overlapping rows whose columns are two ordered windows: most
+            # likely np.vstack([starts, stops]), which read as rows would
+            # silently merge into one window.
+            (a, b), (c, d) = rows.tolist()
+            return None, [
+                f"{name} is a (2, 2) array whose rows [{a:g}, {b:g}) and "
+                f"[{c:g}, {d:g}) overlap, while its columns are two ordered "
+                f"windows [{a:g}, {c:g}) and [{b:g}, {d:g}), so it is "
+                f"ambiguous{_STARTS_STOPS_HINT}; if they are two overlapping "
+                f"rows, pass the merged row [[{a:g}, {d:g}]]"
             ]
     if rows.shape[0] == 0:
         return None, [f"{name} has no rows, so it would exclude all data"]
@@ -458,7 +474,10 @@ IntervalSet-like
         selection. One interval record (``start_time`` and ``stop_time``,
         such as a :class:`~neurospatial.behavior.Trial`) is its own window,
         or an empty selection without duration. Bounds must be numbers in seconds:
-        timedeltas, datetimes, Booleans and text are refused. An object exposing 1-D
+        timedeltas, datetimes, Booleans and text are refused. An
+        ``np.ndarray`` of shape ``(2, 2)`` whose rows overlap while its
+        columns are two ordered windows (``np.vstack([starts, stops])``) is
+        refused as ambiguous. An object exposing 1-D
         ``.start`` and ``.end`` arrays
         (for example a pynapple ``IntervalSet``) is accepted by duck typing;
         pynapple is never imported. A pynapple interval includes its end, so

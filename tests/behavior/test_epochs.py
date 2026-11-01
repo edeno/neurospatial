@@ -159,7 +159,8 @@ def test_in_epochs_multiple_intervals_union() -> None:
 def test_in_epochs_overlapping_intervals_union() -> None:
     """Overlapping intervals behave as their union."""
     t = np.array([0.0, 3.0, 6.0, 9.0, 11.0])
-    intervals = np.array([[0.0, 6.0], [4.0, 10.0]])
+    # Three rows: a (2, 2) array of overlapping rows is refused as ambiguous.
+    intervals = np.array([[0.0, 6.0], [4.0, 10.0], [8.0, 9.5]])
     mask = in_epochs(t, intervals)
     np.testing.assert_array_equal(mask, [True, True, True, True, False])
 

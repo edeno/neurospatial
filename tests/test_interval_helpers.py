@@ -569,3 +569,28 @@ def test_timedelta_epochs_name_the_conversion() -> None:
     )
     with pytest.raises(ValueError, match=re.escape("np.timedelta64(1, 's')")):
         as_intervals(table, name="epochs")
+
+
+def test_starts_and_stops_stacked_as_two_rows_are_ambiguous() -> None:
+    from neurospatial._intervals import as_intervals
+
+    starts, stops = np.array([0.0, 10.0]), np.array([5.0, 15.0])
+    # Read as rows, [[0, 10], [5, 15]] would merge into one window [0, 15).
+    with pytest.raises(
+        ValueError, match=re.escape("pass np.column_stack([starts, stops])")
+    ):
+        as_intervals(np.vstack([starts, stops]), name="epochs")
+    np.testing.assert_array_equal(
+        as_intervals(np.column_stack([starts, stops]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    # Rows that do not overlap, or whose transpose is not two ordered
+    # windows, are read as rows.
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 30.0], [5.0, 10.0]]), name="epochs"),
+        [[0.0, 30.0]],
+    )
