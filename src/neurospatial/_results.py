@@ -31,9 +31,19 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._optional import require_optional
 
+# The normalized form of an empty selection, an interval container without
+# windows (see ``neurospatial._intervals.as_intervals``). Analyses pass
+# normalized windows on to helpers that normalize them again, so this one
+# object passes as zero rows, while any other array without rows is refused
+# as a probable bug. It is immutable, so owning it never copies it.
+EMPTY_SELECTION: NDArray[np.float64] = np.empty((0, 2), dtype=np.float64)
+EMPTY_SELECTION.setflags(write=False)
+
 
 def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     """Return a read-only copy that no caller-held view can alias."""
+    if array is EMPTY_SELECTION and dtype in (None, np.float64):
+        return EMPTY_SELECTION
     owned = np.array(array, dtype=dtype, copy=True)
     owned.flags.writeable = False
     return owned

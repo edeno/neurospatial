@@ -461,3 +461,48 @@ def test_restrict_warns_when_a_window_stop_closes_its_last_interval() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         restrict(times, positions, epochs=(0.0, 0.25))
+
+
+def test_epochs_accept_intervals_and_empty() -> None:
+    """An Intervals passes as epochs; one without windows is an empty selection."""
+    from neurospatial import Intervals
+
+    times = np.arange(0.0, 100.0, 0.1)
+    positions = np.column_stack(
+        [np.linspace(0.0, 50.0, times.size), np.zeros(times.size)]
+    )
+    env = Environment.from_samples(positions, bin_size=5.0)
+    trials = Intervals.from_arrays(
+        [10.0, 40.0, 70.0],
+        [25.0, 55.0, 70.0],
+        outcome=["reached", "timeout", "reached"],
+    )
+    trains = [np.array([12.0, 15.0, 45.0, 80.0]), np.array([20.0, 50.0])]
+
+    np.testing.assert_array_equal(
+        env.occupancy(times, positions, epochs=trials),
+        env.occupancy(times, positions, epochs=trials.windows),
+    )
+    rates = compute_spatial_rates(
+        env, trains, times, positions, epochs=trials, method="binned"
+    )
+    same = compute_spatial_rates(
+        env, trains, times, positions, epochs=trials.windows, method="binned"
+    )
+    np.testing.assert_array_equal(rates.firing_rates, same.firing_rates)
+
+    none = trials[trials.outcome == "missing"]
+    with pytest.warns(UserWarning, match="occupancy is zero in every bin"):
+        occupancy = env.occupancy(times, positions, epochs=none)
+    np.testing.assert_array_equal(occupancy, 0.0)
+    with pytest.warns(UserWarning, match="the rate map is empty"):
+        empty = compute_spatial_rates(
+            env, trains, times, positions, epochs=none, method="binned"
+        )
+    assert np.isnan(empty.firing_rates).all()
+    # A stored empty spike_window is normalized again without error.
+    with pytest.warns(UserWarning, match="the rate map is empty"):
+        windowless = compute_spatial_rates(
+            env, trains, times, positions, spike_window=none, method="binned"
+        )
+    assert windowless.spike_window.shape == (0, 2)

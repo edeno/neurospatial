@@ -231,6 +231,15 @@ def bin_spikes_in_time(
             raise ValueError(msg)
         windows = as_intervals(epochs, name="epochs")
         assert windows is not None
+        if windows.shape[0] == 0:
+            raise ValueError(
+                _format_error(
+                    "bin_spikes_in_time got epochs with no windows (an empty "
+                    "selection), so there is no time to bin.",
+                    fix="select at least one interval with duration, or skip "
+                    "this condition.",
+                )
+            )
     else:
         start_from_spikes = t_start is None
         if t_start is None:

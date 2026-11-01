@@ -155,6 +155,17 @@ class TestSpikeWords:
         assert words.words_table()["n_letters"].tolist() == [1, 1, 2]
         assert words.intervals[0, 1] == pytest.approx(1.03)
 
+    def test_intervals_as_epochs(self):
+        from neurospatial import Intervals
+
+        spikes = [np.array([1.0, 5.0]), np.array([1.05, 5.05])]
+        epochs = Intervals.from_arrays([0.0, 1.04], [1.03, 6.0])
+        words = spike_words(spikes, max_isi=0.0, word_gap=0.1, epochs=epochs)
+        same = spike_words(spikes, max_isi=0.0, word_gap=0.1, epochs=epochs.windows)
+        assert words.letter_units.tolist() == same.letter_units.tolist()
+        none = spike_words(spikes, max_isi=0.0, word_gap=0.1, epochs=epochs[[]])
+        assert none.letter_units.size == 0
+
     def test_max_isi_above_word_gap_is_refused(self):
         with pytest.raises(ValueError, match="max_isi <= word_gap"):
             spike_words([np.array([1.0])], max_isi=0.2, word_gap=0.1)
