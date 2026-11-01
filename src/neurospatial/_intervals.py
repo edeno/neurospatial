@@ -278,9 +278,15 @@ def _parse_intervals(
             return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
         if rows.shape[0] == 0:
             return EMPTY_SELECTION, []
-    elif hasattr(value, "start_time") and hasattr(value, "stop_time"):
+    elif (
+        hasattr(value, "start_time")
+        and hasattr(value, "stop_time")
+        and np.ndim(value.start_time) == 0
+        and np.ndim(value.stop_time) == 0
+    ):
         # One interval record (Interval, Trial, RegionVisit): its own window,
         # or an empty selection when it has no duration, as in ``windows``.
+        # Tables with start_time/stop_time columns are read as rows below.
         try:
             start, stop = float(value.start_time), float(value.stop_time)
         except (TypeError, ValueError) as exc:
@@ -288,7 +294,7 @@ def _parse_intervals(
                 f"{name}.start_time and {name}.stop_time could not be read as "
                 f"numbers ({exc})"
             ]
-        if not stop > start:
+        if np.isfinite(start) and start == stop:
             return EMPTY_SELECTION, []
         rows = np.array([[start, stop]])
     elif hasattr(value, "start") and hasattr(value, "end"):

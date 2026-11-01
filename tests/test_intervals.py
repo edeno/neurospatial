@@ -477,3 +477,18 @@ def test_one_interval_restricts_an_analysis_like_its_row():
     )
     # Without duration it holds no time: an empty selection, as for Intervals.
     assert as_intervals(trials.sel(interval_id=2), name="epochs").shape == (0, 2)
+
+
+def test_a_table_with_start_and_stop_columns_is_read_as_rows():
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame({"start_time": [0.0, 2.0], "stop_time": [1.0, 3.0]})
+    np.testing.assert_array_equal(as_intervals(table, name="epochs"), [[0, 1], [2, 3]])
+    np.testing.assert_array_equal(as_intervals(table.iloc[:1], name="epochs"), [[0, 1]])
+
+
+def test_a_record_with_a_missing_bound_is_refused():
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(ValueError, match="NaN or inf"):
+        as_intervals(pd.Series({"start_time": 0.0, "stop_time": np.nan}), name="epochs")
