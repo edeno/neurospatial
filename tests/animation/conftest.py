@@ -172,7 +172,7 @@ def linearized_env() -> Environment:
 
     edge_order = [(0, 1), (1, 2), (2, 3)]
     return Environment.from_graph(
-        graph, edge_order, edge_spacing=0.0, bin_size=2.0, name="LinearizedTrack"
+        graph, edge_order, bin_size=2.0, name="LinearizedTrack"
     )
 
 

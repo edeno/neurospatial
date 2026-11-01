@@ -28,7 +28,6 @@ def _track() -> Environment:
     return Environment.from_graph(
         graph,
         edge_order=[(0, 1), (1, 2)],
-        edge_spacing=0.0,
         bin_size=2.0,
         track_width=4.0,
     )

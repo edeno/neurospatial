@@ -560,19 +560,23 @@ def _field_centers(
             )
         )
     if env.binning.linearization is not None or env.n_dims == 1:
-        # Tracks: space centers evenly along the track, so every arm gets
-        # fields from one end to the other.
+        # Tracks: space centers evenly by distance along the track, so every
+        # arm gets fields from one end to the other. The distance adds up bin
+        # lengths in track order, so gaps between track segments in the
+        # linear coordinate take no cells.
         linear = (
             env.bin_centers[:, 0]
             if env.binning.linearization is None
             else env.to_linear(env.bin_centers)
         )
-        targets = np.linspace(linear.min(), linear.max(), n_cells)
-        chosen = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
+        order = np.argsort(linear, kind="stable")
+        lengths = env.bin_sizes[order]
+        along = np.cumsum(lengths) - lengths / 2
+        targets = np.linspace(along[0], along[-1], n_cells)
+        chosen = order[np.abs(along[None, :] - targets[:, None]).argmin(axis=1)]
         if len(np.unique(chosen)) < n_cells:
-            # Targets closer together than the bins around a gap between
-            # track segments: take evenly spaced bins in track order instead.
-            order = np.argsort(linear, kind="stable")
+            # Targets closer together than unequal bins: take evenly spaced
+            # bins in track order instead.
             chosen = order[
                 np.round(np.linspace(0, env.n_bins - 1, n_cells)).astype(int)
             ]

@@ -174,6 +174,13 @@ from neurospatial.geometry._region_bins import (
 from neurospatial.geometry._regular_lookup import (
     points_to_regular_grid_bin_ind as points_to_regular_grid_bin_ind,
 )
+from neurospatial.geometry._track import (
+    DEFAULT_TRACK_GAP as DEFAULT_TRACK_GAP,
+)
+from neurospatial.geometry._track import (
+    disjoint_boundaries as disjoint_boundaries,
+)
 from neurospatial.geometry._track import project_1d_to_2d as project_1d_to_2d
+from neurospatial.geometry._track import zero_gap_problem as zero_gap_problem
 from neurospatial.geometry._validation import validate_components as validate_components
 from neurospatial.geometry._wall_frame import wall_source_frame as wall_source_frame

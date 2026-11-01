@@ -116,7 +116,6 @@ class TestUnequalBins:
         env = Environment.from_graph(
             graph,
             edge_order=[(0, 1), (1, 2)],
-            edge_spacing=0.0,
             bin_size=7.0,
             units="cm",
         )

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from itertools import pairwise
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial.geometry import DEFAULT_TRACK_GAP, disjoint_boundaries
 
 
 def validate_edge_coverage(
@@ -67,10 +68,8 @@ def resolve_track_layout(
         order = list(edge_order)
     validate_edge_coverage(order, list(graph.edges), name="edge_order")
     if edge_spacing is None:
-        spacing = np.asarray(
-            [0.0 if left[1] == right[0] else 15.0 for left, right in pairwise(order)],
-            dtype=np.float64,
-        )
+        spacing = np.zeros(max(0, len(order) - 1), dtype=np.float64)
+        spacing[disjoint_boundaries(order)] = DEFAULT_TRACK_GAP
     else:
         validate_edge_spacing(edge_spacing, len(order))
         values = np.asarray(edge_spacing, dtype=np.float64)

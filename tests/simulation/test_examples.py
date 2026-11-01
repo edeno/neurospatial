@@ -362,10 +362,28 @@ class TestTmazeAlternationSession:
         )
         centers = np.array([truth["center"] for truth in session.ground_truth.values()])
         assert len(np.unique(centers, axis=0)) == 30
-        linear = np.sort(session.env.to_linear(centers))
-        track = session.env.to_linear(session.env.bin_centers)
+        # Distance along the track: the linear coordinate less the gaps between
+        # segments that do not meet (the left arm's end and the right arm's start).
+        linearization = session.env.binning.linearization
+        gaps = np.broadcast_to(
+            linearization.edge_spacing, (len(linearization.edge_order) - 1,)
+        )
+        lengths = [
+            linearization.graph.edges[edge]["distance"]
+            for edge in linearization.edge_order
+        ]
+        gap_starts = np.cumsum(lengths[:-1]) + np.concatenate(
+            [[0.0], np.cumsum(gaps)[:-1]]
+        )
+
+        def along(points):
+            linear = session.env.to_linear(points)
+            return linear - (gaps[None, :] * (linear[:, None] > gap_starts)).sum(axis=1)
+
+        positions = np.sort(along(centers))
+        track = along(session.env.bin_centers)
         spacing = (track.max() - track.min()) / 29
-        np.testing.assert_allclose(np.diff(linear), spacing, atol=2.0)  # 2 cm bins
+        np.testing.assert_allclose(np.diff(positions), spacing, atol=2.0)  # 2 cm bins
 
     def test_tmaze_alternation_session_correct_number_of_cells(self):
         """tmaze_alternation_session() should create correct number of place cells."""

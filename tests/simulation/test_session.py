@@ -927,7 +927,7 @@ class TestSimulateSession:
         graph.add_node(1, pos=(100.0, 0.0))
         graph.add_edge(0, 1, distance=100.0)
         track = Environment.from_graph(
-            graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=2.0
+            graph, [(0, 1)], bin_size=2.0, track_width=2.0
         ).with_metadata(units="cm")
         session = simulate_session(
             track,

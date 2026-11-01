@@ -405,7 +405,8 @@ graph.add_edge(0, 4, edge_id=3, distance=50.0)
 env = Environment.from_graph(
     graph=graph,
     edge_order=[(4, 0), (0, 1), (0, 2), (0, 3)],  # traversal order
-    edge_spacing=0.0,  # no gaps between edges
+    # East and south arms start at the center, not where the previous arm
+    # ended, so a 15 cm gap separates them in the linear coordinate.
     bin_size=2.0,  # cm
     track_width=10.0,  # measured corridor width, cm; positions farther out get bin -1
     name="PlusMaze"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import pairwise
 from typing import Any
 
 import networkx as nx
@@ -12,6 +13,48 @@ from numpy.typing import NDArray
 from neurospatial.geometry._locators import coordinate_roundoff
 
 Edge = tuple[Any, Any]
+
+#: Automatic gap, in the track's units, between an edge and a next edge that
+#: does not start where it ends. A fixed length, not a number of bins, so a
+#: place keeps its linear position at every bin size. 15 is the gap the track
+#: annotation tool has always inserted.
+DEFAULT_TRACK_GAP = 15.0
+
+
+def disjoint_boundaries(edge_order: Sequence[Edge]) -> list[int]:
+    """Indices ``k`` where ``edge_order[k]`` does not end where ``k + 1`` starts.
+
+    Each edge runs from its first node to its second. At these boundaries the
+    end of one edge and the start of the next are different places, so they
+    need a positive gap to get different linear positions.
+    """
+    return [
+        k for k, (left, right) in enumerate(pairwise(edge_order)) if left[1] != right[0]
+    ]
+
+
+def zero_gap_problem(
+    edge_order: Sequence[Edge], edge_spacing: float | Sequence[float]
+) -> str | None:
+    """Describe the first zero gap between edges that do not meet, or None.
+
+    With no gap there, the end of ``edge_order[k]`` and the start of
+    ``edge_order[k + 1]`` share one linear position, which then names two
+    places: ``linear_to_nd`` can return only one of them.
+    """
+    n_gaps = max(len(edge_order) - 1, 0)
+    gaps = np.broadcast_to(np.asarray(edge_spacing, dtype=float), (n_gaps,))
+    zero = [k for k in disjoint_boundaries(edge_order) if gaps[k] == 0]
+    if not zero:
+        return None
+    k = zero[0]
+    others = f" (and {len(zero) - 1} more)" if len(zero) > 1 else ""
+    return (
+        f"edge_order[{k}] {tuple(edge_order[k])!r} ends at {edge_order[k][1]!r} but "
+        f"edge_order[{k + 1}] {tuple(edge_order[k + 1])!r} starts at "
+        f"{edge_order[k + 1][0]!r}, and edge_spacing leaves no gap between them"
+        f"{others}, so one linear position would name two places"
+    )
 
 
 def _segment_starts(
