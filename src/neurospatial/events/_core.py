@@ -63,6 +63,30 @@ def _validate_event_indices(
         raise ValueError(msg)
 
 
+def empty_selection_names(
+    epochs: NDArray[np.float64] | None, spike_window: NDArray[np.float64] | None
+) -> list[str]:
+    """The resolved windows that are an empty selection (no rows)."""
+    return [
+        name
+        for name, windows in (("epochs", epochs), ("spike_window", spike_window))
+        if windows is not None and windows.shape[0] == 0
+    ]
+
+
+def warn_empty_selection(names: list[str], *, n_events: int, result: str) -> None:
+    """Warn that an empty selection leaves no event to average."""
+    warnings.warn(
+        f"{' and '.join(names)} {'select' if len(names) > 1 else 'selects'} no "
+        "time (an Intervals with no windows, "
+        f"such as a condition with no trials), so none of the {n_events} "
+        f"events is analyzed and {result} is NaN with n_events == 0. Fix: "
+        "select intervals with duration, or leave this condition out.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _is_real_number(value: Any) -> bool:
     """True for one real number; False for bools, arrays, strings and None."""
     return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
@@ -269,10 +293,11 @@ def _validated_psth_fields(
             msg = f"{context}: {name} must be an integer, got {value!r}."
             raise ValueError(msg)
         object.__setattr__(result, name, int(value))
-    if result.n_events < 1 or result.n_events_dropped < 0:
+    # n_events == 0 only for an empty selection, with all-NaN arrays.
+    if result.n_events < 0 or result.n_events_dropped < 0:
         msg = (
-            f"{context}: n_events must be at least 1 and n_events_dropped at "
-            f"least 0, got {result.n_events} and {result.n_events_dropped}."
+            f"{context}: n_events and n_events_dropped must be at least 0, got "
+            f"{result.n_events} and {result.n_events_dropped}."
         )
         raise ValueError(msg)
     for name, shape in arrays.items():
@@ -289,6 +314,12 @@ def _validated_psth_fields(
             msg = (
                 f"{context}: {name} has negative values; spike counts and their "
                 "standard errors are never negative."
+            )
+            raise ValueError(msg)
+        if result.n_events == 0 and not np.isnan(array).all():
+            msg = (
+                f"{context}: n_events is 0 (an empty selection), but {name} has "
+                "values; with no event analyzed every value is NaN."
             )
             raise ValueError(msg)
         object.__setattr__(result, name, array)
@@ -946,11 +977,14 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         _, latency = _peak_latencies(
             self.mean_firing_rate[np.newaxis], self.bin_centers
         )
+        # Units without a defined rate (no event analyzed) have no peak.
+        peaks, _ = _peak_latencies(self.firing_rates, self.bin_centers)
+        defined = peaks[~np.isnan(peaks)]
         return {
             "n_units": self.n_units,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
-            "mean_peak_rate": float(np.nanmean(np.nanmax(self.firing_rates, axis=1))),
+            "mean_peak_rate": float(defined.mean()) if defined.size else np.nan,
             "population_peak_latency": float(latency[0]),
         }
 

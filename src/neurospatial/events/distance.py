@@ -22,7 +22,12 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals, intersect_intervals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.events._core import _finite_times, _make_bin_edges
+from neurospatial.events._core import (
+    _finite_times,
+    _make_bin_edges,
+    empty_selection_names,
+    warn_empty_selection,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -321,10 +326,13 @@ def peri_event_distance_histogram(
         Longest stretch of missing tracking, in seconds, to bridge. A longer
         gap ends the path: distance is not measured across it, so an event's
         distance axis stops there.
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+    epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
+or None
         Analyze only these half-open time windows (seconds). When
         ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
-        ``time_support``.
+        ``time_support``. An :class:`~neurospatial.Intervals` with no windows
+        (a condition with no trials) is an empty selection: the result has no
+        events and a NaN rate, and a warning says so.
     break_before : array-like of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break before it (for example a new
         recording); distance does not continue across it.
@@ -348,7 +356,12 @@ def peri_event_distance_histogram(
     ValueError
         If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
         or not finite, ``event_times`` is empty, or no event falls on tracked
-        time.
+        time inside windows with duration.
+
+    Warns
+    -----
+    UserWarning
+        When ``epochs`` or ``spike_window`` is an empty selection.
 
     Notes
     -----
@@ -401,6 +414,18 @@ def peri_event_distance_histogram(
     events = _finite_times(event_times, "event_times", non_empty=True)
     analyzed = as_intervals(epochs, name="epochs")
     recorded = as_intervals(spike_window, name="spike_window")
+    empty = empty_selection_names(analyzed, recorded)
+    if empty:
+        warn_empty_selection(empty, n_events=events.size, result="the rate")
+        no_events = np.zeros((0, edges.size - 1), dtype=np.float64)
+        return PeriEventDistanceResult(
+            spike_counts=no_events,
+            occupancy=no_events,
+            window=window,
+            bin_size=float(bin_size),
+            n_events_dropped=events.size,
+            event_indices=np.empty(0, dtype=np.intp),
+        )
     if analyzed is None:
         analyzed = recorded
     elif recorded is not None:
