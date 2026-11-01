@@ -214,7 +214,8 @@ mean over trials (Hz): [ 1.   0.5  0.5  0.5  0.6  2.7 12.8 15.7 13.7  4.7]
 Each row is noisy: one pass through a bin lasts a fraction of a second. The
 plain mean over trials weights every trial equally; weighting each trial by
 its time in the bin gives the pooled curve, `compute_tuning_curve(...,
-epochs=east)`, exactly.
+epochs=east)`, exactly (with the default `min_occupancy=0` and no
+`bandwidth`).
 
 ## 4. One row per trial
 
