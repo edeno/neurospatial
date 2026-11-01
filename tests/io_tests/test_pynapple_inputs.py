@@ -664,3 +664,38 @@ def test_interval_set_metadata_that_cannot_be_a_field_is_left_out(nap):
     with pytest.warns(UserWarning, match=r"\['trial type'\].*left out"):
         intervals = from_pynapple(iset)
     assert intervals.fields == ("goal",)
+
+
+
+def test_from_pynapple_reads_integral_float_interval_ids(nap):
+    """pynapple metadata can store integer ids as floats; they stay the ids."""
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[0.0, 5.0, 9.0],
+        end=[2.0, 7.0, 11.0],
+        metadata={"interval_id": [7.0, 12.0, 9.0]},
+    )
+
+    intervals = from_pynapple(iset)
+
+    assert intervals.interval_ids.tolist() == [7, 12, 9]
+    assert intervals.interval_ids.dtype == np.int64
+    assert intervals.fields == ()
+
+
+@pytest.mark.parametrize(
+    ("ids", "problem"),
+    [([7.5, 9.0, 12.0], "not whole numbers"), ([7, 7, 9], "repeat")],
+)
+def test_from_pynapple_refuses_ids_it_cannot_keep(nap, ids, problem):
+    """Bad ids raise instead of being silently renumbered 0 to n - 1."""
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[0.0, 5.0, 9.0], end=[2.0, 7.0, 11.0], metadata={"interval_id": ids}
+    )
+
+    with pytest.raises(ValueError, match=problem) as exc:
+        from_pynapple(iset)
+    assert "Fix:" in str(exc.value)

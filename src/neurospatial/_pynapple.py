@@ -272,7 +272,9 @@ def intervals_from_interval_set(intervals: Any) -> Any:
     Metadata columns become fields, with text ``""`` as ``None`` (the empty
     string is not a field value; an IntervalSet loaded from an NWB table
     holds ``""`` where a value is missing). An ``interval_id`` metadata
-    column (as ``to_pynapple`` writes) becomes the ids. Each inclusive
+    column (as ``to_pynapple`` writes) becomes the ids; whole-number floats
+    are read as integers, and ids that are not whole numbers or repeat are
+    refused. Each inclusive
     pynapple ``end`` becomes the next float above it, the half-open stop
     holding the same timestamps.
 
@@ -311,9 +313,34 @@ def intervals_from_interval_set(intervals: Any) -> Any:
         )
     id_column = None
     if "interval_id" in table.columns:
-        ids = table["interval_id"].to_numpy()
-        if ids.dtype.kind in "iu" and len(np.unique(ids)) == len(ids):
-            id_column = "interval_id"
-        else:
-            table = table.drop(columns="interval_id")
+        table["interval_id"] = _metadata_ids(table["interval_id"].to_numpy())
+        id_column = "interval_id"
     return Intervals.from_dataframe(table, id_column=id_column)
+
+
+def _metadata_ids(ids: NDArray[Any]) -> NDArray[np.integer[Any]]:
+    """An ``interval_id`` metadata column as int64 ids, else a refusal.
+
+    pynapple metadata may store integer ids as floats (``7.0``); whole
+    numbers are kept. Ids that are not whole numbers or that repeat are
+    refused rather than renumbered, which would lose the stable ids.
+    """
+    whole = ids.dtype.kind in "iu" or (
+        ids.dtype.kind == "f" and bool(np.all(np.isfinite(ids) & (ids % 1 == 0)))
+    )
+    if not whole or len(np.unique(ids)) != len(ids):
+        problem = "are not whole numbers" if not whole else "repeat"
+        raise ValueError(
+            _format_error(
+                "from_pynapple: the IntervalSet has an 'interval_id' metadata "
+                "column, which becomes the ids of the intervals, but its values "
+                f"{problem} (first values: {ids[:5].tolist()}).",
+                why="an interval_id identifies one interval; renumbering the "
+                "intervals would silently lose that identity, and sets from two "
+                "sessions concatenated together repeat them.",
+                fix="drop the column (iset.drop_info('interval_id')) to number "
+                "the intervals 0 to n - 1, or set it to unique integers.",
+            )
+        )
+    # Integer ids pass as they are, so the id check sees any beyond int64.
+    return ids if ids.dtype.kind in "iu" else ids.astype(np.int64)
