@@ -269,10 +269,12 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
 def intervals_from_interval_set(intervals: Any) -> Any:
     """A pynapple ``IntervalSet`` as :class:`~neurospatial.Intervals`.
 
-    Metadata columns become fields; an ``interval_id`` metadata column (as
-    ``to_pynapple`` writes) becomes the ids. Each inclusive pynapple ``end``
-    becomes the next float above it, the half-open stop holding the same
-    timestamps.
+    Metadata columns become fields, with text ``""`` as ``None`` (the empty
+    string is not a field value; an IntervalSet loaded from an NWB table
+    holds ``""`` where a value is missing). An ``interval_id`` metadata
+    column (as ``to_pynapple`` writes) becomes the ids. Each inclusive
+    pynapple ``end`` becomes the next float above it, the half-open stop
+    holding the same timestamps.
 
     Parameters
     ----------
@@ -291,6 +293,13 @@ def intervals_from_interval_set(intervals: Any) -> Any:
     metadata = getattr(intervals, "metadata", None)
     if metadata is not None:
         for column in metadata.columns:
-            table[str(column)] = metadata[column].to_numpy()
+            values = metadata[column]
+            if pd.api.types.is_numeric_dtype(values.dtype):
+                table[str(column)] = values.to_numpy()
+            else:
+                table[str(column)] = pd.Series(
+                    [None if isinstance(v, str) and v == "" else v for v in values],
+                    dtype=object,
+                ).to_numpy()
     id_column = "interval_id" if "interval_id" in table.columns else None
     return Intervals.from_dataframe(table, id_column=id_column)

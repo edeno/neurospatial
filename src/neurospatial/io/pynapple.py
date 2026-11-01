@@ -14,9 +14,9 @@ gaps between recording epochs are not lost on the array route either.
 Functions
 ---------
 from_pynapple
-    Convert a pynapple ``Ts`` / ``Tsd`` / ``TsdFrame`` / ``TsGroup`` /
-    ``IntervalSet`` to plain arrays plus its time support as ``(n_epochs, 2)``
-    epochs.
+    Convert a pynapple ``Ts`` / ``Tsd`` / ``TsdFrame`` / ``TsGroup`` to plain
+    arrays plus its time support as ``(n_epochs, 2)`` epochs, and an
+    ``IntervalSet`` to :class:`~neurospatial.Intervals`.
 to_pynapple
     Convert ``times`` + ``values``, a decode result (MAP or mean track, or
     the posterior), or behavior records (laps, trials, runs, region visits,
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
 from numpy.typing import NDArray
@@ -37,9 +37,13 @@ from neurospatial._optional import require_optional
 from neurospatial._pynapple import (
     interval_rows,
     interval_set,
+    intervals_from_interval_set,
     refuse_permuted_spatial_columns,
 )
 from neurospatial._stacklevel import _external_stacklevel
+
+if TYPE_CHECKING:
+    from neurospatial._interval_table import Interval, Intervals
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
@@ -56,13 +60,15 @@ def _require_pynapple() -> Any:
     return require_optional("pynapple", extra="pynapple", purpose="pynapple conversion")
 
 
-def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
+def from_pynapple(obj: Any) -> tuple[Any, ...] | Intervals[Interval]:
     """Convert a pynapple object to plain NumPy arrays and its epochs.
 
     Each time series comes back with its pynapple ``time_support`` as
     ``epochs``, a ``(n_epochs, 2)`` array of half-open ``[start, stop)`` rows
     in seconds. Pass it as ``epochs=`` (or, for spikes, ``spike_window=``) so the
-    gaps between recording epochs stay out of occupancy and rates.
+    gaps between recording epochs stay out of occupancy and rates. An
+    ``IntervalSet`` (for example trials) comes back as
+    :class:`~neurospatial.Intervals`, with its metadata as fields.
 
     Parameters
     ----------
@@ -81,8 +87,14 @@ def from_pynapple(obj: Any) -> tuple[Any, ...] | NDArray[np.float64]:
 ndarray of shape (n_epochs, 2)
         For a ``TsGroup``: one spike-time array per unit in group order, the
         group's unit labels, and the group's time support.
-    epochs : ndarray, shape (n_epochs, 2)
-        For an ``IntervalSet``: one ``[start, stop)`` row per interval.
+    intervals : Intervals of Interval
+        For an ``IntervalSet``: one ``[start, stop)`` row per interval, its
+        metadata columns as fields (text ``""`` as ``None``). An
+        ``interval_id`` column, as :func:`to_pynapple` writes, gives the
+        ids, so ``from_pynapple(to_pynapple(trials))`` keeps them; otherwise
+        the ids are ``0`` to ``n - 1`` in time order. Select rows by field
+        (``trials[trials.outcome == "reached"]``) and pass them as
+        ``epochs=``.
 
     All arrays are float64 copies (``unit_ids`` keeps its label type), so
     editing them never changes the pynapple object.
@@ -118,6 +130,7 @@ ndarray of shape (n_epochs, 2)
     >>> from neurospatial.io import from_pynapple  # doctest: +SKIP
     >>> times, positions, epochs = from_pynapple(tsdframe)  # doctest: +SKIP
     >>> trains, unit_ids, recorded = from_pynapple(tsgroup)  # doctest: +SKIP
+    >>> trials = from_pynapple(trial_set)  # doctest: +SKIP
     >>> rates = compute_spatial_rates(  # doctest: +SKIP
     ...     env, trains, times, positions, epochs=epochs, spike_window=recorded,
     ...     unit_ids=unit_ids,
@@ -126,7 +139,8 @@ ndarray of shape (n_epochs, 2)
     nap = _require_pynapple()
 
     if isinstance(obj, nap.IntervalSet):
-        return interval_rows(obj)
+        intervals: Intervals[Interval] = intervals_from_interval_set(obj)
+        return intervals
     if isinstance(obj, nap.Ts):
         return np.array(obj.t, dtype=np.float64), interval_rows(obj.time_support)
     if isinstance(obj, (nap.Tsd, nap.TsdFrame)):
