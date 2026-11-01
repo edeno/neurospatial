@@ -484,3 +484,60 @@ def test_per_trial_curves_weighted_by_occupancy_equal_the_pooled_curve(runs, tri
     weighted = np.nansum(occupancy * rates, axis=0) / occupancy.sum(axis=0)
     np.testing.assert_allclose(weighted, pooled.firing_rate, rtol=1e-12)
     np.testing.assert_allclose(occupancy.sum(axis=0), pooled.occupancy, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "recorded"),
+    [
+        ("bin_edges", EDGES, (EDGES * 100).tolist()),
+        ("variable", "progress", "speed"),
+        ("units", None, "cm"),
+        ("bandwidth", 0.1, 0.2),
+        ("bandwidth", None, 0.1),
+        ("n_samples_outside_range", 3, 4),
+    ],
+)
+def test_analysis_settings_cannot_contradict_a_field(field, value, recorded):
+    """A recorded setting that describes another analysis is refused."""
+    fields = {
+        "firing_rate": np.ones(10),
+        "occupancy": np.ones(10),
+        "bin_edges": EDGES,
+        "variable": "progress",
+        field: value,
+    }
+    with pytest.raises(ValueError, match=rf"analysis_settings\['{field}'\]"):
+        TuningCurveResult(**fields, analysis_settings={field: recorded})
+    population = {**fields, "firing_rates": np.ones((2, 10))}
+    del population["firing_rate"]
+    with pytest.raises(ValueError, match=rf"analysis_settings\['{field}'\]"):
+        TuningCurvesResult(**population, analysis_settings={field: recorded})
+
+
+def test_analysis_settings_method_must_match_bandwidth():
+    with pytest.raises(ValueError, match=r"analysis_settings\['method'\]"):
+        TuningCurveResult(
+            np.ones(10), np.ones(10), EDGES, analysis_settings={"method": "gaussian"}
+        )
+
+
+def test_computed_settings_agree_with_fields(runs):
+    """A computed result, its units and a replace() of it all construct."""
+    import dataclasses
+
+    times, progress = runs
+    curves = compute_tuning_curves(
+        [times[::3] + 0.01],
+        times,
+        progress,
+        bin_edges=EDGES,
+        bandwidth=0.1,
+        variable="progress",
+    )
+    settings = curves.analysis_settings
+    for name in ("bin_edges", "bandwidth", "method", "variable", "units"):
+        assert name in settings
+    assert dataclasses.replace(curves).bandwidth == 0.1
+    assert curves[0].analysis_settings["bin_edges"] == EDGES.tolist()
+    with pytest.raises(ValueError, match="disagrees with the recorded"):
+        dataclasses.replace(curves, bandwidth=0.2)

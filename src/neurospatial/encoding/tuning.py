@@ -266,6 +266,7 @@ class _TuningCurveMixin:
         def peak_firing_rate(self) -> NDArray[np.float64] | float: ...
         def _accounting_columns(self) -> dict[str, Any]: ...
         def _analysis_attrs(self) -> dict[str, Any]: ...
+        def _check_recorded_settings(self, fields: Mapping[str, Any]) -> None: ...
 
     @property
     def method(self) -> str:
@@ -309,6 +310,16 @@ class _TuningCurveMixin:
                 msg = f"{owner}: n_samples_outside_range must be >= 0, got {n_outside}."
                 raise ValueError(msg)
             object.__setattr__(self, "n_samples_outside_range", int(n_outside))
+        self._check_recorded_settings(
+            {
+                "variable": self.variable,
+                "units": self.units,
+                "bin_edges": self.bin_edges,
+                "bandwidth": self.bandwidth,
+                "method": self.method,
+                "n_samples_outside_range": self.n_samples_outside_range,
+            }
+        )
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
