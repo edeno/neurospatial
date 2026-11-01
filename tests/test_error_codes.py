@@ -160,7 +160,7 @@ class TestErrorCodeE1005PathTraversal:
         malicious_path = tmp_path / ".." / ".." / "etc" / "passwd"
 
         with pytest.raises(
-            ValueError, match=r"Path traversal detected in path: /private/var/folders"
+            ValueError, match=r"Path traversal detected in path"
         ) as exc_info:
             to_file(grid_env_from_samples, malicious_path)
 
