@@ -992,7 +992,7 @@ def test_pre_decision_heading_stats_all_stationary():
 
 
 def test_goal_regions_are_represented_by_their_centroid_bin():
-    """compute_decision_analysis and trials_to_region_arrays share one goal bin.
+    """compute_decision_analysis represents each goal region by one bin.
 
     The representative is the region bin nearest the centroid of the region's
     bins, not the lowest-index bin, so the decision boundary does not depend on
@@ -1003,9 +1003,7 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
     from neurospatial.behavior import (
         compute_decision_analysis,
         distance_to_decision_boundary,
-        trials_to_region_arrays,
     )
-    from neurospatial.behavior.segmentation import Trial
 
     x, y = np.meshgrid(np.arange(0.0, 101.0, 2.0), np.arange(0.0, 11.0, 2.0))
     env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
@@ -1026,11 +1024,14 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
         min_speed=5.0,
     )
 
-    trial = Trial(times[0], times[-1], "west", "east", "reached")
-    start_bins, goal_bins = trials_to_region_arrays(Intervals([trial]), times, env)
-    goals = [int(start_bins[0]), int(goal_bins[0])]
-    for name, goal in zip(["west", "east"], goals, strict=True):
-        assert goal != env.bins_in_region(name)[0]  # not the lowest-index bin
+    goals = []
+    for name in ["west", "east"]:
+        region_bins = env.bins_in_region(name)
+        centers = env.bin_centers[region_bins]
+        distance = np.linalg.norm(centers - centers.mean(axis=0), axis=1)
+        goal = int(region_bins[np.argmin(distance)])
+        assert goal != region_bins[0]  # not the lowest-index bin
+        goals.append(goal)
     np.testing.assert_array_equal(
         result.boundary.distance_to_decision_boundary,
         distance_to_decision_boundary(env, env.bin_at(positions), goals),

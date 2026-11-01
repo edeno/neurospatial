@@ -55,6 +55,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Hausdorff Distance](#hausdorff-distance)
    - [Dynamic Time Warping](#dynamic-time-warping)
 6. [Goal-Directed Behavior](#goal-directed-behavior)
+   - [Progress and Distance to the Goal](#progress-and-distance-to-the-goal)
    - [Directedness Score](#directedness-score)
 7. [Complete Workflows](#complete-workflows)
    - [Circular Track Lap-by-Lap Analysis](#circular-track-lap-by-lap-analysis)
@@ -1459,6 +1460,97 @@ similarity = trajectory_similarity(
 ---
 
 ## Goal-Directed Behavior
+
+### Progress and Distance to the Goal
+
+How far along the way to the goal is the animal? `path_progress` answers on a
+0-to-1 scale: 0 at the start, 1 at the goal, and in between the probability
+that an animal moving at random from there would reach the goal before the
+start. On a track with one route between start and goal, that is the fraction
+of the route covered; a wrong arm keeps the value of the junction where it
+leaves the route, so running into it is no progress. `distance_to_goal` gives
+the remaining distance in centimetres instead and needs no start.
+
+Pass trials as `intervals` to give each trial its own goal. Here each trial's
+destination is its `end_region`; a trial that reached no region has an
+unknown goal and its samples are NaN:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial import Intervals
+from neurospatial.behavior import Trial, distance_to_goal, path_progress
+from neurospatial.simulation.mazes import make_t_maze
+
+maze = make_t_maze()
+track = maze.env_track  # the T-maze's linearized track: 95 cm stem, 45 cm arms
+
+# Three runs up the stem and into an arm, 1 sample per second.
+up_the_stem = np.column_stack([np.zeros(10), np.linspace(-45.0, 50.0, 10)])
+left_arm = np.column_stack([np.linspace(-5.0, -45.0, 5), np.full(5, 50.0)])
+right_arm = left_arm * [-1, 1]
+positions = np.vstack([up_the_stem, left_arm, up_the_stem, right_arm, up_the_stem, left_arm])
+times = np.arange(len(positions), dtype=float)
+trials = Intervals(
+    [
+        Trial(0.0, 15.0, "start", "well_left", "reached"),
+        Trial(15.0, 30.0, "start", None, "timeout"),
+        Trial(30.0, 45.0, "start", "well_left", "reached"),
+    ]
+)
+
+progress = path_progress(track, times, positions, trials, start="start", goal=trials.end_region)
+remaining = distance_to_goal(track, times, positions, trials, goal=trials.end_region)
+print(np.round(progress[:15], 2))
+print(np.round(remaining[:15]))
+assert np.isnan(progress[15:30]).all()  # the second trial's goal is unknown
+
+# The same runs measured toward the left well: the right arm is the wrong arm.
+toward_left = path_progress(track, times, positions, start="start", goal="well_left")
+print(np.round(toward_left[25:30], 2))  # the second trial, in the right arm
+
+# The same runs in the 2-D maze, with 5 cm start and goal discs (see below).
+progress_2d = path_progress(
+    maze.env_2d, times, positions, start="start", goal="well_left", point_radius=5.0
+)
+print(np.round(progress_2d[:15], 2))
+```
+
+Along the stem progress rises with the fraction of the 140 cm route covered
+(95 cm of stem, then 45 cm of arm), and it reaches 1 in the left well.
+`remaining` counts down the same route in centimetres. In the second trial,
+measured toward the left well, the right arm stays at the junction's value,
+95 / 140 = 0.68: the animal made no progress toward the left well there.
+
+**Progress in 2-D and 3-D.** The same function works in open fields, 2-D mazes
+and 3-D environments, using the environment's connectivity and walls; no
+threshold is needed. There, a start or goal of a single point gives values that
+change with bin size, so give point regions and points a physical size with
+`point_radius` (for example the radius of the reward well), or use polygon
+regions, as in the last lines of the example above. Its 2-D values follow the
+track's but are not equal to them: the 5 cm start and goal discs and the open
+area of the junction change how progress is shared along the way, as the next
+list describes.
+
+Read 2-D and 3-D progress as commitment to the goal rather than distance:
+
+- Where the corridor or open space widens, a wide section takes a smaller share
+  of progress than its length. For a fraction proportional to distance on a
+  corridor maze, use its linearized track (`maze.env_track`), as above; for
+  centimetres, use `distance_to_goal`.
+- Values depend on the start and goal regions and on the whole environment. An
+  environment built from tracked samples has holes where the animal never went,
+  which shift progress nearby; compare sessions with an environment built from
+  the apparatus and with the same regions.
+- When start and goal are joined by more than one route (a loop), progress
+  depends on all of them, not only on the path the animal took. Compare
+  sessions only with the same maze configuration.
+- `trials.end_region` is where the animal went, known only after the trial. For
+  a model that predicts behavior, use the instructed goal from your task log.
+
+The `path_progress` docstring lists the guarantees and the measured sizes of
+these effects.
 
 ### Directedness Score
 

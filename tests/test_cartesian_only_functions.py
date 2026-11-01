@@ -24,7 +24,7 @@ from neurospatial.behavior import (
     detect_laps,
     detect_runs_between_regions,
     distance_to_boundary,
-    distance_to_region,
+    distance_to_goal,
     distance_to_reward,
     graph_turn_sequence,
     mean_square_displacement,
@@ -184,39 +184,31 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (
             lambda env: path_progress(
-                np.array([0, 1]),
-                env,
-                start_bins=np.array([0, 0]),
-                goal_bins=np.array([3, 3]),
-                metric="euclidean",
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                start="near",
+                goal="far",
             ),
-            "path_progress(metric='euclidean')",
+            "path_progress()",
         ),
         (
-            lambda env: distance_to_region(
-                np.array([0, 1]),
-                env,
-                target_bins=np.array([3, 3]),
+            lambda env: distance_to_goal(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                goal="far",
                 metric="euclidean",
             ),
-            "distance_to_region(metric='euclidean')",
+            "distance_to_goal()",
         ),
         # The behavior geodesic is a path through allocentric space, so it
         # refuses (distance, angle) bins too.
         (
-            lambda env: path_progress(
-                np.array([0, 1]),
-                env,
-                start_bins=np.array([0, 0]),
-                goal_bins=np.array([3, 3]),
+            lambda env: distance_to_goal(
+                _polar_regions_env(env), _TIMES, _POLAR_POSITIONS, goal="far"
             ),
-            "path_progress(metric='geodesic')",
-        ),
-        (
-            lambda env: distance_to_region(
-                np.array([0, 1]), env, target_bins=np.array([3, 3])
-            ),
-            "distance_to_region(metric='geodesic')",
+            "distance_to_goal(metric='geodesic')",
         ),
         (
             lambda env: trajectory_similarity(

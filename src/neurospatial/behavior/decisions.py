@@ -1769,7 +1769,7 @@ def compute_decision_analysis(
     )
 
     # Compute boundary metrics. Each goal region is represented by its
-    # centroid bin, as in trials_to_region_arrays.
+    # centroid bin (the region bin nearest the centroid of its bins).
     goal_bins: list[int] = []
     for r in goal_regions:
         goal_bin = region_representative_bin(env, r)

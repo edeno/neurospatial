@@ -12,7 +12,6 @@ import pytest
 from neurospatial import BinIndexOutOfRangeError, Environment, Intervals
 from neurospatial.behavior import (
     cost_to_goal,
-    distance_to_region,
     distance_to_reward,
     goal_pair_direction_labels,
     graph_turn_sequence,
@@ -20,7 +19,6 @@ from neurospatial.behavior import (
     headings_to_direction_labels,
     path_progress,
     time_to_goal,
-    trials_to_region_arrays,
 )
 from neurospatial.behavior.segmentation import Trial
 
@@ -38,76 +36,36 @@ def _bin(env: Environment, x: float) -> int:
 
 class TestPathProgress:
     def test_halfway_along_a_corridor_is_one_half(self, corridor):
-        start, goal = _bin(corridor, 10.5), _bin(corridor, 90.5)
-        position_bins = np.array(
-            [start, _bin(corridor, 30.5), _bin(corridor, 50.5), goal]
-        )
-        for metric in ("geodesic", "euclidean"):
-            progress = path_progress(
-                position_bins,
-                corridor,
-                start_bins=start,
-                goal_bins=goal,
-                metric=metric,
-            )
-            np.testing.assert_allclose(progress, [0.0, 0.25, 0.5, 1.0])
+        """On a uniform 1-bin-wide corridor progress is linear between the zones.
 
-    def test_overshoot_past_the_goal_reads_below_one(self, corridor):
-        """Only the goal is 1: 20 cm past it, 80 cm covered of a 100 cm route."""
-        start, goal = _bin(corridor, 10.5), _bin(corridor, 70.5)
-        position_bins = np.array([goal, _bin(corridor, 90.5)])
+        Start is the bin centred at 10.5 and goal the one at 90.5, so 30.5 is a
+        quarter and 50.5 half of the way; the stretch behind the start is a dead
+        end that joins only the start, so it reads 0.
+        """
+        from shapely.geometry import box
+
+        from neurospatial import Regions
+
+        regions = Regions(corridor.regions.values())
+        regions.add("start", polygon=box(10, -1, 11, 1))
+        regions.add("goal", polygon=box(90, -1, 91, 1))
+        env = corridor.with_regions(regions)
+        positions = np.c_[[10.5, 30.5, 50.5, 90.5, 5.5], np.zeros(5)]
         progress = path_progress(
-            position_bins, corridor, start_bins=start, goal_bins=goal
+            env, np.arange(5.0), positions, start="start", goal="goal"
         )
-        np.testing.assert_allclose(progress, [1.0, 80.0 / 100.0])
-
-    def test_wrong_arm_of_a_t_maze_reads_below_one(self):
-        """At the end of the wrong arm the whole goal arm is still ahead."""
-        stem = np.c_[np.zeros(40), np.arange(0.5, 40.0, 1.0)]
-        left = np.c_[-np.arange(0.5, 30.0, 1.0), np.full(30, 39.5)]
-        right = np.c_[np.arange(0.5, 30.0, 1.0), np.full(30, 39.5)]
-        env = Environment.from_samples(np.vstack([stem, left, right]), bin_size=1.0)
-        start, goal, wrong_end = env.bin_at(
-            np.array([[0.0, 0.5], [29.5, 39.5], [-29.5, 39.5]])
-        )
-        progress = path_progress(
-            np.array([wrong_end]), env, start_bins=start, goal_bins=goal
-        )
-        d_start = env.distance_between(bins=[start, wrong_end])
-        d_goal = env.distance_between(bins=[wrong_end, goal])
-        np.testing.assert_allclose(progress, [d_start / (d_start + d_goal)])
-        # About 70 cm covered of a ~130 cm start-wrong-end-goal route.
-        assert progress[0] < 0.6
-
-    def test_start_equal_to_goal_has_no_progress_away_from_it(self, corridor):
-        """With start == goal the ratio is 0/0: only the goal bin itself is 1."""
-        goal = _bin(corridor, 50.5)
-        position_bins = np.array([goal, _bin(corridor, 60.5), -1])
-        progress = path_progress(
-            position_bins, corridor, start_bins=goal, goal_bins=goal
-        )
-        np.testing.assert_array_equal(progress, [1.0, np.nan, np.nan])
-
-    def test_float_position_bins_are_refused(self, corridor):
-        with pytest.raises(TypeError, match=r"position_bins"):
-            path_progress(np.array([0.7, 3.2]), corridor, start_bins=0, goal_bins=5)
-
-    def test_negative_bins_other_than_minus_one_are_refused(self, corridor):
-        """-2 would index the second-to-last bin instead of meaning 'outside'."""
-        with pytest.raises(BinIndexOutOfRangeError):
-            path_progress(np.array([0, -2, 3]), corridor, start_bins=0, goal_bins=5)
+        np.testing.assert_allclose(progress, [0.0, 0.25, 0.5, 1.0, 0.0], atol=1e-12)
 
 
 @pytest.mark.parametrize(
     "call",
     [
-        lambda bins, env: distance_to_region(bins, env, target_bins=5),
         lambda bins, env: cost_to_goal(bins, env, goal_bins=5),
         lambda bins, env: cost_to_goal(
             bins, env, goal_bins=5, cost_map=np.zeros(env.n_bins)
         ),
     ],
-    ids=["distance_to_region", "cost_to_goal", "cost_to_goal_weighted"],
+    ids=["cost_to_goal", "cost_to_goal_weighted"],
 )
 class TestPositionBinsValidation:
     def test_minus_two_is_refused(self, corridor, call):
@@ -482,6 +440,11 @@ class TestTrialHelpersOnAnotherClock:
         return corridor.with_regions(regions)
 
     @staticmethod
+    def _positions(times: np.ndarray) -> np.ndarray:
+        """A 10 cm/s run along the corridor, inside it at every sample."""
+        return np.c_[10.0 * times + 0.5, np.zeros(len(times))]
+
+    @staticmethod
     def _trials(scale: float = 1.0) -> Intervals[Trial]:
         return Intervals(
             [
@@ -507,14 +470,18 @@ class TestTrialHelpersOnAnotherClock:
             labels = goal_pair_direction_labels(times, self._trials(scale=1000.0))
         assert labels.tolist() == [None] * 10
 
-    def test_trials_to_region_arrays_warns(self, env_with_regions):
+    def test_path_progress_warns(self, env_with_regions):
         times = np.arange(10.0)
         with pytest.warns(UserWarning, match=r"same clock"):
-            start_bins, goal_bins = trials_to_region_arrays(
-                self._trials(scale=1000.0), times, env_with_regions
+            progress = path_progress(
+                env_with_regions,
+                times,
+                self._positions(times),
+                self._trials(scale=1000.0),
+                start="home",
+                goal="goal",
             )
-        assert np.all(start_bins == -1)
-        assert np.all(goal_bins == -1)
+        assert np.all(np.isnan(progress))
 
     @pytest.mark.parametrize(
         ("times", "match"),
@@ -531,7 +498,14 @@ class TestTrialHelpersOnAnotherClock:
         with pytest.raises(ValueError, match=match):
             time_to_goal(times, self._trials())
         with pytest.raises(ValueError, match=match):
-            trials_to_region_arrays(self._trials(), times, env_with_regions)
+            path_progress(
+                env_with_regions,
+                times,
+                self._positions(np.arange(4.0)),
+                self._trials(),
+                start="home",
+                goal="goal",
+            )
 
     def test_overlapping_trials_do_not_warn(self, env_with_regions):
         import warnings
@@ -541,7 +515,14 @@ class TestTrialHelpersOnAnotherClock:
             warnings.simplefilter("error")
             ttg = time_to_goal(times, self._trials())
             goal_pair_direction_labels(times, self._trials())
-            trials_to_region_arrays(self._trials(), times, env_with_regions)
+            path_progress(
+                env_with_regions,
+                times,
+                self._positions(times),
+                self._trials(),
+                start="home",
+                goal="goal",
+            )
         np.testing.assert_array_equal(ttg[1:5], [3.0, 2.0, 1.0, np.nan])
 
     def test_no_trials_do_not_warn(self):
@@ -552,3 +533,85 @@ class TestTrialHelpersOnAnotherClock:
             assert np.all(
                 np.isnan(time_to_goal(np.arange(5.0), Intervals([], record_type=Trial)))
             )
+
+
+class TestDistanceToGoal:
+    """distance_to_goal against independent known answers."""
+
+    @staticmethod
+    def _box(*, wall: bool = False) -> Environment:
+        from shapely.geometry import box as shapely_box
+
+        from neurospatial import Regions
+
+        xs, ys = np.meshgrid(np.arange(0.0, 50.0, 0.5), np.arange(0.0, 50.0, 0.5))
+        samples = np.column_stack([xs.ravel(), ys.ravel()])
+        if wall:
+            # A wall, two bins thick, around x = 25 from y = 0 to 40, open above.
+            samples = samples[
+                ~((np.abs(samples[:, 0] - 25.0) < 3.0) & (samples[:, 1] < 40.0))
+            ]
+        env = Environment.from_samples(samples, bin_size=2.0)
+        regions = Regions()
+        regions.add("reward", polygon=shapely_box(40.0, 0.0, 50.0, 10.0))
+        return env.with_regions(regions)
+
+    def test_distance_to_goal_needs_no_start(self):
+        from neurospatial import Intervals
+        from neurospatial.behavior import distance_to_goal
+
+        env = self._box()
+        times = np.arange(6.0)
+        positions = np.array(
+            [
+                [100.0, 100.0],
+                [5.0, 5.0],
+                [20.0, 30.0],
+                [41.0, 1.0],
+                [5.0, 45.0],
+                [30.0, 5.0],
+            ]
+        )
+        trials = Intervals.from_arrays([0.0, 3.0], [3.0, 5.0])
+        geodesic = distance_to_goal(env, times, positions, trials, goal="reward")
+        # The first trial starts outside the environment; the rest is defined.
+        assert np.isnan(geodesic[0])
+        assert np.isnan(geodesic[5])  # outside every trial
+        goal_centers = env.bin_centers[env.bins_in_region("reward")]
+        straight = np.min(
+            np.linalg.norm(positions[:, None, :] - goal_centers[None], axis=2), axis=1
+        )
+        # A convex box: the shortest path inside is the straight line.
+        np.testing.assert_allclose(geodesic[1:5], straight[1:5], rtol=1e-9)
+        euclidean = distance_to_goal(
+            env, times, positions, trials, goal="reward", metric="euclidean"
+        )
+        np.testing.assert_allclose(euclidean[1:5], straight[1:5], rtol=1e-12)
+        at_goal = distance_to_goal(env, [0.0], goal_centers[:1], goal="reward")
+        assert at_goal[0] == 0.0
+
+    def test_distance_goes_around_a_wall(self):
+        from neurospatial.behavior import distance_to_goal
+
+        env = self._box(wall=True)
+        assert env.n_bins < self._box().n_bins  # the wall removed bins
+        position = np.array([[10.0, 5.0]])
+        around = distance_to_goal(env, [0.0], position, goal="reward")[0]
+        straight = distance_to_goal(
+            env, [0.0], position, goal="reward", metric="euclidean"
+        )[0]
+        assert around > straight + 20.0
+
+    def test_distance_along_a_track(self):
+        from neurospatial.behavior import distance_to_goal
+        from neurospatial.simulation.mazes import make_linear_track
+
+        track = make_linear_track().env_track
+        goal = np.asarray(track.regions["well_right"].data, dtype=float)
+        start = np.asarray(track.regions["well_left"].data, dtype=float)
+        positions = start + np.linspace(0.0, 1.0, 11)[:, None] * (goal - start)
+        distances = distance_to_goal(track, np.arange(11.0), positions, goal=goal)
+        goal_center = track.bin_centers[track.bin_at(goal[None])[0]]
+        np.testing.assert_allclose(
+            distances, np.linalg.norm(positions - goal_center, axis=1), atol=1e-9
+        )

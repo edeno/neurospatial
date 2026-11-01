@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from shapely.geometry import Polygon
+from shapely.geometry import box
 
 from neurospatial import BinIndexOutOfRangeError, Environment, Intervals, Regions
-from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
 
 # =============================================================================
@@ -52,229 +51,12 @@ def environment_with_polygon_regions():
     env = Environment.from_samples(positions, bin_size=2.0)
     env = env.with_metadata(units="cm")
 
-    # Add polygon regions that cover multiple bins
-    start_polygon = Polygon([(0, 0), (4, 0), (4, 4), (0, 4)])
-    goal_polygon = Polygon([(16, 16), (20, 16), (20, 20), (16, 20)])
-
+    # Polygon regions covering 2 x 2 bins in opposite corners; their edges
+    # lie between bin centres, so the 180-degree turn about (10, 10) swaps them.
     region_builder = Regions(env.regions.values())
-    region_builder.add("start_zone", polygon=start_polygon)
-    region_builder.add("goal_zone", polygon=goal_polygon)
+    region_builder.add("start_zone", polygon=box(-1, -1, 3, 3))
+    region_builder.add("goal_zone", polygon=box(17, 17, 21, 21))
     return env.with_regions(region_builder)
-
-
-# =============================================================================
-# trials_to_region_arrays() Tests
-# =============================================================================
-
-
-def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
-    """Test helper with single trial - constant start/goal."""
-    env = simple_environment_with_regions
-
-    # Create single trial from t=0 to t=10
-    trial = Trial(
-        start_time=0.0,
-        stop_time=10.0,
-        start_region="start",
-        end_region="goal1",
-        outcome="reached",
-    )
-    trials = Intervals([trial])
-
-    # Create times array with 11 points (0, 1, 2, ..., 10 seconds)
-    times = np.linspace(0.0, 10.0, 11)
-
-    # Call function
-    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-
-    # Assertions
-    assert start_bins.shape == (11,)
-    assert goal_bins.shape == (11,)
-    assert start_bins.dtype == np.int_
-    assert goal_bins.dtype == np.int_
-
-    # Get expected bin indices
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Every sample in [0, 10) has the trial's bins; the arrival at 10 is outside
-    assert np.all(start_bins[:-1] == start_bin)
-    assert np.all(goal_bins[:-1] == goal_bin)
-    assert start_bins[-1] == goal_bins[-1] == -1
-
-
-def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions):
-    """Test helper with multiple trials - varying start/goal."""
-    env = simple_environment_with_regions
-
-    # Check regions exist - skip if goal2 missing
-    if len(env.bins_in_region("goal2")) == 0:
-        pytest.skip("goal2 region has no bins in random environment")
-
-    # Create 3 trials with different goals
-    trials = Intervals(
-        [
-            Trial(0.0, 5.0, "start", "goal1", "reached"),  # t=0 to t=5
-            Trial(5.5, 10.0, "start", "goal2", "reached"),  # t=5.5 to t=10
-            Trial(11.0, 15.0, "start", "goal1", "reached"),  # t=11 to t=15
-        ]
-    )
-
-    # Create times array covering all trials plus gaps
-    times = np.linspace(0.0, 16.0, 17)  # 0, 1, 2, ..., 16 seconds
-
-    # Call function
-    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-
-    # Get expected bin indices
-    start_bin = env.bins_in_region("start")[0]
-    goal1_bin = env.bins_in_region("goal1")[0]
-    goal2_bin = env.bins_in_region("goal2")[0]
-
-    # Check Trial 1 ([0, 5): indices 0-4); t=5 is outside every trial
-    assert np.all(start_bins[0:5] == start_bin)
-    assert np.all(goal_bins[0:5] == goal1_bin)
-    assert start_bins[5] == goal_bins[5] == -1
-
-    # Check Trial 2 ([5.5, 10): indices 6-9)
-    trial2_mask = (times >= 5.5) & (times < 10.0)
-    assert np.all(start_bins[trial2_mask] == start_bin)
-    assert np.all(goal_bins[trial2_mask] == goal2_bin)
-
-    # Check gap between trials ([10, 11))
-    gap_mask = (times >= 10.0) & (times < 11.0)
-    assert np.all(start_bins[gap_mask] == -1)
-    assert np.all(goal_bins[gap_mask] == -1)
-
-    # Check Trial 3 ([11, 15): indices 11-14)
-    trial3_mask = (times >= 11.0) & (times < 15.0)
-    assert np.all(start_bins[trial3_mask] == start_bin)
-    assert np.all(goal_bins[trial3_mask] == goal1_bin)
-
-    # Check after last trial (t=16)
-    assert start_bins[16] == -1
-    assert goal_bins[16] == -1
-
-
-def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
-    """Test helper with failed trial (end_region=None)."""
-    env = simple_environment_with_regions
-
-    # Create failed trial (end_region=None, success=False)
-    trial = Trial(
-        start_time=0.0,
-        stop_time=10.0,
-        start_region="start",
-        end_region=None,  # Failed trial - no end region
-        outcome="timeout",
-    )
-    trials = Intervals([trial])
-
-    times = np.linspace(0.0, 10.0, 11)
-
-    # Call function
-    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-
-    # Start bins should be set inside [0, 10)
-    start_bin = env.bins_in_region("start")[0]
-    assert np.all(start_bins[:-1] == start_bin)
-
-    # Goal bins should remain -1 (no goal for failed trial)
-    assert np.all(goal_bins == -1)
-
-
-def _expected_centroid_bin(env, region_name):
-    """Region bin nearest the centroid of the region's bin centers."""
-    region_bins = env.bins_in_region(region_name)
-    centers = env.bin_centers[region_bins]
-    centroid = centers.mean(axis=0)
-    nearest = int(np.argmin(np.linalg.norm(centers - centroid, axis=1)))
-    return int(region_bins[nearest])
-
-
-def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_regions):
-    """Test helper with polygon regions (multi-bin) uses the centroid bin."""
-    env = environment_with_polygon_regions
-
-    # Create trial with polygon regions
-    trial = Trial(
-        start_time=0.0,
-        stop_time=10.0,
-        start_region="start_zone",
-        end_region="goal_zone",
-        outcome="reached",
-    )
-    trials = Intervals([trial])
-
-    times = np.linspace(0.0, 10.0, 11)
-
-    # Call function
-    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-
-    # Get bins for polygon regions (returns multiple bins)
-    start_zone_bins = env.bins_in_region("start_zone")
-    goal_zone_bins = env.bins_in_region("goal_zone")
-
-    assert len(start_zone_bins) > 0
-    assert len(goal_zone_bins) > 0
-
-    # Multi-bin regions must be represented by their centroid bin, not an
-    # arbitrary first bin.
-    expected_start = _expected_centroid_bin(env, "start_zone")
-    expected_goal = _expected_centroid_bin(env, "goal_zone")
-
-    assert np.all(start_bins[:-1] == expected_start)
-    assert np.all(goal_bins[:-1] == expected_goal)
-
-    # The chosen representative must lie inside the region (a real region bin).
-    assert expected_start in set(start_zone_bins.tolist())
-    assert expected_goal in set(goal_zone_bins.tolist())
-
-
-def test_trials_to_region_arrays_centroid_differs_from_first_bin():
-    """Centroid representative differs from the first bin for an L-shaped region.
-
-    Build a multi-bin region whose centroid bin is not the first bin in the
-    region's bin ordering, so the centroid choice is observably different from
-    (and better than) the legacy first-bin behavior.
-    """
-    from shapely.geometry import Polygon
-
-    # 12x12 cm grid, bin_size 2 -> 7x7 = 49 bins on a regular grid.
-    x = np.linspace(0, 12, 7)
-    y = np.linspace(0, 12, 7)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # A wide, off-origin rectangular region spanning several bins so its
-    # centroid sits well away from the lowest-index bin.
-    region_polygon = Polygon([(4, 4), (12, 4), (12, 8), (4, 8)])
-    region_builder = Regions(env.regions.values())
-    region_builder.add("zone", polygon=region_polygon)
-    env = env.with_regions(region_builder)
-
-    region_bins = env.bins_in_region("zone")
-    assert len(region_bins) > 1, "Need a genuinely multi-bin region"
-
-    centers = env.bin_centers[region_bins]
-    centroid = centers.mean(axis=0)
-    expected = int(
-        region_bins[int(np.argmin(np.linalg.norm(centers - centroid, axis=1)))]
-    )
-    first_bin = int(region_bins[0])
-    assert expected != first_bin, (
-        "Test setup invalid: centroid bin equals first bin; choose a region "
-        "where they differ."
-    )
-
-    trial = Trial(0.0, 5.0, "zone", "zone", "reached")
-    times = np.linspace(0.0, 5.0, 6)
-    start_bins, goal_bins = trials_to_region_arrays(Intervals([trial]), times, env)
-
-    assert np.all(start_bins[:-1] == expected)
-    assert np.all(goal_bins[:-1] == expected)
-    assert not np.any(start_bins == first_bin)
 
 
 # =============================================================================
@@ -282,469 +64,126 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
 # =============================================================================
 
 
-def test_path_progress_single_trial_geodesic(simple_environment_with_regions):
-    """Test path progress with single trial and geodesic metric."""
+def test_path_progress_runs_from_start_to_goal(environment_with_polygon_regions):
+    """0 on the start zone, 1 on the goal zone, 1/2 where symmetry demands it.
+
+    Turning the arena by 180 degrees about its centre swaps the start and goal
+    zones, so progress p there becomes 1 - p: every place the turn maps onto
+    itself, or onto its mirror across the anti-diagonal, reads 1/2.
+    """
     from neurospatial.behavior.navigation import path_progress
 
-    env = simple_environment_with_regions
-
-    # Get bin indices for regions
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Create simulated trajectory from start to goal
-    # For testing, use actual position_bins that progress toward goal
-    position_bins = np.array([start_bin, start_bin, goal_bin, goal_bin])
-
-    # Constant start and goal for single trial
-    start_bins = np.full(4, start_bin)
-    goal_bins = np.full(4, goal_bin)
-
-    # Compute progress
-    progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    )
-
-    # Check output shape and type
-    assert progress.shape == (4,)
-    assert progress.dtype == np.float64
-
-    # Progress should be between 0 and 1
-    assert np.all((progress >= 0) & (progress <= 1))
-
-    # First point at start should have progress ~0
-    assert progress[0] < 0.1  # Close to start
-
-    # Last points at goal should have progress = 1.0
-    assert np.isclose(progress[-1], 1.0)
-
-
-def test_path_progress_multiple_trials(simple_environment_with_regions):
-    """Test path progress with multiple trials (varying start/goal)."""
-    from neurospatial.behavior.navigation import path_progress
-
-    env = simple_environment_with_regions
-
-    # Get bin indices - handle case where goal2 might not have bins
-    start_bins_list = env.bins_in_region("start")
-    goal1_bins_list = env.bins_in_region("goal1")
-    goal2_bins_list = env.bins_in_region("goal2")
-
-    # Skip if any region has no bins
-    if (
-        len(start_bins_list) == 0
-        or len(goal1_bins_list) == 0
-        or len(goal2_bins_list) == 0
-    ):
-        pytest.skip("Some regions have no bins in random environment")
-
-    start_bin = start_bins_list[0]
-    goal1_bin = goal1_bins_list[0]
-    goal2_bin = goal2_bins_list[0]
-
-    # Create trajectory with 10 timepoints
-    # Trial 1: t=0-4 going to goal1
-    # Trial 2: t=5-9 going to goal2
-    position_bins = np.array(
-        [
-            start_bin,
-            start_bin,
-            goal1_bin,
-            goal1_bin,
-            goal1_bin,  # Trial 1
-            start_bin,
-            start_bin,
-            goal2_bin,
-            goal2_bin,
-            goal2_bin,
-        ]  # Trial 2
-    )
-
-    # Create start/goal arrays with two different trials
-    start_bins = np.full(10, start_bin)
-    goal_bins = np.array(
-        [
-            goal1_bin,
-            goal1_bin,
-            goal1_bin,
-            goal1_bin,
-            goal1_bin,  # Trial 1
-            goal2_bin,
-            goal2_bin,
-            goal2_bin,
-            goal2_bin,
-            goal2_bin,
-        ]  # Trial 2
-    )
-
-    # Compute progress
-    progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    )
-
-    # Check output
-    assert progress.shape == (10,)
-    assert np.all((progress >= 0) & (progress <= 1))
-
-    # Each trial should have progress reaching 1.0 at goal
-    assert np.isclose(progress[4], 1.0)  # End of trial 1
-    assert np.isclose(progress[9], 1.0)  # End of trial 2
-
-
-def test_path_progress_euclidean(simple_environment_with_regions):
-    """Test path progress with euclidean metric."""
-    from neurospatial.behavior.navigation import path_progress
-
-    env = simple_environment_with_regions
-
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Simple trajectory
-    position_bins = np.array([start_bin, goal_bin])
-    start_bins = np.array([start_bin, start_bin])
-    goal_bins = np.array([goal_bin, goal_bin])
-
-    # Compute with euclidean metric
-    progress = path_progress(
-        position_bins,
-        env,
-        start_bins=start_bins,
-        goal_bins=goal_bins,
-        metric="euclidean",
-    )
-
-    # Check output
-    assert progress.shape == (2,)
-    assert np.all((progress >= 0) & (progress <= 1))
-
-    # At start, progress ~0; at goal, progress = 1
-    assert progress[0] < 0.1
-    assert np.isclose(progress[1], 1.0)
-
-
-def test_path_progress_edge_case_same_start_goal(simple_environment_with_regions):
-    """Test edge case: start_bin == goal_bin (should return 1.0)."""
-    from neurospatial.behavior.navigation import path_progress
-
-    env = simple_environment_with_regions
-
-    start_bin = env.bins_in_region("start")[0]
-
-    # Start and goal are the same
-    position_bins = np.array([start_bin, start_bin])
-    start_bins = np.array([start_bin, start_bin])
-    goal_bins = np.array([start_bin, start_bin])  # Same as start
-
-    progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    )
-
-    # When start == goal, progress should be 1.0 (already at goal)
-    assert np.all(progress == 1.0)
-
-
-def test_path_progress_edge_case_invalid_bins(simple_environment_with_regions):
-    """Test edge case: invalid bins -1 (should return NaN)."""
-    from neurospatial.behavior.navigation import path_progress
-
-    env = simple_environment_with_regions
-
-    start_bin = env.bins_in_region("start")[0]
-
-    # Mix of valid and invalid bins
-    position_bins = np.array([start_bin, -1, start_bin])
-    start_bins = np.array([start_bin, start_bin, -1])  # Invalid start for last point
-    goal_bins = np.array([start_bin, start_bin, start_bin])
-
-    progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    )
-
-    # Invalid bins should produce NaN
-    assert np.isnan(progress[2])  # Invalid start_bin
-
-
-def test_path_progress_edge_case_disconnected():
-    """Test edge case: disconnected paths (should return NaN)."""
-    from neurospatial.behavior.navigation import path_progress
-
-    # Create environment with two disconnected components
+    env = environment_with_polygon_regions
     positions = np.array(
-        [
-            [0, 0],
-            [2, 0],
-            [4, 0],  # Component 1
-            [10, 10],
-            [12, 10],
-            [14, 10],  # Component 2 (disconnected)
-        ]
+        [[0.0, 0.0], [2.0, 2.0], [10.0, 10.0], [6.0, 14.0], [18.0, 18.0], [20.0, 20.0]]
     )
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # Add regions in different components
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(0.0, 0.0))
-    region_builder.add("goal", point=(12.0, 10.0))
-    env = env.with_regions(region_builder)
-
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal")[0]
-
-    # Try to compute progress between disconnected components
-    position_bins = np.array([start_bin, start_bin])
-    start_bins = np.array([start_bin, start_bin])
-    goal_bins = np.array([goal_bin, goal_bin])
-
     progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+        env,
+        np.arange(len(positions), dtype=float),
+        positions,
+        start="start_zone",
+        goal="goal_zone",
     )
+    assert progress.dtype == np.float64
+    np.testing.assert_allclose(progress, [0.0, 0.0, 0.5, 0.5, 1.0, 1.0], atol=1e-12)
 
-    # Disconnected paths should return NaN
+
+def test_path_progress_outside_the_environment_is_nan(
+    environment_with_polygon_regions,
+):
+    """A NaN row or a position outside the environment gives NaN, not 0."""
+    from neurospatial.behavior.navigation import path_progress
+
+    env = environment_with_polygon_regions
+    positions = np.array(
+        [[0.0, 0.0], [np.nan, np.nan], [10.0, 10.0], [100.0, 100.0], [20.0, 20.0]]
+    )
+    progress = path_progress(
+        env, np.arange(5.0), positions, start="start_zone", goal="goal_zone"
+    )
+    np.testing.assert_allclose(progress, [0.0, np.nan, 0.5, np.nan, 1.0], atol=1e-12)
+
+
+def test_path_progress_start_and_goal_in_different_components():
+    """No path joins start and goal, so progress is undefined everywhere."""
+    from neurospatial.behavior.navigation import path_progress
+
+    left = np.column_stack([np.arange(0.0, 20.0, 0.5), np.zeros(40)])
+    env = Environment.from_samples(
+        np.vstack([left, left + np.array([100.0, 0.0])]), bin_size=2.0
+    )
+    positions = np.array([[1.0, 0.0], [10.0, 0.0], [118.0, 0.0]])
+    with pytest.warns(UserWarning, match=r"does not connect to both start and goal"):
+        progress = path_progress(
+            env,
+            np.arange(3.0),
+            positions,
+            start=[1.0, 0.0],
+            goal=[118.0, 0.0],
+            point_radius=2.5,
+        )
     assert np.all(np.isnan(progress))
 
 
-@pytest.mark.parametrize(
-    "n_cells", [4, 5002], ids=["distance_matrix", "distance_field"]
-)
-def test_path_progress_disconnected_current_position(n_cells):
-    """A reachable goal does not make a position on another component valid."""
-    from neurospatial.behavior.navigation import path_progress
-
-    mask = np.ones(n_cells, dtype=bool)
-    mask[2] = False
-    env = Environment.from_grid_mask(mask, grid_edges=(np.arange(n_cells + 1.0),))
-    progress = path_progress(
-        np.array([0, 1, 2, 2]),
-        env,
-        start_bins=np.array([0, 0, 0, 0]),
-        goal_bins=np.array([1, 1, 1, 0]),
-    )
-    np.testing.assert_allclose(progress, [0.0, 1.0, np.nan, np.nan], equal_nan=True)
-
-
-def test_path_progress_large_environment():
-    """Test path progress with large environment (n_bins > 5000, test fallback)."""
-    from neurospatial.behavior.navigation import path_progress
-
-    # Create large environment with >5000 bins using deterministic grid
-    # 101x101 grid = 10,201 bins
-    x = np.linspace(0, 200, 101)
-    y = np.linspace(0, 200, 101)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # Skip if environment doesn't have enough bins
-    if env.n_bins < 5000:
-        pytest.skip(f"Environment has only {env.n_bins} bins, need >5000")
-
-    # Add regions
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(10.0, 10.0))
-    region_builder.add("goal", point=(190.0, 190.0))
-    env = env.with_regions(region_builder)
-
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal")[0]
-
-    # Simple trajectory
-    position_bins = np.array([start_bin, goal_bin])
-    start_bins = np.array([start_bin, start_bin])
-    goal_bins = np.array([goal_bin, goal_bin])
-
-    # This should use the fallback strategy for large environments
-    progress = path_progress(
-        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
-    )
-
-    # Check it still works correctly
-    assert progress.shape == (2,)
-    assert np.all((progress >= 0) & (progress <= 1) | np.isnan(progress))
-    assert np.isclose(progress[1], 1.0)
-
-
 # =============================================================================
-# distance_to_region() Tests
+# distance_to_goal() Tests
 # =============================================================================
 
 
-def test_distance_to_region_scalar_target(simple_environment_with_regions):
-    """Test distance to region with scalar target (constant goal)."""
-    from neurospatial.behavior.navigation import distance_to_region
+def test_distance_to_goal_point_region(simple_environment_with_regions):
+    """The grid is convex, so the shortest path is the straight line."""
+    from neurospatial.behavior.navigation import distance_to_goal
 
     env = simple_environment_with_regions
-
-    # Get start and goal bins
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Create trajectory from start to goal
-    position_bins = np.array([start_bin, goal_bin])
-
-    # Compute distance to scalar target (goal_bin)
-    distances = distance_to_region(position_bins, env, target_bins=goal_bin)
-
-    # Check shape
-    assert distances.shape == (2,)
-
-    # Distance should be positive at start, zero at goal
-    assert distances[0] > 0
-    assert np.isclose(distances[1], 0.0, atol=1e-6)
-
-    # Test euclidean metric
-    distances_euclidean = distance_to_region(
-        position_bins, env, target_bins=goal_bin, metric="euclidean"
-    )
-    assert distances_euclidean.shape == (2,)
-    assert distances_euclidean[0] > 0
-    assert np.isclose(distances_euclidean[1], 0.0, atol=1e-6)
+    goal_center = env.bin_centers[env.bins_in_region("goal1")[0]]
+    positions = np.array([[0.0, 0.0], [4.0, 6.0], goal_center])
+    expected = np.linalg.norm(positions - goal_center, axis=1)
+    for metric in ("geodesic", "euclidean"):
+        distances = distance_to_goal(
+            env, np.arange(3.0), positions, goal="goal1", metric=metric
+        )
+        np.testing.assert_allclose(distances, expected, rtol=1e-12)
+        assert distances[-1] == 0.0
 
 
-def test_distance_to_region_dynamic_target(simple_environment_with_regions):
-    """Test distance to region with array of targets (dynamic goal)."""
-    from neurospatial.behavior.navigation import distance_to_region
+def test_distance_to_goal_per_interval_goals(simple_environment_with_regions):
+    """Each trial measures to its own goal; an unknown goal gives NaN."""
+    from neurospatial.behavior.navigation import distance_to_goal
 
     env = simple_environment_with_regions
-
-    # Get bins for regions
-    start_bin = env.bins_in_region("start")[0]
-    goal1_bin = env.bins_in_region("goal1")[0]
-    goal2_bins = env.bins_in_region("goal2")
-
-    # Skip if goal2 has no bins
-    if len(goal2_bins) == 0:
-        pytest.skip("goal2 region has no bins in random environment")
-
-    goal2_bin = goal2_bins[0]
-
-    # Create trajectory: start → goal1
-    position_bins = np.array([start_bin, goal1_bin])
-
-    # Dynamic targets: first timepoint targets goal1, second targets goal2
-    target_bins = np.array([goal1_bin, goal2_bin])
-
-    # Compute distances with dynamic targets
-    distances = distance_to_region(position_bins, env, target_bins=target_bins)
-
-    # Check shape
-    assert distances.shape == (2,)
-
-    # At first timepoint: we're at start, target is goal1 (should be positive distance)
-    assert distances[0] > 0
-
-    # At second timepoint: we're at goal1, target is goal2 (should be positive distance)
-    assert distances[1] > 0
-
-
-def test_distance_to_region_invalid_bins(simple_environment_with_regions):
-    """Test distance to region with invalid bins (should return NaN)."""
-    from neurospatial.behavior.navigation import distance_to_region
-
-    env = simple_environment_with_regions
-
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Test 1: Invalid trajectory bins
-    position_bins = np.array([0, -1, 2])  # -1 is invalid
-    distances = distance_to_region(position_bins, env, target_bins=goal_bin)
-    assert distances.shape == (3,)
-    assert not np.isnan(distances[0])  # Valid bin
-    assert np.isnan(distances[1])  # Invalid bin → NaN
-    assert not np.isnan(distances[2])  # Valid bin
-
-    # Test 2: -1 is the outside marker, never a single target
-    position_bins = np.array([0, 1, 2])
-    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
-        distance_to_region(position_bins, env, target_bins=-1)
-
-    # Test 3: Dynamic targets with some invalid
-    target_bins = np.array([goal_bin, -1, goal_bin])
-    distances = distance_to_region(position_bins, env, target_bins=target_bins)
-    assert not np.isnan(distances[0])  # Valid target
-    assert np.isnan(distances[1])  # Invalid target → NaN
-    assert not np.isnan(distances[2])  # Valid target
-
-
-def test_distance_to_region_multiple_goal_bins():
-    """Test distance to region with multiple goal bins (distance to nearest)."""
-    from neurospatial.behavior.navigation import distance_to_region
-
-    # Create environment with known structure
-    positions = np.array(
+    goal1 = env.bin_centers[env.bins_in_region("goal1")[0]]
+    goal2 = env.bin_centers[env.bins_in_region("goal2")[0]]
+    positions = np.array([[0.0, 0.0], [4.0, 4.0], [0.0, 0.0], [4.0, 6.0], [2.0, 2.0]])
+    trials = Intervals(
         [
-            [0, 0],  # bin 0 - start
-            [2, 0],  # bin 1
-            [4, 0],  # bin 2
-            [6, 0],  # bin 3 - goal region
-            [8, 0],  # bin 4 - goal region
+            Trial(0.0, 2.0, "start", "goal1", "reached"),
+            Trial(2.0, 4.0, "start", "goal2", "reached"),
+            Trial(4.0, 5.0, "start", None, "timeout"),
         ]
     )
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # Add region covering multiple bins
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(0.0, 0.0))
-    region_builder.add("goal", point=(7.0, 0.0))
-    env = env.with_regions(region_builder)  # Should cover both bins 3 and 4
-
-    start_bin = env.bins_in_region("start")[0]
-    goal_bins = env.bins_in_region("goal")
-
-    # Goal region should have multiple bins
-    assert len(goal_bins) >= 1
-
-    # Use first goal bin as scalar target
-    target_bin = goal_bins[0]
-
-    # Trajectory from start
-    position_bins = np.array([start_bin])
-
-    # Compute distance - should be to nearest goal bin
-    distances = distance_to_region(position_bins, env, target_bins=target_bin)
-
-    # Distance should be positive
-    assert distances[0] > 0
+    distances = distance_to_goal(
+        env, np.arange(5.0), positions, trials, goal=trials.end_region
+    )
+    expected = np.r_[
+        np.linalg.norm(positions[:2] - goal1, axis=1),
+        np.linalg.norm(positions[2:4] - goal2, axis=1),
+        np.nan,
+    ]
+    np.testing.assert_allclose(distances, expected, rtol=1e-12)
 
 
-def test_distance_to_region_large_environment():
-    """Test distance to region with large environment (memory fallback)."""
-    from neurospatial.behavior.navigation import distance_to_region
+def test_distance_to_goal_outside_the_environment_is_nan(
+    simple_environment_with_regions,
+):
+    from neurospatial.behavior.navigation import distance_to_goal
 
-    # Create large environment with >5000 bins using deterministic grid
-    # 101x101 grid = 10,201 bins
-    x = np.linspace(0, 200, 101)
-    y = np.linspace(0, 200, 101)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # Skip if environment doesn't have enough bins
-    if env.n_bins < 5000:
-        pytest.skip(f"Environment has only {env.n_bins} bins, need ≥5000")
-
-    # Add regions
-    region_builder = Regions(env.regions.values())
-    region_builder.add("start", point=(10.0, 10.0))
-    region_builder.add("goal", point=(190.0, 190.0))
-    env = env.with_regions(region_builder)
-
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal")[0]
-
-    # Test 1: Scalar target (uses existing env.distance_to())
-    position_bins = np.array([start_bin, goal_bin])
-    distances_scalar = distance_to_region(position_bins, env, target_bins=goal_bin)
-    assert distances_scalar.shape == (2,)
-    assert distances_scalar[0] > 0
-    assert np.isclose(distances_scalar[1], 0.0, atol=1e-6)
-
-    # Test 2: Dynamic targets (uses per-target fallback strategy)
-    target_bins = np.array([goal_bin, start_bin])  # Different target each timepoint
-    distances_dynamic = distance_to_region(position_bins, env, target_bins=target_bins)
-    assert distances_dynamic.shape == (2,)
-    assert distances_dynamic[0] > 0
-    assert distances_dynamic[1] > 0
+    env = simple_environment_with_regions
+    positions = np.array(
+        [[0.0, 0.0], [np.nan, np.nan], [4.0, 4.0], [50.0, 50.0], [6.0, 6.0]]
+    )
+    distances = distance_to_goal(env, np.arange(5.0), positions, goal="goal1")
+    assert np.isnan(distances[[1, 3]]).all()
+    assert np.isfinite(distances[[0, 2, 4]]).all()
 
 
 # =============================================================================
@@ -924,7 +363,7 @@ def test_time_to_goal_arrival_is_outside_the_trial():
 
 def test_cost_to_goal_uniform(simple_environment_with_regions):
     """Test cost to goal with uniform cost (equivalent to geodesic distance)."""
-    from neurospatial.behavior.navigation import cost_to_goal, distance_to_region
+    from neurospatial.behavior.navigation import cost_to_goal, distance_to_goal
 
     env = simple_environment_with_regions
 
@@ -938,9 +377,9 @@ def test_cost_to_goal_uniform(simple_environment_with_regions):
     # Compute cost with uniform cost (no cost_map or terrain_difficulty)
     cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)
 
-    # Compute geodesic distance for comparison
-    distance = distance_to_region(
-        position_bins, env, target_bins=goal_bin, metric="geodesic"
+    # Geodesic distance from the bin centres, for comparison
+    distance = distance_to_goal(
+        env, np.arange(3.0), env.bin_centers[position_bins], goal="goal1"
     )
 
     # With uniform cost, cost should equal geodesic distance
@@ -1386,27 +825,17 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 # =============================================================================
 
 
-def test_path_progress_array_length_mismatch():
+def test_path_progress_array_length_mismatch(environment_with_polygon_regions):
     """Test path_progress raises error for mismatched array lengths."""
-    import pytest
-
     from neurospatial.behavior.navigation import path_progress
 
-    # Deterministic grid - no randomness needed
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    # Mismatched lengths
-    with pytest.raises(
-        ValueError, match=r"start_bins= with shape \(2,\), but there are 3 samples"
-    ):
+    with pytest.raises(ValueError, match=r"times has 3 samples, positions has 2"):
         path_progress(
-            np.array([0, 1, 2]),
-            env,
-            start_bins=np.array([0, 0]),  # Wrong length!
-            goal_bins=np.array([2, 2, 2]),
+            environment_with_polygon_regions,
+            np.arange(3.0),
+            np.array([[0.0, 0.0], [2.0, 2.0]]),
+            start="start_zone",
+            goal="goal_zone",
         )
 
 
@@ -1443,17 +872,14 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
     assert costs[0] > 0
 
 
-def test_distance_to_region_refuses_scalar_outside_marker():
-    """A single target of -1 (bin_at's outside marker) raises."""
-    from neurospatial.behavior.navigation import distance_to_region
+def test_distance_to_goal_refuses_a_goal_outside(simple_environment_with_regions):
+    """A goal point outside the environment raises instead of giving NaN."""
+    from neurospatial.behavior.navigation import distance_to_goal
 
-    # Deterministic grid - no randomness needed
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-
-    position_bins = np.array([0, 1, 2, 3, 4])
-
-    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
-        distance_to_region(position_bins, env, target_bins=-1)
+    with pytest.raises(ValueError, match=r"goal= point \[500.0, 500.0\] is outside"):
+        distance_to_goal(
+            simple_environment_with_regions,
+            np.arange(2.0),
+            np.array([[0.0, 0.0], [2.0, 2.0]]),
+            goal=[500.0, 500.0],
+        )
