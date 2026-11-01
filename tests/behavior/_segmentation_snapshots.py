@@ -8,6 +8,7 @@ import scipy.sparse
 
 def capture_segmentation_outputs(pause, laps):
     """Exercise every public segmentation/window/sequence entry point."""
+    from neurospatial import Intervals
     from neurospatial.behavior import (
         Trial,
         detect_goal_directed_runs,
@@ -30,7 +31,7 @@ def capture_segmentation_outputs(pause, laps):
     lap_recording = laps
     labels = np.where(p.env.bin_centers[:, 0] < 50, 0, 1)
     reference = lap_recording.position_bins[100:501]
-    trials = [Trial(0.0, p.times[-1], "source", "target", "reached")]
+    trials = Intervals([Trial(0.0, p.times[-1], "source", "target", "reached")])
     return {
         "detect_region_crossings": detect_region_crossings(
             p.position_bins, p.times, p.env, region_name="target"
@@ -66,13 +67,16 @@ def capture_segmentation_outputs(pause, laps):
             method="reference",
             reference_lap=reference,
         ),
-        "segment_trials": segment_trials(
-            p.position_bins,
-            p.times,
-            p.env,
-            start_region="source",
-            end_regions=["target"],
-            max_duration=2000,
+        # The snapshot holds the trial records; the Intervals adds ids.
+        "segment_trials": list(
+            segment_trials(
+                p.position_bins,
+                p.times,
+                p.env,
+                start_region="source",
+                end_regions=["target"],
+                max_duration=2000,
+            )
         ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
             p.position_bins, p.times, p.env, goal_region="target"

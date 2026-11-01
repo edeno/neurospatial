@@ -132,6 +132,7 @@ from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
+    from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
     from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.behavior.segmentation import Trial
@@ -560,7 +561,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
 def _warn_if_no_trial_overlaps(
     times: NDArray[np.float64],
-    trials: list[Trial],
+    trials: Intervals[Trial],
     *,
     call: str,
     result: str,
@@ -575,8 +576,8 @@ def _warn_if_no_trial_overlaps(
     ----------
     times : ndarray, shape (n_samples,)
         Sample times in seconds.
-    trials : list of Trial
-        Trials with ``start_time`` and ``stop_time`` in seconds.
+    trials : Intervals
+        Trials with ``start`` and ``stop`` in seconds.
     call : str
         Public function name for the message.
     result : str
@@ -588,8 +589,7 @@ def _warn_if_no_trial_overlaps(
 
     if len(trials) == 0 or len(times) == 0:
         return
-    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
-    ends = np.array([trial.stop_time for trial in trials], dtype=np.float64)
+    starts, ends = trials.start, trials.stop
     # Each trial's first sample at or after its start; it is inside the trial
     # when it is not after the trial's end.
     ordered = np.sort(times)
@@ -613,7 +613,7 @@ def _warn_if_no_trial_overlaps(
 
 @reads_pynapple_samples
 def trials_to_region_arrays(
-    trials: list[Trial],
+    trials: Intervals[Trial],
     times: NDArray[np.float64],
     env: Environment,
 ) -> tuple[NDArray[np.int_], NDArray[np.int_]]:
@@ -624,8 +624,9 @@ def trials_to_region_arrays(
 
     Parameters
     ----------
-    trials : list[Trial]
-        Trial segmentation from segment_trials().
+    trials : Intervals
+        Trials from segment_trials(), read_trials() or a task log, with
+        ``start_region`` and ``end_region`` fields.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session, strictly increasing (seconds).
     env : Environment
@@ -686,8 +687,10 @@ def trials_to_region_arrays(
     path_progress : Compute normalized path progress
     distance_to_region : Distance to target region
     """
+    from neurospatial._interval_table import require_intervals
     from neurospatial._observation import _validated_signal_times
 
+    require_intervals(trials, name="trials", owner="trials_to_region_arrays()")
     times = _validated_signal_times(times, call="trials_to_region_arrays")
     _warn_if_no_trial_overlaps(
         times, trials, call="trials_to_region_arrays()", result="-1"
@@ -724,7 +727,7 @@ def trials_to_region_arrays(
 
 
 def _trial_sample_bounds(
-    times: NDArray[np.float64], trials: list[Trial]
+    times: NDArray[np.float64], trials: Intervals[Trial]
 ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     """First and one-past-last sample of each trial in strictly increasing times.
 
@@ -732,8 +735,8 @@ def _trial_sample_bounds(
     ----------
     times : ndarray, shape (n_samples,)
         Strictly increasing sample times in seconds.
-    trials : list of Trial
-        Trials with finite ``start_time <= stop_time`` in seconds.
+    trials : Intervals
+        Trials in seconds.
 
     Returns
     -------
@@ -741,10 +744,8 @@ def _trial_sample_bounds(
         ``times[first:stop]`` are the samples with
         ``start_time <= t <= end_time``.
     """
-    starts = np.array([trial.start_time for trial in trials], dtype=np.float64)
-    ends = np.array([trial.stop_time for trial in trials], dtype=np.float64)
-    first: NDArray[np.intp] = np.searchsorted(times, starts, side="left")
-    stop: NDArray[np.intp] = np.searchsorted(times, ends, side="right")
+    first: NDArray[np.intp] = np.searchsorted(times, trials.start, side="left")
+    stop: NDArray[np.intp] = np.searchsorted(times, trials.stop, side="right")
     return first, stop
 
 
@@ -2033,7 +2034,7 @@ def _validated_bin_values(
 @reads_pynapple_samples
 def time_to_goal(
     times: NDArray[np.float64],
-    trials: list[Trial],
+    trials: Intervals[Trial],
 ) -> NDArray[np.float64]:
     """Compute time remaining until goal arrival for each trial.
 
@@ -2041,57 +2042,62 @@ def time_to_goal(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session, strictly increasing (seconds).
-    trials : list[Trial]
-        Trial segmentation from segment_trials(). Only trials that reached
-        their goal (``trial.success``) are included; timed-out and censored
-        trials, whose arrival was never observed, are not.
+    trials : Intervals
+        Trials from segment_trials(), read_trials() or a task log, with an
+        ``outcome`` field. Only trials with ``outcome == "reached"`` are
+        included; timed-out, returned and censored trials, whose arrival was
+        never observed, are not. The arrival is each trial's ``stop``.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Time in seconds until goal arrival, for samples with
-        ``start_time <= t <= stop_time`` of a successful trial. NaN outside
-        successful trials.
+        ``stop - t`` in seconds for samples in a reached trial's
+        ``[start, stop)``; NaN outside them. The arrival sample, at ``stop``,
+        is outside its trial.
 
     Raises
     ------
     ValueError
         If ``times`` is empty, not 1-D, holds a non-finite value or is not
-        strictly increasing.
+        strictly increasing, or if two reached trials overlap.
+    TypeError
+        If ``trials`` is not an Intervals.
+    AttributeError
+        If ``trials`` has no ``outcome`` field.
 
     Warns
     -----
     UserWarning
-        If there are trials but none contains a sample of ``times`` (usually
-        trials on a different clock).
+        If reached trials contain no sample of ``times`` (usually trials on a
+        different clock).
 
     Examples
     --------
-    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
-    >>> ttg = time_to_goal(times, trials)  # doctest: +SKIP
-    >>> approach_mask = (ttg > 0) & (ttg <= 2.0)  # Last 2 seconds  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Intervals
+    >>> from neurospatial.behavior import time_to_goal
+    >>> trials = Intervals.from_arrays(
+    ...     [1.0, 5.0], [4.0, 8.0], outcome=["reached", "timeout"]
+    ... )
+    >>> time_to_goal(np.arange(10.0), trials).tolist()
+    [nan, 3.0, 2.0, 1.0, nan, nan, nan, nan, nan, nan]
 
     See Also
     --------
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
+    from neurospatial._interval_table import require_intervals
     from neurospatial._observation import _validated_signal_times
 
+    require_intervals(trials, name="trials", owner="time_to_goal()")
     times = _validated_signal_times(times, call="time_to_goal")
-    _warn_if_no_trial_overlaps(times, trials, call="time_to_goal()", result="NaN")
-    ttg = np.full(len(times), np.nan, dtype=np.float64)
-
-    for trial, first, stop in zip(
-        trials, *_trial_sample_bounds(times, trials), strict=True
-    ):
-        # Only an observed arrival has a time to goal: timed-out and censored
-        # trials (cut off by a gap, an epoch edge, a break or the end of the
-        # recording) never reached it.
-        if trial.success:
-            ttg[first:stop] = np.maximum(trial.stop_time - times[first:stop], 0.0)
-
-    return ttg
+    # Only an observed arrival has a time to goal: timed-out, returned and
+    # censored trials (cut off by a gap, an epoch edge, a break or the end of
+    # the recording) never reached it.
+    reached = trials[trials.outcome == "reached"]
+    arrival: NDArray[np.float64] = reached.sample_values(times, reached.stop)
+    return arrival - times
 
 
 # A heading change wider than this is a reversal (within 30 degrees of
@@ -2284,7 +2290,7 @@ def _simplified_polyline(
 @reads_pynapple_samples
 def goal_pair_direction_labels(
     times: NDArray[np.float64],
-    trials: list[Trial],
+    trials: Intervals[Trial],
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from trial data.
 
@@ -2297,10 +2303,11 @@ def goal_pair_direction_labels(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the entire session (seconds).
-    trials : list[Trial]
-        Trial segmentation from ``segment_trials()``. Each completed trial
-        labels ``[start_time, stop_time)``; trials with ``end_region=None``
-        label nothing.
+    trials : Intervals
+        Trials from ``segment_trials()``, ``read_trials()`` or a task log,
+        with ``start_region`` and ``end_region`` fields. Each completed trial
+        labels ``[start, stop)``; trials with ``end_region=None`` label
+        nothing.
 
     Returns
     -------
@@ -2308,18 +2315,27 @@ def goal_pair_direction_labels(
         Direction label for each timepoint using arrow notation, dtype
         ``object``; ``None`` outside every completed trial.
 
+    Raises
+    ------
+    ValueError
+        If ``times`` is empty, not 1-D, holds a non-finite value or is not
+        strictly increasing, or if two completed trials overlap.
+    TypeError
+        If ``trials`` is not an Intervals.
+
     Warns
     -----
     UserWarning
-        If there are trials but none contains a sample of ``times`` (usually
-        trials on a different clock).
+        If completed trials contain no sample of ``times`` (usually trials on
+        a different clock).
 
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Intervals
     >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
     >>> times = np.arange(6.0)
-    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", "reached")]
+    >>> trials = Intervals([Trial(1.0, 3.0, "home", "goal_left", "reached")])
     >>> goal_pair_direction_labels(times, trials).tolist()
     [None, 'home→goal_left', 'home→goal_left', None, None, None]
 
@@ -2331,22 +2347,18 @@ def goal_pair_direction_labels(
     laps_to_direction_labels : Direction labels from detected laps
     runs_to_direction_labels : Direction labels from detected runs
     """
-    from neurospatial.behavior.segmentation import _interval_labels
+    from neurospatial._interval_table import require_intervals
 
-    times = np.asarray(times, dtype=np.float64)
-    _warn_if_no_trial_overlaps(
-        times, trials, call="goal_pair_direction_labels()", result="None"
-    )
-    intervals = [
-        (
-            trial.start_time,
-            trial.stop_time,
-            f"{trial.start_region}\u2192{trial.end_region}",
-        )
-        for trial in trials
-        if trial.end_region is not None
+    require_intervals(trials, name="trials", owner="goal_pair_direction_labels()")
+    completed = trials[np.array([end is not None for end in trials.end_region], bool)]
+    labels = [
+        f"{start}\u2192{end}"
+        for start, end in zip(completed.start_region, completed.end_region, strict=True)
     ]
-    return _interval_labels(times, intervals)
+    out: NDArray[np.object_] = completed.sample_values(
+        times, np.array(labels, dtype=object)
+    )
+    return out
 
 
 @reads_pynapple_samples

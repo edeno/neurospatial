@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial.behavior import (
     detect_goal_directed_runs,
     detect_laps,
@@ -323,7 +323,7 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
         r.times,
         positions,
         decision_region="target",
-        trials=[trial],
+        trials=Intervals([trial]),
         window_duration=1001,
     )
     assert len(result.trial_results) == 1

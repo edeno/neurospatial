@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import BinIndexOutOfRangeError, Environment
+from neurospatial import BinIndexOutOfRangeError, Environment, Intervals
 from neurospatial.behavior import (
     cost_to_goal,
     distance_to_region,
@@ -482,16 +482,18 @@ class TestTrialHelpersOnAnotherClock:
         return corridor.with_regions(regions)
 
     @staticmethod
-    def _trials(scale: float = 1.0) -> list[Trial]:
-        return [
-            Trial(
-                start_time=1.0 * scale,
-                stop_time=4.0 * scale,
-                start_region="home",
-                end_region="goal",
-                outcome="reached",
-            )
-        ]
+    def _trials(scale: float = 1.0) -> Intervals[Trial]:
+        return Intervals(
+            [
+                Trial(
+                    start_time=1.0 * scale,
+                    stop_time=4.0 * scale,
+                    start_region="home",
+                    end_region="goal",
+                    outcome="reached",
+                )
+            ]
+        )
 
     def test_time_to_goal_warns(self):
         times = np.arange(10.0)
@@ -540,11 +542,13 @@ class TestTrialHelpersOnAnotherClock:
             ttg = time_to_goal(times, self._trials())
             goal_pair_direction_labels(times, self._trials())
             trials_to_region_arrays(self._trials(), times, env_with_regions)
-        np.testing.assert_array_equal(ttg[1:5], [3.0, 2.0, 1.0, 0.0])
+        np.testing.assert_array_equal(ttg[1:5], [3.0, 2.0, 1.0, np.nan])
 
     def test_no_trials_do_not_warn(self):
         import warnings
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            assert np.all(np.isnan(time_to_goal(np.arange(5.0), [])))
+            assert np.all(
+                np.isnan(time_to_goal(np.arange(5.0), Intervals([], record_type=Trial)))
+            )

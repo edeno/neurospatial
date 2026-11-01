@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
+from neurospatial.behavior.segmentation import Trial
 
 # =============================================================================
 # Test PreDecisionMetrics Dataclass
@@ -1026,7 +1027,7 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
     )
 
     trial = Trial(times[0], times[-1], "west", "east", "reached")
-    start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
+    start_bins, goal_bins = trials_to_region_arrays(Intervals([trial]), times, env)
     goals = [int(start_bins[0]), int(goal_bins[0])]
     for name, goal in zip(["west", "east"], goals, strict=True):
         assert goal != env.bins_in_region(name)[0]  # not the lowest-index bin
@@ -1488,7 +1489,12 @@ def _min_speed_calls(env):
             min_speed=v,
         ),
         "compute_vte_session": lambda v: compute_vte_session(
-            env, times, positions, decision_region="center", trials=[], min_speed=v
+            env,
+            times,
+            positions,
+            decision_region="center",
+            trials=Intervals([], record_type=Trial),
+            min_speed=v,
         ),
     }
 

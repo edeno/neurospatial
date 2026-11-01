@@ -672,7 +672,7 @@ class TestSegmentTrials:
         assert [(t.start_time, t.stop_time, t.outcome) for t in long_enough] == [
             (9.0, 12.0, "censored")
         ]
-        assert too_short == []
+        assert len(too_short) == 0
 
     def test_segment_trials_multiple_starts(self):
         """Test handling of multiple trial starts without completion."""

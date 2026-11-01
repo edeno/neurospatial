@@ -1044,6 +1044,21 @@ _MEMBERS = frozenset(name for name in dir(Intervals) if not name.startswith("_")
 }
 
 
+def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]:
+    """Require an :class:`Intervals`; a list of records gets the fix."""
+    if isinstance(value, Intervals):
+        return value
+    raise TypeError(
+        _format_error(
+            f"{owner}: {name} must be an Intervals, got {type(value).__name__}.",
+            why="consumers read fields (for example outcome) by name, so trials "
+            "detected, loaded from a task log or read from NWB work the same way.",
+            fix=f"pass the Intervals from segment_trials() or read_trials(), or "
+            f"wrap records with neurospatial.Intervals({name}).",
+        )
+    )
+
+
 def _missing_as_none(value: Any) -> Any:
     """``None`` for a missing table value (``NaN``, ``None``, ``pd.NA``)."""
     if value is None:

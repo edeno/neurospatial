@@ -17,7 +17,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Regions
+from neurospatial import Intervals, Regions
+from neurospatial.behavior.segmentation import Trial
 
 # =============================================================================
 # Test helpers
@@ -867,22 +868,24 @@ class TestComputeVTESession:
         )
 
         # Define trials
-        trials = [
-            Trial(
-                start_time=t1_times[0],
-                stop_time=t1_times[-1],
-                start_region="start",
-                end_region="center",
-                outcome="reached",
-            ),
-            Trial(
-                start_time=t2_times[0],
-                stop_time=t2_times[-1],
-                start_region="start",
-                end_region="center",
-                outcome="reached",
-            ),
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=t1_times[0],
+                    stop_time=t1_times[-1],
+                    start_region="start",
+                    end_region="center",
+                    outcome="reached",
+                ),
+                Trial(
+                    start_time=t2_times[0],
+                    stop_time=t2_times[-1],
+                    start_region="start",
+                    end_region="center",
+                    outcome="reached",
+                ),
+            ]
+        )
 
         result = compute_vte_session(
             positions=positions,
@@ -923,15 +926,17 @@ class TestComputeVTESession:
             ]
         )
 
-        trials = [
-            Trial(
-                start_time=0.0,
-                stop_time=2.0,
-                start_region="start",
-                end_region=None,
-                outcome="timeout",
-            ),
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=0.0,
+                    stop_time=2.0,
+                    start_region="start",
+                    end_region=None,
+                    outcome="timeout",
+                ),
+            ]
+        )
 
         # A trial that never enters the decision region keeps its place with
         # a status saying why, not silently dropped; this is not a warning.
@@ -1015,7 +1020,7 @@ class TestComputeVTESession:
         result = compute_vte_session(
             positions=positions,
             times=times,
-            trials=trials,
+            trials=Intervals(trials),
             decision_region="center",
             env=env,
             window_duration=0.5,
@@ -1065,15 +1070,17 @@ def test_compute_vte_session_env_first(t_maze_environment):
     y = np.linspace(30.0, 56.0, n)  # into the center bin (y >= 52.5)
     positions = np.column_stack([x, y])
 
-    trials = [
-        Trial(
-            start_time=times[0],
-            stop_time=times[-1],
-            start_region="start",
-            end_region="center",
-            outcome="reached",
-        )
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=times[0],
+                stop_time=times[-1],
+                start_region="start",
+                end_region="center",
+                outcome="reached",
+            )
+        ]
+    )
 
     # Positional (env, times, positions) call analyzes the trial. One trial
     # has no spread to z-score against, and that is not worth a warning.
@@ -1130,7 +1137,7 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
             times,
             positions,
             decision_region="decision",
-            trials=[Trial(5.0, 9.9, "start", "decision", "reached")],
+            trials=Intervals([Trial(5.0, 9.9, "start", "decision", "reached")]),
             window_duration=1.0,
             min_speed=5.0,
         )
@@ -1155,7 +1162,7 @@ def test_session_marks_trial_window_too_short(zig_zag_then_run):
         times,
         positions,
         decision_region="decision",
-        trials=[Trial(5.2, 9.9, "start", "decision", "reached")],
+        trials=Intervals([Trial(5.2, 9.9, "start", "decision", "reached")]),
         window_duration=1.0,
         min_speed=5.0,
     )
@@ -1193,7 +1200,7 @@ def _t_maze_session(amplitudes, *, creep=None):
         ys.append(y)
         trials.append(Trial(t[0], t[-1], "start", "center", "reached"))
     positions = np.column_stack([np.concatenate(xs), np.concatenate(ys)])
-    return np.concatenate(times), positions, trials
+    return np.concatenate(times), positions, Intervals(trials)
 
 
 def _first_center_sample(env, times, positions, *, after):
@@ -1227,7 +1234,7 @@ def test_session_trial_without_heading_is_unclassified(t_maze_environment):
         env,
         times,
         positions,
-        trials=[trials[i] for i in moving],
+        trials=trials[moving],
         **_SESSION_KWARGS,
     )
 
@@ -1289,11 +1296,13 @@ def test_session_break_before_ends_the_window(t_maze_environment):
         **_SESSION_KWARGS,
     )
     keep = (times < trials[1].start_time) | (times >= times[first])
-    shortened = [
-        trials[0],
-        Trial(times[first], trials[1].stop_time, "start", "center", "reached"),
-        trials[2],
-    ]
+    shortened = Intervals(
+        [
+            trials[0],
+            Trial(times[first], trials[1].stop_time, "start", "center", "reached"),
+            trials[2],
+        ]
+    )
     alone = compute_vte_session(
         env, times[keep], positions[keep], trials=shortened, **_SESSION_KWARGS
     )
@@ -1323,7 +1332,11 @@ def test_one_dimensional_positions_raise(t_maze_environment, name, n_samples):
             times, p, entry_time=2.0, window_duration=1.0, min_speed=1.0
         ),
         "compute_vte_session": lambda p: vte.compute_vte_session(
-            t_maze_environment, times, p, trials=[], **_SESSION_KWARGS
+            t_maze_environment,
+            times,
+            p,
+            trials=Intervals([], record_type=Trial),
+            **_SESSION_KWARGS,
         ),
     }
     match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
@@ -1388,15 +1401,17 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
     x = np.r_[np.full(30, 50.0), np.linspace(50, 90, 30), 90 - 2.0 * np.arange(41)]
     y = np.r_[np.linspace(5, 55, 30), np.full(71, 55.0)]
     positions = np.column_stack([x, y])
-    trials = [
-        Trial(
-            start_time=0.0,
-            stop_time=10.0,
-            start_region="start",
-            end_region="left",
-            outcome="reached",
-        )
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=0.0,
+                stop_time=10.0,
+                start_region="start",
+                end_region="left",
+                outcome="reached",
+            )
+        ]
+    )
     kwargs = {"decision_region": "center", "window_duration": 1.0, "min_speed": 5.0}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # one trial: no z-score spread
@@ -1433,7 +1448,7 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
         end_region="center",
         outcome="reached",
     )
-    trials = [trials[0], ms_trial, trials[1], trials[2]]
+    trials = Intervals([trials[0], ms_trial, trials[1], trials[2]])
     with pytest.warns(
         UserWarning,
         match=r"has no samples between its start and end times",
@@ -1442,20 +1457,21 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
             t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
         )
     messages = [str(w.message) for w in record]
-    assert any("Trial 1 " in m and "no samples" in m and "clock" in m for m in messages)
+    # Rows are in time order, so the trial on the millisecond clock is last.
+    assert any("Trial 3 " in m and "no samples" in m and "clock" in m for m in messages)
 
     assert [t.status for t in result.trial_results] == [
         "ok",
-        "no_samples",
         "no_entry",
         "ok",
+        "no_samples",
     ]
-    for unmeasured in result.trial_results[1:3]:
+    for unmeasured in result.trial_results[1::2]:
         assert np.isnan(unmeasured.head_sweep_magnitude)
         assert np.isnan(unmeasured.window_end)
         assert np.isnan(unmeasured.vte_index)
         assert unmeasured.is_vte is None
-    measured = [result.trial_results[i] for i in (0, 3)]
+    measured = [result.trial_results[i] for i in (0, 2)]
     assert measured[0].window_end < measured[1].window_end
     assert measured[0].head_sweep_magnitude < measured[1].head_sweep_magnitude
     assert result.n_classified == 2
@@ -1463,7 +1479,7 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
     table = result.trials_table()
     assert table.index.name == "trial"
     assert table.index.tolist() == [0, 1, 2, 3]
-    assert table["status"].tolist() == ["ok", "no_samples", "no_entry", "ok"]
+    assert table["status"].tolist() == ["ok", "no_entry", "ok", "no_samples"]
     assert list(table.columns)[:3] == ["window_start", "window_end", "status"]
     assert list(table.columns)[-1] == "is_vte"
 
@@ -1635,16 +1651,18 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
     ]
     times = np.concatenate([t for t, _ in pieces])
     positions = np.vstack([p for _, p in pieces])
-    trials = [
-        Trial(
-            start_time=t[0],
-            stop_time=t[-1],
-            start_region="start",
-            end_region="center",
-            outcome="reached",
-        )
-        for t, _ in pieces
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=t[0],
+                stop_time=t[-1],
+                start_region="start",
+                end_region="center",
+                outcome="reached",
+            )
+            for t, _ in pieces
+        ]
+    )
     alpha, threshold = 0.3, 0.5
     result = compute_vte_session(
         t_maze_environment,

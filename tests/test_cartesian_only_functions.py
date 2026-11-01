@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment, compute_spatial_rate
+from neurospatial import Environment, Intervals, compute_spatial_rate
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.behavior import (
     Trial,
@@ -326,7 +326,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _TIMES,
                 _POLAR_POSITIONS,
                 decision_region="near",
-                trials=[Trial(0.0, 2.5, "near", "far", "reached")],
+                trials=Intervals([Trial(0.0, 2.5, "near", "far", "reached")]),
             ),
             "compute_vte_session()",
         ),
@@ -413,7 +413,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _TIMES,
                 _POLAR_POSITIONS,
                 decision_region="near",
-                trials=[],
+                trials=Intervals([], record_type=Trial),
             ),
             "compute_vte_session()",
         ),

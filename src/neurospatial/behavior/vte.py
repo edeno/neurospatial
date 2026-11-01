@@ -77,6 +77,7 @@ from numpy.typing import ArrayLike, NDArray
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Intervals
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
@@ -1235,7 +1236,7 @@ def compute_vte_session(
     positions: NDArray[np.float64],
     *,
     decision_region: str,
-    trials: list[Trial],
+    trials: Intervals[Trial],
     window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
@@ -1260,8 +1261,9 @@ def compute_vte_session(
         a non-finite coordinate (NaN, for a lost frame) is a missing sample.
     decision_region : str
         Name of decision region in env.regions.
-    trials : list[Trial]
-        Trial segmentation from segment_trials().
+    trials : Intervals
+        Trials from segment_trials(), read_trials() or a task log; each
+        row's ``start_time`` and ``stop_time`` bound its samples.
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds; finite and positive.
         Typical values: 0.5-2.0s depending on maze size and task.
@@ -1316,8 +1318,8 @@ def compute_vte_session(
     Returns
     -------
     VTESessionResult
-        Session-level VTE analysis with one :class:`VTETrialResult` per input
-        trial, in input order (``result.trial_results[i]`` is ``trials[i]``;
+        Session-level VTE analysis with one :class:`VTETrialResult` per
+        trial, in row order (``result.trial_results[i]`` is ``trials[i]``;
         ``result.trials_table()`` tabulates them). A trial that could not be
         measured keeps its place with NaN metrics, ``is_vte=None`` and a
         ``status`` saying why; a measured trial without an observed head
@@ -1370,7 +1372,7 @@ def compute_vte_session(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial import Environment, Intervals, Regions
     >>> from neurospatial.behavior import Trial, compute_vte_session
 
     A T-maze stem rising to a crossbar, with the choice point at its center:
@@ -1401,7 +1403,7 @@ def compute_vte_session(
     ...     np.concatenate(times),
     ...     np.vstack(positions),
     ...     decision_region="center",
-    ...     trials=trials,
+    ...     trials=Intervals(trials),
     ...     window_duration=0.5,
     ...     min_speed=5.0,
     ...     vte_threshold=0.0,
@@ -1417,11 +1419,14 @@ def compute_vte_session(
     >>> result.n_vte_trials, round(result.vte_fraction, 3)
     (1, 0.333)
 
-    One row per trial, in input order:
+    One row per trial, in row order:
 
     >>> result.trials_table()[["status", "is_vte"]].values.tolist()
     [['ok', False], ['ok', False], ['ok', True], ['ok', None]]
     """
+    from neurospatial._interval_table import require_intervals
+
+    require_intervals(trials, name="trials", owner="compute_vte_session()")
     require_cartesian(
         env.coordinate_system,
         "compute_vte_session()",

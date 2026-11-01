@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial import BinIndexOutOfRangeError, Environment, Regions
+from neurospatial import BinIndexOutOfRangeError, Environment, Intervals, Regions
 from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
 
@@ -79,7 +79,7 @@ def test_trials_to_region_arrays_single_trial(simple_environment_with_regions):
         end_region="goal1",
         outcome="reached",
     )
-    trials = [trial]
+    trials = Intervals([trial])
 
     # Create times array with 11 points (0, 1, 2, ..., 10 seconds)
     times = np.linspace(0.0, 10.0, 11)
@@ -111,11 +111,13 @@ def test_trials_to_region_arrays_multiple_trials(simple_environment_with_regions
         pytest.skip("goal2 region has no bins in random environment")
 
     # Create 3 trials with different goals
-    trials = [
-        Trial(0.0, 5.0, "start", "goal1", "reached"),  # t=0 to t=5
-        Trial(5.5, 10.0, "start", "goal2", "reached"),  # t=5.5 to t=10
-        Trial(11.0, 15.0, "start", "goal1", "reached"),  # t=11 to t=15
-    ]
+    trials = Intervals(
+        [
+            Trial(0.0, 5.0, "start", "goal1", "reached"),  # t=0 to t=5
+            Trial(5.5, 10.0, "start", "goal2", "reached"),  # t=5.5 to t=10
+            Trial(11.0, 15.0, "start", "goal1", "reached"),  # t=11 to t=15
+        ]
+    )
 
     # Create times array covering all trials plus gaps
     times = np.linspace(0.0, 16.0, 17)  # 0, 1, 2, ..., 16 seconds
@@ -167,7 +169,7 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
         end_region=None,  # Failed trial - no end region
         outcome="timeout",
     )
-    trials = [trial]
+    trials = Intervals([trial])
 
     times = np.linspace(0.0, 10.0, 11)
 
@@ -203,7 +205,7 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
         end_region="goal_zone",
         outcome="reached",
     )
-    trials = [trial]
+    trials = Intervals([trial])
 
     times = np.linspace(0.0, 10.0, 11)
 
@@ -269,7 +271,7 @@ def test_trials_to_region_arrays_centroid_differs_from_first_bin():
 
     trial = Trial(0.0, 5.0, "zone", "zone", "reached")
     times = np.linspace(0.0, 5.0, 6)
-    start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
+    start_bins, goal_bins = trials_to_region_arrays(Intervals([trial]), times, env)
 
     assert np.all(start_bins == expected)
     assert np.all(goal_bins == expected)
@@ -760,22 +762,24 @@ def test_time_to_goal_successful_trials():
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
 
     # Create successful trials
-    trials = [
-        Trial(
-            start_time=1.0,
-            stop_time=4.0,
-            start_region="start",
-            end_region="goal",
-            outcome="reached",
-        ),
-        Trial(
-            start_time=6.0,
-            stop_time=9.0,
-            start_region="start",
-            end_region="goal",
-            outcome="reached",
-        ),
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=1.0,
+                stop_time=4.0,
+                start_region="start",
+                end_region="goal",
+                outcome="reached",
+            ),
+            Trial(
+                start_time=6.0,
+                stop_time=9.0,
+                start_region="start",
+                end_region="goal",
+                outcome="reached",
+            ),
+        ]
+    )
 
     # Compute time to goal
     ttg = time_to_goal(times, trials)
@@ -793,13 +797,13 @@ def test_time_to_goal_successful_trials():
     assert np.isclose(ttg[1], 3.0)  # 4.0 - 1.0 = 3.0 seconds remaining
     assert np.isclose(ttg[2], 2.0)  # 4.0 - 2.0 = 2.0 seconds remaining
     assert np.isclose(ttg[3], 1.0)  # 4.0 - 3.0 = 1.0 seconds remaining
-    assert np.isclose(ttg[4], 0.0)  # At goal
+    assert np.isnan(ttg[4])  # The arrival sample is outside [start, stop)
 
     # Trial 2: t=6.0 to t=9.0
     assert np.isclose(ttg[6], 3.0)  # 9.0 - 6.0 = 3.0 seconds remaining
     assert np.isclose(ttg[7], 2.0)  # 9.0 - 7.0 = 2.0 seconds remaining
     assert np.isclose(ttg[8], 1.0)  # 9.0 - 8.0 = 1.0 seconds remaining
-    assert np.isclose(ttg[9], 0.0)  # At goal
+    assert np.isnan(ttg[9])  # Arrival
 
 
 def test_time_to_goal_failed_trials():
@@ -810,15 +814,17 @@ def test_time_to_goal_failed_trials():
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 
     # Create failed trial (end_region=None, success=False)
-    trials = [
-        Trial(
-            start_time=1.0,
-            stop_time=4.0,
-            start_region="start",
-            end_region=None,  # Failed trial
-            outcome="timeout",
-        ),
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=1.0,
+                stop_time=4.0,
+                start_region="start",
+                end_region=None,  # Failed trial
+                outcome="timeout",
+            ),
+        ]
+    )
 
     ttg = time_to_goal(times, trials)
 
@@ -837,15 +843,17 @@ def test_time_to_goal_outside_trials():
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
     # Trial runs from 2.0 to 4.0
-    trials = [
-        Trial(
-            start_time=2.0,
-            stop_time=4.0,
-            start_region="start",
-            end_region="goal",
-            outcome="reached",
-        ),
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=2.0,
+                stop_time=4.0,
+                start_region="start",
+                end_region="goal",
+                outcome="reached",
+            ),
+        ]
+    )
 
     ttg = time_to_goal(times, trials)
 
@@ -855,10 +863,10 @@ def test_time_to_goal_outside_trials():
     assert np.isnan(ttg[5])  # After trial
     assert np.isnan(ttg[6])  # After trial
 
-    # Inside trial should have valid values
+    # Inside [2, 4) should have valid values; the arrival at 4 is outside
     assert not np.isnan(ttg[2])
     assert not np.isnan(ttg[3])
-    assert not np.isnan(ttg[4])
+    assert np.isnan(ttg[4])
 
 
 def test_time_to_goal_countdown():
@@ -869,24 +877,27 @@ def test_time_to_goal_countdown():
     # High-resolution timestamps
     times = np.linspace(0.0, 10.0, 101)  # 0.1s resolution
 
-    trials = [
-        Trial(
-            start_time=2.0,
-            stop_time=7.0,
-            start_region="start",
-            end_region="goal",
-            outcome="reached",
-        ),
-    ]
+    trials = Intervals(
+        [
+            Trial(
+                start_time=2.0,
+                stop_time=7.0,
+                start_region="start",
+                end_region="goal",
+                outcome="reached",
+            ),
+        ]
+    )
 
     ttg = time_to_goal(times, trials)
 
     # Find indices within trial
-    trial_mask = (times >= 2.0) & (times <= 7.0)
+    trial_mask = (times >= 2.0) & (times < 7.0)
     trial_times = times[trial_mask]
     trial_ttg = ttg[trial_mask]
+    np.testing.assert_array_equal(np.isnan(ttg), ~trial_mask)
 
-    # Verify countdown: ttg = end_time - current_time
+    # Verify countdown: ttg = stop_time - current_time
     expected_ttg = 7.0 - trial_times
     assert np.allclose(trial_ttg, expected_ttg, atol=1e-10)
 
@@ -894,32 +905,17 @@ def test_time_to_goal_countdown():
     assert np.all(np.diff(trial_ttg) <= 0)  # Non-increasing
 
 
-def test_time_to_goal_after_goal_reached():
-    """Test time to goal after goal reached (should be 0.0)."""
+def test_time_to_goal_arrival_is_outside_the_trial():
+    """The arrival sample, at stop_time, is outside the half-open trial."""
     from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-
-    # Trial ends at t=3.0
-    trials = [
-        Trial(
-            start_time=1.0,
-            stop_time=3.0,
-            start_region="start",
-            end_region="goal",
-            outcome="reached",
-        ),
-    ]
+    trials = Intervals([Trial(1.0, 3.0, "start", "goal", "reached")])
 
     ttg = time_to_goal(times, trials)
 
-    # At goal arrival time, should be 0.0
-    assert np.isclose(ttg[3], 0.0)
-
-    # After goal (due to clamping if any floating point issues)
-    # In this simple case, there shouldn't be values after end_time within trial
-    # But the clamping ensures no negative values
+    np.testing.assert_array_equal(ttg, [np.nan, 2.0, 1.0, np.nan, np.nan, np.nan])
 
 
 # =============================================================================

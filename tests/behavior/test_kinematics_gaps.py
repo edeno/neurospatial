@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial._intervals import observed_interval_mask
 from neurospatial.behavior import Trial, compute_planar_turn_angles
 from neurospatial.behavior.decisions import (
@@ -376,7 +376,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         times,
         positions,
         decision_region="decision",
-        trials=[Trial(times[0], times[-1], "source", "target", "reached")],
+        trials=Intervals([Trial(times[0], times[-1], "source", "target", "reached")]),
         window_duration=duration,
         max_gap=None,
     )

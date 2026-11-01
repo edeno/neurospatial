@@ -1087,28 +1087,33 @@ trials = segment_trials(
     start_region="start",
     end_regions=["left", "right"],
     min_duration=1.0,
-    max_duration=15.0,
+    max_duration=15.0,  # the task's timeout; omit it when the task has none
 )
 
-# Analyze choices and outcomes
-left_trials = [t for t in trials if t.end_region == "left"]
-right_trials = [t for t in trials if t.end_region == "right"]
+# Each field is an array with one entry per trial; select conditions with it
+left_trials = trials[trials.end_region == "left"]
+right_trials = trials[trials.end_region == "right"]
 
 print(f"Left choices: {len(left_trials)}")
 print(f"Right choices: {len(right_trials)}")
-print(f"Timeouts: {sum(t.outcome == 'timeout' for t in trials)}")
-print(f"Censored (result unknown): {sum(t.outcome == 'censored' for t in trials)}")
+print(f"Timeouts: {np.sum(trials.outcome == 'timeout')}")
+print(f"Censored (result unknown): {np.sum(trials.outcome == 'censored')}")
 ```
 
-**Returns**: List of `Trial` objects
-- `start_time`: Departure from the start region (the last sample inside it)
-- `stop_time`: When the trial ended (see `outcome`)
+**Returns**: an `Intervals` of `Trial` records, one row per trial in time
+order, each the half-open window `[start_time, stop_time)` (see
+[Intervals](#intervals)):
+- `start`: Departure from the start region (the last sample inside it)
+- `stop`: When the trial ended (see `outcome`); the sample at `stop`, such as
+  the arrival, is outside the trial
 - `end_region`: Name of the end region reached (None unless `outcome == "reached"`)
 - `outcome`: `"reached"`, `"timeout"`, `"returned"` (went back to the start
   region first) or `"censored"` (observation stopped first: a tracking gap
   longer than `max_gap`, an epochs edge, a declared break or the end of the
-  recording). Leave censored trials out of fraction-correct measures.
-- `success`: Shorthand for `outcome == "reached"`
+  recording). Leave censored trials out of fraction-correct measures, and
+  select successful trials with `trials[trials.outcome == "reached"]`.
+- `max_duration` defaults to `None` (no timeout): a timeout is a rule of the
+  task, so pass the task's own value when it has one.
 
 ---
 
@@ -1135,11 +1140,10 @@ trials = segment_trials(
     start_region="center",
     end_regions=["arm_a", "arm_b", "arm_c"],
     min_duration=0.5,
-    max_duration=10.0,
 )
 
 # Compute spontaneous alternation score
-arms = [t.end_region for t in trials if t.success]
+arms = trials.end_region[trials.outcome == "reached"].tolist()
 alternations = sum(1 for i in range(len(arms)-1) if arms[i] != arms[i+1])
 alternation_rate = alternations / (len(arms) - 1)
 
@@ -1175,17 +1179,15 @@ trials = segment_trials(
     start_region="center",
     end_regions=[f"arm_{i}" for i in range(8)],
     min_duration=0.5,
-    max_duration=20.0,
 )
 
 # Analyze working memory errors (re-entries)
 visited_arms = []
 errors = 0
-for trial in trials:
-    if trial.success and trial.end_region:
-        if trial.end_region in visited_arms:
-            errors += 1  # Re-entry error
-        visited_arms.append(trial.end_region)
+for trial in trials[trials.outcome == "reached"]:
+    if trial.end_region in visited_arms:
+        errors += 1  # Re-entry error
+    visited_arms.append(trial.end_region)
 
 print(f"Working memory errors: {errors}")
 ```
@@ -1458,45 +1460,37 @@ trials = segment_trials(
     start_region="start",
     end_regions=["left", "right"],
     min_duration=1.0,
-    max_duration=15.0,
 )
 
 # Step 2: Separate by outcome
-left_trials = [t for t in trials if t.end_region == "left"]
-right_trials = [t for t in trials if t.end_region == "right"]
+left_trials = trials[trials.end_region == "left"]
 
-# Step 3: Analyze path similarity within choice type
-left_similarities = []
-for i in range(len(left_trials)-1):
-    mask1 = (times >= left_trials[i].start_time) & (times <= left_trials[i].stop_time)
-    mask2 = (times >= left_trials[i+1].start_time) & (times <= left_trials[i+1].stop_time)
-
-    sim = trajectory_similarity(
-        position_bins[mask1],
-        position_bins[mask2],
-        env,
-        method="jaccard"
+# Step 3: Analyze path similarity within choice type; each slice holds one
+# trial's samples, start_time <= t < stop_time
+left_slices = left_trials.sample_slices(times)
+left_similarities = [
+    trajectory_similarity(
+        position_bins[first], position_bins[second], env, method="jaccard"
     )
-    left_similarities.append(sim)
+    for first, second in zip(left_slices[:-1], left_slices[1:])
+]
 
 print(f"Left choice stereotypy: {np.mean(left_similarities):.3f}")
 
-# Step 4: Detect goal-directed behavior
-for trial in trials[:5]:  # First 5 trials
-    if trial.end_region:
-        mask = (times >= trial.start_time) & (times <= trial.stop_time)
-        trial_bins = position_bins[mask]
-        trial_times = times[mask]
-
-        goal_runs = detect_goal_directed_runs(
-            trial_bins,
-            trial_times,
-            env,
-            goal_region=trial.end_region,
-            directedness_threshold=0.5,
-            min_progress=10.0,
-        )
-        print(f"Trial {trials.index(trial)+1}: {len(goal_runs)} goal-directed runs")
+# Step 4: Detect goal-directed behavior in the first 5 trials
+reached = trials[trials.outcome == "reached"]
+for trial_id, trial, samples in zip(
+    reached.interval_ids[:5], reached[:5], reached[:5].sample_slices(times)
+):
+    goal_runs = detect_goal_directed_runs(
+        position_bins[samples],
+        times[samples],
+        env,
+        goal_region=trial.end_region,
+        directedness_threshold=0.5,
+        min_progress=10.0,
+    )
+    print(f"Trial {trial_id}: {len(goal_runs)} goal-directed runs")
 ```
 
 **Applications**:
@@ -1584,7 +1578,8 @@ if transition_idx is not None:
 ### Trial Duration Filters
 
 - **min_duration**: Exclude brief entries (false starts, pass-throughs)
-- **max_duration**: Timeout threshold (typically 2-3x median duration)
+- **max_duration**: The task's timeout, if it has one (default `None`, no
+  timeout)
 - Start with permissive thresholds, refine based on task demands
 
 ### Directedness Thresholds

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from neurospatial import Intervals
 from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.navigation import (
     goal_pair_direction_labels,
@@ -32,24 +33,26 @@ def simple_times() -> NDArray[np.float64]:
 
 
 @pytest.fixture
-def basic_trials() -> list[Trial]:
+def basic_trials() -> Intervals[Trial]:
     """Two simple non-overlapping successful trials."""
-    return [
-        Trial(
-            start_time=10.0,
-            stop_time=20.0,
-            start_region="home",
-            end_region="goal_left",
-            outcome="reached",
-        ),
-        Trial(
-            start_time=30.0,
-            stop_time=45.0,
-            start_region="home",
-            end_region="goal_right",
-            outcome="reached",
-        ),
-    ]
+    return Intervals(
+        [
+            Trial(
+                start_time=10.0,
+                stop_time=20.0,
+                start_region="home",
+                end_region="goal_left",
+                outcome="reached",
+            ),
+            Trial(
+                start_time=30.0,
+                stop_time=45.0,
+                start_region="home",
+                end_region="goal_right",
+                outcome="reached",
+            ),
+        ]
+    )
 
 
 @pytest.fixture
@@ -71,24 +74,26 @@ def failed_trial() -> Trial:
 
 
 @pytest.fixture
-def overlapping_trials() -> list[Trial]:
-    """Two trials with overlapping time ranges (later should overwrite)."""
-    return [
-        Trial(
-            start_time=10.0,
-            stop_time=30.0,
-            start_region="home",
-            end_region="goal_left",
-            outcome="reached",
-        ),
-        Trial(
-            start_time=20.0,  # Overlaps with first trial
-            stop_time=40.0,
-            start_region="center",
-            end_region="goal_right",
-            outcome="reached",
-        ),
-    ]
+def overlapping_trials() -> Intervals[Trial]:
+    """Two trials with overlapping time ranges."""
+    return Intervals(
+        [
+            Trial(
+                start_time=10.0,
+                stop_time=30.0,
+                start_region="home",
+                end_region="goal_left",
+                outcome="reached",
+            ),
+            Trial(
+                start_time=20.0,  # Overlaps with first trial
+                stop_time=40.0,
+                start_region="center",
+                end_region="goal_right",
+                outcome="reached",
+            ),
+        ]
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -148,7 +153,7 @@ class TestGoalPairDirectionLabels:
         failed_trial: Trial,
     ) -> None:
         """Failed trials (end_region=None) are None."""
-        labels = goal_pair_direction_labels(simple_times, [failed_trial])
+        labels = goal_pair_direction_labels(simple_times, Intervals([failed_trial]))
 
         # All timepoints are None since the trial failed
         assert all(label is None for label in labels)
@@ -157,68 +162,67 @@ class TestGoalPairDirectionLabels:
         during_trial_mask = (simple_times >= 50.0) & (simple_times <= 65.0)
         assert all(label is None for label in labels[during_trial_mask])
 
-    def test_overlapping_trials_later_overwrites(
+    def test_overlapping_trials_are_refused(
         self,
         simple_times: NDArray[np.float64],
-        overlapping_trials: list[Trial],
+        overlapping_trials: Intervals[Trial],
     ) -> None:
-        """Later trials in the list overwrite earlier ones in overlapping regions."""
-        labels = goal_pair_direction_labels(simple_times, overlapping_trials)
-
-        # First trial only region (10-20s)
-        first_only_mask = (simple_times >= 10.0) & (simple_times < 20.0)
-        assert all(label == "home→goal_left" for label in labels[first_only_mask])
-
-        # Overlap region (20-30s) should have second trial's label
-        overlap_mask = (simple_times >= 20.0) & (simple_times <= 30.0)
-        assert all(label == "center→goal_right" for label in labels[overlap_mask])
-
-        # Second trial only region (30-40s)
-        second_only_mask = (simple_times > 30.0) & (simple_times < 40.0)
-        assert all(label == "center→goal_right" for label in labels[second_only_mask])
+        """A sample in two completed trials would get two labels."""
+        with pytest.raises(ValueError, match=r"intervals 0 and 1 overlap"):
+            goal_pair_direction_labels(simple_times, overlapping_trials)
+        # One of them is fine.
+        labels = goal_pair_direction_labels(simple_times, overlapping_trials[[1]])
+        assert (
+            labels[(simple_times >= 20.0) & (simple_times < 40.0)].tolist()
+            == ["center→goal_right"] * 200
+        )
 
     def test_empty_trials_list(
         self,
         simple_times: NDArray[np.float64],
     ) -> None:
         """Empty trials list gives all-None labels."""
-        labels = goal_pair_direction_labels(simple_times, [])
+        labels = goal_pair_direction_labels(
+            simple_times, Intervals([], record_type=Trial)
+        )
 
         assert len(labels) == len(simple_times)
         assert all(label is None for label in labels)
 
     def test_empty_times_array(self) -> None:
-        """Empty times array should return empty labels array."""
+        """Samples are required, as for every per-sample trial function."""
         times = np.array([], dtype=np.float64)
-        trials = [
-            Trial(
-                start_time=10.0,
-                stop_time=20.0,
-                start_region="home",
-                end_region="goal",
-                outcome="reached",
-            )
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=10.0,
+                    stop_time=20.0,
+                    start_region="home",
+                    end_region="goal",
+                    outcome="reached",
+                )
+            ]
+        )
 
-        labels = goal_pair_direction_labels(times, trials)
-
-        assert len(labels) == 0
-        assert labels.dtype == object
+        with pytest.raises(ValueError, match="times"):
+            goal_pair_direction_labels(times, trials)
 
     def test_label_format_uses_arrow(
         self,
         simple_times: NDArray[np.float64],
     ) -> None:
         """Labels should use arrow notation: 'start→end'."""
-        trials = [
-            Trial(
-                start_time=10.0,
-                stop_time=20.0,
-                start_region="A",
-                end_region="B",
-                outcome="reached",
-            ),
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=10.0,
+                    stop_time=20.0,
+                    start_region="A",
+                    end_region="B",
+                    outcome="reached",
+                ),
+            ]
+        )
 
         labels = goal_pair_direction_labels(simple_times, trials)
 
@@ -233,15 +237,17 @@ class TestGoalPairDirectionLabels:
         """The trial's first sample is labeled; its last, which leaves it, is not."""
         # Exact timestamps for boundaries
         times = np.array([5.0, 10.0, 15.0, 20.0, 25.0])
-        trials = [
-            Trial(
-                start_time=10.0,
-                stop_time=20.0,
-                start_region="home",
-                end_region="goal",
-                outcome="reached",
-            ),
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=10.0,
+                    stop_time=20.0,
+                    start_region="home",
+                    end_region="goal",
+                    outcome="reached",
+                ),
+            ]
+        )
 
         labels = goal_pair_direction_labels(times, trials)
 
@@ -256,22 +262,24 @@ class TestGoalPairDirectionLabels:
         simple_times: NDArray[np.float64],
     ) -> None:
         """Different region names produce different labels."""
-        trials = [
-            Trial(
-                start_time=10.0,
-                stop_time=20.0,
-                start_region="center",
-                end_region="arm1",
-                outcome="reached",
-            ),
-            Trial(
-                start_time=30.0,
-                stop_time=40.0,
-                start_region="center",
-                end_region="arm2",
-                outcome="reached",
-            ),
-        ]
+        trials = Intervals(
+            [
+                Trial(
+                    start_time=10.0,
+                    stop_time=20.0,
+                    start_region="center",
+                    end_region="arm1",
+                    outcome="reached",
+                ),
+                Trial(
+                    start_time=30.0,
+                    stop_time=40.0,
+                    start_region="center",
+                    end_region="arm2",
+                    outcome="reached",
+                ),
+            ]
+        )
 
         labels = goal_pair_direction_labels(simple_times, trials)
 

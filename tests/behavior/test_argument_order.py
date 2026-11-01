@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, behavior
+from neurospatial import Environment, Intervals, behavior
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +62,7 @@ def test_old_order_raises(name, recording):
         if name == "compute_decision_analysis":
             kwargs["goal_regions"] = ["goal"]
         else:
-            kwargs["trials"] = []
+            kwargs["trials"] = Intervals([], record_type=behavior.Trial)
     if name in {"compute_path_efficiency", "compute_goal_directed_metrics"}:
         args = (env, positions, times, np.array([95.0, 50.0]))
     if name in {"approach_rate", "goal_bias", "instantaneous_goal_alignment"}:
