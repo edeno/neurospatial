@@ -11,15 +11,17 @@ from __future__ import annotations
 
 import math
 import numbers
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _is_pynapple_object
+
+_T = TypeVar("_T")
 
 
 def validate_finite(
@@ -399,8 +401,8 @@ def is_integer_at_least(value: object, minimum: int) -> bool:
 
 def validate_integer_at_least(
     value: object, minimum: int, *, name: str, owner: str, hint: str = ""
-) -> None:
-    """Require an integer of at least ``minimum``, booleans excluded.
+) -> int:
+    """Require an integer of at least ``minimum``, booleans excluded; return it.
 
     Parameters
     ----------
@@ -417,6 +419,11 @@ def validate_integer_at_least(
         Added to the message after the value, such as the value a paper
         used (``"Davidson et al. used 1500"``) or why the minimum holds.
 
+    Returns
+    -------
+    int
+        ``value`` as a Python int.
+
     Raises
     ------
     ValueError
@@ -432,6 +439,8 @@ def validate_integer_at_least(
             f"{owner}: {name} must be {bound}, got {value!r}"
             + (f"; {hint}." if hint else ".")
         )
+    assert isinstance(value, numbers.Integral)  # checked above
+    return int(value)
 
 
 def validate_draw_count(value: object, *, name: str, owner: str) -> None:
@@ -546,15 +555,15 @@ def is_finite_real(value: object, *, positive: bool) -> TypeGuard[float]:
 
 
 def validate_finite_scalar(
-    value: Any, *, name: str, positive: bool, none_allowed: bool = False
-) -> None:
-    """Require one finite real number, nonnegative or strictly positive.
+    value: object, *, name: str, positive: bool, none_allowed: bool = False
+) -> float | None:
+    """Require one finite real number, nonnegative or strictly positive; return it.
 
     Booleans and non-numeric values are rejected rather than coerced.
 
     Parameters
     ----------
-    value : Any
+    value : object
         The value to check.
     name : str
         Name used in the error message.
@@ -563,25 +572,35 @@ def validate_finite_scalar(
     none_allowed : bool, default=False
         Accept ``None`` as "not set".
 
+    Returns
+    -------
+    float or None
+        ``value`` as a float, or None when ``none_allowed`` and it is None.
+
     Raises
     ------
     ValueError
         If ``value`` is not an allowed finite real number.
     """
     if none_allowed and value is None:
-        return
+        return None
     if not is_finite_real(value, positive=positive):
         msg = (
             f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
             f"{', or None' if none_allowed else ''}; got {value!r}."
         )
         raise ValueError(msg)
+    return float(value)
 
 
 def validate_choice(
-    value: object, choices: Sequence[object], *, name: str, owner: str
-) -> None:
-    """Require ``value`` to be one of the documented ``choices``.
+    value: object, choices: Sequence[_T], *, name: str, owner: str
+) -> _T:
+    """Require ``value`` to be one of the documented ``choices``; return it.
+
+    The return value has the choices' type, so ``method =
+    validate_choice(method, ("a", "b"), ...)`` narrows ``method`` for the type
+    checker as well as at run time.
 
     Parameters
     ----------
@@ -595,6 +614,11 @@ def validate_choice(
         What received the value, as the message names it: a function with
         parentheses (``"compare_spatial_rates()"``) or a record (``"Run"``).
 
+    Returns
+    -------
+    object
+        The matching element of ``choices``.
+
     Raises
     ------
     ValueError
@@ -603,16 +627,95 @@ def validate_choice(
     Examples
     --------
     >>> validate_choice("exit", ("entry", "exit"), name="direction", owner="f()")
+    'exit'
     """
-    if value not in choices:
-        options = ", ".join(repr(choice) for choice in choices)
-        raise ValueError(
-            _format_error(
-                f"{owner} got {name}={value!r}; {name} must be one of {options}.",
-                why=f"each {name} option has one documented meaning.",
-                fix=f"pass {name}= one of {options}",
-            )
+    for choice in choices:
+        if value is choice or value == choice:
+            return choice
+    options = ", ".join(repr(choice) for choice in choices)
+    raise ValueError(
+        _format_error(
+            f"{owner} got {name}={value!r}; {name} must be one of {options}.",
+            why=f"each {name} option has one documented meaning.",
+            fix=f"pass {name}= one of {options}",
         )
+    )
+
+
+def validate_bool(value: object, *, name: str, owner: str) -> bool:
+    """Require ``True`` or ``False``; return it as a Python bool.
+
+    NumPy booleans count; ``0``, ``1`` and other truthy values do not.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a boolean.
+
+    Examples
+    --------
+    >>> validate_bool(np.True_, name="show", owner="f()")
+    True
+    """
+    if not isinstance(value, (bool, np.bool_)):
+        msg = f"{owner}: {name} must be True or False, got {value!r}."
+        raise TypeError(msg)
+    return bool(value)
+
+
+def validate_instance(
+    value: object, cls: type[_T], *, name: str, owner: str, hint: str = ""
+) -> _T:
+    """Require an instance of ``cls``; return it, typed as one.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    cls : type
+        The required class.
+    name : str
+        Argument or field name, used in the error message.
+    owner : str
+        What received the value, as the message names it.
+    hint : str, default=""
+        How to fix it, added to the message.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not an instance of ``cls``.
+
+    Examples
+    --------
+    >>> validate_instance("cm", str, name="units", owner="f()")
+    'cm'
+    """
+    if not isinstance(value, cls):
+        msg = (
+            f"{owner}: {name} must be a {cls.__name__}, got {type(value).__name__}"
+            + (f"; {hint}." if hint else ".")
+        )
+        raise TypeError(msg)
+    return value
+
+
+def validate_callable(
+    value: object, *, name: str, owner: str, hint: str = ""
+) -> Callable[..., Any]:
+    """Require a callable; return it, typed as one.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not callable.
+    """
+    if not callable(value):
+        msg = f"{owner}: {name} must be callable, got {type(value).__name__}" + (
+            f"; {hint}." if hint else "."
+        )
+        raise TypeError(msg)
+    return value
 
 
 def check_writable(
