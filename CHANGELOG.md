@@ -346,11 +346,6 @@ trial in one call.
 
 **Changed**
 
-- `segment_trials` returns `Intervals[Trial]` (ids `0` to `n - 1` in
-  detection order, `analysis_settings` recording its arguments) instead of a
-  list. Select successful trials with `trials[trials.outcome == "reached"]`.
-- `segment_trials(max_duration=None)` is the new default: no timeout, since a
-  timeout is a rule of the task. Pass your task's value to keep timeouts.
 - `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
   window `[start_time, stop_time)`.
 - `time_to_goal` and `compute_vte_session` take an `Intervals` and read
