@@ -49,6 +49,7 @@ from neurospatial.ops.alignment import map_probabilities
 
 # Basis functions (GLM spatial basis)
 from neurospatial.ops.basis import (
+    basis_at_positions,
     chebyshev_filter_basis,
     geodesic_rbf_basis,
     heat_kernel_wavelet_basis,
@@ -261,6 +262,7 @@ __all__ = [
     "visibility_occupancy",
     "visible_cues",
     # Basis functions
+    "basis_at_positions",
     "chebyshev_filter_basis",
     "geodesic_rbf_basis",
     "heat_kernel_wavelet_basis",

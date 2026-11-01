@@ -437,3 +437,58 @@ def test_ids_beyond_int64_are_refused() -> None:
         Intervals.from_arrays(
             [0.0], [1.0], interval_ids=np.array([2**64 - 1], dtype=np.uint64)
         )
+
+
+def test_spike_counts_by_hand_with_overlapping_rows():
+    trials = Intervals.from_arrays(
+        [0.0, 0.5, 2.0], [1.0, 1.5, 2.0], interval_ids=[4, 9, 2]
+    )
+    # A spike at a start counts, at a stop does not; the spike at 0.75 lies
+    # in two overlapping rows and counts in both. Trains need not be sorted.
+    counts = trials.spike_counts(
+        {"a": np.array([1.0, 0.0, 0.75]), "b": np.array([1.5, 0.5])}
+    )
+    assert counts.index.tolist() == [4, 9, 2]
+    assert counts.columns.tolist() == ["a", "b"]
+    assert counts["a"].tolist() == [2, 2, 0]
+    assert counts["b"].tolist() == [1, 1, 0]
+    assert counts.dtypes.tolist() == [np.int64, np.int64]
+
+
+def test_spike_counts_sum_to_the_spikes_inside_separate_rows():
+    rng = np.random.default_rng(1)
+    spikes = np.sort(rng.uniform(0, 100, 500))
+    trials = Intervals.from_arrays([5.0, 20.0, 47.5, 80.0], [12.0, 33.3, 61.0, 99.0])
+    inside = ((spikes[:, None] >= trials.start) & (spikes[:, None] < trials.stop)).any(
+        axis=1
+    )
+    assert trials.spike_counts([spikes])[0].sum() == inside.sum()
+
+
+def test_one_interval_restricts_an_analysis_like_its_row():
+    from neurospatial._intervals import as_intervals
+
+    trials = Intervals.from_arrays([1.0, 4.0, 6.0], [3.0, 5.0, 6.0])
+    one = trials.sel(interval_id=1)
+    np.testing.assert_array_equal(as_intervals(one, name="epochs"), [[4.0, 5.0]])
+    np.testing.assert_array_equal(
+        as_intervals(one, name="epochs"),
+        as_intervals(trials[trials.interval_ids == 1], name="epochs"),
+    )
+    # Without duration it holds no time: an empty selection, as for Intervals.
+    assert as_intervals(trials.sel(interval_id=2), name="epochs").shape == (0, 2)
+
+
+def test_a_table_with_start_and_stop_columns_is_read_as_rows():
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame({"start_time": [0.0, 2.0], "stop_time": [1.0, 3.0]})
+    np.testing.assert_array_equal(as_intervals(table, name="epochs"), [[0, 1], [2, 3]])
+    np.testing.assert_array_equal(as_intervals(table.iloc[:1], name="epochs"), [[0, 1]])
+
+
+def test_a_record_with_a_missing_bound_is_refused():
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(ValueError, match="NaN or inf"):
+        as_intervals(pd.Series({"start_time": 0.0, "stop_time": np.nan}), name="epochs")

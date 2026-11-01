@@ -26,8 +26,9 @@ from neurospatial._stacklevel import _external_stacklevel
 _ACCEPTED_FORMS = (
     "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
     "an object with an (n, 2) .windows array (for example "
-    "neurospatial.Intervals), or an object with 1-D .start and .end arrays "
-    "(for example a pynapple IntervalSet)"
+    "neurospatial.Intervals), one interval record with .start_time and "
+    ".stop_time (for example a Trial), or an object with 1-D .start and .end "
+    "arrays (for example a pynapple IntervalSet)"
 )
 
 
@@ -277,6 +278,25 @@ def _parse_intervals(
             return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
         if rows.shape[0] == 0:
             return EMPTY_SELECTION, []
+    elif (
+        hasattr(value, "start_time")
+        and hasattr(value, "stop_time")
+        and np.ndim(value.start_time) == 0
+        and np.ndim(value.stop_time) == 0
+    ):
+        # One interval record (Interval, Trial, RegionVisit): its own window,
+        # or an empty selection when it has no duration, as in ``windows``.
+        # Tables with start_time/stop_time columns are read as rows below.
+        try:
+            start, stop = float(value.start_time), float(value.stop_time)
+        except (TypeError, ValueError) as exc:
+            return None, [
+                f"{name}.start_time and {name}.stop_time could not be read as "
+                f"numbers ({exc})"
+            ]
+        if np.isfinite(start) and start == stop:
+            return EMPTY_SELECTION, []
+        rows = np.array([[start, stop]])
     elif hasattr(value, "start") and hasattr(value, "end"):
         try:
             starts = np.asarray(value.start, dtype=np.float64)
@@ -397,7 +417,10 @@ IntervalSet-like
         array of ``[start, stop)`` rows (for example
         :class:`~neurospatial.Intervals`), is read through it; its rows
         without duration are not windows, and no windows is a valid, empty
-        selection. An object exposing 1-D ``.start`` and ``.end`` arrays
+        selection. One interval record (``start_time`` and ``stop_time``,
+        such as a :class:`~neurospatial.behavior.Trial`) is its own window,
+        or an empty selection without duration. An object exposing 1-D
+        ``.start`` and ``.end`` arrays
         (for example a pynapple ``IntervalSet``) is accepted by duck typing;
         pynapple is never imported. A pynapple interval includes its end, so
         its stop becomes the next float above ``end``: a sample exactly at

@@ -28,6 +28,8 @@ from neurospatial._stacklevel import _external_stacklevel
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._typing import SpikeTrainsLike
+
 __all__ = ["Interval", "Intervals"]
 
 _TIME_FIELDS = ("start_time", "stop_time")
@@ -933,6 +935,71 @@ class Intervals(Generic[R]):
         hi = np.searchsorted(t, self._stop, side="left")
         self._warn_if_no_sample_inside(t, hi > lo, "Intervals.sample_slices")
         return [slice(int(a), int(b)) for a, b in zip(lo, hi, strict=True)]
+
+    @reads_pynapple_samples
+    def spike_counts(
+        self,
+        spike_times: SpikeTrainsLike,
+        *,
+        unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    ) -> pd.DataFrame:
+        """Spikes of each unit in each interval, one row per ``interval_id``.
+
+        A spike at ``t`` counts for row ``i`` when ``start[i] <= t < stop[i]``;
+        overlapping rows each count it. Divide by ``durations`` for rates:
+        ``trials.spike_counts(spikes).div(trials.durations, axis=0)`` (Hz; NaN
+        for a row with no duration).
+
+        Parameters
+        ----------
+        spike_times : array, sequence of arrays, or spike group
+            One 1-D array of spike times in seconds per unit, on the clock of
+            the intervals, or a labelled group such as a pynapple ``TsGroup``.
+        unit_ids : array-like, optional
+            One label per unit; defaults to the group's labels or
+            ``0 .. n_units - 1``.
+
+        Returns
+        -------
+        pandas.DataFrame, shape (n_intervals, n_units)
+            Integer counts, indexed by ``interval_id``, one column per unit.
+            Join the intervals' fields with
+            ``trials.intervals_table().join(counts)``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Intervals
+        >>> trials = Intervals.from_arrays([0.0, 2.0], [1.0, 4.0])
+        >>> counts = trials.spike_counts([np.array([0.5, 1.0, 2.5, 3.0])])
+        >>> counts[0].tolist()
+        [1, 2]
+        >>> counts.div(trials.durations, axis=0)[0].tolist()
+        [1.0, 1.0]
+        """
+        import pandas as pd
+
+        from neurospatial._results import resolve_unit_ids
+        from neurospatial._spikes import _as_spike_trains_with_ids
+
+        trains, input_ids = _as_spike_trains_with_ids(spike_times)
+        labels = resolve_unit_ids(
+            unit_ids,
+            len(trains),
+            context="Intervals.spike_counts",
+            input_ids=input_ids,
+        )
+        counts = np.empty((len(self), len(trains)), dtype=np.int64)
+        for unit, train in enumerate(trains):
+            train = np.sort(train)
+            counts[:, unit] = np.searchsorted(
+                train, self._stop, side="left"
+            ) - np.searchsorted(train, self._start, side="left")
+        return pd.DataFrame(
+            counts,
+            index=pd.Index(self._ids, name="interval_id"),
+            columns=pd.Index(labels, name="unit_id"),
+        )
 
     # ----------------------------------------------------- tables and building
 

@@ -54,16 +54,14 @@ which as an index would select the last bin.
 
 >>> import numpy as np
 >>> from neurospatial import Environment
->>> from neurospatial.ops import geodesic_rbf_basis
+>>> from neurospatial.ops import basis_at_positions, geodesic_rbf_basis
 >>> rng = np.random.default_rng(0)
 >>> positions = rng.uniform(0, 100, size=(2000, 2))  # (n_time, 2), cm
 >>> env = Environment.from_samples(positions, bin_size=5.0)
 >>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0, rng=0)
->>> bins = env.bin_at(positions)  # (n_time,), -1 outside the environment
->>> inside = bins >= 0
->>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
->>> X.shape == (int(inside.sum()), 50)
-True
+>>> X = basis_at_positions(env, basis, positions)  # (n_time, n_basis)
+>>> X.shape
+(2000, 50)
 
 Full GLM Workflow
 -----------------
@@ -73,7 +71,7 @@ project the coefficients back to a rate map.
 >>> import numpy as np
 >>> from sklearn.linear_model import PoissonRegressor
 >>> from neurospatial import Environment
->>> from neurospatial.ops import geodesic_rbf_basis
+>>> from neurospatial.ops import basis_at_positions, geodesic_rbf_basis
 >>> rng = np.random.default_rng(0)
 >>> dt = 0.02  # s per time bin
 >>> positions = rng.uniform(0, 100, size=(5000, 2))  # one row per time bin, cm
@@ -85,11 +83,10 @@ project the coefficients back to a rate map.
 >>> env = Environment.from_samples(positions, bin_size=5.0)
 >>> basis = geodesic_rbf_basis(env, n_centers=30, bandwidth=[10.0, 20.0], rng=0)
 >>>
->>> # 2. Design matrix, one row per time bin inside the environment
->>> bins = env.bin_at(positions)
->>> inside = bins >= 0
->>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
->>> y = spike_counts[inside]
+>>> # 2. Design matrix, one row per time bin; drop the NaN rows outside
+>>> X = basis_at_positions(env, basis, positions)  # (n_time, n_basis)
+>>> inside = ~np.isnan(X).any(axis=1)
+>>> X, y = X[inside], spike_counts[inside]
 >>>
 >>> # 3. Fit the GLM
 >>> model = PoissonRegressor(alpha=1e-4, max_iter=1000).fit(X, y)
@@ -113,9 +110,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice
 from neurospatial.geometry import MissingFaces, require_cartesian
 
@@ -124,6 +122,7 @@ if TYPE_CHECKING:
     from scipy import sparse
     from scipy.spatial import cKDTree
 
+    from neurospatial import Environment
     from neurospatial.geometry import DiffusionGeometry
     from neurospatial.ops._protocols import (
         BasisCentersConsumer,
@@ -133,6 +132,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "basis_at_positions",
     "chebyshev_filter_basis",
     "geodesic_rbf_basis",
     "heat_kernel_wavelet_basis",
@@ -140,6 +140,75 @@ __all__ = [
     "select_basis_centers",
     "spatial_basis",
 ]
+
+
+@reads_pynapple_samples
+def basis_at_positions(
+    env: Environment, basis: ArrayLike, positions: ArrayLike
+) -> NDArray[np.float64]:
+    """Evaluate a spatial basis at the animal's positions, one row per sample.
+
+    Each sample gets the basis values of the bin that contains it, so the
+    rows stay aligned with ``times`` and stack directly with other per-sample
+    features (speed, task phase) in a design matrix. A sample outside the
+    environment or with a missing coordinate gets a row of NaN, never zeros:
+    drop those rows (NeMoS and most GLM fitters drop NaN rows) rather than
+    treating them as "far from every basis function".
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the basis was built on.
+    basis : ArrayLike, shape (n_basis, n_bins)
+        Basis functions over ``env``'s bins, as returned by
+        :func:`spatial_basis`, :func:`geodesic_rbf_basis`,
+        :func:`heat_kernel_wavelet_basis` or :func:`chebyshev_filter_basis`.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Positions in the units of ``env``; NaN marks a missing sample.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples, n_basis)
+        ``basis[:, bin].T`` for each sample's bin; NaN rows outside the
+        environment or where a coordinate is missing.
+
+    Raises
+    ------
+    ValueError
+        If ``basis`` is not 2-D with one column per bin of ``env``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import basis_at_positions, spatial_basis
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> basis = spatial_basis(env, rng=0)
+    >>> X = basis_at_positions(env, basis, np.vstack([positions[:3], [np.nan, 0]]))
+    >>> X.shape
+    (4, 102)
+    >>> bool(np.isnan(X[3]).all())
+    True
+    """
+    basis = np.asarray(basis, dtype=np.float64)
+    if basis.ndim != 2 or basis.shape[1] != env.n_bins:
+        raise ValueError(
+            _format_error(
+                f"basis_at_positions: basis has shape {basis.shape}; the "
+                f"environment has {env.n_bins} bins.",
+                why="A spatial basis holds one row per basis function and one "
+                "column per bin of the environment it was built on.",
+                fix="build the basis on this environment (spatial_basis(env)), "
+                "or transpose a (n_bins, n_basis) array",
+            )
+        )
+    bins = env.bin_at(np.asarray(positions, dtype=np.float64))
+    out = np.full((bins.size, basis.shape[0]), np.nan)
+    inside = bins >= 0
+    out[inside] = basis[:, bins[inside]].T
+    return out
 
 
 def select_basis_centers(
@@ -580,9 +649,8 @@ def geodesic_rbf_basis(
             Row 4: center 2, bandwidth=5
             Row 5: center 2, bandwidth=10
 
-        ``basis[:, bins].T`` with ``bins = env.bin_at(positions)`` restricted
-        to ``bins >= 0`` is a GLM design matrix with one row per time bin
-        (see Examples).
+        :func:`basis_at_positions` turns it into a GLM design matrix with
+        one row per time bin (see Examples).
 
     Raises
     ------
@@ -637,14 +705,14 @@ def geodesic_rbf_basis(
     >>> basis.shape == (90, env.n_bins)
     True
 
-    GLM design matrix, one row per position sample (time bin). ``bin_at``
-    marks samples outside the environment with -1; drop them, and the same
-    time bins from the spike counts:
+    GLM design matrix, one row per position sample (time bin). Samples
+    outside the environment are NaN rows; drop them, and the same time bins
+    from the spike counts:
 
-    >>> bins = env.bin_at(positions)
-    >>> inside = bins >= 0
-    >>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
-    >>> X.shape == (int(inside.sum()), 90)
+    >>> from neurospatial.ops import basis_at_positions
+    >>> X = basis_at_positions(env, basis, positions)
+    >>> inside = ~np.isnan(X).any(axis=1)
+    >>> X[inside].shape == (int(inside.sum()), 90)
     True
 
     See Also
@@ -1175,10 +1243,9 @@ def spatial_basis(
     >>> basis.shape == (102, env.n_bins)  # 34 centers x 3 bandwidths
     True
 
-    GLM design matrix, one row per time bin inside the environment:
+    GLM design matrix, one row per sample (NaN rows outside the environment):
 
-    >>> bins = env.bin_at(positions)
-    >>> X = basis[:, bins[bins >= 0]].T  # (n_time_inside, n_basis)
+    >>> X = basis_at_positions(env, basis, positions)  # (n_samples, n_basis)
 
     Notes
     -----

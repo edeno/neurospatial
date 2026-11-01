@@ -154,6 +154,91 @@ def _inner_bounds(
     return starts + slack, stops - slack
 
 
+ALIGNS = ("start", "stop")
+
+
+def interval_events(
+    event_times: Any, align: str, *, call: str
+) -> tuple[
+    Any,
+    NDArray[np.int64] | None,
+    tuple[NDArray[np.float64], NDArray[np.float64]] | None,
+]:
+    """Alignment times, row ids and window limits for events or intervals.
+
+    Plain event times pass through unchanged (the caller validates them).
+    For an :class:`~neurospatial.Intervals`, each row is aligned at its start
+    or stop, and its window is limited on the other side: aligned at the
+    start, nothing at or after the row's stop; aligned at the stop, nothing
+    before the row's start.
+
+    Returns
+    -------
+    events : array-like
+        ``event_times`` as given, or each row's start or stop, shape
+        ``(n_rows,)``.
+    interval_ids : ndarray of int64, shape (n_rows,), or None
+        The rows' ``interval_id``; None for plain times.
+    limits : tuple of ndarray of float64, each shape (n_rows,), or None
+        ``(-inf, stop)`` per row aligned at the start, ``(start, inf)``
+        aligned at the stop; None for plain times.
+    """
+    from neurospatial._interval_table import Intervals
+
+    if align not in ALIGNS:
+        raise ValueError(
+            _format_error(
+                f"{call}: align={align!r} is not supported.",
+                why="An interval is aligned at its start or at its stop.",
+                fix="pass align='start' or align='stop'",
+            )
+        )
+    if not isinstance(event_times, Intervals):
+        if align != "start":
+            raise ValueError(
+                _format_error(
+                    f"{call}: align={align!r} was given with plain event times.",
+                    why="align chooses the start or stop of each interval; "
+                    "plain times are already the alignment points.",
+                    fix="pass an Intervals (trials, visits) as event_times, or "
+                    "drop align",
+                )
+            )
+        return event_times, None, None
+    if len(event_times) == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}: event_times is an Intervals with no rows.",
+                why="There is no interval to align.",
+                fix="check the selection that produced it",
+            )
+        )
+    starts = np.asarray(event_times.start, dtype=np.float64)
+    stops = np.asarray(event_times.stop, dtype=np.float64)
+    unbounded = np.full(starts.shape, np.inf)
+    ids = np.asarray(event_times.interval_ids)
+    if align == "start":
+        return starts, ids, (-unbounded, stops)
+    return stops, ids, (starts, unbounded)
+
+
+def _window_bounds(
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    limits: tuple[NDArray[np.float64], NDArray[np.float64]] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Each event's absolute window, cut to its own ``limits`` when given.
+
+    A window entirely outside its limits becomes empty (``stop <= start``).
+    """
+    starts = event_times + window[0]
+    stops = event_times + window[1]
+    if limits is not None:
+        starts = np.maximum(starts, limits[0])
+        stops = np.minimum(stops, limits[1])
+    return starts, stops
+
+
 def _validate_window(
     window: tuple[float, float], *, context: str, warn_wide: bool = True
 ) -> tuple[float, float]:
@@ -326,6 +411,29 @@ def _validated_psth_fields(
     _validate_event_indices(
         result.event_indices, result.n_events, result.n_events_dropped
     )
+    if result.align not in (None, *ALIGNS):
+        msg = f"{context}: align must be None, 'start' or 'stop', got {result.align!r}."
+        raise ValueError(msg)
+    if (result.events_per_bin is None) != (result.align is None):
+        msg = (
+            f"{context}: events_per_bin and align go together: both are set for "
+            "intervals and both None for plain event times."
+        )
+        raise ValueError(msg)
+    if result.events_per_bin is not None:
+        per_bin = np.asarray(result.events_per_bin)
+        if (
+            per_bin.shape != (n_bins,)
+            or per_bin.dtype.kind not in "iu"
+            or np.any(per_bin < 0)
+            or np.any(per_bin > result.n_events)
+        ):
+            msg = (
+                f"{context}: events_per_bin must hold one integer per bin "
+                f"({n_bins}), each between 0 and n_events ({result.n_events})."
+            )
+            raise ValueError(msg)
+        object.__setattr__(result, "events_per_bin", per_bin.astype(np.int64))
 
 
 def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
@@ -389,6 +497,8 @@ class _PeriEventExports:
     bin_size: float
     n_events: int
     n_events_dropped: int
+    events_per_bin: NDArray[np.int64] | None
+    align: str | None
 
     @property
     def bin_centers(self) -> NDArray[np.float64]:
@@ -402,6 +512,7 @@ class _PeriEventExports:
             "bin_size": self.bin_size,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
+            "align": self.align,
         }
 
     def _metrics_table(self, rates: NDArray[np.float64], unit_ids: Any) -> pd.DataFrame:
@@ -423,6 +534,11 @@ class _PeriEventExports:
         import pandas as pd
 
         n_units, n_bins = histograms.shape
+        per_bin = (
+            np.full(n_bins, self.n_events)
+            if self.events_per_bin is None
+            else self.events_per_bin
+        )
         df = pd.DataFrame(
             {
                 "unit_id": np.repeat(unit_ids, n_bins),
@@ -431,6 +547,7 @@ class _PeriEventExports:
                 "firing_rate_sem": (sem / self.bin_size).reshape(-1),
                 "histogram": histograms.reshape(-1),
                 "sem": sem.reshape(-1),
+                "n_events": np.tile(per_bin, n_units),
             }
         )
         df.attrs = self._table_attrs()
@@ -476,6 +593,13 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         cohort as this histogram. Read-only; None for manually constructed
         results whose original event cohort is unknown. Raw event times are
         not retained.
+    events_per_bin : NDArray[np.int64], shape (n_bins,), or None
+        For intervals (trials), the trials under way for the whole of each
+        bin, which the bin's mean is over; None for plain event times, where
+        every retained event covers every bin.
+    align : {"start", "stop"} or None
+        For intervals, the bound each trial was aligned at; None for plain
+        event times.
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Time relative to event (seconds), derived from ``window`` and
         ``bin_size``. Negative = before, positive = after.
@@ -519,6 +643,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
     unit_id: int | str | None = None
     n_events_dropped: int = 0
     event_indices: NDArray[np.intp] | None = None
+    events_per_bin: NDArray[np.int64] | None = None
+    align: str | None = None
 
     def __post_init__(self) -> None:
         _validated_psth_fields(
@@ -550,9 +676,10 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         pandas.DataFrame
             Columns ``unit_id``, ``bin_center`` (s, time relative to event),
             ``firing_rate`` (Hz), ``firing_rate_sem`` (Hz), ``histogram``
-            (mean spike count per bin), and ``sem`` (count units).
-            ``df.attrs`` holds ``window``, ``bin_size``, ``n_events`` and
-            ``n_events_dropped``.
+            (mean spike count per bin), ``sem`` (count units) and
+            ``n_events`` (events averaged in the bin). ``df.attrs`` holds
+            ``window``, ``bin_size``, ``n_events``, ``n_events_dropped`` and
+            ``align``.
 
         Examples
         --------
@@ -568,7 +695,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem']
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'n_events']
         >>> df["bin_center"].tolist()
         [-0.5, 0.0, 0.5]
         """
@@ -591,8 +718,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             when no bin is above zero, as for a unit with no spikes) and
             ``baseline_rate`` (Hz, mean rate over the bins that end at or
             before the event; NaN when the window has none). ``df.attrs``
-            holds ``window``, ``bin_size``, ``n_events`` and
-            ``n_events_dropped``.
+            holds ``window``, ``bin_size``, ``n_events``,
+            ``n_events_dropped`` and ``align``.
         """
         return self._metrics_table(
             self.firing_rate[np.newaxis], np.array([self.unit_id], dtype=object)
@@ -706,6 +833,13 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         cohort as this histogram. Read-only; None for manually constructed
         results whose original event cohort is unknown. Raw event times are
         not retained.
+    events_per_bin : NDArray[np.int64], shape (n_bins,), or None
+        For intervals (trials), the trials under way for the whole of each
+        bin, which the bin's mean is over; None for plain event times, where
+        every retained event covers every bin.
+    align : {"start", "stop"} or None
+        For intervals, the bound each trial was aligned at; None for plain
+        event times.
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Time relative to event (seconds), derived from ``window`` and
         ``bin_size``.
@@ -756,6 +890,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     unit_table: pd.DataFrame | None = None
     n_events_dropped: int = 0
     event_indices: NDArray[np.intp] | None = None
+    events_per_bin: NDArray[np.int64] | None = None
+    align: str | None = None
 
     def __post_init__(self) -> None:
         context = "PopulationPeriEventResult"
@@ -858,6 +994,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             unit_id=unit_id,
             n_events_dropped=self.n_events_dropped,
             event_indices=self.event_indices,
+            events_per_bin=self.events_per_bin,
+            align=self.align,
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -884,8 +1022,9 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         pandas.DataFrame
             Columns ``unit_id``, ``bin_center`` (s), ``firing_rate`` (Hz),
             ``firing_rate_sem`` (Hz), ``histogram`` (mean spike count per
-            bin), and ``sem`` (count units). ``df.attrs`` holds ``window``,
-            ``bin_size``, ``n_events`` and ``n_events_dropped``.
+            bin), ``sem`` (count units) and ``n_events`` (events averaged in
+            the bin). ``df.attrs`` holds ``window``, ``bin_size``,
+            ``n_events``, ``n_events_dropped`` and ``align``.
 
         Examples
         --------
@@ -902,7 +1041,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
-        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem']
+        ['unit_id', 'bin_center', 'firing_rate', 'firing_rate_sem', 'histogram', 'sem', 'n_events']
         >>> len(df) == 2 * 3
         True
         """
@@ -922,7 +1061,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             relative to the event; NaN for a unit with no bin above zero), and
             ``baseline_rate`` (Hz, mean rate over
             the bins that end at or before the event). ``df.attrs`` holds
-            ``window``, ``bin_size``, ``n_events`` and ``n_events_dropped``.
+            ``window``, ``bin_size``, ``n_events``, ``n_events_dropped`` and
+            ``align``.
 
         Examples
         --------
@@ -1014,6 +1154,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             bin_size=self.bin_size,
             n_events_dropped=self.n_events_dropped,
             event_indices=self.event_indices,
+            events_per_bin=self.events_per_bin,
+            align=self.align,
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 

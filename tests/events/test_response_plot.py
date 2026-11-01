@@ -295,6 +295,8 @@ def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
         "unit_id",
         "n_events_dropped",
         "event_indices",
+        "events_per_bin",
+        "align",
     }
 
 

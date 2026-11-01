@@ -17,6 +17,7 @@ Each route explains the analysis choices and how to interpret the figures.
 | Evaluate decoding on new data | [Held-out decoding](workflows.md#decode-held-out-laps) | Separate training/test periods and locations visited during training |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
 | Measure speed, heading or position-based features around events | [Behavior around events](behavior-around-events.md) | Tracking dropouts inside event windows and angle features declared circular |
+| Lay trials out by time or along the route, tabulate them, or hand them to a model | [Compute on trials and segments](compute-on-trials.md) | Trials that end inside the window, and cross-validation folds that split a trial |
 | Measure firing around cues | [Raster and PSTH example](../examples/07_peri_event_analysis.ipynb) | Which cues have fully recorded before/after windows |
 | Save results I can interpret later | [Analysis settings and exports](interoperability.md#analysis-settings-and-exports) | Units, neuron labels, analyzed periods, bin widths and smoothing |
 
