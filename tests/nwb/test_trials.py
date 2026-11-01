@@ -326,3 +326,14 @@ class TestReadTrials:
 
         trials = read_trials(empty_nwb)
         assert trials.tags.tolist() == [("a", "b"), ("c",)]
+
+
+def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
+    """pandas 3 reads NWB text as string dtype; "" must still become None."""
+    from neurospatial.io.nwb import read_trials, write_trials
+
+    trials = Intervals([Trial(0.0, 5.0, "home", None, "timeout")])
+    write_trials(empty_nwb, trials)
+    with pd.option_context("future.infer_string", True):
+        back = read_trials(empty_nwb)
+    assert back.end_region.tolist() == [None]

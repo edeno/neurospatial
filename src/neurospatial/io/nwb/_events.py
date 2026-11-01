@@ -1108,8 +1108,13 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
 
     table = read_intervals(nwbfile, interval_name="trials")
     for name in table.columns:
-        if table[name].dtype == object:
-            table[name] = [_field_value(value) for value in table[name]]
+        # Text is object or, with pandas 3, string dtype; numbers are left as is.
+        if not pd.api.types.is_numeric_dtype(table[name].dtype):
+            table[name] = pd.Series(
+                [_field_value(value) for value in table[name]],
+                index=table.index,
+                dtype=object,
+            )
     # The table's ids are its index, named "id"; a column cannot share it.
     return Intervals.from_dataframe(table.reset_index(), id_column="id")
 
