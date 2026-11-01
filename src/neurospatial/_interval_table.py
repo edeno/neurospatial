@@ -157,20 +157,6 @@ class Interval:
         """The fields as a read-only mapping, built on access."""
         return MappingProxyType(dict(self.items))
 
-    @property
-    def windows(self) -> NDArray[np.float64]:
-        """The window as one row, shape ``(1, 2)``; ``(0, 2)`` without duration.
-
-        ``epochs=trial`` reads it, so a single interval restricts an analysis
-        like an :class:`Intervals` holding only that row.
-        """
-        rows = (
-            [[self.start_time, self.stop_time]]
-            if self.stop_time > self.start_time
-            else []
-        )
-        return _read_only(np.array(rows, dtype=np.float64).reshape(-1, 2))
-
     def __getattr__(self, name: str) -> Any:
         """Read a field by name."""
         if name.startswith("_"):
@@ -183,7 +169,7 @@ class Interval:
         raise AttributeError(msg)
 
 
-_INTERVAL_MEMBERS = frozenset({*_TIME_FIELDS, "items", "fields", "windows"})
+_INTERVAL_MEMBERS = frozenset({*_TIME_FIELDS, "items", "fields"})
 
 
 def _check_field_name(name: object, *, owner: str, reserved: Iterable[str]) -> None:
