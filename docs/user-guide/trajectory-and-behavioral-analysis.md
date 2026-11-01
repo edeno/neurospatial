@@ -1215,9 +1215,16 @@ the trials came from.
   outside the trial and belongs to whatever comes next.
 - **Fields** are the columns that describe each trial (`start_region`,
   `end_region`, `outcome` for detected trials; any column of a task log).
-  `trials.outcome` is an array with one entry per row, so a condition is a
-  comparison: `trials[trials.outcome == "reached"]`. A missing value is
-  `None`, never `""`.
+  `trials.outcome` is a pandas Series indexed by `interval_id`, one value per
+  trial, so a condition is a comparison: `trials[trials.outcome ==
+  "reached"]`, and a value always stays with its trial, even in a selection
+  made in another order. A missing value is `None`, never `""`.
+- **Your labels.** `trials.with_fields(instructed_goal=goals,
+  outcome=outcomes)` adds fields from your task log or rule, one value per
+  trial (a Series by `interval_id`, or an array in time order), keeping the
+  ids. Well or port numbers are not region names: map them,
+  `trials.goal_well.map({1: "well_1", 2: "well_2"})`, before passing them as
+  a start or goal.
 - **Stable ids.** `trials[0]` is the first trial in time; `interval_ids` name
   the trials and stay with them through every selection, NWB and pynapple:
   `trials.sel(interval_id=12)` is trial 12 in any subset that contains it.

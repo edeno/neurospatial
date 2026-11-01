@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Trial fields, labels and wells with a size
+
+**Changed**
+
+- A field of an `Intervals` (`trials.outcome`) is now a `pandas.Series`
+  indexed by `interval_id` instead of an array, so it stays one value per
+  trial wherever it is passed. Selecting with a Boolean Series
+  (`trials[trials.outcome == "correct"]`) matches rows by id; a plain
+  Boolean array still selects by position. The Series is a copy: editing it
+  never changes the trials.
+- `path_progress` and `distance_to_goal` refuse a number per interval in 2-D
+  and 3-D environments (a well number read as a coordinate gave wrong
+  progress without an error); the message says to map numbers to region
+  names. In 1-D a number is still a position.
+
+**Added**
+
+- `Intervals.with_fields(**columns)`: the same intervals with your labels
+  (instructed goal, correct/error) added or replaced, ids and times kept.
+- `Regions.add(name, point=..., radius=...)` stores a disc around the point,
+  so a reward well has the size of the place where the animal stops.
+
 ### Tuning curves over a behavioral variable
 
 **Added**
