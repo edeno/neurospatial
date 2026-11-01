@@ -1325,10 +1325,11 @@ def linear_allocated_occupancy(
     second = values[1:][interval_mask]
     dt = np.asarray(dt, dtype=np.float64)[interval_mask]
     low, high = np.minimum(first, second), np.maximum(first, second)
-    covered = high - low
-    n_bins = edges.size - 1
+    # inf - inf is NaN (not moving, then left out like any non-finite value).
     with np.errstate(invalid="ignore"):
-        moving = covered > 0
+        covered = high - low
+    n_bins = edges.size - 1
+    moving = covered > 0
     # A moving interval overlaps bins j with edges[j] < high and edges[j+1] > low.
     first_bin = np.maximum(np.searchsorted(edges, low[moving], side="right") - 1, 0)
     last_bin = np.minimum(
