@@ -290,9 +290,10 @@ class Trial:
         the half-open window ``[start_time, stop_time)``, so the sample at
         ``stop_time`` (for example the arrival) is outside it.
     start_region : str
-        Name of the region the trial started from.
+        Name of the region the trial started from (non-empty).
     end_region : str or None
-        Name of the region reached; None unless ``outcome == 'reached'``.
+        Name of the region reached, different from ``start_region``; None
+        unless ``outcome == 'reached'``.
     outcome : {'reached', 'returned', 'censored'}
         How the trial ended:
 
@@ -321,6 +322,27 @@ class Trial:
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "stop_time", stop)
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
+        for name in ("start_region", "end_region"):
+            value = getattr(self, name)
+            if name == "end_region" and value is None:
+                continue
+            if not isinstance(value, str) or value == "":
+                error = ValueError if isinstance(value, str) else TypeError
+                raise error(
+                    _format_error(
+                        f"Trial.{name} must be a region name (a non-empty str); "
+                        f"got {value!r}.",
+                        why="a trial runs between named regions of the environment.",
+                        fix="map port or well numbers to the environment's region "
+                        "names first"
+                        + (
+                            ", and pass end_region=None for a trial that reached "
+                            "no region."
+                            if name == "end_region"
+                            else "."
+                        ),
+                    )
+                )
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
                 _format_error(
@@ -330,6 +352,16 @@ class Trial:
                     "exactly when outcome == 'reached'.",
                     fix="pass end_region='<name>' with outcome='reached', and "
                     "end_region=None with any other outcome.",
+                )
+            )
+        if self.outcome == "reached" and self.end_region == self.start_region:
+            raise ValueError(
+                _format_error(
+                    f"Trial reached its own start region {self.start_region!r}.",
+                    why="'reached' means arriving at a different region; coming "
+                    "back to the start region is 'returned'.",
+                    fix="pass outcome='returned' and end_region=None for a trial "
+                    "that came back, or the different region it reached.",
                 )
             )
 
