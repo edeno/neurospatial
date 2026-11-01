@@ -13,7 +13,6 @@ from neurospatial import BinIndexOutOfRangeError, Environment, Intervals
 from neurospatial.behavior import (
     cost_to_goal,
     distance_to_reward,
-    goal_pair_direction_labels,
     graph_turn_sequence,
     heading_direction_labels,
     headings_to_direction_labels,
@@ -464,10 +463,11 @@ class TestTrialHelpersOnAnotherClock:
             result = time_to_goal(times, self._trials(scale=1000.0))
         assert np.all(np.isnan(result))
 
-    def test_goal_pair_direction_labels_warns(self):
+    def test_route_labels_warn(self):
         times = np.arange(10.0)
+        trials = self._trials(scale=1000.0)
         with pytest.warns(UserWarning, match=r"same clock"):
-            labels = goal_pair_direction_labels(times, self._trials(scale=1000.0))
+            labels = trials.sample_values(times, ("start_region", "end_region"))
         assert labels.tolist() == [None] * 10
 
     def test_path_progress_warns(self, env_with_regions):
@@ -514,7 +514,7 @@ class TestTrialHelpersOnAnotherClock:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             ttg = time_to_goal(times, self._trials())
-            goal_pair_direction_labels(times, self._trials())
+            self._trials().sample_values(times, ("start_region", "end_region"))
             path_progress(
                 env_with_regions,
                 times,

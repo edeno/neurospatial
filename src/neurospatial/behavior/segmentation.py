@@ -40,8 +40,6 @@ trajectory_similarity
     Compare similarity between two trajectories
 detect_goal_directed_runs
     Efficient approaches to a goal
-laps_to_direction_labels
-    Per-sample direction labels from detected laps
 
 Classes
 -------
@@ -56,7 +54,7 @@ Lap
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -163,48 +161,6 @@ def _event_runs(
     inside = times_in_intervals(windows, times)
     trimmed = [run[inside[run]] for run in runs]
     return [run for run in trimmed if run.size]
-
-
-def _interval_labels(
-    times: NDArray[np.float64],
-    intervals: Iterable[tuple[float, float, object]],
-) -> NDArray[np.object_]:
-    """Build a per-timepoint object label array from labeled time intervals.
-
-    Allocates an object array of length ``len(times)`` filled with ``None``
-    and, for each ``(start_time, stop_time, label)`` interval, assigns ``label``
-    to every sample with ``start_time <= times < stop_time``: the half-open,
-    last-writer-wins rule of :func:`laps_to_direction_labels`. A sample's label
-    describes the interval that starts at it, so the last sample of a lap,
-    whose interval leaves it, is not given its label. Later intervals
-    overwrite earlier ones on any overlap.
-
-    Parameters
-    ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for the whole session (seconds).
-    intervals : iterable of (float, float, object)
-        ``(start_time, stop_time, label)`` tuples, half-open
-        ``[start_time, stop_time)``.
-
-    Returns
-    -------
-    NDArray[np.object_], shape (n_samples,)
-        Per-timepoint labels, dtype ``object``; ``None`` outside every
-        interval.
-    """
-    times = np.asarray(times, dtype=np.float64)
-    labels: NDArray[np.object_] = np.full(len(times), None, dtype=object)
-    # Each interval's samples are one slice of the sorted times (NaN sorts
-    # last and lies in no interval), so each costs only its own samples.
-    order = np.argsort(times, kind="stable")
-    sorted_times = times[order]
-    for start_time, stop_time, label in intervals:
-        lo, hi = np.searchsorted(sorted_times, [start_time, stop_time], side="left")
-        # In sample order, as a Boolean mask would assign them.
-        labels[np.sort(order[lo:hi])] = label
-
-    return labels
 
 
 # =============================================================================
@@ -1005,8 +961,6 @@ def detect_laps(
     --------
     detect_region_crossings : Detect region entry/exit events
     detect_trials : Trials between visits to named regions.
-    laps_to_direction_labels : Convert these laps into per-timepoint direction
-        labels for ``compute_directional_place_fields``.
 
     Notes
     -----
@@ -1133,16 +1087,14 @@ def detect_laps(
     >>> len(laps_cw)
     0
 
-    Feed detected laps into directional place fields via
-    :func:`laps_to_direction_labels`:
+    Feed detected laps into directional place fields: each sample takes its
+    lap's direction (``None`` outside every lap and in laps of unknown
+    direction):
 
     >>> import numpy as np
     >>> from shapely.geometry import Point
     >>> from neurospatial import Environment
-    >>> from neurospatial.behavior.segmentation import (
-    ...     detect_laps,
-    ...     laps_to_direction_labels,
-    ... )
+    >>> from neurospatial.behavior.segmentation import detect_laps
     >>> from neurospatial.encoding.spatial import (
     ...     compute_directional_place_fields,
     ... )
@@ -1157,7 +1109,8 @@ def detect_laps(
     >>> env = env.with_regions(regions)
     >>> times = np.linspace(0, 60, 300)
     >>> laps = detect_laps(env, times, positions, method="region", start_region="start")
-    >>> direction_labels = laps_to_direction_labels(laps, times)
+    >>> known = laps[laps.direction != "unknown"]
+    >>> direction_labels = known.sample_values(times, "direction")
     >>> rng = np.random.default_rng(0)
     >>> spike_times = np.sort(rng.uniform(0, 60, 40))
     >>> fields = compute_directional_place_fields(
@@ -1628,88 +1581,6 @@ def _detect_laps_search_contiguous(
         starts, pieces = [candidate], []
         reach = np.zeros_like(template)
     return laps
-
-
-# =============================================================================
-# Direction-label bridges (lap/run -> per-timepoint labels)
-# =============================================================================
-
-
-@reads_pynapple_samples
-def laps_to_direction_labels(
-    laps: Intervals[Any],
-    times: NDArray[np.float64],
-) -> NDArray[np.object_]:
-    """Convert detected laps into per-timepoint direction labels.
-
-    Bridges :func:`detect_laps` to :func:`compute_directional_place_fields`
-    and :func:`labels_to_epochs`: every sample falling inside a lap is labeled
-    with that lap's ``direction`` (``"clockwise"`` or ``"counter-clockwise"``).
-    Samples outside every lap, and inside a lap whose direction is
-    ``"unknown"``, are ``None``, which both functions leave out. The returned
-    array is drop-in for their labels argument.
-
-    Parameters
-    ----------
-    laps : Intervals
-        Laps from :func:`detect_laps`, or read back with ``read_intervals``,
-        with a ``direction`` field. Each contributes its half-open
-        ``[start_time, stop_time)`` window and ``direction``.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps for the whole session (seconds). The output has this length.
-
-    Returns
-    -------
-    NDArray[np.object_], shape (n_samples,)
-        Per-timepoint direction label, dtype ``object``. Samples outside every
-        lap, or in a lap of unknown direction (not resolved, e.g. in non-2D
-        environments), are ``None``.
-
-    Raises
-    ------
-    TypeError
-        If ``laps`` is not an Intervals.
-    AttributeError
-        If ``laps`` has no ``direction`` field.
-
-    See Also
-    --------
-    detect_laps : Detect laps in a circular-track trajectory.
-    goal_pair_direction_labels : Direction labels from trialized tasks.
-
-    Notes
-    -----
-    Later laps overwrite earlier ones wherever their windows overlap
-    (last-writer-wins). ``detect_laps`` emits non-overlapping laps, so this
-    matters only for hand-built or merged laps.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Intervals
-    >>> from neurospatial.behavior.segmentation import (
-    ...     Lap,
-    ...     laps_to_direction_labels,
-    ... )
-    >>> times = np.linspace(0.0, 10.0, 11)
-    >>> laps = Intervals(
-    ...     [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 10.0, "counter-clockwise", 1.0)]
-    ... )
-    >>> labels = laps_to_direction_labels(laps, times)
-    >>> labels[0], labels[5], labels[9], labels[-1]
-    ('clockwise', None, 'counter-clockwise', None)
-    """
-    from neurospatial._interval_table import require_intervals
-
-    laps = require_intervals(laps, name="laps", owner="laps_to_direction_labels()")
-    directions = laps._field_array("direction")
-    intervals = [
-        (start, stop, None if direction == "unknown" else direction)
-        for start, stop, direction in zip(
-            laps.start.tolist(), laps.stop.tolist(), directions.tolist(), strict=True
-        )
-    ]
-    return _interval_labels(times, intervals)
 
 
 # =============================================================================
@@ -2402,7 +2273,6 @@ __all__ = [
     "detect_goal_directed_runs",
     "detect_laps",
     "detect_region_crossings",
-    "laps_to_direction_labels",
     "segment_by_velocity",
     "trajectory_similarity",
 ]

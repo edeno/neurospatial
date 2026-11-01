@@ -38,7 +38,6 @@ from neurospatial.behavior.decisions import (
     pre_decision_speed_stats,
 )
 from neurospatial.behavior.epochs import (
-    LabelEpochsResult,
     in_epochs,
     labels_to_epochs,
     restrict,
@@ -58,7 +57,6 @@ from neurospatial.behavior.navigation import (
     distance_to_reward,
     goal_bias,
     goal_direction,
-    goal_pair_direction_labels,
     goal_vector,
     graph_turn_sequence,
     heading_direction_labels,
@@ -86,7 +84,6 @@ from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
-    laps_to_direction_labels,
     segment_by_velocity,
     trajectory_similarity,
 )
@@ -137,7 +134,6 @@ __all__ = [  # noqa: RUF022
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
     # epochs module
-    "LabelEpochsResult",
     "in_epochs",
     "labels_to_epochs",
     "restrict",
@@ -166,7 +162,6 @@ __all__ = [  # noqa: RUF022
     "distance_to_reward",
     "goal_bias",
     "goal_direction",
-    "goal_pair_direction_labels",
     "goal_vector",
     "graph_turn_sequence",
     "heading_direction_labels",
@@ -185,7 +180,6 @@ __all__ = [  # noqa: RUF022
     "detect_goal_directed_runs",
     "detect_laps",
     "detect_region_crossings",
-    "laps_to_direction_labels",
     "segment_by_velocity",
     "trajectory_similarity",
     # visits module

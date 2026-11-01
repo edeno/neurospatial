@@ -536,9 +536,9 @@ def test_direction_labels_feed_epochs_and_place_fields_consistently():
     assert "stationary" in set(labels)
     assert labels[-1] == "stationary"
     # None rows are excluded by both consumers; "stationary" is an ordinary label.
-    assert None not in set(epochs.labels)
+    assert None not in set(epochs.label)
     assert None not in result.labels
-    assert "stationary" in epochs.labels
+    assert "stationary" in set(epochs.label)
     assert "stationary" in result.labels
     assert result.missing_label is None
     # missing_label="stationary" drops that map and is recorded.

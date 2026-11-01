@@ -768,26 +768,35 @@ print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1
 
 ### Labels to analysis epochs
 
-Direction and trial functions such as `laps_to_direction_labels` and
-`goal_pair_direction_labels` give one label per frame. `labels_to_epochs`
-turns them into `[start, stop)` windows for each label, which you pass as
-`epochs=` to a rate map, decoder or other analysis:
+`sample_values` gives each frame the field of the lap or trial it falls in:
+`laps[laps.direction != "unknown"].sample_values(times, "direction")` for lap
+direction, and
+`trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`
+for the route of each reached trial, a tuple such as `("home", "left")`.
+Frames outside every selected row are `None`, and overlapping rows raise,
+because a frame would belong to two of them. `labels_to_epochs`
+turns such labels into an `Intervals`, one `[start, stop)` epoch per row with a
+`label` field. Select one label, `conditions[conditions.label == "clockwise"]`,
+and pass it as `epochs=` to a rate map, decoder or other analysis:
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Intervals
-from neurospatial.behavior import Lap, labels_to_epochs, laps_to_direction_labels
+from neurospatial.behavior import Lap, labels_to_epochs
 
 times = np.arange(0, 10, 0.5)  # 2 Hz frames, for a short printout
 laps = Intervals(
     [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
 )
-labels = laps_to_direction_labels(laps, times)  # None outside every lap
+labels = laps[laps.direction != "unknown"].sample_values(times, "direction")
+assert labels[7] == "clockwise" and labels[8] is None  # 3.5 s and 4.0 s
 conditions = labels_to_epochs(times, labels)
-print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
-assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
-assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+print(conditions.intervals_table())
+clockwise = conditions[conditions.label == "clockwise"]
+assert clockwise.windows.tolist() == [[0.0, 4.0]]
+assert conditions.label.tolist() == ["clockwise", "counter-clockwise"]
+assert conditions.windows.tolist() == [[0.0, 4.0], [6.0, 9.5]]
 ```
 
 The time between two frames takes the label of the frame at its start. A lap
@@ -1355,7 +1364,7 @@ sample, and never overlaps another row.
 
 **Overlap.** Rows may overlap, for example visits to two overlapping regions.
 Functions that give each sample one trial (`sample_interval_ids`,
-`sample_values`, `goal_pair_direction_labels`, `time_to_goal`) refuse
+`sample_values`, `time_to_goal`) refuse
 overlapping rows and name them; select a non-overlapping subset first.
 
 **Your own task log.** A log with one row per trial, start and stop times on

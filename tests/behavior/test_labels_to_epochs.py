@@ -1,4 +1,9 @@
-"""Per-sample labels become supported, half-open epochs per label."""
+"""Per-sample labels become supported, half-open epochs, one row per epoch.
+
+Every expected row below was captured from the mapping result that
+``labels_to_epochs`` returned before it returned ``Intervals``; selecting a
+label (``epochs[epochs.label == x]``) gives exactly that label's old windows.
+"""
 
 from __future__ import annotations
 
@@ -7,78 +12,85 @@ import pickle
 import numpy as np
 import pytest
 
-from neurospatial import Intervals
+from neurospatial import Interval, Intervals
 from neurospatial._observation import validated_observations
-from neurospatial.behavior import (
-    LabelEpochsResult,
-    Lap,
-    labels_to_epochs,
-    laps_to_direction_labels,
-)
+from neurospatial.behavior import Lap, labels_to_epochs
 
 _ABAB = list("AABBAAAABB")
 
 
+def _rows(epochs: Intervals[Interval]) -> tuple[list[object], list[list[float]]]:
+    """The label and ``[start, stop)`` of every row, in time order."""
+    return epochs.label.tolist(), np.column_stack([epochs.start, epochs.stop]).tolist()
+
+
+def _windows(epochs: Intervals[Interval], label: object) -> list[list[float]]:
+    """The ``[start, stop)`` rows of one label."""
+    return epochs[epochs.label == label].windows.tolist()
+
+
 @pytest.fixture
-def invalid_sample_result() -> LabelEpochsResult:
+def invalid_sample_epochs() -> Intervals[Interval]:
     valid = np.ones(10, dtype=bool)
     valid[6] = False
     # The 2 s gap around the invalid sample exceeds max_gap, so it splits.
     return labels_to_epochs(np.arange(10.0), _ABAB, valid=valid, max_gap=1.5)
 
 
-def test_invalid_sample_splits_same_label(invalid_sample_result):
-    r = invalid_sample_result
-    assert isinstance(r, LabelEpochsResult)
-    assert list(r) == ["A", "B"]
-    np.testing.assert_array_equal(r["A"], [[0, 2], [4, 5], [7, 8]])
-    np.testing.assert_array_equal(r["B"], [[2, 4], [8, 9]])
-    np.testing.assert_array_equal(r.interval_labels, [0, 0, 1, 1, 0, -1, -1, 0, 1])
-    assert r.durations == {"A": 4.0, "B": 3.0}
-    np.testing.assert_array_equal(
-        r.epoch_bounds, [[0, 2], [2, 4], [4, 5], [7, 8], [8, 9]]
+def test_invalid_sample_splits_same_label(invalid_sample_epochs):
+    r = invalid_sample_epochs
+    assert isinstance(r, Intervals)
+    assert r.record_type is Interval
+    assert r.fields == ("label",)
+    assert r.interval_ids.tolist() == [0, 1, 2, 3, 4]
+    assert _rows(r) == (
+        ["A", "B", "A", "A", "B"],
+        [[0, 2], [2, 4], [4, 5], [7, 8], [8, 9]],
     )
-    np.testing.assert_array_equal(r.epoch_labels, [0, 1, 0, 0, 1])
-    np.testing.assert_array_equal(
-        r.epoch_intervals, [[0, 1], [2, 3], [4, 4], [7, 7], [8, 8]]
-    )
-    np.testing.assert_array_equal(r.interval_supported, [1, 1, 1, 1, 1, 0, 0, 1, 1])
-    assert r.unsupported_labels == ()
-    assert r.n_samples == 10
+    assert _windows(r, "A") == [[0, 2], [4, 5], [7, 8]]
+    assert _windows(r, "B") == [[2, 4], [8, 9]]
+    durations = {label: r[r.label == label].durations.sum() for label in "AB"}
+    assert durations == {"A": 4.0, "B": 3.0}
+    assert r.analysis_settings == {
+        "labels": ["A", "B"],
+        "unsupported_labels": [],
+        "max_gap": 1.5,
+        "epochs": None,
+        "missing_label": None,
+        "n_declared_breaks": 0,
+    }
 
 
 def test_declared_break_splits():
     breaks = np.zeros(10, dtype=bool)
     breaks[3] = True
     r = labels_to_epochs(np.arange(10.0), ["A"] * 10, break_before=breaks, max_gap=None)
-    np.testing.assert_array_equal(r["A"], [[0, 2], [3, 9]])
-    assert r.n_declared_breaks == 1
+    assert _rows(r) == (["A", "A"], [[0, 2], [3, 9]])
+    assert r.analysis_settings["n_declared_breaks"] == 1
 
 
 def test_break_before_first_sample_is_not_counted():
     breaks = np.zeros(4, dtype=bool)
     breaks[0] = True
     r = labels_to_epochs(np.arange(4.0), ["A"] * 4, break_before=breaks, max_gap=None)
-    assert r.n_declared_breaks == 0
-    np.testing.assert_array_equal(r["A"], [[0, 3]])
+    assert r.analysis_settings["n_declared_breaks"] == 0
+    assert _rows(r) == (["A"], [[0, 3]])
 
 
 def test_time_gap_splits():
     r = labels_to_epochs([0, 1, 2, 3, 10, 11, 12], ["A"] * 7, max_gap=1.5)
-    np.testing.assert_array_equal(r["A"], [[0, 3], [10, 12]])
-    assert r.max_gap == 1.5
+    assert _rows(r) == (["A", "A"], [[0, 3], [10, 12]])
+    assert r.analysis_settings["max_gap"] == 1.5
 
 
 def test_missing_labels_are_excluded():
     labels = ["A", None, "A", "other", "A", np.nan, "A", "A", "A", "A"]
     r = labels_to_epochs(np.arange(10.0), labels, max_gap=None, missing_label="other")
-    assert list(r) == ["A"]
-    np.testing.assert_array_equal(r["A"], [[0, 1], [2, 3], [4, 5], [6, 9]])
-    summary = r.summary()
-    assert summary["n_missing_label_intervals"] == 3
-    assert summary["n_unsupported_intervals"] == 0
-    assert r.missing_label == "other"
-    assert "other" not in r.unsupported_labels
+    assert _rows(r) == (["A"] * 4, [[0, 1], [2, 3], [4, 5], [6, 9]])
+    settings = r.analysis_settings
+    assert settings["missing_label"] == "other"
+    assert settings["labels"] == ["A"]
+    assert "other" not in settings["unsupported_labels"]
 
 
 def test_direction_labels_need_no_missing_label():
@@ -87,63 +99,59 @@ def test_direction_labels_need_no_missing_label():
     laps = Intervals(
         [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
     )
-    conditions = labels_to_epochs(times, laps_to_direction_labels(laps, times))
-    assert list(conditions) == ["clockwise", "counter-clockwise"]
-    assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
-    assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+    labels = laps[laps.direction != "unknown"].sample_values(times, "direction")
+    conditions = labels_to_epochs(times, labels)
+    assert _rows(conditions) == (
+        ["clockwise", "counter-clockwise"],
+        [[0.0, 4.0], [6.0, 9.5]],
+    )
 
 
 def test_final_sample_adds_no_time():
     r = labels_to_epochs([0.0, 1.0], ["A", "B"], max_gap=None)
-    assert list(r) == ["A"]
-    np.testing.assert_array_equal(r["A"], [[0, 1]])
-    assert "B" not in r
-    assert "B" not in r.unsupported_labels
+    assert _rows(r) == (["A"], [[0, 1]])
+    assert r.analysis_settings["unsupported_labels"] == []
 
 
-def test_single_sample_gives_empty_result():
+def test_single_sample_gives_empty_epochs():
     r = labels_to_epochs([0.0], ["A"], max_gap=None)
     assert len(r) == 0
-    assert r.epoch_bounds.shape == (0, 2)
-    assert r.epoch_intervals.shape == (0, 2)
-    assert r.interval_labels.shape == (0,)
-    assert r.interval_supported.shape == (0,)
-    assert r.unsupported_labels == ()
-    assert r.summary()["labeled_duration"] == 0.0
+    assert r.fields == ("label",)
+    assert r.windows.shape == (0, 2)
+    assert r.label.dtype == object
+    assert r.analysis_settings["labels"] == []
+    assert r.analysis_settings["unsupported_labels"] == []
 
 
-def test_label_with_no_supported_interval_is_not_a_key():
+def test_label_with_no_supported_interval_has_no_row():
     valid = np.array([True, True, False, True])
     r = labels_to_epochs(np.arange(4.0), list("ABAA"), valid=valid, max_gap=1.5)
-    assert "B" in r.unsupported_labels
-    assert "B" not in r
-    with pytest.raises(KeyError, match="none of its intervals"):
-        r["B"]
-    assert r.summary()["n_unsupported_labels"] == 1
+    assert _rows(r) == (["A"], [[0, 1]])
+    assert r.analysis_settings["unsupported_labels"] == ["B"]
+    selected = r[r.label == "B"]
+    assert len(selected) == 0
+    assert selected.fields == ("label",)
 
 
-def test_unsupported_label_error_names_the_real_causes():
-    """The KeyError names gap/break/epochs/recording-edge causes, not the end sample.
+def test_unobserved_end_sample_is_bridged_or_a_tracking_loss():
+    """Sample 3 is unobserved: bridged by default, a loss at max_gap=0.15.
 
-    Sample 3 is unobserved: at max_gap=0.15 the 0.2 s gap around it is a
-    tracking loss, so both intervals of label "b" are unsupported. With the
-    default max_gap the same unobserved end sample is bridged and "b" keeps
-    the epoch [0.2, 0.4).
+    At max_gap=0.15 the 0.2 s gap around it is a tracking loss, so both
+    intervals of label "b" are unsupported. With the default max_gap the
+    same unobserved end sample is bridged and "b" keeps the epoch [0.2, 0.4).
     """
     times = np.arange(6) * 0.1
     labels = ["a", "a", "b", "b", "c", "c"]
     valid = np.array([True, True, True, False, True, True])
     bridged = labels_to_epochs(times, labels, valid=valid)
-    np.testing.assert_allclose(bridged["b"], [[0.2, 0.4]])
+    assert _rows(bridged) == (
+        ["a", "b", "c"],
+        [[times[0], times[2]], [times[2], times[4]], [times[4], times[5]]],
+    )
 
     r = labels_to_epochs(times, labels, valid=valid, max_gap=0.15)
-    assert r.unsupported_labels == ("b",)
-    with pytest.raises(KeyError) as info:
-        r["b"]
-    message = str(info.value)
-    assert "invalid end sample" not in message
-    for cause in ("longer than max_gap", "declared break", "outside epochs", "last"):
-        assert cause in message
+    assert _rows(r) == (["a", "c"], [[times[0], times[2]], [times[4], times[5]]])
+    assert r.analysis_settings["unsupported_labels"] == ["b"]
 
 
 def test_trailing_unobserved_samples_leave_their_intervals_out():
@@ -151,9 +159,8 @@ def test_trailing_unobserved_samples_leave_their_intervals_out():
     times = np.arange(6) * 0.1
     valid = np.array([True, True, True, True, False, False])
     r = labels_to_epochs(times, ["a", "a", "b", "b", "c", "c"], valid=valid)
-    np.testing.assert_array_equal(r.interval_supported, [1, 1, 1, 0, 0])
-    np.testing.assert_allclose(r["b"], [[0.2, 0.3]])
-    assert r.unsupported_labels == ("c",)
+    assert _rows(r) == (["a", "b"], [[times[0], times[2]], [times[2], times[3]]])
+    assert r.analysis_settings["unsupported_labels"] == ["c"]
 
 
 def test_valid_flags_error_describes_bridging():
@@ -166,47 +173,11 @@ def test_valid_flags_error_describes_bridging():
     assert "max_gap" in message
 
 
-def test_epoch_labels_and_n_samples_are_derived():
+def test_labels_are_ordered_by_first_epoch():
     """B B A A B B: epochs B[0, .5), A[.5, 1), B[1, 1.25) -> labels (B, A)."""
     r = labels_to_epochs(np.arange(6) * 0.25, list("BBAABB"))
-    assert r.labels == ("B", "A")
-    np.testing.assert_array_equal(r.epoch_labels, [0, 1, 0])
-    np.testing.assert_allclose(r.epoch_bounds, [[0.0, 0.5], [0.5, 1.0], [1.0, 1.25]])
-    assert r.n_samples == 6
-    assert type(r.n_samples) is int
-    assert labels_to_epochs(np.array([0.0]), ["a"]).n_samples == 1
-
-
-_VALID_FIELDS = {
-    "labels": ("A", "B"),
-    "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
-    "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
-    "interval_labels": np.array([0, 0, 1], dtype=np.intp),
-    "interval_supported": np.ones(3, dtype=bool),
-    "unsupported_labels": (),
-    "max_gap": 0.5,
-    "input_epochs": None,
-    "missing_label": None,
-    "n_declared_breaks": 0,
-}
-
-
-@pytest.mark.parametrize(
-    ("changes", "match"),
-    [
-        ({"epoch_bounds": np.array([[0.0, 2.0], [3.0, 2.0]])}, "stop <= start"),
-        ({"epoch_bounds": np.array([0.0, 2.0])}, "not \\(n_epochs, 2\\)"),
-        ({"epoch_intervals": np.array([[0, 1], [2, 3]])}, "first <= last < 3"),
-        ({"epoch_intervals": np.array([[1, 0], [2, 2]])}, "first <= last"),
-        ({"epoch_intervals": np.array([[0.0, 1.0], [2.0, 2.0]])}, "integers"),
-        ({"interval_labels": np.array([0, 0, 2])}, "\\[-1, 2\\)"),
-        ({"interval_labels": np.array([-1, 0, 1])}, "not retained"),
-        ({"interval_supported": np.ones(2, dtype=bool)}, "interval_supported"),
-    ],
-)
-def test_inconsistent_result_fields_raise(changes, match):
-    with pytest.raises(ValueError, match=match):
-        LabelEpochsResult(**{**_VALID_FIELDS, **changes})
+    assert _rows(r) == (["B", "A", "B"], [[0.0, 0.5], [0.5, 1.0], [1.0, 1.25]])
+    assert r.analysis_settings["labels"] == ["B", "A"]
 
 
 def test_invalid_sample_in_bridged_gap_keeps_the_label():
@@ -217,52 +188,54 @@ def test_invalid_sample_in_bridged_gap_keeps_the_label():
     deleted = labels_to_epochs(
         np.arange(10.0)[kept], [_ABAB[k] for k in kept], max_gap=None
     )
-    np.testing.assert_array_equal(r["A"], [[0, 2], [4, 8]])
-    np.testing.assert_array_equal(r["A"], deleted["A"])
-    np.testing.assert_array_equal(r["B"], deleted["B"])
-
-
-def test_unknown_label_error_lists_labels(invalid_sample_result):
-    with pytest.raises(KeyError, match=r"'A', 'B'"):
-        invalid_sample_result["C"]
+    expected = (["A", "B", "A", "B"], [[0, 2], [2, 4], [4, 8], [8, 9]])
+    assert _rows(r) == expected
+    assert _rows(deleted) == expected
 
 
 def test_zero_is_a_label():
     r = labels_to_epochs(np.arange(5.0), np.array([0, 0, 1, 1, 0]), max_gap=None)
-    assert list(r) == [0, 1]
-    assert all(type(k) is int for k in r)
-    np.testing.assert_array_equal(r[0], [[0, 2]])
-    np.testing.assert_array_equal(r[1], [[2, 4]])
+    assert _rows(r) == ([0, 1], [[0, 2], [2, 4]])
+    assert all(type(label) is int for label in r.label.tolist())
+    assert _windows(r, 0) == [[0, 2]]
+    assert _windows(r, 1) == [[2, 4]]
 
 
-@pytest.mark.parametrize("label", [-1, ""])
-def test_negative_one_and_empty_string_are_labels(label):
-    r = labels_to_epochs(np.arange(3.0), [label, label, "x"], max_gap=None)
-    assert list(r) == [label]
+def test_negative_one_is_a_label():
+    r = labels_to_epochs(np.arange(3.0), [-1, -1, "x"], max_gap=None)
+    assert _rows(r) == ([-1], [[0, 2]])
+
+
+def test_empty_string_label_is_refused_unless_declared_missing():
+    """NWB reads "" back as a missing field, so it cannot name a condition."""
+    with pytest.raises(ValueError, match='missing_label=""'):
+        labels_to_epochs(np.arange(3.0), ["", "", "x"], max_gap=None)
+    r = labels_to_epochs(
+        np.arange(4.0), ["", "x", "x", ""], max_gap=None, missing_label=""
+    )
+    assert _rows(r) == (["x"], [[1, 3]])
 
 
 def test_nan_in_a_list_of_strings_is_missing():
     r = labels_to_epochs(np.arange(4.0), ["A", np.nan, "A", "A"], max_gap=None)
-    assert list(r) == ["A"]
-    np.testing.assert_array_equal(r["A"], [[0, 1], [2, 3]])
+    assert _rows(r) == (["A", "A"], [[0, 1], [2, 3]])
 
 
 def test_epochs_gate():
     r = labels_to_epochs(np.arange(10.0), ["A"] * 10, epochs=[(2.0, 6.0)], max_gap=None)
-    np.testing.assert_array_equal(r["A"], [[2, 6]])
-    np.testing.assert_array_equal(r.input_epochs, [[2.0, 6.0]])
-    assert not hasattr(r, "epochs")
-    assert r.epochs_table().attrs["input_epochs"] == [[2.0, 6.0]]
+    assert _rows(r) == (["A"], [[2, 6]])
+    assert r.analysis_settings["epochs"] == [[2.0, 6.0]]
     restored = pickle.loads(pickle.dumps(r))
-    np.testing.assert_array_equal(restored.input_epochs, [[2.0, 6.0]])
-    assert not restored.input_epochs.flags.writeable
+    assert _rows(restored) == _rows(r)
+    assert restored.analysis_settings == r.analysis_settings
 
 
 def test_labels_ordered_by_first_retained_interval():
     valid = np.array([False, False, True, True])
     r = labels_to_epochs(np.arange(4.0), list("BAAA"), valid=valid, max_gap=None)
-    assert list(r) == ["A"]
-    assert r.unsupported_labels == ("B",)
+    assert _rows(r) == (["A"], [[2, 3]])
+    assert r.analysis_settings["labels"] == ["A"]
+    assert r.analysis_settings["unsupported_labels"] == ["B"]
 
 
 def test_epochs_match_the_shared_resolver():
@@ -286,14 +259,21 @@ def test_epochs_match_the_shared_resolver():
         break_before=breaks,
         result="r",
     )[2]
-    kept = np.concatenate([np.arange(a, b + 1) for a, b in r.epoch_intervals])
-    np.testing.assert_array_equal(kept, np.flatnonzero(support.interval_mask))
-    np.testing.assert_array_equal(r.interval_supported, support.interval_mask)
-    assert r.epoch_bounds.shape[0] > 5
-    np.testing.assert_array_equal(r.epoch_bounds[:, 0], times[r.epoch_intervals[:, 0]])
-    np.testing.assert_array_equal(
-        r.epoch_bounds[:, 1], times[r.epoch_intervals[:, 1] + 1]
+    # Every bound is a sample time; row i covers intervals first[i]..last[i].
+    first = np.searchsorted(times, r.start)
+    after_last = np.searchsorted(times, r.stop)
+    np.testing.assert_array_equal(times[first], r.start)
+    np.testing.assert_array_equal(times[after_last], r.stop)
+    expected_spans = [
+        [0, 18], [20, 32], [36, 37], [39, 53], [55, 55], [57, 86], [88, 96],
+        [99, 103], [106, 113], [116, 126], [129, 130], [132, 154], [157, 158],
+        [161, 170], [172, 198],
+    ]  # fmt: skip
+    assert np.column_stack([first, after_last - 1]).tolist() == expected_spans
+    kept = np.concatenate(
+        [np.arange(a, b) for a, b in zip(first, after_last, strict=True)]
     )
+    np.testing.assert_array_equal(kept, np.flatnonzero(support.interval_mask))
 
 
 @pytest.mark.parametrize(
@@ -317,118 +297,72 @@ def test_invalid_input_names_the_argument(kwargs, name):
         labels_to_epochs(call.pop("times"), call.pop("labels"), **call)
 
 
-def test_result_owns_its_arrays():
+def test_epochs_own_their_data():
     times = np.arange(10.0)
     labels = np.array(_ABAB)
     valid = np.ones(10, dtype=bool)
     valid[6] = False
     epochs = np.array([[0.0, 9.0]])
     r = labels_to_epochs(times, labels, valid=valid, epochs=epochs, max_gap=None)
-    expected = {name: np.array(getattr(r, name)) for name in _ARRAY_FIELDS}
+    expected = (["A", "B", "A", "B"], [[0, 2], [2, 4], [4, 8], [8, 9]])
+    assert _rows(r) == expected
+    assert r.analysis_settings["epochs"] == [[0.0, 9.0]]
     times[:] = -1
     labels[:] = "B"
     valid[:] = False
     epochs[:] = 0
-    for name, array in expected.items():
-        np.testing.assert_array_equal(getattr(r, name), array)
+    assert _rows(r) == expected
+    assert r.analysis_settings["epochs"] == [[0.0, 9.0]]
     with pytest.raises(ValueError, match="read-only"):
-        r.epoch_bounds[0, 0] = 1.0
-    selected = r["A"]
-    with pytest.raises(ValueError, match="read-only"):
-        selected[0, 0] = 1.0
+        r.start[0] = 1.0
     restored = pickle.loads(pickle.dumps(r))
-    assert list(restored) == ["A", "B"]
-    for name in _ARRAY_FIELDS:
-        assert not getattr(restored, name).flags.writeable, name
-        np.testing.assert_array_equal(getattr(restored, name), getattr(r, name))
+    assert _rows(restored) == expected
+    assert not restored.start.flags.writeable
 
 
-_ARRAY_FIELDS = (
-    "epoch_bounds",
-    "epoch_labels",
-    "epoch_intervals",
-    "interval_labels",
-    "interval_supported",
-    "input_epochs",
-)
-
-
-def test_equality_is_identity(invalid_sample_result):
-    r = invalid_sample_result
-    assert r == r
-    assert r != labels_to_epochs(np.arange(10.0), _ABAB, max_gap=None)
-
-
-def test_epochs_table_and_summary(invalid_sample_result):
-    r = invalid_sample_result
-    df = r.epochs_table()
-    assert list(df.columns) == [
-        "label",
-        "start",
-        "stop",
-        "duration",
-        "first_interval",
-        "last_interval",
-        "n_intervals",
-    ]
-    assert len(df) == 5
-    assert df["duration"].sum() == 7.0
+def test_intervals_table(invalid_sample_epochs):
+    df = invalid_sample_epochs.intervals_table()
+    assert list(df.columns) == ["start_time", "stop_time", "label"]
+    assert df.index.name == "interval_id"
+    assert df.index.tolist() == [0, 1, 2, 3, 4]
     assert df["label"].tolist() == ["A", "B", "A", "A", "B"]
-    assert df["n_intervals"].tolist() == [2, 2, 1, 1, 1]
-    assert df.attrs == {
-        "max_gap": 1.5,
-        "input_epochs": None,
-        "missing_label": None,
-        "n_declared_breaks": 0,
-        "allocation": "interval_start",
-    }
-    df.loc[0, "start"] = 99.0
-    assert r.epoch_bounds[0, 0] == 0.0
-    summary = r.summary()
-    assert summary == {
-        "n_labels": 2,
-        "n_epochs": 5,
-        "labeled_duration": 7.0,
-        "n_unsupported_intervals": 2,
-        "n_missing_label_intervals": 0,
-        "n_unsupported_labels": 0,
-        "max_gap": 1.5,
-    }
-    for value in summary.values():
-        assert value is None or type(value) in (int, float)
+    assert (df["stop_time"] - df["start_time"]).sum() == 7.0
+    df.loc[0, "start_time"] = 99.0
+    assert invalid_sample_epochs.start[0] == 0.0
 
 
-def test_selected_windows_restrict_the_original_samples(invalid_sample_result):
+def test_selected_windows_restrict_the_original_samples(invalid_sample_epochs):
     """Each label's rows are directly usable as half-open ``epochs=`` windows."""
     from neurospatial._intervals import interval_valid_mask
 
     times = np.arange(10.0)
-    windows = invalid_sample_result["A"]
-    mask = interval_valid_mask(times, max_gap=None, epochs=windows)
-    np.testing.assert_array_equal(mask, invalid_sample_result.interval_labels == 0)
+    epochs = invalid_sample_epochs
+    selected = epochs[epochs.label == "A"].windows
+    mask = interval_valid_mask(times, max_gap=None, epochs=selected)
+    # Intervals [k, k + 1) labelled "A" and supported: 0, 1, 4 and 7.
+    np.testing.assert_array_equal(mask, [1, 1, 0, 0, 1, 0, 0, 1, 0])
 
 
 def test_labels_follow_first_retained_interval():
     valid = np.ones(5, dtype=bool)
     valid[0] = False  # "B" starts at sample 0 but is first retained after "A"
     r = labels_to_epochs(np.arange(5.0), list("BAABB"), valid=valid, max_gap=None)
-    assert list(r) == ["A", "B"]
-    np.testing.assert_array_equal(r.interval_labels, [-1, 0, 0, 1])
+    assert _rows(r) == (["A", "B"], [[1, 3], [3, 4]])
+    assert r.analysis_settings["labels"] == ["A", "B"]
 
 
-def test_label_keys_are_plain_python_values():
+def test_labels_are_plain_python_values():
     r = labels_to_epochs(
         np.arange(5.0), [np.int64(1), np.int64(1), "x", "x", "x"], max_gap=None
     )
-    keys = list(r)
-    assert keys == [1, "x"]
-    assert type(keys[0]) is int
-    assert 1 in r
+    assert _rows(r) == ([1, "x"], [[0, 2], [2, 4]])
+    assert type(r.label.iloc[0]) is int
+    assert type(r.analysis_settings["labels"][0]) is int
 
 
 def test_tuple_labels_are_combined_conditions():
     labels = [("arm1", "out")] * 3 + [("arm1", "in")] * 2
     r = labels_to_epochs(np.arange(5.0), labels, max_gap=None)
-    assert list(r) == [("arm1", "out"), ("arm1", "in")]
-    np.testing.assert_array_equal(r[("arm1", "out")], [[0, 3]])
-    np.testing.assert_array_equal(r[("arm1", "in")], [[3, 4]])
+    assert _rows(r) == ([("arm1", "out"), ("arm1", "in")], [[0, 3], [3, 4]])
+    assert _windows(r, ("arm1", "out")) == [[0, 3]]
+    assert _windows(r, ("arm1", "in")) == [[3, 4]]

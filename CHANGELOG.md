@@ -44,9 +44,9 @@
 - `detect_region_visits` and `detect_trials` refuse point regions: a one-bin
   well misses an animal that stops beside it. Give the well its size with
   `Regions.add(name, point=..., radius=...)`.
-- `laps_to_direction_labels` and `write_laps` take an `Intervals` only;
-  `write_laps` stores the `interval_ids` in an `interval_id` column and every
-  field as a column (its `start_times`/`stop_times`/`directions` arrays are
+- `write_laps` takes an `Intervals` only; it stores the `interval_ids` in an
+  `interval_id` column and every field
+  as a column (its `start_times`/`stop_times`/`directions` arrays are
   removed). `to_pynapple` takes an `Intervals` for interval records and
   refuses a list of them; lists of region crossings are unchanged.
 
@@ -109,6 +109,40 @@
   and `filter_by_intervals`, and `preserve_columns` of
   `intervals_to_events` (now `preserve_fields`). Build the intervals with
   `Intervals.from_dataframe(table, start_column=..., stop_column=...)`.
+
+### Labels as Intervals
+
+**Changed**
+
+- `labels_to_epochs` returns an `Intervals[Interval]`, one row per epoch
+  with a `label` field, instead of a mapping from label to windows. The
+  epochs are the same. Select a condition with
+  `conditions[conditions.label == "outbound"]` and pass it as `epochs=`;
+  its total time is `.durations.sum()`. `analysis_settings` records the
+  labels with epochs, the `unsupported_labels` (labels with no kept
+  interval), `max_gap`, `epochs`, `missing_label` and `n_declared_breaks`.
+  `to_pynapple` exports it with `interval_id` and `label` columns. The
+  empty string is refused as a label, because NWB reads it back as missing;
+  pass `missing_label=""` if it means "no label".
+- Per-sample lap labels refuse overlapping laps instead of giving a sample
+  in two laps the later lap's direction (last writer wins): `sample_values`
+  raises, naming both `interval_id`s. Select non-overlapping laps first.
+  `detect_laps` never returns overlapping laps; this affects hand-built or
+  merged laps.
+
+**Removed**
+
+- `LabelEpochsResult`, with its `epochs_table()`, `durations` and
+  `summary()`: use `intervals_table()` and the `Intervals` columns. The
+  per-interval provenance (`interval_labels`, `interval_supported`,
+  `epoch_intervals`) is gone.
+- `laps_to_direction_labels(laps, times)`: use
+  `laps[laps.direction != "unknown"].sample_values(times, "direction")`.
+- `goal_pair_direction_labels(times, trials)`: use
+  `trials[trials.outcome == "reached"].sample_values(times, ("start_region", "end_region"))`.
+  Each label is a `(start_region, end_region)` tuple instead of a
+  `"start→end"` string; `compute_directional_place_fields` and
+  `labels_to_epochs` take tuple labels as they are.
 
 ### Trial fields, labels and wells with a size
 
@@ -249,12 +283,11 @@ trial in one call.
   timeout is a rule of the task. Pass your task's value to keep timeouts.
 - `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
   window `[start_time, stop_time)`.
-- `time_to_goal`, `goal_pair_direction_labels` and `compute_vte_session`
-  take an `Intervals` and read fields, so trials
-  read back from NWB or a task log work too. `time_to_goal` now treats
-  trials as half-open (the arrival sample is NaN, not 0) and, like
-  `goal_pair_direction_labels`, needs strictly increasing `times` and
-  refuses overlapping trials instead of letting the later one win.
+- `time_to_goal` and `compute_vte_session` take an `Intervals` and read
+  fields, so trials read back from NWB or a task log work too.
+  `time_to_goal` now treats trials as half-open (the arrival sample is NaN,
+  not 0), needs strictly increasing `times` and refuses overlapping trials
+  instead of letting the later one win.
   `compute_vte_session` results follow the row order of the trials (sorted
   by time). Every trial consumer now reads a trial as `[start, stop)`:
   `compute_vte_session` no longer includes the stop (arrival) sample, and a
