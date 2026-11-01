@@ -73,7 +73,8 @@ def test_as_intervals_real_intervalset():
         ([[0, np.nan]], "row(s) 0 contain NaN or inf"),
         ([[5, 5]], "row(s) 0 have stop <= start"),
         (IntervalSetLike(np.array([0, 1]), np.array([2])), "shapes (2,) and (1,)"),
-        ("bad", "could not be read as numbers"),
+        ("bad", "holds text"),
+        ([{}, 1.0], "could not be read as numbers"),
     ],
 )
 def test_as_intervals_errors_follow_contract(value, detail):
@@ -535,3 +536,36 @@ def test_linear_allocated_occupancy_clips_a_step_beyond_the_edges():
         ),
         [1.0, 1.0, 1.0, 1.0],
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "detail"),
+    [
+        (np.array([[0, 5]], dtype="timedelta64[s]"), "total_seconds()"),
+        (np.array([[0, 5]], dtype="datetime64[s]"), "datetime"),
+        (np.array([[False, True]]), "bool"),
+        (np.array([["0", "5"]]), "text"),
+        (np.array([["0", "5"]], dtype=object), "text"),
+        ([("0", "5")], "text"),
+    ],
+)
+def test_non_numeric_epochs_are_refused(value, detail) -> None:
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(ValueError, match="float seconds") as exc:
+        as_intervals(value, name="epochs")
+    assert detail in str(exc.value)
+
+
+def test_timedelta_epochs_name_the_conversion() -> None:
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame(
+        {
+            "start_time": pd.to_timedelta([0, 10], unit="s"),
+            "stop_time": pd.to_timedelta([5, 15], unit="s"),
+        }
+    )
+    with pytest.raises(ValueError, match=re.escape("np.timedelta64(1, 's')")):
+        as_intervals(table, name="epochs")

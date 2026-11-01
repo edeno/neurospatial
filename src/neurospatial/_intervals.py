@@ -24,7 +24,8 @@ from neurospatial._results import EMPTY_SELECTION, ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 _ACCEPTED_FORMS = (
-    "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
+    "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows "
+    "in seconds, "
     "an object with an (n, 2) .windows array (for example "
     "neurospatial.Intervals), one interval record with .start_time and "
     ".stop_time (for example a Trial), or an object with 1-D .start and .end "
@@ -246,6 +247,39 @@ def _format_rows(idx: NDArray[np.intp]) -> str:
     return shown + (f" (+{idx.size - 5} more)" if idx.size > 5 else "")
 
 
+def _non_numeric_problem(raw: NDArray[Any], name: str) -> str | None:
+    """The problem with window bounds that are not numbers, or None.
+
+    Timedeltas, datetimes, Booleans and text would otherwise be coerced to
+    numbers that are not seconds (a timedelta becomes nanoseconds).
+    """
+    kind = raw.dtype.kind
+    if kind == "m":
+        return (
+            f"{name} holds timedelta values; convert to float seconds, for "
+            f"example {name} / np.timedelta64(1, 's'), or "
+            "series.dt.total_seconds() for a pandas column"
+        )
+    if kind == "M":
+        return (
+            f"{name} holds datetime values; convert to float seconds on the "
+            f"clock of `times`, for example ({name} - t0) / np.timedelta64(1, 's')"
+        )
+    if kind == "b":
+        return (
+            f"{name} holds bool values, which are not times; convert to float "
+            "seconds (a Boolean mask over samples is not a set of windows)"
+        )
+    if kind in "US" or (
+        kind == "O" and any(isinstance(v, (str, bytes)) for v in raw.ravel())
+    ):
+        return (
+            f"{name} holds text; convert to float seconds, for example "
+            f"np.asarray({name}, dtype=float)"
+        )
+    return None
+
+
 def _parse_intervals(
     value: Any, name: str
 ) -> tuple[NDArray[np.float64] | None, list[str]]:
@@ -332,12 +366,16 @@ def _parse_intervals(
         ]
     else:
         try:
-            rows = np.asarray(value, dtype=np.float64)
+            raw = np.asarray(value)
+            problem = _non_numeric_problem(raw, name)
+            rows = raw.astype(np.float64) if problem is None else raw
         except (TypeError, ValueError):
             return None, [
                 f"{name} could not be read as numbers "
                 f"(got {type(value).__name__}: {value!r:.80})"
             ]
+        if problem is not None:
+            return None, [problem]
         if rows.shape == (2,):
             rows = rows.reshape(1, 2)
         if rows.ndim != 2 or rows.shape[1] != 2:
@@ -419,7 +457,8 @@ IntervalSet-like
         without duration are not windows, and no windows is a valid, empty
         selection. One interval record (``start_time`` and ``stop_time``,
         such as a :class:`~neurospatial.behavior.Trial`) is its own window,
-        or an empty selection without duration. An object exposing 1-D
+        or an empty selection without duration. Bounds must be numbers in seconds:
+        timedeltas, datetimes, Booleans and text are refused. An object exposing 1-D
         ``.start`` and ``.end`` arrays
         (for example a pynapple ``IntervalSet``) is accepted by duck typing;
         pynapple is never imported. A pynapple interval includes its end, so
