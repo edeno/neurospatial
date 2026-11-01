@@ -186,7 +186,8 @@ def test_rayleigh_test_nan_cofilters_weights(concentrated_angles):
     angles_manual = angles[keep]
     weights_manual = weights[keep]
 
-    z_cofiltered, p_cofiltered = rayleigh_test(angles_with_nan, weights=weights)
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        z_cofiltered, p_cofiltered = rayleigh_test(angles_with_nan, weights=weights)
     z_manual, p_manual = rayleigh_test(angles_manual, weights=weights_manual)
 
     assert_allclose(z_cofiltered, z_manual)
@@ -210,7 +211,8 @@ def test_weighted_metrics_nan_angle_cofilters_weight(func):
     angles_filtered = np.array([0.0, np.pi / 2])
     weights_filtered = np.array([1.0, 1.0])
 
-    result = func(angles_with_nan, weights=weights)
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        result = func(angles_with_nan, weights=weights)
     expected = func(angles_filtered, weights=weights_filtered)
 
     assert np.isfinite(result)
@@ -488,8 +490,10 @@ def test_circular_circular_exact_identities_and_pvalue():
 def test_nan_angles_dropped_the_same_with_or_without_weights(func):
     """Unit weights must not change how NaN angles are treated."""
     angles = np.array([0.1, np.nan, 0.3, 0.2])
-    unweighted = func(angles)
-    weighted = func(angles, weights=np.ones(4))
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        unweighted = func(angles)
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        weighted = func(angles, weights=np.ones(4))
     expected = func(np.array([0.1, 0.3, 0.2]))
     assert unweighted == pytest.approx(weighted, rel=1e-12)
     assert unweighted == pytest.approx(expected, rel=1e-12)

@@ -19,6 +19,7 @@ arrows, poses, events and the time panels' windows) comes from the scene's
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from itertools import pairwise
@@ -28,6 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _head_direction_color, _rate_opacity
@@ -1076,7 +1078,7 @@ def _playback(
     """The time each step moves, and the steps a second, to play at ``speed``.
 
     Every field frame is visited: if that needs more than ``max_steps`` a
-    second, playback is slower. Overlays with their own
+    second, playback is slower, with a warning. Overlays with their own
     samples are stepped through as finely as the speed allows. The step is
     then shortened a little so the speed comes out exactly.
 
@@ -1098,6 +1100,15 @@ def _playback(
     steps_per_second : int
     """
     played = min(speed, max_steps * frame_step)
+    if played < speed:
+        warnings.warn(
+            f"Playing every frame at speed {speed:g} needs "
+            f"{speed / frame_step:.0f} steps a second; the controls take at most "
+            f"{max_steps}, so it plays at speed {played:.2g}. Raise "
+            "max_playback_fps (up to 100), lower speed, or subsample the frames.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
     step = min(frame_step, max(overlay_interval, played / max_steps))
     steps_per_second = min(max(int(np.ceil(played / step - 1e-9)), 1), max_steps)
     return played / steps_per_second, steps_per_second
@@ -1194,8 +1205,8 @@ class FastplotlibAnimation:
         speed allows.
     max_playback_fps : int, default=60
         The most steps a second Play takes (fastplotlib allows 100). When
-        visiting every frame at ``speed`` needs more, it plays at the slower
-        speed these steps allow, below ``speed``.
+        visiting every frame at ``speed`` needs more, it plays slower and
+        warns.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     layout : {"horizontal", "vertical", "grid"}, optional

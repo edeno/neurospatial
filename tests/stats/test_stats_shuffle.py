@@ -303,8 +303,9 @@ def test_shuffle_spikes_isi_requires_sorted_finite_1d(spikes):
         shuffle_spikes_isi(spikes)
 
 
-def test_shuffle_spikes_isi_with_two_spikes_returns_the_input():
-    draws = list(shuffle_spikes_isi(np.array([0.1, 0.4]), n_shuffles=3))
+def test_shuffle_spikes_isi_warns_when_null_is_degenerate():
+    with pytest.warns(UserWarning, match="every shuffle equals the input"):
+        draws = list(shuffle_spikes_isi(np.array([0.1, 0.4]), n_shuffles=3))
     assert all(np.array_equal(draw, [0.1, 0.4]) for draw in draws)
 
 

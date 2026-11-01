@@ -1082,10 +1082,14 @@ def shuffle_spikes_isi(
         If ``spike_times`` is not a sorted, finite 1-D array, or
         ``n_shuffles`` is not a positive integer.
 
+    Warns
+    -----
+    UserWarning
+        With fewer than three spikes there is at most one ISI, so every
+        shuffle equals the input.
+
     Notes
     -----
-    - With fewer than three spikes there is at most one ISI, so every
-      shuffle equals the input; a null built from such a unit is degenerate
     - Preserves the first spike time exactly
     - Preserves the ISI distribution (same ISI values, different order)
     - Preserves the last spike time, up to floating-point rounding
@@ -1119,6 +1123,13 @@ def shuffle_spikes_isi(
         spike_times, call="shuffle_spikes_isi()", require_sorted=True
     )
     validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_spikes_isi()")
+    if spike_times.size < 3:
+        warnings.warn(
+            f"shuffle_spikes_isi: {spike_times.size} spike(s) give at most one "
+            "inter-spike interval, so every shuffle equals the input.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
     return _isi_permutations(spike_times, n_shuffles, np.random.default_rng(rng))
 
 

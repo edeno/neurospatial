@@ -111,6 +111,7 @@ Kramer, M.A. & Eden, U.T. (2016). Case Studies in Neural Data Analysis. MIT Pres
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -120,6 +121,7 @@ from numpy.typing import NDArray
 from neurospatial._angles import to_radians, wrap_angle
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -358,6 +360,13 @@ def _valid_angles(
         angles = angles[~nan_mask]
         if weights is not None:
             weights = weights[~nan_mask]
+        if len(angles):
+            warnings.warn(
+                f"Removed {n_nan} NaN values from angles. "
+                f"Proceeding with {len(angles)} valid samples.",
+                category=UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
 
     if np.any(np.isinf(angles)):
         n_inf = np.sum(np.isinf(angles))
@@ -439,6 +448,13 @@ def _validate_paired_input(
     # Remove pairs where either is NaN
     nan_mask = np.isnan(arr1) | np.isnan(arr2)
     if np.any(nan_mask):
+        n_removed = np.sum(nan_mask)
+        warnings.warn(
+            f"Removed {n_removed} pairs containing NaN values. "
+            f"Proceeding with {len(arr1) - n_removed} valid pairs.",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
         arr1 = arr1[~nan_mask]
         arr2 = arr2[~nan_mask]
 
@@ -474,7 +490,7 @@ def rayleigh_test(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles are dropped and the statistic uses the rest.
+        Sample of angles. NaN angles are dropped with a warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -603,7 +619,8 @@ def circular_linear_correlation(
         Circular variable (e.g., spike phases) in radians or degrees.
     linear_values : ndarray of shape (n_samples,)
         Linear variable (e.g., positions, time). A pair with a NaN in either
-        array is dropped and the correlation uses the remaining pairs.
+        array is dropped with a warning and the correlation uses the remaining
+        pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
 
@@ -750,7 +767,7 @@ def circular_circular_correlation(
     angles2 : ndarray of shape (n_samples,)
         Second circular variable in radians or degrees. Must have same
         length as ``angles1``. A pair with a NaN in either array is dropped
-        and the correlation uses the remaining pairs.
+        with a warning and the correlation uses the remaining pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles (applies to both arrays).
 
@@ -879,8 +896,8 @@ def circular_mean(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped and the
-        statistic uses the rest.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -928,8 +945,8 @@ def circular_variance(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped and the
-        statistic uses the rest.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
@@ -974,8 +991,8 @@ def mean_resultant_length(
     Parameters
     ----------
     angles : ndarray of shape (n_samples,)
-        Sample of angles. NaN angles (and their weights) are dropped and the
-        statistic uses the rest.
+        Sample of angles. NaN angles (and their weights) are dropped with a
+        warning.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional

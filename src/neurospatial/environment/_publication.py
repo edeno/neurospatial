@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -22,6 +23,7 @@ from scipy import sparse
 
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.arena import EgocentricSurround
 from neurospatial.environment._cache import AnalysisCache
@@ -84,6 +86,34 @@ class _Metadata:
                 raise TypeError(msg)
 
 
+# Unit labels that tools reading ``units`` (scale bars, simulators) recognize.
+_UNITS_REGISTRY: frozenset[str] = frozenset({"cm", "m", "mm", "px", "pixels"})
+
+
+def _validate_units(value: object) -> None:
+    """Warn if ``value`` is not in :data:`_UNITS_REGISTRY`.
+
+    Called when constructing or replacing the units declaration. The
+    registry is intentionally small and advisory; the goal is to
+    catch typos (``"centimeters"``, ``"px "``) without preventing
+    legitimate free-form values.
+    """
+    if value is None:
+        return
+    if not isinstance(value, str):
+        msg = f"Environment.units must be a str or None, got {type(value).__name__}."
+        raise TypeError(msg)
+    if value not in _UNITS_REGISTRY:
+        warnings.warn(
+            f"Environment.units={value!r} is not in the standard "
+            f"registry {sorted(_UNITS_REGISTRY)}. Free-form strings "
+            "are allowed but may not be interpreted by tools that consume "
+            "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def _replace_metadata(
     metadata: _Metadata,
     *,
@@ -94,13 +124,16 @@ def _replace_metadata(
     """Return ``metadata`` with the labels a caller supplied replaced.
 
     An omitted label (``UNSET``) is kept; ``None`` clears ``units`` or
-    ``frame``.
+    ``frame``. Only newly declared units are checked against the registry.
     """
-    return _Metadata(
+    replaced = _Metadata(
         metadata.name if isinstance(name, _Unset) else name,
         metadata.units if isinstance(units, _Unset) else units,
         metadata.frame if isinstance(frame, _Unset) else frame,
     )
+    if not isinstance(units, _Unset):
+        _validate_units(replaced.units)
+    return replaced
 
 
 def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry:
@@ -346,7 +379,12 @@ def _declared_metadata(
     units: str | None = None,
     frame: str | None = None,
 ) -> _Metadata:
-    """Return a metadata record for labels a caller declares at construction."""
+    """Return a metadata record for labels a caller declares at construction.
+
+    Unrecognized units warn here, once per declaration; derived environments
+    reuse their parent's record and do not warn again.
+    """
+    _validate_units(units)
     return _Metadata(name, units, frame)
 
 

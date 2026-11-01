@@ -48,14 +48,15 @@ def test_file_rate_is_the_sample_rate_times_speed(env, fields, tmp_path, speed, 
 
 def test_capped_rate_keeps_speed_and_skips_rows(env, fields, tmp_path):
     pytest.importorskip("imageio_ffmpeg")
-    path = env.animate_fields(
-        fields,
-        frame_times=FRAME_TIMES,
-        save_path=tmp_path / "fast.mp4",
-        speed=4.0,
-        max_playback_fps=20,
-        dpi=30,
-    )
+    with pytest.warns(UserWarning, match="max_playback_fps=20.*skips rows"):
+        path = env.animate_fields(
+            fields,
+            frame_times=FRAME_TIMES,
+            save_path=tmp_path / "fast.mp4",
+            speed=4.0,
+            max_playback_fps=20,
+            dpi=30,
+        )
     meta, n_frames = _metadata(path)
     assert meta["fps"] == pytest.approx(20)
     # A frame every 0.2 s of recording (20 fps at 4x), not one per 0.05 s row:

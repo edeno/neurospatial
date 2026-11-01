@@ -1188,24 +1188,26 @@ class TestDecodingCorrelationEdgeCases:
     """Test edge cases in decoding_correlation."""
 
     def test_decoding_correlation_constant_values_returns_nan(self):
-        """Constant values (zero variance) have no correlation: NaN."""
+        """Constant values (zero variance) have no correlation: NaN, warned."""
         from neurospatial.decoding.metrics import decoding_correlation
 
         decoded = np.full((5, 2), 3.0)
         actual = np.full((5, 2), 5.0)
 
-        result = decoding_correlation(_space_for(decoded), decoded, actual)
+        with pytest.warns(UserWarning, match=r"do not vary.*result is NaN"):
+            result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert np.isnan(result)
 
     def test_decoding_correlation_one_constant_dimension_is_left_out(self):
-        """A dimension that does not vary is excluded from the mean."""
+        """A dimension that does not vary is excluded from the mean, warned."""
         from neurospatial.decoding.metrics import decoding_correlation
 
         actual = np.column_stack([np.arange(5.0), np.full(5, 5.0)])  # y constant
         decoded = np.column_stack([np.arange(5.0) ** 2, np.arange(5.0)])
 
-        result = decoding_correlation(_space_for(decoded), decoded, actual)
+        with pytest.warns(UserWarning, match=r"dimension\(s\) \[1\] of 2"):
+            result = decoding_correlation(_space_for(decoded), decoded, actual)
 
         assert result == pytest.approx(np.corrcoef(decoded[:, 0], actual[:, 0])[0, 1])
 

@@ -26,6 +26,7 @@ to_pynapple
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from typing import Any, Literal, get_args
 
 import numpy as np
@@ -38,6 +39,7 @@ from neurospatial._pynapple import (
     interval_set,
     refuse_permuted_spatial_columns,
 )
+from neurospatial._stacklevel import _external_stacklevel
 
 __all__ = ["from_pynapple", "to_pynapple"]
 
@@ -244,6 +246,11 @@ default="map_position"
         records overlap. These checks run before
         pynapple is imported.
 
+    Warns
+    -----
+    UserWarning
+        If interval records without duration are dropped.
+
     Notes
     -----
     **Decode results.** The time support is the result's ``time_support``,
@@ -280,9 +287,7 @@ default="map_position"
     (``Run.bins``, one bin per sample, is not exported). A record without
     duration (``end_time == start_time``, such as a visit seen in one sample
     before a tracking loss) holds no half-open time and cannot be a pynapple
-    interval, so it is dropped without a warning; the exported intervals are
-    fewer than the records, and the dropped ones are those whose ``end_time``
-    equals their ``start_time``. pynapple merges overlapping
+    interval, so it is dropped with a warning. pynapple merges overlapping
     intervals and then drops all metadata, so overlapping records are
     refused: export them (for example visits to overlapping regions) in
     separate calls. A ``LabelEpochsResult`` becomes one interval per epoch,
@@ -640,8 +645,16 @@ def _intervals_to_pynapple(
     ends = stop_to_pynapple_end(stops)
     timed = ends > starts
     if not timed.all():
-        # A half-open [start_time, end_time) window without duration holds no
-        # time, and a pynapple IntervalSet cannot hold it.
+        n_empty = int(np.count_nonzero(~timed))
+        warnings.warn(
+            f"to_pynapple dropped {n_empty} of {starts.size} {kind} record(s) "
+            "without duration (end_time == start_time), such as a visit seen "
+            "in one sample before a tracking loss. A half-open "
+            "[start_time, end_time) window then holds no time, and a pynapple "
+            "IntervalSet cannot hold an interval without duration.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
         starts, stops, ends = starts[timed], stops[timed], ends[timed]
         metadata = {name: column[timed] for name, column in metadata.items()}
     overlap = np.flatnonzero(starts[1:] < np.maximum.accumulate(stops)[:-1])

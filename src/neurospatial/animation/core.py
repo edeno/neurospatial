@@ -552,6 +552,15 @@ def animate_fields(
         **scene_options,
     )
     if backend in ("video", "html"):
+        if rate is not None and rate * speed > max_playback_fps:
+            warnings.warn(
+                f"speed={speed:g} would need {rate * speed:.0f} fps; the file is "
+                f"written at max_playback_fps={max_playback_fps}, so it skips "
+                "rows between output frames. Raise max_playback_fps or lower "
+                "speed to keep every row.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
         with scene:
             return scene.export(
                 options.pop("save_path"),

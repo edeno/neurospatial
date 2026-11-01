@@ -572,11 +572,14 @@ class TestAssemblyActivation:
         assert_allclose(activation.mean(), expected, atol=1e-12)
         assert abs(activation.mean()) < 4 * np.sqrt(2 / 5000)
 
-    def test_constant_member_contributes_nothing(self, coactivation_counts) -> None:
+    def test_constant_member_warns_and_contributes_nothing(
+        self, coactivation_counts
+    ) -> None:
         counts, pattern = coactivation_counts
         silent = counts.copy()
         silent[:, 2] = 0.0
-        activation = assembly_activation(silent, pattern)
+        with pytest.warns(UserWarning, match=r"units \[2\] have nonzero weight"):
+            activation = assembly_activation(silent, pattern)
         assert np.all(np.isfinite(activation))
 
     def test_all_zero_weights_raise(self, coactivation_counts) -> None:
@@ -670,7 +673,8 @@ class TestPairwiseCorrelations:
         """A neuron with one count in every bin has no correlation, not r = 0."""
         counts = small_spike_counts.copy()
         counts[:, 3] = 0.0
-        corr = pairwise_correlations(counts)
+        with pytest.warns(UserWarning, match=r"neuron columns \[3\]"):
+            corr = pairwise_correlations(counts)
         first, second = np.triu_indices(counts.shape[1], k=1)
         involves = (first == 3) | (second == 3)
         assert np.all(np.isnan(corr[involves]))
@@ -737,7 +741,10 @@ class TestAssemblyReactivationBasics:
     def test_neuron_constant_in_one_period_is_excluded(self, pattern) -> None:
         pre, post = self._period(0, 2000, 0.5), self._period(1, 2000, 0.5)
         pre[:, 3] = 0.0  # member 3 silent before the task
-        result = assembly_reactivation(pre, post, pattern)
+        with pytest.warns(
+            UserWarning, match=r"units \[3\] .* control_counts.* excluded"
+        ):
+            result = assembly_reactivation(pre, post, pattern)
         keep = np.arange(20) != 3
         reduced = AssemblyPattern(pattern.weights[keep], np.arange(4), 0.2)
         expected = assembly_reactivation(pre[:, keep], post[:, keep], reduced)
@@ -899,7 +906,8 @@ class TestExplainedVarianceUndefined:
         """A member silent in the match period leaves the other pairs' EV intact."""
         match = periods["match"].copy()
         match[:, 2] = 0.0
-        match_correlations = pairwise_correlations(match)
+        with pytest.warns(UserWarning, match="undefined"):
+            match_correlations = pairwise_correlations(match)
         result = explained_variance_reactivation(
             pairwise_correlations(periods["template"]), match_correlations
         )

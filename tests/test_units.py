@@ -61,7 +61,8 @@ def test_overlay_units_alias_matches_environment():
     grid = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
-    env = grid.with_metadata(units="micrometers")
+    with pytest.warns(UserWarning, match="not in the standard registry"):
+        env = grid.with_metadata(units="micrometers")
     times = np.array([0.0, 0.1])
     overlay = PositionOverlay(
         np.array([[0.5, 0.5], [1.5, 1.5]]), times=times, units="um"

@@ -162,8 +162,9 @@ def test_persistence_restores_labels_through_constructor(kind, path, tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["grid_mask", "polar_create", "graph"])
-def test_factory_accepts_free_form_units(kind):
-    env = _create(kind, units="lab distance")
+def test_factory_preserves_advisory_unit_validation(kind):
+    with pytest.warns(UserWarning, match="standard"):
+        env = _create(kind, units="lab distance")
     assert env.units == "lab distance"
 
 

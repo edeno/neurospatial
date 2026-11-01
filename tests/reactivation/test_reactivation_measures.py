@@ -146,7 +146,11 @@ class TestAssemblyReactivation:
         counts = np.random.default_rng(0).poisson(1.0, (300, 3)).astype(float)
         silent = counts.copy()
         silent[:, :2] = 0.0
-        result = assembly_reactivation(silent, counts, pattern)
+        with (
+            pytest.warns(UserWarning, match="excluded from both periods"),
+            pytest.warns(UserWarning, match="comparison is undefined"),
+        ):
+            result = assembly_reactivation(silent, counts, pattern)
         assert np.isnan(result.mean_activation_difference)
         assert np.isnan(result.fraction_above_control_threshold)
 

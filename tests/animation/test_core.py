@@ -304,19 +304,37 @@ class TestExports:
         assert played == pytest.approx(fps)
         assert labels == [f"t = {t:.3f} s" for t in times]
 
-    def test_capped_rate_keeps_speed_and_skips_rows(self, env, tmp_path):
+    def test_capped_rate_keeps_speed_and_warns_at_the_call_site(self, env, tmp_path):
         times = np.linspace(0, 0.2, 101)  # 500 Hz
-        path = animate_fields(
-            env,
-            _fields(env, 101),
-            frame_times=times,
-            save_path=tmp_path / "a.html",
-            dpi=20,
-        )
+        with pytest.warns(UserWarning, match="max_playback_fps=60") as record:
+            path = animate_fields(
+                env,
+                _fields(env, 101),
+                frame_times=times,
+                save_path=tmp_path / "a.html",
+                dpi=20,
+            )
+        (warning,) = [w for w in record if "max_playback_fps" in str(w.message)]
+        assert warning.filename == __file__
+        assert "skips rows" in str(warning.message)
         played, labels, _ = _player(path)
         assert played == MAX_PLAYBACK_FPS
         # Real time: frames are 1/60 s of recording apart.
         assert labels == [f"t = {k / 60:.3f} s" for k in range(13)]
+
+    def test_uncapped_rate_does_not_warn(self, env, tmp_path):
+        import warnings
+
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            animate_fields(
+                env,
+                _fields(env, 5),
+                frame_times=np.arange(5) / 20.0,
+                save_path=tmp_path / "a.html",
+                dpi=20,
+            )
+        assert not [w for w in record if "max_playback_fps" in str(w.message)]
 
     def test_auto_exports_a_gif_suffix_as_video(self, env, tmp_path):
         import imageio.v3 as iio

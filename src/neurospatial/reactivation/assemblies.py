@@ -2035,12 +2035,15 @@ def assembly_activation(
         weight, or with ``unit_ids``, if the pattern's labels were generated
         or the labels of the two sides differ.
 
+    Warns
+    -----
+    UserWarning
+        If a neuron with nonzero weight has the same count in every bin of
+        this period. Its z-score is undefined; it contributes 0, so it
+        cannot take part in co-activation.
+
     Notes
     -----
-    A neuron with nonzero weight that has the same count in every bin of
-    this period has no z-score; it contributes 0, so it cannot take part in
-    co-activation. No warning is raised.
-
     **Activation strength**:
 
     With the pattern's weights :math:`w` scaled to unit length and the
@@ -2145,7 +2148,16 @@ def assembly_activation(
     weights = _unit_weights(pattern.weights, call=call)
 
     if z_score_input:
-        spike_counts_z, _ = _z_scores(spike_counts)
+        spike_counts_z, constant = _z_scores(spike_counts)
+        silent_members = constant & (weights != 0)
+        if np.any(silent_members):
+            warnings.warn(
+                f"{call}: units {np.asarray(pattern.unit_ids)[silent_members].tolist()} "
+                "have nonzero weight but the same count in every time bin of "
+                "spike_counts, so they contribute 0 to the activation strength.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         spike_counts_z = spike_counts
 
@@ -2205,13 +2217,15 @@ def pairwise_activation(
         [-1, 1] per pair of the columns, or the labels are given alone or
         name different units.
 
+    Warns
+    -----
+    UserWarning
+        If some template pairs are NaN, or a neuron with a defined template
+        correlation has the same count in every bin of ``spike_counts`` (its
+        z-score is undefined; it contributes 0).
+
     Notes
     -----
-    A NaN template pair (a neuron constant in the template period) gets
-    weight 0. A neuron with a defined template correlation that has the same
-    count in every bin of ``spike_counts`` has no z-score; it contributes 0.
-    No warning is raised for either.
-
     With :math:`C` the template's correlation matrix and :math:`P = C` with
     :math:`P_{ii} = 0`,
 
@@ -2332,6 +2346,13 @@ def pairwise_activation(
         labels, order = None, np.arange(n_neurons)
 
     undefined = np.isnan(template)
+    if np.any(undefined):
+        warnings.warn(
+            f"{call}: {int(undefined.sum())} of {n_pairs} template pairs are NaN "
+            "(a neuron constant in the template) and get weight 0.",
+            UserWarning,
+            stacklevel=2,
+        )
     first, second = np.triu_indices(n_neurons, k=1)
     weights = np.where(undefined, 0.0, template)
     projector = np.zeros((n_neurons, n_neurons))
@@ -2339,7 +2360,19 @@ def pairwise_activation(
     projector[second, first] = weights
 
     if z_score_input:
-        spike_counts_z, _ = _z_scores(spike_counts)
+        spike_counts_z, constant = _z_scores(spike_counts)
+        silent = constant & np.any(projector != 0, axis=0)
+        if np.any(silent):
+            # Name the caller's columns, not their place in template order.
+            columns = np.sort(order[silent])
+            named = "" if labels is None else f" (units {labels[columns].tolist()})"
+            warnings.warn(
+                f"{call}: neuron columns {columns.tolist()}{named} have the "
+                "same count in every time bin of spike_counts, so they "
+                "contribute 0 to the activation strength.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
         spike_counts_z = spike_counts
     activation: NDArray[np.float64] = np.sum(
@@ -2517,6 +2550,11 @@ def pairwise_correlations(
         If ``spike_counts`` is not 2-D or holds NaN, infinite or negative
         values.
 
+    Warns
+    -----
+    UserWarning
+        If some neurons are constant over the period, naming their columns.
+
     Notes
     -----
     Returns only the upper triangle (excluding diagonal) to avoid
@@ -2532,7 +2570,7 @@ def pairwise_correlations(
     which pairs the correlations by cell.
 
     A neuron whose count is the same in every time bin is constant over the
-    period; its pairs are NaN and no warning is raised.
+    period; its pairs are NaN, with a warning.
     :func:`explained_variance_reactivation` drops those pairs; to keep the
     same pairs in every period, select units that fire in all periods.
 
@@ -2570,7 +2608,17 @@ def pairwise_correlations(
     ... )
     """
     spike_counts = _validated_counts(spike_counts, call="pairwise_correlations()")
-    correlations, _ = _pairwise_correlations(spike_counts)
+    correlations, constant = _pairwise_correlations(spike_counts)
+    if np.any(constant):
+        warnings.warn(
+            f"pairwise_correlations(): neuron columns "
+            f"{np.flatnonzero(constant).tolist()} have the same count in every "
+            "time bin, so their correlations are undefined and returned as NaN. "
+            "explained_variance_reactivation() drops those pairs; to keep the "
+            "same pairs in every period, select units that fire in all periods.",
+            UserWarning,
+            stacklevel=2,
+        )
     return correlations
 
 
@@ -2649,12 +2697,17 @@ def assembly_reactivation(
         given, the pattern's labels were generated, or a period's labels
         differ from the pattern's.
 
+    Warns
+    -----
+    UserWarning
+        If neurons with nonzero weight have the same count in every bin of
+        either period (they are excluded from both periods, named in the
+        warning).
+
     Notes
     -----
-    Neurons with nonzero weight that have the same count in every bin of
-    either period are excluded from both periods, without a warning. When
-    every neuron with nonzero weight is excluded, the comparison is undefined
-    and every statistic is NaN.
+    When every neuron with nonzero weight is excluded, the comparison is
+    undefined and every statistic is NaN.
 
     **Terms.** Peyrache et al. (2009, 2010) call R(t) itself the
     "reactivation strength"; van de Ven et al. (2016) call R(t) the
@@ -2798,9 +2851,32 @@ def assembly_reactivation(
     # both so the two means use the same neurons.
     excluded = (control_constant | match_constant) & (weights != 0)
     if np.any(excluded):
+        names = np.asarray(pattern.unit_ids)
+        warnings.warn(
+            f"{call}: units {names[excluded].tolist()} have nonzero weight but "
+            "the same count in every time bin of "
+            + " and ".join(
+                period
+                for period, constant in (
+                    ("control_counts", control_constant & excluded),
+                    ("match_counts", match_constant & excluded),
+                )
+                if constant.any()
+            )
+            + ", so they have no z-score there. They are excluded from both "
+            "periods.",
+            UserWarning,
+            stacklevel=2,
+        )
         weights = np.where(excluded, 0.0, weights)
         norm = np.linalg.norm(weights)
         if norm == 0:
+            warnings.warn(
+                f"{call}: every unit with nonzero weight is excluded, so the "
+                "comparison is undefined (NaN).",
+                UserWarning,
+                stacklevel=2,
+            )
             return AssemblyReactivationResult(
                 mean_activation_difference=np.nan,
                 control_mean_activation=np.nan,

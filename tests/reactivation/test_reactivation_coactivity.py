@@ -146,13 +146,14 @@ def test_cofiring_means_use_pairs_defined_in_both(
     before = rng.poisson(2.0, (250, 5)).astype(float)
     after = rng.poisson(2.0, (250, 5)).astype(float)
     before[:, 3] = 0.0
-    result = assembly_member_cofiring(
-        before[:, ::-1],
-        after,
-        member_pattern,
-        control_unit_ids=[14, 13, 12, 11, 10],
-        match_unit_ids=[10, 11, 12, 13, 14],
-    )
+    with pytest.warns(UserWarning, match=r"members \[13\]"):
+        result = assembly_member_cofiring(
+            before[:, ::-1],
+            after,
+            member_pattern,
+            control_unit_ids=[14, 13, 12, 11, 10],
+            match_unit_ids=[10, 11, 12, 13, 14],
+        )
     assert np.isnan(result.control_correlations[1:]).all()
     assert result.n_member_pairs == 1
     hand_before = np.corrcoef(before[:, 0], before[:, 2])[0, 1]

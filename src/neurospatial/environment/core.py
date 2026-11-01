@@ -337,14 +337,7 @@ class Environment(Generic[_C]):
 
     @property
     def units(self) -> str | None:
-        """Length units of the coordinates, such as ``"cm"``, or None.
-
-        A free-form label that is not checked against a list: ``"cm"``, ``"m"``,
-        ``"mm"``, ``"px"`` and spelled-out names such as ``"centimeters"`` are
-        all accepted. Tools that convert lengths (scale bars, simulators, video
-        calibration) read the label, and ones that need a unit they cannot
-        interpret say so when they are called.
-        """
+        """Length units of the coordinates, such as ``"cm"``, or None."""
         return self._metadata.units
 
     @property
