@@ -625,18 +625,19 @@ stop exactly on a sample, the two routes select different samples:
 
 | Route | Meaning of `stop_time` | Samples kept (two trials, 100 Hz) |
 | --- | --- | --- |
-| `read_trials(nwbfile)` rows as `epochs=` | exclusive | 500 |
+| `read_trials(nwbfile)` as `epochs=` | exclusive | 500 |
 | `nap.load_file(path)["trials"]` with pynapple's `restrict` | inclusive | 502 |
 | that `IntervalSet` as `epochs=` | inclusive | 502 |
 
 To get identical selections, pick one meaning and use it on both routes:
 
 ```python
-rows = read_trials(nwbfile)[["start_time", "stop_time"]].to_numpy()
+trials = read_trials(nwbfile)
+rows = np.column_stack([trials.start, trials.stop])
 iset = nap.load_file(path)["trials"]
 
-# Half-open, as written: plain arrays are read as [start, stop).
-in_epochs(times, rows)
+# Half-open, as written: Intervals and plain arrays are read as [start, stop).
+in_epochs(times, trials)
 in_epochs(times, np.column_stack([iset.start, iset.end]))
 
 # Inclusive, as pynapple reads it.
@@ -970,6 +971,66 @@ shape and dtype under `array_specs`. Bin adjacency is
 `binning.connections.all_distances`; `binning.connections.is_open` is False
 where a wall closes the pair. No connectivity graph is stored: neurospatial
 rebuilds it from these arrays when it reads the record.
+
+### Trials round trip
+
+`write_trials` writes an [`Intervals`](trajectory-and-behavioral-analysis.md#intervals)
+to the NWB trials table: each trial's `interval_id` becomes the table `id`,
+and every field becomes a column. `read_trials` reads the table back as an
+`Intervals` with the same ids and fields, so trials detected in one session
+and trials loaded from a shared file go through the same analysis. NWB text
+columns cannot hold `None`, so a missing value, such as the end region of a
+trial that timed out, is stored as `""` and read back as `None`.
+
+A task log goes through the same path: read it into a `DataFrame`, name the
+column with the trial numbers, and write it. Its columns, such as the
+instructed goal, become fields of the trials table.
+
+<!-- nwb-docs-test: run -->
+```python
+from datetime import datetime, timezone
+
+import pandas as pd
+from pynwb import NWBHDF5IO, NWBFile
+
+from neurospatial import Intervals
+from neurospatial.io.nwb import read_trials, write_trials
+
+# One row per trial, as a behavior rig would log it (seconds, recording clock).
+log = pd.DataFrame(
+    {
+        "trial": [1, 2, 3, 4],
+        "start_time": [2.0, 14.5, 27.0, 40.2],
+        "stop_time": [9.1, 21.0, 35.5, 52.0],
+        "instructed_goal": ["left", "right", "left", "right"],
+        "rewarded": [True, False, True, True],
+        "end_region": ["left", None, "left", "right"],
+    }
+)
+trials = Intervals.from_dataframe(log, id_column="trial")
+
+nwbfile = NWBFile(
+    session_description="T-maze session",
+    identifier="trials-round-trip",
+    session_start_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+)
+write_trials(nwbfile, trials)
+with NWBHDF5IO("trials.nwb", "w") as io:
+    io.write(nwbfile)
+
+with NWBHDF5IO("trials.nwb", "r") as io:
+    loaded = read_trials(io.read())
+
+print(loaded)
+print(loaded.intervals_table())
+left = loaded[loaded.instructed_goal == "left"]
+print(f"left trials: {left.interval_ids.tolist()}")
+```
+
+`loaded` has the trial numbers of the log as `interval_ids`, the same fields
+in the same order, and `None` where the log had no end region. Select a
+condition by field and pass it as `epochs=`, exactly as with trials from
+`segment_trials`.
 
 ### Trials, laps, crossings and events
 

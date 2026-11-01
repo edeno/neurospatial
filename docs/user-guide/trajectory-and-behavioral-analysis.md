@@ -48,6 +48,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [T-maze Trials](#t-maze-trials)
    - [Y-maze Trials](#y-maze-trials)
    - [Radial Arm Maze](#radial-arm-maze)
+   - [Intervals](#intervals)
 5. [Trajectory Similarity](#trajectory-similarity)
    - [Jaccard Overlap](#jaccard-overlap)
    - [Correlation](#correlation)
@@ -1199,6 +1200,129 @@ print(f"Working memory errors: {errors}")
 - **Aging/disease models**: Memory impairment quantification
 
 **References**: Olton & Samuelson (1976), Wood et al. (2000)
+
+### Intervals
+
+`segment_trials` returns an `Intervals`: a table of trials with one row per
+trial. The same object holds trials read back from an NWB file
+([`read_trials`](interoperability.md#trials-round-trip)) or from your own task log
+(`Intervals.from_dataframe`), so the analysis below does not depend on where
+the trials came from.
+
+- **A row** is one half-open window `[start, stop)` in seconds, on the clock
+  of `times`. The sample at `stop`, for example the arrival at the goal, is
+  outside the trial and belongs to whatever comes next.
+- **Fields** are the columns that describe each trial (`start_region`,
+  `end_region`, `outcome` for detected trials; any column of a task log).
+  `trials.outcome` is an array with one entry per row, so a condition is a
+  comparison: `trials[trials.outcome == "reached"]`. A missing value is
+  `None`, never `""`.
+- **Stable ids.** `trials[0]` is the first trial in time; `interval_ids` name
+  the trials and stay with them through every selection, NWB and pynapple:
+  `trials.sel(interval_id=12)` is trial 12 in any subset that contains it.
+- **`epochs=`.** Pass an `Intervals` as `epochs=` (or `spike_window=`) to any
+  rate map, occupancy, decoder or peri-event analysis to restrict it to the
+  trials.
+
+<!-- docs-test: run -->
+```python
+import warnings
+
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment, Regions, compute_spatial_rate
+from neurospatial.behavior import segment_trials
+from neurospatial.simulation import generate_poisson_spikes
+
+# Three out-and-back runs on a 100 cm track, 20 s each, tracked at 30 Hz.
+times = np.arange(0.0, 60.0, 1 / 30)
+phase = (times % 20.0) / 20.0
+x = 5.0 + 90.0 * (1.0 - np.abs(2.0 * phase - 1.0))
+positions = np.column_stack([x, np.zeros_like(x)])
+env = Environment.from_samples(positions, bin_size=5.0).with_metadata(units="cm")
+regions = Regions(env.regions.values())
+regions.add("home", polygon=box(0, -5, 10, 5))
+regions.add("goal", polygon=box(90, -5, 100, 5))
+env = env.with_regions(regions)
+
+# A place cell with a field at 60 cm that fires only on the way out.
+outbound = phase < 0.5
+rate = 0.5 + 20.0 * outbound * np.exp(-0.5 * ((x - 60.0) / 8.0) ** 2)
+spike_times = generate_poisson_spikes(rate, times, seed=4)
+
+trials = segment_trials(
+    env.bin_at(positions), times, env, start_region="home", end_regions="goal"
+)
+print(trials)
+print(trials.intervals_table())
+
+# A condition is a selection by field; the rows keep their interval_ids.
+reached = trials[trials.outcome == "reached"]
+outward = compute_spatial_rate(env, spike_times, times, positions, epochs=reached)
+peak = env.bin_centers[np.nanargmax(outward.firing_rate), 0]
+print(f"outbound field peak: {peak:.0f} cm")
+assert abs(peak - 60.0) <= 5.0
+
+# Per-sample labels: each sample gets its trial's id or field, missing outside.
+trial_of_sample = trials.sample_interval_ids(times)  # -1 outside every trial
+goal_of_sample = trials.sample_values(times, "end_region")  # None outside
+# Per-trial samples: one slice of times per trial.
+for trial_id, samples in zip(trials.interval_ids, trials.sample_slices(times)):
+    print(f"trial {trial_id}: {np.ptp(positions[samples, 0]):.0f} cm covered")
+assert np.all(trial_of_sample[~outbound] == -1)
+
+# A condition with no trials is a valid, empty selection: NaN, with a warning.
+none = trials[trials.outcome == "timeout"]
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    empty = compute_spatial_rate(env, spike_times, times, positions, epochs=none)
+assert np.isnan(empty.firing_rate).all()
+print(caught[0].message)
+```
+
+The trials are the outbound runs: each starts at the last sample in the home
+zone and stops at the first sample in the goal zone, so the rate map with
+`epochs=reached` uses only outward running and recovers the field at 60 cm.
+`sample_interval_ids` is `-1` and `sample_values` is `None` for samples
+outside every trial (`NaN` for numeric fields), never a value that could be
+mistaken for a measurement. `sample_slices` gives each trial's samples, for
+per-trial measures such as path length or mean speed.
+
+A condition that has no trials in a session (here, no timeouts) is not an
+error: the rate map is NaN in every bin and occupancy is zero, with a warning
+that says the selection is empty. The peri-event histograms return NaN with
+`n_events == 0` in that case. Windows that do contain time but no events or
+samples still raise or warn, because that usually means event times or
+trials on another clock.
+
+**Zero-duration rows.** A trial or visit seen in a single sample has
+`start == stop`. It stays in the table, counted and exported, but holds no
+time: it is not in `trials.windows` (the windows `epochs=` uses), contains no
+sample, and never overlaps another row.
+
+**Overlap.** Rows may overlap, for example visits to two overlapping regions.
+Functions that give each sample one trial (`sample_interval_ids`,
+`sample_values`, `goal_pair_direction_labels`, `time_to_goal`) refuse
+overlapping rows and name them; select a non-overlapping subset first.
+
+**Your own task log.** A log with one row per trial, start and stop times on
+the recording clock, and any other columns becomes an `Intervals`:
+
+```python
+import pandas as pd
+
+from neurospatial import Intervals
+
+log = pd.read_csv("task_log.csv")  # trial, start_time, stop_time, instructed_goal
+trials = Intervals.from_dataframe(log, id_column="trial")
+left = trials[trials.instructed_goal == "left"]
+```
+
+Arrays with one value per trial are in row order, the order of the
+`Intervals` (sorted by time). An array built in the order of your log before
+`Intervals` sorted it is misaligned when the log was not in time order; pass a
+`pandas.Series` indexed by `interval_id` to align by id instead.
 
 ---
 

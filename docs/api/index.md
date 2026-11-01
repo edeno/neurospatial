@@ -52,6 +52,14 @@ Build one ordinary environment from disjoint component environments.
 
 - `Environment.combine`: Combine disjoint environments with automatic navigation bridges
 
+### [Trials and other time intervals](neurospatial/_interval_table.md)
+
+`Intervals` and `Interval`, imported from the top level
+(`from neurospatial import Intervals`): half-open time windows with stable
+ids and named fields, from `segment_trials`, a task log or an NWB trials
+table, usable as `epochs=` in any analysis. See the
+[tutorial](../user-guide/trajectory-and-behavioral-analysis.md#intervals).
+
 ### [neurospatial.regions](neurospatial/regions/index.md)
 
 Define and manage named regions of interest (ROIs).

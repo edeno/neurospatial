@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+### Trials as one table: `Intervals`
+
+Detected trials, a task log and an NWB trials table are now one object,
+`neurospatial.Intervals`, with stable ids and named fields. Select a
+condition by field, pass it as `epochs=` anywhere, and get each sample's
+trial in one call.
+
+**Added**
+
+- `Intervals` and `Interval` (top level). An `Intervals` holds one row per
+  half-open `[start, stop)` window, sorted by time, with an `interval_id`
+  that stays with the row through selection, pickling, NWB and pynapple, and
+  a fixed field schema that empty selections keep. `[]` selects by
+  position and `sel(interval_id=...)` by id; fields read as arrays
+  (`trials.outcome`). `sample_interval_ids`, `sample_values` and
+  `sample_slices` assign samples to rows (overlapping rows are refused where
+  a sample would get two rows; outside every row values are `NaN` or `None`,
+  never 0 or `""`). `intervals_table()` gives a DataFrame, and
+  `Intervals.from_arrays` / `Intervals.from_dataframe` build one from your
+  own arrays or task log. A row without duration stays in the table but holds
+  no time.
+- Every `epochs=` and `spike_window=` argument accepts an `Intervals` (any
+  object with a `windows` attribute). One with no windows, such as a
+  condition with no trials, is an empty selection: rate maps are NaN and
+  occupancy zero, with a warning that says the selection is empty, and
+  `peri_event_histogram`, `population_peri_event_histogram` and
+  `peri_event_distance_histogram` return NaN results with `n_events == 0`
+  and a warning instead of raising. Windows with duration that keep no
+  event still raise (usually another clock), and a plain array without rows
+  is still refused. `spike_words` reads `epochs=` the same way.
+
+**Changed**
+
+- `segment_trials` returns `Intervals[Trial]` (ids `0` to `n - 1` in
+  detection order, `analysis_settings` recording its arguments) instead of a
+  list. Select successful trials with `trials[trials.outcome == "reached"]`.
+- `segment_trials(max_duration=None)` is the new default: no timeout, since a
+  timeout is a rule of the task. Pass your task's value to keep timeouts.
+- `Trial.end_time` is now `Trial.stop_time`: the trial is the half-open
+  window `[start_time, stop_time)`.
+- `time_to_goal`, `goal_pair_direction_labels`, `compute_vte_session` and
+  `trials_to_region_arrays` take an `Intervals` and read fields, so trials
+  read back from NWB or a task log work too. `time_to_goal` now treats
+  trials as half-open (the arrival sample is NaN, not 0) and, like
+  `goal_pair_direction_labels`, needs strictly increasing `times` and
+  refuses overlapping trials instead of letting the later one win.
+  `compute_vte_session` results follow the row order of the trials (sorted
+  by time).
+- `write_trials(nwbfile, trials)` takes an `Intervals`: `interval_ids` become
+  the table `id` and every field a column, with `None` stored as `""`.
+  `read_trials` returns an `Intervals` with those ids and fields, reading
+  `""` back as `None`, so a trial that reached no end region stays missing.
+- `to_pynapple(intervals)` exports an `Intervals` with `interval_id` and the
+  fields as metadata.
+
+**Removed**
+
+- The parallel-array keywords of `write_trials` (`start_times`,
+  `stop_times`, `start_regions`, `end_regions`, `outcomes`): build an
+  `Intervals` with `Intervals.from_arrays` or `Intervals.from_dataframe`.
+- `to_pynapple` of a list of `Trial` records: pass the `Intervals`.
+
+**Fixed**
+
+- `ReactivationWindows(clock="wall").split` no longer fails on epochs without
+  rows, and `PopulationPeriEventResult.summary()` no longer warns for units
+  without a defined rate.
+
 ### Your own speed and headings
 
 **Added**

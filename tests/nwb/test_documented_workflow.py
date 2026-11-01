@@ -13,6 +13,24 @@ pytestmark = pytest.mark.nwb
 GUIDE = Path(__file__).resolve().parents[2] / "docs/user-guide/interoperability.md"
 
 
+def _recipe(marker: str) -> str:
+    """The NWB recipe in the guide that uses ``marker``."""
+    blocks = re.findall(
+        r"<!-- nwb-docs-test: run -->\s*```python\n(.*?)\n```",
+        GUIDE.read_text(),
+        re.DOTALL,
+    )
+    matching = [block for block in blocks if marker in block]
+    assert len(matching) == 1, f"Keep the NWB recipe using {marker} executable."
+    return matching[0]
+
+
+def _run_recipe(marker: str) -> dict:
+    namespace = {"__name__": "__main__"}
+    exec(compile(_recipe(marker), str(GUIDE), "exec"), namespace)
+    return namespace
+
+
 @pytest.fixture
 def component_file(empty_nwb, tmp_path):
     from pynwb.behavior import Position, SpatialSeries
@@ -53,15 +71,8 @@ def component_file(empty_nwb, tmp_path):
 def test_documented_components_to_decode_after_file_close(component_file, monkeypatch):
     path, expected_positions, expected_times = component_file
     monkeypatch.chdir(path.parent)
-    blocks = re.findall(
-        r"<!-- nwb-docs-test: run -->\s*```python\n(.*?)\n```",
-        GUIDE.read_text(),
-        re.DOTALL,
-    )
-    assert len(blocks) == 1, "Keep the complete NWB recipe executable."
-    namespace = {"__name__": "__main__"}
+    namespace = _run_recipe("read_units")
     try:
-        exec(compile(blocks[0], str(GUIDE), "exec"), namespace)
         pos = namespace["pos"]
         units = namespace["units"]
         rates = namespace["rates"]
@@ -111,3 +122,15 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
         )
     finally:
         plt.close("all")
+
+
+def test_documented_trials_round_trip(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    namespace = _run_recipe("write_trials")
+    trials, loaded = namespace["trials"], namespace["loaded"]
+    assert loaded.interval_ids.tolist() == [1, 2, 3, 4]
+    assert loaded.fields == trials.fields
+    for name in trials.fields:
+        assert getattr(loaded, name).tolist() == getattr(trials, name).tolist()
+    assert loaded.sel(interval_id=2).end_region is None
+    assert namespace["left"].interval_ids.tolist() == [1, 3]
