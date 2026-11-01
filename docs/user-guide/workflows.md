@@ -1751,12 +1751,13 @@ choice point, running:  6.3 Hz over 7.0 s
 ```
 
 Over all time, the choice-point bin holds 15.7 s and an 11 Hz rate. Over
-running time only it holds 7.0 s and 6 Hz: the stopped time, and the spikes
-fired then, are gone from it. The other bins hardly change. Some pause time
-remains, about 0.3 s per trial, because `compute_speed` smooths velocity over
-time: speed stays above 2 cm/s for a moment after the animal stops and rises
-above it shortly before it moves again.
-Report which you used: the all-time curve answers "where along the route does
+running time only it holds 7.0 s and 6 Hz: most of the stopped time, and the
+spikes fired then, are gone from it, and the other bins hardly change. About
+0.3 s of each 1 s pause remains, because `compute_speed` smooths velocity over
+time (`smooth_window=0.1` s): speed stays above 2 cm/s for a moment after the
+animal stops and rises above it shortly before it moves again. A shorter
+`smooth_window` keeps less of each stop but lets tracking jitter at rest count
+as movement. Report which curve you used: the all-time curve answers "where along the route does
 the cell fire", the running curve "where does it fire while running".
 
 Neither curve shows that the tuning is independent of speed: a pooled curve
