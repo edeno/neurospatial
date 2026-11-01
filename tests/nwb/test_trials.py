@@ -347,6 +347,16 @@ def test_missing_text_reads_as_none_with_pandas_string_dtype(empty_nwb):
     assert back.end_region.tolist() == [None]
 
 
+def test_field_named_id_is_refused(empty_nwb):
+    """NWB tables reserve id for the row ids, which hold the interval_ids."""
+    from neurospatial.io.nwb import write_trials
+
+    trials = Intervals.from_arrays([0.0, 1.0], [1.0, 2.0], id=[10, 20])
+    with pytest.raises(ValueError, match="field 'id'"):
+        write_trials(empty_nwb, trials)
+    assert empty_nwb.trials is None
+
+
 def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
     """Route functions read fields, so NWB-reloaded trials behave identically."""
     from neurospatial.behavior import distance_to_goal, path_progress

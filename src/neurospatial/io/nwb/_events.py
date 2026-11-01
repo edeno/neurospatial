@@ -949,7 +949,8 @@ def write_trials(
         ``Intervals(records)``), or a field holds values other than numbers,
         Booleans or text.
     ValueError
-        If times are non-finite or negative (NWB times are seconds from the
+        If a field is named ``id``, which NWB reserves for the row ids. If
+        times are non-finite or negative (NWB times are seconds from the
         session start). If a trials table already exists and
         ``overwrite=False``, or another table refers to the rows of the
         trials table being replaced.
@@ -995,6 +996,17 @@ def write_trials(
 
     _require_pynwb()
     trials = require_intervals(trials, name="trials", owner="write_trials()")
+    if "id" in trials.fields:
+        raise ValueError(
+            _format_error(
+                "write_trials: the trials have a field 'id'.",
+                why="NWB tables reserve id for the row ids, which hold the "
+                "interval_ids, so the field would overwrite them.",
+                fix="pass the ids as interval_ids (for a task log, "
+                "Intervals.from_dataframe(log, id_column='id')), or rename "
+                "the field.",
+            )
+        )
     start = _checked_event_times(trials.start, "start_time")
     stop = _checked_event_times(trials.stop, "stop_time")
     columns = {

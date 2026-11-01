@@ -1104,3 +1104,45 @@ class TestReadPoseLazy:
 
         with pytest.raises(ValueError, match="Length mismatch"):
             read_pose(empty_nwb, lazy=True)
+
+
+def test_empty_recording_window_survives_a_file(tmp_path):
+    """Rates from an empty selection as spike_window read back from disk."""
+    from pynwb import NWBHDF5IO
+
+    from neurospatial import Environment, Intervals
+    from neurospatial.encoding import compute_spatial_rates
+    from neurospatial.io.nwb import read_spatial_rates, write_spatial_rates
+
+    from ._nwb_helpers import create_roundtrip_nwb
+
+    pytest.importorskip("ndx_events")
+    pytest.importorskip("ndx_pose")
+    edges = np.arange(5.0) * 10.0
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(edges, edges), units="cm"
+    )
+    times = np.arange(0.0, 20.0, 0.1)
+    positions = np.column_stack([np.linspace(1.0, 39.0, times.size)] * 2)
+    none = Intervals.from_arrays([0.0], [1.0])[[]]
+    with pytest.warns(UserWarning, match="spike_window selects no time"):
+        rates = compute_spatial_rates(
+            env,
+            [np.array([1.0, 5.0])],
+            times,
+            positions,
+            spike_window=none,
+            method="binned",
+        )
+
+    nwbfile = create_roundtrip_nwb()
+    write_spatial_rates(nwbfile, rates)
+    path = tmp_path / "empty_window.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(nwbfile)
+    with NWBHDF5IO(str(path), "r") as io:
+        back = read_spatial_rates(io.read())
+
+    assert back.spike_window.shape == (0, 2)
+    assert np.isnan(back.firing_rates).all()
+    assert np.isnan(back[0].firing_rate).all()  # rebuilt from the stored window

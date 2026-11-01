@@ -101,6 +101,13 @@ trial in one call.
 
 **Fixed**
 
+- `Intervals.sample_interval_ids` returns `-1` for every sample when there are
+  no rows (it raised `IndexError`); `interval_ids` beyond int64 are refused
+  instead of wrapping to negative values; `interval_id` cannot be a field
+  name (it names the ids, and a field of that name overwrote them in the
+  pynapple export); `write_trials` refuses a field named `id`, which NWB
+  reserves for the row ids; and rates computed with an empty selection as
+  `spike_window` read back from NWB.
 - `ReactivationWindows(clock="wall").split` no longer fails on epochs without
   rows, and `PopulationPeriEventResult.summary()` no longer warns for units
   without a defined rate.

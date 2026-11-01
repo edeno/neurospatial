@@ -274,6 +274,15 @@ def _checked_ids(ids: ArrayLike, n: int, *, owner: str) -> NDArray[np.int64]:
                 fix="pass integer ids, for example the trial numbers of a task log.",
             )
         )
+    if raw.dtype.kind == "u" and raw.size and raw.max() > np.iinfo(np.int64).max:
+        raise ValueError(
+            _format_error(
+                f"{owner} interval_ids go up to {raw.max()}, beyond int64.",
+                why="ids are stored as int64, where larger values would wrap to "
+                "negative numbers and read as -1, outside every interval.",
+                fix="renumber the intervals with ids below 2**63.",
+            )
+        )
     if raw.shape != (n,):
         msg = (
             f"{owner} needs one interval_id per interval: got shape {raw.shape} "
@@ -768,7 +777,10 @@ class Intervals(Generic[R]):
             another clock).
         """
         p = self._sample_positions(times, "Intervals.sample_interval_ids")
-        return np.where(p >= 0, self._ids[np.maximum(p, 0)], -1).astype(np.int64)
+        out = np.full(p.shape, -1, dtype=np.int64)
+        inside = p >= 0
+        out[inside] = self._ids[p[inside]]
+        return out
 
     @reads_pynapple_samples
     def sample_values(
@@ -1017,6 +1029,16 @@ class Intervals(Generic[R]):
                     "stop_column= and id_column=.",
                 )
             )
+        if id_column is None and "interval_id" in df.columns:
+            raise ValueError(
+                _format_error(
+                    "from_dataframe: the table has an 'interval_id' column but no "
+                    "id_column was named.",
+                    why="interval_id names the stable ids, so it cannot be a field.",
+                    fix="pass id_column='interval_id' to use it as the ids, or "
+                    "rename the column.",
+                )
+            )
         used = {start_column, stop_column, id_column}
         columns: dict[str, NDArray[Any]] = {}
         for name in df.columns:
@@ -1038,8 +1060,11 @@ class Intervals(Generic[R]):
         return f"{name}: {n} interval{'s' if n != 1 else ''}{span}; fields: {fields}"
 
 
+# interval_id names the stable ids (the index of intervals_table and the
+# pynapple metadata column), so no field may take it.
 _MEMBERS = frozenset(name for name in dir(Intervals) if not name.startswith("_")) | {
     *_TIME_FIELDS,
+    "interval_id",
 }
 
 

@@ -339,3 +339,24 @@ def test_from_dataframe_nullable_columns() -> None:
 def test_unhashable_value_inside_a_tuple_is_refused() -> None:
     with pytest.raises(TypeError, match="not hashable"):
         Interval(0.0, 1.0, {"path": (1, [2, 3])})
+
+
+def test_no_rows_assign_no_sample() -> None:
+    empty = Intervals.from_arrays([], [])
+    assert empty.sample_interval_ids(np.array([0.0, 1.0])).tolist() == [-1, -1]
+    assert np.isnan(empty.sample_values(np.array([0.0, 1.0]), empty.durations)).all()
+
+
+def test_interval_id_is_not_a_field_name() -> None:
+    with pytest.raises(ValueError, match="'interval_id'"):
+        Intervals.from_arrays([0.0, 1.0], [1.0, 2.0], interval_id=[100, 200])
+    log = pd.DataFrame({"start_time": [0.0], "stop_time": [1.0], "interval_id": [5]})
+    with pytest.raises(ValueError, match="id_column='interval_id'"):
+        Intervals.from_dataframe(log)
+
+
+def test_ids_beyond_int64_are_refused() -> None:
+    with pytest.raises(ValueError, match="int64"):
+        Intervals.from_arrays(
+            [0.0], [1.0], interval_ids=np.array([2**64 - 1], dtype=np.uint64)
+        )
