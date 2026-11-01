@@ -172,7 +172,12 @@ smoothing neurospatial applies itself is to motion derived from positions:
 speed, velocity and direction of motion are smoothed over 0.1 s wherever
 they are computed, because differencing positions turns even small jitter
 into speed; `compute_speed` and `heading_from_velocity` take
-`smooth_window` to change it. `compute_cumulative_distance` returns the distance at every
+`smooth_window` to change it. To use your own processing instead, compute
+speed once, for example `speed = compute_speed(times, positions,
+smooth_window=0)` for positions your pipeline already smoothed, and pass
+`speed=speed` to every function with a `min_speed`; functions that use the
+direction of movement also take `headings=`, such as head direction from a
+head-mounted LED. `compute_cumulative_distance` returns the distance at every
 frame (`run_distance` restarts at 0 in each run, `cumulative_distance` keeps
 adding across runs); `traveled_path_length` returns only the total.
 

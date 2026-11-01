@@ -89,7 +89,12 @@ from neurospatial.behavior._decision_windows import (
     validated_entry_time,
     validated_window_duration,
 )
-from neurospatial.behavior._kinematics import validated_min_speed
+from neurospatial.behavior._kinematics import (
+    _movement_heading_and_speed,
+    run_speed,
+    validated_min_speed,
+    validated_motion,
+)
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _region_names
@@ -649,6 +654,8 @@ def pre_decision_heading_stats(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -671,6 +678,21 @@ def pre_decision_heading_stats(
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
         Stationary periods are excluded from statistics.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -757,32 +779,24 @@ def pre_decision_heading_stats(
         result="the heading statistics are NaN",
         columns="xy",
     )
-    min_speed = validated_min_speed(min_speed, call="pre_decision_heading_stats")
-    return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
-
-
-def _heading_stats(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-    *,
-    min_speed: float,
-) -> tuple[float, float, float]:
-    """Circular heading statistics over moving samples in usable intervals.
-
-    ``positions`` are already validated by the public caller.
-    """
-    from neurospatial.behavior._kinematics import _movement_heading_and_speed
-
-    if len(positions) < 2:
-        return np.nan, np.nan, np.nan
-    headings, _ = _movement_heading_and_speed(
+    call = "pre_decision_heading_stats"
+    min_speed = validated_min_speed(min_speed, call=call)
+    heading, _ = _movement_heading_and_speed(
         times,
         positions,
-        interval_mask,
+        support.interval_mask,
         smooth_window=DEFAULT_SPEED_SMOOTHING,
         min_speed=min_speed,
+        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call=call
+        ),
     )
+    return _heading_stats(heading)
+
+
+def _heading_stats(headings: NDArray[np.float64]) -> tuple[float, float, float]:
+    """Circular statistics of the headings of moving samples (NaN elsewhere)."""
     valid_headings = headings[np.isfinite(headings)]
 
     if len(valid_headings) == 0:
@@ -800,6 +814,7 @@ def pre_decision_speed_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    speed: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -816,6 +831,14 @@ def pre_decision_speed_stats(
         lost frame) is a missing sample: it has no speed of its own and is
         bridged like a deleted row when the observed samples on either side
         are within ``max_gap``.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -890,7 +913,10 @@ def pre_decision_speed_stats(
         break_before=break_before,
         result="the speed statistics are NaN",
     )
-    return speed_stats(times, positions, support.interval_mask)
+    speed = validated_motion(
+        speed, name="speed", n_samples=len(times), call="pre_decision_speed_stats"
+    )
+    return speed_stats(run_speed(times, positions, support.interval_mask, speed=speed))
 
 
 @reads_pynapple_samples
@@ -901,6 +927,8 @@ def compute_pre_decision_metrics(
     *,
     window_duration: float,
     min_speed: float,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -926,6 +954,21 @@ def compute_pre_decision_metrics(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -998,7 +1041,12 @@ def compute_pre_decision_metrics(
         result="the pre-decision metrics are NaN",
         columns="xy",
     )
-    min_speed = validated_min_speed(min_speed, call="compute_pre_decision_metrics")
+    call = "compute_pre_decision_metrics"
+    min_speed = validated_min_speed(min_speed, call=call)
+    speed = validated_motion(speed, name="speed", n_samples=len(times), call=call)
+    headings = validated_motion(
+        headings, name="headings", n_samples=len(times), call=call
+    )
     window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_pre_decision_metrics"
     )
@@ -1012,6 +1060,8 @@ def compute_pre_decision_metrics(
         entry_time,
         window_duration,
         min_speed=min_speed,
+        speed=speed,
+        headings=headings,
     )
 
 
@@ -1023,8 +1073,16 @@ def _pre_decision_metrics(
     window_duration: float,
     *,
     min_speed: float,
+    speed: NDArray[np.float64] | None,
+    headings: NDArray[np.float64] | None,
 ) -> PreDecisionMetrics:
-    """Speed and heading metrics of the pre-decision window under ``support``."""
+    """Speed and heading metrics of the pre-decision window under ``support``.
+
+    Speed and heading are computed from the window's samples alone, as
+    :func:`pre_decision_speed_stats` and :func:`pre_decision_heading_stats`
+    compute them on :func:`extract_pre_decision_window`'s output; a caller's
+    ``speed`` and ``headings`` are taken at the window's samples.
+    """
     window = pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -1044,11 +1102,19 @@ def _pre_decision_metrics(
     # exactly the run's usable intervals between its first and last sample.
     window_mask = support.interval_mask[window.start : window.stop - 1]
     window_positions = positions[window]
-    mean_dir, circ_var, mrl = _heading_stats(
-        window_times, window_positions, window_mask, min_speed=min_speed
+    window_speed = None if speed is None else speed[window]
+    heading, _ = _movement_heading_and_speed(
+        window_times,
+        window_positions,
+        window_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
+        speed=window_speed,
+        headings=None if headings is None else headings[window],
     )
+    mean_dir, circ_var, mrl = _heading_stats(heading)
     mean_speed, min_observed_speed = speed_stats(
-        window_times, window_positions, window_mask
+        run_speed(window_times, window_positions, window_mask, speed=window_speed)
     )
     return PreDecisionMetrics(
         mean_speed=mean_speed,
@@ -1488,6 +1554,8 @@ def compute_decision_analysis(
     goal_regions: str | list[str],
     pre_window: float = 1.0,
     min_speed: float | None = None,
+    speed: ArrayLike | None = None,
+    headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1518,6 +1586,21 @@ def compute_decision_analysis(
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s); finite and non-negative.
+    speed : ArrayLike, shape (n_samples,), optional
+        Your own speed of each sample in position units per second (NaN
+        where not observed), used instead of computing it from
+        ``positions``: for example speed from your own position processing,
+        or ``compute_speed(times, positions, smooth_window=0)`` for positions
+        you already smoothed. Samples excluded by ``max_gap``, ``epochs`` or
+        ``break_before`` stay excluded. Default: the speed of
+        :func:`compute_speed` (from x and y, the horizontal speed).
+    headings : ArrayLike, shape (n_samples,), optional
+        Your own direction of each sample in radians (allocentric: 0 = East,
+        +π/2 = North; NaN where not observed), used instead of the direction
+        of movement computed from ``positions``: for example the direction of
+        your own smoothed velocity, or head direction from a head-mounted LED
+        or sensor. Samples slower than ``min_speed`` still have none. Default:
+        the direction of movement of :func:`heading_from_velocity`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1666,10 +1749,20 @@ def compute_decision_analysis(
 
     from neurospatial.behavior._kinematics import resolve_min_speed
 
-    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis")
+    call = "compute_decision_analysis"
+    min_speed = resolve_min_speed(env, min_speed, call=call)
     # Compute pre-decision metrics
     pre_decision = _pre_decision_metrics(
-        times, positions, support, entry_time, pre_window, min_speed=min_speed
+        times,
+        positions,
+        support,
+        entry_time,
+        pre_window,
+        min_speed=min_speed,
+        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
+        headings=validated_motion(
+            headings, name="headings", n_samples=len(times), call=call
+        ),
     )
 
     # Compute boundary metrics. Each goal region is represented by its

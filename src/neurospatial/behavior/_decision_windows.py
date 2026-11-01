@@ -6,7 +6,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import run_sample_bounds
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
 
 
 def first_entry(
@@ -73,15 +72,9 @@ def pre_decision_window(
     return slice(0, 0)
 
 
-def speed_stats(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    interval_mask: NDArray[np.bool_],
-) -> tuple[float, float]:
-    """Mean and minimum smoothed speed over usable intervals; NaN without any."""
-    if not interval_mask.any():
+def speed_stats(speeds: NDArray[np.float64]) -> tuple[float, float]:
+    """Mean and minimum of the observed speeds; NaN when none is observed."""
+    observed = speeds[~np.isnan(speeds)]
+    if observed.size == 0:
         return np.nan, np.nan
-    speeds = smoothed_speed(
-        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
-    )
-    return float(np.nanmean(speeds)), float(np.nanmin(speeds))
+    return float(np.mean(observed)), float(np.min(observed))

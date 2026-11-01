@@ -302,16 +302,22 @@ def compute_speed(
     The velocity at each sample is the slope of a straight line fitted to the
     positions around it, weighted by a Gaussian of ``smooth_window`` seconds
     in time (the same fit whose value is the smoothed position of
-    :func:`smooth_positions`); speed is its magnitude. Differencing raw positions instead turns camera jitter into
-    speed: an animal sitting still with 0.5 cm of jitter reads about
-    20 cm/s at 30 Hz and 200 cm/s at 500 Hz, so a ``min_speed`` filter would
-    keep nearly all of its rest. The per-sample ``min_speed`` gates of rate
-    maps, decoding, ``segment_by_velocity`` and the decision and goal
-    metrics use this speed, so passing ``speed=compute_speed(...)``
-    explicitly gives the same result as leaving it out, provided the gate
-    gets the same ``break_before``. ``detect_runs_between_regions`` is
-    different: its ``min_speed`` drops whole runs by their mean speed
-    between bin centres.
+    :func:`smooth_positions`); speed is its magnitude. Differencing raw
+    positions instead turns camera jitter into speed: an animal sitting
+    still with 0.5 cm of jitter reads about 20 cm/s at 30 Hz and 200 cm/s at
+    500 Hz, so a ``min_speed`` filter would keep nearly all of its rest.
+
+    Every per-sample ``min_speed`` gate (rate maps, decoding,
+    ``segment_by_velocity``, heading labels, goal alignment, the decision
+    and VTE metrics) uses this speed unless you pass ``speed=``, so passing
+    ``speed=compute_speed(...)`` gives the same result as leaving it out,
+    provided both get the same ``max_gap``, ``epochs`` and ``break_before``.
+    Compute speed once and pass it everywhere to change how it is computed
+    in one place: ``smooth_window=0`` for positions you already smoothed, or
+    your own speed from another estimator or sensor. The functions that use
+    the direction of movement likewise take ``headings=``.
+    ``detect_runs_between_regions`` is different: its ``min_speed`` drops
+    whole runs by their mean speed between bin centres.
 
     A missing sample is bridged like a deleted row when the valid samples
     around it are within ``max_gap``. Speed is never smoothed across a longer
