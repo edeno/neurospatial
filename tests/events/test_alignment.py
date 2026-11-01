@@ -527,17 +527,6 @@ class TestPeriEventHistogram:
         assert np.all(result.histogram == 0)
         assert result.n_events == 2
 
-    def test_empty_event_times(self):
-        """Empty event array raises ValueError."""
-        from neurospatial.events.alignment import peri_event_histogram
-
-        spike_times = np.array([10.0])
-        event_times = np.array([])
-        window = (-0.5, 0.5)
-
-        with pytest.raises(ValueError, match="event"):
-            peri_event_histogram(spike_times, event_times, window)
-
     def test_no_spikes_in_any_window(self):
         """No spikes in any window returns zero histogram."""
         from neurospatial.events.alignment import peri_event_histogram
@@ -787,17 +776,6 @@ class TestPopulationPeriEventHistogram:
 
         assert pop_result.n_units == 1
         assert_array_almost_equal(pop_result.histograms[0], single_result.histogram)
-
-    def test_empty_event_times(self):
-        """Empty event times raises ValueError."""
-        from neurospatial.events.alignment import population_peri_event_histogram
-
-        spike_trains = [np.array([10.0])]
-        event_times = np.array([])
-        window = (-0.5, 0.5)
-
-        with pytest.raises(ValueError, match="event"):
-            population_peri_event_histogram(spike_trains, event_times, window)
 
     def test_empty_spike_trains_list(self):
         """Empty spike trains list raises ValueError."""

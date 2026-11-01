@@ -178,11 +178,6 @@ def test_misuse_is_refused(clock, trials, events, kwargs, match):
         )
 
 
-def test_an_intervals_without_rows_is_refused(clock, trials):
-    with pytest.raises(ValueError, match="Intervals with no rows"):
-        peri_event_histogram(SPIKES, trials[np.zeros(3, dtype=bool)], (0.0, 1.0))
-
-
 def test_continuous_cut_is_exact_at_float_rounded_trial_bounds():
     times = np.round(np.arange(0, 5, 0.1), 10)
     # 0.7 + 0.1 rounds below 0.8: that query is the trial's stop, not inside.

@@ -39,6 +39,7 @@ from neurospatial.events._core import (
     empty_selection_names,
     interval_events,
     warn_empty_selection,
+    warn_no_events,
 )
 
 if TYPE_CHECKING:
@@ -87,13 +88,15 @@ def align_spikes_to_events(
         List of arrays, one per event (one per row of an ``Intervals``, in
         row order, matching ``interval_ids``), containing spike times relative
         to that event (spike_time - event_time). Arrays are sorted by relative
-        time. Empty arrays are returned for events with no spikes in window.
+        time. Empty arrays are returned for events with no spikes in window,
+        and an empty list for no events.
 
     Raises
     ------
     ValueError
-        If window start >= stop, spike/event times contain NaN or Inf, or
-        ``align`` is invalid or given with plain event times.
+        If window start >= stop, spike/event times contain NaN or Inf,
+        ``align`` is invalid or given with plain event times, or
+        ``align='stop'`` is given with censored trials.
 
     Notes
     -----
@@ -162,12 +165,12 @@ def _keep_observed_events(
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Keep events with observed windows and return their original input indices.
 
-    An empty selection (``epochs`` or ``spike_window`` without rows) keeps no
-    event; the caller warns. Non-empty windows that keep no event raise:
+    No events, or an empty selection (``epochs`` or ``spike_window`` without
+    rows), keeps no event; the caller warns. Non-empty windows that keep no event raise:
     that usually means another clock. With ``limits`` (intervals), each
     window is first cut to its row's limits.
     """
-    if empty_selection_names(epochs, spike_window):
+    if event_times.size == 0 or empty_selection_names(epochs, spike_window):
         return event_times[:0], np.empty(0, dtype=np.intp)
     keep = np.ones(event_times.shape, dtype=bool)
     starts, stops = _inner_bounds(*_window_bounds(event_times, window, limits))
@@ -263,7 +266,7 @@ def _peri_event_histograms(
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
     event_times, _, limits = interval_events(event_times, align, call=context)
-    event_times = _finite_times(event_times, "event_times", non_empty=True)
+    event_times = _finite_times(event_times, "event_times")
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     n_input_events = event_times.size
     event_times, event_indices = _keep_observed_events(
@@ -292,7 +295,9 @@ def _peri_event_histograms(
     events_per_bin = None if limits is None else covered.sum(axis=0)
     if n_events == 0:
         names = empty_selection_names(resolved_epochs, resolved_spike_window)
-        if not names:
+        if n_input_events == 0:
+            warn_no_events(result="the histogram")
+        elif not names:
             msg = (
                 f"{context}: no interval holds a whole bin of the window "
                 f"[{window[0]:g}, {window[1]:g}) s aligned at its {align}.\n"
@@ -302,7 +307,8 @@ def _peri_event_histograms(
                 "(window=(0, 2) with align='start'), or a smaller bin_size."
             )
             raise ValueError(msg)
-        warn_empty_selection(names, n_events=n_input_events, result="the histogram")
+        else:
+            warn_empty_selection(names, n_events=n_input_events, result="the histogram")
         missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
         return _PeriEventCounts(
             missing,
@@ -434,15 +440,17 @@ or None
     ValueError
         If window is invalid or inverted, bin_size is not a finite positive
         number or leaves no complete bin in the window, spike_times or
-        event_times is not 1-D or holds NaN or Inf, event_times is empty,
-        time windows are invalid, or windows with duration keep no event
-        (usually event times on another clock).
+        event_times is not 1-D or holds NaN or Inf, time windows are
+        invalid, windows with duration keep no event (usually event times on
+        another clock), or ``align='stop'`` is given with censored trials.
 
     Warns
     -----
     UserWarning
-        When the window spans more than 60 s (it may be in milliseconds), or
-        when ``epochs`` or ``spike_window`` is an empty selection.
+        When the window spans more than 60 s (it may be in milliseconds),
+        when ``epochs`` or ``spike_window`` is an empty selection, or when
+        ``event_times`` holds no event (an empty condition); the result is
+        then NaN with ``n_events == 0``.
 
     Notes
     -----
@@ -602,16 +610,18 @@ or None
     ------
     ValueError
         If spike_times is empty, a spike train or event_times is not 1-D or
-        holds NaN or Inf, event_times is empty, window is invalid or
-        inverted, bin_size is not a finite positive number or leaves no
-        complete bin, time windows are invalid, or windows with duration keep
-        no event (usually event times on another clock).
+        holds NaN or Inf, window is invalid or inverted, bin_size is not a
+        finite positive number or leaves no complete bin, time windows are
+        invalid, windows with duration keep no event (usually event times on
+        another clock), or ``align='stop'`` is given with censored trials.
 
     Warns
     -----
     UserWarning
-        When the window spans more than 60 s (it may be in milliseconds), or
-        when ``epochs`` or ``spike_window`` is an empty selection.
+        When the window spans more than 60 s (it may be in milliseconds),
+        when ``epochs`` or ``spike_window`` is an empty selection, or when
+        ``event_times`` holds no event (an empty condition); the result is
+        then NaN with ``n_events == 0``.
 
     Notes
     -----

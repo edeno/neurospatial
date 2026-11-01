@@ -87,6 +87,18 @@ def warn_empty_selection(names: list[str], *, n_events: int, result: str) -> Non
     )
 
 
+def warn_no_events(*, result: str) -> None:
+    """Warn that ``event_times`` is empty, so there is no event to average."""
+    warnings.warn(
+        "event_times holds no event (an empty array, or an Intervals with no "
+        f"rows such as a condition with no trials), so {result} is NaN with "
+        "n_events == 0. Fix: leave this condition out, or check the selection "
+        "that produced event_times.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _is_real_number(value: Any) -> bool:
     """True for one real number; False for bools, arrays, strings and None."""
     return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
@@ -206,14 +218,6 @@ def interval_events(
                 )
             )
         return event_times, None, None
-    if len(event_times) == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}: event_times is an Intervals with no rows.",
-                why="There is no interval to align.",
-                fix="check the selection that produced it",
-            )
-        )
     if align == "stop" and "outcome" in event_times.fields:
         n_censored = int(np.count_nonzero(event_times.outcome.to_numpy() == "censored"))
         if n_censored:

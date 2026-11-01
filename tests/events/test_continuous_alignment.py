@@ -411,7 +411,6 @@ def test_derived_properties_are_fresh():
         ({"resultant_threshold": np.nan}, "resultant_threshold"),
         ({"retain_aligned": "yes"}, "retain_aligned"),
         ({"event_times": [3.0, np.nan]}, "event_times"),
-        ({"event_times": []}, "event_times"),
         ({"event_times": [[3.0]]}, "event_times"),
         ({"event_ids": ["a"]}, "event_ids"),
         ({"event_ids": "ab"}, "event_ids"),

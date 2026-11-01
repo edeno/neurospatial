@@ -50,6 +50,7 @@ from neurospatial.events._core import (
     _validate_window,
     empty_selection_names,
     interval_events,
+    warn_no_events,
 )
 
 if TYPE_CHECKING:
@@ -901,8 +902,16 @@ def align_continuous_to_events(
         ``resultant_threshold`` or ``retain_aligned`` is invalid, the signals,
         feature metadata, ``event_times`` or ``event_ids`` are malformed,
         ``align`` is invalid or given with plain event times, ``event_ids`` is
-        given with an ``Intervals``, or every event is excluded by windows
-        with duration (usually another clock).
+        given with an ``Intervals``, ``align='stop'`` is given with censored
+        trials, or every event is excluded by windows with duration (usually
+        another clock).
+
+    Warns
+    -----
+    UserWarning
+        When ``epochs`` is an empty selection or ``event_times`` holds no
+        event (an empty condition); the summaries are then NaN with
+        ``n_events == 0``.
 
     Notes
     -----
@@ -1043,7 +1052,9 @@ def align_continuous_to_events(
                 "Intervals instead",
             )
         )
-    events = _finite_times(events, "event_times", non_empty=True)
+    events = _finite_times(events, "event_times")
+    if events.size == 0:
+        warn_no_events(result="every summary")
     ids = (
         interval_ids
         if interval_ids is not None
@@ -1080,9 +1091,13 @@ def align_continuous_to_events(
             kept_support.append(support[observed])
 
     retained = status == "retained"
-    # An empty selection (an Intervals with no windows) leaves no event by
-    # design; validated_signals has warned, and the summaries stay NaN.
-    if not retained.any() and not empty_selection_names(normalized_epochs, None):
+    # No events, or an empty selection (an Intervals with no windows), leaves
+    # no event by design; a warning has been given, and the summaries stay NaN.
+    if (
+        events.size
+        and not retained.any()
+        and not empty_selection_names(normalized_epochs, None)
+    ):
         reasons = ", ".join(
             f"{np.count_nonzero(status == reason)} {reason}"
             for reason in _EVENT_STATUSES[1:]
