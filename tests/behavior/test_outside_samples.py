@@ -167,7 +167,7 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
         goal_region="goal",
         min_progress=10.0,
         max_gap=max_gap,
-    )
+    ).windows
 
     np.testing.assert_array_equal(runs, [[times[0], times[19]], [times[21], times[-1]]])
 
@@ -182,7 +182,7 @@ def test_goal_directed_runs_without_a_place_are_empty(strip):
             np.full((len(times), 2), np.nan),
             goal_region="goal",
             min_progress=10.0,
-        )
+        ).windows
 
     assert runs.shape == (0, 2)
 

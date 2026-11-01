@@ -36,7 +36,7 @@ DETECTORS = {
     "detect_laps": lambda env, t, p: detect_laps(env, t, p),
     "detect_goal_directed_runs": lambda env, t, p: detect_goal_directed_runs(
         env, t, p, goal_region="goal"
-    ),
+    ).windows,
 }
 
 
@@ -117,7 +117,7 @@ def test_segment_by_velocity_parameters_are_checked(options, match):
     times = np.arange(20) / 10.0
     positions = np.c_[times * 20.0, np.zeros(20)]
     with pytest.raises(ValueError, match=match):
-        segment_by_velocity(times, positions, **options)
+        segment_by_velocity(times, positions, **options).windows
 
 
 class TestMinProgressUnits:
@@ -147,7 +147,7 @@ class TestMinProgressUnits:
         x = np.linspace(start_cm, 96.0, 20) * scale
         runs = detect_goal_directed_runs(
             env, np.arange(20) / 10.0, np.c_[x, np.zeros_like(x)], goal_region="goal"
-        )
+        ).windows
         assert runs.shape == ((1, 2) if detected else (0, 2))
 
     def test_unknown_units_need_an_explicit_min_progress(self):
@@ -157,12 +157,12 @@ class TestMinProgressUnits:
         with pytest.raises(ValueError, match="needs min_progress"):
             detect_goal_directed_runs(
                 env, times, np.c_[x, np.zeros_like(x)], goal_region="goal"
-            )
+            ).windows
         runs = detect_goal_directed_runs(
             env,
             times,
             np.c_[x, np.zeros_like(x)],
             goal_region="goal",
             min_progress=20.0,
-        )
+        ).windows
         assert runs.shape == (1, 2)

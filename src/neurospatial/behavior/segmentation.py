@@ -67,7 +67,7 @@ from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
-from neurospatial._interval_table import Intervals
+from neurospatial._interval_table import Interval, Intervals
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
@@ -582,12 +582,12 @@ def segment_by_velocity(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> NDArray[np.float64]:
+) -> Intervals[Interval]:
     """Find movement epochs: stretches where speed stays above a threshold.
 
     Uses hysteresis thresholding on the smoothed speed to find movement
-    epochs and returns them as ``[start, stop)`` rows; time outside every
-    row is rest or unobserved. Epochs shorter than ``min_duration`` are
+    epochs and returns them as half-open ``[start, stop)`` intervals; time
+    outside every interval is rest or unobserved. Epochs shorter than ``min_duration`` are
     dropped. Useful for running-bout analysis and for restricting place-field
     and decoding analyses to movement with ``epochs=``.
 
@@ -647,9 +647,12 @@ def segment_by_velocity(
 
     Returns
     -------
-    NDArray[np.float64], shape (n_epochs, 2)
-        Movement epochs as ``[start, stop)`` rows in seconds, in time order.
-        Pass them as ``epochs=`` to any analysis to restrict it to movement.
+    Intervals of Interval
+        Movement epochs in seconds, in time order, ids ``0`` to ``n - 1``,
+        with no fields. Pass them as ``epochs=`` to any analysis to restrict
+        it to movement; ``.windows`` is the ``(n_epochs, 2)`` array.
+        ``analysis_settings`` records the thresholds, ``max_gap`` and
+        ``epochs``.
 
     Raises
     ------
@@ -712,9 +715,9 @@ def segment_by_velocity(
     >>> segments = segment_by_velocity(
     ...     times, trajectory, min_speed=2.0, min_duration=0.5
     ... )
-    >>> segments.shape  # one movement epoch, as a [start, stop) row
-    (1, 2)
-    >>> bool(np.all(segments[:, 1] - segments[:, 0] >= 0.5))  # min_duration
+    >>> len(segments)  # one movement epoch, [start, stop)
+    1
+    >>> bool(np.all(segments.durations >= 0.5))  # min_duration
     True
     """
     from neurospatial._observation import validated_observations
@@ -742,6 +745,7 @@ def segment_by_velocity(
     speed = validated_motion(
         speed, name="speed", n_samples=len(times), call="segment_by_velocity"
     )
+    speed_given = speed is not None
     if speed is None:
         speed = smoothed_speed(
             times, positions, support.interval_mask, smooth_window=smooth_window
@@ -750,17 +754,34 @@ def segment_by_velocity(
         speed = np.where(
             observed_run_samples(positions, support.interval_mask), speed, np.nan
         )
-    segments = [
-        _segment_by_velocity_contiguous(
-            speed[run],
-            times[run],
-            min_speed=min_speed,
-            min_duration=min_duration,
-            hysteresis=hysteresis,
-        )
-        for run in support.run_samples()
-    ]
-    return np.concatenate([np.empty((0, 2)), *segments])
+    segments = np.concatenate(
+        [
+            np.empty((0, 2)),
+            *(
+                _segment_by_velocity_contiguous(
+                    speed[run],
+                    times[run],
+                    min_speed=min_speed,
+                    min_duration=min_duration,
+                    hysteresis=hysteresis,
+                )
+                for run in support.run_samples()
+            ),
+        ]
+    )
+    windows = as_intervals(epochs, name="epochs")
+    return _windows_as_intervals(
+        segments,
+        fields={},
+        settings={
+            "min_speed": float(min_speed),
+            "min_duration": float(min_duration),
+            "hysteresis": float(hysteresis),
+            "smooth_window": None if speed_given else float(smooth_window),
+            "max_gap": None if max_gap is None else float(max_gap),
+            "epochs": None if windows is None else windows.tolist(),
+        },
+    )
 
 
 def _segment_by_velocity_contiguous(
@@ -795,6 +816,18 @@ def _segment_by_velocity_contiguous(
     stops = times[np.minimum(np.flatnonzero(edges == -1) + 1, times.size - 1)]
     keep = (stops - starts) >= min_duration
     return np.column_stack([starts[keep], stops[keep]])
+
+
+def _windows_as_intervals(
+    rows: NDArray[np.float64], *, fields: dict[str, Any], settings: dict[str, Any]
+) -> Intervals[Interval]:
+    """``[start, stop)`` rows, shape (n, 2), as Intervals with constant fields."""
+    return Intervals(
+        [Interval(float(start), float(stop), fields) for start, stop in rows],
+        record_type=Interval,
+        fields=tuple(fields),
+        analysis_settings=settings,
+    )
 
 
 # =============================================================================
@@ -2036,7 +2069,7 @@ def detect_goal_directed_runs(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> NDArray[np.float64]:
+) -> Intervals[Interval]:
     """Detect goal-directed runs: approaches to a goal that are efficient.
 
     Splits the trajectory into approaches (stretches where the distance to
@@ -2091,15 +2124,17 @@ def detect_goal_directed_runs(
 
     Returns
     -------
-    NDArray[np.float64], shape (n_runs, 2)
-        Goal-directed approaches as ``[start, stop)`` rows in seconds, in
-        time order: ``start`` is the departure sample and ``stop`` the
-        arrival sample, so a row covers the travel between them (interval
-        ``k`` is ``[times[k], times[k + 1])``, as in
-        :func:`segment_by_velocity`). A row means the directedness and
-        net-progress criteria were met; the arrival need not be in the goal
-        region. Pass the rows as ``epochs=`` to restrict another analysis to
-        them.
+    Intervals of Interval
+        Goal-directed approaches in seconds, in time order, ids ``0`` to
+        ``n - 1``, with the field ``goal_region``: ``start`` is the
+        departure sample and ``stop`` the arrival sample, so a row covers
+        the travel between them (interval ``k`` is ``[times[k], times[k +
+        1])``, as in :func:`segment_by_velocity`). A row means the
+        directedness and net-progress criteria were met; the arrival need
+        not be in the goal region. Pass them as ``epochs=`` to restrict
+        another analysis to them; ``.windows`` is the ``(n_runs, 2)`` array.
+        ``analysis_settings`` records the criteria, ``max_gap`` and
+        ``epochs``.
 
     Raises
     ------
@@ -2180,8 +2215,9 @@ def detect_goal_directed_runs(
     >>> x = np.linspace(10, 90, 41)  # 80 cm toward the goal in 4 s
     >>> positions = np.c_[x, np.zeros_like(x)]
     >>> times = np.arange(41) / 10.0
-    >>> detect_goal_directed_runs(env, times, positions, goal_region="goal")
-    array([[0., 4.]])
+    >>> runs = detect_goal_directed_runs(env, times, positions, goal_region="goal")
+    >>> runs.windows.tolist(), runs.goal_region.tolist()
+    ([[0.0, 4.0]], ['goal'])
 
     Out to the goal, back, and out again: each approach is its own row, and
     the walk back is not goal-directed:
@@ -2192,14 +2228,13 @@ def detect_goal_directed_runs(
     ...     np.arange(trips.size) / 10.0,
     ...     np.c_[trips, np.zeros_like(trips)],
     ...     goal_region="goal",
-    ... )
-    array([[ 0.,  4.],
-           [ 8., 12.]])
+    ... ).windows.tolist()
+    [[0.0, 4.0], [8.0, 12.0]]
 
     Walking the same path away from the goal is not goal-directed:
 
-    >>> detect_goal_directed_runs(env, times, positions[::-1], goal_region="goal").shape
-    (0, 2)
+    >>> len(detect_goal_directed_runs(env, times, positions[::-1], goal_region="goal"))
+    0
 
     """
     # Input validation
@@ -2270,7 +2305,18 @@ def detect_goal_directed_runs(
                 min_progress=min_progress,
             )
         )
-    return np.array(results, dtype=np.float64).reshape(-1, 2)
+    windows = as_intervals(epochs, name="epochs")
+    return _windows_as_intervals(
+        np.array(results, dtype=np.float64).reshape(-1, 2),
+        fields={"goal_region": goal_region},
+        settings={
+            "goal_region": goal_region,
+            "directedness_threshold": float(directedness_threshold),
+            "min_progress": float(min_progress),
+            "max_gap": None if max_gap is None else float(max_gap),
+            "epochs": None if windows is None else windows.tolist(),
+        },
+    )
 
 
 def _approach_bouts(

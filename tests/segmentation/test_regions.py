@@ -172,7 +172,7 @@ class TestSegmentByVelocity:
         # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
             times, trajectory, min_speed=2.0, min_duration=0.5, hysteresis=2.0
-        )
+        ).windows
 
         # Should detect at least one movement period
         assert len(segments) > 0
@@ -199,10 +199,10 @@ class TestSegmentByVelocity:
 
         wide = segment_by_velocity(
             times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=2.0
-        )
+        ).windows
         narrow = segment_by_velocity(
             times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=1.01
-        )
+        ).windows
 
         # Wide hysteresis band ⇒ fewer (or equal) transitions, hence
         # fewer segments. A strict ``<`` would over-fit this noise; the
@@ -227,7 +227,7 @@ class TestSegmentByVelocity:
             trajectory,
             min_speed=5.0,
             min_duration=1.0,  # Require 1 second
-        )
+        ).windows
 
         # Brief movement should be filtered
         # All segments should have duration >= min_duration
@@ -262,7 +262,7 @@ class TestSegmentByVelocity:
             min_duration=0.5,
             hysteresis=2.0,
             smooth_window=0.5,  # multi-sample window -> noticeable edge effect
-        )
+        ).windows
 
         assert len(segments) == 1, (
             f"Constant-speed run should be one epoch, got {len(segments)}"
@@ -283,19 +283,25 @@ class TestSegmentByVelocity:
             f"end_time={end_time:.3f}, expected near {times[-1]:.3f}."
         )
 
-    def test_returns_epoch_array(self):
-        """Movement epochs come back as a float (n_epochs, 2) [start, stop) array."""
+    def test_returns_epoch_intervals(self):
+        """Movement epochs come back as Intervals of [start, stop) windows."""
         # Rest 0-5 s, move at 20 cm/s 5-10 s, rest 10-15 s, sampled at 100 Hz.
         times = np.arange(1501) / 100.0
         x = np.clip(20.0 * (times - 5.0), 0.0, 100.0)
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        segments = segment_by_velocity(
+        from neurospatial import Interval, Intervals
+
+        epochs = segment_by_velocity(
             times, x[:, None], min_speed=5.0, smooth_window=0.0
         )
-
-        assert isinstance(segments, np.ndarray)
+        assert isinstance(epochs, Intervals)
+        assert epochs.record_type is Interval
+        assert epochs.fields == ()
+        assert epochs.interval_ids.tolist() == [0]
+        assert epochs.analysis_settings["min_speed"] == 5.0
+        segments = epochs.windows
         assert segments.dtype == np.float64
         assert segments.shape == (1, 2)
         # The centered-secant speed is 10 cm/s at 5.00 s (x goes 0 -> 0.2 cm
@@ -356,7 +362,7 @@ class TestRegionSegmentationIntegration:
         # 3. Segment by velocity
         movement_segments = segment_by_velocity(
             times, trajectory, min_speed=2.0, min_duration=0.5
-        )
+        ).windows
 
         # All functions should execute successfully
         assert isinstance(source_crossings, list)

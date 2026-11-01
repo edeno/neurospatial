@@ -209,7 +209,7 @@ class TestFullTrajectoryAnalysisWorkflow:
                     goal_region=trial.end_region,
                     directedness_threshold=0.3,  # Lower for synthetic data
                     min_progress=5.0,
-                )
+                ).windows
 
                 # Should detect at least one goal-directed run
                 # (Note: may be 0 if trajectory is too discretized)
@@ -290,7 +290,7 @@ class TestFullTrajectoryAnalysisWorkflow:
             goal_region="goal",
             directedness_threshold=0.7,
             min_progress=10.0,
-        )
+        ).windows
 
         # The straight approach in phase 2 is a goal-directed run, from the
         # last sample in its first bin (the departure) to the first sample in
@@ -342,4 +342,4 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
             times,
             walk,
             goal_region="nonexistent",
-        )
+        ).windows

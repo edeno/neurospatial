@@ -72,7 +72,7 @@ SPEED_ONLY_CALLS = {
     ),
     "segment_by_velocity": lambda r, p, **kw: segment_by_velocity(
         r.times, p, min_speed=MIN_SPEED, **kw
-    ),
+    ).windows,
 }
 
 
@@ -184,7 +184,7 @@ def test_your_speed_decides_who_is_moving(session):
     assert np.isnan(alignment[stopped]).all()
     epochs = segment_by_velocity(
         r.times, positions, min_speed=MIN_SPEED, speed=speed, **support
-    )
+    ).windows
     overlaps = (epochs[:, 0] < 60.0) & (epochs[:, 1] > 50.0)
     assert epochs.size
     assert not overlaps.any()

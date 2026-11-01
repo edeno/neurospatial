@@ -254,7 +254,9 @@ class TestDetectGoalDirectedRuns:
             min_progress=70.0,
         )
 
-        np.testing.assert_array_equal(runs, [[times[0], times[-1]]])
+        np.testing.assert_array_equal(runs.windows, [[times[0], times[-1]]])
+        assert runs.goal_region.tolist() == ["goal"]
+        assert runs.analysis_settings["min_progress"] == 70.0
 
     def test_straight_retreat_is_not_goal_directed(self):
         """Moving straight away from the goal has negative progress: no run."""
@@ -269,7 +271,7 @@ class TestDetectGoalDirectedRuns:
             goal_region="goal",
             directedness_threshold=0.0,
             min_progress=0.0,
-        )
+        ).windows
 
         assert runs.shape == (0, 2)
 
@@ -302,7 +304,7 @@ class TestDetectGoalDirectedRuns:
             directedness_threshold=0.5,
             min_progress=50.0,  # high threshold - should filter out
             max_gap=None,
-        )
+        ).windows
 
         # Should be filtered by min_progress
         assert len(runs) == 0
@@ -327,7 +329,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="nonexistent",
                 directedness_threshold=0.7,
                 min_progress=10.0,
-            )
+            ).windows
 
         # Invalid threshold
         from shapely.geometry import Point
@@ -347,7 +349,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="goal",
                 directedness_threshold=1.5,  # invalid
                 min_progress=10.0,
-            )
+            ).windows
 
         # Negative min_progress
         with pytest.raises(ValueError, match=r"min_progress must be finite and nonneg"):
@@ -358,7 +360,7 @@ class TestDetectGoalDirectedRuns:
                 goal_region="goal",
                 directedness_threshold=0.7,
                 min_progress=-10.0,  # invalid
-            )
+            ).windows
 
     def test_detect_goal_directed_runs_empty_trajectory(self):
         """Empty trajectory should return empty list."""
@@ -381,7 +383,7 @@ class TestDetectGoalDirectedRuns:
             np.empty((0, env.n_dims)),
             goal_region="goal",
             min_progress=20.0,
-        )
+        ).windows
 
         assert runs.shape == (0, 2)
 
@@ -415,7 +417,7 @@ class TestGoalDirectedApproachBouts:
         times = np.arange(x.size) / self.FS
         return detect_goal_directed_runs(
             env, times, np.c_[x, np.zeros_like(x)], goal_region="goal", **kwargs
-        )
+        ).windows
 
     LEG = np.arange(0.0, 101.0, 2.0)  # 0 -> 100 cm, 51 samples
 
@@ -509,7 +511,7 @@ class TestGoalDirectedRunsUnreachableSamples:
         positions[bins < 0] = np.nan
         return detect_goal_directed_runs(
             env, times, positions, goal_region="goal", min_progress=1.0
-        )
+        ).windows
 
     def test_island_sample_before_the_approach(self):
         env, walk, island_bin = self._env()
@@ -578,14 +580,14 @@ class TestSimilarityIntegration:
             env.bin_centers[traj1_bins],
             goal_region="goal",
             min_progress=20.0,
-        )
+        ).windows
         runs2 = detect_goal_directed_runs(
             env,
             traj2_times,
             env.bin_centers[traj2_bins],
             goal_region="goal",
             min_progress=20.0,
-        )
+        ).windows
 
         # Both are straight walks toward the goal corner.
         assert runs1.shape[1:] == (2,)

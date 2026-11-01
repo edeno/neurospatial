@@ -35,7 +35,7 @@ def capture_segmentation_outputs(pause, laps):
         ),
         "segment_by_velocity": segment_by_velocity(
             p.times, p.positions, min_speed=5.0, min_duration=0.1
-        ),
+        ).windows,
         "detect_laps_region": detect_laps(
             lap_recording.env,
             lap_recording.times,
@@ -58,7 +58,7 @@ def capture_segmentation_outputs(pause, laps):
         ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
             p.env, p.times, p.positions, goal_region="target"
-        ),
+        ).windows,
         "detect_boundary_crossings": detect_boundary_crossings(
             p.position_bins, labels, p.times
         ),

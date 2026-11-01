@@ -79,7 +79,9 @@ def test_trials_do_not_span_pause(pause_track):
 
 def test_velocity_epochs_do_not_span_pause(pause_track):
     r = pause_track
-    epochs = segment_by_velocity(r.times, r.positions, min_speed=5, min_duration=0.1)
+    epochs = segment_by_velocity(
+        r.times, r.positions, min_speed=5, min_duration=0.1
+    ).windows
     assert len(epochs)
     starts, stops = epochs.T
     assert np.all((stops <= 99.9) | (starts >= 1100))
@@ -148,7 +150,9 @@ def test_goal_directed_runs_do_not_span_pause(pause_track):
     min_progress); after the pause it stays at the target.
     """
     r = pause_track
-    runs = detect_goal_directed_runs(r.env, r.times, r.positions, goal_region="target")
+    runs = detect_goal_directed_runs(
+        r.env, r.times, r.positions, goal_region="target"
+    ).windows
     assert runs.shape == (1, 2)
     # The departure is the last sample in the resting bin: within the time to
     # cross one 2 cm bin, plus one sample, of 98 s.
@@ -177,7 +181,7 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
     expected = function(*arguments, r.times[selected], r.positions[selected], **options)
     assert len(actual) == len(expected)
     if kind == "velocity":
-        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(actual.windows, expected.windows)
         return
     # Sliced data end at 99.9 s; the epoch's observed time runs to 100 s.
     assert actual.outcome.tolist() == expected.outcome.tolist() == ["censored"]
