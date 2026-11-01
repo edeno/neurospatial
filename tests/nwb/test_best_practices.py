@@ -32,6 +32,7 @@ def edge_case_file(tmp_path: Path) -> Path:
     """Write every record writer with zero records, plus region-method laps."""
     from pynwb import NWBHDF5IO
 
+    from neurospatial import Intervals
     from neurospatial.io.nwb import (
         write_events,
         write_laps,
@@ -40,7 +41,7 @@ def edge_case_file(tmp_path: Path) -> Path:
     )
 
     nwbfile = create_roundtrip_nwb()
-    write_trials(nwbfile, [])
+    write_trials(nwbfile, Intervals.from_arrays([], []))
     write_laps(nwbfile, [])
     write_region_crossings(nwbfile, [])
     write_events(nwbfile, pd.DataFrame({"timestamp": []}), name="rewards")

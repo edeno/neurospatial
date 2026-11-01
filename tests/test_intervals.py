@@ -225,7 +225,7 @@ def test_construction_refusals(trials: Intervals[Trial]) -> None:
         _ = trials.goal
 
 
-def test_detected_and_reloaded_schema_match(trials: Intervals[Trial]) -> None:
+def test_table_round_trip_keeps_schema(trials: Intervals[Trial]) -> None:
     reloaded = Intervals.from_dataframe(
         trials.intervals_table().reset_index(), id_column="interval_id"
     )

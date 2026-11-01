@@ -449,6 +449,7 @@ def test_trial_stop_closedness_routes_and_how_to_match_them(nap, tmp_path):
 
     from pynwb import NWBHDF5IO, NWBFile
 
+    from neurospatial import Intervals
     from neurospatial.behavior import in_epochs
     from neurospatial.io.nwb import read_trials, write_trials
 
@@ -459,15 +460,16 @@ def test_trial_stop_closedness_routes_and_how_to_match_them(nap, tmp_path):
         session_start_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
     )
     # Each trial stops exactly on a sample.
-    write_trials(nwbfile, start_times=times[[100, 400]], stop_times=times[[300, 700]])
+    write_trials(nwbfile, Intervals.from_arrays(times[[100, 400]], times[[300, 700]]))
     path = tmp_path / "trials.nwb"
     with NWBHDF5IO(str(path), "w") as io:
         io.write(nwbfile)
     with NWBHDF5IO(str(path), "r") as io:
-        rows = read_trials(io.read())[["start_time", "stop_time"]].to_numpy()
+        trials = read_trials(io.read())
+    rows = np.column_stack([trials.start, trials.stop])
     iset = nap.load_file(str(path))["trials"]
 
-    half_open = in_epochs(times, rows)
+    half_open = in_epochs(times, trials)
     inclusive = in_epochs(times, iset)
     assert half_open.sum() == 500
     assert inclusive.sum() == len(nap.Ts(times).restrict(iset)) == 502

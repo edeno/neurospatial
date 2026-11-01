@@ -33,7 +33,8 @@ if TYPE_CHECKING:
     import ndx_events
     from pynwb import NWBFile
 
-    from neurospatial.behavior.segmentation import Crossing, Lap, Outcome, Trial
+    from neurospatial._interval_table import Interval, Intervals
+    from neurospatial.behavior.segmentation import Crossing, Lap
 
 # =============================================================================
 # Constants for NWB events
@@ -414,7 +415,6 @@ class _Column:
 
 
 _INTERVAL_TIMES = {"start_times": "start_time", "stop_times": "end_time"}
-_TRIAL_TIMES = {"start_times": "start_time", "stop_times": "stop_time"}
 _LAP_COLUMNS = (
     _Column(
         "direction",
@@ -438,20 +438,13 @@ _CROSSING_COLUMNS = (
     ),
     _Column("bin_index", "Environment bin index of the sample at the crossing time"),
 )
-_TRIAL_COLUMNS = (
-    _Column("start_region", "Region where trial started", "start_regions"),
-    _Column(
-        "end_region",
-        "Region reached (empty string if none was reached)",
-        "end_regions",
-    ),
-    _Column(
-        "outcome",
-        "How the trial ended: reached (end region entered), timeout, returned "
-        "(back to the start region) or censored (cut off by the recording)",
-        "outcomes",
-    ),
-)
+# Column descriptions of the Trial fields; any other field gets a generic one.
+_TRIAL_FIELD_DESCRIPTIONS = {
+    "start_region": "Region where trial started",
+    "end_region": "Region reached (empty string if none was reached)",
+    "outcome": "How the trial ended: reached (end region entered), timeout, "
+    "returned (back to the start region) or censored (cut off by the recording)",
+}
 
 
 def _record_columns(
@@ -468,7 +461,7 @@ def _record_columns(
     Parameters
     ----------
     record_class : type
-        The record type: ``Lap``, ``Crossing`` or ``Trial``.
+        The record type: ``Lap`` or ``Crossing``.
     records : sequence of record_class or None
         The writer's records argument; None to read ``arrays`` instead.
     arrays : dict of str to array-like or None
@@ -594,6 +587,7 @@ def _build_time_intervals(
     start_times: NDArray[np.float64],
     stop_times: NDArray[np.float64],
     columns: dict[str, tuple[str, NDArray[np.generic]]],
+    ids: NDArray[np.int64] | None = None,
 ) -> Any:
     """Build a TimeIntervals table column by column.
 
@@ -609,17 +603,20 @@ def _build_time_intervals(
     columns : dict[str, tuple[str, NDArray]]
         Extra columns, each ``name -> (description, values)`` with values of
         shape ``(n_intervals,)``.
+    ids : NDArray[np.int64], shape (n_intervals,), optional
+        Row ids (the table's ``id`` column); default ``0`` to ``n - 1``.
 
     Returns
     -------
     pynwb.epoch.TimeIntervals
     """
-    from hdmf.common import VectorData
+    from hdmf.common import ElementIdentifiers, VectorData
     from pynwb.epoch import TimeIntervals
 
     return TimeIntervals(
         name=name,
         description=description,
+        id=None if ids is None else ElementIdentifiers(name="id", data=ids),
         columns=[
             VectorData(
                 name="start_time",
@@ -909,49 +906,34 @@ def write_region_crossings(
     )
 
 
-@reads_pynapple_samples
 def write_trials(
     nwbfile: NWBFile,
-    trials: Sequence[Trial] | None = None,
+    trials: Intervals[Any],
     *,
-    start_times: NDArray[np.float64] | None = None,
-    stop_times: NDArray[np.float64] | None = None,
-    start_regions: Sequence[str] | None = None,
-    end_regions: Sequence[str | None] | None = None,
-    outcomes: Sequence[Outcome] | None = None,
     description: str = "Behavioral trials",
     overwrite: bool = False,
 ) -> None:
     """
-    Write trial data to NWB file.
+    Write trials to the NWB trials table.
 
-    Writes trial intervals to the built-in NWB trials table, including
-    optional columns for start/end regions and how each trial ended.
-    Zero trials write nothing, without a warning: NWB files should not hold empty tables
-    (nwbinspector ``check_empty_table``). Reading the table back then raises
-    ``KeyError``; treat a missing table as zero trials. With ``overwrite=True``,
-    zero trials still remove the table they replace.
+    Each row of ``trials`` becomes one row of the built-in NWB trials table:
+    its ``interval_id`` is the table ``id``, and every field is a column, in
+    field order. A missing text value (``None``) is stored as ``""``, which
+    NWB text columns need, and :func:`read_trials` reads it back as ``None``.
+    Zero trials write nothing, without a warning: NWB files should not hold
+    empty tables (nwbinspector ``check_empty_table``). Reading the table back
+    then raises ``KeyError``; treat a missing table as zero trials. With
+    ``overwrite=True``, zero trials still remove the table they replace.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    trials : Sequence[Trial], optional
-        Trials from :func:`~neurospatial.behavior.segmentation.segment_trials`.
-        Writes the ``start_region``, ``end_region`` and ``outcome`` of every
-        trial. Cannot be combined with the array arguments.
-    start_times : NDArray[np.float64], shape (n_trials,), optional
-        Trial start times in seconds. Required if ``trials`` is not given.
-    stop_times : NDArray[np.float64], shape (n_trials,), optional
-        Trial stop times in seconds. Required if ``trials`` is not given.
-    start_regions : Sequence[str], shape (n_trials,), optional
-        Start region name of each trial.
-    end_regions : Sequence[str or None], shape (n_trials,), optional
-        End region reached by each trial; None (no region reached) is stored
-        as ``""``.
-    outcomes : Sequence[Outcome], shape (n_trials,), optional
-        How each trial ended: ``"reached"``, ``"timeout"``, ``"returned"`` or
-        ``"censored"`` (see :class:`~neurospatial.behavior.segmentation.Trial`).
+    trials : Intervals
+        Trials from :func:`~neurospatial.behavior.segmentation.segment_trials`,
+        or any :class:`~neurospatial.Intervals`, such as a task log read with
+        ``Intervals.from_dataframe``. Fields must hold numbers, Booleans, or
+        text with ``None`` for missing values.
     description : str, default "Behavioral trials"
         Description of the trials table.
     overwrite : bool, default False
@@ -962,18 +944,15 @@ def write_trials(
 
     Raises
     ------
-    ValueError
-        If ``trials`` is combined with array arguments, or neither
-        ``trials`` nor both ``start_times`` and ``stop_times`` are given.
-        If array lengths don't match, or an outcome is not one of the four.
-        If stop_times < start_times for any trial.
-        If timestamps contain non-finite or negative values.
-        If a trials table already exists and ``overwrite=False``, or another
-        table refers to the rows of the trials table being replaced.
     TypeError
-        If ``trials`` is not a list of ``Trial`` objects, or a per-trial
-        argument is a single string, or a region is not a string (None is
-        allowed in ``end_regions``).
+        If ``trials`` is not an Intervals (wrap a list of records with
+        ``Intervals(records)``), or a field holds values other than numbers,
+        Booleans or text.
+    ValueError
+        If times are non-finite or negative (NWB times are seconds from the
+        session start). If a trials table already exists and
+        ``overwrite=False``, or another table refers to the rows of the
+        trials table being replaced.
     NotImplementedError
         If ``overwrite=True`` would replace the trials table of a file read
         from disk.
@@ -992,18 +971,9 @@ def write_trials(
     ``IntervalSet`` whose ``end`` is inclusive, so pynapple keeps one more
     sample per trial whenever a sample falls exactly on ``stop_time``; the
     ``IntervalSet`` passed to a neurospatial ``epochs=`` keeps it too. For the
-    same selection on both routes, pick one meaning: the half-open one with
-    ``epochs=np.column_stack([iset.start, iset.end])`` (a plain array is
-    half-open), or the inclusive one with ``in_epochs(t, rows,
-    closed="both")`` on the rows from read_trials.
-
-    Custom columns are added for:
-    - ``start_region``: Region where trial started
-    - ``end_region``: Region reached (or "" when the trial did not reach one)
-    - ``outcome``: How the trial ended (``"reached"``, ``"timeout"``,
-      ``"returned"`` or ``"censored"``). A successful trial is
-      ``outcome == "reached"``; a censored trial was cut off by the recording,
-      not failed.
+    same selection on both routes, pass the trials from :func:`read_trials`
+    as ``epochs=``, or ``epochs=np.column_stack([iset.start, iset.end])``
+    (a plain array is half-open).
 
     Examples
     --------
@@ -1021,28 +991,23 @@ def write_trials(
     read_intervals : Read generic TimeIntervals.
     segment_trials : Segment trajectory into trials.
     """
-    from neurospatial.behavior.segmentation import Trial
+    from neurospatial._interval_table import require_intervals
 
     _require_pynwb()
+    trials = require_intervals(trials, name="trials", owner="write_trials()")
+    start = _checked_event_times(trials.start, "start_time")
+    stop = _checked_event_times(trials.stop, "stop_time")
+    columns = {
+        name: (
+            _TRIAL_FIELD_DESCRIPTIONS.get(name, f"Field {name!r} of each trial"),
+            _field_column(getattr(trials, name), name),
+        )
+        for name in trials.fields
+    }
 
-    (start, stop), columns = _record_columns(
-        Trial,
-        trials,
-        {
-            "start_times": start_times,
-            "stop_times": stop_times,
-            "start_regions": start_regions,
-            "end_regions": end_regions,
-            "outcomes": outcomes,
-        },
-        times=_TRIAL_TIMES,
-        columns=_TRIAL_COLUMNS,
-        needs="write_trials needs either 'trials' (from segment_trials) or "
-        "both 'start_times' and 'stop_times'.",
+    table = _build_time_intervals(
+        PREDEFINED_TRIALS, description, start, stop, columns, ids=trials.interval_ids
     )
-    _refuse_reversed_intervals(start, stop, record="trial")
-
-    table = _build_time_intervals(PREDEFINED_TRIALS, description, start, stop, columns)
     removed = nwbfile.trials is not None
     if removed:
         if not overwrite:
@@ -1091,12 +1056,15 @@ def write_trials(
     logger.debug("Wrote %d trials to NWB file", len(start))
 
 
-def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
+def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     """
-    Read trials table from NWB file.
+    Read the NWB trials table as Intervals.
 
-    Convenience wrapper around read_intervals("trials") that provides
-    a more discoverable API for reading trial data.
+    Each row becomes one :class:`~neurospatial.Interval`: the table ``id`` is
+    its ``interval_id`` and every other column a field, in column order.
+    Text ``""`` reads back as ``None`` (NWB text columns cannot hold
+    ``None``, so :func:`write_trials` stores a missing value as ``""``); a
+    list cell (for example NWB ``tags``) becomes a tuple.
 
     Parameters
     ----------
@@ -1105,9 +1073,12 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame
-        Trials data with columns: start_time, stop_time, and any custom
-        columns (start_region, end_region, outcome, etc.).
+    Intervals of Interval
+        The trials, sorted by time, with the fields of the table, for
+        example ``start_region``, ``end_region`` and ``outcome`` for trials
+        written from :func:`~neurospatial.behavior.segmentation.segment_trials`.
+        Select conditions by field (``trials[trials.outcome == "reached"]``)
+        and pass them as ``epochs=``.
 
     Raises
     ------
@@ -1125,16 +1096,48 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-    ...     nwbfile = io.read()
-    ...     trials = read_trials(nwbfile)
-    ...     print(f"Found {len(trials)} trials")
+    ...     trials = read_trials(io.read())
+    >>> reached = trials[trials.outcome == "reached"]  # doctest: +SKIP
 
     See Also
     --------
     write_trials : Write trials to NWB file.
     read_intervals : Read generic TimeIntervals.
     """
-    return read_intervals(nwbfile, interval_name="trials")
+    from neurospatial._interval_table import Intervals
+
+    table = read_intervals(nwbfile, interval_name="trials")
+    for name in table.columns:
+        if table[name].dtype == object:
+            table[name] = [_field_value(value) for value in table[name]]
+    # The table's ids are its index, named "id"; a column cannot share it.
+    return Intervals.from_dataframe(table.reset_index(), id_column="id")
+
+
+def _field_value(value: Any) -> Any:
+    """A table cell as a field value: ``""`` is missing, a list a tuple."""
+    if isinstance(value, str) and value == "":
+        return None
+    if isinstance(value, (list, np.ndarray)):
+        return tuple(value)
+    return value
+
+
+def _field_column(values: NDArray[Any], name: str) -> NDArray[np.generic]:
+    """One field as an NWB column: numbers as they are, text with ``""`` for None."""
+    if values.dtype.kind in "biuf":
+        return values
+    if all(value is None or isinstance(value, str) for value in values):
+        return np.array(["" if value is None else value for value in values], dtype=str)
+    bad = next(v for v in values if not (v is None or isinstance(v, str)))
+    raise TypeError(
+        _format_error(
+            f"write_trials: field {name!r} holds a {type(bad).__name__} "
+            f"({bad!r}), which an NWB column cannot store.",
+            why="NWB trials columns hold numbers, Booleans or text.",
+            fix=f"convert {name} to text or numbers before writing, or leave it out.",
+        )
+    )
 
 
 @keyword_hint("name", "description")

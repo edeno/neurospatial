@@ -327,7 +327,9 @@ class TestReadIntervals:
         from neurospatial.io.nwb import read_intervals, write_laps, write_trials
 
         nwbfile = create_roundtrip_nwb()
-        write_trials(nwbfile, start_times=[0.0], stop_times=[1.0])
+        from neurospatial import Intervals
+
+        write_trials(nwbfile, Intervals.from_arrays([0.0], [1.0]))
         nwbfile.add_invalid_time_interval(start_time=2.0, stop_time=3.0)
         write_laps(nwbfile, start_times=[0.0], stop_times=[1.0])
         with NWBHDF5IO(str(tmp_path / "intervals.nwb"), "w") as io:
