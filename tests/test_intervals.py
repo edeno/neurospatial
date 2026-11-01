@@ -530,3 +530,43 @@ def test_from_dataframe_refuses_a_repeated_index() -> None:
     log = pd.DataFrame({"start_time": [0.0, 1.0], "stop_time": [0.5, 1.5]})
     with pytest.raises(ValueError, match=r"reset_index\(drop=True\)"):
         Intervals.from_dataframe(pd.concat([log, log]))
+
+
+def test_spike_counts_warn_for_spikes_on_another_clock() -> None:
+    trials = Intervals.from_arrays([0.0, 20.0], [10.0, 30.0])
+    with pytest.warns(UserWarning, match="spike_counts: none of the 2 interval"):
+        counts = trials.spike_counts([np.array([1000.0, 1001.0]), np.array([1500.0])])
+    assert counts.to_numpy().sum() == 0
+    # No spikes at all is a silent population, not another clock.
+    assert trials.spike_counts([np.array([])]).to_numpy().sum() == 0
+
+
+def test_spike_counts_of_an_empty_intervals_and_a_zero_duration_row() -> None:
+    empty = Intervals.from_arrays([], [])
+    counts = empty.spike_counts([np.array([0.5, 1.0])])
+    assert counts.shape == (0, 1)
+    assert counts.index.name == "interval_id"
+    # A row without duration holds no time, so a spike exactly on it is not
+    # counted there; the touching row [5, 8) counts it.
+    rows = Intervals.from_arrays([0.0, 5.0, 5.0], [5.0, 5.0, 8.0])
+    assert rows.spike_counts([np.array([5.0])])[0].tolist() == [0, 0, 1]
+
+
+def test_spike_counts_refuse_a_nan_spike() -> None:
+    trials = Intervals.from_arrays([0.0], [10.0])
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        trials.spike_counts([np.array([1.0, np.nan])])
+
+
+@pytest.mark.pynapple
+def test_spike_counts_of_a_tsgroup_keep_its_labels() -> None:
+    nap = pytest.importorskip("pynapple")
+    trials = Intervals.from_arrays([0.0, 5.0], [5.0, 10.0], interval_ids=[4, 8])
+    # pynapple drops a unit with one spike, so each has at least two.
+    group = nap.TsGroup(
+        {3: nap.Ts(np.array([1.0, 6.0, 7.0])), 9: nap.Ts(np.array([2.0, 3.0]))}
+    )
+    counts = trials.spike_counts(group)
+    assert counts.columns.tolist() == [3, 9]
+    assert counts.loc[4].tolist() == [1, 2]
+    assert counts.loc[8].tolist() == [2, 0]

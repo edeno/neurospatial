@@ -966,6 +966,17 @@ class Intervals(Generic[R]):
             Join the intervals' fields with
             ``trials.intervals_table().join(counts)``.
 
+        Raises
+        ------
+        ValueError
+            If a spike time is NaN or infinite.
+
+        Warns
+        -----
+        UserWarning
+            If rows have duration but no spike falls in any (usually spikes
+            on another clock).
+
         Examples
         --------
         >>> import numpy as np
@@ -995,6 +1006,13 @@ class Intervals(Generic[R]):
             counts[:, unit] = np.searchsorted(
                 train, self._stop, side="left"
             ) - np.searchsorted(train, self._start, side="left")
+        spikes = np.sort(np.concatenate([np.empty(0), *trains]))
+        if spikes.size:  # no spikes at all is silence, not another clock
+            self._warn_if_no_sample_inside(
+                spikes,
+                np.asarray(counts.any(axis=1), dtype=bool),
+                "Intervals.spike_counts",
+            )
         return pd.DataFrame(
             counts,
             index=pd.Index(self._ids, name="interval_id"),
