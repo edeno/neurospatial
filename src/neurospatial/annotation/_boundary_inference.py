@@ -26,6 +26,7 @@ LARGE_DATASET_THRESHOLD = 10_000
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from shapely.geometry import Polygon
+    from shapely.geometry.base import BaseGeometry
 
 
 @dataclass(frozen=True)
@@ -38,8 +39,7 @@ class BoundaryConfig:
         Boundary inference algorithm. Default is "alpha_shape".
 
         - "alpha_shape": Captures concave boundaries (L-shapes, mazes).
-          Provides tighter fit to actual trajectory. Falls back to
-          convex_hull if alphashape package not installed.
+          Provides tighter fit to actual trajectory.
         - "convex_hull": Fast, robust, always produces single polygon.
           Best when you want guaranteed simple results.
     buffer_fraction : float
@@ -183,18 +183,7 @@ def boundary_from_positions(
         boundary = _convex_hull_boundary(positions)
     elif effective_method == "alpha_shape":
         alpha = method_kwargs.get("alpha", cfg.alpha)
-        try:
-            boundary = _alpha_shape_boundary(positions, alpha)
-        except ImportError:
-            import warnings
-
-            warnings.warn(
-                "alphashape package not installed. Falling back to convex_hull. "
-                "Install with: pip install alphashape",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-            boundary = _convex_hull_boundary(positions)
+        boundary = _alpha_shape_boundary(positions, alpha)
     else:
         msg = f"Unknown method: {effective_method}"  # type: ignore[unreachable]  # runtime check of user input
         raise ValueError(msg)
@@ -249,6 +238,39 @@ def _convex_hull_boundary(positions: NDArray[np.float64]) -> Polygon:
     return Polygon(vertices)
 
 
+def _alpha_shape(points: NDArray[np.float64], alpha: float) -> BaseGeometry:
+    """The alpha shape of 2-D points: the union of Delaunay triangles whose
+    circumradius is below ``1 / alpha``, with every region their outline
+    encloses filled.
+
+    Fewer than four points, or ``alpha <= 0``, give the convex hull. The same
+    construction as the ``alphashape`` package, vectorized.
+    """
+    import shapely
+    from scipy.spatial import Delaunay
+    from shapely.geometry import MultiPoint
+
+    if len(points) < 4 or alpha <= 0:
+        return MultiPoint(points).convex_hull
+    simplices = Delaunay(points).simplices
+    corners = points[simplices]  # (n_triangles, 3, 2)
+    a = np.linalg.norm(corners[:, 1] - corners[:, 2], axis=1)
+    b = np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1)
+    c = np.linalg.norm(corners[:, 0] - corners[:, 1], axis=1)
+    d1 = corners[:, 1] - corners[:, 0]
+    d2 = corners[:, 2] - corners[:, 0]
+    area = 0.5 * np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        radius = np.where(area > 0, a * b * c / (4 * area), np.inf)
+    kept = simplices[radius < 1.0 / alpha]
+    # The edges of exactly one kept triangle bound the shape; every region they
+    # enclose is part of it, holes included.
+    edges = np.sort(kept[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1)
+    edges, counts = np.unique(edges, axis=0, return_counts=True)
+    boundary = shapely.linestrings(points[edges[counts == 1]])
+    return shapely.union_all(shapely.get_parts(shapely.polygonize(boundary)))
+
+
 def _alpha_shape_boundary(
     positions: NDArray[np.float64],
     alpha: float,
@@ -269,8 +291,6 @@ def _alpha_shape_boundary(
 
     Raises
     ------
-    ImportError
-        If alphashape package not installed.
     ValueError
         If the alpha shape collapses to a degenerate (non-``Polygon`` or
         empty) geometry, e.g. when the positions are nearly collinear,
@@ -278,17 +298,6 @@ def _alpha_shape_boundary(
 
     """
     import warnings
-
-    try:
-        import alphashape
-    except ImportError:
-        msg = (
-            "alphashape package required for alpha_shape method. "
-            "Install with: pip install alphashape"
-        )
-        raise ImportError(
-            msg,
-        ) from None
 
     from shapely.geometry import MultiPolygon, Polygon
 
@@ -306,7 +315,7 @@ def _alpha_shape_boundary(
             flush=True,
         )
 
-    result = alphashape.alphashape(positions, alpha)
+    result = _alpha_shape(positions, alpha)
 
     if n_points >= LARGE_DATASET_THRESHOLD:
         logger.info("Alpha shape computation complete")
@@ -327,7 +336,7 @@ def _alpha_shape_boundary(
         )
         return largest
 
-    # Validate the single-geometry result before returning. alphashape can
+    # Validate the single-geometry result before returning. The alpha shape can
     # return a Point / LineString / empty Polygon / GeometryCollection when the
     # input points are collinear, near-duplicate, or too sparse for the chosen
     # alpha; downstream code assumes a non-empty Polygon.

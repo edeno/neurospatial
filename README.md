@@ -111,7 +111,6 @@ neurospatial v0.8.0 has been tested with the following dependency versions:
 | scikit-learn | 1.7.2 |
 | scikit-image | 0.25.2 |
 | shapely | 2.1.2 |
-| alphashape | 1.3.1 |
 | joblib | 1.5.2 |
 | track-linearization | 2.4.0 |
 | tqdm | 4.67.1 |
@@ -656,7 +655,7 @@ CI tests the lowest version of each:
 - scikit-learn >= 1.6
 - networkx >= 3.4
 - shapely >= 2.1
-- alphashape >= 1.3.1, joblib >= 1.2, track-linearization >= 2.4,
+- joblib >= 1.2, track-linearization >= 2.4,
   tqdm >= 4.67.1, typing_extensions >= 4.4
 
 `pyproject.toml` is the authoritative list.

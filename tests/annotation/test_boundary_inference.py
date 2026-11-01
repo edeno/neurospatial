@@ -167,7 +167,7 @@ class TestBoundaryFromPositionsValidation:
             warnings.simplefilter("always")
             boundary = boundary_from_positions(
                 positions,
-                method="convex_hull",  # Use convex_hull to avoid alphashape warnings
+                method="convex_hull",
             )
 
             # Check no NaN-related warnings
@@ -256,40 +256,8 @@ class TestBoundaryFromPositionsConfigOverride:
 class TestAlphaShape:
     """Tests for alpha shape boundary inference."""
 
-    def test_alpha_shape_fallback_when_not_installed(self, monkeypatch):
-        """Falls back to convex_hull with warning if alphashape not installed."""
-        import sys
-        import warnings
-
-        from neurospatial.annotation import boundary_from_positions
-
-        # Temporarily hide alphashape module
-        monkeypatch.setitem(sys.modules, "alphashape", None)
-
-        positions = np.array([[0, 0], [0, 10], [10, 10], [10, 0], [5, 5]])
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            boundary = boundary_from_positions(
-                positions,
-                method="alpha_shape",
-                buffer_fraction=0,
-                simplify_fraction=0,
-            )
-
-            # Should have warned about fallback
-            assert len(w) == 1
-            assert "alphashape package not installed" in str(w[0].message)
-            assert "Falling back to convex_hull" in str(w[0].message)
-
-        # Should still produce a valid boundary (convex hull fallback)
-        assert boundary.is_valid
-        assert isinstance(boundary, Polygon)
-
     def test_basic_alpha_shape(self):
         """Alpha shape boundary is valid polygon."""
-        pytest.importorskip("alphashape")
-
         from neurospatial.annotation import boundary_from_positions
 
         rng = np.random.default_rng(42)
@@ -307,8 +275,6 @@ class TestAlphaShape:
 
     def test_alpha_parameter_affects_boundary(self):
         """Smaller alpha = tighter fit = smaller area."""
-        pytest.importorskip("alphashape")
-
         from neurospatial.annotation import boundary_from_positions
 
         rng = np.random.default_rng(42)
@@ -337,8 +303,6 @@ class TestAlphaShape:
 
     def test_multipolygon_warning(self):
         """Warning emitted when alpha shape produces multiple polygons."""
-        pytest.importorskip("alphashape")
-
         from neurospatial.annotation import boundary_from_positions
 
         rng = np.random.default_rng(42)
@@ -360,15 +324,13 @@ class TestAlphaShape:
         assert isinstance(boundary, Polygon)
 
     def test_alpha_shape_collinear_points_raises(self):
-        """Near-collinear points that collapse alphashape raise ValueError.
+        """Near-collinear points that collapse the alpha shape raise ValueError.
 
-        With near-collinear input, ``alphashape`` returns an empty
-        ``GeometryCollection`` rather than a usable polygon. The helper must
+        With near-collinear input, no triangle passes the radius filter, so
+        the alpha shape is an empty geometry rather than a usable polygon. The helper must
         reject this degenerate result instead of handing back a degenerate
         boundary.
         """
-        pytest.importorskip("alphashape")
-
         from neurospatial.annotation._boundary_inference import (
             _alpha_shape_boundary,
         )
@@ -387,8 +349,6 @@ class TestAlphaShape:
 
     def test_alpha_shape_valid_points_returns_polygon(self):
         """A well-separated 2D cloud still returns a non-empty Polygon."""
-        pytest.importorskip("alphashape")
-
         from neurospatial.annotation._boundary_inference import (
             _alpha_shape_boundary,
         )
