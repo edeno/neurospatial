@@ -1160,7 +1160,10 @@ class Intervals(Generic[R]):
             ``[start, stop)``.
         id_column : str, optional
             Column with stable integer ids (for example trial numbers). Default:
-            ``0`` to ``n - 1`` in table order.
+            the table's integer index, ``0`` to ``n - 1`` for a fresh table.
+            A Series built from the table (``log.outcome == "correct"``) is
+            labelled by that index, so it selects the same rows after the
+            table was sorted or filtered.
 
         Returns
         -------
@@ -1169,7 +1172,10 @@ class Intervals(Generic[R]):
         Raises
         ------
         ValueError
-            If a named column is missing.
+            If a named column is missing, or the ids repeat or are negative.
+        TypeError
+            If ``id_column`` is not given and the index is not integers (call
+            ``df.reset_index(drop=True)`` or name ``id_column``).
         """
         import pandas as pd
 
@@ -1215,7 +1221,9 @@ class Intervals(Generic[R]):
             df[start_column].to_numpy(dtype=np.float64),
             df[stop_column].to_numpy(dtype=np.float64),
             columns,
-            interval_ids=None if id_column is None else df[id_column].to_numpy(),
+            interval_ids=_index_ids(df.index)
+            if id_column is None
+            else df[id_column].to_numpy(),
         )
 
     def __repr__(self) -> str:
@@ -1268,6 +1276,43 @@ def _table_column(series: pd.Series) -> NDArray[Any]:
     ):
         return np.asarray(series.to_numpy(dtype=numpy_dtype))
     return _object_array([_missing_as_none(v) for v in series.tolist()])
+
+
+def _index_ids(index: pd.Index) -> NDArray[Any]:
+    """A table's integer index as interval ids; any other index is refused.
+
+    A Series built from the table (``log.outcome == "correct"``) is labelled
+    by this index, so ids taken from it keep such a Series aligned with its
+    rows after the table is sorted or filtered.
+    """
+    ids: NDArray[Any] = np.asarray(index.to_numpy())
+    if len(index) and (index.nlevels != 1 or ids.dtype.kind not in "iu"):
+        raise TypeError(
+            _format_error(
+                f"from_dataframe: the table index has dtype {index.dtype}, so it "
+                "cannot give the interval_ids.",
+                why="without id_column the ids are the table's integer index, "
+                "the labels a column of the table (log.outcome == 'correct') "
+                "selects rows by.",
+                fix="pass id_column='<column of integer ids>', or call "
+                "df.reset_index(drop=True) to number the rows 0 to n - 1 in "
+                "table order.",
+            )
+        )
+    if len(index) and (not index.is_unique or ids.min() < 0):
+        raise ValueError(
+            _format_error(
+                "from_dataframe: the table index has repeated or negative "
+                "values, so it cannot give the interval_ids.",
+                why="without id_column the ids are the table's index, and an "
+                "interval_id is unique and >= 0 (a table concatenated from "
+                "sessions repeats its index).",
+                fix="pass id_column='<column of unique integer ids>', or call "
+                "df.reset_index(drop=True) to number the rows 0 to n - 1 in "
+                "table order.",
+            )
+        )
+    return ids
 
 
 def _missing_as_none(value: Any) -> Any:

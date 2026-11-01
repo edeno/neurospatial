@@ -492,3 +492,41 @@ def test_a_record_with_a_missing_bound_is_refused():
 
     with pytest.raises(ValueError, match="NaN or inf"):
         as_intervals(pd.Series({"start_time": 0.0, "stop_time": np.nan}), name="epochs")
+
+
+def test_from_dataframe_ids_are_the_table_index() -> None:
+    log = pd.DataFrame(
+        {
+            "start_time": [10.0, 0.0, 20.0],
+            "stop_time": [15.0, 5.0, 25.0],
+            "outcome": ["error", "correct", "correct"],
+        }
+    )
+    trials = Intervals.from_dataframe(log.sort_values("start_time"))
+    # The log's own rows 1 and 2 are correct: they start at 0 and 20 s.
+    assert trials[log.outcome == "correct"].start.tolist() == [0.0, 20.0]
+    rewarded = trials.with_fields(reward=log.outcome == "correct")
+    assert rewarded.reward.tolist() == [True, False, True]  # time order
+    assert trials.interval_ids.tolist() == [1, 0, 2]
+    # A default index numbers the rows 0 to n - 1 in table order, as before.
+    assert Intervals.from_dataframe(log).interval_ids.tolist() == [1, 0, 2]
+
+
+@pytest.mark.parametrize(
+    "index",
+    [["a", "b", "c"], [0.0, 1.0, 2.0], pd.date_range("2026-01-01", periods=3)],
+)
+def test_from_dataframe_refuses_an_index_that_is_not_integer(index) -> None:
+    log = pd.DataFrame(
+        {"start_time": [0.0, 1.0, 2.0], "stop_time": [0.5, 1.5, 2.5]}, index=index
+    )
+    with pytest.raises(TypeError, match=r"id_column=.*reset_index\(drop=True\)"):
+        Intervals.from_dataframe(log)
+    by_column = Intervals.from_dataframe(log.reset_index(drop=True))
+    assert by_column.interval_ids.tolist() == [0, 1, 2]
+
+
+def test_from_dataframe_refuses_a_repeated_index() -> None:
+    log = pd.DataFrame({"start_time": [0.0, 1.0], "stop_time": [0.5, 1.5]})
+    with pytest.raises(ValueError, match=r"reset_index\(drop=True\)"):
+        Intervals.from_dataframe(pd.concat([log, log]))
