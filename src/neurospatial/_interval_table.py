@@ -723,8 +723,8 @@ class Intervals(Generic[R]):
         Raises
         ------
         KeyError
-            If an id is not in :attr:`interval_ids`; every missing id is
-            listed.
+            If an id is not in :attr:`interval_ids`; the message lists the
+            first ten missing ids and how many more are missing.
         ValueError
             If ``interval_id`` is an array with more than one dimension.
         """
