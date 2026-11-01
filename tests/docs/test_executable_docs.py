@@ -187,9 +187,32 @@ SETUPS["docs_animation_quick_start"] = collect_blocks(
     (ROOT / _ANIMATION_GUIDE).read_text(encoding="utf-8"), _ANIMATION_GUIDE
 )[0].code
 _WORKFLOWS_GUIDE = "docs/user-guide/workflows.md"
-SETUPS["workflows_outbound_inbound"] = collect_blocks(
+_WORKFLOWS_BLOCKS = collect_blocks(
     (ROOT / _WORKFLOWS_GUIDE).read_text(encoding="utf-8"), _WORKFLOWS_GUIDE
-)[0].code
+)
+SETUPS["workflows_outbound_inbound"] = _WORKFLOWS_BLOCKS[0].code
+
+
+def _workflows_block(marker: str) -> str:
+    """The one block of the workflows guide containing ``marker``."""
+    matching = [block.code for block in _WORKFLOWS_BLOCKS if marker in block.code]
+    assert len(matching) == 1, f"{len(matching)} workflow blocks contain {marker!r}"
+    return matching[0]
+
+
+# Workflow 9 continues block by block: the session, then the selected trials
+# and progress, then the tuning curves.
+SETUPS["workflows_route_session"] = _workflows_block("make_w_maze().env_track")
+SETUPS["workflows_route_progress"] = "\n".join(
+    [
+        SETUPS["workflows_route_session"],
+        _workflows_block("conditions = {"),
+        _workflows_block("progress = path_progress("),
+    ]
+)
+SETUPS["workflows_route_curves"] = "\n".join(
+    [SETUPS["workflows_route_progress"], _workflows_block("curves = {}")]
+)
 
 
 def _fixture_namespace() -> dict[str, object]:

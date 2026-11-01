@@ -155,7 +155,9 @@ A 1-D firing-rate function over some behavioral variable other than
 position — head direction, speed, time-from-event. Computed by
 binning the variable, counting spikes per bin, and dividing by
 occupancy. Direction tuning is the most common case. See
-[`compute_directional_rate`](api/index.md) and
+[`compute_directional_rate`](api/index.md) for head direction,
+[`compute_tuning_curves`](api/index.md) for any other variable
+([Workflow 9](user-guide/workflows.md#workflow-9-firing-along-the-route-to-a-goal)), and
 [specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### View field

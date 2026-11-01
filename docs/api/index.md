@@ -128,12 +128,15 @@ egocentric targets, and gaze.
 - `encoding.egocentric`: Object-vector cells and egocentric tuning
 - `encoding.view`: Spatial-view cells and gaze-based fields
 - `encoding.phase_precession`: Theta-phase precession
+- `encoding.tuning`: Tuning curves over one behavioral variable
 - `encoding.population`: Population-level metrics
 
 **Key Functions:**
 
 - `compute_spatial_rate()` / `compute_spatial_rates()`: Build firing-rate maps
 - `compute_directional_rate()`: Head-direction tuning curve
+- `compute_tuning_curve()` / `compute_tuning_curves()`: Firing rate against
+  one behavioral variable, such as progress or distance to a goal
 - `compute_egocentric_rate()`: Object-vector tuning
 - `compute_view_rate()`: Spatial-view tuning
 - `compute_phase_precession()`: Theta-phase slope, offset and fit quality

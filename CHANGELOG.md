@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Tuning curves over a behavioral variable
+
+**Added**
+
+- `compute_tuning_curve(spike_times, times, values, *, ...)` and
+  `compute_tuning_curves(...)` (in `neurospatial.encoding`): firing rate
+  against one variable sampled with the trajectory, such as `path_progress`,
+  `distance_to_goal`, running speed or time in a trial. Each bin's spike count
+  is divided by the time spent in it, pooled over the analyzed intervals.
+  Give exactly one of `bin_size` and `bin_edges`; `value_range` is an
+  exclusion boundary that `bin_size` must tile exactly; edges derived from the
+  data lie on multiples of `bin_size`, so sessions share them. The last bin is
+  closed, as in `numpy.histogram`, so progress of exactly 1 is counted. A NaN
+  value (progress between trials) excludes its sampling interval instead of
+  being filled from the previous sample. `epochs=` takes a selection of trials
+  (an `Intervals`, whose `interval_ids` are recorded) and an empty selection
+  gives NaN rates, zero occupancy and a warning; `speed=` with `min_speed=`
+  excludes slow intervals from spikes and occupancy alike; `bandwidth=`
+  smooths counts and occupancy separately. A pynapple `Tsd` of values gives
+  its time support as `epochs`.
+- `TuningCurveResult` / `TuningCurvesResult`, with `firing_rate(s)`,
+  `occupancy`, `spike_counts`, `bin_edges`, `variable` and `units`;
+  `to_dataframe()` has a `bin_center` column, `peak_location()` is in the
+  variable's units and `plot()` labels the axis with the variable's name.
+- Workflow 9 in the workflows guide, "Firing Along the Route to a Goal":
+  trials from a task log, progress to each trial's instructed goal, curves
+  with shared edges per condition, an empty condition, odd/even consistency,
+  pauses and running speed, and the same curves from trials read back from
+  NWB.
+
+**Changed**
+
+- The error for `min_speed=` without `speed=` names `compute_speed` as a way
+  to get a speed array.
+
 ### Progress and distance to the goal
 
 **Changed**
