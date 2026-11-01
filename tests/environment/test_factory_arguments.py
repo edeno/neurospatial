@@ -284,7 +284,8 @@ def test_track_factories_share_the_edge_spacing_default():
     np.testing.assert_allclose(
         from_graph.to_linear(np.array([[20.0, 1.0]])), [21.0], atol=1e-12
     )
-    assert from_graph.layout_parameters["edge_spacing"] == 0.0
+    # The build record keeps the choice: automatic gaps.
+    assert from_graph.layout_parameters["edge_spacing"] is None
 
 
 def test_edge_spacing_on_a_one_edge_track_is_refused():

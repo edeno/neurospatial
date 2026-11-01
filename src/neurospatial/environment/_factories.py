@@ -600,7 +600,7 @@ def _linear_track(
     endpoints: Sequence[Sequence[float]] | None = None,
     node_positions: Sequence[Sequence[float]] | None = None,
     bin_size: float,
-    edge_spacing: float | Sequence[float] = 0.0,
+    edge_spacing: float | Sequence[float] | None = None,
     track_width: float | None = None,
     name: str = "",
     units: str | None = None,
@@ -677,7 +677,7 @@ def _maze(
     track_graph: nx.Graph | None = None,
     node_positions: dict[Any, Sequence[float]] | None = None,
     bin_size: float,
-    edge_spacing: float | Sequence[float] = 0.0,
+    edge_spacing: float | Sequence[float] | None = None,
     track_width: float | None = None,
     name: str = "",
     units: str | None = None,
@@ -760,7 +760,7 @@ def _from_graph(
     edge_order: list[tuple[Any, Any]],
     *,
     bin_size: float,
-    edge_spacing: float | Sequence[float] = 0.0,
+    edge_spacing: float | Sequence[float] | None = None,
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
@@ -772,8 +772,9 @@ def _from_graph(
     # A gap sits between consecutive edges, so a one-edge track has none.
     n_gaps = max(0, len(edge_order) - 1)
     scalar = isinstance(edge_spacing, (int, float, np.number))
-    if (scalar and n_gaps == 0 and edge_spacing != 0) or (
-        not scalar and np.size(cast("Any", edge_spacing)) != n_gaps
+    if edge_spacing is not None and (
+        (scalar and n_gaps == 0 and edge_spacing != 0)
+        or (not scalar and np.size(cast("Any", edge_spacing)) != n_gaps)
     ):
         raise ValueError(
             _format_error(

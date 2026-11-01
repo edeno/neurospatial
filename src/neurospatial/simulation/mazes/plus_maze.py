@@ -309,7 +309,6 @@ def _create_plus_maze_track_graph(
         },
         bin_size=bin_size,
         track_width=dims.corridor_width,
-        edge_spacing=0.0,
         name="plus_maze_1d",
         units="cm",
     )

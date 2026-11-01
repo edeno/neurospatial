@@ -354,7 +354,9 @@ def test_saved_track_refuses_corrupt_linearization_edge_ids(
     """Track edge enumeration is shared by forward and inverse projection."""
     env = built_environment
     points = np.array([[1.0, 0.0], [6.0, 1.0], [7.0, 0.0]])
-    np.testing.assert_array_equal(env.to_linear(points), [1.0, 7.0, 13.0])
+    # (7, 0) lies on edge (1, 3), which starts after the 15-unit gap that
+    # separates it from the end of edge (1, 2): 6 + 6 + 15 + 1.
+    np.testing.assert_array_equal(env.to_linear(points), [1.0, 7.0, 28.0])
 
     def corrupt(metadata, arrays):
         links = metadata["binning"]["linearization"]["graph"]["links"]

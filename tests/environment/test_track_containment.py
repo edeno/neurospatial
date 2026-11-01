@@ -16,9 +16,7 @@ def _track(width):
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
-    return Environment.from_graph(
-        graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=width
-    )
+    return Environment.from_graph(graph, [(0, 1)], bin_size=2.0, track_width=width)
 
 
 def _widthless(factory):
@@ -154,7 +152,7 @@ def test_a_mapped_one_dimensional_track_keeps_its_ends():
     graph.add_node(0, pos=(0.1,))
     graph.add_node(1, pos=(10.1,))
     graph.add_edge(0, 1, distance=10.0)
-    env = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0)
+    env = Environment.from_graph(graph, [(0, 1)], bin_size=1.0)
     ends = np.array([[0.1], [10.1]])
     np.testing.assert_array_equal(env.bin_at(ends), [0, env.n_bins - 1])
 

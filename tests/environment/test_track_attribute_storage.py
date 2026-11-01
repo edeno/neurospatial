@@ -23,9 +23,7 @@ def _track(where: str, key: str, value: object) -> Environment:
         graph.edges[0, 1][key] = value
     else:
         graph.graph[key] = value
-    return Environment.from_graph(
-        graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-    )
+    return Environment.from_graph(graph, edge_order=[(0, 1)], bin_size=2.0)
 
 
 @pytest.mark.parametrize(

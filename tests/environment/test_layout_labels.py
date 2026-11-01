@@ -35,9 +35,7 @@ def _track():
         graph.add_node(node, pos=pos)
     graph.add_edge(0, 1, distance=10.0)
     graph.add_edge(1, 2, distance=10.0)
-    return Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=1.0
-    )
+    return Environment.from_graph(graph, edge_order=[(0, 1), (1, 2)], bin_size=1.0)
 
 
 PARENTS = {

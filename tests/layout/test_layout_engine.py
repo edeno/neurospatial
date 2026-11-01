@@ -89,7 +89,6 @@ def _straight_track():
         "Graph",
         graph_definition=add_edge_distances(graph),
         edge_order=[(0, 1), (1, 2)],
-        edge_spacing=0.0,
         bin_size=0.5,
     )
 
@@ -242,7 +241,6 @@ MINIMAL_BUILD_PARAMS: dict[str, dict[str, Any]] = {
     "Graph": {  # Requires a pre-built graph with 'pos', 'distance', 'edge_id'
         "graph_definition": nx.Graph(),  # Will be populated in test
         "edge_order": [],  # Will be populated in test
-        "edge_spacing": 0.0,
         "bin_size": 0.5,
     },
     "MaskedGrid": {
@@ -853,7 +851,6 @@ def test_track_plot_honors_figsize_and_refuses_unknown_options(
         "Graph",
         graph_definition=simple_graph_for_layout,
         edge_order=list(simple_graph_for_layout.edges()),
-        edge_spacing=0.0,
         bin_size=0.5,
     )
     ax = layout.plot(figsize=(2, 3))

@@ -879,7 +879,7 @@ class TestBatchGridScoresNonRegularGrid:
             for u, v in graph.edges:
                 graph.edges[u, v]["distance"] = 5.0
             env = Environment.from_graph(
-                graph, edge_order=list(graph.edges), edge_spacing=0.0, bin_size=2.0
+                graph, edge_order=list(graph.edges), bin_size=2.0
             )
         else:
             grid = np.stack(np.meshgrid(*[np.linspace(0, 40, 41)] * 2), -1)

@@ -2301,9 +2301,9 @@ def test_nwb_writer_names_a_json_only_track_attribute(empty_nwb, key, value, rea
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
-    clean = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
+    clean = Environment.from_graph(graph, [(0, 1)], bin_size=2.0)
     graph.nodes[0][key] = value
-    track = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
+    track = Environment.from_graph(graph, [(0, 1)], bin_size=2.0)
 
     with pytest.raises(
         ValueError, match=f"track graph node 0 attribute '{key}'"

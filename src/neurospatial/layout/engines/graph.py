@@ -26,7 +26,7 @@ from neurospatial.layout.helpers.graph import (
     track_pairs,
 )
 from neurospatial.layout.mixins import _NeighborPairsMixin
-from neurospatial.layout.validation import validate_cell_size
+from neurospatial.layout.validation import resolve_edge_spacing, validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -74,7 +74,7 @@ class GraphLayout(_NeighborPairsMixin):
         *,
         graph_definition: nx.Graph,  # Original user-provided graph
         edge_order: list[tuple[Any, Any]],
-        edge_spacing: float | Sequence[float],
+        edge_spacing: float | Sequence[float] | None = None,
         bin_size: float,  # Linearized bin size
     ) -> None:
         """Build the graph-based (linearized track) layout.
@@ -92,10 +92,13 @@ class GraphLayout(_NeighborPairsMixin):
             An ordered sequence of edge tuples (node_id_1, node_id_2) from
             `graph_definition` that defines the ordering of edges in the
             linear space.
-        edge_spacing : Union[float, Sequence[float]]
+        edge_spacing : float, sequence of float, or None, default None
             Spacing (gap) to insert between consecutive edges in `edge_order`
             during linearization. If float, same gap for all. If sequence,
-            specifies each gap; length must be `len(edge_order) - 1`.
+            specifies each gap; length must be `len(edge_order) - 1`. None
+            puts no gap where an edge starts at the node where the previous
+            edge ends and a 15-unit gap where it does not, so every linear
+            position names one place.
         bin_size : float
             Largest bin length along the track, in the units of the node
             positions. Each segment of length ``L`` is split into
@@ -112,8 +115,9 @@ class GraphLayout(_NeighborPairsMixin):
             `edge_order` is not in the graph, an entry of `edge_order` is not
             an edge of the graph, a node lacks 'pos', an edge joins two nodes
             at the same position,
-            `edge_spacing` has the wrong length, or an edge's 'distance' is
-            not the distance between its nodes.
+            `edge_spacing` has the wrong length or leaves no gap between an
+            edge and a next edge that does not start where it ends, or an
+            edge's 'distance' is not the distance between its nodes.
 
         """
         self._begin_build()
@@ -122,6 +126,7 @@ class GraphLayout(_NeighborPairsMixin):
         if not edge_order:  # Empty edge_order means no path to linearize
             raise ValueError("edge_order must not be empty.")
         validate_cell_size(bin_size, scalar_only=True)
+        edge_spacing = resolve_edge_spacing(edge_spacing, edge_order)
 
         # track_linearization finds a point's nearest segment by its position in
         # ``graph.edges()`` but looks that segment up by its ``edge_id`` attribute,

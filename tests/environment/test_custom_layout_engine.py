@@ -246,7 +246,7 @@ def test_non_grid_engine_matches_builtin_engine(kind, params) -> None:
     np.testing.assert_array_equal(env.bin_at(points), builtin.bin_at(points))
 
 
-def _track(spacing: float | list[float]):
+def _track(spacing: float | list[float] | None):
     graph = nx.Graph()
     for node, position in enumerate(
         [(0.0, 0.0), (30.0, 0.0), (30.0, 20.0), (60.0, 0.0)]
@@ -263,7 +263,7 @@ def _track(spacing: float | list[float]):
     )
 
 
-@pytest.mark.parametrize("spacing", [0.0, 5.0, [0.0, 3.0]])
+@pytest.mark.parametrize("spacing", [None, 5.0, [0.0, 3.0]])
 def test_track_graph_follows_binning(spacing) -> None:
     layout = _track(spacing)
     env = Environment.from_layout(layout)

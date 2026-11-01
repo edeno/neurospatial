@@ -352,9 +352,7 @@ def _make_graph_env() -> Environment:
     graph.add_edge(0, 1, distance=10.0)
     graph.add_edge(1, 2, distance=10.0)
     graph.add_edge(2, 3, distance=10.0)
-    return Environment.from_graph(
-        graph, [(0, 1), (1, 2), (2, 3)], edge_spacing=0.0, bin_size=2.0
-    )
+    return Environment.from_graph(graph, [(0, 1), (1, 2), (2, 3)], bin_size=2.0)
 
 
 def _make_polygon_env() -> Environment:

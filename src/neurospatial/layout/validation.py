@@ -9,6 +9,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import is_finite_real
+from neurospatial.geometry import (
+    DEFAULT_TRACK_GAP,
+    disjoint_boundaries,
+    zero_gap_problem,
+)
 
 
 def validate_cell_size(
@@ -278,10 +283,69 @@ def validate_edge_spacing(
             why="Why: edge_spacing is the linear distance inserted between "
             "consecutive track edges: one finite, non-negative number for "
             "every gap, or one per gap.",
-            fix=f"pass one number, such as edge_spacing=0.0, or {n_gaps} "
-            "non-negative values",
+            fix=f"omit edge_spacing for automatic gaps, or pass one number, such "
+            f"as edge_spacing=15.0, or {n_gaps} non-negative values",
         )
     )
+
+
+def resolve_edge_spacing(
+    edge_spacing: float | Sequence[float] | None,
+    edge_order: Sequence[tuple[object, object]],
+) -> float | Sequence[float]:
+    """Return the gaps to insert between consecutive track edges.
+
+    Parameters
+    ----------
+    edge_spacing : float, sequence of float, or None
+        Gaps as given by the caller, or None for automatic gaps: none where
+        an edge starts at the node where the previous edge ends, and 15 track
+        units (``DEFAULT_TRACK_GAP``) where it does not. A fixed length keeps
+        every place at the same linear position whatever the bin size.
+    edge_order : sequence of (node, node)
+        Track edges in linear order; each runs from its first node to its
+        second.
+
+    Returns
+    -------
+    float or sequence of float
+        ``edge_spacing`` as given, or the automatic gaps as a tuple of
+        ``len(edge_order) - 1`` values.
+
+    Raises
+    ------
+    ValueError
+        If ``edge_spacing`` is not valid gaps (:func:`validate_edge_spacing`),
+        or leaves no gap between an edge and the next one that does not start
+        where it ends: the two places would share one linear position.
+
+    Examples
+    --------
+    >>> resolve_edge_spacing(None, [("a", "b"), ("b", "c"), ("b", "d")])
+    (0.0, 15.0)
+    """
+    n_gaps = max(len(edge_order) - 1, 0)
+    if edge_spacing is None:
+        gaps = [0.0] * n_gaps
+        for k in disjoint_boundaries(edge_order):
+            gaps[k] = DEFAULT_TRACK_GAP
+        return tuple(gaps)
+    validate_edge_spacing(edge_spacing, len(edge_order))
+    problem = zero_gap_problem(edge_order, edge_spacing)
+    if problem is not None:
+        raise ValueError(
+            _format_error(
+                f"{problem}.",
+                why="Why: positions along a linearized track are measured edge "
+                "after edge, so with no gap the end of one edge and the start of "
+                "the next get the same linear position, and converting it back "
+                "(linear_to_nd) can return only one of them.",
+                fix="omit edge_spacing to insert a gap wherever an edge does not "
+                "start where the previous one ends, or give those boundaries a "
+                "positive gap",
+            )
+        )
+    return edge_spacing
 
 
 def validate_uniform_edges(

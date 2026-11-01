@@ -408,8 +408,9 @@ class TestLinearization:
         """Test linear_to_nd with batch of positions."""
         assert graph_env.is_linearized_track
 
-        # Batch of linear positions
-        linear_positions = np.linspace(0, 5, 10)
+        # Batch of linear positions, within the first edge (later edges start
+        # after a gap, where no position lies on the track)
+        linear_positions = np.linspace(0, 1.9, 10)
 
         # Convert to ND
         nd_positions = graph_env.linear_to_nd(linear_positions)

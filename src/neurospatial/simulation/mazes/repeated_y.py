@@ -510,7 +510,6 @@ def _create_repeated_y_track_graph(
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
-        edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="repeated_y_maze_1d",

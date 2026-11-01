@@ -368,7 +368,6 @@ class TestPlotPopulationCoverage:
         env = Environment.from_graph(
             graph=graph,
             edge_order=[("A", "B")],
-            edge_spacing=0.0,
             bin_size=10.0,
         )
         n_bins = env.n_bins
