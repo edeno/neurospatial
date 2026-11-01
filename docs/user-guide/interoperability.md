@@ -478,35 +478,40 @@ likelihood instead of excluding the bin, and its uniform prior is flat over
 bins rather than over space. neurospatial gives a bin where any rate is missing
 zero probability, and its default prior is proportional to bin size.
 
-**Laps, trials, runs and region visits.** A list of `Lap`, `Trial`, `Run`,
-`RegionVisit` or `RegionTransition` records becomes an `IntervalSet` with one
-interval per record. Every field becomes a metadata column (`direction` for
-laps; `outcome` and the region names for trials and runs; `region_name`,
-`entry_observed` and `exit_observed` for visits), so you can select records the
-way you would in pynapple:
+**Trials, laps, runs and region visits.** Trials and any other
+[`Intervals`](trajectory-and-behavioral-analysis.md#intervals) become an
+`IntervalSet` with one interval per row, with `interval_id` and every field as
+metadata columns. A list of `Lap`, `Run`, `RegionVisit` or `RegionTransition`
+records becomes an `IntervalSet` with one interval per record and every field
+as a metadata column (`direction` for laps; `outcome` and the region names for
+runs; `region_name`, `entry_observed` and `exit_observed` for visits). Select
+rows the way you would in pynapple:
 
 ```python
-from neurospatial.behavior import detect_laps, labels_to_epochs
+from neurospatial.behavior import detect_laps, labels_to_epochs, segment_trials
+
+trials = segment_trials(position_bins, times, env, start_region="home", end_regions=["left", "right"])
+iset = to_pynapple(trials)
+left = iset[iset.end_region == "left"]  # interval_id stays with each trial
+spikes_on_left_trials = tsgroup.restrict(left)
 
 laps = to_pynapple(detect_laps(position_bins, times, env))
 clockwise = laps[laps.direction == "clockwise"]
-spikes_on_clockwise_laps = tsgroup.restrict(clockwise)
 
 conditions = to_pynapple(labels_to_epochs(times, task_phase))  # label column
 ```
 
-A record covers `[start_time, end_time)`. The exported interval ends one float
-below `end_time`, so `restrict` selects exactly the samples that
-`in_epochs(t, (start_time, end_time))` selects: a sample at a lap's end belongs
-to the next lap, not to both. A record without duration, such as a region
-visit seen in a single sample just before a tracking loss longer than
-`max_gap`, holds no time and cannot be a pynapple interval, so it is dropped
-without a warning; compare `len(records)` with the number of exported
-intervals to count them. Overlapping records, such as
+A row covers `[start, stop)`. The exported interval ends one float below the
+stop, so `restrict` selects exactly the samples that `in_epochs` selects with
+the same windows: a sample at a lap's end belongs to the next lap, not to both.
+A row without duration, such as a region visit seen in a single sample just
+before a tracking loss longer than `max_gap`, holds no time and cannot be a
+pynapple interval, so it is dropped with a warning. Overlapping rows, such as
 visits to overlapping regions, are refused: pynapple merges overlapping
 intervals and drops all their metadata, so export them in separate calls. An
 empty list is also refused, because it does not say what kind of record it
-would hold; skip the export when nothing was detected.
+would hold; an empty `Intervals` exports as an empty `IntervalSet` with its
+columns.
 
 **Region crossings.** pynapple time series carry no per-event labels, so
 crossings become a `TsGroup` with one `Tsd` per region and direction. Its

@@ -190,17 +190,6 @@ def test_laps_become_an_interval_set_with_metadata():
     [
         (
             [
-                Trial(0.0, 1.0, "home", "left", "reached"),
-                Trial(2.0, 3.0, "home", None, "timeout"),
-            ],
-            {
-                "start_region": ["home", "home"],
-                "end_region": ["left", None],
-                "outcome": ["reached", "timeout"],
-            },
-        ),
-        (
-            [
                 Run(0.5, 2.0, "home", "goal", "returned", np.array([1, 2])),
                 Run(2.0, 3.0, "home", "goal", "reached", np.array([3])),
             ],
@@ -238,21 +227,20 @@ def test_laps_become_an_interval_set_with_metadata():
             },
         ),
     ],
-    ids=["trials", "runs", "visits", "transitions"],
+    ids=["runs", "visits", "transitions"],
 )
 def test_records_keep_every_field_as_metadata(records, expected):
     import dataclasses
 
     iset = to_pynapple(records)
 
-    windows = [[r.start_time, getattr(r, "stop_time", None) or r.end_time] for r in records]
+    windows = [[r.start_time, r.end_time] for r in records]
     np.testing.assert_array_equal(_half_open(iset.values), windows)
     for name, column in expected.items():
         assert list(iset.metadata[name]) == column, name
     # Every scalar field is exported, so nothing about a record is lost.
     fields = {f.name for f in dataclasses.fields(records[0]) if f.init} - {
         "start_time",
-        "stop_time",
         "end_time",
         "bins",
     }
@@ -305,6 +293,44 @@ def test_records_without_duration_are_dropped_with_a_warning():
     assert list(iset.direction) == ["clockwise", "counter-clockwise"]
     with pytest.warns(UserWarning, match=r"dropped 1 of 1 Lap"):
         assert len(to_pynapple([laps[1]])) == 0
+
+
+@needs_pynapple
+@pytest.mark.pynapple
+def test_intervals_export_ids_and_fields():
+    from neurospatial import Intervals
+    from neurospatial._intervals import stop_to_pynapple_end
+
+    trials = Intervals(
+        [
+            Trial(2.0, 3.0, "home", None, "timeout"),
+            Trial(0.0, 1.0, "home", "left", "reached"),
+            Trial(4.0, 4.0, "home", None, "censored"),
+        ],
+        interval_ids=[7, 3, 9],
+    )
+    with pytest.warns(UserWarning, match=r"dropped 1 of 3 interval record\(s\)"):
+        iset = to_pynapple(trials)
+
+    timed = trials[trials.durations > 0]
+    np.testing.assert_array_equal(iset.start, timed.start)
+    np.testing.assert_array_equal(iset.end, stop_to_pynapple_end(timed.stop))
+    assert list(iset.metadata_columns) == ["interval_id", *trials.fields]
+    assert list(iset.interval_id) == [3, 7]
+    assert list(iset.end_region) == ["left", None]
+    assert list(iset.outcome) == ["reached", "timeout"]
+    _assert_same_membership(iset, timed.windows)
+
+    # An empty selection keeps its columns.
+    none = to_pynapple(trials[[]])
+    assert len(none) == 0
+    assert list(none.metadata_columns) == ["interval_id", *trials.fields]
+
+
+def test_trial_records_are_refused_with_the_fix():
+    trials = [Trial(0.0, 1.0, "home", "left", "reached")]
+    with pytest.raises(TypeError, match=r"neurospatial\.Intervals\(trials\)"):
+        to_pynapple(trials)
 
 
 def test_interval_record_refusals():
