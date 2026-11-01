@@ -936,6 +936,7 @@ class Intervals(Generic[R]):
         self._warn_if_no_sample_inside(t, hi > lo, "Intervals.sample_slices")
         return [slice(int(a), int(b)) for a, b in zip(lo, hi, strict=True)]
 
+    @reads_pynapple_samples
     def spike_counts(
         self,
         spike_times: SpikeTrainsLike,

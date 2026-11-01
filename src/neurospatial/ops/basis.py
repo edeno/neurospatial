@@ -113,6 +113,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice
 from neurospatial.geometry import MissingFaces, require_cartesian
 
@@ -141,6 +142,7 @@ __all__ = [
 ]
 
 
+@reads_pynapple_samples
 def basis_at_positions(
     env: Environment, basis: ArrayLike, positions: ArrayLike
 ) -> NDArray[np.float64]:
