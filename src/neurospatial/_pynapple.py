@@ -264,3 +264,33 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
                 )
             )
     return rows
+
+
+def intervals_from_interval_set(intervals: Any) -> Any:
+    """A pynapple ``IntervalSet`` as :class:`~neurospatial.Intervals`.
+
+    Metadata columns become fields; an ``interval_id`` metadata column (as
+    ``to_pynapple`` writes) becomes the ids. Each inclusive pynapple ``end``
+    becomes the next float above it, the half-open stop holding the same
+    timestamps.
+
+    Parameters
+    ----------
+    intervals : pynapple.IntervalSet
+
+    Returns
+    -------
+    Intervals of Interval
+    """
+    import pandas as pd
+
+    from neurospatial._interval_table import Intervals
+
+    rows = interval_rows(intervals)
+    table = pd.DataFrame({"start_time": rows[:, 0], "stop_time": rows[:, 1]})
+    metadata = getattr(intervals, "metadata", None)
+    if metadata is not None:
+        for column in metadata.columns:
+            table[str(column)] = metadata[column].to_numpy()
+    id_column = "interval_id" if "interval_id" in table.columns else None
+    return Intervals.from_dataframe(table, id_column=id_column)

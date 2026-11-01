@@ -13,87 +13,91 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _format_rows, _merge, times_in_intervals
-from neurospatial._pynapple import interval_rows, is_pynapple_type
+from neurospatial._pynapple import intervals_from_interval_set, is_pynapple_type
 from neurospatial._validation import validate_finite_scalar
-from neurospatial.events._core import _event_times, _validate_events_dataframe
+from neurospatial.events._core import _event_times
 
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._interval_table import Interval, Intervals
 
-def _interval_table(intervals: Any, start_column: str, stop_column: str) -> Any:
-    """Return ``intervals``, reading a pynapple ``IntervalSet`` as a table.
 
-    The set becomes a DataFrame with ``start_column``, ``stop_column`` and its
-    metadata columns. Each inclusive pynapple ``end`` becomes the next float
-    above it, the half-open stop holding the same timestamps.
-    """
-    if not is_pynapple_type(intervals, "IntervalSet"):
+def _as_intervals(intervals: Any, *, call: str) -> Intervals[Any]:
+    """``intervals`` as :class:`~neurospatial.Intervals`; a pynapple set converted."""
+    from neurospatial._interval_table import Intervals
+
+    if isinstance(intervals, Intervals):
         return intervals
-    import pandas as pd
-
-    rows = interval_rows(intervals)
-    table = pd.DataFrame({start_column: rows[:, 0], stop_column: rows[:, 1]})
-    metadata = getattr(intervals, "metadata", None)
-    if metadata is not None:
-        for column in metadata.columns:
-            if column not in table.columns:
-                table[column] = metadata[column].to_numpy()
-    return table
+    if is_pynapple_type(intervals, "IntervalSet"):
+        converted: Intervals[Any] = intervals_from_interval_set(intervals)
+        return converted
+    hint = (
+        "wrap the table with Intervals.from_dataframe(table) (columns start_time, "
+        "stop_time, then any fields)"
+        if hasattr(intervals, "columns")
+        else "pass an Intervals, for example from Intervals.from_dataframe or a "
+        "detector"
+    )
+    raise TypeError(
+        _format_error(
+            f"{call}: intervals must be an Intervals or a pynapple IntervalSet, "
+            f"got {type(intervals).__name__}.",
+            why="intervals are half-open [start, stop) rows with named fields and "
+            "stable ids, whatever their source.",
+            fix=hint + ".",
+        )
+    )
 
 
 def intervals_to_events(
-    intervals: pd.DataFrame | Any,
+    intervals: Intervals[Any] | Any,
     *,
     which: Literal["start", "stop", "both"] = "start",
-    start_column: str = "start_time",
-    stop_column: str = "stop_time",
-    preserve_columns: list[str] | None = None,
+    preserve_fields: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Convert intervals to point events (start and/or stop times).
+    Convert intervals to point events at their starts and/or stops.
 
-    This function extracts timestamps from interval boundaries, creating
-    a point event DataFrame suitable for peri-event analysis or other
-    event-based workflows.
+    For peri-event analysis aligned to trial starts, arrivals (trial stops)
+    or both.
 
     Parameters
     ----------
-    intervals : pd.DataFrame or IntervalSet
-        Intervals DataFrame with start and stop time columns, or a pynapple
-        ``IntervalSet`` (its metadata columns can be preserved). An
-        ``IntervalSet``'s inclusive ``end`` becomes the half-open stop, the
-        next float above ``end``.
+    intervals : Intervals or IntervalSet
+        Trials or other intervals, for example from ``detect_trials``,
+        ``read_trials`` or ``Intervals.from_dataframe``. A pynapple
+        ``IntervalSet`` is converted with its metadata as fields; its
+        inclusive ``end`` becomes the half-open stop, the next float above
+        ``end``.
     which : {"start", "stop", "both"}, default="start"
         Which interval boundaries to extract as events:
         - "start": Extract only start times
         - "stop": Extract only stop times
         - "both": Extract both, with a 'boundary' column indicating type
-    start_column : str, default="start_time"
-        Name of the start time column in intervals.
-    stop_column : str, default="stop_time"
-        Name of the stop time column in intervals.
-    preserve_columns : list[str], optional
-        Additional columns from intervals to preserve in output.
-        These columns are duplicated for both boundaries when which="both".
+    preserve_fields : list[str], optional
+        Fields of the intervals to copy onto their events (duplicated for
+        both boundaries when ``which="both"``).
 
     Returns
     -------
     pd.DataFrame
-        Events DataFrame with 'timestamp' column. When which="both",
-        includes a 'boundary' column with values "start" or "stop".
-        Output is sorted by timestamp with reset index; at equal times a stop
-        comes before a start, so abutting intervals read stop, start.
+        Events with a ``timestamp`` column, the ``interval_id`` each event
+        came from, a ``boundary`` column (``"start"`` or ``"stop"``) when
+        ``which="both"``, and the preserved fields. Sorted by timestamp with a
+        reset index; at equal times a stop comes before a start, so abutting
+        intervals read stop, start.
 
     Raises
     ------
     TypeError
-        If intervals is not a DataFrame.
+        If intervals is not an Intervals or IntervalSet (a DataFrame: wrap it
+        with ``Intervals.from_dataframe``).
     ValueError
-        If required columns are missing, not numeric, or hold NaN or inf, if
-        which is invalid, if preserve_columns contains non-existent columns,
-        or (``which="both"``) if an interval stops before it starts.
+        If which is invalid or preserve_fields names a field the intervals
+        do not have.
 
     See Also
     --------
@@ -102,40 +106,31 @@ def intervals_to_events(
 
     Examples
     --------
-    >>> import pandas as pd
+    >>> from neurospatial import Intervals
     >>> from neurospatial.events import intervals_to_events
 
     Extract trial start times for PSTH alignment:
 
-    >>> trials = pd.DataFrame(
-    ...     {
-    ...         "start_time": [0.0, 10.0, 20.0],
-    ...         "stop_time": [8.0, 18.0, 28.0],
-    ...         "trial_type": ["go", "nogo", "go"],
-    ...     }
+    >>> trials = Intervals.from_arrays(
+    ...     [0.0, 10.0, 20.0], [8.0, 18.0, 28.0], trial_type=["go", "nogo", "go"]
     ... )
     >>> trial_starts = intervals_to_events(
-    ...     trials, which="start", preserve_columns=["trial_type"]
+    ...     trials, which="start", preserve_fields=["trial_type"]
     ... )
-    >>> print(trial_starts["timestamp"].values)
-    [ 0. 10. 20.]
+    >>> trial_starts["timestamp"].tolist(), trial_starts["trial_type"].tolist()
+    ([0.0, 10.0, 20.0], ['go', 'nogo', 'go'])
 
     Extract both boundaries with labels:
 
     >>> events = intervals_to_events(trials, which="both")
-    >>> print(events[["timestamp", "boundary"]].head())
-       timestamp boundary
-    0        0.0    start
-    1        8.0     stop
-    2       10.0    start
-    3       18.0     stop
-    4       20.0    start
+    >>> events["boundary"].tolist()[:4]
+    ['start', 'stop', 'start', 'stop']
     """
     import pandas as pd
 
-    intervals = _interval_table(intervals, start_column, stop_column)
-    # Validate which parameter
-    valid_which = {"start", "stop", "both"}
+    call = "intervals_to_events"
+    rows = _as_intervals(intervals, call=call)
+    valid_which = ("start", "stop", "both")
     if which not in valid_which:
         msg = (
             f"'which' must be one of {valid_which}, got '{which}'.\n"
@@ -143,46 +138,30 @@ def intervals_to_events(
             "  Fix: Use which='start' to extract start times only."
         )
         raise ValueError(msg)
+    preserved = list(preserve_fields or [])
+    missing = [name for name in preserved if name not in rows.fields]
+    if missing:
+        msg = (
+            f"{call}: fields to preserve not found: {missing}.\n"
+            "  WHY: only fields of the intervals can be copied onto events.\n"
+            f"  Fix: choose from {list(rows.fields)}."
+        )
+        raise ValueError(msg)
 
-    used = [start_column] if which == "start" else [stop_column]
-    if which == "both":
-        used = [start_column, stop_column]
-    _validate_events_dataframe(
-        intervals,
-        timestamp_column=used[0],
-        required_columns=used[1:],
-        context="intervals_to_events",
-    )
+    used = ["start", "stop"] if which == "both" else [which]
 
-    # Validate preserve_columns
-    if preserve_columns:
-        missing_preserve = [
-            col for col in preserve_columns if col not in intervals.columns
-        ]
-        if missing_preserve:
-            msg = (
-                f"Columns to preserve not found: {missing_preserve}.\n"
-                "  WHY: Cannot preserve columns that don't exist in intervals.\n"
-                f"  Fix: Check column names. Available: {list(intervals.columns)}"
-            )
-            raise ValueError(msg)
-
-    times = {
-        col: _event_times(intervals, col, name="intervals", call="intervals_to_events")
-        for col in used
-    }
-    if which == "both":
-        _refuse_inverted(times[start_column], times[stop_column], "intervals_to_events")
-
-    def boundary_events(column: str) -> pd.DataFrame:
-        frame = pd.DataFrame({"timestamp": times[column]})
+    def boundary_events(boundary: str) -> pd.DataFrame:
+        times = rows.start if boundary == "start" else rows.stop
+        frame = pd.DataFrame(
+            {"timestamp": np.array(times), "interval_id": np.array(rows.interval_ids)}
+        )
         if which == "both":
-            frame["boundary"] = "start" if column == start_column else "stop"
-        for col in preserve_columns or []:
-            frame[col] = intervals[col].to_numpy()
+            frame["boundary"] = boundary
+        for name in preserved:
+            frame[name] = np.array(rows._field_array(name))
         return frame
 
-    result = pd.concat([boundary_events(col) for col in used], ignore_index=True)
+    result = pd.concat([boundary_events(b) for b in used], ignore_index=True)
     # A stop sorts before a start at the same time, so abutting intervals read
     # stop, start; equal times otherwise keep their input order.
     is_start = (
@@ -219,7 +198,7 @@ def events_to_intervals(
     *,
     match_by: str | None = None,
     max_duration: float | None = None,
-) -> pd.DataFrame:
+) -> Intervals[Interval]:
     """
     Pair start and stop events into intervals.
 
@@ -242,14 +221,11 @@ def events_to_intervals(
 
     Returns
     -------
-    pd.DataFrame
-        Intervals with columns:
-        - 'start_time': Start timestamp
-        - 'stop_time': Stop timestamp
-        - 'duration': Interval duration (stop - start)
-        - Additional columns from start_events are preserved
-
-        Output is sorted by start_time.
+    Intervals of Interval
+        One row per pair, ``[start, stop)``, sorted by start, ids ``0`` to
+        ``n - 1`` in that order. The other columns of ``start_events``
+        (including ``match_by``) become fields; ``durations`` gives
+        ``stop - start``.
 
     Raises
     ------
@@ -281,8 +257,8 @@ def events_to_intervals(
     >>> entries = pd.DataFrame({"timestamp": [10.0, 30.0, 50.0]})
     >>> exits = pd.DataFrame({"timestamp": [15.0, 35.0, 58.0]})
     >>> dwell = events_to_intervals(entries, exits)
-    >>> print(dwell["duration"].values)
-    [5. 5. 8.]
+    >>> dwell.durations.tolist()
+    [5.0, 5.0, 8.0]
 
     Match by trial ID (handles out-of-order events):
 
@@ -299,10 +275,8 @@ def events_to_intervals(
     ...     }
     ... )
     >>> intervals = events_to_intervals(starts, stops, match_by="trial_id")
-    >>> print(intervals[["start_time", "stop_time", "duration"]].values)
-    [[1. 4. 3.]
-     [2. 5. 3.]
-     [3. 6. 3.]]
+    >>> intervals.stop.tolist(), intervals.trial_id.tolist()
+    ([4.0, 5.0, 6.0], [1, 2, 3])
     """
     import pandas as pd
 
@@ -403,16 +377,16 @@ def events_to_intervals(
         result = pd.DataFrame({"start_time": merged_starts, "stop_time": merged_stops})
         extra = merged.drop(columns=["timestamp", "stop_time"])
 
-    # Preserve additional columns from start_events
+    from neurospatial._interval_table import Intervals
+
+    # Preserve additional columns from start_events as fields.
     for col in extra.columns:
         if col not in result.columns:
             result[col] = extra[col].to_numpy()
-    result.insert(2, "duration", result["stop_time"] - result["start_time"])
-
     if max_duration is not None:
-        result = result[result["duration"] <= max_duration]
-
-    return result.sort_values("start_time", kind="stable").reset_index(drop=True)
+        result = result[result["stop_time"] - result["start_time"] <= max_duration]
+    result = result.sort_values("start_time", kind="stable").reset_index(drop=True)
+    return Intervals.from_dataframe(result)
 
 
 def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
@@ -447,12 +421,10 @@ def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
 
 def filter_by_intervals(
     events: pd.DataFrame,
-    intervals: pd.DataFrame | Any,
+    intervals: Intervals[Any] | Any,
     *,
     include: bool = True,
     timestamp_column: str = "timestamp",
-    start_column: str = "start_time",
-    stop_column: str = "stop_time",
 ) -> pd.DataFrame:
     """
     Filter events to those within (or outside) intervals.
@@ -464,22 +436,17 @@ def filter_by_intervals(
     ----------
     events : pd.DataFrame
         Events DataFrame to filter. Must have timestamp column.
-    intervals : pd.DataFrame or IntervalSet
-        Intervals DataFrame with start and stop time columns, or a pynapple
-        ``IntervalSet``, whose inclusive ends keep an event at ``end`` inside,
-        as pynapple's ``restrict`` does. Pass the set itself rather than
-        ``iset.as_dataframe()``: that table's ``end`` column is inclusive, but
-        read as ``stop_column`` it would be treated as exclusive.
+    intervals : Intervals or IntervalSet
+        Trials or other intervals, for example from ``detect_trials`` or
+        ``Intervals.from_dataframe``. A pynapple ``IntervalSet`` is converted;
+        its inclusive ends keep an event at ``end`` inside, as pynapple's
+        ``restrict`` does.
     include : bool, default=True
         If True, keep events within intervals, half-open
         ``[start, stop)``: an event exactly at a stop is outside.
         If False, keep events outside intervals (exclusive filtering).
     timestamp_column : str, default="timestamp"
         Name of timestamp column in events.
-    start_column : str, default="start_time"
-        Name of start time column in intervals.
-    stop_column : str, default="stop_time"
-        Name of stop time column in intervals.
 
     Returns
     -------
@@ -489,11 +456,12 @@ def filter_by_intervals(
     Raises
     ------
     TypeError
-        If events or intervals is not a DataFrame.
+        If events is not a DataFrame, or intervals is not an Intervals or
+        IntervalSet (a DataFrame: wrap it with ``Intervals.from_dataframe``).
     ValueError
-        If a time column is missing, not numeric, or holds NaN or inf, or if
-        an interval stops before it starts. A missing event time is neither
-        inside nor outside an interval, so it is refused in both modes.
+        If the timestamp column is missing, not numeric, or holds NaN or inf.
+        A missing event time is neither inside nor outside an interval, so it
+        is refused in both modes.
 
     See Also
     --------
@@ -507,48 +475,32 @@ def filter_by_intervals(
     Examples
     --------
     >>> import pandas as pd
+    >>> from neurospatial import Intervals
     >>> from neurospatial.events import filter_by_intervals
 
     Keep only events during trial periods:
 
     >>> events = pd.DataFrame({"timestamp": [5.0, 15.0, 25.0, 35.0]})
-    >>> trials = pd.DataFrame(
-    ...     {
-    ...         "start_time": [0.0, 20.0],
-    ...         "stop_time": [10.0, 30.0],
-    ...     }
-    ... )
-    >>> trial_events = filter_by_intervals(events, trials, include=True)
-    >>> print(trial_events["timestamp"].values)
-    [ 5. 25.]
+    >>> trials = Intervals.from_arrays([0.0, 20.0], [10.0, 30.0])
+    >>> filter_by_intervals(events, trials)["timestamp"].tolist()
+    [5.0, 25.0]
 
     Remove events during artifact periods:
 
-    >>> artifacts = pd.DataFrame(
-    ...     {
-    ...         "start_time": [10.0],
-    ...         "stop_time": [20.0],
-    ...     }
-    ... )
-    >>> clean_events = filter_by_intervals(events, artifacts, include=False)
-    >>> print(clean_events["timestamp"].values)
-    [ 5. 25. 35.]
+    >>> artifacts = Intervals.from_arrays([10.0], [20.0])
+    >>> filter_by_intervals(events, artifacts, include=False)["timestamp"].tolist()
+    [5.0, 25.0, 35.0]
     """
-
     call = "filter_by_intervals"
-    intervals = _interval_table(intervals, start_column, stop_column)
+    rows = _as_intervals(intervals, call=call)
     timestamps = _event_times(events, timestamp_column, name="events", call=call)
-    starts = _event_times(intervals, start_column, name="intervals", call=call)
-    stops = _event_times(intervals, stop_column, name="intervals", call=call)
-    _refuse_inverted(starts, stops, call)
-
-    if not (stops > starts).any():
+    windows = rows.windows
+    if windows.shape[0] == 0:
         in_any_interval = np.zeros(timestamps.size, dtype=bool)
     else:
         # Zero-length rows hold no time; merging the rest makes membership one
         # binary search per event.
-        rows = np.column_stack([starts, stops])[stops > starts]
-        in_any_interval = times_in_intervals(_merge(rows), timestamps)
+        in_any_interval = times_in_intervals(_merge(windows), timestamps)
 
     mask = in_any_interval if include else ~in_any_interval
     return events[mask].copy()
