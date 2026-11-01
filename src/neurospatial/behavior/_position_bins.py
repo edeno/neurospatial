@@ -8,6 +8,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import (
+    EMPTY_RESULT,
+    start_allocation,
+    warn_excluded_intervals,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -145,3 +150,68 @@ def sample_bins(
         )
     bins = np.asarray(env.bin_at(p), dtype=np.int64)
     return t, bins
+
+
+def bridge_missing_positions(
+    times: NDArray[np.float64],
+    bins: NDArray[np.int64],
+    positions: ArrayLike,
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None,
+    result: str = EMPTY_RESULT,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.int64], NDArray[np.bool_] | None, NDArray[np.intp]
+]:
+    """Drop NaN position rows as deleted rows, warning when nothing is observed.
+
+    A NaN position is a missing sample (lost tracking), the same as a
+    deleted row: the detector runs on the rows left, so the samples around
+    it are joined when no more than ``max_gap`` apart. A position outside
+    the environment (bin -1 at a finite position) stays a row, observed but
+    not located, so it still ends observation.
+
+    The warning judges the whole recording with the missing samples bridged
+    (as ``env.occupancy`` does), so epochs on another clock, all-NaN
+    positions or gaps longer than ``max_gap`` warn even when no row is left.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        Validated timestamps in seconds.
+    bins : ndarray of int64, shape (n_samples,)
+        Each sample's bin (:func:`sample_bins`), -1 outside or missing.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        The positions the bins came from; NaN where missing.
+    max_gap, epochs, break_before
+        The detector's validated gates; ``epochs`` as resolved windows.
+    result : str
+        What an all-excluded recording leaves, for the warning.
+
+    Returns
+    -------
+    times : ndarray of float64, shape (n_kept,)
+    bins : ndarray of int64, shape (n_kept,)
+    break_before : ndarray of bool, shape (n_kept,), or None
+        A break declared at a dropped row moves to the next kept row.
+    kept : ndarray of intp, shape (n_kept,)
+        Indices of the kept rows in the original arrays.
+    """
+    samples = np.asarray(positions, dtype=np.float64)
+    tracked: NDArray[np.bool_] = (
+        np.asarray(np.isfinite(samples.reshape(times.size, -1)).all(axis=1))
+        if times.size
+        else np.zeros(0, dtype=bool)
+    )
+    gates = start_allocation(
+        times, bins, tracked, max_gap=max_gap, epochs=epochs, break_before=break_before
+    ).gates
+    warn_excluded_intervals(gates, result=result)
+    kept = np.flatnonzero(tracked)
+    if break_before is not None:
+        declared = np.cumsum(np.asarray(break_before, dtype=np.intp))
+        moved = np.zeros(kept.size, dtype=bool)
+        moved[1:] = declared[kept[1:]] > declared[kept[:-1]]
+        break_before = moved
+    return times[kept], bins[kept], break_before, kept

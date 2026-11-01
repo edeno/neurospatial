@@ -16,6 +16,8 @@ from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import (
     compute_path_efficiency,
     compute_speed,
+    detect_region_visits,
+    detect_trials,
     heading_from_velocity,
 )
 from neurospatial.behavior.decisions import (
@@ -103,6 +105,12 @@ def _vte_session(env, times, positions, **kwargs):
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
         env, t, p, region_name="mid_area", **kw
+    ),
+    "detect_trials": lambda env, t, p, **kw: detect_trials(
+        env, t, p, regions=["mid_area"], **kw
+    ),
+    "detect_region_visits": lambda env, t, p, **kw: detect_region_visits(
+        env, t, p, regions=["mid_area"], **kw
     ),
     "segment_by_velocity": lambda env, t, p, **kw: segment_by_velocity(
         t, p, min_speed=1.0, min_duration=0.0, **kw
@@ -251,3 +259,16 @@ def test_fewer_than_two_samples_is_silent():
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         segment_by_velocity(np.array([0.0]), np.array([[0.0, 0.0]]), min_speed=1.0)
+
+
+@pytest.mark.parametrize(
+    "name", ["detect_region_crossings", "detect_trials", "detect_region_visits"]
+)
+def test_region_detectors_warn_when_nothing_is_observed(coarse_track, name):
+    """Epochs on another clock or all-NaN positions leave no observation."""
+    env, times, positions = coarse_track
+    with pytest.warns(UserWarning, match=r"excluded ALL.*epochs") as record:
+        assert len(CALLS[name](env, times, positions, epochs=[(1e4, 6e4)])) == 0
+    assert record[0].filename == __file__
+    with pytest.warns(UserWarning, match="excluded ALL"):
+        assert len(CALLS[name](env, times, np.full_like(positions, np.nan))) == 0

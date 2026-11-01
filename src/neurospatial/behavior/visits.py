@@ -23,11 +23,10 @@ from neurospatial._intervals import (
     start_allocation,
     times_in_intervals,
     validate_max_gap,
-    warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial.behavior._position_bins import sample_bins
+from neurospatial.behavior._position_bins import bridge_missing_positions, sample_bins
 from neurospatial.behavior.segmentation import _checked_interval
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -186,13 +185,6 @@ def _observed_visits(
     from neurospatial._exceptions import _format_error
 
     clock, bins = sample_bins(env, times, positions, call=call)
-    samples = np.asarray(positions, dtype=np.float64)
-    tracked = (
-        np.isfinite(samples.reshape(clock.size, -1)).all(axis=1)
-        if clock.size
-        else np.zeros(0, dtype=bool)
-    )
-    kept = np.flatnonzero(tracked)
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(regions, str):
@@ -214,12 +206,15 @@ def _observed_visits(
     if len(set(names)) != len(names):
         msg = f"{call}(): regions must not contain duplicate names."
         raise ValueError(msg)
-    breaks = validate_break_before(break_before, clock.size, call=call)
-    if breaks is not None:
-        # A break declared at a dropped row applies to the next kept sample.
-        declared = np.cumsum(np.asarray(breaks, dtype=np.intp))
-        breaks = np.r_[False, declared[kept[1:]] > declared[kept[:-1]]]
-    clock, bins = clock[kept], bins[kept]
+    clock, bins, breaks, kept = bridge_missing_positions(
+        clock,
+        bins,
+        positions,
+        max_gap=max_gap,
+        epochs=windows,
+        break_before=validate_break_before(break_before, clock.size, call=call),
+        result=result,
+    )
 
     # Resolve every bin's exclusive label before looking at this trajectory:
     # unvisited overlap is still ambiguous geometry, not a name-order policy.
@@ -268,7 +263,6 @@ def _observed_visits(
     gates = start_allocation(
         clock, bins, None, max_gap=max_gap, epochs=windows, break_before=breaks
     ).gates
-    warn_excluded_intervals(gates, result=result)
     continuous = gates.mask
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
@@ -391,6 +385,13 @@ def detect_region_visits(
         If names are not strings.
     RegionNotFoundError
         If a selected region does not exist.
+
+    Warns
+    -----
+    UserWarning
+        If no sampling interval is observed (for example ``epochs`` on
+        another clock, all-NaN positions, or every gap longer than
+        ``max_gap``), naming the gate to fix, as for every detector.
 
     Notes
     -----
