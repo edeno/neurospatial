@@ -13,9 +13,11 @@ by its trial.
 - `align_continuous_to_events`, `peri_event_histogram`,
   `population_peri_event_histogram` and `align_spikes_to_events` take an
   `Intervals` as `event_times`, with `align="start"` (default) or
-  `align="stop"`. Each trial's window ends at its other bound, so the next
-  trial's data never enters it, while the side of the alignment point is
-  kept (the time at the well before a departure, or after an arrival).
+  `align="stop"`. Each trial's window ends at its other bound, so a short
+  trial never borrows data past it. The side of the alignment point is kept
+  as for any event and is not cut at the neighbouring trial: a window longer
+  than the time at the well reaches into the previous run (aligned at the
+  start) or the next one (aligned at the stop).
   Values are sampled by time, not by sample index, so dropped frames do not
   shift later values.
 - Continuous results label their rows by `interval_id` (`event_ids`) and

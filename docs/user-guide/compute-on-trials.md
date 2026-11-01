@@ -111,7 +111,10 @@ or `align="stop"` (arrival). Each trial's window ends at its other bound:
 aligned at departure, nothing after the trial's arrival is used, so a short
 trial never borrows the next trial's data. The side of the alignment point is
 used as for any event, so the second before departure (the animal at the
-well) stays in.
+well) stays in. That side is not cut at the neighbouring trial: if the animal
+stays at the well for less time than the window reaches, the window runs into
+the previous run (aligned at departure) or the next one (aligned at arrival).
+Here the rat rests at least 1 s, so the 1 s before departure stays at the well.
 
 ```python
 from neurospatial.events import align_continuous_to_events, peri_event_histogram
