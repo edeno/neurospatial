@@ -39,7 +39,9 @@ The velocity-based entries were captured again when velocity became the slope
 of the Gaussian-weighted local line fit that ``smooth_positions`` uses,
 instead of a Gaussian mean of centered secants: headings more than 20 samples
 from the ends of the recording moved by less than 3e-6 rad, those at the ends
-by up to 0.014 rad.
+by up to 0.014 rad. The ``compute_vte_session`` entry was captured again
+when the session result began to keep the input trials' ``interval_ids``;
+its trial results are unchanged.
 """
 
 import json

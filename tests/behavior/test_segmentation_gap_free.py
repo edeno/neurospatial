@@ -32,7 +32,9 @@ mean speed moved from 42.188 to 42.198 cm/s. They were captured again when
 velocity became the slope of a Gaussian-weighted local line fit: the mean
 speed moved to 42.219 cm/s, and the minimum speed, during a true pause, from
 0.063 to exactly 0 cm/s because movement before and after the pause no longer
-leaks into it.
+leaks into it. ``compute_vte_session`` was captured again when the session
+result began to keep the input trials' ``interval_ids``; its trial results
+are unchanged.
 """
 
 import json

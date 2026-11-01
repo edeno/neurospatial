@@ -295,6 +295,10 @@ class VTESessionResult(ResultMixin):
     ----------
     trial_results : tuple of VTETrialResult
         Per-trial VTE metrics with z-scores computed, one per input trial.
+    interval_ids : NDArray[np.int64], shape (n_trials,)
+        The input trials' ``interval_ids``, one per entry of
+        ``trial_results``; unique and non-negative. Default (None): ``0`` to
+        ``n_trials - 1``, the ids of trials built from a list.
     mean_head_sweep : float
         Session mean of head sweep magnitude (the z-scoring baseline), over
         trials with an observed head sweep. NaN when no trial has one.
@@ -345,9 +349,12 @@ class VTESessionResult(ResultMixin):
     """
 
     trial_results: tuple[VTETrialResult, ...]
+    interval_ids: NDArray[np.int64] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        """Store the trial results as a tuple."""
+        """Store the trial results as a tuple and the ids read-only."""
+        from neurospatial._interval_table import _checked_ids
+
         trial_results = tuple(
             validate_instance(
                 trial,
@@ -359,6 +366,14 @@ class VTESessionResult(ResultMixin):
             for trial in self.trial_results
         )
         object.__setattr__(self, "trial_results", trial_results)
+        given: ArrayLike | None = self.interval_ids
+        ids = _checked_ids(
+            np.arange(len(trial_results)) if given is None else given,
+            len(trial_results),
+            owner="VTESessionResult",
+        )
+        ids.setflags(write=False)
+        object.__setattr__(self, "interval_ids", ids)
 
     def _observed(self, name: str) -> NDArray[np.float64]:
         """Finite values of one per-trial metric."""
@@ -456,19 +471,19 @@ class VTESessionResult(ResultMixin):
         Returns
         -------
         pandas.DataFrame
-            Indexed by ``trial`` (the position of the trial in the input
-            list), with the columns of :meth:`VTETrialResult.summary`:
-            window bounds and ``status`` first, then the raw metrics,
-            z-scores and VTE index, and the ``is_vte`` verdict last.
+            Indexed by ``interval_id`` (the input trials' ids), with the
+            columns of :meth:`VTETrialResult.summary`: window bounds and
+            ``status`` first, then the raw metrics, z-scores and VTE index,
+            and the ``is_vte`` verdict last. Join it to the trials with
+            ``trials.intervals_table().join(result.trials_table())``.
         """
         import pandas as pd
 
-        table = pd.DataFrame(
+        return pd.DataFrame(
             [trial.summary() for trial in self.trial_results],
             columns=list(_TRIAL_COLUMNS),
+            index=pd.Index(np.array(self.interval_ids), name="interval_id"),
         )
-        table.index.name = "trial"
-        return table
 
     def __str__(self) -> str:
         n_classified = self.n_classified
@@ -1517,7 +1532,9 @@ def compute_vte_session(
                 is_vte=classify_vte(vte_idx, threshold=vte_threshold),
             )
         )
-    return VTESessionResult(trial_results=tuple(trial_results))
+    return VTESessionResult(
+        trial_results=tuple(trial_results), interval_ids=trials.interval_ids
+    )
 
 
 def _unscored_trial(
