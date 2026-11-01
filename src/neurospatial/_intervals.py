@@ -1128,7 +1128,8 @@ def validate_speed_gate(
                 f"min_speed={min_speed} was given without speed.",
                 why="the speed gate compares each interval's start-sample "
                 "speed with min_speed.",
-                fix="pass speed= (one value per sample), or min_speed=None.",
+                fix="pass speed= (one value per sample, for example "
+                "compute_speed(times, positions)), or min_speed=None.",
             )
         )
     if min_speed is None:
