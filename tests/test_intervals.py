@@ -733,3 +733,30 @@ def test_trial_consumers_say_how_to_make_intervals() -> None:
         TypeError, match=r"(?s)got list.*wrap records with neurospatial\.Intervals"
     ):
         time_to_goal(times, [Interval(0.0, 1.0, {"outcome": "reached"})])
+
+
+@pytest.mark.parametrize(
+    "records", [[], [Interval(0.0, 1.0, {"a": 1})]], ids=["no rows", "rows"]
+)
+def test_repeated_field_names_are_refused_with_or_without_rows(records) -> None:
+    with pytest.raises(
+        ValueError, match=r"field names must be unique; repeated: \['a'\]"
+    ):
+        Intervals(records, record_type=Interval, fields=("a", "b", "a"))
+    with pytest.raises(
+        ValueError, match=r"field names must be unique; repeated: \['a'\]"
+    ):
+        Interval(0.0, 1.0, [("a", 1), ("a", 2)])
+
+
+def test_fields_of_an_empty_container_are_the_names_given() -> None:
+    empty = Intervals(record_type=Interval, fields=("goal", "outcome"))
+
+    assert empty.fields == ("goal", "outcome")
+    assert empty.intervals_table().columns.tolist() == [
+        "start_time",
+        "stop_time",
+        "goal",
+        "outcome",
+    ]
+    assert pickle.loads(pickle.dumps(empty)).fields == ("goal", "outcome")

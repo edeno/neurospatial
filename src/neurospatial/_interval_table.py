@@ -149,11 +149,7 @@ class Interval:
             name, value = pair
             _check_field_name(name, owner="Interval", reserved=_MEMBERS)
             items.append((name, _checked_value("Interval", name, value)))
-        names = [name for name, _ in items]
-        repeated = sorted({name for name in names if names.count(name) > 1})
-        if repeated:
-            msg = f"Interval field names must be unique; repeated: {repeated}."
-            raise ValueError(msg)
+        _refuse_repeated_names([name for name, _ in items], owner="Interval")
         object.__setattr__(self, "items", tuple(items))
 
     @property
@@ -171,6 +167,14 @@ class Interval:
         names = [key for key, _ in object.__getattribute__(self, "items")]
         msg = f"Interval has no field {name!r}; its fields are {names}."
         raise AttributeError(msg)
+
+
+def _refuse_repeated_names(names: Sequence[str], *, owner: str) -> None:
+    """Refuse field names that repeat, naming them."""
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        msg = f"{owner} field names must be unique; repeated: {repeated}."
+        raise ValueError(msg)
 
 
 def _check_field_name(name: object, *, owner: str, reserved: Iterable[str]) -> None:
@@ -348,8 +352,8 @@ class Intervals(Generic[R]):
         The record class. Inferred from the records; required when there are
         none.
     fields : sequence of str, optional
-        The field names of :class:`Interval` records. Inferred from the first
-        record; required for no :class:`Interval` records. Detector records
+        The field names of :class:`Interval` records, each once. Inferred
+        from the first record; required for no :class:`Interval` records. Detector records
         take their fields from the class.
     interval_ids : array-like of int, shape (n,), optional
         Stable id of each record, in input order: unique and ``>= 0``.
@@ -485,7 +489,6 @@ class Intervals(Generic[R]):
         self._init_parts(
             records=tuple(rows[i] for i in order),
             record_type=kind,
-            fields=names,
             dtypes={name: column.dtype for name, column in columns.items()},
             ids=ids[order],
             start=start[order],
@@ -498,7 +501,6 @@ class Intervals(Generic[R]):
         *,
         records: tuple[R, ...],
         record_type: type[R],
-        fields: tuple[str, ...],
         dtypes: dict[str, np.dtype],
         ids: NDArray[np.int64],
         start: NDArray[np.float64],
@@ -507,7 +509,6 @@ class Intervals(Generic[R]):
     ) -> None:
         self._records = records
         self._record_type = record_type
-        self._fields = fields
         self._dtypes = dtypes
         self._ids = marked_read_only(np.asarray(ids, dtype=np.int64))
         self._start = marked_read_only(np.asarray(start, dtype=np.float64))
@@ -521,7 +522,6 @@ class Intervals(Generic[R]):
         new._init_parts(
             records=tuple(self._records[i] for i in positions),
             record_type=self._record_type,
-            fields=self._fields,
             dtypes=self._dtypes,
             ids=self._ids[positions],
             start=self._start[positions],
@@ -551,7 +551,7 @@ class Intervals(Generic[R]):
     @property
     def fields(self) -> tuple[str, ...]:
         """Field names, in schema order."""
-        return self._fields
+        return tuple(self._dtypes)
 
     @property
     def record_type(self) -> type[R]:
@@ -614,9 +614,9 @@ class Intervals(Generic[R]):
         """One field as a read-only array, shape ``(n,)``, in row order."""
         if name.startswith("_"):
             raise AttributeError(name)
-        if name not in self._fields:
+        if name not in self._dtypes:
             msg = (
-                f"Intervals has no field {name!r}; its fields are {list(self._fields)}."
+                f"Intervals has no field {name!r}; its fields are {list(self._dtypes)}."
             )
             raise AttributeError(msg)
         column = self._columns.get(name)
@@ -1082,7 +1082,7 @@ class Intervals(Generic[R]):
             "start_time": np.array(self._start),
             "stop_time": np.array(self._stop),
         }
-        for name in self._fields:
+        for name in self._dtypes:
             column = self._field_array(name)
             data[name] = pd.Series(np.array(column), dtype=column.dtype)
         table = pd.DataFrame(data)
@@ -1148,7 +1148,7 @@ class Intervals(Generic[R]):
         >>> rescored[0].success
         False
         """
-        data = {name: self._field_array(name) for name in self._fields}
+        data = {name: self._field_array(name) for name in self._dtypes}
         for name, values in columns.items():
             _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
             if isinstance(values, str):
@@ -1360,7 +1360,7 @@ class Intervals(Generic[R]):
         name = f"Intervals[{self._record_type.__name__}]"
         n = len(self)
         span = f" in [{self._start.min():g}, {self._stop.max():g}) s" if n else ""
-        fields = ", ".join(self._fields) if self._fields else "none"
+        fields = ", ".join(self._dtypes) if self._dtypes else "none"
         return f"{name}: {n} interval{'s' if n != 1 else ''}{span}; fields: {fields}"
 
 
@@ -1522,6 +1522,7 @@ def _schema(
         names = tuple(name for name, _ in rows[0].items)
     else:
         names = tuple(fields)
+        _refuse_repeated_names(names, owner="Intervals")
     expected = set(names)
     for i, row in enumerate(rows):
         got = [name for name, _ in row.items]
@@ -1591,7 +1592,6 @@ def _from_columns(
     intervals._init_parts(
         records=rows,
         record_type=Interval,
-        fields=names,
         # Each column keeps its dtype, for integer fields and empty selections.
         dtypes={
             name: array.dtype if array.dtype.kind in "biuf" else np.dtype(object)
