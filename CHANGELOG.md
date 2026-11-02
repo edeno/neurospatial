@@ -100,6 +100,9 @@ by its trial.
 - A spike exactly at the event is counted in the bin starting at 0: PSTH
   bin edges on the `bin_size` grid are exact grid values (with a window
   such as `(-0.3, 0.3)` the zero edge was 5.6e-17).
+- fastplotlib figures no longer show numpy division warnings from pygfx's
+  axis setup, and playback no longer warns of a slowdown when every frame
+  fits exactly in `max_playback_fps`.
 
 ### One row per trial
 
