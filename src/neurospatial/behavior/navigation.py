@@ -119,6 +119,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._interval_table import _missing_as_none
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     break_sample_times,
@@ -603,15 +604,6 @@ def _harmonic_progress(
     return u
 
 
-def _is_missing(value: object) -> bool:
-    """Whether a per-interval value is a pandas missing marker (NaN, pd.NA)."""
-    if value is None:
-        return True
-    if isinstance(value, float) and np.isnan(value):
-        return True
-    return type(value).__name__ in {"NAType", "NaTType"}
-
-
 def _as_point(target: object) -> NDArray[np.float64] | None:
     """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
     if isinstance(target, str) or target is None:
@@ -687,7 +679,7 @@ def _rows_and_targets(
     values = list(intervals._per_row(target, name=name)) if by_id else list(target)
     # A missing entry in a pandas column (NaN, pd.NA; pandas 3 stores a
     # missing string as NaN) is an unknown target, like None.
-    values = [None if _is_missing(value) else value for value in values]
+    values = [_missing_as_none(value) for value in values]
     if len(values) != len(intervals):
         msg = (
             f"{call}: {name}= has {len(values)} entries; give one per interval "
