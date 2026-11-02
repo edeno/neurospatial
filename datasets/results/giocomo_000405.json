@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "639f08121bd9c6eb10c6ff42ef6f598f36ed5145"
+    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.343,
+      "seconds": 0.265,
       "peak_mb": 8.1
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
+      "seconds": 0.021,
       "peak_mb": 8.2
     },
     "rates.spatial": {
@@ -145,7 +145,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.047,
+      "seconds": 0.036,
       "peak_mb": 8.2
     },
     "behavior.turn_sequence": {
@@ -172,7 +172,7 @@
       "note": "position: not found, but the loader found it; head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.203,
+      "seconds": 0.159,
       "peak_mb": 0.2
     },
     "imaging.rates": {
@@ -194,7 +194,7 @@
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.071,
+      "seconds": 0.043,
       "peak_mb": 9.3
     }
   },

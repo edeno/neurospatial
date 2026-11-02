@@ -41,7 +41,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "639f08121bd9c6eb10c6ff42ef6f598f36ed5145"
+    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
   },
   "load_warnings": [],
   "operations": {
@@ -55,7 +55,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.722,
+      "seconds": 1.552,
       "peak_mb": 30.0
     },
     "env.occupancy": {
@@ -69,7 +69,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.01,
       "peak_mb": 3.8
     },
     "rates.spatial": {
@@ -83,7 +83,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.159,
+      "seconds": 0.918,
       "peak_mb": 53.9
     },
     "rates.spatial_information": {
@@ -96,7 +96,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.6
     },
     "rates.information_vs_shifts": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.133,
+      "seconds": 0.087,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.086,
+      "seconds": 0.066,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -136,7 +136,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.1,
+      "seconds": 0.058,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -145,7 +145,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.005,
       "peak_mb": 0.6
     },
     "hd.tuning": {
@@ -164,7 +164,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.146,
+      "seconds": 0.091,
       "peak_mb": 31.0
     },
     "io.nwb_roundtrip": {
@@ -175,7 +175,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.646,
+      "seconds": 4.186,
       "peak_mb": 12.1
     },
     "env.from_graph": {
@@ -193,7 +193,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 1.704,
+      "seconds": 0.987,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -205,7 +205,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.05,
+      "seconds": 0.044,
       "peak_mb": 3.8
     },
     "behavior.turn_sequence": {
@@ -223,7 +223,7 @@
       "note": "needs events['ripples'] and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.199,
+      "seconds": 0.169,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -236,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.615,
+      "seconds": 0.358,
       "peak_mb": 2.7
     },
     "imaging.rates": {

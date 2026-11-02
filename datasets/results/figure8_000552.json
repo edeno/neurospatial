@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "639f08121bd9c6eb10c6ff42ef6f598f36ed5145"
+    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
   },
   "load_warnings": [],
   "operations": {
@@ -93,7 +93,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.296,
+      "seconds": 0.227,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -106,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.9
     },
     "rates.information_vs_shifts": {
@@ -129,7 +129,7 @@
           "count": 4
         }
       ],
-      "seconds": 2.318,
+      "seconds": 1.582,
       "peak_mb": 181.4
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.002,
       "peak_mb": 0.9
     },
     "cells.grid_score": {
@@ -193,7 +193,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.377,
+      "seconds": 0.262,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -204,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.284,
+      "seconds": 2.476,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -225,7 +225,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.019,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -234,7 +234,7 @@
       "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.008,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -266,7 +266,7 @@
           "count": 1
         }
       ],
-      "seconds": 23.892,
+      "seconds": 16.272,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
@@ -279,7 +279,7 @@
       "note": "position: raised ValueError",
       "gap": null,
       "warnings": [],
-      "seconds": 2.015,
+      "seconds": 1.295,
       "peak_mb": 137.3
     },
     "imaging.rates": {
