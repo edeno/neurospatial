@@ -30,7 +30,8 @@ Prerequisite: phase 1 merged (harness, registry, driver exist).
   - `behavior.turn_sequence` (requires `positions`, graph env): `graph_turn_sequence(graph_env, times, positions)`; summary: n turns, fraction left.
   - `replay.compare_methods` (requires `spike_times`, `events["ripples"]`): fit rates on running epochs (`compute_spatial_rates(..., epochs=train_epochs, min_speed=...)`), `decode_intervals(env, spike_times, ripples, rates, dt=replay_dt)`, then `compare_replay_methods(env, events, replay_methods=[DAVIDSON_2009, GROSMARK_2016], spike_counts=counts, spike_times=spike_times, encoding_models=rates, dt=replay_dt, rng=0)` and `detection_rates(table)`; summary: per-method detection rate with CI. The bat ripples (`RPL_probe*`) are optional — include only if the file is under ~100 MB for the chosen probe.
   - The phase-1 ops already cover 3-D rates, information, decoding; the 3-D run is the test of whether they work in 3-D. Grid and border scores on 3-D maps: let them run; an error or meaningless value is the finding.
-- **Run and log.** Run the driver on all five datasets so far; commit results; give every non-`ok` cell a gap entry. Record runtime and peak memory for the 3-D decode and the replay comparison in the gap log if they're slow (> 60 s) or large (> 4 GB).
+- **Dataset hazards** ([contract](shared-contracts.md#loader-module), [design](designs.md#warning-calibration)). `yartsev_bat_demo`: `samples_outside_r_lim` (keep the out-of-bounds samples the loader flags); the generic `length_unit_off_by_100` covers cm-vs-m. `rosenberg_labyrinth`: whatever the repo reader converts (e.g. pixel → maze units). `figure8_000552`: any position/unit conversion the loader records. Add `"behavior.segment_by_velocity"` and `"behavior.laps"` to `PROBE_OPS` (speed thresholds are where a unit error shows up).
+- **Run and log.** Run the driver on all five datasets so far; commit results; give every non-`ok` cell a gap entry and every new `results/warnings.md` row a verdict. Record runtime and peak memory for the 3-D decode and the replay comparison in the gap log if they're slow (> 60 s) or large (> 4 GB).
 - **README.** Add the three datasets to `datasets/README.md`'s dataset list with their download sizes.
 
 ## Deliberately not in this phase
@@ -50,7 +51,7 @@ Prerequisite: phase 1 merged (harness, registry, driver exist).
 | `test_operations_tracks.py::test_ops_na_without_graph_or_ripples` | ops return `n/a` with an explanatory note when `geometry["graph"]` or `events["ripples"]` is absent |
 | `datasets/tests/test_record.py::test_three_dimensional_recording_validates` | a simulated 3-D recording passes validation and `n_dims` measures 3 |
 | `uv run ruff check datasets && uv run ruff format --check datasets` | clean |
-| Real run (manual, network) | the three loaders validate; expectations results committed; every non-`ok` cell has a gap id |
+| Real run (manual, network) | the three loaders validate; expectations results committed; every non-`ok` cell has a gap id; no `unreviewed` row in `results/warnings.md` |
 
 ## Fixtures
 
