@@ -71,7 +71,6 @@ Add a non-default dependency group in `pyproject.toml`:
 
 ```toml
 datasets = [
-    "dandi>=0.69",        # DANDI asset metadata (sha256) and download URLs
     "fsspec[http]>=2024.6", # byte-range reads of zip members (bat archive)
     "mat-io>=0.5",        # MATLAB `table` objects (bat spike tables) -> pandas
     "opexebo>=0.7",       # reference grid score

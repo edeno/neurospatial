@@ -1,6 +1,6 @@
 # Real-data survey Implementation Plan
 
-**Status:** Not started.
+**Status:** In progress — phase 1 (branch `feat/real-data-survey-harness`).
 
 Build a tracked `datasets/` folder that loads public spatial-neuroscience
 recordings into plain arrays, runs a fixed set of neurospatial operations on

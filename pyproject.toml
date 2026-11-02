@@ -252,6 +252,11 @@ ignore = [
 "scripts/*" = ["T201"]
 "benchmarks/*" = ["T201"]
 "data/*" = ["T201"]
+"datasets/**/*.py" = [
+    "T201",    # loader scripts and the driver print summaries
+    "RUF001",  # tables use the en dash for n/a and the multiplication sign
+]
+"datasets/tests/*.py" = ["ARG"]  # pytest fixtures are used by name, not by value
 "examples/*.py" = [
     "E402",  # Module level import not at top of file (common in notebook cells)
     "N803",  # Allow uppercase argument names (mathematical notation in examples)
@@ -486,6 +491,13 @@ notebooks = [
     "nbconvert>=7.16.6",
     "ipykernel>=6.0.0",
     "jupytext>=1.16.0",
+]
+# Real-data survey harness (datasets/); run with
+# `uv run --group datasets --extra nwb --extra pynapple python datasets/run.py`.
+datasets = [
+    "fsspec[http]>=2024.6",  # byte-range reads of zip members
+    "mat-io>=0.5; python_version >= '3.11'",  # MATLAB `table` objects -> pandas
+    "opexebo>=0.7",  # reference grid score
 ]
 
 [tool.codespell]

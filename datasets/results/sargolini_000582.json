@@ -1,0 +1,298 @@
+{
+  "dataset": "sargolini_000582",
+  "session": "sub-10884_ses-03080402",
+  "source": "https://dandiarchive.org/dandiset/000582/0.251111.2151 sub-10884/sub-10884_ses-03080402_behavior+ecephys.nwb",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",
+    "headings: none; the file has one LED (SpatialSeriesLED1)"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 6, got 6"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=49.0, high=51.0), got 50.000000000045475"
+    },
+    {
+      "key": "position_min",
+      "passed": true,
+      "detail": "expected Range(low=(-55.0, -55.0), high=(0.0, 0.0)), got array([-49.0199646, -50.       ])"
+    },
+    {
+      "key": "position_max",
+      "passed": true,
+      "detail": "expected Range(low=(0.0, 0.0), high=(55.0, 55.0)), got array([49.0199646, 50.       ])"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "db0cce880f8301ed5ea92c0be6ad34b96dac9b8e"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1399,
+        "n_dims": 2,
+        "max_extent": 100.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.011,
+      "peak_mb": 30.0
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 599.96,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.27999999999974534,
+        "max_s": 9.620000000000346
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.007,
+      "peak_mb": 3.8
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 8.922085900468817,
+        "median_mean_hz": 0.931964316009954
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.872,
+      "peak_mb": 54.1
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 1.0082116647675357,
+        "bits_per_spike_max": 1.6664030367388312,
+        "bits_per_spike_n_finite": 6
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.6
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 4,
+        "n_units": 6
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.046,
+      "peak_mb": 80.4
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "median": 0.2922088711921358,
+        "max": 0.9639771872772648,
+        "n_finite": 6
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.05,
+      "peak_mb": 8.5
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.004,
+      "peak_mb": 0.6
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 65.96194077712559,
+        "chance_median_error": 55.281100267422524,
+        "units": "cm",
+        "n_time_bins": 1199
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.095,
+      "peak_mb": 31.0
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1399
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 3.623,
+      "peak_mb": 12.1
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1399,
+        "n_dims": 2,
+        "max_extent": 100.0
+      },
+      "hazard_summary": {
+        "n_bins": 1399,
+        "n_dims": 2,
+        "max_extent": 100.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 599.96,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.27999999999974534,
+        "max_s": 9.620000000000346
+      },
+      "hazard_summary": {
+        "total_s": 599.98,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.27999999999974534,
+        "max_s": 9.620000000000346
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 8.922085900468817,
+        "median_mean_hz": 0.931964316009954
+      },
+      "hazard_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 8.922085900468808,
+        "median_mean_hz": 0.9319466872622875
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "All 6 units are silent from 0.0 s to 362.7 s (363 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n4011/4013 spike_times (100%) across all neurons fell outside the position time window [0, 599.98]; spike_times.min()=362.729 spike_times.max()=599902. The spike times span 599540 and reach 599902, about 1000 times the 599.98 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 8.922085900468817,
+        "median_mean_hz": 0.931964316009954
+      },
+      "hazard_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.980399291953292, 1.0] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.02 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1399,
+        "n_dims": 2,
+        "max_extent": 100.0
+      },
+      "hazard_summary": {
+        "n_bins": 4,
+        "n_dims": 2,
+        "max_extent": 2.5
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 599.96,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.27999999999974534,
+        "max_s": 9.620000000000346
+      },
+      "hazard_summary": {
+        "total_s": 599.96,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 151.67000000000007,
+        "max_s": 163.2199999999998
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check env.units and the scale of your recording.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 8.922085900468817,
+        "median_mean_hz": 0.931964316009954
+      },
+      "hazard_summary": {
+        "n_units": 6,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 0.9194317116302448,
+        "median_mean_hz": 0.9058958261167503
+      }
+    }
+  ]
+}
