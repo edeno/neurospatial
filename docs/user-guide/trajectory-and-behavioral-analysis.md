@@ -1559,26 +1559,28 @@ assert np.isnan(progress[15:30]).all()  # the second trial's goal is unknown
 # The same runs measured toward the left well: the right arm is the wrong arm.
 toward_left = path_progress(track, times, positions, start="start", goal="well_left")
 print(np.round(toward_left[25:30], 2))  # the second trial, in the right arm
+# The right arm stays at the junction's value: 90 cm of stem between the 5 cm
+# start disc and the junction, out of a 130 cm route to the left well's disc.
+assert np.allclose(toward_left[25:30], 90 / 130, atol=0.01)
 
-# The same runs in the 2-D maze, with 5 cm start and goal discs (see below).
-progress_2d = path_progress(
-    maze.env_2d, times, positions, start="start", goal="well_left", point_radius=5.0
-)
+# The same runs in the 2-D maze, whose start and goal are 5 cm discs.
+progress_2d = path_progress(maze.env_2d, times, positions, start="start", goal="well_left")
 print(np.round(progress_2d[:15], 2))
 ```
 
-Along the stem progress rises with the fraction of the 140 cm route covered
-(95 cm of stem, then 45 cm of arm), and it reaches 1 in the left well.
+Along the stem progress rises with the fraction of the route covered, from the
+start disc to the left well's disc, and it reaches 1 in the left well.
 `remaining` counts down the same route in centimetres. In the second trial,
-measured toward the left well, the right arm stays at the junction's value,
-95 / 140 = 0.68: the animal made no progress toward the left well there.
+measured toward the left well, the right arm stays at the junction's value
+(the assert above: 90 / 130 of the route): the animal made no progress toward
+the left well there.
 
 **Progress in 2-D and 3-D.** The same function works in open fields, 2-D mazes
 and 3-D environments, using the environment's connectivity and walls; no
 threshold is needed. There, a start or goal of a single point gives values that
 change with bin size, so give point regions and points a physical size with
 `point_radius` (for example the radius of the reward well), or use polygon
-regions, as in the last lines of the example above. Its 2-D values follow the
+regions, as the 2-D maze's discs do in the last lines of the example above. Its 2-D values follow the
 track's but are not equal to them: the 5 cm start and goal discs and the open
 area of the junction change how progress is shared along the way, as the next
 list describes.

@@ -197,11 +197,11 @@ assert set(sim.ground_truth) == set(sim.unit_ids)
 print(rates.unit_ids.tolist())
 validation = validate_simulation(sim, unit_ids=[0, 3, 4])
 print(validation.summary_table()[["center_error", "correlation", "status"]])
-assert validation.unit_status == ("failed", "passed", "failed")
+assert validation.unit_status == ("passed", "failed", "passed")
 ```
 
 `validate_simulation` returns one row per selected unit; one minute is too
-short to recover every field, so units 0 and 4 fail the default center-error
+short to recover every field, so unit 3 fails the default center-error
 limit here. `plot_session_summary(sim, unit_ids=[1, 3])` uses the same label
 selection.
 Analysis functions take arrays; the validation and summary plot functions

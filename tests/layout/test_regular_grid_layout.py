@@ -381,3 +381,63 @@ def test_boundary_bins_without_inference_stay_inside_dimension_ranges():
     assert np.all((layout.bin_centers > low) & (layout.bin_centers < high))
     np.testing.assert_array_equal(layout.bin_centers.min(axis=0), [-1.0, -1.0])
     np.testing.assert_array_equal(layout.bin_centers.max(axis=0), [11.0, 7.0])
+
+
+@pytest.fixture
+def linear_track_env():
+    from neurospatial.simulation import linear_track_session
+
+    env = linear_track_session(duration=10.0, n_place_cells=1, seed=0).env
+    assert env.n_dims == 1
+    return env
+
+
+def test_plot_1d_regular_grid(linear_track_env):
+    """``env.plot()`` draws a one-dimensional grid along x, in the env's units."""
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    env = linear_track_env
+    ax = env.plot()
+    try:
+        assert ax.get_xlabel() == "Position (cm)"
+        # The bin-edge ticks are one line collection with a segment per edge.
+        ticks = [
+            c
+            for c in ax.collections
+            if isinstance(c, LineCollection) and len(c.get_segments()) == env.n_bins + 1
+        ]
+        assert len(ticks) == 1
+        np.testing.assert_allclose(ax.get_xlim(), env.dimension_ranges[0])
+    finally:
+        plt.close(ax.figure)
+
+
+def test_plot_1d_regular_grid_marks_regions_and_landmarks(linear_track_env):
+    """A 1-D point region and point landmark are labeled markers on the line."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial import Regions
+    from neurospatial.landmarks import Landmark, Landmarks
+
+    regions = Regions()
+    regions.add("reward", point=[150.0])
+    env = linear_track_env.with_regions(regions).with_landmarks(
+        Landmarks([Landmark("cue", "point", [20.0], {})])
+    )
+    ax = env.plot()
+    try:
+        labels = {text.get_text(): text.xy for text in ax.texts}
+        assert labels == {"reward": (150.0, 0.0), "cue": (20.0, 0.0)}
+    finally:
+        plt.close(ax.figure)
+
+
+def test_plot_1d_regular_grid_respects_figsize(linear_track_env):
+    import matplotlib.pyplot as plt
+
+    ax = linear_track_env.plot(figsize=(12, 3))
+    try:
+        np.testing.assert_allclose(ax.figure.get_size_inches(), (12, 3))
+    finally:
+        plt.close(ax.figure)

@@ -155,6 +155,57 @@ def _grid_mesh(
     return x, y
 
 
+def _plot_grid_1d(
+    ax: Axes,
+    *,
+    title: str,
+    bin_centers: NDArray[np.float64],
+    edges: NDArray[np.float64],
+    active: NDArray[np.bool_],
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    show_connectivity: bool,
+    node_size: float,
+    node_color: str,
+) -> Axes:
+    """Draw a one-dimensional grid as bin edges along a horizontal line.
+
+    Active bins are thick segments between their edges, every bin edge is a
+    tick across the line, and bin centers are dots.
+    """
+    from matplotlib.collections import LineCollection
+
+    y = np.zeros(len(edges))
+    segments = np.stack(
+        [
+            np.column_stack((edges[:-1], y[:-1])),
+            np.column_stack((edges[1:], y[1:])),
+        ],
+        axis=1,
+    )
+    ax.add_collection(
+        LineCollection(
+            cast("Sequence[NDArray[np.float64]]", segments[np.asarray(active).ravel()]),
+            colors="gray",
+            linewidths=6,
+            alpha=0.7,
+        )
+    )
+    ax.vlines(edges, -0.15, 0.15, colors="black", linewidths=0.5)
+    if show_connectivity:
+        ax.scatter(
+            bin_centers[:, 0],
+            np.zeros(len(bin_centers)),
+            s=node_size,
+            color=node_color,
+            zorder=3,
+        )
+    ax.set_xlim(*(dimension_ranges[0] if dimension_ranges else (edges[0], edges[-1])))
+    ax.set_ylim(-1, 1)
+    ax.set_yticks([])
+    ax.set_title(f"{title} (1D Grid)")
+    return ax
+
+
 def plot_grid(
     ax: Axes | None = None,
     *,
@@ -165,22 +216,43 @@ def plot_grid(
     dimension_ranges: Sequence[tuple[float, float]] | None,
     rectilinear: RectilinearGrid,
     frame: FramedGrid | None = None,
-    figsize: tuple[float, float] = (7, 7),
+    figsize: tuple[float, float] | None = None,
     cmap: str = "bone_r",
     alpha: float = 0.7,
     show_connectivity: bool = True,
     node_size: float = 20,
     node_color: str = "blue",
 ) -> Axes:
-    """Draw active rectangular cells and their connectivity in two dimensions."""
+    """Draw active rectangular cells and their connectivity.
+
+    Two-dimensional grids are filled with ``cmap`` and ``alpha``. A
+    one-dimensional grid is drawn along a line as bin edges and centers, and
+    ignores ``cmap`` and ``alpha``. ``figsize`` defaults to ``(7, 7)`` in two
+    dimensions and ``(10, 2)`` in one. Grids of more dimensions raise
+    ``NotImplementedError``.
+    """
     import matplotlib.pyplot as plt
 
     grid_edges = rectilinear.edges
-    if len(rectilinear.shape) != 2 or len(grid_edges) != 2:
-        msg = "Plotting for non-2D grid layouts is not implemented yet."
+    if len(grid_edges) > 2:
+        msg = "Plotting for grid layouts of more than two dimensions is not implemented yet."
         raise NotImplementedError(msg)
     if ax is None:
+        if figsize is None:
+            figsize = (7, 7) if len(grid_edges) == 2 else (10, 2)
         _, ax = plt.subplots(figsize=figsize)
+    if len(grid_edges) == 1:
+        return _plot_grid_1d(
+            ax,
+            title=title,
+            bin_centers=bin_centers,
+            edges=grid_edges[0],
+            active=rectilinear.active_mask,
+            dimension_ranges=dimension_ranges,
+            show_connectivity=show_connectivity,
+            node_size=node_size,
+            node_color=node_color,
+        )
     x, y = _grid_mesh(rectilinear, frame)
     # Fill only the active cells, light whatever the mix of active and
     # inactive cells, so the same bin looks the same in every grid.

@@ -837,80 +837,82 @@ Analyzing behavior across experimentally-defined spatial zones.
 
 ### Complete Example
 
+This example simulates a place cell tuned to the arena center, so its rate
+should be higher in the `Center` zone than in the corners. With your own
+recording, replace the simulation with your `times`, `positions` and
+`spike_times`.
+
+<!-- docs-test: run -->
 ```python
-from neurospatial import Regions
-
-from neurospatial import Environment, Intervals
-from shapely.geometry import Point
+import matplotlib.pyplot as plt
 import numpy as np
+from shapely.geometry import Point, box
 
-# Create environment from position data
-env = Environment.from_samples(position_data, bin_size=3.0)
+from neurospatial import Environment, Regions
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
 
-# Define experimental regions
-# Center zone (15 cm radius circle)
-center_point = Point(50.0, 50.0)  # Arena center
-region_builder = Regions(env.regions.values())
-region_builder.add("Center", polygon=center_point.buffer(15.0))
+# A 100 x 100 cm arena, a 30 minute foraging trajectory, and one place cell.
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=3.0, units="cm")
+positions, times = simulate_trajectory_ou(
+    env, duration=1800.0, dt=1 / 30.0, speed_units="cm", seed=0
+)
+place_cell = PlaceCellModel(
+    env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0
+)
+spike_times = generate_poisson_spikes(
+    place_cell.firing_rate(times, positions), times, seed=1
+)
 
-# Corner zones (10x10 cm squares)
+# Define experimental regions: a 15 cm radius center zone and 10 x 10 cm corners.
+regions = Regions()
+regions.add("Center", polygon=Point(50.0, 50.0).buffer(15.0))
 corners = {
-    "TopLeft": [(0, 90), (10, 90), (10, 100), (0, 100)],
-    "TopRight": [(90, 90), (100, 90), (100, 100), (90, 100)],
-    "BottomLeft": [(0, 0), (10, 0), (10, 10), (0, 10)],
-    "BottomRight": [(90, 0), (100, 0), (100, 10), (90, 10)],
+    "TopLeft": box(0, 90, 10, 100),
+    "TopRight": box(90, 90, 100, 100),
+    "BottomLeft": box(0, 0, 10, 10),
+    "BottomRight": box(90, 0, 100, 10),
 }
+for name, polygon in corners.items():
+    regions.add(name, polygon=polygon)
+env = env.with_regions(regions)
 
-for name, coords in corners.items():
-    from shapely.geometry import Polygon
-    region_builder.add(name, polygon=Polygon(coords))
-env = env.with_regions(region_builder)
-
-# Find which bins belong to each region (a bin belongs when its center is inside)
+# A bin belongs to a region when its center is inside the region.
 region_bins = {name: env.bins_in_region(name) for name in env.regions}
-for region_name, bins in region_bins.items():
-    print(f"{region_name}: {len(bins)} bins")
+for name, bins in region_bins.items():
+    print(f"{name}: {len(bins)} bins")
 
-# Compute occupancy per region
-position_bins = env.bin_at(position_data)
-sampling_rate = 30.0  # Hz
+# Seconds spent in each bin. Gaps longer than max_gap are not counted.
+occupancy = env.occupancy(times, positions)
 
-region_occupancy = {}
-for region_name, bins in region_bins.items():
-    time_in_region = np.sum(np.isin(position_bins, bins)) / sampling_rate
-    region_occupancy[region_name] = time_in_region
-    print(f"Time in {region_name}: {time_in_region:.2f} seconds")
-
-# Compute firing rate per region
-spike_positions = interpolate_position(position_data, spike_times)
+# Assign each spike to the bin the animal was in at that moment.
+spike_positions = np.column_stack(
+    [np.interp(spike_times, times, positions[:, axis]) for axis in range(2)]
+)
 spike_bins = env.bin_at(spike_positions)
 
-region_firing_rates = {}
-for region_name, bins in region_bins.items():
-    spikes_in_region = np.sum(np.isin(spike_bins, bins))
-    time_in_region = region_occupancy[region_name]
+# Firing rate per region: spikes in the region over seconds in the region.
+region_rate = {}
+for name, bins in region_bins.items():
+    seconds = occupancy[bins].sum()
+    n_spikes = np.isin(spike_bins, bins).sum()
+    # Require half a second of occupancy; a rate from less time is not stable.
+    region_rate[name] = n_spikes / seconds if seconds > 0.5 else np.nan
+    print(f"{name}: {seconds:.1f} s, {n_spikes} spikes, {region_rate[name]:.2f} Hz")
 
-    if time_in_region > 0.5:  # Require 0.5s minimum
-        firing_rate = spikes_in_region / time_in_region
-        region_firing_rates[region_name] = firing_rate
-    else:
-        region_firing_rates[region_name] = np.nan
-
-    print(f"{region_name} firing rate: {region_firing_rates[region_name]:.2f} Hz")
-
-# Statistical comparison
-# Example: Is firing rate higher in center vs. corners?
-center_rate = region_firing_rates["Center"]
-corner_rates = [region_firing_rates[name] for name in corners.keys()]
-corner_rates = [r for r in corner_rates if not np.isnan(r)]
-
-print(f"\nCenter: {center_rate:.2f} Hz")
-print(f"Corners: {np.mean(corner_rates):.2f} ± {np.std(corner_rates):.2f} Hz")
+# Is the rate higher in the center than in the corners?
+corner_rates = np.array([region_rate[name] for name in corners])
+print(f"Center: {region_rate['Center']:.2f} Hz")
+print(f"Corners: {np.nanmean(corner_rates):.2f} +/- {np.nanstd(corner_rates):.2f} Hz")
+assert region_rate["Center"] > np.nanmax(corner_rates)
 
 # Visualize regions: env.plot draws and labels every region
 fig, ax = plt.subplots(figsize=(8, 8))
 env.plot(ax=ax)
-ax.set_title('Experimental Regions')
+ax.set_title("Experimental Regions")
 plt.show()
 ```
 
@@ -1751,19 +1753,51 @@ These limits were measured in simulations of this task:
 
 ### Pattern: Handling Edge Cases
 
+<!-- docs-test: run -->
 ```python
-# Always check for valid bins
-bin_indices = env.bin_at(positions)
-valid = bin_indices != -1  # -1 indicates point outside environment
+import numpy as np
+from shapely.geometry import box
 
-# Use only valid data
-valid_positions = positions[valid]
-valid_bins = bin_indices[valid]
+from neurospatial import Environment, compute_spatial_rate
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
 
-# Or handle invalid gracefully
-firing_rate = np.full(env.n_bins, np.nan)
-valid_occupancy = occupancy_time > min_threshold
-firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[valid_occupancy]
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+positions, times = simulate_trajectory_ou(
+    env, duration=600.0, speed_units="cm", seed=0
+)
+spike_times = generate_poisson_spikes(
+    PlaceCellModel(env, center=np.array([50.0, 50.0]), width=15.0).firing_rate(
+        times, positions
+    ),
+    times,
+    seed=1,
+)
+
+# A position outside the environment has bin index -1. Check for it before
+# you index with the result.
+positions_with_outliers = np.vstack([positions, [[250.0, 250.0]]])
+bin_indices = env.bin_at(positions_with_outliers)
+inside = bin_indices != -1
+print(f"{(~inside).sum()} of {len(inside)} samples are outside the environment")
+
+# Bins the animal barely visited have no trustworthy rate. The rate map
+# stores them as NaN, never as zero: NaN means "not observed", zero means
+# "observed, and the cell was silent".
+result = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=1.0)
+observed = np.isfinite(result.firing_rate)
+print(f"{observed.sum()} of {env.n_bins} bins have a rate")
+
+# `env.occupancy` gives the seconds behind each bin, so you can report the
+# bins you left out and why.
+occupancy = env.occupancy(times, positions)
+print(f"{(occupancy < 1.0).sum()} bins have less than 1 s of occupancy")
+
+# Reduce over the observed bins only: nan-aware functions skip NaN.
+print(f"Mean rate over observed bins: {np.nanmean(result.firing_rate):.2f} Hz")
 ```
 
 ### Pattern: Batch Processing
