@@ -56,7 +56,7 @@ _MODE_STATUS: dict[str, str] = {
 }
 
 
-class _AnnotationWidget(Container):  # type: ignore[misc, unused-ignore]
+class _AnnotationWidget(Container):  # type: ignore[misc, type-arg, unused-ignore]
     """Annotation controls with an explicit pending-edit save boundary."""
 
     def __init__(
