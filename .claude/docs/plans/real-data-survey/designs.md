@@ -2,6 +2,12 @@
 
 [← back to PLAN.md](PLAN.md)
 
+The code in `datasets/` is canonical once a phase has shipped; the samples here
+record the design and may lag it (phase 1 found that `spatial_information`,
+`grid_scores`, `border_scores` and `mean_vector_lengths` are methods, that
+`DecodingResult.error_against` replaces the harness interpolation, and that
+`_warnings` shadows a CPython module, hence `_calibration.py`).
+
 - [Fetch and cache](#fetch-and-cache)
 - [Record validation](#record-validation)
 - [Expectations](#expectations)
@@ -484,6 +490,8 @@ regeneration. Verdict vocabulary:
 | 2 | `caught, poor message` | raised or warned, but the message would not lead a user to the cause | `error-message` |
 | 2 | `silent` | accepted without comment | `silent-hazard` |
 | 2 | `undetectable` | silent, but no rule on values could catch it (`reason` says why, e.g. both value ranges are plausible) | `docs` if the docs should warn instead |
+| 2 | `caught upstream` | silent here, but an earlier operation in the same workflow already warned or raised for this hazard | none |
+| 1 | `third-party` | emitted by another package (origin `third-party`), not neurospatial | none |
 
 Judge a `false alarm` against the data, not the threshold: open the samples
 that triggered it before deciding. A threshold change is proposed only in
