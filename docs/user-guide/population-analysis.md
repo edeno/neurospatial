@@ -87,8 +87,8 @@ pass untuned cells (see
 This is a screen, not a verdict.
 For a per-cell decision you can report, use the shuffle labels of
 `spatial_cell_type_significance` on the raw spike times and tracking (they
-test grid and border scores as well), or `is_place_cell(...,
-criterion="shuffle")` for one cell. Both call a cell place only when its
+test grid and border scores as well), or `is_place_cell(...)`, a
+circular-shift test by default, for one cell. Both call a cell place only when its
 information test is significant and its bias-corrected information reaches the
 screen's cutoff; `place_cell_significance` gives the information test's
 p-values alone.
@@ -761,7 +761,7 @@ Checks before you interpret the numbers:
   threshold, the membership cutoff, activation strength above 5, the share
   of bins above the pre-task 99th percentile, EV versus REV and the
   pair-level EV p-value are descriptive. Use `spatial_cell_type_significance` labels or
-  `is_place_cell(..., criterion="shuffle")` for cell-type decisions and a
+  `is_place_cell(...)` (a circular-shift test by default) for cell-type decisions and a
   null built for your recording for reactivation claims.
 - **Missing is not zero.** Unvisited bins stay NaN in rate maps; compare
   conditions only over bins visited in both, and check whether coverage gaps

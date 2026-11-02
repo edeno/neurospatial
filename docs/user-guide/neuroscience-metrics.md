@@ -83,7 +83,7 @@ In simulations, every untuned unit firing at 1 Hz or more had a "field" at
 every recording length from 1 to 20 minutes, and so did interneuron-like units
 with a high, broadly modulated rate, whose field covered the whole track. Field
 count and `has_place_field` do not establish a place cell; use
-`is_place_cell(..., criterion="shuffle")` for a verdict. Keep cell-type tests and
+`is_place_cell(...)` (a circular-shift test by default) for a verdict. Keep cell-type tests and
 quality selection separate from map segmentation. To recover the previous
 10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
 `fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
@@ -1037,11 +1037,14 @@ a 5 cm kernel, `K` is about 46 for 441 bins. With a 10 cm kernel it is about
 11. The derivation is in the Notes of
 `SpatialRateResult.spatial_information_bias`. In simulations of untuned cells
 across arena sizes, bin sizes, bandwidths and estimators, it matched the mean
-information to within 10% (16% for `method="binned"`) whenever the units had at
-least as many spikes as independent bins.
+information to within 10% whenever the units had at least as many spikes as
+independent bins. A repeat for `method="binned"`, with 1, 2 and 4 times as
+many spikes as independent bins, matched within 14% for unsmoothed maps (the
+default) and within 33% for maps smoothed with a 5 or 10 cm bandwidth; in
+that harsher repeat `diffusion_kde` matched within 16%.
 
 Every information screen subtracts this bias before it applies its cutoff:
-`is_place_cell(criterion="threshold")`, `classify()`, `label_cell_types()`,
+`is_place_cell(criterion="threshold")`, the result methods `is_place_cell()` and `classify()`, `label_cell_types()`,
 `summary_table()` labels, `count_place_cells`, `is_object_vector_cell()` and
 `is_spatial_view_cell()`. `spatial_information()` itself still returns the
 plug-in value. The expansion behind the bias needs at least as many spikes as
@@ -1084,10 +1087,13 @@ heading occupancy as exposure, divided by the estimated spike-count
 dispersion), which keeps its false-positive rate near `alpha` for untuned
 cells under uneven heading sampling, including bursting cells.
 
-`has_place_field()` preserves field detection. `is_place_cell()` requires
-`criterion="threshold"` (screen) or `"shuffle"` (circular-shift verdict).
-The other four cell predicates default to `criterion="threshold"` and allow
-opt-in `"shuffle"`. For place, view and object-vector cells the shuffle
+`has_place_field()` preserves field detection. The five free cell predicates
+(`is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`,
+`is_egocentric_object_vector_cell` and `is_spatial_view_cell`) test whether a
+cell is that type: they default to `criterion="shuffle"` (a 1000-shift
+verdict; pass `rng=` to reproduce it) and take `criterion="threshold"` for the
+fast screen. Result methods (`is_place_cell()`, `classify()` and their
+siblings) are screens only and take no `criterion=`. For place, view and object-vector cells the shuffle
 verdict needs both a significant information test and bias-corrected
 information at or above the screen's cutoff (`min_info=`, the same keyword and
 default in both modes). In 2-minute recordings untuned 0.5 Hz units passed the
@@ -1191,11 +1197,12 @@ sparse = sparsity(firing_rate, occupancy=occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
 
-# 5. Explicit fast screen (subtracts the untuned-cell information bias)
+# 5. Fast screen (subtracts the untuned-cell information bias)
 from neurospatial.encoding import is_place_cell
 candidate = is_place_cell(env, spike_times, times, positions, criterion="threshold")
 print(f"Place candidate: {candidate}")
-# For publication: criterion="shuffle" on these raw arrays.
+# For publication: the default circular-shift verdict on these raw arrays,
+# is_place_cell(env, spike_times, times, positions, rng=0).
 ```
 
 ### Population-Level Analysis

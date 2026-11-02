@@ -121,7 +121,9 @@ def test_result_table_per_trial_equals_each_trial_alone(
     arena, session, function, columns
 ):
     times, positions, trials = session
-    table = function(arena, times, positions, trials, goal=trials.end_region)
+    table = function(
+        arena, times, positions, trials, goal=trials.end_region
+    ).summary_table()
     assert isinstance(table, pd.DataFrame)
     assert table.index.name == "interval_id"
     assert table["goal"].tolist() == list(trials.end_region)
@@ -163,9 +165,17 @@ def test_unknown_goal_gives_nan_for_that_trial(arena, session):
     bias = goal_bias(arena, times, positions, trials, goal=goals, min_speed=2.0)
     assert np.isnan(bias.iloc[1])
     assert np.isfinite(bias.iloc[[0, 2]]).all()
-    table = compute_path_efficiency(arena, times, positions, trials, goal=goals)
+    result = compute_path_efficiency(arena, times, positions, trials, goal=goals)
+    assert np.isnan(result.efficiency[1])
+    assert result.goal[1] is None
+    # Tracking, not the goal, decides fully_observed.
+    alone = compute_path_efficiency(
+        arena, times, positions, trials, goal=list(trials.end_region)
+    )
+    assert result.fully_observed[1] == alone.fully_observed[1]
+    table = result.summary_table()
     assert np.isnan(table["efficiency"].iloc[1])
-    assert table["goal"].iloc[1] is None
+    assert table["goal"].isna().tolist() == [False, True, False]
 
 
 def test_overlapping_trials_are_refused_only_for_per_sample_results(arena, session):

@@ -55,6 +55,11 @@ _OUTLINE = [
 ]
 
 
+def _names_per_row(df):
+    """The names of the regions containing each position, in column order."""
+    return [list(df.columns[row]) for row in df.to_numpy(dtype=bool)]
+
+
 def _lattice(step: float = 0.125) -> np.ndarray:
     """Points every ``step`` over the tiles; many lie exactly on the spokes."""
     axis = np.arange(-10.0, 10.0 + step, step)
@@ -124,7 +129,7 @@ def test_a_point_on_a_shared_edge_goes_to_the_tile_north_east_of_it():
             [0.0, 0.0],  # the shared vertex: north-east of it is "east"
         ]
     )
-    assert regions_containing_points(points, tiles, return_dataframe=False) == [
+    assert _names_per_row(regions_containing_points(points, tiles)) == [
         ["east"],
         ["north"],
         ["south"],
@@ -221,19 +226,18 @@ def test_square_maze_positions_on_the_wall_are_in_a_quadrant():
         ]
     )
     assert env.contains(wall).all()
-    found = regions_containing_points(
-        wall, _square_maze_quadrants(), return_dataframe=False
-    )
+    found = _names_per_row(regions_containing_points(wall, _square_maze_quadrants()))
     # On the outer wall, the quadrant a nudge south-west enters; where the
     # nudge north-east stays in the arena, the quadrant it enters.
     assert found == [["NE"], ["NE"], ["NW"], ["SE"], ["NE"], ["NW"], ["SE"], ["SW"]]
 
 
 def test_shared_edges_inside_the_union_still_go_north_east():
-    found = regions_containing_points(
-        np.array([[0.0, 5.0], [5.0, 0.0], [-5.0, 0.0], [0.0, -5.0], [0.0, 0.0]]),
-        _square_maze_quadrants(),
-        return_dataframe=False,
+    found = _names_per_row(
+        regions_containing_points(
+            np.array([[0.0, 5.0], [5.0, 0.0], [-5.0, 0.0], [0.0, -5.0], [0.0, 0.0]]),
+            _square_maze_quadrants(),
+        )
     )
     assert found == [["NE"], ["NE"], ["NW"], ["SE"], ["NE"]]
 
@@ -357,8 +361,8 @@ class TestPointRegionRim:
         wells = Regions()
         wells.add("west", point=(-1.0, 0.0))
         wells.add("east", point=(1.0, 0.0))
-        found = regions_containing_points(
-            np.array([[0.0, 0.0]]), wells, point_radius=1.0, return_dataframe=False
+        found = _names_per_row(
+            regions_containing_points(np.array([[0.0, 0.0]]), wells, point_radius=1.0)
         )
         assert found == [["east"]]
 

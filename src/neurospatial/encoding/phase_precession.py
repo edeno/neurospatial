@@ -970,7 +970,7 @@ def has_phase_precession(
     position_range: tuple[float, float] | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     min_spikes: int = 10,
-    n_shuffles: int = 200,
+    n_shuffles: int = 1000,
     rng: int | np.random.Generator | None = None,
 ) -> bool:
     """Quick check for significant phase precession.
@@ -1002,13 +1002,11 @@ def has_phase_precession(
     min_spikes : int, default=10
         Minimum number of spikes with finite position and phase; fewer
         screen as ``False``.
-    n_shuffles : int, default=200
-        Number of permutation shuffles for the p-value. A smaller default
-        than :func:`compute_phase_precession` (1000) keeps screening fast
-        since this function is intended for filtering many neurons; 200
-        shuffles resolve p-values down to 1/201 and give a Monte Carlo
-        standard error of about 0.015 near ``p = 0.05``. Use more for a
-        cell whose p-value is close to ``alpha``.
+    n_shuffles : int, default=1000
+        Number of permutation shuffles for the p-value, as in
+        :func:`compute_phase_precession`. 1000 shuffles resolve p-values down
+        to 1/1001 and give a Monte Carlo standard error of about 0.007 near
+        ``p = 0.05``.
     rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the shuffles. Pass a fixed value for a
         deterministic result.

@@ -105,7 +105,7 @@ def test_velocity_segments_ignore_jitter_at_rest():
 
 
 def test_speed_matches_rate_map_gate_with_missing_rows_and_gaps():
-    from neurospatial.encoding._spatial_counts import resolve_speed
+    from neurospatial._velocity import resolve_speed
 
     times = np.r_[np.arange(0, 4, 1 / 30), 10 + np.arange(0, 4, 1 / 30)]
     rng = np.random.default_rng(2)

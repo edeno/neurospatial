@@ -47,7 +47,7 @@ def _path_efficiency() -> PathEfficiencyResult:
     return PathEfficiencyResult(
         traveled_length=12.0,
         shortest_length=10.0,
-        time_efficiency=None,
+        time_efficiency=np.nan,
         angular_efficiency=0.9,
         start_position=np.array([0.0, 0.0]),
         goal=np.array([10.0, 0.0]),

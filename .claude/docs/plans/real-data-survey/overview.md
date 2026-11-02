@@ -71,7 +71,6 @@ Add a non-default dependency group in `pyproject.toml`:
 
 ```toml
 datasets = [
-    "dandi>=0.69",        # DANDI asset metadata (sha256) and download URLs
     "fsspec[http]>=2024.6", # byte-range reads of zip members (bat archive)
     "mat-io>=0.5",        # MATLAB `table` objects (bat spike tables) -> pandas
     "opexebo>=0.7",       # reference grid score
@@ -108,7 +107,7 @@ Commit `uv.lock` changes in the same commit as the group.
 | Comparing tools with different conventions and calling it a bug | Reference checks fix conventions explicitly (bins, range, smoothing, occupancy handling) and report the difference before judging |
 | NWB data in nonstandard locations misread as missing | Loaders walk the whole HDF5 tree by `neurodata_type` before declaring something absent (see `nwb-nonstandard-locations` memory) |
 | License / redistribution | No data is committed; the cache is git-ignored; loaders record license per dataset |
-| Untrusted downloaded content | Never unpickle; `np.load(..., allow_pickle=False)`; read MATLAB/HDF5 with data readers only |
+| Untrusted downloaded content | `np.load(..., allow_pickle=False)`; read MATLAB/HDF5 with data readers only. Data that exist only as pickles (the Rosenberg `-tf` files) are read with a restricted unpickler whose `find_class` allow-lists the exact globals the files contain (maintainer decision, 2026-11-02); never plain `pickle.load` |
 | Long downloads stall a session | Each loader states its download size; the bat archive is read by member (byte ranges), not downloaded whole |
 
 ## Rollout Strategy

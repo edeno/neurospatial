@@ -1,5 +1,7 @@
 """Tests for region membership queries on 2-D positions."""
 
+import inspect
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -131,9 +133,8 @@ class TestMissingPositions:
         [
             points_in_any_region,
             regions_containing_points,
-            lambda p, r: regions_containing_points(p, r, return_dataframe=False),
         ],
-        ids=["any", "dataframe", "list"],
+        ids=["any", "dataframe"],
     )
     def test_non_finite_rows_are_refused(self, square, query, bad):
         positions = np.array([[5.0, 5.0], [1.0, 1.0], [bad, 2.0], [3.0, bad]])
@@ -205,10 +206,6 @@ class TestEdges:
         df = regions_containing_points(EDGE_PROBES, square)
         assert_array_equal(df["box"].to_numpy(), EDGE_EXPECTED)
 
-    def test_list(self, square):
-        result = regions_containing_points(EDGE_PROBES, square, return_dataframe=False)
-        assert result == [["box"] if hit else [] for hit in EDGE_EXPECTED]
-
     def test_point_region_rim(self, well):
         # Exactly 5 cm from (50, 50) by 3-4-5 triangles: the rim is held where
         # a nudge north-east moves the position toward the well.
@@ -267,13 +264,12 @@ class TestPointRegions:
         assert_array_equal(df["box"].to_numpy(), [True, False])
 
     def test_mixed_regions(self, box_and_well):
-        result = regions_containing_points(
+        df = regions_containing_points(
             np.array([[5.0, 5.0], [51.0, 51.0], [30.0, 30.0]]),
             box_and_well,
-            return_dataframe=False,
             point_radius=2.0,
         )
-        assert result == [["box"], ["well"], []]
+        assert _names_per_row(df) == [["box"], ["well"], []]
 
     @pytest.mark.parametrize("coords", [[1.0, 2.0, 3.0], [4.0]], ids=["3d", "1d"])
     @pytest.mark.parametrize(
@@ -287,13 +283,37 @@ class TestPointRegions:
             query(np.array([[1.0, 2.0]]), regions, point_radius=1.0)
 
 
+def _names_per_row(df):
+    """The names of the regions containing each position, in column order."""
+    return [list(df.columns[row]) for row in df.to_numpy(dtype=bool)]
+
+
 class TestRegionsContainingPoints:
-    def test_list_output_names_every_containing_region(self, overlapping):
+    def test_regions_containing_points_returns_frame(self, overlapping):
+        """One return type: a bool DataFrame, whatever the inputs."""
         positions = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
-        result = regions_containing_points(
-            positions, overlapping, return_dataframe=False
+        for query, shape in (
+            (regions_containing_points(positions, overlapping), (4, 2)),
+            (
+                regions_containing_points(positions, overlapping, region_names="box2"),
+                (4, 1),
+            ),
+            (regions_containing_points(np.empty((0, 2)), overlapping), (0, 2)),
+            (regions_containing_points(positions, Regions([])), (4, 0)),
+        ):
+            assert isinstance(query, pd.DataFrame)
+            assert isinstance(query.index, pd.RangeIndex)
+            assert query.shape == shape
+            assert [str(dtype) for dtype in query.dtypes] == ["bool"] * shape[1]
+        # The documented names-per-position recipe also works with no regions.
+        empty = regions_containing_points(positions, Regions([]))
+        assert _names_per_row(empty) == [[], [], [], []]
+        assert (
+            "return_dataframe"
+            not in inspect.signature(regions_containing_points).parameters
         )
-        assert result == [["box1"], ["box1", "box2"], ["box2"], []]
+        df = regions_containing_points(positions, overlapping)
+        assert _names_per_row(df) == [["box1"], ["box1", "box2"], ["box2"], []]
 
     def test_dataframe_output(self, overlapping):
         positions = np.array([[2.0, 2.0], [7.0, 7.0], [12.0, 12.0], [20.0, 20.0]])
@@ -306,16 +326,12 @@ class TestRegionsContainingPoints:
         assert_array_equal(df["box1"].to_numpy(), [True, True, False, False])
         assert_array_equal(df["box2"].to_numpy(), [False, True, True, False])
 
-    def test_list_and_dataframe_agree(self, three_boxes):
+    def test_any_column_agrees_with_points_in_any_region(self, three_boxes):
         rng = np.random.default_rng(0)
         positions = rng.uniform(-2, 22, size=(200, 2))
 
         df = regions_containing_points(positions, three_boxes)
-        result = regions_containing_points(
-            positions, three_boxes, return_dataframe=False
-        )
 
-        assert result == [list(df.columns[row]) for row in df.to_numpy()]
         assert_array_equal(
             df.any(axis=1).to_numpy(), points_in_any_region(positions, three_boxes)
         )
@@ -357,21 +373,11 @@ class TestRegionsContainingPoints:
         assert isinstance(df.index, pd.RangeIndex)
         assert (df.dtypes == np.dtype(bool)).all()
 
-    def test_empty_positions_list(self, square):
-        result = regions_containing_points(
-            np.empty((0, 2)), square, return_dataframe=False
-        )
-        assert result == []
-
     def test_no_regions(self):
         positions = np.array([[5.0, 5.0], [1.0, 1.0]])
         df = regions_containing_points(positions, Regions([]))
         assert df.shape == (2, 0)
         assert isinstance(df.index, pd.RangeIndex)
-        result = regions_containing_points(
-            positions, Regions([]), return_dataframe=False
-        )
-        assert result == [[], []]
 
     def test_transform(self):
         unit = Regions([Region(name="box", data=box(0, 0, 1, 1), kind="polygon")])

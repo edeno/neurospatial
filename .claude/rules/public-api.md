@@ -88,11 +88,16 @@ change training support or recorded analysis choices.
   `is_border_cell` or `is_grid_cell`: border and grid are labels from
   `SpatialRatesResult.label_cell_types()`.
 - `has_place_field` detects a field; it is not a cell-type verdict.
-- Result methods and batch classifiers are threshold screens with inclusive
-  `>=` thresholds (p-values stay `< alpha`). Shuffle verdicts come from
-  the `*_significance` functions or `criterion="shuffle"` on raw arrays, and
-  seeded results agree between single and population calls when `unit_id`
-  matches.
+- The free predicates on raw arrays are verdicts: they default to
+  `criterion="shuffle"` and keep `criterion="threshold"` as the fast screen.
+  Their first docstring line starts "Test whether ...". Result methods,
+  `classify()` and `label_cell_types()` are threshold screens with inclusive
+  `>=` thresholds (p-values stay `< alpha`), take no `criterion=`, and start
+  "Screen ...". Seeded shuffle verdicts agree between single and population
+  calls when `unit_id` matches.
+- Constant defaults are written in the signature (`min_info=0.5`,
+  `alpha=0.05`, `n_shuffles=1000`), never as a `None` that resolves to a
+  constant; `tests/test_argument_conventions.py` enforces it.
 - `classify()` returns a bool array for one cell type and `label_cell_types()`
   returns strings. A bool predicate and a string labeler never share a name.
 

@@ -2077,6 +2077,7 @@ class TestIsObjectVectorCellFreeFunction:
                 distance_bin_size=5.0,
                 direction_bin_size=2 * np.pi / 12,
                 metric="euclidean",
+                criterion="threshold",
                 min_info=min_info,
             )
             method = result.is_object_vector_cell(min_info=min_info)

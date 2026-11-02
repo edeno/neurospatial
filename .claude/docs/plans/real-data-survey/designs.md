@@ -2,6 +2,12 @@
 
 [← back to PLAN.md](PLAN.md)
 
+The code in `datasets/` is canonical once a phase has shipped; the samples here
+record the design and may lag it (phase 1 found that `spatial_information`,
+`grid_scores`, `border_scores` and `mean_vector_lengths` are methods, that
+`DecodingResult.error_against` replaces the harness interpolation, and that
+`_warnings` shadows a CPython module, hence `_calibration.py`).
+
 - [Fetch and cache](#fetch-and-cache)
 - [Record validation](#record-validation)
 - [Expectations](#expectations)
@@ -116,7 +122,7 @@ def dandi_asset_url(asset_id: str) -> str:
 ```
 
 Pinning: for DANDI, take the SHA-256 from the asset metadata
-(`DandiAPIClient().get_dandiset(id, version).get_asset(asset_id).get_raw_metadata()["digest"]["dandi:sha2-256"]`)
+(`GET https://api.dandiarchive.org/api/dandisets/<id>/versions/<version>/assets/?path=<path>` gives the asset id; the asset's metadata has `digest["dandi:sha2-256"]`; the `dandi` package is not a dependency because it pins `wcwidth>=0.9` through `blessed` and would move the dev environment)
 and record the published version, not `draft`, whenever one exists. For Zenodo,
 check the downloaded file's MD5 against the record's `files[].checksum`, then
 pin the SHA-256. For OSF, compare against NeMoS's pooch registry
@@ -127,52 +133,9 @@ cannot read; that needs `inflate64` and is out of scope until then.
 
 ## Record validation
 
-`datasets/_record.py` holds `Recording` ([contract](shared-contracts.md#recording)) and:
-
-```python
-POSITION_UNITS = {"cm", "m", "pixel", "arbitrary"}
-
-
-def validate_recording(rec: Recording) -> None:
-    """Raise ValueError listing every contract violation in ``rec``."""
-    problems: list[str] = []
-    if (rec.times is None) != (rec.positions is None):
-        problems.append("times and positions must be set together")
-    if rec.times is not None and rec.positions is not None:
-        if rec.times.ndim != 1 or not np.all(np.diff(rec.times) > 0):
-            problems.append("times must be 1-D and strictly increasing")
-        if rec.positions.ndim != 2 or rec.positions.shape[0] != rec.times.shape[0]:
-            problems.append(f"positions shape {rec.positions.shape} does not match {rec.times.shape[0]} times")
-        if rec.position_units not in POSITION_UNITS:
-            problems.append(f"position_units {rec.position_units!r} not in {sorted(POSITION_UNITS)}")
-    if rec.headings is not None:
-        if rec.times is None or rec.headings.shape != rec.times.shape:
-            problems.append("headings must have one value per time")
-        finite = rec.headings[np.isfinite(rec.headings)]
-        if finite.size and (finite.min() < -np.pi or finite.max() > np.pi):
-            problems.append("headings must be radians in [-pi, pi]")
-    if rec.spike_times is not None:
-        if rec.unit_ids is None or len(rec.unit_ids) != len(rec.spike_times):
-            problems.append("unit_ids must have one id per spike train")
-        elif len(np.unique(rec.unit_ids)) != len(rec.unit_ids):
-            problems.append("unit_ids must be unique")
-        for index, train in enumerate(rec.spike_times):
-            if not np.all(np.isfinite(train)) or np.any(np.diff(train) < 0):
-                problems.append(f"spike train {index} must be finite and sorted")
-    if (rec.activity is None) != (rec.activity_times is None):
-        problems.append("activity and activity_times must be set together")
-    elif rec.activity is not None and rec.activity.shape[0] != rec.activity_times.shape[0]:
-        problems.append("activity must have one row per activity time")
-    for name, table in rec.epochs.items():
-        if table.ndim != 2 or table.shape[1] != 2 or np.any(table[:, 1] < table[:, 0]):
-            problems.append(f"epochs[{name!r}] must be (n, 2) with stop >= start")
-    missing_params = {"bin_size"} - set(rec.params) if rec.positions is not None else set()
-    if missing_params:
-        problems.append(f"params missing {sorted(missing_params)}")
-    if problems:
-        msg = f"{rec.dataset}/{rec.session} breaks the Recording contract:\n- " + "\n- ".join(problems)
-        raise ValueError(msg)
-```
+`datasets/_record.py` holds `Recording` ([contract](shared-contracts.md#recording))
+and `validate_recording`, which collects every violation of the contract
+invariants and raises one `ValueError` listing them all.
 
 ## Expectations
 
@@ -422,7 +385,7 @@ while loading or running operations on correctly loaded data is a candidate
 false alarm. **Not aggressive enough:** each recording is re-run with one known
 defect re-introduced (a *hazard*); an operation that accepts it without a
 warning or error is a candidate silent hazard. Both live in
-`datasets/_warnings.py`.
+`datasets/_calibration.py`.
 
 ```python
 import re
@@ -511,11 +474,19 @@ def probe_hazards(module, rec, clean_operations):
    and the clean vs hazardous summary side by side (a silent response with a
    changed summary means a quietly different result), and the verdict.
 
-Verdicts are hand-written in `datasets/warning_verdicts.json`, keyed by
-template (table 1) or `"<dataset>/<hazard>/<op>"` (table 2), each
-`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`. The renderer joins
-them in and prints `unreviewed` for keys without one, so verdicts survive
-regeneration. Verdict vocabulary:
+Verdicts are hand-written in `datasets/verdicts.json`, in three sections:
+`"warnings"` keyed by `"<origin> <category>: <template>"` (table 1),
+`"hazards"` keyed by `"<dataset>/<hazard>/<op>"` (table 2), each
+`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`, and `"errors"`
+keyed by `"<dataset>/<op>"` with the gap id of each `err` cell, which the
+matrix prints. The renderer prints `unreviewed` for rows without a verdict, so
+verdicts survive regeneration. As implemented, a probe counts as `warned` only
+for warnings the clean run of that operation did not emit, every operation
+reading a changed field (its `requires` plus `times`, `position_units`,
+`epochs`, `params`) is probed; an operation that was not `ok` on the clean
+recording, and a hazard reaching no operation, get `not probed` rows (no
+verdict needed); an `ok` operation that turns `n/a` under the hazard reports
+`n/a`. Verdict vocabulary:
 
 | Table | Verdict | Meaning | Gap kind |
 | --- | --- | --- | --- |
@@ -527,6 +498,9 @@ regeneration. Verdict vocabulary:
 | 2 | `caught, poor message` | raised or warned, but the message would not lead a user to the cause | `error-message` |
 | 2 | `silent` | accepted without comment | `silent-hazard` |
 | 2 | `undetectable` | silent, but no rule on values could catch it (`reason` says why, e.g. both value ranges are plausible) | `docs` if the docs should warn instead |
+| 2 | `no effect` | silent, and the operation's summary did not change | none |
+| 2 | `caught upstream` | silent here, but an earlier operation in the same workflow already warned or raised for this hazard | none |
+| 1 | `third-party` | emitted by another package (origin `third-party`), not neurospatial | none |
 
 Judge a `false alarm` against the data, not the threshold: open the samples
 that triggered it before deciding. A threshold change is proposed only in

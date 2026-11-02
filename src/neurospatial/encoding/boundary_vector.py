@@ -731,7 +731,7 @@ def compute_boundary_vector_rates(
         5 cm converted to ``env.units``; pass it when the units are unknown.
         An explicit ``distance_range`` is divided into the whole number of
         rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins and one ray
         is cast at each bin's center. The 5 cm and 30 degree defaults suit
@@ -768,7 +768,9 @@ def compute_boundary_vector_rates(
     bandwidth : float, optional
         Smoothing bandwidth for the kernel methods, in the environment's
         units. None uses 5 cm converted to ``env.units``; with units that
-        are not a known length, a kernel method needs it explicitly.
+        are not a known length, a kernel method needs it explicitly. Binned
+        maps are not smoothed, so a positive bandwidth with
+        ``method="binned"`` raises.
     min_occupancy : float, default=0.0
         Seconds of boundary occupancy a bin needs to get a rate.
     unit_ids : array-like, optional

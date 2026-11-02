@@ -188,7 +188,7 @@ class TestDetectPlaceFields:
         ).with_metadata(units="cm")
         runs = []
         for seed in range(3):
-            positions, times = simulate_trajectory_laps(
+            positions, times, _ = simulate_trajectory_laps(
                 env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             rate = 15 * np.exp(-((positions[:, 0] - 100) ** 2) / (2 * 8.0**2)) + 0.1
@@ -260,7 +260,7 @@ class TestDetectPlaceFields:
             return peak * np.exp(-((x - center) ** 2) / (2 * 8.0**2))
 
         for seed in range(3):
-            positions, times = simulate_trajectory_laps(
+            positions, times, _ = simulate_trajectory_laps(
                 env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             x = positions[:, 0]
@@ -327,7 +327,7 @@ class TestDetectPlaceFields:
             np.linspace(0, 200, 401)[:, None], bin_size=2.0
         ).with_metadata(units="cm")
         for seed in range(3):
-            positions, times = simulate_trajectory_laps(
+            positions, times, _ = simulate_trajectory_laps(
                 env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             x = positions[:, 0]

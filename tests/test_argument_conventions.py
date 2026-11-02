@@ -634,6 +634,7 @@ def test_smoothing_widths_say_their_unit():
 # Functions that take ``alpha``: each is a significance level.
 SIGNIFICANCE_ALPHA = {
     "DirectionalRateResult.is_head_direction_cell",
+    "DirectionalRateResult.interpretation",
     "DirectionalRatesResult.classify",
     "is_head_direction_cell",
     "is_egocentric_object_vector_cell",
@@ -725,3 +726,71 @@ def test_field_resampling_takes_environments_first():
         "source_env",
         "target_env",
     ]
+
+
+# --- Defaults ----------------------------------------------------------------
+# A default that always resolves to one value is written in the signature, so
+# ``help()`` and the API reference show it. ``None`` is kept only where the
+# value depends on the data, the environment or another argument.
+
+
+def test_no_constant_none_sentinels():
+    """Thresholds, levels and shuffle counts never hide a constant behind None."""
+    offenders = [
+        f"{label}({name}=None)"
+        for label, parameters in _public_signatures()
+        for name, parameter in parameters.items()
+        if name in {"min_info", "alpha", "n_shuffles", "min_shift", "min_mvl"}
+        and parameter.default is None
+    ]
+    assert not offenders, sorted(offenders)
+
+
+# Lower shuffle counts kept on purpose, each with its documented reason.
+_N_SHUFFLES_EXCEPTIONS: dict[str, str] = {}
+
+
+def test_n_shuffles_defaults_agree():
+    """Every shuffle test defaults to 1000 shuffles unless documented otherwise."""
+    defaults = {
+        label: parameters["n_shuffles"].default
+        for label, parameters in _public_signatures()
+        if "n_shuffles" in parameters
+        and parameters["n_shuffles"].default is not inspect.Parameter.empty
+    }
+    assert len(defaults) >= 20
+    offenders = {
+        label: value
+        for label, value in defaults.items()
+        if value != 1000 and label not in _N_SHUFFLES_EXCEPTIONS
+    }
+    assert not offenders, offenders
+
+
+# These take positions or speeds but no environment, so they cannot know the
+# length unit; a numeric default (5 cm/s, the cited stop threshold) would be
+# wrong for positions in meters or pixels. Their docs say why it is required.
+_UNITLESS_MIN_SPEED = {
+    "neurospatial.behavior.decisions.compute_pre_decision_metrics",
+    "neurospatial.behavior.decisions.pre_decision_heading_stats",
+    "neurospatial.behavior.navigation.heading_direction_labels",
+    "neurospatial.behavior.navigation.headings_to_direction_labels",
+    "neurospatial.behavior.segmentation.segment_by_velocity",
+    "neurospatial.behavior.vte.compute_vte_trial",
+    "neurospatial.behavior.vte.head_sweep_from_positions",
+}
+
+
+def test_min_speed_has_default():
+    """``min_speed`` is never required where the unit of speed is known."""
+    required = {
+        label
+        for label, parameters in _public_signatures()
+        if "min_speed" in parameters
+        and parameters["min_speed"].default is inspect.Parameter.empty
+    }
+    assert required == _UNITLESS_MIN_SPEED
+    for label in _UNITLESS_MIN_SPEED:
+        module, name = label.rsplit(".", 1)
+        function = getattr(importlib.import_module(module), name)
+        assert "Required" in _documented_entry(function, "min_speed"), label

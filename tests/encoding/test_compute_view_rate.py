@@ -2101,9 +2101,16 @@ def test_view_rate_peaks_at_the_viewed_location_not_the_position(left_gaze_cell)
         headings,
         gaze_offsets=np.full(len(times), np.pi / 2),
         method="binned",
+        bandwidth=5.0,
         min_occupancy=1.0,
     )
     place = compute_spatial_rate(
-        env, spikes, times, positions, method="binned", min_occupancy=1.0
+        env,
+        spikes,
+        times,
+        positions,
+        method="binned",
+        bandwidth=5.0,
+        min_occupancy=1.0,
     )
     assert view.spatial_information() > 5 * place.spatial_information()

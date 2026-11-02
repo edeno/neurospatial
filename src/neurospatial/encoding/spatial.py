@@ -80,7 +80,6 @@ from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
-    resolve_shuffle_settings,
     shuffle_information_verdict,
 )
 
@@ -1364,7 +1363,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Ornstein-Uhlenbeck trajectory: predicted and simulated mean
         information agreed within 10% for ``N >= K`` with ``diffusion_kde``
         and ``gaussian_kde`` on 1 m and 2 m boxes (2.5 and 5 cm bins, 5 and
-        10 cm kernels) and a 200 cm track, within 16% for ``binned``. For
+        10 cm kernels) and a 200 cm track. A repeat for ``binned`` on the
+        same arenas, with N = K, 2K and 4K spikes on 20-minute trajectories,
+        agreed within 14% for unsmoothed maps (the default; boxes within 10%)
+        and within 33% when smoothed with a 5 or 10 cm bandwidth; that repeat
+        is harsher than the first check (``diffusion_kde`` came within 16%
+        in it). For
         a tuned cell the plug-in bias is smaller (its spikes come from fewer
         bins), so the correction is conservative.
 
@@ -1864,26 +1868,23 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         )
         return len(fields) > 0
 
-    def is_place_cell(
-        self, *, criterion: Literal["threshold"], min_info: float | None = None
-    ) -> bool:
-        """Classify one neuron using an explicitly chosen criterion.
+    def is_place_cell(self, *, min_info: float = 0.5) -> bool:
+        """Screen one neuron for place tuning by bias-corrected spatial information.
 
-        There is no default criterion. ``criterion="threshold"`` thresholds
-        spatial information minus the information an untuned cell shows by
-        chance (``spatial_information_bias``). ``criterion="shuffle"``, on
-        the raw arrays, also requires spatial information to be significant
-        against circularly shifted spike trains. Use the shuffle when the
-        verdict must control false positives under that null (slow), or the
-        information screen for a fast check. To detect a
-        field, use ``has_place_field()``; field detection also flags most noise units.
+        This is a fast threshold screen, not a verdict: it thresholds spatial
+        information minus the information an untuned cell shows by chance
+        (``spatial_information_bias``) and runs no null test. For a verdict
+        that controls false positives against circularly shifted spike
+        trains, call the free function :func:`is_place_cell` with the raw
+        arrays (it runs the shuffle test by default); a result does not keep
+        the spike times it was computed from. To detect a field, use
+        ``has_place_field()``; field detection also flags most noise units.
 
         Parameters
         ----------
-        criterion : {"threshold"}
-            Required screen. Shuffle verdicts require the raw-array free function.
-        min_info : float or None, default=None
-            Inclusive information cutoff; None resolves to 0.5 bits/spike.
+        min_info : float, default=0.5
+            Inclusive cutoff on bias-corrected spatial information
+            (bits/spike).
 
         Returns
         -------
@@ -1910,28 +1911,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         common screening convention, not derived or calibrated. For
         publication, report a circular-shift test and its assumptions
         instead of a cutoff verdict.
-        For a shuffle verdict, call is_place_cell(..., criterion='shuffle')
-        with the raw arrays; a result does not keep the arrays it was
-        computed from.
         """
-        if str(criterion) == "shuffle":
-            raise ValueError(
-                _format_error(
-                    "SpatialRateResult.is_place_cell cannot run criterion='shuffle'.",
-                    why="Why: a result does not keep the spike times it was computed from",
-                    fix="is_place_cell(env, spike_times, times, positions, criterion='shuffle') or place_cell_significance(...)",
-                )
-            )
-        check_criterion(
-            criterion, ("threshold",), call="SpatialRateResult.is_place_cell"
-        )
         from neurospatial.encoding._metrics import _information_screen
 
-        return bool(
-            _information_screen(
-                self, min_info, default=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"]
-            )[0]
-        )
+        return bool(_information_screen(self, min_info)[0])
 
 
 @_copy_unit_table
@@ -2674,9 +2657,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     def label_cell_types(
         self,
         *,
-        min_spatial_info: float | None = None,
-        min_grid_score: float | None = None,
-        min_border_score: float | None = None,
+        min_spatial_info: float = 0.5,
+        min_grid_score: float = 0.4,
+        min_border_score: float = 0.5,
         grid_scores: NDArray[np.float64] | None = None,
         border_scores: NDArray[np.float64] | None = None,
         boundary_source: BoundarySource = "physical",
@@ -2698,16 +2681,17 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         Parameters
         ----------
-        min_spatial_info : float or None, default=None
-            Inclusive spatial-information cutoff (bits/spike); None is 0.5.
-        min_grid_score : float or None, default=None
-            Minimum grid score to be classified as a grid cell; ``None`` uses
-            0.4, a common screening convention. On circularly time-shifted
+        min_spatial_info : float, default=0.5
+            Inclusive cutoff on bias-corrected spatial information
+            (bits/spike).
+        min_grid_score : float, default=0.4
+            Minimum grid score to be classified as a grid cell, a common
+            screening convention. On circularly time-shifted
             spike trains of simulated cells 1-8% of shuffled maps reach 0.4,
             so it is a screen, not a verdict; use
             :func:`spatial_cell_type_significance` for a verdict.
-        min_border_score : float or None, default=None
-            Inclusive border-score cutoff; None is 0.5. A uniform map scores
+        min_border_score : float, default=0.5
+            Inclusive border-score cutoff. A uniform map scores
             about 0.5 in a convex arena but differently on other shapes (see
             ``untuned_border_score``).
         grid_scores : ndarray of shape (n_neurons,), optional
@@ -2804,12 +2788,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         True
         """
         thresholds = {
-            name: PLACE_GRID_BORDER_THRESHOLDS[name] if value is None else value
-            for name, value in (
-                ("min_spatial_info", min_spatial_info),
-                ("min_grid_score", min_grid_score),
-                ("min_border_score", min_border_score),
-            )
+            "min_spatial_info": min_spatial_info,
+            "min_grid_score": min_grid_score,
+            "min_border_score": min_border_score,
         }
         given: dict[str, NDArray[np.float64] | None] = {}
         for name, value in (
@@ -2842,10 +2823,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             )
         )
 
-    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
-        """Classify neurons as place cells (single-type boolean predicate).
+    def classify(self, *, min_info: float = 0.5) -> NDArray[np.bool_]:
+        """Screen neurons for place tuning by bias-corrected spatial information.
 
-        A neuron is classified as a place cell if its bias-corrected spatial
+        A neuron passes the place-cell screen if its bias-corrected spatial
         information, ``spatial_information() - spatial_information_bias()``,
         meets the minimum threshold. This is the single-type boolean
         predicate ("is this a place cell") sibling of
@@ -2860,9 +2841,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         Parameters
         ----------
-        min_info : float or None, default=None
-            Inclusive minimum Skaggs spatial information (bits/spike) to be
-            classified as a place cell; None is 0.5 bits/spike.
+        min_info : float, default=0.5
+            Inclusive cutoff on bias-corrected Skaggs spatial information
+            (bits/spike).
 
         Returns
         -------
@@ -2914,15 +2895,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         common screening convention, not derived or calibrated. For
         publication, report a circular-shift test and its assumptions
         instead of a cutoff verdict.
-        ``min_info=None`` is 0.5 bits/spike.
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.
         """
         from neurospatial.encoding._metrics import _information_screen
 
-        return _information_screen(
-            self, min_info, default=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"]
-        )
+        return _information_screen(self, min_info)
 
     def summary_table(
         self,
@@ -3249,7 +3227,7 @@ def _resolve_spatial_method(
     method: str,
     *,
     bandwidth: float | None,
-    min_occupancy: float | None,
+    min_occupancy: float,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -3262,8 +3240,10 @@ def _resolve_spatial_method(
         Environment that sets the default bandwidth.
     method : str
         Spatial rate estimator.
-    bandwidth, min_occupancy : float or None
-        Ratio-method parameters as passed by the caller.
+    bandwidth : float or None
+        Ratio-method smoothing as passed by the caller.
+    min_occupancy : float
+        Seconds a bin must be occupied; ``None`` is refused.
     penalty : float or None
         GLM smoothing penalty as passed by the caller.
     rank : int or None
@@ -3274,7 +3254,8 @@ def _resolve_spatial_method(
     Returns
     -------
     bandwidth : float
-        Resolved bandwidth in environment units (``0.0`` for ``"glm"``).
+        Resolved bandwidth in environment units (``0.0`` for ``"glm"``, and
+        for ``"binned"`` without a bandwidth).
     min_occupancy : float
         Resolved minimum occupancy in seconds.
     penalty : float or None
@@ -3304,12 +3285,13 @@ def _resolve_spatial_method(
     validate_pooled(pooled, method)
     # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
     # returns before any smoothing and stamps bandwidth=None on the result).
-    resolved_bandwidth = (
-        resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
-    )
-    resolved_min_occupancy = (
-        0.0 if min_occupancy is None else validate_min_occupancy(min_occupancy)
-    )
+    # "binned" is the plain occupancy-normalized histogram unless a bandwidth
+    # is passed; only the kernel methods default to a smoothing length.
+    if method == "glm" or (method == "binned" and bandwidth is None):
+        resolved_bandwidth = 0.0
+    else:
+        resolved_bandwidth = resolve_spatial_bandwidth(env, bandwidth)
+    resolved_min_occupancy = validate_min_occupancy(min_occupancy)
     if method != "glm":
         _validate_smoothing_parameters(method, resolved_bandwidth)
     return resolved_bandwidth, resolved_min_occupancy, penalty, rank
@@ -3387,11 +3369,11 @@ def _prepare_spatial_support(
         The resolved speed gate, linear intervals (``None`` for
         ``time_allocation="start"``), time support and analysis settings.
     """
+    from neurospatial._velocity import resolve_speed
     from neurospatial.encoding._provenance import rate_analysis_settings
     from neurospatial.encoding._spatial_counts import (
         _resolve_spatial_time_support,
         prepare_linear_spatial_intervals,
-        resolve_speed,
     )
 
     # Resolve the speed gate ONCE so the SAME concrete array feeds both the
@@ -3477,7 +3459,7 @@ def _spatial_rate_maps(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
     bandwidth: float | None,
-    min_occupancy: float | None,
+    min_occupancy: float,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -3749,7 +3731,7 @@ def compute_spatial_rate(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -3803,8 +3785,14 @@ default="diffusion_kde"
           at a 5 cm bandwidth and 60% at 10 cm, and the leak was detected as
           a second field (``diffusion_kde`` and ``binned``: 0-0.3%, no
           leaked field). Use ``diffusion_kde`` or ``binned`` in walled mazes.
-        - **binned**: Bin-then-smooth method. Computes raw rate first, then
-          smooths. Can introduce discretization artifacts.
+        - **binned**: Occupancy-normalized histogram, spike count divided by
+          occupancy in each bin, with no smoothing by default. Pass
+          ``bandwidth`` to smooth that raw rate afterwards; smoothing after
+          the division can introduce discretization artifacts. An unsmoothed
+          map has as many independent bins as visited bins, so on a short
+          recording a unit can have fewer spikes than that: its information
+          bias is then unknown, and the place screen and verdict are False
+          ("undetermined" in labels). Pass ``bandwidth`` or record longer.
         - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
           (never a denominator) and the smoothness penalty λ is chosen by REML,
           so the fit returns **finite rates everywhere** -- including
@@ -3812,8 +3800,8 @@ default="diffusion_kde"
           with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy``, which are mutually exclusive
           with ``method="glm"``).
 
-        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
-        finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
+        Note: ``diffusion_kde``, and ``binned`` with a ``bandwidth``, smooth
+        matrix-free via the cached finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
         dense kernel and scale to large/fine grids. ``glm`` also avoids a dense
         O(n_bins²) kernel (it fits on the rank-``r`` basis), but its
         penalized-Poisson fit is heavier and **not** linear in ``rank``: each
@@ -3825,14 +3813,17 @@ default="diffusion_kde"
         increase ``bin_size``.
 
     bandwidth : float | None, default=None
-        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        larger values produce more smoothing. ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
-        or 2.5 median graph-edge lengths for unspecified/custom units.
+        Smoothing bandwidth in environment units; ``None`` is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm in declared metric units
+        (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
+        values smooth more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
-    min_occupancy : float | None, default=None
-        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
-        included; bins below the threshold are set to NaN. ``None`` resolves to
-        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included; bins below the
+        threshold are set to NaN. ``0.0`` masks nothing (unvisited bins are
+        NaN regardless). ``method="glm"`` fits every bin and accepts only
+        ``0.0``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -4015,7 +4006,7 @@ default="diffusion_kde"
        position's bin under ``"linear"``)
     4. Estimate the rate with ``method``: smooth counts and occupancy, then
        divide (``diffusion_kde``, ``gaussian_kde``), or divide, then smooth
-       (``binned``)
+       only when a ``bandwidth`` is passed (``binned``)
 
     Examples
     --------
@@ -4137,7 +4128,7 @@ def compute_spatial_rates(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -4185,7 +4176,9 @@ def compute_spatial_rates(
         missing observations excluded from occupancy and rate computation.
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
 default="diffusion_kde"
-        Estimator to use. See ``compute_spatial_rate()`` for details. In addition
+        Estimator to use. See ``compute_spatial_rate()`` for details, including
+        why unsmoothed ``"binned"`` maps of short recordings can leave a unit's
+        place verdict undetermined. In addition
         to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
         (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
         everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
@@ -4193,8 +4186,8 @@ default="diffusion_kde"
         the batched entry point the decoder consumes; ``method="glm"`` flows
         through both the decoder (``decode_session`` / ``BayesianDecoder``) and
         NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
-        ``diffusion_kde`` and ``binned`` are
-        matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
+        ``diffusion_kde`` (and ``binned``, unsmoothed unless given a
+        ``bandwidth``) are matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
         O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
         ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
         (≈ O(n_units·n_bins·rank²) + O(n_units·rank³)), repeated across Newton
@@ -4202,13 +4195,16 @@ default="diffusion_kde"
         populations (see ``compute_spatial_rate`` for details). Only
         ``gaussian_kde`` builds a dense O(n_bins²) kernel.
     bandwidth : float | None, default=None
-        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
-        or 2.5 median graph-edge lengths for unspecified/custom units. Mutually exclusive with ``method="glm"``.
-    min_occupancy : float | None, default=None
-        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
-        included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
-        with ``method="glm"``.
+        Smoothing bandwidth in environment units; ``None`` is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm in declared metric units
+        (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
+        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        Mutually exclusive with ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
+        nothing (unvisited bins are NaN regardless). ``method="glm"`` fits
+        every bin and accepts only ``0.0``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
         selects ``λ`` by REML, which raises ``ValueError`` on pathologically
@@ -5090,9 +5086,10 @@ def compute_directional_place_fields(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
     bandwidth : float or None, default=None
-        Smoothing bandwidth in environment units (e.g., cm).
-        None uses 5 cm in declared metric units, or 2.5 median graph-edge
-        lengths for unspecified/custom units.
+        Smoothing bandwidth in environment units (e.g., cm); ``None`` is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm in declared metric units
+        or 2.5 median graph-edge lengths for unspecified or custom units for
+        the kernel methods.
     min_occupancy : float, default=0.0
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
@@ -5668,7 +5665,7 @@ def has_place_field(
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -5703,9 +5700,10 @@ def has_place_field(
     method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
         Rate-map estimator; see :func:`compute_spatial_rate`.
     bandwidth : float or None, default=None
-        Smoothing bandwidth in environment units.
-        None uses 5 cm in declared metric units, or 2.5 median graph-edge
-        lengths for unspecified/custom units.
+        Smoothing bandwidth in environment units; None is 0 (no smoothing)
+        for ``method="binned"``, and 5 cm in declared metric units or 2.5
+        median graph-edge lengths for unspecified or custom units for the
+        kernel methods.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -5754,10 +5752,11 @@ def has_place_field(
         If True, separate two fields that merge at ``threshold`` (the
         FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
 
-    min_occupancy : float | None, default=None
-        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
-        included; bins below the threshold are set to NaN. ``None`` resolves to
-        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included; bins below the
+        threshold are set to NaN. ``0.0`` masks nothing (unvisited bins are
+        NaN regardless). ``method="glm"`` fits every bin and accepts only
+        ``0.0``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -5919,16 +5918,16 @@ def is_place_cell(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    criterion: Literal["threshold", "shuffle"],
-    min_info: float | None = None,
-    alpha: float | None = None,
-    n_shuffles: int | None = None,
-    min_shift: float | None = None,
+    criterion: Literal["threshold", "shuffle"] = "shuffle",
+    min_info: float = 0.5,
+    alpha: float = 0.05,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -5941,18 +5940,20 @@ def is_place_cell(
     backend: BackendType = "numpy",
     warn_on_drop: bool = True,
 ) -> bool:
-    """Classify one neuron using an explicitly chosen criterion.
+    """Test whether one neuron is a place cell with a circular-shift shuffle (default).
 
-    There is no default criterion. Both criteria require spatial
-    information minus the information an untuned cell shows by chance
-    (``spatial_information_bias``) to reach ``min_info``.
-    ``criterion="threshold"`` applies only that cutoff.
-    ``criterion="shuffle"`` also requires spatial information to be
-    significant against circularly shifted spike trains, the rule of
+    By default (``criterion="shuffle"``) the neuron is a place cell when its
+    spatial information is significant (``p_value < alpha``) against
+    ``n_shuffles=1000`` circularly shifted spike trains and its
+    bias-corrected spatial information (spatial information minus the
+    information an untuned cell shows by chance,
+    ``spatial_information_bias``) reaches ``min_info``: the rule of
     ``passes_spatial_information`` in
-    :meth:`CellTypeSignificanceResult.summary_table`. Use the shuffle
-    when the verdict must control false positives under that null (slow), or
-    the information screen for a fast check. To detect a field, use
+    :meth:`CellTypeSignificanceResult.summary_table`. The shuffle costs about
+    ``n_shuffles`` rate-map recomputes; pass ``rng`` (an integer seed or a
+    Generator) to make the verdict reproducible. ``criterion="threshold"`` is
+    the fast screen: it applies only the ``min_info`` cutoff, like
+    :meth:`SpatialRateResult.is_place_cell`. To detect a field, use
     ``has_place_field()``; field detection also flags most noise units.
 
     Parameters
@@ -5968,18 +5969,19 @@ def is_place_cell(
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
-    criterion : {"threshold", "shuffle"}
-        Screen the observed statistic or test circular-shift significance.
-    min_info : float or None, default=None
+    criterion : {"shuffle", "threshold"}, default="shuffle"
+        Test circular-shift significance (a verdict), or screen the observed
+        statistic only (fast).
+    min_info : float, default=0.5
         Inclusive cutoff on bias-corrected spatial information (bits/spike),
-        for both criteria; None is 0.5 bits/spike, a common screening
-        convention, not derived or calibrated.
-    alpha : float or None, default=None
-        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
+        for both criteria; a common screening convention, not derived or
+        calibrated.
+    alpha : float, default=0.05
+        P-value level for ``criterion="shuffle"``.
+    n_shuffles : int, default=1000
+        Number of circular shifts in shuffle mode.
+    min_shift : float, default=20.0
+        Minimum shift in analyzed seconds, in shuffle mode.
     rng : numpy.random.Generator, int or None, default=None
         Shuffle random source; an integer seed with the same unit label is stable
         across single and population calls.
@@ -6000,8 +6002,14 @@ def is_place_cell(
           at a 5 cm bandwidth and 60% at 10 cm, and the leak was detected as
           a second field (``diffusion_kde`` and ``binned``: 0-0.3%, no
           leaked field). Use ``diffusion_kde`` or ``binned`` in walled mazes.
-        - **binned**: Bin-then-smooth method. Computes raw rate first, then
-          smooths. Can introduce discretization artifacts.
+        - **binned**: Occupancy-normalized histogram, spike count divided by
+          occupancy in each bin, with no smoothing by default. Pass
+          ``bandwidth`` to smooth that raw rate afterwards; smoothing after
+          the division can introduce discretization artifacts. An unsmoothed
+          map has as many independent bins as visited bins, so on a short
+          recording a unit can have fewer spikes than that: its information
+          bias is then unknown, and the place screen and verdict are False
+          ("undetermined" in labels). Pass ``bandwidth`` or record longer.
         - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
           (never a denominator) and the smoothness penalty λ is chosen by REML,
           so the fit returns **finite rates everywhere** -- including
@@ -6009,8 +6017,8 @@ def is_place_cell(
           with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy``, which are mutually exclusive
           with ``method="glm"``).
 
-        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
-        finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
+        Note: ``diffusion_kde``, and ``binned`` with a ``bandwidth``, smooth
+        matrix-free via the cached finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
         dense kernel and scale to large/fine grids. ``glm`` also avoids a dense
         O(n_bins²) kernel (it fits on the rank-``r`` basis), but its
         penalized-Poisson fit is heavier and **not** linear in ``rank``: each
@@ -6022,14 +6030,17 @@ def is_place_cell(
         increase ``bin_size``.
 
     bandwidth : float | None, default=None
-        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        larger values produce more smoothing. ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
-        or 2.5 median graph-edge lengths for unspecified/custom units.
+        Smoothing bandwidth in environment units; ``None`` is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm in declared metric units
+        (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
+        values smooth more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
-    min_occupancy : float | None, default=None
-        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
-        included; bins below the threshold are set to NaN. ``None`` resolves to
-        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included; bins below the
+        threshold are set to NaN. ``0.0`` masks nothing (unvisited bins are
+        NaN regardless). ``method="glm"`` fits every bin and accepts only
+        ``0.0``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -6179,8 +6190,8 @@ def is_place_cell(
     plural map. Its null assumes stable firing statistics on the joined
     analyzed clock; recording gaps and excluded epochs are never shift
     destinations. Results keep no raw arrays or recompute closures.
-    Shuffle keywords belong only to the shuffle; passing one with
-    ``criterion="threshold"`` raises.
+    Shuffle keywords belong only to the shuffle; passing one with a value
+    other than its default with ``criterion="threshold"`` raises.
 
     See Also
     --------
@@ -6194,15 +6205,17 @@ def is_place_cell(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import is_place_cell
     >>> rng = np.random.default_rng(0)
-    >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> times = np.linspace(0, 40, 1000)
-    >>> spike_times = np.sort(rng.uniform(0, 40, 50))
-    >>> result = is_place_cell(
-    ...     env, spike_times, times, positions, criterion="threshold"
-    ... )
-    >>> type(result)
-    <class 'bool'>
+    >>> positions = rng.uniform(0, 100, (3000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    >>> times = np.linspace(0, 120, 3000)  # 2 minutes, in seconds
+    >>> spike_times = np.sort(rng.uniform(0, 120, 150))  # untuned unit
+    >>> is_place_cell(env, spike_times, times, positions, rng=0)
+    False
+
+    The threshold screen is fast and runs no null test:
+
+    >>> is_place_cell(env, spike_times, times, positions, criterion="threshold")
+    False
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_place_cell")
     check_mode_keywords(
@@ -6215,6 +6228,7 @@ def is_place_cell(
             "unit_id": unit_id,
             "alpha": alpha,
         },
+        defaults=_SHUFFLE_DEFAULTS,
         call="is_place_cell",
     )
     breaks = validate_break_before(break_before, len(times), call="is_place_cell")
@@ -6250,7 +6264,8 @@ def is_place_cell(
                 times,
                 positions,
                 unit_ids=[label],
-                **resolve_shuffle_settings(n_shuffles, min_shift),
+                n_shuffles=n_shuffles,
+                min_shift=min_shift,
                 rng=rng,
                 method=method,
                 bandwidth=bandwidth,
@@ -6270,10 +6285,9 @@ def is_place_cell(
             rate_map,
             alpha=alpha,
             min_info=min_info,
-            default_min_info=PLACE_SPATIAL_INFO_THRESHOLDS["min_info"],
             kind="place",
         )
-    return rate_map().is_place_cell(criterion="threshold", min_info=min_info)
+    return rate_map().is_place_cell(min_info=min_info)
 
 
 def _rises_toward_a_neighbor(
@@ -6360,7 +6374,7 @@ def place_cell_significance(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -6423,13 +6437,16 @@ def place_cell_significance(
         its pooled REML penalty couples units, so a shifted single-unit fit
         would not be the observed model.
     bandwidth : float | None, default=None
-        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
-        ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
-        or 2.5 median graph-edge lengths for unspecified/custom units. Mutually exclusive with ``method="glm"``.
-    min_occupancy : float | None, default=None
-        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
-        included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
-        with ``method="glm"``.
+        Smoothing bandwidth in environment units; ``None`` is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm in declared metric units
+        (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
+        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        Mutually exclusive with ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
+        nothing (unvisited bins are NaN regardless). ``method="glm"`` fits
+        every bin and accepts only ``0.0``.
     penalty, rank : None, default=None
         GLM-only settings; ``method="glm"`` is not supported here, so any
         value raises ``ValueError``.
@@ -6895,16 +6912,10 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
 
     def _outcomes(
         self,
-        alpha: float | None,
-        min_spatial_info: float | None,
+        level: float,
+        min_info: float,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-        min_info = (
-            PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
-            if min_spatial_info is None
-            else min_spatial_info
-        )
         adjusted, cannot_reject = self._adjusted(level, correction)
         with np.errstate(invalid="ignore"):
             passed = adjusted < level
@@ -6996,22 +7007,21 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     def label_cell_types(
         self,
         *,
-        alpha: float | None = None,
-        min_spatial_info: float | None = None,
+        alpha: float = 0.05,
+        min_spatial_info: float = 0.5,
         correction: Literal["holm", "fdr_bh"] | None = None,
     ) -> NDArray[np.str_]:
         """Label each unit from its three shuffle tests.
 
         Parameters
         ----------
-        alpha : float or None, default=None
-            Significance level; a test passes when ``p_value < alpha``. None
-            is 0.05.
-        min_spatial_info : float or None, default=None
+        alpha : float, default=0.05
+            Significance level; a test passes when ``p_value < alpha``.
+        min_spatial_info : float, default=0.5
             Inclusive cutoff on bias-corrected spatial information
             (``spatial_information - spatial_information_bias``, bits/spike)
-            that a significant unit must also reach to be ``"place"``. None
-            is 0.5, the cutoff of the fixed-threshold screen
+            that a significant unit must also reach to be ``"place"``: the
+            cutoff of the fixed-threshold screen
             (:meth:`SpatialRatesResult.label_cell_types`), a common screening
             convention, not derived or calibrated.
         correction : {"holm", "fdr_bh"} or None, default=None
@@ -7065,20 +7075,20 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     def summary_table(
         self,
         *,
-        alpha: float | None = None,
-        min_spatial_info: float | None = None,
+        alpha: float = 0.05,
+        min_spatial_info: float = 0.5,
         correction: Literal["holm", "fdr_bh"] | None = None,
     ) -> pd.DataFrame:
         """Per-unit observed scores, null percentiles, p-values and labels.
 
         Parameters
         ----------
-        alpha : float or None, default=None
+        alpha : float, default=0.05
             Significance level for ``passes_*`` and ``cell_type``, and the
-            null percentile reported, ``100 * (1 - alpha)``. None is 0.05.
-        min_spatial_info : float or None, default=None
-            Bias-corrected information cutoff of the place label; see
-            :meth:`label_cell_types`. None is 0.5 bits/spike.
+            null percentile reported, ``100 * (1 - alpha)``.
+        min_spatial_info : float, default=0.5
+            Bias-corrected information cutoff of the place label
+            (bits/spike); see :meth:`label_cell_types`.
         correction : {"holm", "fdr_bh"} or None, default=None
             Multiple-comparison correction of ``passes_*`` and ``cell_type``;
             see :meth:`label_cell_types`.
@@ -7108,7 +7118,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         import pandas as pd
 
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
+        level = alpha
         percentile = 100.0 * (1.0 - level)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN nulls
@@ -7128,11 +7138,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         n_finite = self._n_finite_null()
         for k, name in enumerate(self.statistics):
             columns[f"{name}_n_finite_null"] = n_finite[:, k]
-        min_info = (
-            PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
-            if min_spatial_info is None
-            else min_spatial_info
-        )
+        min_info = min_spatial_info
         columns.update(_cell_type_columns(self._outcomes(level, min_info, correction)))
         df = pd.DataFrame(
             columns, index=pd.Index(self.unit_ids.tolist(), name="unit_id")
@@ -7187,7 +7193,7 @@ def spatial_cell_type_significance(
     boundary_source: BoundarySource = "physical",
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -7235,10 +7241,11 @@ def spatial_cell_type_significance(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate-map estimator; see :func:`compute_spatial_rates`.
     bandwidth : float or None, default=None
-        Smoothing bandwidth in environment units; None uses 5 cm in metric
-        units, or 2.5 median graph-edge lengths otherwise.
-    min_occupancy : float or None, default=None
-        Seconds a bin must be occupied to count; None is 0.0.
+        Smoothing bandwidth in environment units; None is 0 (no smoothing)
+        for ``method="binned"``, and 5 cm in metric units or 2.5 median
+        graph-edge lengths otherwise for the kernel methods.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to count; ``0.0`` masks nothing.
     speed : ndarray, shape (n_samples,), optional
         Speed for the ``min_speed`` gate; derived from ``positions`` when None.
     min_speed : float or None, default=None
@@ -7580,7 +7587,7 @@ def _spatial_shuffle(
     boundary_source: BoundarySource,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
     bandwidth: float | None,
-    min_occupancy: float | None,
+    min_occupancy: float,
     penalty: float | None,
     rank: int | None,
     pooled: bool,

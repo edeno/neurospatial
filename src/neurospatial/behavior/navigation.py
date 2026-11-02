@@ -96,13 +96,13 @@ Complete analysis pipeline for a spatial navigation task::
     efficiency = compute_path_efficiency(
         env, times, positions, reached, goal=reached.end_region
     )
-    print(efficiency[["efficiency", "angular_efficiency"]])
+    print(efficiency.summary_table()[["efficiency", "angular_efficiency"]])
 
     # 4. Goal-directed metrics of each trial
     goal_directed = compute_goal_directed_metrics(
         env, times, positions, reached, goal=reached.end_region
     )
-    print(goal_directed["goal_bias"].mean())
+    print(goal_directed.summary_table()["goal_bias"].mean())
 
 References
 ----------
@@ -204,104 +204,240 @@ def _result_goal(
     return point
 
 
-def _require_length(result: str, name: str, value: float) -> float:
-    """Return ``value`` as a float; raise if it is negative (NaN and inf pass)."""
-    value = float(value)
-    if value < 0:
+def _require_lengths(result: str, name: str, values: NDArray[np.float64]) -> None:
+    """Raise if any of ``values`` is negative (NaN and inf pass)."""
+    if np.any(values < 0):
+        what = (
+            f"{name}={float(values)!r} is negative."
+            if values.ndim == 0
+            else f"{name} has a negative value ({float(np.nanmin(values))!r})."
+        )
         raise _result_error(
             result,
-            f"{name}={value!r} is negative.",
+            what,
             why="a path length, distance or duration is never negative.",
             fix=f"pass {name} >= 0, or NaN when it was not measured.",
         )
-    return value
+
+
+def _ids_array(ids: list[Any]) -> NDArray[Any]:
+    """Interval ids as an array; integer (int64) even when there are none."""
+    return np.array(ids) if ids else np.array([], dtype=np.int64)
+
+
+def _interval_shape(
+    result: str, interval_ids: Any
+) -> tuple[tuple[int, ...], NDArray[Any] | None]:
+    """The metric shape, ``()`` for one path or ``(n_intervals,)``, and the ids."""
+    if interval_ids is None:
+        return (), None
+    ids = np.asarray(interval_ids)
+    if ids.ndim != 1:
+        raise _result_error(
+            result,
+            f"interval_ids has shape {ids.shape}.",
+            why="each interval has one id.",
+            fix="pass a 1-D array of interval ids, or None for one path.",
+        )
+    return (ids.size,), ids
+
+
+def _interval_goals(
+    result: str, goal: Any, ids: NDArray[Any] | None, *, n_dims: int | None
+) -> Any:
+    """One validated goal, or a tuple with one goal (or None) per interval."""
+    if ids is None:
+        return _result_goal(result, goal, n_dims=n_dims)
+    goals = tuple(goal) if isinstance(goal, (tuple, list)) else ()
+    if len(goals) != ids.size:
+        raise _result_error(
+            result,
+            f"got {len(goals)} goals for {ids.size} interval_ids.",
+            why="each interval has its own goal.",
+            fix="pass a tuple with one goal (or None) per interval.",
+        )
+    return tuple(
+        None if g is None else _result_goal(result, g, n_dims=n_dims) for g in goals
+    )
+
+
+def _metric_column(
+    result: str, key: str, value: Any, shape: tuple[int, ...], dtype: type
+) -> NDArray[Any]:
+    """One metric as an array of ``shape`` (scalar ``()`` for one path).
+
+    None is refused: a metric that was not measured is NaN, not None.
+    """
+    if value is None or (
+        isinstance(value, (list, tuple)) and any(v is None for v in value)
+    ):
+        raise _result_error(
+            result,
+            f"{key} is None.",
+            why="a metric that was not measured is NaN, so every metric stays a "
+            "number.",
+            fix=f"pass {key}=np.nan for a value that was not measured.",
+        )
+    array: NDArray[Any] = np.asarray(value, dtype=dtype)
+    if array.shape != shape:
+        raise _result_error(
+            result,
+            f"{key} has shape {array.shape}, expected {shape}.",
+            why="a single path has scalar metrics and an interval result "
+            "has one value per interval.",
+            fix="pass one value per interval_id, or scalars without interval_ids.",
+        )
+    return array
+
+
+def _set_metrics(obj: Any, values: dict[str, NDArray[Any]], per_interval: bool) -> None:
+    """Store each metric as a Python scalar for one path, else as its array."""
+    for key, value in values.items():
+        object.__setattr__(obj, key, value if per_interval else value.item())
+
+
+def _metrics_table(
+    obj: Any, floats: tuple[str, ...], bools: tuple[str, ...], units: dict[str, str]
+) -> pd.DataFrame:
+    """One row per interval of a result's metrics, indexed by ``interval_id``.
+
+    Float and bool columns in order, then a string ``goal`` column when every
+    goal is a region name (or unknown). ``attrs`` holds ``metric`` and
+    ``units``.
+    """
+    import pandas as pd
+
+    data: dict[str, Any] = {
+        key: np.atleast_1d(np.asarray(getattr(obj, key), dtype=float)).copy()
+        for key in floats
+    }
+    for key in bools:
+        data[key] = np.atleast_1d(np.asarray(getattr(obj, key), dtype=bool)).copy()
+    goals = obj.goal if isinstance(obj.goal, tuple) else (obj.goal,)
+    if all(g is None or isinstance(g, str) for g in goals):
+        data["goal"] = pd.array(list(goals), dtype="string")
+    index = (
+        pd.Index([pd.NA], dtype="Int64", name="interval_id")
+        if obj.interval_ids is None
+        else pd.Index(np.asarray(obj.interval_ids).copy(), name="interval_id")
+    )
+    df = pd.DataFrame(data, index=index)
+    df.attrs["metric"] = obj.metric
+    df.attrs["units"] = units
+    return df
 
 
 @dataclass(frozen=True, repr=False, eq=False)
 class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
-    """Path efficiency metrics for a trajectory segment.
+    """Path efficiency metrics of a trajectory, or of each of its intervals.
+
+    Without ``interval_ids`` the result describes one path and every metric
+    is a scalar. With ``interval_ids`` (from
+    ``compute_path_efficiency(..., intervals)``) every metric is an array with
+    one value per interval, in interval order; :meth:`summary_table` lays
+    them out as a table indexed by ``interval_id``.
 
     Attributes
     ----------
-    traveled_length : float
+    traveled_length : float or ndarray of shape (n_intervals,)
         Distance traveled over the observed steps, in environment units. NaN
         when no step was observed.
-    shortest_length : float
+    shortest_length : float or ndarray of shape (n_intervals,)
         Length of the shortest path from the start to the goal, in
         environment units. Is ``inf`` when the goal is unreachable under the
         geodesic metric (the goal lies on a disconnected component); it is
-        not clamped to ``0.0``.
-    efficiency : float
+        not clamped to ``0.0``. NaN when not measured.
+    efficiency : float or ndarray of shape (n_intervals,)
         Derived: ``shortest_length / traveled_length`` when the path is
         ``fully_observed``. Is ``(0, 1]`` when the path ends at the goal, and
         can exceed 1 when it does not. Is 0.0 when a geodesic step is
         infinite (it crosses between disconnected parts of the environment).
         NaN when the path is not fully observed, ``traveled_length`` is 0 or
         NaN, or ``shortest_length`` is not finite.
-    time_efficiency : float or None
-        Ratio T_optimal / T_actual if reference_speed provided, else None.
-    angular_efficiency : float
+    time_efficiency : float or ndarray of shape (n_intervals,)
+        Ratio T_optimal / T_actual for the ``reference_speed`` passed to
+        :func:`compute_path_efficiency`; NaN when no reference speed was
+        given or it could not be measured.
+    angular_efficiency : float or ndarray of shape (n_intervals,)
         ``1 - mean(angle) / pi``, where ``angle`` is the angle between each
         observed step and the direction from the step's start to the goal
         (see :func:`angular_efficiency`). Range [0, 1]: 1.0 for a run
         straight toward the goal, 0.5 for steps perpendicular to it, 0.0 for
         a run straight away. NaN when no step has a defined direction (no
         movement, or fewer than two observed samples).
-    start_position : NDArray[np.float64]
-        Start position coordinates, shape (n_dims,).
-    goal : str or NDArray[np.float64]
+    start_position : ndarray of shape (n_dims,) or (n_intervals, n_dims)
+        Start position coordinates (NaN for an interval with an unknown goal).
+    goal : str, ndarray of shape (n_dims,), or tuple
         The goal as given: a region name, or a point of shape (n_dims,).
+        With intervals, a tuple with one goal per interval (None for an
+        unknown goal).
     metric : {"euclidean", "geodesic"}
         Distance metric used.
-    fully_observed : bool
+    fully_observed : bool or ndarray of bool, shape (n_intervals,)
         True when every step from the first to the last observed sample is
         usable: missing samples are bridged within ``max_gap`` and there is
         no longer gap, epoch edge or declared break. Only then does
         ``traveled_length`` cover the whole route, so only then is
-        ``efficiency`` defined.
+        ``efficiency`` defined. It describes tracking only, so it is defined
+        for an interval with an unknown goal too.
+    interval_ids : ndarray of shape (n_intervals,) or None, default=None
+        The intervals' ids, or None for a single path.
+    units : str or None, default=None
+        Length unit of ``traveled_length`` and ``shortest_length`` (the
+        environment's ``units``).
     """
 
-    traveled_length: float
-    shortest_length: float
-    efficiency: float = field(init=False)
-    time_efficiency: float | None
-    angular_efficiency: float
+    traveled_length: float | NDArray[np.float64]
+    shortest_length: float | NDArray[np.float64]
+    efficiency: float | NDArray[np.float64] = field(init=False)
+    time_efficiency: float | NDArray[np.float64]
+    angular_efficiency: float | NDArray[np.float64]
     start_position: NDArray[np.float64]
-    goal: str | NDArray[np.float64]
+    goal: str | NDArray[np.float64] | tuple[str | NDArray[np.float64] | None, ...]
     metric: Literal["euclidean", "geodesic"]
-    fully_observed: bool
+    fully_observed: bool | NDArray[np.bool_]
+    interval_ids: NDArray[Any] | None = field(default=None, kw_only=True)
+    units: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        """Validate the fields, derive the efficiency and own the positions."""
+        """Validate the fields, derive the efficiency and own the arrays."""
         name = "PathEfficiencyResult"
         require_metric(self.metric, where=name)
-        traveled = _require_length(name, "traveled_length", self.traveled_length)
-        shortest = _require_length(name, "shortest_length", self.shortest_length)
+        shape, ids = _interval_shape(name, self.interval_ids)
         start = np.asarray(self.start_position, dtype=float)
-        goal = _result_goal(name, self.goal, n_dims=start.shape[-1])
-        if start.ndim != 1:
+        if start.shape[:-1] != shape:
             raise _result_error(
                 name,
                 f"start_position has shape {start.shape}.",
-                why="the start is one position.",
-                fix="pass an array of shape (n_dims,).",
+                why="each path or interval has one start position.",
+                fix="pass shape (n_dims,), or (n_intervals, n_dims) with interval_ids.",
             )
-        object.__setattr__(self, "traveled_length", traveled)
-        object.__setattr__(self, "shortest_length", shortest)
-        object.__setattr__(self, "angular_efficiency", float(self.angular_efficiency))
-        if self.time_efficiency is not None:
-            object.__setattr__(self, "time_efficiency", float(self.time_efficiency))
-        object.__setattr__(self, "fully_observed", bool(self.fully_observed))
+        goal = _interval_goals(name, self.goal, ids, n_dims=start.shape[-1])
+        values = {
+            key: _metric_column(name, key, getattr(self, key), shape, float)
+            for key in (
+                "traveled_length",
+                "shortest_length",
+                "time_efficiency",
+                "angular_efficiency",
+            )
+        }
+        for key in ("traveled_length", "shortest_length"):
+            _require_lengths(name, key, values[key])
+        fully = _metric_column(name, "fully_observed", self.fully_observed, shape, bool)
+        traveled, shortest = values["traveled_length"], values["shortest_length"]
+        defined = fully & (traveled > 0) & np.isfinite(shortest)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            efficiency = np.where(defined, shortest / traveled, np.nan)
+        values.update(efficiency=efficiency, fully_observed=fully)
+        _set_metrics(self, values, per_interval=ids is not None)
+        object.__setattr__(self, "interval_ids", ids)
         object.__setattr__(self, "start_position", start)
         object.__setattr__(self, "goal", goal)
-        defined = self.fully_observed and traveled > 0 and np.isfinite(shortest)
-        object.__setattr__(
-            self, "efficiency", shortest / traveled if defined else float("nan")
-        )
         self._own_arrays()
 
-    def is_efficient(self, threshold: float = 0.8) -> bool:
-        """Return True if the path efficiency is at least ``threshold``.
+    def is_efficient(self, threshold: float = 0.8) -> bool | NDArray[np.bool_]:
+        """Whether the path efficiency is at least ``threshold``.
 
         Parameters
         ----------
@@ -310,24 +446,81 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 
         Returns
         -------
-        bool
-            True if ``efficiency >= threshold``; False when the efficiency
-            is NaN (not measured).
+        bool or ndarray of bool, shape (n_intervals,)
+            True where ``efficiency >= threshold``; False where the
+            efficiency is NaN (not measured). One value per interval for an
+            interval result.
         """
-        return bool(self.efficiency >= threshold)
+        passed = np.asarray(self.efficiency) >= threshold
+        return bool(passed) if self.interval_ids is None else passed
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar path-efficiency metrics.
 
-        For a human-readable string use ``str(result)``.
+        For a single path, its ``traveled_length``, ``shortest_length`` and
+        ``efficiency``. For an interval result, ``n_intervals``,
+        ``n_fully_observed`` and the mean of each of those three over the
+        intervals where it is defined (NaN when it is defined in none). For a
+        human-readable string use ``str(result)``.
         """
-        return {
-            "traveled_length": self.traveled_length,
-            "shortest_length": self.shortest_length,
-            "efficiency": self.efficiency,
+        if self.interval_ids is None:
+            return {
+                "traveled_length": self.traveled_length,
+                "shortest_length": self.shortest_length,
+                "efficiency": self.efficiency,
+            }
+        summary: dict[str, Any] = {
+            "n_intervals": int(np.size(self.interval_ids)),
+            "n_fully_observed": int(np.count_nonzero(self.fully_observed)),
         }
+        for key in ("traveled_length", "shortest_length", "efficiency"):
+            values = np.asarray(getattr(self, key))
+            finite = values[np.isfinite(values)]
+            summary[f"mean_{key}"] = float(finite.mean()) if finite.size else np.nan
+        return summary
+
+    def summary_table(self) -> pd.DataFrame:
+        """One row per interval of the scalar metrics, indexed by ``interval_id``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``traveled_length``, ``shortest_length``, ``efficiency``,
+            ``time_efficiency``, ``angular_efficiency`` (float) and
+            ``fully_observed`` (bool), then ``goal`` (string dtype, missing
+            for an unknown goal) when every goal is a region name; point goals
+            stay in :attr:`goal`. A single path gives one row whose
+            ``interval_id`` is missing. ``df.attrs`` holds ``metric`` and
+            ``units``, the unit of each metric column.
+        """
+        length = self.units or ""
+        return _metrics_table(
+            self,
+            (
+                "traveled_length",
+                "shortest_length",
+                "efficiency",
+                "time_efficiency",
+                "angular_efficiency",
+            ),
+            ("fully_observed",),
+            {
+                "traveled_length": length,
+                "shortest_length": length,
+                "efficiency": "",
+                "time_efficiency": "",
+                "angular_efficiency": "",
+            },
+        )
 
     def __str__(self) -> str:
+        if self.interval_ids is not None:
+            mean = self.summary()["mean_efficiency"]
+            text = "N/A" if np.isnan(mean) else f"{mean:.1%}"
+            return (
+                f"Path efficiency of {np.size(self.interval_ids)} intervals "
+                f"(mean efficiency: {text})"
+            )
         if np.isnan(self.efficiency):
             return (
                 f"Path: {self.traveled_length:.1f} traveled, "
@@ -430,42 +623,59 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 
 @dataclass(frozen=True, repr=False, eq=False)
 class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
-    """Goal-directed navigation metrics for a trajectory.
+    """Goal-directed navigation metrics of a trajectory, or of each interval.
+
+    Without ``interval_ids`` the result describes one path and every metric
+    is a scalar. With ``interval_ids`` (from
+    ``compute_goal_directed_metrics(..., intervals)``) every metric is an
+    array with one value per interval, in interval order;
+    :meth:`summary_table` lays them out as a table indexed by
+    ``interval_id``.
 
     Attributes
     ----------
-    goal_bias : float
+    goal_bias : float or ndarray of shape (n_intervals,)
         Mean instantaneous goal alignment, range [-1, 1].
         Interpretation:
         - > 0.5: Strong goal-directed navigation
         - 0 to 0.5: Weak goal-directed with some wandering
         - < 0: Net movement away from goal
-    mean_approach_rate : float
+    mean_approach_rate : float or ndarray of shape (n_intervals,)
         Mean rate of distance change in environment units per second,
         averaged over the observed time: the change of distance over the
         usable intervals divided by their total duration, so it does not
         depend on the sampling rate. Negative values indicate approaching
         the goal. Interpretation: -10 cm/s means closing 10 cm per second on
         average.
-    time_to_reach_goal : float or None
+    time_to_reach_goal : float or ndarray of shape (n_intervals,)
         Seconds from the first measured sample to arrival: the first sample
         in a goal bin for a region goal, or within ``goal_radius`` of a point
-        goal. None for a point goal without ``goal_radius`` (arrival not
-        tested); NaN when the goal was never reached. Not to be confused with
+        goal. NaN when the goal was never reached, or when arrival was not
+        tested (see ``arrival_tested``). Not to be confused with
         :func:`time_to_goal`, which returns a per-sample array.
-    min_distance_to_goal : float
+    min_distance_to_goal : float or ndarray of shape (n_intervals,)
         Closest distance to the goal (under ``metric``) over the measured
         samples, in environment units. NaN when no sample is measured.
-    goal_distance_at_start : float
+    goal_distance_at_start : float or ndarray of shape (n_intervals,)
         Distance to the goal at the first measured sample, in environment
         units. NaN when no sample is measured.
-    goal_distance_at_end : float
+    goal_distance_at_end : float or ndarray of shape (n_intervals,)
         Distance to the goal at the last measured sample, in environment
         units. NaN when no sample is measured.
-    goal : str or NDArray[np.float64]
+    goal : str, ndarray of shape (n_dims,), or tuple
         The goal as given: a region name, or a point of shape (n_dims,).
+        With intervals, a tuple with one goal per interval (None for an
+        unknown goal).
     metric : {"euclidean", "geodesic"}
         Distance metric used.
+    arrival_tested : bool or ndarray of bool, shape (n_intervals,), default=True
+        Whether arrival was tested: True for a region goal or a point goal
+        with ``goal_radius``; False for a point goal without one, or an
+        interval with an unknown goal.
+    interval_ids : ndarray of shape (n_intervals,) or None, default=None
+        The intervals' ids, or None for a single path.
+    units : str or None, default=None
+        Length unit of the distances (the environment's ``units``).
 
     Examples
     --------
@@ -487,39 +697,46 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     (95.0, 0.0)
     """
 
-    goal_bias: float
-    mean_approach_rate: float
-    time_to_reach_goal: float | None
-    min_distance_to_goal: float
-    goal_distance_at_start: float
-    goal_distance_at_end: float
-    goal: str | NDArray[np.float64]
+    goal_bias: float | NDArray[np.float64]
+    mean_approach_rate: float | NDArray[np.float64]
+    time_to_reach_goal: float | NDArray[np.float64]
+    min_distance_to_goal: float | NDArray[np.float64]
+    goal_distance_at_start: float | NDArray[np.float64]
+    goal_distance_at_end: float | NDArray[np.float64]
+    goal: str | NDArray[np.float64] | tuple[str | NDArray[np.float64] | None, ...]
     metric: Literal["euclidean", "geodesic"]
+    arrival_tested: bool | NDArray[np.bool_] = field(default=True, kw_only=True)
+    interval_ids: NDArray[Any] | None = field(default=None, kw_only=True)
+    units: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        """Validate the fields and own a read-only copy of the goal position."""
+        """Validate the fields and own read-only copies of the arrays."""
         name = "GoalDirectedMetrics"
         require_metric(self.metric, where=name)
-        for length in (
+        shape, ids = _interval_shape(name, self.interval_ids)
+        goal = _interval_goals(name, self.goal, ids, n_dims=None)
+        lengths = (
             "min_distance_to_goal",
             "goal_distance_at_start",
             "goal_distance_at_end",
-        ):
-            value = _require_length(name, length, getattr(self, length))
-            object.__setattr__(self, length, value)
-        if self.time_to_reach_goal is not None:
-            object.__setattr__(
-                self,
-                "time_to_reach_goal",
-                _require_length(name, "time_to_reach_goal", self.time_to_reach_goal),
-            )
-        object.__setattr__(self, "goal_bias", float(self.goal_bias))
-        object.__setattr__(self, "mean_approach_rate", float(self.mean_approach_rate))
-        object.__setattr__(self, "goal", _result_goal(name, self.goal, n_dims=None))
+            "time_to_reach_goal",
+        )
+        values = {
+            key: _metric_column(name, key, getattr(self, key), shape, float)
+            for key in ("goal_bias", "mean_approach_rate", *lengths)
+        }
+        for key in lengths:
+            _require_lengths(name, key, values[key])
+        values["arrival_tested"] = _metric_column(
+            name, "arrival_tested", self.arrival_tested, shape, bool
+        )
+        _set_metrics(self, values, per_interval=ids is not None)
+        object.__setattr__(self, "interval_ids", ids)
+        object.__setattr__(self, "goal", goal)
         self._own_arrays()
 
-    def is_goal_directed(self, threshold: float = 0.3) -> bool:
-        """Return True if the goal bias is at least ``threshold``.
+    def is_goal_directed(self, threshold: float = 0.3) -> bool | NDArray[np.bool_]:
+        """Whether the goal bias is at least ``threshold``.
 
         Parameters
         ----------
@@ -528,27 +745,90 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
         Returns
         -------
-        bool
-            True if ``goal_bias >= threshold``; False when the goal bias is
-            NaN (the animal never moved).
+        bool or ndarray of bool, shape (n_intervals,)
+            True where ``goal_bias >= threshold``; False where the goal bias
+            is NaN (the animal never moved). One value per interval for an
+            interval result.
         """
-        return bool(self.goal_bias >= threshold)
+        passed = np.asarray(self.goal_bias) >= threshold
+        return bool(passed) if self.interval_ids is None else passed
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar goal-directed metrics.
 
-        For a human-readable multi-line string use ``str(result)``.
+        For a single path, its metrics. For an interval result,
+        ``n_intervals``, ``n_reached`` (intervals with a finite
+        ``time_to_reach_goal``), ``n_arrival_tested`` and ``mean_goal_bias``
+        over the intervals where it is defined (NaN when none). For a
+        human-readable multi-line string use ``str(result)``.
         """
+        if self.interval_ids is None:
+            return {
+                "goal_bias": self.goal_bias,
+                "mean_approach_rate": self.mean_approach_rate,
+                "goal_distance_at_start": self.goal_distance_at_start,
+                "goal_distance_at_end": self.goal_distance_at_end,
+                "min_distance_to_goal": self.min_distance_to_goal,
+                "time_to_reach_goal": self.time_to_reach_goal,
+                "arrival_tested": self.arrival_tested,
+            }
+        bias = np.asarray(self.goal_bias)
+        finite = bias[np.isfinite(bias)]
         return {
-            "goal_bias": self.goal_bias,
-            "mean_approach_rate": self.mean_approach_rate,
-            "goal_distance_at_start": self.goal_distance_at_start,
-            "goal_distance_at_end": self.goal_distance_at_end,
-            "min_distance_to_goal": self.min_distance_to_goal,
-            "time_to_reach_goal": self.time_to_reach_goal,
+            "n_intervals": int(np.size(self.interval_ids)),
+            "n_reached": int(np.isfinite(self.time_to_reach_goal).sum()),
+            "n_arrival_tested": int(np.count_nonzero(self.arrival_tested)),
+            "mean_goal_bias": float(finite.mean()) if finite.size else np.nan,
         }
 
+    def summary_table(self) -> pd.DataFrame:
+        """One row per interval of the scalar metrics, indexed by ``interval_id``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``goal_bias``, ``mean_approach_rate``,
+            ``goal_distance_at_start``, ``goal_distance_at_end``,
+            ``min_distance_to_goal``, ``time_to_reach_goal`` (float) and
+            ``arrival_tested`` (bool), then ``goal`` (string dtype, missing for
+            an unknown goal) when every goal is a region name; point goals
+            stay in :attr:`goal`. A single path gives one row whose
+            ``interval_id`` is missing. ``df.attrs`` holds ``metric`` and
+            ``units``, the unit of each metric column.
+        """
+        length = self.units or ""
+        return _metrics_table(
+            self,
+            (
+                "goal_bias",
+                "mean_approach_rate",
+                "goal_distance_at_start",
+                "goal_distance_at_end",
+                "min_distance_to_goal",
+                "time_to_reach_goal",
+            ),
+            ("arrival_tested",),
+            {
+                "goal_bias": "",
+                # Unknown length units stay "", as for the distances.
+                "mean_approach_rate": f"{length}/s" if length else "",
+                "goal_distance_at_start": length,
+                "goal_distance_at_end": length,
+                "min_distance_to_goal": length,
+                "time_to_reach_goal": "s",
+            },
+        )
+
     def __str__(self) -> str:
+        if self.interval_ids is not None:
+            summary = self.summary()
+            bias = summary["mean_goal_bias"]
+            return (
+                f"Goal-directed metrics of {summary['n_intervals']} intervals "
+                f"(mean goal bias: {'N/A' if np.isnan(bias) else f'{bias:.2f}'}; "
+                f"reached in {summary['n_reached']} of "
+                f"{summary['n_arrival_tested']} tested)"
+            )
         lines = [
             "Goal-directed metrics:",
             f"  Goal bias: {self.goal_bias:.2f} (range [-1, 1])",
@@ -557,7 +837,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             f"{self.goal_distance_at_end:.1f} units",
             f"  Closest approach: {self.min_distance_to_goal:.1f} units",
         ]
-        if self.time_to_reach_goal is None:
+        if not self.arrival_tested:
             lines.append("  Time to reach goal: not tested (no goal_radius)")
         elif np.isnan(self.time_to_reach_goal):
             lines.append("  Time to reach goal: not reached")
@@ -2586,10 +2866,12 @@ def heading_direction_labels(
         2D position coordinates over time. A row with a non-finite coordinate
         is a missing position.
     min_speed : float
-        Required, finite and ``>= 0``, in position units per second (e.g.
-        ``5.0`` for 5 cm/s with positions in cm): this function sees no
-        environment, so it cannot know the positions' unit. Observed samples
-        slower than this, or not moving at all, are labeled "stationary".
+        Required, finite and ``>= 0``, in position units per second (e.g. ``5.0`` for 5
+        cm/s with positions in cm, the speed below which Davidson, Kloosterman & Wilson
+        (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
+        as stopped): this function sees no environment, so it cannot know the positions'
+        unit. Observed samples slower than this, or not moving at all, are labeled
+        "stationary".
     n_directions : int, default=8
         Number of direction sectors, a positive integer. Default 8 creates
         45° sectors centred on East, North-East, North, and so on.
@@ -2796,9 +3078,10 @@ def headings_to_direction_labels(
         Speed of each sample, finite and ``>= 0``, in the units of
         ``min_speed``. NaN marks a sample that was not observed.
     min_speed : float
-        Required, finite and ``>= 0``, in the units of ``speeds`` (e.g.
-        ``5.0`` for 5 cm/s). Observed samples slower than this, or not moving
-        at all, are labeled "stationary".
+        Required, finite and ``>= 0``, in the units of ``speeds`` (e.g. ``5.0`` for 5
+        cm/s, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron 63:497)
+        and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped). Observed
+        samples slower than this, or not moving at all, are labeled "stationary".
     n_directions : int, default=8
         Number of direction sectors, a positive integer. Default 8 creates
         45° sectors centred on East, North-East, North, and so on.
@@ -3893,7 +4176,7 @@ def subgoal_efficiency(
             PathEfficiencyResult(
                 traveled_length=traveled,
                 shortest_length=float(distances[start]),
-                time_efficiency=None,
+                time_efficiency=np.nan,
                 angular_efficiency=_angular_efficiency(
                     env,
                     *_smoothed_steps(
@@ -3910,6 +4193,7 @@ def subgoal_efficiency(
                 goal=subgoal,
                 metric=metric,
                 fully_observed=complete,
+                units=env.units,
             )
         )
         start = arrival
@@ -3932,7 +4216,7 @@ def compute_path_efficiency(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> PathEfficiencyResult | pd.DataFrame:
+) -> PathEfficiencyResult:
     """Compute comprehensive path efficiency metrics.
 
     Parameters
@@ -3969,7 +4253,7 @@ def compute_path_efficiency(
         environment.
     reference_speed : float, optional
         Reference speed for time efficiency, in position units per second;
-        finite and greater than zero. None leaves ``time_efficiency`` None.
+        finite and greater than zero. None leaves ``time_efficiency`` NaN.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3991,15 +4275,16 @@ def compute_path_efficiency(
 
     Returns
     -------
-    PathEfficiencyResult or pandas.DataFrame
+    PathEfficiencyResult
         All path efficiency metrics, measured from the first observed sample
         (the first row with finite coordinates) to ``goal``; missing rows
         before the first or after the last observed sample are treated as
-        deleted, also for ``time_efficiency``. With ``intervals``, a table
-        with one row per interval indexed by ``interval_id`` and the columns
-        ``traveled_length``, ``shortest_length``, ``efficiency``,
-        ``time_efficiency``, ``angular_efficiency``, ``fully_observed`` and
-        ``goal``; an interval with an unknown goal has NaN metrics. When the
+        deleted, also for ``time_efficiency``. With ``intervals``, every
+        metric is an array with one value per interval, ``interval_ids``
+        names the intervals, and ``result.summary_table()`` gives one row
+        per interval indexed by ``interval_id``; an interval with an unknown
+        goal has NaN metrics, while ``fully_observed`` still describes its
+        tracking. When the
         goal is unreachable under ``metric="geodesic"`` (it lies on a
         disconnected component), ``shortest_length`` is ``inf`` and the
         derived ``efficiency`` and ``time_efficiency`` are ``nan``; when the
@@ -4108,17 +4393,22 @@ def compute_path_efficiency(
     if intervals is None:
         assert results[0] is not None  # one goal without intervals
         return results[0]
-    return _result_table(
-        rows,
-        results,
-        (
-            "traveled_length",
-            "shortest_length",
-            "efficiency",
-            "time_efficiency",
-            "angular_efficiency",
-            "fully_observed",
-        ),
+    # Whether tracking covered each interval does not depend on its goal.
+    fully_observed: list[bool] = []
+    for row, result in zip(rows, results, strict=True):
+        if result is not None:
+            fully_observed.append(bool(result.fully_observed))
+            continue
+        row_support = _support_of(times_arr, support, row.samples, intervals)
+        _, complete = _observed_path_length(
+            positions_arr[row.samples],
+            row_support.sample_valid,
+            row_support.interval_mask,
+            paths=paths,
+        )
+        fully_observed.append(complete)
+    return _interval_path_efficiency(
+        rows, results, fully_observed, env=env, metric=metric
     )
 
 
@@ -4154,7 +4444,7 @@ def _path_efficiency(
         if len(positions)
         else np.nan
     )
-    time_eff = None
+    time_eff = np.nan
     if reference_speed is not None and len(positions) >= 2:
         time_eff = time_efficiency(
             times,
@@ -4172,31 +4462,45 @@ def _path_efficiency(
         goal=goal.label,
         metric=metric,
         fully_observed=complete,
+        units=env.units,
     )
 
 
-def _result_table(
-    rows: list[GoalRow], results: list[Any], columns: tuple[str, ...]
-) -> pd.DataFrame:
-    """One row per interval of the results' ``columns`` and goal.
+def _interval_path_efficiency(
+    rows: list[GoalRow],
+    results: list[PathEfficiencyResult | None],
+    fully_observed: list[bool],
+    *,
+    env: Environment,
+    metric: DistanceMetric,
+) -> PathEfficiencyResult:
+    """One :class:`PathEfficiencyResult` holding each interval's metrics.
 
-    A row whose goal is unknown (no result) has NaN metrics and goal None.
+    An interval with an unknown goal (no result) has NaN metrics and a NaN
+    start; ``fully_observed`` describes its tracking whatever the goal.
     """
-    import pandas as pd
 
-    records = [
-        {
-            **{
-                name: (np.nan if result is None else getattr(result, name))
-                for name in columns
-            },
-            "goal": None if row.goal is None else row.goal.label,
-        }
-        for row, result in zip(rows, results, strict=True)
-    ]
-    table = pd.DataFrame.from_records(records, columns=[*columns, "goal"])
-    table.index = pd.Index([row.interval_id for row in rows], name="interval_id")
-    return table
+    def column(name: str, missing: Any) -> NDArray[Any]:
+        return np.array([missing if r is None else getattr(r, name) for r in results])
+
+    return PathEfficiencyResult(
+        traveled_length=column("traveled_length", np.nan),
+        shortest_length=column("shortest_length", np.nan),
+        time_efficiency=column("time_efficiency", np.nan),
+        angular_efficiency=column("angular_efficiency", np.nan),
+        start_position=np.array(
+            [
+                np.full(env.n_dims, np.nan) if r is None else r.start_position
+                for r in results
+            ],
+            dtype=float,
+        ).reshape(len(results), env.n_dims),
+        goal=tuple(None if row.goal is None else row.goal.label for row in rows),
+        metric=metric,
+        fully_observed=np.array(fully_observed, dtype=bool),
+        interval_ids=_ids_array([row.interval_id for row in rows]),
+        units=env.units,
+    )
 
 
 # =============================================================================
@@ -4405,10 +4709,11 @@ def instantaneous_goal_alignment(
         goal they agree. A geodesic goal point must lie inside the
         environment.
     min_speed : float or None, default=None
-        Minimum speed for a direction of movement, in position units per
-        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
-        meters, ``50.0`` for millimeters); with units that are not a metric
-        length, pass it explicitly.
+        Minimum speed for a direction of movement, in position units per second; None is
+        5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
+        millimeters), the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped.
+        With units that are not a metric length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -4726,10 +5031,11 @@ def goal_bias(
         goal they agree. A geodesic goal point must lie inside the
         environment.
     min_speed : float or None, default=None
-        Minimum speed for a direction of movement, in position units per
-        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
-        meters, ``50.0`` for millimeters); with units that are not a metric
-        length, pass it explicitly.
+        Minimum speed for a direction of movement, in position units per second; None is
+        5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
+        millimeters), the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped.
+        With units that are not a metric length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -5058,7 +5364,7 @@ def compute_goal_directed_metrics(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> GoalDirectedMetrics | pd.DataFrame:
+) -> GoalDirectedMetrics:
     """Compute comprehensive goal-directed navigation metrics.
 
     Parameters
@@ -5093,10 +5399,11 @@ def compute_goal_directed_metrics(
         goal they agree. A geodesic goal point must lie inside the
         environment.
     min_speed : float or None, default=None
-        Minimum speed for a direction of movement, in position units per
-        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
-        meters, ``50.0`` for millimeters); with units that are not a metric
-        length, pass it explicitly.
+        Minimum speed for a direction of movement, in position units per second; None is
+        5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
+        millimeters), the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped.
+        With units that are not a metric length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -5140,11 +5447,12 @@ def compute_goal_directed_metrics(
 
     Returns
     -------
-    GoalDirectedMetrics or pandas.DataFrame
-        All goal-directed metrics. With ``intervals``, a table with one row
-        per interval indexed by ``interval_id`` and the columns of
-        :meth:`GoalDirectedMetrics.summary` plus ``goal``; an interval with
-        an unknown goal has NaN metrics. ``goal_bias`` is NaN if the animal
+    GoalDirectedMetrics
+        All goal-directed metrics. With ``intervals``, every metric is an
+        array with one value per interval, ``interval_ids`` names the
+        intervals, and ``result.summary_table()`` gives one row per interval
+        indexed by ``interval_id``; an interval with an unknown goal has NaN
+        metrics and ``arrival_tested`` False. ``goal_bias`` is NaN if the animal
         never moves at an observed sample. The distance summaries use the
         measured samples: finite coordinates inside the environment, inside
         ``epochs`` when given. ``min_distance_to_goal`` is the minimum
@@ -5152,8 +5460,9 @@ def compute_goal_directed_metrics(
         ``goal_distance_at_end`` are the distances at the first and last of
         them. All three are NaN when no sample is measured.
         ``time_to_reach_goal`` is the seconds from the first measured sample
-        to arrival, NaN when the goal is never reached, and None for a point
-        goal without ``goal_radius``.
+        to arrival, NaN when the goal is never reached or arrival was not
+        tested; ``arrival_tested`` is False for a point goal without
+        ``goal_radius``.
 
     Raises
     ------
@@ -5286,17 +5595,22 @@ def compute_goal_directed_metrics(
     if intervals is None:
         assert results[0] is not None  # one goal without intervals
         return results[0]
-    return _result_table(
-        rows,
-        results,
-        (
-            "goal_bias",
-            "mean_approach_rate",
-            "goal_distance_at_start",
-            "goal_distance_at_end",
-            "min_distance_to_goal",
-            "time_to_reach_goal",
-        ),
+
+    def column(name: str, missing: Any) -> NDArray[Any]:
+        return np.array([missing if r is None else getattr(r, name) for r in results])
+
+    return GoalDirectedMetrics(
+        goal_bias=column("goal_bias", np.nan),
+        mean_approach_rate=column("mean_approach_rate", np.nan),
+        time_to_reach_goal=column("time_to_reach_goal", np.nan),
+        min_distance_to_goal=column("min_distance_to_goal", np.nan),
+        goal_distance_at_start=column("goal_distance_at_start", np.nan),
+        goal_distance_at_end=column("goal_distance_at_end", np.nan),
+        goal=tuple(None if row.goal is None else row.goal.label for row in rows),
+        metric=metric,
+        arrival_tested=column("arrival_tested", False).astype(bool),
+        interval_ids=_ids_array([row.interval_id for row in rows]),
+        units=env.units,
     )
 
 
@@ -5332,8 +5646,9 @@ def _goal_directed(
         end_dist = float(distances[rows[-1]])
     else:
         min_dist = start_dist = end_dist = np.nan
-    time_to_reach: float | None = None
-    if goal.bins is not None or goal_radius is not None:
+    time_to_reach = np.nan
+    tested = goal.bins is not None or goal_radius is not None
+    if tested:
         if goal.bins is not None:
             arrived = rows[goal.contains(env, positions[rows])]
         else:
@@ -5351,4 +5666,6 @@ def _goal_directed(
         goal_distance_at_end=end_dist,
         goal=goal.label,
         metric=metric,
+        arrival_tested=tested,
+        units=env.units,
     )

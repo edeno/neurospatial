@@ -107,9 +107,9 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
-    resolve_shuffle_settings,
     shuffle_information_verdict,
 )
 from neurospatial.encoding._spatial_counts import (
@@ -222,7 +222,7 @@ def _view_summary_frame(
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
         "is_spatial_view_cell": _information_screen(
-            result, default=VIEW_THRESHOLDS["min_info"], bias=bias
+            result, VIEW_THRESHOLDS["min_info"], bias=bias
         ),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
@@ -567,22 +567,23 @@ class ViewRateResult(SingleUnitRateMixin):
 
         return float(_information_bias(self)[0])
 
-    def is_spatial_view_cell(self, *, min_info: float | None = None) -> bool:
-        """Classify as spatial view cell based on view spatial information.
+    def is_spatial_view_cell(self, *, min_info: float = 0.5) -> bool:
+        """Screen one neuron for spatial view tuning by bias-corrected information.
 
-        A neuron is classified as a spatial view cell if its view spatial
-        information, minus its untuned-cell bias, meets or exceeds the
-        minimum threshold. Spatial view cells fire
-        when the animal *looks at* a specific location, regardless of where
-        the animal is positioned.
+        A neuron passes the screen if its view spatial information, minus
+        its untuned-cell bias, meets or exceeds the minimum threshold.
+        Spatial view cells fire when the animal *looks at* a specific
+        location, regardless of where the animal is positioned. This is a
+        fast threshold screen, not a verdict; for a circular-shift verdict
+        call the free :func:`is_spatial_view_cell` with the raw arrays.
 
         Parameters
         ----------
-        min_info : float or None, default=None
-            Minimum view spatial information threshold in bits/spike. None
-            uses 0.5 bits/spike, a common screening convention, not derived
-            or calibrated; see Notes for its false-positive
-            rate on untuned units.
+        min_info : float, default=0.5
+            Inclusive cutoff on bias-corrected view spatial information
+            (bits/spike), a common screening convention, not derived or
+            calibrated; see Notes for its false-positive rate on untuned
+            units.
 
         Returns
         -------
@@ -609,7 +610,6 @@ class ViewRateResult(SingleUnitRateMixin):
         spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
         minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
-        None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
         or is_spatial_view_cell(..., criterion="shuffle") with the raw
         arrays; a result does not keep the arrays it was computed from.
@@ -661,9 +661,7 @@ class ViewRateResult(SingleUnitRateMixin):
         """
         from neurospatial.encoding._metrics import _information_screen
 
-        return bool(
-            _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])[0]
-        )
+        return bool(_information_screen(self, min_info)[0])
 
 
 @_copy_unit_table
@@ -1046,19 +1044,20 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
         return _information_bias(self)
 
-    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
-        """Classify neurons as spatial view cells.
+    def classify(self, *, min_info: float = 0.5) -> NDArray[np.bool_]:
+        """Screen neurons for spatial view tuning by bias-corrected information.
 
-        A neuron is classified as a spatial view cell if its view spatial
+        A neuron passes the spatial-view screen if its view spatial
         information, minus its untuned-cell bias, meets or exceeds the
         minimum threshold. This is the single-type
         boolean predicate ("is this a view cell") for the batch result.
 
         Parameters
         ----------
-        min_info : float or None, default=None
-            Minimum view spatial information threshold in bits/spike.
-            See ViewRateResult.is_spatial_view_cell() for threshold rationale.
+        min_info : float, default=0.5
+            Inclusive cutoff on bias-corrected view spatial information
+            (bits/spike). See ViewRateResult.is_spatial_view_cell() for its
+            rationale.
 
         Returns
         -------
@@ -1085,7 +1084,6 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
         minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
-        None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
         or is_spatial_view_cell(..., criterion="shuffle") with the raw
         arrays; a result does not keep the arrays it was computed from.
@@ -1122,7 +1120,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         """
         from neurospatial.encoding._metrics import _information_screen
 
-        return _information_screen(self, min_info, default=VIEW_THRESHOLDS["min_info"])
+        return _information_screen(self, min_info)
 
     def summary_table(
         self,
@@ -1418,7 +1416,13 @@ bandwidth, min_occupancy, backend, boundary_source
         env, gaze_model, view_distance, context=context
     )
 
-    resolved_bandwidth = resolve_spatial_bandwidth(env, bandwidth)
+    # "binned" is the plain occupancy-normalized histogram unless a bandwidth
+    # is passed; only the kernel methods default to a smoothing length.
+    resolved_bandwidth = (
+        0.0
+        if method == "binned" and bandwidth is None
+        else resolve_spatial_bandwidth(env, bandwidth)
+    )
     _validate_smoothing_parameters(method, resolved_bandwidth)
 
     if single_unit:
@@ -1750,12 +1754,13 @@ def compute_view_rate(
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles).
         - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
-        - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
+        - **binned**: Occupancy-normalized histogram (count / occupancy per bin), unsmoothed unless ``bandwidth`` is passed; then the raw rate is smoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units.
+        Physical smoothing length in environment units; None is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm converted to declared
+        metric units, or 2.5 median graph-edge lengths for unspecified or
+        custom units, for the kernel methods.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2015,9 +2020,10 @@ def compute_view_rates(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units.
+        Physical smoothing length in environment units; None is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm converted to declared
+        metric units, or 2.5 median graph-edge lengths for unspecified or
+        custom units, for the kernel methods.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1
@@ -2229,11 +2235,11 @@ def is_spatial_view_cell(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    criterion: Literal["threshold", "shuffle"] = "threshold",
-    min_info: float | None = None,
-    alpha: float | None = None,
-    n_shuffles: int | None = None,
-    min_shift: float | None = None,
+    criterion: Literal["threshold", "shuffle"] = "shuffle",
+    min_info: float = 0.5,
+    alpha: float = 0.05,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
@@ -2249,7 +2255,16 @@ def is_spatial_view_cell(
     backend: BackendType = "numpy",
     boundary_source: BoundarySource = "physical",
 ) -> bool:
-    """Classify one neuron by the spatial_view_cell screen or circular-shift test.
+    """Test whether one neuron is a spatial view cell with a circular-shift shuffle (default).
+
+    By default (``criterion="shuffle"``) the neuron is a spatial view cell
+    when its view spatial information is significant (``p_value < alpha``)
+    against ``n_shuffles=1000`` circularly shifted spike trains and its
+    bias-corrected information reaches ``min_info``. The shuffle costs about
+    ``n_shuffles`` view-map recomputes; pass ``rng`` (an integer seed or a
+    Generator) to make the verdict reproducible. ``criterion="threshold"`` is
+    the fast screen: it applies only the ``min_info`` cutoff, like
+    :meth:`ViewRateResult.is_spatial_view_cell`.
 
     Parameters
     ----------
@@ -2325,12 +2340,13 @@ def is_spatial_view_cell(
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles).
         - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
-        - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
+        - **binned**: Occupancy-normalized histogram (count / occupancy per bin), unsmoothed unless ``bandwidth`` is passed; then the raw rate is smoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units.
+        Physical smoothing length in environment units; None is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm converted to declared
+        metric units, or 2.5 median graph-edge lengths for unspecified or
+        custom units, for the kernel methods.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2341,17 +2357,18 @@ def is_spatial_view_cell(
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
 
-    criterion : {"threshold", "shuffle"}, default="threshold"
-        Screen the observed statistic or test circular-shift significance.
-    min_info : float or None, default=None
+    criterion : {"shuffle", "threshold"}, default="shuffle"
+        Test circular-shift significance (a verdict), or screen the observed
+        statistic only (fast).
+    min_info : float, default=0.5
         Inclusive cutoff on bias-corrected information (bits/spike), for both
-        criteria; None resolves to the family threshold constant.
-    alpha : float or None, default=None
-        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
+        criteria.
+    alpha : float, default=0.05
+        P-value level for ``criterion="shuffle"``.
+    n_shuffles : int, default=1000
+        Number of circular shifts in shuffle mode.
+    min_shift : float, default=20.0
+        Minimum shift in analyzed seconds, in shuffle mode.
     rng : numpy.random.Generator, int or None, default=None
         Shuffle random source; an integer seed with the same unit label is stable
         across single and population calls.
@@ -2407,8 +2424,8 @@ def is_spatial_view_cell(
     information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
     bins has an unknown bias and is not a spatial view cell, with a warning.
     Results keep no raw arrays or recompute closures. Shuffle keywords
-    belong only to the shuffle; passing one with ``criterion="threshold"``
-    raises.
+    belong only to the shuffle; passing one with a value other than its
+    default with ``criterion="threshold"`` raises.
 
     See Also
     --------
@@ -2421,14 +2438,14 @@ def is_spatial_view_cell(
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.view import is_spatial_view_cell
-    >>> positions = np.random.rand(1000, 2) * 100
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (3000, 2))
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
-    >>> times = np.linspace(0, 40, 1000)
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
-    >>> spike_times = np.sort(np.random.default_rng(0).uniform(0, 40, 50))
-    >>> result = is_spatial_view_cell(env, spike_times, times, positions, headings)
-    >>> type(result)
-    <class 'bool'>
+    >>> times = np.linspace(0, 120, 3000)  # 2 minutes, in seconds
+    >>> headings = rng.uniform(0, 2 * np.pi, 3000)
+    >>> spike_times = np.sort(rng.uniform(0, 120, 150))  # untuned unit
+    >>> is_spatial_view_cell(env, spike_times, times, positions, headings, rng=0)
+    False
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_spatial_view_cell")
     check_mode_keywords(
@@ -2441,6 +2458,7 @@ def is_spatial_view_cell(
             "unit_id": unit_id,
             "alpha": alpha,
         },
+        defaults=_SHUFFLE_DEFAULTS,
         call="is_spatial_view_cell",
     )
     breaks = validate_break_before(
@@ -2478,7 +2496,8 @@ def is_spatial_view_cell(
                 positions,
                 headings,
                 unit_ids=[label],
-                **resolve_shuffle_settings(n_shuffles, min_shift),
+                n_shuffles=n_shuffles,
+                min_shift=min_shift,
                 rng=rng,
                 gaze_model=gaze_model,
                 view_distance=view_distance,
@@ -2496,7 +2515,6 @@ def is_spatial_view_cell(
             rate_map,
             alpha=alpha,
             min_info=min_info,
-            default_min_info=VIEW_THRESHOLDS["min_info"],
             kind="spatial view",
         )
     return rate_map().is_spatial_view_cell(min_info=min_info)
@@ -2624,9 +2642,10 @@ def spatial_view_cell_significance(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units.
+        Physical smoothing length in environment units; None is 0 (no
+        smoothing) for ``method="binned"``, and 5 cm converted to declared
+        metric units, or 2.5 median graph-edge lengths for unspecified or
+        custom units, for the kernel methods.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1

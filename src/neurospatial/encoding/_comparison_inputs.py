@@ -242,8 +242,8 @@ def _bin_pairs(
             fix='pass topology="may_differ" to accept this when the bins are the '
             "same places and only how they connect changed (a door opened, one "
             "map covers part of the arena, or cell faces between neighbors "
-            "differ); maps from method='binned' with bandwidth=0 were not "
-            "smoothed, so for them nothing changes",
+            "differ); maps from method='binned' (unsmoothed) without a "
+            "bandwidth were not smoothed, so for them nothing changes",
             first=env_a,
             second=env_b,
         )

@@ -249,6 +249,7 @@ def test_predicates_report_invalid_windows(
         f.predicate(
             *f.args(r, r.spike_times),
             **options,
+            criterion="threshold",
             epochs=epochs,
             spike_window=spike_window,
         )
