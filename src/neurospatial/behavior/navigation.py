@@ -1309,6 +1309,7 @@ def distance_to_goal(
     distances = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)
     goal_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
+    goal_samples: dict[tuple[Any, ...], list[NDArray[np.intp]]] = {}
     for row, samples in _samples_by_row(rows):
         target = goals[row]
         if target is None:
@@ -1326,6 +1327,12 @@ def distance_to_goal(
                     sized=False,
                 )
             )
+            goal_samples[key] = []
+        goal_samples[key].append(samples)
+    # One distance query per distinct goal: each sample's distance depends
+    # only on its own position.
+    for key, parts in goal_samples.items():
+        samples = np.concatenate(parts)
         distances[samples] = _distance_to_bins(
             env, paths, goal_bins[key], positions[samples]
         )
