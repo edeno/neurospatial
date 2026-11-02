@@ -19,7 +19,7 @@ def simulated_recording() -> Recording:
     """600 s of 50 place cells in a 100 cm box (seeded), as a loader would return it."""
     from neurospatial.simulation import open_field_session
 
-    session = open_field_session(duration=600.0, n_place_cells=50, seed=0)
+    session = open_field_session(duration=600.0, n_place_cells=50, rng=0)
     train, test = alternating_blocks(session.times[0], session.times[-1], 60.0)
     return Recording(
         dataset="simulated_open_field",

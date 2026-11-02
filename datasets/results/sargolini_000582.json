@@ -35,13 +35,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3922+g752c5888b.d20261102",
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "cd577f8b8d1fa51b6d9721593dbc851bffea49e5"
+    "git_commit": "db0cce880f8301ed5ea92c0be6ad34b96dac9b8e"
   },
   "load_warnings": [],
   "operations": {
@@ -55,7 +55,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.329,
+      "seconds": 1.011,
       "peak_mb": 30.0
     },
     "env.occupancy": {
@@ -69,7 +69,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.007,
       "peak_mb": 3.8
     },
     "rates.spatial": {
@@ -83,8 +83,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.853,
-      "peak_mb": 53.9
+      "seconds": 0.872,
+      "peak_mb": 54.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
+      "seconds": 0.046,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.058,
+      "seconds": 0.05,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -149,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.101,
+      "seconds": 0.095,
       "peak_mb": 31.0
     },
     "io.nwb_roundtrip": {
@@ -160,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.688,
+      "seconds": 3.623,
       "peak_mb": 12.1
     }
   },
