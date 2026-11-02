@@ -700,12 +700,9 @@ An old call that passes an option by position raises a `TypeError` that names
 the keyword to use and shows the corrected call, so the error tells you how to
 update each line:
 
-<!-- docs-test: run -->
+<!-- docs-test: raises TypeError match="pass bin_size=2.0 by keyword" -->
 ```python
-try:
-    Environment.from_samples(positions, 2.0)
-except TypeError as error:
-    assert "pass bin_size=2.0 by keyword" in str(error)
+Environment.from_samples(positions, 2.0)
 ```
 
 ### `from_samples` and `open_field`
@@ -1008,14 +1005,11 @@ assert np.array_equal(to_reward, env.distance_to(points=[[82.0, 77.0]]))
 A target passed by position raises a `TypeError` that lists the keyword-only
 options, without guessing whether a number was meant as a bin or a point:
 
-<!-- docs-test: run -->
+<!-- docs-test: raises TypeError match="pass them by name: bins=, points=" -->
 ```python
 positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))  # cm
 env = Environment.from_samples(positions, bin_size=4.0, units="cm")
-try:
-    env.neighbors(12)
-except TypeError as error:
-    assert "pass them by name: bins=, points=" in str(error)
+env.neighbors(12)
 ```
 
 What the old guesses did, and what happens now:
@@ -1522,15 +1516,10 @@ plt.close(fig)
 An old positional call raises a `TypeError` that names the keyword and shows
 the corrected call:
 
-<!-- docs-test: run -->
+<!-- docs-test: raises TypeError match="pass bandwidth=5.0 by keyword, as in env.smooth(field, bandwidth=5.0)" -->
 ```python
 rate = np.random.default_rng(2).random(env.n_bins)  # Hz
-try:
-    env.smooth(rate, 5.0)
-except TypeError as error:
-    assert "pass bandwidth=5.0 by keyword, as in env.smooth(field, bandwidth=5.0)" in str(
-        error
-    )
+env.smooth(rate, 5.0)
 ```
 
 `to_nwb(nwbfile, "arena")` is now `to_nwb(nwbfile, name="arena")`, matching
@@ -1568,19 +1557,26 @@ A region name that is not in `env.regions` used to be skipped by
 and `plot_regions(region_names=...)`, so the region was silently missing. Each
 now raises `RegionNotFoundError` naming the closest region; fix the name:
 
-<!-- docs-test: run -->
+<!-- docs-test: raises RegionNotFoundError match="Fix: pass region_names=['reward']" -->
 ```python
-from neurospatial import RegionNotFoundError, Regions
+from neurospatial import Regions
 from neurospatial.regions import regions_containing_points
 
 regions = Regions()
 regions.add("reward", point=(50.0, 50.0))
-# Before: regions_containing_points(positions, regions, region_names=["rewrd"])
-# returned a table without the column
-try:
-    regions_containing_points(positions, regions, region_names=["rewrd"])
-except RegionNotFoundError as error:
-    print(str(error).splitlines()[-1])  # Fix: pass region_names=['reward']
+# Before: returned a table without the column
+regions_containing_points(positions, regions, region_names=["rewrd"])
+```
+
+With the name fixed:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Regions
+from neurospatial.regions import regions_containing_points
+
+regions = Regions()
+regions.add("reward", point=(50.0, 50.0))
 table = regions_containing_points(
     positions, regions, region_names=["reward"], point_radius=5.0  # cm
 )
@@ -1664,12 +1660,9 @@ such as `crf=` with `backend="html"`, does nothing, and says so with one
 `UserWarning` that names the backend that uses it. `fps=` raises; the frame
 rate comes from `frame_times` and `speed=`.
 
-<!-- docs-test: run -->
+<!-- docs-test: raises TypeError match="Fix: pass colorbar_label= instead of colorbar_lable=" -->
 ```python
-try:
-    env.animate_fields(
-        fields, frame_times=frame_times, save_path="typo.html", colorbar_lable="Hz"
-    )
-except TypeError as error:
-    print(str(error).splitlines()[-1])  # Fix: pass colorbar_label= instead of colorbar_lable=
+env.animate_fields(
+    fields, frame_times=frame_times, save_path="typo.html", colorbar_lable="Hz"
+)
 ```

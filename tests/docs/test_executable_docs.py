@@ -147,6 +147,8 @@ _FENCE = re.compile(
 _MARKER = re.compile(
     r"<!--\s*docs-test:\s*(?P<kind>run|skip|raises)\b(?P<arg>[^>]*?)\s*-->"
 )
+# The message text is literal, not a regular expression.
+_RAISES = re.compile(r'(?P<name>\w+)(?:\s+match="(?P<match>[^"]+)")?')
 
 
 @dataclass(frozen=True)
@@ -275,10 +277,15 @@ def _run_document(path: str, *, opt_in: bool, seeded: bool) -> int:
         code = compile("\n" * (block.line - 1) + block.code, str(ROOT / path), "exec")
         try:
             if block.kind == "raises":
-                assert block.arg, f"{location}: 'docs-test: raises' needs an exception"
-                name = block.arg.split()[0]
+                raises = _RAISES.fullmatch(block.arg)
+                assert raises, (
+                    f"{location}: write 'docs-test: raises <Exception>' with an "
+                    f'optional match="<text in the message>"; got {block.arg!r}'
+                )
+                name = raises["name"]
                 expected = getattr(builtins, name, None) or getattr(neurospatial, name)
-                with pytest.raises(expected):
+                match = None if raises["match"] is None else re.escape(raises["match"])
+                with pytest.raises(expected, match=match):
                     exec(code, namespace)
             else:
                 exec(code, namespace)
@@ -360,6 +367,27 @@ def test_opted_in_documents_check_raises_markers(example_document):
     )
     with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
         _run_document("example.md", opt_in=True, seeded=True)
+
+
+def test_raises_marker_matches_message_text(example_document):
+    marker = '<!-- docs-test: raises ValueError match="bad (x.y)" -->\n'
+    example_document.write_text(
+        marker + "```python\nraise ValueError('bad (x.y)')\n```\n"
+    )
+    assert _run_document("example.md", opt_in=False, seeded=False) == 1
+    example_document.write_text(
+        marker + "```python\nraise ValueError('bad (xzy)')\n```\n"
+    )
+    with pytest.raises(AssertionError, match="Regex pattern did not match"):
+        _run_document("example.md", opt_in=False, seeded=False)
+
+
+def test_raises_marker_refuses_unknown_text(example_document):
+    example_document.write_text(
+        "<!-- docs-test: raises ValueError bad -->\n```python\nraise ValueError\n```\n"
+    )
+    with pytest.raises(AssertionError, match="optional match="):
+        _run_document("example.md", opt_in=False, seeded=False)
 
 
 def test_marker_setups_are_known_and_used():
