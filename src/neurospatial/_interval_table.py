@@ -1140,7 +1140,10 @@ class Intervals(Generic[R]):
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
         self._check_owned_fields(data, replaced=columns.keys())
-        labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
+        # The rows are in time order, so the order check always passes.
+        labelled = _from_columns(
+            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        )
         labelled._settings = deepcopy(self._settings)
         return labelled
 
@@ -1237,7 +1240,7 @@ class Intervals(Generic[R]):
             stops,
             columns,
             interval_ids=interval_ids,
-            in_time_order="from_arrays",
+            owner="from_arrays",
         )
 
     @classmethod
@@ -1331,7 +1334,7 @@ class Intervals(Generic[R]):
             interval_ids=_index_ids(df.index)
             if id_column is None
             else df[id_column].to_numpy(),
-            in_time_order="from_dataframe",
+            owner="from_dataframe",
         )
 
     def __repr__(self) -> str:
@@ -1504,14 +1507,14 @@ def _from_columns(
     columns: dict[str, NDArray[Any]],
     *,
     interval_ids: ArrayLike | None,
-    in_time_order: str | None = None,
+    owner: str,
 ) -> Intervals[Interval]:
     """Build Interval rows from parallel columns, keeping column dtypes.
 
-    Rows are put in time order (by start, then stop; ties keep their input
-    order). ``in_time_order`` names a public builder that refuses input out
-    of that order instead, so a caller's arrays in input order stay aligned
-    with the rows.
+    The rows must already be in time order (by start, then stop), so a
+    caller's arrays in input order stay aligned with the rows; input out of
+    that order is refused, naming the public builder ``owner``. ``start``
+    and ``stop`` are copied, so the caller's arrays stay writable.
     """
     for name in columns:
         _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
@@ -1529,17 +1532,16 @@ def _from_columns(
         start.size,
         owner="Intervals",
     )
-    order = np.lexsort((stop, start))
     # A row that sorts before the one above it: earlier start, or the same
     # start and an earlier stop.
     backward = (start[1:] < start[:-1]) | (
         (start[1:] == start[:-1]) & (stop[1:] < stop[:-1])
     )
-    if in_time_order is not None and backward.any():
+    if backward.any():
         k = int(np.flatnonzero(backward)[0])
         raise ValueError(
             _format_error(
-                f"{in_time_order}: the rows are not in time order: row {k + 1} "
+                f"{owner}: the rows are not in time order: row {k + 1} "
                 f"[{start[k + 1]:g}, {stop[k + 1]:g}) s comes before row {k} "
                 f"[{start[k]:g}, {stop[k]:g}) s.",
                 why="Intervals keeps its rows in time order, so an array or mask "
@@ -1551,7 +1553,7 @@ def _from_columns(
         )
     intervals: Intervals[Interval] = object.__new__(Intervals)
     intervals._init_parts(
-        records=tuple(rows[i] for i in order),
+        records=rows,
         record_type=Interval,
         fields=names,
         # Each column keeps its dtype, for integer fields and empty selections.
@@ -1559,9 +1561,9 @@ def _from_columns(
             name: array.dtype if array.dtype.kind in "biuf" else np.dtype(object)
             for name, array in columns.items()
         },
-        ids=ids[order],
-        start=start[order],
-        stop=stop[order],
+        ids=ids,
+        start=start.copy(),
+        stop=stop.copy(),
         settings={},
     )
     return intervals
