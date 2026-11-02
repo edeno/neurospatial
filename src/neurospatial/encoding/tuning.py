@@ -1322,9 +1322,9 @@ def _tuning_curves(
         )
 
     frame_bins = value_frame_bins(values, edges, closed_last=True)
-    in_range = (values >= edges[0]) & (values <= edges[-1])
     analyzed = in_windows & np.isfinite(values)
-    n_outside = int(np.count_nonzero(analyzed & ~in_range))
+    # A finite value is in bin -1 only outside [edges[0], edges[-1]].
+    n_outside = int(np.count_nonzero(analyzed & (frame_bins < 0)))
     _warn_if_mostly_outside(values[analyzed], n_outside, edges, edges_source, call=call)
 
     if not single_unit:
