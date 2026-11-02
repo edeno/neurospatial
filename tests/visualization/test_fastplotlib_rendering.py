@@ -487,9 +487,11 @@ def test_uneven_frames_are_each_reached(apparatus, walk):
     _, _, fields = walk
     # Two bursts of 2 ms decoding bins, 5 s apart.
     times = np.concatenate([np.arange(60) * 0.002, 5.0 + np.arange(60) * 0.002])
-    animation = apparatus.animate_fields(
-        fields, frame_times=times, backend="fastplotlib"
-    ).native
+    # Visiting every 2 ms frame takes 500 steps a second, more than the controls.
+    with pytest.warns(UserWarning, match="plays at speed 0.12"):
+        animation = apparatus.animate_fields(
+            fields, frame_times=times, backend="fastplotlib"
+        ).native
     step = animation.widget.ranges["time"].step
     assert step <= np.diff(times).min()  # stepping never passes over a frame
     jittered = np.cumsum(np.random.default_rng(0).uniform(0.9, 1.1, len(times)) / 30.0)
@@ -1267,6 +1269,7 @@ def test_a_tracks_window_reuses_rows_read_for_the_last_one(track):
         backend="fastplotlib",
         track=track,
         window_seconds=0.5,
+        max_playback_fps=100,  # every 10 ms frame at speed 1
     ).native
     frame_times = np.arange(300) * 0.01
     panel = animation._tracks[0]
@@ -1519,9 +1522,10 @@ def test_recording_gaps_do_not_slow_playback(apparatus):
     steps = animation.widget.ui_sliders._fps["time"]
     assert steps * animation.widget.ranges["time"].step == pytest.approx(1.0)
     # 100 frames a second cannot each be shown in 60 steps: slower.
-    animation = apparatus.animate_fields(
-        np.zeros((200, apparatus.n_bins)), frame_times=times, backend="fastplotlib"
-    ).native
+    with pytest.warns(UserWarning, match="plays at speed 0.6"):
+        animation = apparatus.animate_fields(
+            np.zeros((200, apparatus.n_bins)), frame_times=times, backend="fastplotlib"
+        ).native
     steps = animation.widget.ui_sliders._fps["time"]
     assert steps * animation.widget.ranges["time"].step == pytest.approx(0.6)
 
