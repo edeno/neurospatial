@@ -331,6 +331,9 @@
     },
     "giocomo_001701/io.nwb_readers": {
       "gap": "G-030"
+    },
+    "giocomo_001701/cells.border_score": {
+      "gap": "G-005"
     }
   }
 }

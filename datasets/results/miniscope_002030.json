@@ -4,6 +4,8 @@
   "source": "https://dandiarchive.org/dandiset/002030/0.261016.1321 sub-F53/sub-F53_ses-FOF-F53-1D_behavior+ophys.nwb",
   "license": "CC-BY-4.0",
   "conversions": [
+    "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
+    "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
     "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi]; 0.7 % of stored samples lie outside it",
     "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate"
   ],
@@ -36,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
+    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
   },
   "load_warnings": [],
   "operations": {
@@ -50,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.057,
       "peak_mb": 1.5
     },
     "env.occupancy": {
@@ -64,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.009,
       "peak_mb": 2.7
     },
     "rates.spatial": {
@@ -139,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.021,
       "peak_mb": 2.7
     },
     "behavior.turn_sequence": {
@@ -159,14 +161,14 @@
     "io.nwb_readers": {
       "status": "workaround",
       "summary": {
-        "position": "ok",
+        "position": "ok (loader used this reader)",
         "head_direction": "not found, but the loader found it",
         "units": "absent (file has none)"
       },
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.341,
+      "seconds": 0.372,
       "peak_mb": 2.0
     },
     "imaging.rates": {
@@ -183,12 +185,12 @@
       "summary": {
         "n_cells": 26,
         "frac_nan_bins": 0.0,
-        "median_peak": 0.9718652330928079
+        "median_peak": 0.5833714497833298
       },
-      "note": "one event per dF/F transient onset above median + 3 robust SD (1.4826 x MAD), then compute_spatial_rates (harness heuristic)",
+      "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.139,
+      "seconds": 0.542,
       "peak_mb": 5.9
     }
   },

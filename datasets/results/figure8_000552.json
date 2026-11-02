@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
+    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.011,
       "peak_mb": 1.6
     },
     "env.occupancy": {
@@ -93,7 +93,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.227,
+      "seconds": 0.236,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -129,7 +129,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.582,
+      "seconds": 1.574,
       "peak_mb": 181.4
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.006,
       "peak_mb": 0.9
     },
     "cells.grid_score": {
@@ -193,7 +193,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.262,
+      "seconds": 0.305,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -204,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.476,
+      "seconds": 3.066,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -225,7 +225,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.024,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -234,7 +234,7 @@
       "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.009,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -266,20 +266,20 @@
           "count": 1
         }
       ],
-      "seconds": 16.272,
+      "seconds": 15.876,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
-      "status": "workaround",
+      "status": "error",
       "summary": {
         "position": "raised ValueError",
         "head_direction": "absent (file has none)",
-        "units": "ok"
+        "units": "ok (loader used this reader)"
       },
-      "note": "position: raised ValueError",
+      "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.295,
+      "seconds": 1.232,
       "peak_mb": 137.3
     },
     "imaging.rates": {

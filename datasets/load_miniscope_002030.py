@@ -94,8 +94,10 @@ def load(cache: Path | None = None) -> Recording:
         activity_times=np.asarray(dff_times, dtype=float),
         activity_kind="dff",
         geometry={"shape": "circle", "diameter_cm": 96.0},
-        params={"bin_size": 2.5, "nwb_path": str(path)},
+        params={"bin_size": 2.5, "nwb_path": str(path), "readers_used": ("position",)},
         conversions=(
+            "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
+            "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
             "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi];"
             " 0.7 % of stored samples lie outside it",
             "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",

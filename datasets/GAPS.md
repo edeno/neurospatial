@@ -82,7 +82,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-005: Border score refuses an environment built from samples
 
-- Datasets: sargolini_000582
+- Datasets: sargolini_000582, giocomo_001701
 - Operation / step: cells.border_score
 - Kind: friction
 - Evidence: `rates.border_scores()` raises `NotImplementedError: Physical
@@ -201,13 +201,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 ## G-012: `read_position(position_name=)` rejects the `Position` container name
 
 - Datasets: figure8_000552
-- Operation / step: loader (`read_position`)
+- Operation / step: loader (`read_position`), io.nwb_readers
 - Kind: error-message
 - Evidence: with two position series, `read_position(nwbfile)` refuses to
   choose (good). `position_name="LinearizedPosition"` (the container's name)
   then raises "Position series 'LinearizedPosition' not found … pass
   position_name= with a name or path from this list", and the list holds only
   full series paths. The container name is what a user sees first in the file.
+  With default arguments (`io.nwb_readers`) the refusal is the right
+  behavior; the cell is an error because a reader raised, as the operation
+  defines it.
 - Harness workaround: the loader passes the full series path
 - Proposed change: accept a `Position` container name when it holds one series.
 - Status: open
@@ -487,10 +490,15 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `docs/user-guide/` never mentions calcium imaging. The harness workaround
   (`imaging.rates_workaround`) builds maps two ways: for 000405's binned rates,
   an occupancy-weighted mean per spatial bin (46 cells, median peak 63 Hz);
-  for 002030's ΔF/F, one event per transient onset above median + 3 robust SD,
-  passed to `compute_spatial_rates` as spike times (26 cells, median peak
-  0.97 events/s). Both throw away amplitude or rely on a threshold choice the
-  library cannot see.
+  for 002030's ΔF/F, one event per transient (onset above median + 3 robust
+  SD, end below median + 1 SD), passed to `compute_spatial_rates` as spike
+  times (26 cells, median peak 0.58 events/s; counting every re-crossing of
+  the onset level instead gave 0.97). Both throw away amplitude or rely on
+  threshold choices the library cannot see, and the event rule has no
+  published source. On simulated transients it recovers a field (map vs true
+  field r ≈ 0.6–0.8, ≈ 0 for a time-shifted trace) only at modest event rates:
+  when transients overlap (≫ 2 events/s with a 0.5 s decay) the trace never
+  falls back and a whole field visit counts once.
 - Harness workaround: `datasets/operations.py:imaging_rates_workaround`
 - Proposed change: undecided — a value-weighted rate map (occupancy-normalized
   mean of a signal per bin) sharing the rate maps' bins, NaN rules and
@@ -511,7 +519,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: `datasets/load_giocomo_001701.py` reads the values with pynwb and keeps them as radians
 - Proposed change: refuse (or warn on) a degrees-labelled series whose finite
   values all lie within ±π and span most of it, naming both readings.
-- Status: open
+- Status: open (UX-fixes declined it for its plan; follow-up PR after that plan merges)
 
 ## G-031: Head directions squeezed into a small arc pass unnoticed
 
@@ -525,10 +533,13 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   check catches the opposite error (degrees read as radians, the
   `headings_in_degrees` probes), not headings confined to a few degrees.
 - Harness workaround: none
-- Proposed change: warn when the tracked headings cover only a small arc of
-  the circle (for example less than a quarter), naming a radians/degrees
-  mix-up as a likely cause.
-- Status: open
+- Proposed change: warn when the tracked headings cover only a small part of
+  the circle, naming a radians/degrees mix-up as a likely cause. The rule
+  needs calibrating first: on a linear track headings cluster in two
+  opposite directions, so a naive arc-coverage measure would misfire; a
+  circular spread, or the share of direction bins with occupancy, measured on
+  the survey's real datasets would make the threshold defensible.
+- Status: open (UX-fixes declined it for its plan; follow-up PR after that plan merges)
 
 ## G-032: The NWB readers miss data stored outside the standard containers
 
@@ -560,7 +571,13 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `firing_rates` is labelled `unit="uv"`, and its values reach 3,079 Hz
   (median 0, 99th percentile 47.5) with almost no values on the 50 Hz grid a
   count per 20 ms bin would give, so they look smoothed; the session start is
-  in the year 18. The dandiset is a draft with no license stated.
+  in the year 18. The column `hd` is not head direction: it equals the
+  direction of movement computed from x, y (median difference 0.00°, 90th
+  percentile at most 1.5° in every speed band from 0 to over 10 cm/s), so the
+  loader leaves `headings` empty; what `ha` holds is not stated. The `sp`
+  column agrees with the speed computed from x, y as cm at 0.02 s per sample
+  (r = 0.91), supporting both the cm and the period readings. The dandiset is
+  a draft with no license stated.
 - Harness workaround: `datasets/load_giocomo_000405.py` reads positions as cm and times from the period
 - Proposed change: none for neurospatial
 - Status: open
@@ -590,3 +607,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: none
 - Status: open
+
+## G-036: 000405's pre-registered head-direction expectation assumed `hd` was head direction
+
+- Datasets: giocomo_000405
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: "headings span the circle" was registered from the survey
+  appendix, which read the `hd` column as head direction. It is the
+  direction of movement (G-033), so the loader keeps no headings and the
+  expectation fails ("check raised TypeError").
+- Harness workaround: none (the expectation stays as registered)
+- Proposed change: none
+- Status: won't fix (the expectation, not the loader, was wrong)

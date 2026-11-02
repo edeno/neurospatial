@@ -105,6 +105,7 @@ def load(cache: Path | None = None) -> Recording:
             "train_epochs": train,
             "test_epochs": test,
             "nwb_path": str(path),
+            "readers_used": ("position", "units"),
         },
         conversions=(
             "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",

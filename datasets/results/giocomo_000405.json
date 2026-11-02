@@ -6,7 +6,7 @@
   "conversions": [
     "positions: track_data columns x, y by the description's column names; labelled mm, read as cm (ranges -62..60, -5..134)",
     "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
-    "headings: track_data column hd (0..6.28) as radians, wrapped to [-pi, pi]",
+    "headings: none; track_data column hd is the direction of movement from x, y",
     "activity: firing_rates (labelled uv) as binned rates in Hz"
   ],
   "expectations": [
@@ -32,8 +32,8 @@
     },
     {
       "key": "headings_span_the_circle",
-      "passed": true,
-      "detail": "predicate"
+      "passed": false,
+      "detail": "check raised TypeError: '<' not supported between instances of 'NoneType' and 'float'"
     }
   ],
   "versions": {
@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
+    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.265,
+      "seconds": 0.254,
       "peak_mb": 8.1
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.017,
       "peak_mb": 8.2
     },
     "rates.spatial": {
@@ -106,7 +106,7 @@
     },
     "hd.tuning": {
       "status": "n/a",
-      "note": "needs spike_times",
+      "note": "needs headings, spike_times",
       "warnings": []
     },
     "decode.position": {
@@ -145,7 +145,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.036,
+      "seconds": 0.034,
       "peak_mb": 8.2
     },
     "behavior.turn_sequence": {
@@ -166,13 +166,13 @@
       "status": "workaround",
       "summary": {
         "position": "not found, but the loader found it",
-        "head_direction": "not found, but the loader found it",
+        "head_direction": "absent (file has none)",
         "units": "absent (file has none)"
       },
-      "note": "position: not found, but the loader found it; head_direction: not found, but the loader found it",
+      "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.159,
+      "seconds": 0.153,
       "peak_mb": 0.2
     },
     "imaging.rates": {
@@ -194,20 +194,11 @@
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.043,
+      "seconds": 0.063,
       "peak_mb": 9.3
     }
   },
   "hazards": [
-    {
-      "hazard": "headings_in_degrees",
-      "op": "",
-      "response": "not probed",
-      "message": "changes ['headings'], which no probed operation reads",
-      "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
-    },
     {
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
@@ -340,15 +331,6 @@
       "op": "behavior.turn_sequence",
       "response": "not probed",
       "message": "the clean run was n/a",
-      "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
-    },
-    {
-      "hazard": "headings_as_stored",
-      "op": "",
-      "response": "not probed",
-      "message": "changes ['headings'], which no probed operation reads",
       "repeated_clean_warnings": 0,
       "clean_summary": {},
       "hazard_summary": null

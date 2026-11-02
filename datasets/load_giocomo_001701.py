@@ -111,8 +111,10 @@ def load(cache: Path | None = None) -> Recording:
             "train_epochs": train,
             "test_epochs": test,
             "nwb_path": str(path),
+            "readers_used": ("position", "units"),
         },
         conversions=(
+            "positions: read_position, cm; range checked: 3.6-79 by 3.9-94 cm",
             "headings: CompassDirection/head direction labelled degrees, values in"
             " [-pi, pi]; kept as radians (read with pynwb)",
         ),

@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3de71ca193218b433df2626a583c9618a88455cc"
+    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.347,
+      "seconds": 0.276,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -74,7 +74,7 @@
       "note": "ValueError: min_speed=0.5 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 1.9
     },
     "rates.spatial": {
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.813,
+      "seconds": 2.868,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -101,7 +101,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.008,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.166,
+      "seconds": 5.511,
       "peak_mb": 264.7
     },
     "cells.place_screen": {
@@ -128,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.059,
+      "seconds": 0.06,
       "peak_mb": 66.8
     },
     "cells.grid_score": {
@@ -165,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.627,
+      "seconds": 1.402,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -176,7 +176,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.227,
+      "seconds": 3.821,
       "peak_mb": 24.2
     },
     "env.from_graph": {
@@ -197,7 +197,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.68,
+      "seconds": 0.758,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -208,7 +208,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.176,
+      "seconds": 0.192,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {

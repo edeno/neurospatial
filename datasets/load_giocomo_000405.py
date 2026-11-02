@@ -13,13 +13,15 @@ stated), one 27 MB file pinned by asset id and SHA-256.
 What the loader converts, trusting value ranges over labels:
 
 - ``track_data`` is labelled ``unit="mm"``, but x spans −62 to 60 and y −5 to
-  134; in millimetres a rat's open field would be 12 cm across. The values are
-  read as cm, unchanged.
+  134; in millimetres a rat's open field would be 12 cm across. The ``sp``
+  column agrees with the speed computed from x, y read as cm at 0.02 s per
+  sample (r = 0.91). The values are read as cm, unchanged.
 - ``track_data``'s ``rate`` attribute is 0.02, which is the sampling period:
   ``firing_rates`` has the same length with ``rate=50``. Times are
   ``0.02 * arange(n)`` s for both.
-- ``hd`` (0 to 6.28) is taken as radians and wrapped to [−π, π]. Its frame is
-  not stated, so it is not rotated.
+- ``hd`` is not head direction: it equals the direction of movement computed
+  from x and y (median difference 0.00°, 90th percentile at most 1.5° in every
+  speed band), so ``headings`` is left empty. What ``ha`` holds is not stated.
 - ``firing_rates`` is labelled ``unit="uv"``; it is kept as rates (Hz) per
   20 ms bin, ``activity_kind="binned_rate"``.
 
@@ -72,8 +74,6 @@ def load(cache: Path | None = None) -> Recording:
     """Fetch the session; positions in cm, headings in radians, binned rates."""
     import pynwb
 
-    from neurospatial.stats import wrap_angle
-
     path = fetch(
         dandi_asset_url(_ASSET_ID),
         Path(_PATH).name,
@@ -99,7 +99,6 @@ def load(cache: Path | None = None) -> Recording:
         times=times,
         positions=np.column_stack([col["x"], col["y"]]),
         position_units="cm",
-        headings=np.asarray(wrap_angle(col["hd"])),
         unit_ids=unit_names,
         activity=rates,
         activity_times=times.copy(),
@@ -109,7 +108,7 @@ def load(cache: Path | None = None) -> Recording:
             "positions: track_data columns x, y by the description's column names;"
             " labelled mm, read as cm (ranges -62..60, -5..134)",
             "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
-            "headings: track_data column hd (0..6.28) as radians, wrapped to [-pi, pi]",
+            "headings: none; track_data column hd is the direction of movement from x, y",
             "activity: firing_rates (labelled uv) as binned rates in Hz",
         ),
     )
@@ -121,16 +120,7 @@ def _positions_read_as_mm(rec: Recording) -> Recording:
     return replace(rec, positions=rec.positions / 10.0)
 
 
-def _headings_as_stored(rec: Recording) -> Recording:
-    # Undoes the wrap: hd as stored, in [0, 2 pi).
-    assert rec.headings is not None
-    return replace(rec, headings=np.mod(rec.headings, 2 * np.pi))
-
-
-HAZARDS = {
-    "positions_read_as_mm": _positions_read_as_mm,
-    "headings_as_stored": _headings_as_stored,
-}
+HAZARDS = {"positions_read_as_mm": _positions_read_as_mm}
 
 
 if __name__ == "__main__":

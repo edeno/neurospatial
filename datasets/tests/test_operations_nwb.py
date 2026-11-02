@@ -97,3 +97,25 @@ def test_readers_find_position_in_generic_timeseries(tmp_path):
     outcome = nwb_readers(rec, {})
     assert outcome.summary["position"] == "not found, but the loader found it"
     assert outcome.status == "workaround"
+
+
+def test_readers_compare_times(tmp_path):
+    from dataclasses import replace
+
+    rec = _write(tmp_path / "clock.nwb", heading_unit="radians")
+    shifted = replace(rec, times=rec.times + 1.0)
+    outcome = nwb_readers(shifted, {})
+    assert outcome.summary["position"] == "mismatch: times differ"
+    assert outcome.summary["head_direction"] == "mismatch: times differ"
+    assert outcome.status == "workaround"
+
+
+def test_self_comparison_is_labelled(tmp_path):
+    from dataclasses import replace
+
+    rec = _write(tmp_path / "used.nwb", heading_unit="radians")
+    used = replace(rec, params={**rec.params, "readers_used": ("units",)})
+    outcome = nwb_readers(used, {})
+    assert outcome.summary["units"] == "ok (loader used this reader)"
+    assert outcome.summary["position"] == "ok"
+    assert outcome.status == "ok"
