@@ -416,6 +416,12 @@ low total occupancy, because the samples outside the environment are dropped.
 Compare the range of `positions` with `env.dimension_ranges` when either looks
 wrong.
 
+Filtering by speed with NaN instead of deleted rows
+(`positions[speed < 5] = np.nan`) is not detected. NaN rows are treated
+exactly like deleted rows, so short NaN runs are bridged as occupancy in the
+same way, but they look like ordinary lost tracking. Select running samples
+with `min_speed=` (or `epochs=`) instead of masking the arrays yourself.
+
 `spatial_information`, `sparsity`, `selectivity` and `information_per_second`
 take `occupancy` by keyword (`spatial_information(rate, occupancy=occupancy)`).
 A rate map and its occupancy have the same shape, so a swapped positional pair
