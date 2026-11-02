@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import sys
 import textwrap
-from collections.abc import Mapping, Sequence
+import warnings
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast
@@ -661,6 +663,25 @@ def draw_colorbar(
 # --- figures --------------------------------------------------------------------
 
 
+@contextmanager
+def quiet_axes_setup() -> Iterator[None]:
+    """Silence pygfx's division warnings while fastplotlib builds a figure.
+
+    fastplotlib sizes its axes on the default camera before any data is
+    drawn, where a ruler end can project to w = 0 and pygfx divides by it;
+    the first draw resizes them, so those numpy warnings say nothing about
+    the scene.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            "(divide by zero|invalid value) encountered in divide",
+            RuntimeWarning,
+            module="pygfx",
+        )
+        yield
+
+
 def new_figure(env: Environment) -> tuple[Any, Any]:
     """A figure for ``env`` and its one subplot.
 
@@ -670,9 +691,10 @@ def new_figure(env: Environment) -> tuple[Any, Any]:
     """
     fastplotlib = import_fastplotlib()
     camera, controller = camera_options(env)
-    figure = fastplotlib.Figure(
-        cameras=camera, controller_types=[controller], size=(800, 700)
-    )
+    with quiet_axes_setup():
+        figure = fastplotlib.Figure(
+            cameras=camera, controller_types=[controller], size=(800, 700)
+        )
     subplot = figure[0, 0]
     subplot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
     return figure, subplot
