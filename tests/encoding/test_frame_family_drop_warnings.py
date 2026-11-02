@@ -68,3 +68,36 @@ def test_allocentric_object_vector_epochs_on_wrong_clock_raise(continuous_record
             distance_bin_size=5.0,
             epochs=[(1e4, 6e4)],
         )
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_warn_on_drop_false_silences_spike_drop(
+    frame_family, continuous_recording, plural
+):
+    f, r = frame_family, continuous_recording
+    call = f.plural if plural else f.single
+    spikes_ms = r.spike_times * 1000.0
+    spikes = [spikes_ms] if plural else spikes_ms
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        call(*f.args(r, spikes), **f.defaults, warn_on_drop=False)
+    assert _drop_warnings(record) == []
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_tuning_curve_warn_on_drop_false_silences_spike_drop(
+    continuous_recording, plural
+):
+    from neurospatial.encoding import compute_tuning_curve, compute_tuning_curves
+
+    r = continuous_recording
+    values = r.positions[:, 0]
+    spikes_ms = r.spike_times * 1000.0
+    call = compute_tuning_curves if plural else compute_tuning_curve
+    spikes = [spikes_ms] if plural else spikes_ms
+    with pytest.warns(UserWarning, match="fell outside the position time window"):
+        call(spikes, r.times, values, bin_size=10.0)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        call(spikes, r.times, values, bin_size=10.0, warn_on_drop=False)
+    assert _drop_warnings(record) == []

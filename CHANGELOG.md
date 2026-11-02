@@ -19,7 +19,9 @@
   stays meaningful at the exact samples still warn and return:
   `add_positions`, `heading_from_velocity(allow_all_nan=True)`, animation
   overlays and decoding ground truth. A deliberately empty selection (an
-  `Intervals` with no rows) still warns.
+  `Intervals` with no rows) still warns, and a label of
+  `compute_directional_place_fields` with no analyzable time still gets a
+  NaN map with zero occupancy.
 - These inputs raise `TypeError`, naming the call that takes them, where
   they raised `ValueError` before:
   - a list of spike trains, or equal-length trains stacked in a 2-D array,
@@ -35,6 +37,14 @@
   - `population_coverage` given a rate result (an `AttributeError` before);
   - `BayesianDecoder.fit` given a spike count matrix (a 0/1 raster still
     raises the raster `ValueError`).
+- `detect_laps(method="auto" | "region")` reads the topology of the space
+  instead of counting cycles of the bin graph, whose grid neighbours and
+  junction bins always form short cycles. It refuses an open arena and a
+  tree, plus or W maze, which it used to cut into "laps", and accepts a
+  track graph with a cycle (a figure-eight) or a 2-D area with a hole whose
+  inscribed circle has a radius above one bin (an annulus; bins from
+  `from_samples` shrink a ring's hole by up to a bin on each side). A 3-D
+  environment is refused.
 
 **Added**
 
@@ -43,7 +53,7 @@
   `positions` validation, a selection with no usable interval, `unit_ids` of
   the wrong length or with repeats, spike counts and rate maps with
   different numbers of neurons, an angular `bin_size` wider than half a
-  circle, a decoding `dt` in milliseconds and `detect_laps` on a track with
+  circle, a decoding `dt` in milliseconds and `detect_laps` in a space with
   no loop. `except ValueError` still catches all of them.
 - Wrong-kind messages name the fix: `r.spatial_information()` for a result
   passed to `spatial_information`, `compute_spatial_rates` for a one-unit
@@ -57,6 +67,14 @@
   called), `decode_session` and `decode_session_summary` keywords, and every
   option checked by the shared choice validator, which now names the
   calling function (`method="gaussian"` suggests `"gaussian_kde"`).
+- `warn_on_drop=` on every encoding function that can warn about dropped
+  spikes: `compute_directional_rate(s)`, `is_head_direction_cell`,
+  `head_direction_cell_significance`, `compute_egocentric_rate(s)`,
+  `compute_object_vector_rate(s)`, `is_object_vector_cell`,
+  `is_egocentric_object_vector_cell`, `object_vector_cell_significance`,
+  `egocentric_object_vector_cell_significance`, `compute_view_rate(s)`,
+  `is_spatial_view_cell`, `spatial_view_cell_significance`,
+  `compute_tuning_curve(s)` and `compute_directional_place_fields`.
 
 **Changed**
 
@@ -65,6 +83,17 @@
   `spatial_autocorrelation_radial`, `credible_region`, `confusion_matrix`,
   `population_coverage`, `plot_field`, `decode_position` (fractional counts)
   and the replay spike-count check now say why and how to fix the input.
+
+**Fixed**
+
+- The spike-drop warning ("N/M spike_times (P%) fell outside the position
+  time window") counted every spike outside the tracked time, even spikes
+  outside the requested `epochs` or `spike_window`. Head direction tracked
+  only during wake, analysed with `epochs=wake`, warned that the sleep
+  spikes were lost. Only spikes inside the analysed windows count now.
+  Spikes on another clock still count in full: milliseconds, spike times
+  far beyond every time and window bound, or spikes of which none falls
+  inside the windows or inside the tracked time (a clock offset).
 
 ### One name per concept in every argument
 

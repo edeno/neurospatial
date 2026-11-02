@@ -50,27 +50,41 @@ def _warn_if_spikes_out_of_window(
     trains: list[NDArray[np.float64]],
     t_start: float,
     t_stop: float,
+    *,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
 ) -> None:
-    """Warn once if most spikes fall outside the decode window ``[t_start, t_stop]``.
+    """Warn once if many spikes fall outside the decode window ``[t_start, t_stop]``.
 
-    Aggregates across all spike trains; an empty session never warns. The
+    Aggregates across all spike trains; an empty session never warns. Only
+    spikes inside ``epochs`` and ``spike_window`` count
+    (:func:`~neurospatial.encoding._spatial_counts.time_window_drops`). The
     warning names a likely millisecond/second mix-up.
     """
+    from neurospatial.encoding._spatial_counts import time_window_drops
+
     nonempty = [t for t in trains if t.size > 0]
     if not nonempty:
         return
-    n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in nonempty)
-    # The message needs only the spike-time range.
-    spike_range = np.array(
-        [min(float(t.min()) for t in nonempty), max(float(t.max()) for t in nonempty)]
+    spikes = np.concatenate(nonempty)
+    n_out, n_considered, within = time_window_drops(
+        spikes,
+        (spikes < t_start) | (spikes > t_stop),
+        t_start,
+        t_stop,
+        epochs=epochs,
+        spike_window=spike_window,
     )
+    # The message needs only the spike-time range.
+    spike_range = np.array([float(spikes.min()), float(spikes.max())])
     _emit_time_window_warning(
         n_out,
-        sum(int(t.size) for t in nonempty),
+        n_considered,
         t_start,
         t_stop,
         spike_range,
         window="decode",
+        scope=within,
     )
 
 
@@ -275,9 +289,9 @@ def decode_session(
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
     warn_on_drop : bool, optional
-        If ``True`` (the default), emit a single ``UserWarning`` when a large
-        fraction (>50%, which includes the all-dropped case) of spikes fall
-        outside the decode time window ``[times.min(), times.max()]`` and are
+        If ``True`` (the default), emit a single ``UserWarning`` when more
+        than 5% of the spikes inside ``epochs`` and ``spike_window`` fall
+        outside the time window ``[times.min(), times.max()]`` and are
         therefore excluded from the count matrix, for example
         ``spike_times`` in milliseconds while ``times`` is in seconds. The
         warning fires once per call, from the encoder, and also covers spikes
@@ -285,7 +299,10 @@ def decode_session(
         the observed time falls in run remainders shorter than ``dt``, which
         are not decoded. Set ``False`` to suppress these diagnostics. When
         every spike lies before, or every spike after, the decode bins, the
-        call raises whatever ``warn_on_drop`` is.
+        call raises whatever ``warn_on_drop`` is. Spikes outside ``epochs``
+        and ``spike_window`` are not checked, so a clock offset that leaves
+        some spikes inside them goes unreported: compare
+        ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
     dtype : {np.float32, np.float64}, default=np.float64
         Dtype of the stored rate maps and posterior; ``np.float32`` halves
         their memory. Rates are computed in float64 and then cast. Any other
@@ -577,7 +594,11 @@ def _prepare_session_decode(
 
     if warn_spikes_outside:
         _warn_if_spikes_out_of_window(
-            trains, float(times_arr.min()), float(times_arr.max())
+            trains,
+            float(times_arr.min()),
+            float(times_arr.max()),
+            epochs=epochs,
+            spike_window=spike_window,
         )
 
     # Decode bins exist only where the recording was observed: the gap, epochs and

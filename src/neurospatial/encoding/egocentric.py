@@ -1473,6 +1473,7 @@ def compute_egocentric_rate(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRateResult:
     """Compute egocentric firing rate for one neuron.
 
@@ -1598,6 +1599,15 @@ def compute_egocentric_rate(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -1720,6 +1730,7 @@ def compute_egocentric_rate(
         min_occupancy=min_occupancy,
         backend=backend,
         context="compute_egocentric_rate",
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -1743,6 +1754,7 @@ def compute_object_vector_rate(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRateResult:
     """Compute allocentric firing rate for one neuron.
 
@@ -1862,6 +1874,15 @@ def compute_object_vector_rate(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -1964,6 +1985,7 @@ def compute_object_vector_rate(
         min_occupancy=min_occupancy,
         backend=backend,
         context="compute_object_vector_rate",
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -2310,6 +2332,7 @@ def _count_object_vectors(
     epoch_interval_ids: list[int] | None,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
+    warn_on_drop: bool = True,
 ) -> _ObjectVectorCounts:
     """Bin egocentric coordinates, count spikes and build provenance.
 
@@ -2386,7 +2409,9 @@ def _count_object_vectors(
         break_before=break_before,
         spike_window=spike_window,
     )
-    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    spike_counts, occupancy = prepared.count(
+        spike_trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+    )
     time_in_range = float(occupancy.sum())
     analyzed = time_in_range + time_beyond
 
@@ -2445,6 +2470,7 @@ def _object_vector_rate(
     min_occupancy: float,
     backend: BackendType,
     context: str,
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRateResult:
     """One unit's map in either frame: unit 0 of a one-unit population."""
     population = _object_vector_rates(
@@ -2468,6 +2494,7 @@ def _object_vector_rate(
         backend=backend,
         context=context,
         single_unit=True,
+        warn_on_drop=warn_on_drop,
     )
     unit = population[0]
     # A standalone unit has no label (unit_id=None), unlike an indexed one.
@@ -2508,6 +2535,7 @@ def compute_egocentric_rates(
     n_jobs: int = 1,
     backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
@@ -2655,6 +2683,15 @@ def compute_egocentric_rates(
         group, a ``unit_ids`` that differs from the group's index raises
         ``ValueError`` (relabel the group itself instead). A wrong-length
         value or a repeated label raises ``ValueError``.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2830,6 +2867,7 @@ def compute_egocentric_rates(
         backend=backend,
         unit_ids=unit_ids,
         context="compute_egocentric_rates",
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -2855,6 +2893,7 @@ def compute_object_vector_rates(
     n_jobs: int = 1,
     backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRatesResult:
     """Compute allocentric firing rates for multiple neurons.
 
@@ -2996,6 +3035,15 @@ def compute_object_vector_rates(
         group, a ``unit_ids`` that differs from the group's index raises
         ``ValueError`` (relabel the group itself instead). A wrong-length
         value or a repeated label raises ``ValueError``.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -3110,6 +3158,7 @@ def compute_object_vector_rates(
         backend=backend,
         unit_ids=unit_ids,
         context="compute_object_vector_rates",
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -3197,6 +3246,7 @@ def _object_vector_rates(
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
     single_unit: bool = False,
+    warn_on_drop: bool = True,
 ) -> ObjectVectorRatesResult:
     """Compute either frame through the shared binning and smoothing path.
 
@@ -3311,6 +3361,7 @@ def _object_vector_rates(
         backend=resolved_backend,
         n_jobs=n_jobs,
         break_before=breaks,
+        warn_on_drop=warn_on_drop,
     )
 
     firing_rates = _object_vector_firing_rates(
@@ -3552,6 +3603,7 @@ def is_object_vector_cell(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> bool:
     """Classify one neuron by the object_vector_cell screen or circular-shift test.
 
@@ -3677,6 +3729,15 @@ def is_object_vector_cell(
         across single and population calls.
     unit_id : hashable or None, default=None
         Shuffle stream label; None uses label 0. Match the population's label.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -3779,6 +3840,7 @@ def is_object_vector_cell(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -3810,6 +3872,7 @@ def is_egocentric_object_vector_cell(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> bool:
     """Classify one neuron by the egocentric_object_vector_cell screen or circular-shift test.
 
@@ -3941,6 +4004,15 @@ def is_egocentric_object_vector_cell(
         across single and population calls.
     unit_id : hashable or None, default=None
         Shuffle stream label; None uses label 0. Match the population's label.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -4045,6 +4117,7 @@ def is_egocentric_object_vector_cell(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -4076,6 +4149,7 @@ def _is_object_vector_cell(
     bandwidth: float | None,
     min_occupancy: float,
     backend: BackendType,
+    warn_on_drop: bool = True,
 ) -> bool:
     """Shared body of the allocentric and egocentric object-vector predicates.
 
@@ -4121,6 +4195,7 @@ def _is_object_vector_cell(
         "bandwidth": bandwidth,
         "min_occupancy": min_occupancy,
         "backend": backend,
+        "warn_on_drop": warn_on_drop,
     }
 
     def rate_map() -> ObjectVectorRateResult:
@@ -4319,6 +4394,7 @@ def _object_vector_null_maps(
     min_occupancy: float,
     n_jobs: int,
     backend: BackendType,
+    warn_on_drop: bool = True,
 ) -> _ObjectVectorNullMaps:
     """Validate the estimator and bin the trajectory once for a shuffle test.
 
@@ -4380,7 +4456,7 @@ def _object_vector_null_maps(
         polar_env=polar_env,
         break_before=break_before,
     )
-    _, occupancy = binning.count(spike_trains, n_jobs=n_jobs)
+    _, occupancy = binning.count(spike_trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop)
     return _ObjectVectorNullMaps(
         binning,
         occupancy,
@@ -4473,6 +4549,7 @@ def _object_vector_significance(
     n_shuffles: int,
     min_shift: float,
     rng: np.random.Generator | int | None,
+    warn_on_drop: bool = True,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Shared body of the allocentric and egocentric object-vector tests.
 
@@ -4616,6 +4693,7 @@ def _object_vector_significance(
                 n_jobs=n_jobs,
                 backend=backend,
                 **estimator,
+                warn_on_drop=warn_on_drop,
             )
         return _object_vector_information(polar_env, shifted, maps)
 
@@ -4656,6 +4734,7 @@ def object_vector_cell_significance(
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
+    warn_on_drop: bool = True,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test object vector tuning against circular spike-time shifts.
 
@@ -4803,6 +4882,15 @@ def object_vector_cell_significance(
         Minimum shift in either direction, seconds of analyzed time.
     rng : numpy.random.Generator, int or None, default=None
         Integer seeds give stable per-unit shifts regardless of population order.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -4865,6 +4953,7 @@ def object_vector_cell_significance(
         n_shuffles=n_shuffles,
         min_shift=min_shift,
         rng=rng,
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -4894,6 +4983,7 @@ def egocentric_object_vector_cell_significance(
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
+    warn_on_drop: bool = True,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test egocentric object vector tuning against circular spike-time shifts.
 
@@ -5047,6 +5137,15 @@ def egocentric_object_vector_cell_significance(
         Minimum shift in either direction, seconds of analyzed time.
     rng : numpy.random.Generator, int or None, default=None
         Integer seeds give stable per-unit shifts regardless of population order.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -5109,4 +5208,5 @@ def egocentric_object_vector_cell_significance(
         n_shuffles=n_shuffles,
         min_shift=min_shift,
         rng=rng,
+        warn_on_drop=warn_on_drop,
     )

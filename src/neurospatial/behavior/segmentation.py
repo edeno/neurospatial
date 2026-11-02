@@ -884,31 +884,149 @@ def _detect_lap_direction(
     return "unknown"
 
 
-def _require_loop(graph: nx.Graph, method: str) -> None:
-    """Refuse lap detection on a connectivity graph without a cycle.
+def _space_has_loop(env: Environment) -> bool | None:
+    """Whether the space the environment covers has a loop, or None if unknown.
 
-    A graph has a cycle exactly when it has more edges than a spanning
-    forest, ``n_nodes - n_components``.
+    A loop is a path the animal can run around without turning back: a cycle
+    of the track graph for a track, and in 2-D a hole in the area the bins
+    cover (first Betti number above zero) whose inscribed circle has a radius
+    above one bin. Short cycles of the bin graph, between grid neighbours or
+    inside a junction's clique of bins, are not loops, so the bin graph is
+    not used. Cells that touch only at a corner are joined, as diagonal grid
+    neighbours are in the bin graph.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the positions were recorded in.
+
+    Returns
+    -------
+    bool or None
+        ``None`` when the topology cannot be read: a 3-D environment, or 2-D
+        bins without cell geometry.
+
+    Notes
+    -----
+    Bins built from samples on a ring cover the cells the samples fall in,
+    so the binned hole is smaller than the ring's inner circle by up to a
+    bin on each side.
+    """
+    linearization = env.binning.linearization
+    if linearization is not None:
+        return bool(nx.cycle_basis(linearization.graph))
+    if env.n_dims == 1:
+        return False
+    if env.n_dims != 2:
+        return None
+    grid = env.binning.rectilinear
+    if grid is not None and len(grid.shape) == 2:
+        return _grid_has_loop(grid.active_mask, grid.edges)
+    return _cells_have_loop(env)
+
+
+#: Subcells per bin along each axis when :func:`_grid_has_loop` measures a
+#: hole's inscribed radius on the raster.
+_HOLE_SUBDIVISION = 8
+
+
+def _grid_has_loop(
+    active: NDArray[np.bool_], edges: Sequence[NDArray[np.float64]]
+) -> bool:
+    """:func:`_space_has_loop` for a rectilinear grid, on the raster.
+
+    A hole is a 4-connected component of inactive cells that does not reach
+    the grid's border (active cells joined through corners, 8-connected,
+    leave a 4-connected complement). Its inscribed radius is measured on the
+    cells split ``_HOLE_SUBDIVISION`` times along each axis: the largest
+    distance from a hole subcell to the nearest active subcell, less half a
+    subcell, which is within a subcell of the exact radius.
+    """
+    from scipy import ndimage
+
+    spacing = np.array([float(np.median(np.diff(e))) for e in edges])
+    width = float(np.sqrt(spacing[0] * spacing[1]))
+    padded = np.pad(np.asarray(active, dtype=bool), 1, constant_values=False)
+    labels, _ = ndimage.label(~padded)
+    outside = np.unique(np.r_[labels[0], labels[-1], labels[:, 0], labels[:, -1]])
+    holes = (labels > 0) & ~np.isin(labels, outside)
+    if not holes.any():
+        return False
+    # Only the holes and the cells around them matter: crop before refining.
+    rows, columns = np.nonzero(holes)
+    window = (
+        slice(rows.min() - 1, rows.max() + 2),
+        slice(columns.min() - 1, columns.max() + 2),
+    )
+    k = _HOLE_SUBDIVISION
+    fine = np.kron(holes[window], np.ones((k, k), dtype=bool))
+    sub = spacing / k
+    depth = ndimage.distance_transform_edt(fine, sampling=tuple(sub))
+    return bool(np.max(depth) - float(np.mean(sub)) / 2 > width)
+
+
+def _cells_have_loop(env: Environment) -> bool | None:
+    """:func:`_space_has_loop` for any 2-D cells, from their polygons."""
+    import shapely
+
+    from neurospatial.geometry._polygon import cell_polygons
+
+    try:
+        cells = cell_polygons(env.binning)
+    except ValueError:
+        return None
+    width = float(np.sqrt(np.median(shapely.area(cells))))
+    # A tiny buffer joins cells that touch only at a corner.
+    covered = shapely.union_all(shapely.buffer(cells, 1e-6 * width))
+    polygons = getattr(covered, "geoms", [covered])
+    # A hole whose inscribed radius is above one bin survives an inward
+    # buffer of one bin.
+    return any(
+        not shapely.Polygon(ring).buffer(-width).is_empty
+        for polygon in polygons
+        for ring in getattr(polygon, "interiors", ())
+    )
+
+
+def _require_loop(env: Environment, method: str) -> None:
+    """Refuse lap detection in a space without a loop.
 
     Raises
     ------
     InputError
-        If ``graph`` has no cycle, as on a 1-D linear track or arm.
+        If the space has no loop (:func:`_space_has_loop`), as on a linear
+        track, a tree or plus maze, or an open arena, or if its topology
+        cannot be read (3-D).
     """
-    n_forest_edges = graph.number_of_nodes() - nx.number_connected_components(graph)
-    if graph.number_of_edges() > n_forest_edges:
+    has_loop = _space_has_loop(env)
+    if has_loop:
         return
+    fix = (
+        "for back-and-forth runs on a linear track or arm, use "
+        "detect_trials(env, times, positions, regions=[start, end]); to "
+        "segment round trips against a template, pass "
+        "method='reference' with reference_lap=."
+    )
+    if has_loop is None:
+        raise InputError(
+            _format_error(
+                f"detect_laps(method={method!r}) cannot tell whether this "
+                f"{env.n_dims}-D environment has a loop.",
+                why="a lap goes around a loop of the space: a cycle of a track "
+                "graph, or a hole in a 2-D area. Only those two kinds of "
+                "environment are read.",
+                fix=fix,
+            )
+        )
     raise InputError(
         _format_error(
             f"detect_laps(method={method!r}) counts laps around a loop, but "
-            "this environment has no loop: its bins connect without a cycle.",
-            why="on a track the animal runs back and forth, every trip out "
-            "comes back the way it went, so no lap goes round a loop and the "
-            "laps found would have direction 'unknown'.",
-            fix="for back-and-forth runs on a linear track or arm, use "
-            "detect_trials(env, times, positions, regions=[start, end]); to "
-            "segment round trips against a template, pass "
-            "method='reference' with reference_lap=.",
+            "this environment has no loop: its track graph has no cycle, or "
+            "its area has no hole to run around.",
+            why="on a track, a tree maze or in an open arena the animal can "
+            "always come back the way it went, so no lap goes round a loop "
+            "and the laps found would have direction 'unknown'.",
+            fix=fix,
         )
     )
 
@@ -1006,16 +1124,20 @@ def detect_laps(
     ValueError
         If method='reference' but reference_lap is not provided, is empty,
         or holds bins outside the environment.
-    ValueError
-        If method is 'auto' or 'region' and the environment has no loop (its
-        connectivity graph has no cycle, as on a 1-D linear track); use
-        :func:`detect_trials` for back-and-forth runs.
+    InputError
+        If method is 'auto' or 'region' and the space has no loop: a track
+        graph without a cycle (a linear track, a tree or plus maze) or a 2-D
+        area without a hole whose inscribed circle has a radius above one
+        bin (an open arena); use
+        :func:`detect_trials` for back-and-forth runs. Also for a 3-D
+        environment, whose topology is not read.
     ValueError
         If method='region' but start_region not provided.
     ValueError
         If start_region not in env.regions, or (method='region') if it does
-        not cut a loop of connected bins into two sides: in an open arena,
-        at a dead end, or where the environment's bins do not connect.
+        not cut the loop into two sides: at a dead end, where it covers only
+        part of a wide track's width, or where the bins around it do not
+        connect.
     CartesianOnlyError
         If ``env`` is polar: each lap's clockwise or counter-clockwise
         direction is the signed area of Cartesian bin centers.
@@ -1042,8 +1164,15 @@ def detect_laps(
     resulting stretch is analyzed on its own, so no lap spans a split or a
     recording boundary.
 
-    The no-loop refusal checks the connectivity graph, so a corridor binned
-    two or more bins wide in 2-D (whose grid has cycles) is not refused.
+    The no-loop refusal reads the topology of the space, not the bin graph,
+    whose grid neighbours and junction bins always form short cycles: the
+    cycles of the track graph for a track, the holes of the area the bins
+    cover in 2-D. A hole counts when its inscribed circle has a radius
+    above one bin, so a few unvisited bins inside an arena are not a loop.
+    Bins built with ``Environment.from_samples`` from positions on a ring
+    cover the cells the samples fall in, so their hole is smaller than the
+    ring's inner circle by up to a bin on each side: bin a small ring finely
+    enough, or build it with ``Environment.from_polygon``.
 
     **Lap Detection Methods:**
 
@@ -1070,13 +1199,14 @@ def detect_laps(
       the circuit is the first trip from the start line that goes round the
       loop, judged as for the 'region' method with the start line as the
       region, so a turn back at the start of the recording is skipped. On a
-      track run back and forth or in an open arena, where the start line
-      does not cut a loop, it runs from the first sample to the first return
-      to the start line after a trip to the far side of the track (a bin at
-      least half the greatest path distance away). This first circuit is
+      loop wider than the start line (an annulus, a wide track), where the
+      start line does not cut the loop into two sides, it runs from the
+      first sample to the first return to the start line after a trip to the
+      far side of the loop (a bin at least half the greatest path distance
+      away). This first circuit is
       itself the first lap. Useful when no canonical lap is at hand; use
-      'reference' when the first circuit is atypical. An environment whose
-      bins connect without any cycle (a 1-D linear track) raises: use
+      'reference' when the first circuit is atypical. A space without a loop
+      (a linear track, a tree maze, an open arena) raises: use
       :func:`detect_trials` for its runs, or 'reference' to segment round
       trips against a template.
     - **Region**: A lap is a trip out of a start region and round the loop
@@ -1259,7 +1389,7 @@ def detect_laps(
         break_before=break_before,
     )
     if method in ("auto", "region"):
-        _require_loop(env.connectivity, method)
+        _require_loop(env, method)
     runs = _event_runs(
         times,
         position_bins,
@@ -1284,14 +1414,13 @@ def detect_laps(
                     "track around it does not split into one stretch on each side.",
                     why="a region lap is a trip that leaves the start region on "
                     "one side and comes back on the other after going round the "
-                    "loop; in an open arena, at a dead end, or where the "
-                    "environment's bins do not connect, every trip out is a turn "
-                    "back.",
-                    fix="draw start_region across the full width of a loop track "
-                    "whose bins connect (for example Environment.from_samples on "
-                    "densely sampled positions). In an open arena use "
-                    "method='auto' or 'reference'; on a track the animal runs "
-                    "back and forth use detect_trials.",
+                    "loop; at a dead end, or where the region covers only part "
+                    "of the track's width or the bins around it do not connect, "
+                    "every trip out can come back the same way.",
+                    fix="draw start_region across the full width of the loop, "
+                    "where its bins connect (for example Environment.from_samples "
+                    "on densely sampled positions), or use method='auto' or "
+                    "'reference'.",
                 )
             )
         for run in runs:
@@ -1561,9 +1690,10 @@ def _first_circuit(
     zone cuts a loop track into two sides (:func:`_region_sides`), the
     circuit is the first trip out of the zone that goes round the loop, from
     the pass through the zone it leaves to the pass it returns to; a turn
-    back before it is skipped. Otherwise (an open arena or a track run back
-    and forth) the circuit starts at the first sample and ends at the first
-    return to the zone after a trip to the far side of the track. Each pass
+    back before it is skipped. Otherwise (a loop wider than the zone, such as
+    an annulus, where the zone does not cut it) the circuit starts at the
+    first sample and ends at the first return to the zone after a trip to the
+    far side of the loop. Each pass
     is represented by its sample nearest the first bin. None when no
     recording completes a circuit.
     """

@@ -37,6 +37,7 @@ from neurospatial._intervals import (
     excluded_intervals_message,
     fill_missing_positions,
     hold_last_valid,
+    intersect_intervals,
     interval_gates,
     interval_valid_mask,
     resolve_time_windows,
@@ -615,10 +616,16 @@ class FrameBinning:
     samples: Literal["positions", "headings", "values"] = "positions"
 
     def count(
-        self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
+        self,
+        spike_times: Sequence[NDArray[np.float64]],
+        *,
+        n_jobs: int = 1,
+        warn_on_drop: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Count a population and its shared occupancy on the prepared support."""
-        return count_frames_and_occupancy(spike_times, self, n_jobs=n_jobs)
+        return count_frames_and_occupancy(
+            spike_times, self, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+        )
 
 
 def prepare_frame_binning(
@@ -657,8 +664,15 @@ def count_frames_and_occupancy(
     prepared: FrameBinning,
     *,
     n_jobs: int,
+    warn_on_drop: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Count spikes and dwell time using exactly the recorded interval mask."""
+    """Count spikes and dwell time using exactly the recorded interval mask.
+
+    Warns once when the interval gates or the spike times discard data
+    (:func:`warn_discarded`), unless ``warn_on_drop`` is False. A selection
+    that excludes every interval raises whatever ``warn_on_drop``
+    (:func:`~neurospatial._intervals.excluded_intervals_message`).
+    """
     times, frame_bins, n_bins = prepared.times, prepared.frame_bins, prepared.n_bins
     support = prepared.support
     mask = support.mask
@@ -678,17 +692,27 @@ def count_frames_and_occupancy(
             else np.empty(0, dtype=np.float64)
         )
         outside = ~((all_spikes >= times[0]) & (all_spikes < times[-1]))
+        n_dropped, n_considered, within = time_window_drops(
+            all_spikes,
+            outside,
+            float(times[0]),
+            float(times[-1]),
+            epochs=prepared.gates.epochs,
+            spike_window=prepared.gates.spike_window,
+        )
         messages.append(
             _time_window_message(
-                int(outside.sum()),
-                all_spikes.size,
+                n_dropped,
+                n_considered,
                 float(times[0]),
                 float(times[-1]),
                 all_spikes,
-                scope="across all neurons " if len(spike_times_list) > 1 else "",
+                scope=within
+                + ("across all neurons " if len(spike_times_list) > 1 else ""),
             )
         )
-    warn_discarded(messages, suppress_hint="")
+    if warn_on_drop:
+        warn_discarded(messages, suppress_hint="")
     occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
     spike_counts = np.zeros((len(spike_times_list), n_bins), dtype=np.float64)
     if len(spike_times_list) and n_jobs != 1:
@@ -1045,6 +1069,97 @@ def _clock_ratio_hint(
     return ""
 
 
+#: Spike times whose median is beyond this many times the largest time and
+#: window bound are taken to be on another clock (milliseconds against
+#: seconds) by :func:`time_window_drops`. Spikes spread over a recording that
+#: long (more than a day around 10 min of tracking that starts at 0) are past
+#: any session this package expects; milliseconds give about 1000.
+_OTHER_CLOCK_FACTOR = 100.0
+
+
+def time_window_drops(
+    spikes: NDArray[np.float64],
+    outside: NDArray[np.bool_],
+    t_min: float,
+    t_max: float,
+    *,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+) -> tuple[int, int, str]:
+    """Count spikes lost because they fall outside the tracked time.
+
+    A spike outside ``epochs`` or ``spike_window`` is excluded by the
+    caller's own selection, so only spikes inside both (the analysed
+    windows) count: tracking only during wake, with ``epochs=wake``, loses
+    no spike. When the spike times look like another clock than ``times``,
+    the windows are on the clock of ``times`` and say nothing about the
+    spikes, so every spike counts. Another clock is: spans and magnitudes
+    about 1000 times apart (:func:`_clock_ratio_hint`), a median spike time
+    beyond ``_OTHER_CLOCK_FACTOR`` times every time and window bound, no
+    spike inside the analysed windows, or no spike inside the tracked time.
+    A deliberately empty selection (a window set with no rows) counts no
+    spike.
+
+    Parameters
+    ----------
+    spikes : ndarray, shape (n_spikes,)
+        Every unit's spike times, concatenated, in seconds.
+    outside : ndarray of bool, shape (n_spikes,)
+        True for spikes outside the tracked time ``[t_min, t_max]``, in the
+        caller's convention for the closing edge.
+    t_min, t_max : float
+        The tracked time.
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Resolved windows (:func:`~neurospatial._intervals.as_intervals`).
+
+    Returns
+    -------
+    n_dropped : int
+        Spikes inside the analysed windows but outside the tracked time.
+    n_considered : int
+        Spikes inside the analysed windows.
+    scope : str
+        Phrase naming the windows for the message, ``""`` when every spike
+        counts.
+    """
+    windows = [w for w in (epochs, spike_window) if w is not None]
+    if not windows or not spikes.size:
+        return int(np.count_nonzero(outside)), int(spikes.size), ""
+    # Windows are on the clock of ``times``. Spike times about 1000 times the
+    # span of ``times``, or whose median is beyond 100 times every time and
+    # window bound, are on another clock (milliseconds), and the windows say
+    # nothing about which of them were meant: count every one.
+    largest = max(
+        abs(t_min), abs(t_max), *(float(np.abs(w).max()) for w in windows if w.size)
+    )
+    if (
+        _clock_ratio_hint(spikes, t_min, t_max)
+        or float(np.median(np.abs(spikes))) > _OTHER_CLOCK_FACTOR * largest
+    ):
+        return int(np.count_nonzero(outside)), int(spikes.size), ""
+    if any(w.shape[0] == 0 for w in windows):
+        # A deliberately empty selection drops every spike by choice; its own
+        # message says so.
+        return 0, 0, ""
+    analysed = windows[0] if len(windows) == 1 else intersect_intervals(*windows)
+    inside = times_in_intervals(analysed, spikes)
+    if not inside.any() or outside.all():
+        # No spike in the analysed windows, or none in the tracked time at
+        # all: the spikes are on another clock (an offset, as from a
+        # misaligned NWB file), not outside a selection. Count every one.
+        return int(np.count_nonzero(outside)), int(spikes.size), ""
+    names = " and ".join(
+        name
+        for name, value in (("epochs", epochs), ("spike_window", spike_window))
+        if value is not None
+    )
+    return (
+        int(np.count_nonzero(outside & inside)),
+        int(np.count_nonzero(inside)),
+        f"inside {names} ",
+    )
+
+
 def warn_discarded(messages: Sequence[str | None], *, suppress_hint: str) -> None:
     """Emit the discarded-data messages of one call as one ``UserWarning``.
 
@@ -1068,13 +1183,20 @@ def _emit_time_window_warning(
     all_spike_times: NDArray[np.float64] | None,
     *,
     window: str = "position",
+    scope: str = "",
     suppress_hint: str = _WARN_ON_DROP_HINT,
 ) -> None:
     """Warn with :func:`_time_window_message` alone."""
     warn_discarded(
         [
             _time_window_message(
-                n_time_dropped, n_total, t_min, t_max, all_spike_times, window=window
+                n_time_dropped,
+                n_total,
+                t_min,
+                t_max,
+                all_spike_times,
+                scope=scope,
+                window=window,
             )
         ],
         suppress_hint=suppress_hint,
@@ -1376,6 +1498,7 @@ def bin_spike_trains(
     warn_on_drop: bool = True,
     drop_scope: str = "across all neurons ",
     drop_message: str | None = None,
+    check_time_window: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains into spatial bins.
 
@@ -1432,6 +1555,9 @@ def bin_spike_trains(
     drop_message : str or None, optional
         The caller's own discarded-data message (an excluded-interval
         message), emitted with the spike-drop messages in one warning.
+    check_time_window : bool, default=True
+        Whether to report spikes outside the tracked time. False when the
+        caller checks the whole recording once, for example per-label maps.
 
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict complete sampling intervals to these half-open windows in
@@ -1551,7 +1677,7 @@ def bin_spike_trains(
         )
     spike_counts = np.array([counts for counts, *_ in results], dtype=np.float64)
     spike_counts = spike_counts.reshape(n_neurons, env.n_bins)
-    n_time_dropped, n_bin_dropped, n_total, n_after_time = (
+    _, n_bin_dropped, _, n_after_time = (
         np.array([stats for _, *stats in results], dtype=np.int64)
         .reshape(n_neurons, 4)
         .sum(axis=0)
@@ -1561,18 +1687,40 @@ def bin_spike_trains(
     # Warn ONCE in the main process from the aggregated statistics.
     if warn_on_drop:
         messages = [drop_message]
-        if n_neurons > 0:
-            messages += [
+        if n_neurons > 0 and check_time_window:
+            all_spikes = np.concatenate(spike_arrays)
+            # Resolved windows (an (n, 2) ndarray, possibly with no rows) pass
+            # as is; any other form is resolved here.
+            analysed_epochs, analysed_window = (
+                (epochs, spike_window)
+                if all(
+                    w is None or (isinstance(w, np.ndarray) and w.ndim == 2)
+                    for w in (epochs, spike_window)
+                )
+                else resolve_time_windows(epochs, spike_window)[:2]
+            )
+            n_time_dropped, n_considered, within = time_window_drops(
+                all_spikes,
+                (all_spikes < track.t_min) | (all_spikes >= track.t_max),
+                track.t_min,
+                track.t_max,
+                epochs=analysed_epochs,
+                spike_window=analysed_window,
+            )
+            messages.append(
                 _time_window_message(
                     n_time_dropped,
-                    n_total,
+                    n_considered,
                     track.t_min,
                     track.t_max,
-                    np.concatenate(spike_arrays),
-                    scope=drop_scope,
-                ),
-                _inactive_bin_message(n_bin_dropped, n_after_time, scope=drop_scope),
-            ]
+                    all_spikes,
+                    scope=within + drop_scope,
+                )
+            )
+        if n_neurons > 0:
+            messages.append(
+                _inactive_bin_message(n_bin_dropped, n_after_time, scope=drop_scope)
+            )
         warn_discarded(messages, suppress_hint=_WARN_ON_DROP_HINT)
 
     return spike_counts, occupancy

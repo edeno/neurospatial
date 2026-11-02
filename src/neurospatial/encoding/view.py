@@ -1499,7 +1499,9 @@ class _ViewRates(NamedTuple):
     n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
 
 
-def _view_rates(env: Environment, setup: _ViewSetup, *, n_jobs: int) -> _ViewRates:
+def _view_rates(
+    env: Environment, setup: _ViewSetup, *, n_jobs: int, warn_on_drop: bool = True
+) -> _ViewRates:
     """Count every unit's spikes by viewed bin and smooth the rate maps.
 
     Parameters
@@ -1523,7 +1525,9 @@ def _view_rates(env: Environment, setup: _ViewSetup, *, n_jobs: int) -> _ViewRat
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
 
     prepared = setup.prepared
-    spike_counts, occupancy = prepared.count(setup.trains, n_jobs=n_jobs)
+    spike_counts, occupancy = prepared.count(
+        setup.trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+    )
     settings = rate_analysis_settings(
         prepared.support,
         epoch_interval_ids=setup.epoch_interval_ids,
@@ -1660,6 +1664,7 @@ def compute_view_rate(
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
     boundary_source: BoundarySource = "physical",
+    warn_on_drop: bool = True,
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
@@ -1771,6 +1776,15 @@ def compute_view_rate(
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
         Fixed-distance gaze stops at the same walls.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -1880,7 +1894,7 @@ def compute_view_rate(
         context="compute_view_rate",
         single_unit=True,
     )
-    rates = _view_rates(env, setup, n_jobs=1)
+    rates = _view_rates(env, setup, n_jobs=1, warn_on_drop=warn_on_drop)
     return ViewRateResult(
         min_occupancy=min_occupancy,
         firing_rate=rates.firing_rates[0],
@@ -1918,6 +1932,7 @@ def compute_view_rates(
     backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     boundary_source: BoundarySource = "physical",
+    warn_on_drop: bool = True,
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -2044,6 +2059,15 @@ def compute_view_rates(
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
         Fixed-distance gaze stops at the same walls.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2196,7 +2220,7 @@ def compute_view_rates(
         context="compute_view_rates",
         single_unit=False,
     )
-    rates = _view_rates(env, setup, n_jobs=n_jobs)
+    rates = _view_rates(env, setup, n_jobs=n_jobs, warn_on_drop=warn_on_drop)
     return ViewRatesResult(
         min_occupancy=min_occupancy,
         firing_rates=rates.firing_rates,
@@ -2246,6 +2270,7 @@ def is_spatial_view_cell(
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
     boundary_source: BoundarySource = "physical",
+    warn_on_drop: bool = True,
 ) -> bool:
     """Classify one neuron by the spatial_view_cell screen or circular-shift test.
 
@@ -2363,6 +2388,15 @@ def is_spatial_view_cell(
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
         Fixed-distance gaze stops at the same walls.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2473,6 +2507,7 @@ def is_spatial_view_cell(
             min_occupancy=min_occupancy,
             backend=backend,
             boundary_source=boundary_source,
+            warn_on_drop=warn_on_drop,
         )
 
     if criterion == "shuffle":
@@ -2499,6 +2534,7 @@ def is_spatial_view_cell(
                 min_occupancy=min_occupancy,
                 backend=backend,
                 boundary_source=boundary_source,
+                warn_on_drop=warn_on_drop,
             )[label],
             rate_map,
             alpha=alpha,
@@ -2534,6 +2570,7 @@ def spatial_view_cell_significance(
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     boundary_source: BoundarySource = "physical",
+    warn_on_drop: bool = True,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test spatial view tuning against circular spike-time shifts.
 
@@ -2668,6 +2705,15 @@ def spatial_view_cell_significance(
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
         Fixed-distance gaze stops at the same walls.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2743,7 +2789,9 @@ def spatial_view_cell_significance(
         context=call,
         single_unit=False,
     )
-    _, occupancy = setup.prepared.count(setup.trains, n_jobs=n_jobs)
+    _, occupancy = setup.prepared.count(
+        setup.trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+    )
 
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
         return _view_information(env, shifted, setup, occupancy, n_jobs=n_jobs)

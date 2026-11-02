@@ -2340,6 +2340,7 @@ def _count_directional(
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
     estimate_dispersion: bool = True,
+    warn_on_drop: bool = True,
 ) -> _DirectionalCounts:
     """Bin headings, count spikes and build provenance for directional rates.
 
@@ -2409,7 +2410,9 @@ def _count_directional(
         spike_window=spike_window,
         break_before=break_before,
     )
-    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    spike_counts, occupancy = prepared.count(
+        spike_trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+    )
     if estimate_dispersion:
         dispersion, dispersion_window, dispersion_dof = spike_count_dispersion(
             spike_trains, prepared, spike_counts, occupancy, bin_centers
@@ -2473,6 +2476,7 @@ def compute_directional_rate(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> DirectionalRateResult:
     """Compute directional firing rate for one neuron.
 
@@ -2559,6 +2563,15 @@ def compute_directional_rate(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2646,6 +2659,7 @@ def compute_directional_rate(
         unit_ids=None,
         context="compute_directional_rate",
         single_unit=True,
+        warn_on_drop=warn_on_drop,
     )
     unit = population[0]
     return DirectionalRateResult(
@@ -2679,6 +2693,7 @@ def compute_directional_rates(
     n_jobs: int = 1,
     backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    warn_on_drop: bool = True,
 ) -> DirectionalRatesResult:
     """Compute directional firing rates for multiple neurons.
 
@@ -2785,6 +2800,15 @@ def compute_directional_rates(
         group, a ``unit_ids`` that differs from the group's index raises
         ``ValueError`` (relabel the group itself instead). A wrong-length
         value or a repeated label raises ``ValueError``.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -2878,6 +2902,7 @@ def compute_directional_rates(
         unit_ids=unit_ids,
         context="compute_directional_rates",
         single_unit=False,
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -2898,6 +2923,7 @@ def _directional_rates(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     context: str,
     single_unit: bool,
+    warn_on_drop: bool = True,
 ) -> DirectionalRatesResult:
     """Validate, count every unit and estimate directional rates.
 
@@ -2971,6 +2997,7 @@ def _directional_rates(
         epoch_interval_ids=epoch_ids,
         n_jobs=n_jobs,
         break_before=breaks,
+        warn_on_drop=warn_on_drop,
     )
     # Rates from the unsmoothed counts; the counts stay unsmoothed for the
     # tuning test.
@@ -3023,6 +3050,7 @@ def is_head_direction_cell(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: BackendType = "numpy",
+    warn_on_drop: bool = True,
 ) -> bool:
     """Classify one neuron by the head_direction_cell screen or circular-shift test.
 
@@ -3114,6 +3142,15 @@ def is_head_direction_cell(
         across single and population calls.
     unit_id : hashable or None, default=None
         Shuffle stream label; None uses label 0. Match the population's label.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -3207,6 +3244,7 @@ def is_head_direction_cell(
             break_before=breaks,
             spike_window=spike_window,
             backend=backend,
+            warn_on_drop=warn_on_drop,
         )[label]
         return shuffle_result.p_value < level
     min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
@@ -3223,6 +3261,7 @@ def is_head_direction_cell(
         break_before=breaks,
         spike_window=spike_window,
         backend=backend,
+        warn_on_drop=warn_on_drop,
     )
     return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
@@ -3444,6 +3483,7 @@ def head_direction_cell_significance(
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
+    warn_on_drop: bool = True,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test head direction tuning against circular spike-time shifts.
 
@@ -3550,6 +3590,15 @@ def head_direction_cell_significance(
         Minimum shift in either direction, seconds of analyzed time.
     rng : numpy.random.Generator, int or None, default=None
         Integer seeds give stable per-unit shifts regardless of population order.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -3655,6 +3704,7 @@ def head_direction_cell_significance(
                 n_jobs=n_jobs,
                 break_before=breaks,
                 estimate_dispersion=False,
+                warn_on_drop=warn_on_drop,
             )
             null_binning = (
                 counts.binning,

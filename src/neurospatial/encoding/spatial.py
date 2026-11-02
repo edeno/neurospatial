@@ -3348,6 +3348,7 @@ def _prepare_spatial_support(
     rank: int | None,
     pooled: bool,
     backend: str,
+    raise_if_empty: bool = True,
 ) -> _SpatialSupport:
     """Resolve the speed gate, training support and provenance once.
 
@@ -3384,6 +3385,9 @@ def _prepare_spatial_support(
         Whether the GLM shares one penalty across units.
     backend : str
         Resolved backend recorded in the provenance.
+    raise_if_empty : bool, default=True
+        Raise when no interval is usable; False warns, for a caller whose
+        empty map is a valid answer.
 
     Returns
     -------
@@ -3435,6 +3439,7 @@ def _prepare_spatial_support(
         time_allocation=time_allocation,
         linear_intervals=linear_intervals,
         break_before=break_before,
+        raise_if_empty=raise_if_empty,
     )
 
     settings = rate_analysis_settings(
@@ -3498,6 +3503,7 @@ def _spatial_rate_maps(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     context: str,
     single_unit: bool,
+    window_messages: bool = True,
 ) -> _SpatialRateMaps:
     """Validate the inputs and estimate every unit's spatial rate map.
 
@@ -3515,6 +3521,12 @@ def _spatial_rate_maps(
         validated without a neuron index, drop warnings do not say "across
         all neurons", and GLM warnings name the unit by position because a
         standalone unit has no label.
+    window_messages : bool, default=True
+        False when ``windows`` are a piece of the recording the caller chose,
+        such as one direction label's runs: a piece with no usable interval
+        is an empty map, not a refusal, and the excluded-interval and
+        spike-time-window messages are left to the caller, which checks the
+        whole recording once.
 
     Returns
     -------
@@ -3587,7 +3599,7 @@ def _spatial_rate_maps(
         max_gap=max_gap,
         windows=windows,
         break_before=breaks,
-        warn_on_drop=warn_on_drop,
+        warn_on_drop=warn_on_drop and window_messages,
         time_allocation=time_allocation,
         method=method,
         bandwidth=resolved_bandwidth,
@@ -3596,6 +3608,7 @@ def _spatial_rate_maps(
         rank=rank,
         pooled=pooled,
         backend=resolved_backend,
+        raise_if_empty=window_messages,
     )
     # Recording coverage uses tracked runs, independently of speed or frame
     # bins. Fewer than five units never warn, so a single unit never does.
@@ -3631,6 +3644,8 @@ def _spatial_rate_maps(
         speed=support.speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        epochs=support.time_support.epochs,
+        spike_window=support.time_support.spike_window,
         interval_mask=support.time_support.mask,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
@@ -3638,6 +3653,7 @@ def _spatial_rate_maps(
         linear_intervals=support.linear_intervals,
         drop_scope="" if single_unit else "across all neurons ",
         drop_message=support.drop_message,
+        check_time_window=window_messages,
     )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
@@ -3966,16 +3982,16 @@ default="diffusion_kde"
         ``lambda``) and is markedly faster on populations. The returned
         diagnostics stay float64 either way.
     warn_on_drop : bool, default=True
-        If ``True`` (the default), emit a ``UserWarning`` when a large
-        fraction of spikes are silently dropped — either because they
-        fall outside the position time window or because they map to
-        inactive/out-of-environment bins.  A warning is always emitted
-        when **all** spikes are dropped (regardless of threshold).  This
-        guards against common unit mismatches (e.g. spike_times in
-        milliseconds while times is in seconds).  Set to ``False`` to
-        suppress all drop-related warnings. Speed-excluded spikes (via
-        ``min_speed``) are intentional exclusions and do NOT trigger this
-        warning.
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), when more than 5% map outside the
+        environment's bins, or when the interval gates discard much of the
+        recording. Spikes excluded by ``min_speed`` are intentional and do
+        not count. ``False`` silences these warnings; a selection that leaves
+        no usable interval still raises. Spikes outside ``epochs`` and
+        ``spike_window`` are not checked, so a clock offset that leaves some
+        spikes inside them goes unreported: compare ``spike_times.min()`` and
+        ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -4335,7 +4351,10 @@ default="diffusion_kde"
         all neurons.  The warning is computed in the main process from
         aggregate statistics, so it fires exactly once even when
         ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
-        Set to ``False`` to suppress all drop-related warnings.
+        Set to ``False`` to suppress all drop-related warnings. Spikes
+        outside ``epochs`` and ``spike_window`` are not checked, so a clock
+        offset that leaves some spikes inside them goes unreported: compare
+        ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
     dtype : {np.float32, np.float64}, default=np.float64
         Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
         ``np.float32`` halves the stored rate-map array. The rate computation
@@ -4974,6 +4993,72 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return ax
 
 
+def _check_directional_recording(
+    env: Environment,
+    spike_times: Any,
+    times: Any,
+    positions: Any,
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None,
+    warn_on_drop: bool,
+) -> None:
+    """Check the whole recording once before the per-label maps.
+
+    Raises :class:`~neurospatial.InputError` when no interval of the
+    recording is usable (positions in another frame, every gap longer than
+    ``max_gap``, ``spike_window`` on another clock), as
+    :func:`compute_spatial_rate` does, and warns once about the recording's
+    excluded intervals and spikes outside the tracked time. The per-label
+    maps leave these to this check, so a label without analyzable time is an
+    empty map and the warning does not depend on which label a unit fires in.
+    """
+    from neurospatial._spikes import as_spike_train
+    from neurospatial.encoding._spatial_counts import (
+        _WARN_ON_DROP_HINT,
+        _resolve_spatial_time_support,
+        _time_window_message,
+        time_window_drops,
+        warn_discarded,
+    )
+    from neurospatial.encoding._validation import validate_trajectory
+
+    call = "compute_directional_place_fields"
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    validate_trajectory(times, positions=positions, context=call, n_dims=env.n_dims)
+    _, drop_message = _resolve_spatial_time_support(
+        env,
+        times,
+        positions,
+        speed=None,
+        min_speed=None,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+        break_before=break_before,
+    )
+    if not warn_on_drop:
+        return
+    spikes = as_spike_train(spike_times, call=call, population=None)
+    t_min, t_max = float(times[0]), float(times[-1])
+    n_dropped, n_considered, within = time_window_drops(
+        spikes,
+        (spikes < t_min) | (spikes >= t_max),
+        t_min,
+        t_max,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    window_message = _time_window_message(
+        n_dropped, n_considered, t_min, t_max, spikes, scope=within
+    )
+    warn_discarded([drop_message, window_message], suppress_hint=_WARN_ON_DROP_HINT)
+
+
 @reads_pynapple_samples
 def compute_directional_place_fields(
     env: Environment,
@@ -4990,6 +5075,7 @@ def compute_directional_place_fields(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     missing_label: Hashable | None = None,
+    warn_on_drop: bool = True,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -5059,6 +5145,15 @@ def compute_directional_place_fields(
     missing_label : hashable, optional
         A label value that means "no label" (for example ``"none"`` or
         ``-1`` from a labeling function), excluded like ``None``.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -5073,8 +5168,10 @@ def compute_directional_place_fields(
         - ``labels``: Every label that occurs in ``direction_labels``, sorted
           (numbers numerically, then strings alphabetically; labels that
           cannot be compared keep first-seen order). A label with no
-          analyzable time (it occurs only at the last sample, or outside
-          ``epochs``) has zero occupancy and an all-NaN rate map.
+          analyzable time (it occurs only at the last sample, outside
+          ``epochs``, or only where positions are missing, outside the
+          environment or across gaps longer than ``max_gap``) has zero
+          occupancy and an all-NaN rate map.
 
     Raises
     ------
@@ -5181,6 +5278,17 @@ def compute_directional_place_fields(
     resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
         epochs, spike_window
     )
+    _check_directional_recording(
+        env,
+        spike_times,
+        times,
+        positions,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+        break_before=breaks,
+        warn_on_drop=warn_on_drop,
+    )
     for code in order:
         label = values[code]
         label_windows = run_windows[run_codes == code]
@@ -5196,7 +5304,10 @@ def compute_directional_place_fields(
             occupancy_dict[label] = np.zeros(env.n_bins)
             continue
 
-        # compute_spatial_rate on this label's windows, already resolved.
+        # compute_spatial_rate on this label's windows, already resolved. A
+        # label whose samples are all missing, outside the environment or
+        # across long gaps has no analyzable time either: a NaN map with
+        # zero occupancy. The recording as a whole was checked above.
         single = _spatial_rate_maps(
             env,
             spike_times,
@@ -5216,11 +5327,12 @@ def compute_directional_place_fields(
             break_before=breaks,
             n_jobs=1,
             backend="numpy",
-            warn_on_drop=True,
+            warn_on_drop=warn_on_drop,
             dtype=np.float64,
             unit_ids=None,
             context="compute_spatial_rate",
             single_unit=True,
+            window_messages=False,
         )
         firing_rates_dict[label] = np.asarray(single.firing_rates[0], dtype=np.float64)  # type: ignore[index]
         occupancy_dict[label] = np.asarray(single.occupancy, dtype=np.float64)
@@ -5776,16 +5888,16 @@ def has_place_field(
         ``lambda``) and is markedly faster on populations. The returned
         diagnostics stay float64 either way.
     warn_on_drop : bool, default=True
-        If ``True`` (the default), emit a ``UserWarning`` when a large
-        fraction of spikes are silently dropped — either because they
-        fall outside the position time window or because they map to
-        inactive/out-of-environment bins.  A warning is always emitted
-        when **all** spikes are dropped (regardless of threshold).  This
-        guards against common unit mismatches (e.g. spike_times in
-        milliseconds while times is in seconds).  Set to ``False`` to
-        suppress all drop-related warnings. Speed-excluded spikes (via
-        ``min_speed``) are intentional exclusions and do NOT trigger this
-        warning.
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), when more than 5% map outside the
+        environment's bins, or when the interval gates discard much of the
+        recording. Spikes excluded by ``min_speed`` are intentional and do
+        not count. ``False`` silences these warnings; a selection that leaves
+        no usable interval still raises. Spikes outside ``epochs`` and
+        ``spike_window`` are not checked, so a clock offset that leaves some
+        spikes inside them goes unreported: compare ``spike_times.min()`` and
+        ``.max()`` with ``times`` yourself.
 
 
     Returns
@@ -6077,16 +6189,16 @@ def is_place_cell(
         ``lambda``) and is markedly faster on populations. The returned
         diagnostics stay float64 either way.
     warn_on_drop : bool, default=True
-        If ``True`` (the default), emit a ``UserWarning`` when a large
-        fraction of spikes are silently dropped — either because they
-        fall outside the position time window or because they map to
-        inactive/out-of-environment bins.  A warning is always emitted
-        when **all** spikes are dropped (regardless of threshold).  This
-        guards against common unit mismatches (e.g. spike_times in
-        milliseconds while times is in seconds).  Set to ``False`` to
-        suppress all drop-related warnings. Speed-excluded spikes (via
-        ``min_speed``) are intentional exclusions and do NOT trigger this
-        warning.
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), when more than 5% map outside the
+        environment's bins, or when the interval gates discard much of the
+        recording. Spikes excluded by ``min_speed`` are intentional and do
+        not count. ``False`` silences these warnings; a selection that leaves
+        no usable interval still raises. Spikes outside ``epochs`` and
+        ``spike_window`` are not checked, so a clock offset that leaves some
+        spikes inside them goes unreported: compare ``spike_times.min()`` and
+        ``.max()`` with ``times`` yourself.
 
 
     Returns

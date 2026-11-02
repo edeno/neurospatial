@@ -717,6 +717,7 @@ def compute_tuning_curve(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
+    warn_on_drop: bool = True,
 ) -> TuningCurveResult:
     """Firing rate of one unit as a function of a behavioral variable.
 
@@ -798,6 +799,15 @@ def compute_tuning_curve(
     spike_window : same forms as ``epochs``, or None
         When the spikes were recorded. Intervals outside it are excluded.
         None assumes spikes were recorded throughout.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -931,6 +941,7 @@ def compute_tuning_curve(
         unit_ids=None,
         owner="compute_tuning_curve",
         single_unit=True,
+        warn_on_drop=warn_on_drop,
     )
     # A standalone curve has no unit label.
     return replace(population[0], unit_id=None, _unit_ids_generated=False)
@@ -957,6 +968,7 @@ def compute_tuning_curves(
     spike_window: Any = None,
     n_jobs: int = 1,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    warn_on_drop: bool = True,
 ) -> TuningCurvesResult:
     """Firing rates of several units as a function of a behavioral variable.
 
@@ -1042,6 +1054,15 @@ def compute_tuning_curves(
         A label per unit, in the order of ``spike_times``; defaults to the
         group's labels, else ``np.arange(n_units)``. A wrong length or a
         repeated label raises ``ValueError``.
+    warn_on_drop : bool, default=True
+        Warn when more than 5% of the spikes inside ``epochs`` and
+        ``spike_window`` fall outside the tracked time (often spike times on
+        another clock or in milliseconds), or when the interval gates
+        discard much of the recording. ``False`` silences these warnings; a
+        selection that leaves no usable interval still raises.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Returns
     -------
@@ -1169,6 +1190,7 @@ def compute_tuning_curves(
         unit_ids=unit_ids,
         owner="compute_tuning_curves",
         single_unit=False,
+        warn_on_drop=warn_on_drop,
     )
 
 
@@ -1234,6 +1256,7 @@ def _tuning_curves(
     unit_ids: Any,
     owner: str,
     single_unit: bool,
+    warn_on_drop: bool = True,
 ) -> TuningCurvesResult:
     """Validate, bin the variable, count every unit and estimate the rates."""
     from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
@@ -1347,7 +1370,9 @@ def _tuning_curves(
     prepared = prepare_frame_binning(
         gates, frame_bins, len(edges) - 1, samples="values"
     )
-    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    spike_counts, occupancy = prepared.count(
+        spike_trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop
+    )
     firing_rates = kernel_ratio_rates(
         occupancy,
         bandwidth=bandwidth,
