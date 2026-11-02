@@ -36,11 +36,17 @@ Files are downloaded once into `data/datasets/` (git-ignored) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
+The labyrinth's trajectories are Python pickles; its loader reads them with a
+restricted unpickler that resolves only the trajectory record and int64 or
+float64 NumPy arrays, and refuses every other global or dtype.
 
 | Dataset | What it is | Size | License |
 | --- | --- | --- | --- |
 | `sargolini_000582` | Rat MEC grid/conjunctive cells, 1 m box (DANDI 000582) | 15.9 MB | CC-BY-4.0 |
 | `peyrache_mouse32` | Mouse ADn head-direction cells, wake and sleep (OSF jb2gd) | 36.6 MB | unstated on OSF; source DANDI 000056 is CC-BY-4.0 |
+| `figure8_000552` | Mouse CA1 on a figure-8 maze, ripples and sleep states (DANDI 000552) | 96.0 MB | CC-BY-4.0 |
+| `rosenberg_labyrinth` | Mouse exploring a binary-tree labyrinth, behavior only (Rosenberg et al. 2021 repository) | 6.3 MB | MIT |
+| `yartsev_bat_demo` | Bat CA1 during 3-D flight (Zenodo 15738988; members of a 3.3 GB zip read by byte range) | 260 MB | CC-BY-4.0 |
 
 ## Read the results
 

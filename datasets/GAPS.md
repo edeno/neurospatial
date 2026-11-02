@@ -7,8 +7,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-001: Spike-drop warning fires when spikes fall outside tracking but also outside the requested epochs
 
-- Datasets: peyrache_mouse32
-- Operation / step: hd.tuning (`compute_directional_rates(..., epochs=wake)`)
+- Datasets: peyrache_mouse32, figure8_000552
+- Operation / step: hd.tuning (`compute_directional_rates(..., epochs=wake)`); rates.spatial, decode.position, replay.compare_methods
 - Kind: false-alarm
 - Evidence: head direction is tracked only during the wake epoch (8812–10771 s);
   the recording runs 0–22025 s with sleep before and after. Passing
@@ -20,12 +20,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   has no `warn_on_drop=` (`compute_spatial_rates` has one), so the only way to
   silence it is to trim the spike trains by hand. The same warning is what
   catches spike times in ms (hazard probes in `warnings.md`), so the fix must
-  keep that.
+  keep that. On figure8_000552 (tracking only during the maze epoch,
+  7891–9483 s, of an 18,557 s recording) every spike-based operation warns
+  "5053296/5637087 spike_times (90%) … fell outside the position time window",
+  and `decode.position` warns twice for the one fact (position window and
+  decode window).
 - Harness workaround: none (the warning is recorded, the op is `ok`)
 - Proposed change: count as dropped only spikes inside the requested
   `epochs ∩ spike_window` that fall outside tracking; keep the clock-ratio hint
   for the units case; add `warn_on_drop=` to the directional entry points.
-- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn)
+- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn; at most one discarded-data warning per call)
 
 ## G-002: `method="binned"` smooths with a 5 cm bandwidth unless `bandwidth=0` is passed
 
@@ -159,7 +163,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-010: Spike times in ms pass unnoticed when the tracking covers only part of the recording
 
-- Datasets: peyrache_mouse32 (hazard probe `spike_times_in_ms` / hd.tuning)
+- Datasets: peyrache_mouse32 (hazard probe `spike_times_in_ms` / hd.tuning), figure8_000552 (`spike_times_in_ms` / rates.spatial)
 - Operation / step: hd.tuning
 - Kind: silent-hazard
 - Evidence: with spike times multiplied by 1000, `compute_directional_rates`
@@ -169,9 +173,304 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   1959 s wake epoch, so the ratio rule does not fire. The result changes
   quietly: median mean vector length 0.436 → 0.389, and 10 of 49 units lose a
   finite value. On 000582, where tracking covers the whole recording, the same
-  hazard is caught with "divide them by 1000".
+  hazard is caught with "divide them by 1000". On figure8_000552 the same
+  hazard is silent too: median peak rate 4.67 → 0.00 Hz with only the
+  clean-run warning.
 - Harness workaround: none
 - Proposed change: compare the spike span with the span of the requested
   epochs (or the whole tracked session) rather than with `times` alone; fixing
   G-001 removes the clean-run warning that hides this case.
 - Status: open (linked to G-001)
+
+## G-011: `read_intervals` does not search processing modules
+
+- Datasets: figure8_000552
+- Operation / step: loader (`read_intervals`)
+- Kind: missing-feature
+- Evidence: the file keeps its ripples (`processing/ecephys/Ripples`, 4297
+  rows) and sleep states (`processing/behavior/SleepStates`, 27 rows) as
+  `TimeIntervals` in processing modules. `read_intervals(nwbfile,
+  interval_name="Ripples")` raises "TimeIntervals 'Ripples' not found …
+  Available intervals: ['trials', 'epochs']". `read_position` searches
+  `processing/*` and `acquisition`; `read_intervals` only `intervals/`.
+- Harness workaround: `datasets/load_figure8_000552.py` reads both tables with pynwb
+- Proposed change: search processing modules (and list what was found there)
+  as `read_position` does.
+- Status: open
+
+## G-012: `read_position(position_name=)` rejects the `Position` container name
+
+- Datasets: figure8_000552
+- Operation / step: loader (`read_position`)
+- Kind: error-message
+- Evidence: with two position series, `read_position(nwbfile)` refuses to
+  choose (good). `position_name="LinearizedPosition"` (the container's name)
+  then raises "Position series 'LinearizedPosition' not found … pass
+  position_name= with a name or path from this list", and the list holds only
+  full series paths. The container name is what a user sees first in the file.
+- Harness workaround: the loader passes the full series path
+- Proposed change: accept a `Position` container name when it holds one series.
+- Status: open
+
+## G-013: `env.occupancy(min_speed=)` needs `speed=`; the rate and decoder entry points compute it
+
+- Datasets: figure8_000552, rosenberg_labyrinth, yartsev_bat_demo
+- Operation / step: env.occupancy
+- Kind: friction
+- Evidence: `env.occupancy(times, positions, min_speed=4.0)` raises
+  "min_speed=4.0 was given without speed … pass speed= (one value per sample,
+  for example compute_speed(times, positions)), or min_speed=None", while
+  `compute_spatial_rates(..., min_speed=4.0)` and `BayesianDecoder.fit(...,
+  min_speed=4.0)` on the same arrays compute speed themselves and run. The
+  same argument means different things across siblings.
+- Harness workaround: none (cell is `err`)
+- Proposed change: compute speed in `occupancy` as the rate functions do (or
+  require `speed=` everywhere).
+- Status: promoted (UX fixes phase 3b: every sibling taking min_speed derives speed the same way)
+
+## G-014: A length unit off by 100 on a 1-D track builds 3 bins without a warning
+
+- Datasets: figure8_000552, yartsev_bat_demo (hazard probe `length_unit_off_by_100`)
+- Operation / step: env.from_samples, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: positions ×0.01 (metres labelled cm) on the 222 cm track give a
+  2.2 "cm" track: `Environment.from_samples(bin_size=2)` builds 3 bins with no
+  warning, rate maps flatten (median peak 4.67 → 1.36 Hz) and velocity
+  segmentation finds 0 running segments instead of 395, all silently. On
+  000582 the same hazard warns because the bin is at least the whole extent
+  in every dimension; here the extent (2.2) is just above the bin (2.0). On
+  the bat (cm labelled m, positions ×100) the environment refuses a 9e9-bin
+  grid, but `segment_by_velocity` with the file's 0.5 m/s threshold silently
+  finds 668 movement segments (882 s) instead of 69 (146 s): speeds 100 times
+  too high pass any threshold.
+- Harness workaround: none
+- Proposed change: warn when the environment has fewer than a handful of bins
+  along a dimension (the existing check only fires at one bin or fewer).
+- Status: open
+
+## G-015: `detect_laps` finds laps on a maze with no loop
+
+- Datasets: rosenberg_labyrinth, sargolini_000582
+- Operation / step: behavior.laps
+- Kind: wrong-result
+- Evidence: the labyrinth is a binary tree (`nx.is_tree` on the track graph is
+  True). Its `Environment.from_graph` bin graph has 412 edges for 350 bins and
+  63 three-bin cycles, one triangle at each junction. `detect_laps(env, times,
+  positions)` (method `auto`) accepts it as a loop environment and returns 3
+  "laps" of 0.9–1.3 s covering 6–7 bins each (one clockwise, one
+  counter-clockwise, one unknown). Its docs say `auto` raises when "its
+  connectivity graph has no cycle"; the cycles here are the junction cliques,
+  not loops of the maze. On sargolini_000582, an open 1 m box with no track,
+  `detect_laps` likewise accepts the grid's bin cycles as a loop and reports
+  one clockwise "lap".
+- Harness workaround: none
+- Proposed change: test for a loop on the track graph (or ignore cycles that
+  stay within one junction's bins) before counting laps.
+- Status: promoted (UX fixes phase 6 fix round)
+
+## G-016: A track graph without `track_width` cannot place positions
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: behavior.laps, behavior.turn_sequence
+- Kind: friction
+- Evidence: `Environment.from_graph(graph, edge_order, bin_size=0.5)` builds,
+  but `detect_laps` and `graph_turn_sequence` then raise "Positions cannot be
+  assigned to the bins of a track built without track_width", with a clear fix
+  (`env.with_track_width(width)`). The source states the corridor width (one
+  maze cell), and with `track_width=1.0` both run.
+- Harness workaround: none (the loader states `geometry["track_width"]` from the source)
+- Proposed change: none beyond showing `track_width=` in the `from_graph`
+  example; the refusal is the right behavior.
+- Status: open
+
+## G-017: Missing positions stored as 0 silently change movement segments and turns
+
+- Datasets: rosenberg_labyrinth, yartsev_bat_demo (hazard probe `missing_positions_as_zero`)
+- Operation / step: behavior.segment_by_velocity, behavior.turn_sequence
+- Kind: silent-hazard
+- Evidence: 4.9 % of the labyrinth's frames have no nose keypoint (NaN). With
+  them set to (0, 0), a corner of the maze, velocity segmentation finds 2936
+  movement segments instead of 2637 and the turn sequence 4604 turns instead
+  of 4415, with no warning. On 000582 the same hazard touches one sample and
+  is undetectable; here the zeros are 12,400 samples at exactly (0, 0). On
+  the bat (0.24 % missing), the zeros land at (0, 0, 0), below the lowest
+  tracked height (0.28 m): the environment loses 3 bins and the median mean
+  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning.
+- Harness workaround: none
+- Proposed change: warn when a sizeable share of samples sit at exactly the
+  same coordinate (or at exactly 0) between moving samples.
+- Status: open
+
+## G-018: Replay methods run on one-time-bin events without a warning
+
+- Datasets: figure8_000552
+- Operation / step: replay.compare_methods
+- Kind: silent-hazard
+- Evidence: the file's ripple windows inside the maze epoch (71) have a median
+  duration of 29 ms (10th–90th percentile 22–65 ms), so most are one 20 ms
+  time bin. `DAVIDSON_2009` calls 0/71 replay (95 % CI 0–0.051) and
+  `GROSMARK_2016` 2/71. Both recipes' notes say candidate events last at
+  least 100 ms and that event selection is not applied; nothing warns that a
+  line fit or weighted correlation is being run on a single time bin.
+- Harness workaround: none
+- Proposed change: warn (or refuse) when an event has fewer time bins than a
+  recipe's score needs, and name the recipe's event-duration rule.
+- Status: open
+
+## G-019: The pre-registered node count left out the maze entrance
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: the expectation "127 nodes" (the article's count) fails: the track
+  graph has 128, the article's 127 run ends plus the entrance where the mouse
+  comes in from the home cage, which the corridor geometry needs. "63
+  junctions" passes.
+- Harness workaround: none (the expectation stays as registered)
+- Proposed change: none
+- Status: won't fix (the expectation, not the loader, was incomplete)
+
+## G-020: A mirrored frame cannot be detected, and turn directions depend on it
+
+- Datasets: rosenberg_labyrinth (hazard probe `image_y_down`)
+- Operation / step: behavior.turn_sequence
+- Kind: docs
+- Evidence: with y left pointing down (image rows), every left turn becomes a
+  right turn; the share of left turns barely moves (0.5001 → 0.4999) because
+  the maze is symmetric, so no value check can catch it.
+- Harness workaround: the loader flips y to point up
+- Proposed change: say in `graph_turn_sequence` that left and right assume a
+  y-up (right-handed) frame and that image coordinates must be flipped first.
+- Status: open
+
+## G-021: No periodic 1-D track: a linearized loop is treated as a line
+
+- Datasets: figure8_000552
+- Operation / step: behavior.laps, behavior.segment_by_velocity, env.from_samples
+- Kind: missing-feature
+- Evidence: the file's linearized position runs around the figure-8 as a loop
+  (G-026): 0 and 222 cm are the same place. A 1-D environment built from it is
+  a line, so `detect_laps` raises "this environment has no loop … use
+  detect_trials", the two ends are 222 cm apart for decoding and replay, and
+  57 of the 62 wraps fall inside `segment_by_velocity` running segments as
+  speed spikes of about 6,500 cm/s. `Environment.from_graph` cannot express
+  the loop either: its node positions must be in the positions' coordinates,
+  and on a 1-D axis 0 and 222 are different points.
+- Harness workaround: none (laps cell is `err`)
+- Proposed change: undecided — a periodic 1-D track (a length and a flag that
+  the ends meet), or a documented recipe that embeds a linearized loop as a
+  circle for `from_graph`.
+- Status: open
+
+## G-022: In sparse 3-D occupancy, spatial information is at the shuffle level while its bias estimate is small
+
+- Datasets: yartsev_bat_demo
+- Operation / step: rates.spatial_information, rates.information_vs_shifts, cells.place_screen
+- Kind: wrong-result (candidate; needs a full shuffle test)
+- Evidence: 3-D rate maps of 289 units over 1352 bins of 0.2 m, restricted to
+  37 flights during the neural recording (121 s of occupancy; median 0.067 s
+  per visited bin, 70 % of the 1201 visited bins under 0.1 s). Median spatial
+  information is 3.38 bits/spike; with each unit's spikes circularly shifted
+  (4 seeded shifts, `rates.information_vs_shifts`) it is 3.55, and only 34 %
+  of units beat every shift (all 6 on 000582, 94 % on the figure-8).
+  `spatial_information_bias`, the "expected untuned information" that
+  `classify()` compares with, has a median of 0.37 bits/spike. The 101 units
+  firing above 2 Hz during flight (which the record's script sets aside as
+  putative interneurons) have a median of 1.36 bits/spike, the rest 4.62, so
+  the high values come from sparsely firing units on sparse occupancy.
+  `min_occupancy` defaults to 0 s.
+- Harness workaround: none
+- Proposed change: undecided — test `spatial_information_bias` against a
+  shuffle null on sparse occupancy; warn when most visited bins hold very
+  little time, and point to `min_occupancy` or larger bins.
+- Status: open
+
+## G-023: 3-D position decoding is near chance on the bat session
+
+- Datasets: yartsev_bat_demo
+- Operation / step: decode.position
+- Kind: docs
+- Evidence: training on even flights and testing on odd ones during the
+  neural recording (250 ms bins, 0.2 m bins), the median error is 2.18 m
+  against a chance level of 2.34 m.
+  Likely related to G-022 (rate maps from sparse flight occupancy); not
+  investigated further.
+- Harness workaround: none
+- Proposed change: undecided (revisit after G-022)
+- Status: open
+
+## G-024: Grid and border scores refuse 3-D environments
+
+- Datasets: yartsev_bat_demo
+- Operation / step: cells.grid_score, cells.border_score
+- Kind: friction
+- Evidence: `grid_scores()` raises "needs a regular 2D grid of rectangular
+  cells … Fix: use spatial_autocorrelation_radial(env, firing_rate) … a radial
+  profile does not test for sixfold symmetry"; `border_scores()` raises "Wall
+  geometry needs a 2-D environment; this one is 3-D". Both messages say what
+  to do; 3-D grid and border measures are a research question, not a missing
+  convenience.
+- Harness workaround: none (cells are `err`)
+- Proposed change: none
+- Status: won't fix (behaves as documented)
+
+## G-025: 3.6 % of the bat's positions lie outside the room bounds the file states
+
+- Datasets: yartsev_bat_demo
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: 23,454 of 642,724 samples have y outside `r_lim` [−2.6, 2.6] m
+  (down to −4.23 m); x and z are inside. Only 17 of them fall in flights,
+  so they look like resting positions beyond the flight volume rather than
+  tracking errors.
+- Harness workaround: none (positions kept as recorded; rate maps use flights)
+- Proposed change: none
+- Status: open
+
+## G-026: The figure-8's linearized position wraps around
+
+- Datasets: figure8_000552
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: the linear coordinate jumps by a median of 215.6 cm 62 times while
+  the camera position moves a median of 0.69 cm (at most 1.99 cm) across the
+  same samples; samples below 3 cm and above 219 cm sit at the same camera
+  point, (85.3, 43.3) ± (2.3, 1.7) cm. The file's description says only
+  "Linearization of the (x,y) coordinates".
+- Harness workaround: none (kept as stored; consequences in G-021)
+- Proposed change: none for neurospatial beyond G-021
+- Status: open
+
+## G-027: `DAVIDSON_2009` verdicts depend on which other events are tested
+
+- Datasets: simulated linear track (offline test construction)
+- Operation / step: replay.compare_methods
+- Kind: docs
+- Evidence: with 100 shuffles per null, the same simulated stationary events
+  are called replay 7 of 8 times when tested together with 8 sweeps, and 0 of
+  16 times when tested with stationary events only. Stationary events can be
+  replay, and the recipe's line search includes zero-speed lines on purpose,
+  so accepting them is not the issue; the issue is that an event's verdict
+  changes with the other events in the call. The pseudo-event null draws from
+  the whole set of candidate events (the recipe's note), so the null for an
+  event depends on the batch. The replay guide documents that `DAVIDSON_2009`
+  accepts stationary events, not that its verdicts depend on the batch.
+- Harness workaround: none
+- Proposed change: say in the recipe's notes and the replay guide that
+  pseudo-event verdicts depend on the set of events passed together.
+- Status: open
+
+## G-028: The bat's first flight precedes the neural recording
+
+- Datasets: yartsev_bat_demo
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: flight 0 runs from −15.40 to −14.05 s; the earliest spike of any
+  of the 289 units is at −12.68 s, with a population rate of about 800
+  spikes/s afterwards. Left in, it adds occupancy with no spikes: 13 bins
+  visited only then get rate 0 instead of NaN, and nothing warns (a silent
+  1.35 s is below what neurospatial's silent-unit check flags).
+  `NP_Bat_Demo.m` restricts the session to where behavior and ephys overlap.
+- Harness workaround: `datasets/load_yartsev_bat_demo.py` clips the analysis flights to the first–last spike span
+- Proposed change: none for neurospatial (`spike_window=` handles it when the recording span is known)
+- Status: open

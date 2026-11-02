@@ -1,0 +1,407 @@
+{
+  "dataset": "yartsev_bat_demo",
+  "session": "Dataset_3_14543_240419",
+  "source": "https://zenodo.org/records/15738988/files/Demo_Session.zip?download=1",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "spike_times: spikeTimes_usec (global clock) / 1e6",
+    "spike_times: merges_Dataset_*.mat groups pooled and sorted under the first id",
+    "spike_times: in every unit, a spike within 1 ms of its predecessor dropped",
+    "epochs['flight']: times at the 1-based sample indices f_smp (all 38)",
+    "epochs['neural_recording']: first to last spike of any unit",
+    "params flights: flights clipped to the neural recording",
+    "unit_ids: probe<n>-<kilosort cluster id>"
+  ],
+  "expectations": [
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 3, got 3"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=119.0, high=121.0), got 120.00000000010914"
+    },
+    {
+      "key": "position_min",
+      "passed": true,
+      "detail": "expected Range(low=(-3.1, -inf, -0.2), high=(inf, inf, inf)), got array([-2.83635761, -4.22852176,  0.28094464])"
+    },
+    {
+      "key": "position_max",
+      "passed": true,
+      "detail": "expected Range(low=(-inf, -inf, -inf), high=(3.1, inf, 2.5)), got array([2.85424703, 2.49111456, 2.1582002 ])"
+    },
+    {
+      "key": "probe1_at_most_24_units",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "flights_present",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1352,
+        "n_dims": 3,
+        "max_extent": 6.800000000000001
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.33,
+      "peak_mb": 68.5
+    },
+    "env.occupancy": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: min_speed=0.5 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.002,
+      "peak_mb": 1.9
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11168639053254438,
+        "median_peak_hz": 71.22769547505833,
+        "median_mean_hz": 0.935954322872282
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 2.839,
+      "peak_mb": 227.7
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 3.469447456840328,
+        "bits_per_spike_max": 10.306945730994089,
+        "bits_per_spike_n_finite": 283
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.011,
+      "peak_mb": 26.2
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 3.3830155560160655,
+        "median_shifted_bits_per_spike": 3.547335554128509,
+        "frac_above_every_shift": 0.337037037037037,
+        "n_units": 270,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 6.55,
+      "peak_mb": 264.7
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 2,
+        "n_units": 289
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.073,
+      "peak_mb": 66.8
+    },
+    "cells.grid_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 3.1
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.002,
+      "peak_mb": 3.9
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 2.1756630355021698,
+        "chance_median_error": 2.3429797587774144,
+        "units": "m",
+        "n_time_bins": 210
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.712,
+      "peak_mb": 227.7
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1352
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 5.241,
+      "peak_mb": 24.2
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 69,
+        "running_s": 146.21667075813255
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.805,
+      "peak_mb": 234.8
+    },
+    "behavior.laps": {
+      "status": "ok",
+      "summary": {
+        "n_laps": 0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.22,
+      "peak_mb": 100.7
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1352,
+        "n_dims": 3,
+        "max_extent": 6.800000000000001
+      },
+      "hazard_summary": {
+        "n_bins": 1349,
+        "n_dims": 3,
+        "max_extent": 6.800000000000001
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11168639053254438,
+        "median_peak_hz": 71.22769547505833,
+        "median_mean_hz": 0.935954322872282
+      },
+      "hazard_summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11638250555967383,
+        "median_peak_hz": 72.81160972741736,
+        "median_mean_hz": 0.9220187950713027
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 69,
+        "running_s": 146.21667075813255
+      },
+      "hazard_summary": {
+        "n_segments": 70,
+        "running_s": 146.7750043066929
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 0
+      },
+      "hazard_summary": {
+        "n_laps": 0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "4205542/4209549 spike_times (100%) across all neurons fell outside the position time window [-107.379, 5248.59]; spike_times.min()=-12675.3 spike_times.max()=5.25522e+06. The spike times span 5.26789e+06 and reach 5.25522e+06, about 1000 times the 5355.97 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11168639053254438,
+        "median_peak_hz": 71.22769547505833,
+        "median_mean_hz": 0.935954322872282
+      },
+      "hazard_summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11168639053254438,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "raised",
+      "message": "ValueError: A regular grid over these positions would have 8,994,640,980 bins in 3 dimension(s), and its bin centers would need 215,871,383,520 bytes, more than the 8 GiB limit.\nWhy: each column of positions is one spatial dimension, so a transposed array of shape (n_dims, n_samples) reads as one dimension per sample; a bin_size far smaller than the arena has the same effect.\nFix: pass positions with shape (n_samples, n_dims), for example positions.T, and check that bin_size is in the units of positions",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1352,
+        "n_dims": 3,
+        "max_extent": 6.800000000000001
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "rates.spatial",
+      "response": "raised",
+      "message": "ValueError: A regular grid over these positions would have 8,994,640,980 bins in 3 dimension(s), and its bin centers would need 215,871,383,520 bytes, more than the 8 GiB limit.\nWhy: each column of positions is one spatial dimension, so a transposed array of shape (n_dims, n_samples) reads as one dimension per sample; a bin_size far smaller than the arena has the same effect.\nFix: pass positions with shape (n_samples, n_dims), for example positions.T, and check that bin_size is in the units of positions",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 289,
+        "frac_nan_bins": 0.11168639053254438,
+        "median_peak_hz": 71.22769547505833,
+        "median_mean_hz": 0.935954322872282
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 69,
+        "running_s": 146.21667075813255
+      },
+      "hazard_summary": {
+        "n_segments": 668,
+        "running_s": 882.3727762925173
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "raised",
+      "message": "ValueError: A regular grid over these positions would have 8,994,640,980 bins in 3 dimension(s), and its bin centers would need 215,871,383,520 bytes, more than the 8 GiB limit.\nWhy: each column of positions is one spatial dimension, so a transposed array of shape (n_dims, n_samples) reads as one dimension per sample; a bin_size far smaller than the arena has the same effect.\nFix: pass positions with shape (n_samples, n_dims), for example positions.T, and check that bin_size is in the units of positions",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 0
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

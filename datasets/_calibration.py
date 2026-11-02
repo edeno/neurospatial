@@ -108,7 +108,17 @@ GENERIC_HAZARDS: dict[str, tuple[Callable[[Recording], bool], Hazard]] = {
         _length_off_by_100,
     ),
 }
-PROBE_OPS = ("env.from_samples", "env.occupancy", "rates.spatial", "hd.tuning")
+PROBE_OPS = (
+    "env.from_samples",
+    "env.occupancy",
+    "rates.spatial",
+    "hd.tuning",
+    # Speed thresholds are where a time or length unit error shows up.
+    "behavior.segment_by_velocity",
+    "behavior.laps",
+    # A mirrored frame swaps left and right turns.
+    "behavior.turn_sequence",
+)
 
 
 def hazards_for(module: ModuleType, rec: Recording) -> dict[str, Hazard]:
@@ -128,6 +138,20 @@ def _warning_keys(rows: list[dict[str, Any]]) -> set[tuple[str, str]]:
     return {(row["category"], row["template"]) for row in rows}
 
 
+def _row(
+    hazard: str, op_id: str, response: str, message: str, **extra: Any
+) -> dict[str, Any]:
+    return {
+        "hazard": hazard,
+        "op": op_id,
+        "response": response,
+        "message": message,
+        "repeated_clean_warnings": extra.get("repeated", 0),
+        "clean_summary": dict(extra.get("clean_summary", {})),
+        "hazard_summary": extra.get("hazard_summary"),
+    }
+
+
 def probe_hazards(
     module: ModuleType,
     rec: Recording,
@@ -139,8 +163,10 @@ def probe_hazards(
 
     An operation is probed when it reads a field the hazard changed. Its
     response is ``raised``, ``warned`` (a warning the clean run of the same
-    operation did not emit) or ``silent``. A hazard that reaches no probed
-    operation gets one ``not probed`` row, so it cannot vanish from the table.
+    operation did not emit), ``n/a`` (it found its input missing) or
+    ``silent``. An operation that was not ``ok`` on the clean recording cannot
+    respond to the hazard; it gets a ``not probed`` row saying so, as does a
+    hazard that reaches no probed operation, so nothing vanishes from the table.
     """
     rows = []
     for name, make in hazards_for(module, rec).items():
@@ -151,7 +177,7 @@ def probe_hazards(
             if getattr(bad, f.name) is not getattr(rec, f.name)
         }
         cache: dict[str, Any] = {}
-        probed = False
+        reached = False
         for op in operations:
             if (
                 op.op_id not in probe_ops
@@ -159,8 +185,13 @@ def probe_hazards(
                 or any(getattr(bad, f) is None for f in op.requires)
             ):
                 continue
-            probed = True
+            reached = True
             clean = clean_operations.get(op.op_id, {})
+            if (status := clean.get("status", "ok")) != "ok":
+                rows.append(
+                    _row(name, op.op_id, "not probed", f"the clean run was {status}")
+                )
+                continue
             outcome, error, caught = captured(op.run, bad, cache)
             new = [
                 row
@@ -170,33 +201,30 @@ def probe_hazards(
             ]
             if error is not None:
                 response, message = "raised", f"{type(error).__name__}: {error}"
+            elif outcome is not None and outcome.status == "n/a":
+                response, message = "n/a", outcome.note
             elif new:
                 response, message = "warned", "\n".join(row["example"] for row in new)
             else:
                 response, message = "silent", ""
             rows.append(
-                {
-                    "hazard": name,
-                    "op": op.op_id,
-                    "response": response,
-                    "message": message,
-                    "repeated_clean_warnings": len(caught) - len(new),
-                    "clean_summary": dict(clean.get("summary", {})),
-                    "hazard_summary": None
-                    if outcome is None
-                    else dict(outcome.summary),
-                }
+                _row(
+                    name,
+                    op.op_id,
+                    response,
+                    message,
+                    repeated=len(caught) - len(new),
+                    clean_summary=clean.get("summary", {}),
+                    hazard_summary=None if outcome is None else dict(outcome.summary),
+                )
             )
-        if not probed:
+        if not reached:
             rows.append(
-                {
-                    "hazard": name,
-                    "op": "",
-                    "response": "not probed",
-                    "message": f"changes {sorted(changed)}, which no probed operation reads",
-                    "repeated_clean_warnings": 0,
-                    "clean_summary": {},
-                    "hazard_summary": None,
-                }
+                _row(
+                    name,
+                    "",
+                    "not probed",
+                    f"changes {sorted(changed)}, which no probed operation reads",
+                )
             )
     return rows

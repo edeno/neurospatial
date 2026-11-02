@@ -197,3 +197,21 @@ def test_unreviewed_rows_rendered():
         line.startswith("| demo | spike_times_in_ms") and "unreviewed" in line
         for line in lines
     )
+
+
+def test_operation_failing_on_clean_data_is_not_probed(
+    simulated_recording, loader_module
+):
+    def fails(rec, cache):
+        msg = "needs speed="
+        raise ValueError(msg)
+
+    rows = probe_hazards(
+        loader_module,
+        simulated_recording,
+        {"p.fails": {"status": "error", "summary": {}}},
+        operations=(_probe("p.fails", fails),),
+        probe_ops=("p.fails",),
+    )
+    assert {row["response"] for row in rows} == {"not probed"}
+    assert {row["message"] for row in rows if row["op"]} == {"the clean run was error"}

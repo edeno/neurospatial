@@ -30,6 +30,15 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
     assert border["note"].startswith(
         "NotImplementedError: Physical boundaries are unknown"
     )
+    # Operations that need inputs this recording lacks decide n/a themselves.
+    for op_id in (
+        "env.from_graph",
+        "behavior.segment_by_velocity",
+        "behavior.turn_sequence",
+        "replay.compare_methods",
+    ):
+        assert statuses.pop(op_id) == "n/a", op_id
+        assert simulated_record["operations"][op_id]["note"]
     assert set(statuses.values()) == {"ok"}, statuses
     assert simulated_record["expectations"][0]["passed"]
 
@@ -64,6 +73,9 @@ def test_simulated_place_cells_recovered(simulated_record):
         > 0.5
     )
     assert operations["decode.position"]["summary"]["median_error"] < 10.0
+    shifts = operations["rates.information_vs_shifts"]["summary"]
+    assert shifts["frac_above_every_shift"] > 0.8
+    assert shifts["median_shifted_bits_per_spike"] < shifts["median_bits_per_spike"] / 2
 
 
 def test_matrix_render(simulated_record):
