@@ -687,7 +687,7 @@ def test_undo_keys_follow_the_brush_while_painting_an_outline(session_factory):
 def test_done_returns_the_calibration_applied_in_the_editor(monkeypatch):
     import functools
 
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation import _session, _workflow, core
     from neurospatial.annotation.project import AnnotationShape
