@@ -19,6 +19,7 @@ from neurospatial.behavior.segmentation import (
 )
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial.behavior.trials import detect_trials
+from neurospatial.behavior.visits import detect_region_visits
 from neurospatial.regions import Regions
 
 # Equal one-unit bins: the home range ranks them by occupancy alone.
@@ -268,3 +269,89 @@ def test_an_outside_sample_ends_a_lap():
         )
     )
     assert not any(lap.start_time < times[k] < lap.stop_time for lap in laps)
+
+
+def _shuttle_in_cm():
+    """A 100 cm track and three runs between its end zones, in cm."""
+    times = np.arange(0.0, 30.0, 0.05)
+    x = 50.0 - 48.0 * np.cos(2 * np.pi * times / 20.0)
+    positions = np.column_stack([x, np.zeros_like(x)])
+    track = Environment.from_samples(positions, bin_size=4.0)
+    regions = Regions()
+    regions.add("left", polygon=box(0, -5, 10, 5))
+    regions.add("right", polygon=box(90, -5, 100, 5))
+    return track.with_regions(regions), times, positions
+
+
+@pytest.mark.parametrize(
+    "detect",
+    [
+        lambda e, t, p: detect_trials(e, t, p, regions=["left", "right"]),
+        lambda e, t, p: detect_region_crossings(e, t, p, region_name="left"),
+        lambda e, t, p: detect_goal_directed_runs(
+            e, t, p, goal_region="right", min_progress=5.0
+        ),
+    ],
+    ids=["detect_trials", "detect_region_crossings", "detect_goal_directed_runs"],
+)
+def test_positions_mostly_outside_the_environment_warn(detect):
+    """Positions in mm against an environment in cm fall mostly outside."""
+    track, times, positions = _shuttle_in_cm()
+    in_mm = positions * 10.0
+    # By hand: a sample is inside only within the track's 100 cm.
+    inside = np.abs(in_mm[:, 0] - 50.0) <= 52.0
+    assert inside.mean() < 0.5
+    with pytest.warns(UserWarning, match=r"outside the environment.*unit") as record:
+        detect(track, times, in_mm)
+    message = str(next(w.message for w in record if "outside" in str(w.message)))
+    n_outside = int(np.count_nonzero(track.bin_at(in_mm) < 0))
+    assert f"{n_outside} of {times.size}" in message
+    assert record[0].filename == __file__
+
+
+@pytest.mark.parametrize(
+    "detect",
+    [
+        lambda e, t, p, **kw: detect_trials(e, t, p, regions=["left", "right"], **kw),
+        lambda e, t, p, **kw: detect_region_visits(e, t, p, regions=["left"], **kw),
+        lambda e, t, p, **kw: detect_region_crossings(
+            e, t, p, region_name="left", **kw
+        ),
+        lambda e, t, p, **kw: detect_goal_directed_runs(
+            e, t, p, goal_region="right", min_progress=5.0, **kw
+        ),
+    ],
+    ids=["trials", "visits", "crossings", "goal_runs"],
+)
+def test_time_outside_the_epochs_does_not_count_as_outside(detect):
+    """A sleep box after the run session is outside the track but not analyzed."""
+    track, times, positions = _shuttle_in_cm()
+    sleep_times = times[-1] + np.arange(1, 2 * times.size + 1) * np.median(
+        np.diff(times)
+    )
+    sleep = np.full((sleep_times.size, positions.shape[1]), 500.0)
+    all_times = np.concatenate([times, sleep_times])
+    all_positions = np.concatenate([positions, sleep])
+    assert np.mean(track.bin_at(all_positions) < 0) > 0.5  # mostly in the box
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*outside the environment.*")
+        within = detect(
+            track, all_times, all_positions, epochs=[(times[0], sleep_times[0])]
+        )
+    # The session restricted to the run finds what the run alone gives.
+    alone = detect(track, times, positions)
+    assert len(alone) > 0
+    assert len(within) == len(alone)
+
+
+def test_nan_positions_do_not_count_as_outside():
+    track, times, positions = _shuttle_in_cm()
+    lost = positions.copy()
+    lost[: 2 * times.size // 3] = np.nan  # most samples missing, none outside
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*outside the environment.*")
+        detect_trials(track, times, lost, regions=["left", "right"])

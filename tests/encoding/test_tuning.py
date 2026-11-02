@@ -451,6 +451,26 @@ def test_pynapple_values_use_their_time_support(runs):
     assert from_array.occupancy.sum() == pytest.approx(3.5)
 
 
+@pytest.mark.pynapple
+def test_explicit_epochs_are_intersected_with_the_values_support(runs):
+    """Explicit epochs keep the restricted series' gaps out and record their ids."""
+    nap = pytest.importorskip("pynapple")
+    times, progress = runs
+    restricted = nap.Tsd(t=times, d=progress).restrict(
+        nap.IntervalSet([0.0, 2.0], [1.5, 3.5])
+    )
+    trials = Intervals.from_arrays([0.0, 1.0], [1.0, 4.0], interval_ids=[7, 9])
+
+    curve = compute_tuning_curve(
+        np.array([1.0]), restricted.t, restricted, bin_edges=EDGES, epochs=trials
+    )
+
+    # [0, 1) and [1, 4) cover the recording, but only [0, 1.5) and [2, 3.5)
+    # of it was kept in the series: 3.0 s, not 3.5 s.
+    assert curve.occupancy.sum() == pytest.approx(3.0)
+    assert curve.analysis_settings["epoch_interval_ids"] == [7, 9]
+
+
 def test_to_xarray_names_the_variable(distance_curves):
     pytest.importorskip("xarray")
     dataset = distance_curves.to_xarray()
@@ -484,3 +504,185 @@ def test_per_trial_curves_weighted_by_occupancy_equal_the_pooled_curve(runs, tri
     weighted = np.nansum(occupancy * rates, axis=0) / occupancy.sum(axis=0)
     np.testing.assert_allclose(weighted, pooled.firing_rate, rtol=1e-12)
     np.testing.assert_allclose(occupancy.sum(axis=0), pooled.occupancy, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "recorded"),
+    [
+        ("bin_edges", EDGES, (EDGES * 100).tolist()),
+        ("variable", "progress", "speed"),
+        ("units", None, "cm"),
+        ("bandwidth", 0.1, 0.2),
+        ("bandwidth", None, 0.1),
+        ("n_samples_outside_range", 3, 4),
+    ],
+)
+def test_analysis_settings_cannot_contradict_a_field(field, value, recorded):
+    """A recorded setting that describes another analysis is refused."""
+    fields = {
+        "firing_rate": np.ones(10),
+        "occupancy": np.ones(10),
+        "bin_edges": EDGES,
+        "variable": "progress",
+        field: value,
+    }
+    with pytest.raises(ValueError, match=rf"analysis_settings\['{field}'\]"):
+        TuningCurveResult(**fields, analysis_settings={field: recorded})
+    population = {**fields, "firing_rates": np.ones((2, 10))}
+    del population["firing_rate"]
+    with pytest.raises(ValueError, match=rf"analysis_settings\['{field}'\]"):
+        TuningCurvesResult(**population, analysis_settings={field: recorded})
+
+
+def test_analysis_settings_method_must_match_bandwidth():
+    with pytest.raises(ValueError, match=r"analysis_settings\['method'\]"):
+        TuningCurveResult(
+            np.ones(10), np.ones(10), EDGES, analysis_settings={"method": "gaussian"}
+        )
+
+
+def test_computed_settings_agree_with_fields(runs):
+    """A computed result, its units and a replace() of it all construct."""
+    import dataclasses
+
+    times, progress = runs
+    curves = compute_tuning_curves(
+        [times[::3] + 0.01],
+        times,
+        progress,
+        bin_edges=EDGES,
+        bandwidth=0.1,
+        variable="progress",
+    )
+    settings = curves.analysis_settings
+    for name in ("bin_edges", "bandwidth", "method", "variable", "units"):
+        assert name in settings
+    assert dataclasses.replace(curves).bandwidth == 0.1
+    assert curves[0].analysis_settings["bin_edges"] == EDGES.tolist()
+    with pytest.raises(ValueError, match="disagrees with the recorded"):
+        dataclasses.replace(curves, bandwidth=0.2)
+
+
+@pytest.mark.parametrize("name", ["firing_rate", "occupancy", "spike_counts"])
+def test_negative_rates_occupancy_and_counts_are_refused(name):
+    fields = {
+        "firing_rate": np.ones(10),
+        "occupancy": np.ones(10),
+        "spike_counts": np.full(10, 0.5),  # smoothed counts may be fractional
+    }
+    TuningCurveResult(**fields, bin_edges=EDGES)
+    fields[name] = fields[name].copy()
+    fields[name][3] = -0.25
+    with pytest.raises(ValueError, match=rf"{name} has 1 negative value"):
+        TuningCurveResult(**fields, bin_edges=EDGES)
+
+
+def test_warns_when_most_samples_fall_outside_the_bins(runs):
+    """Percent values against 0-1 edges leave almost every sample out."""
+    times, progress = runs
+    percent = 200.0 * progress  # 0-190: a unit mismatch
+    n_inside = int(np.count_nonzero(percent <= 1.0))  # progress 0 only
+    n_outside = percent.size - n_inside
+    edges = np.linspace(0, 1, 11)
+    with pytest.warns(
+        UserWarning,
+        match=rf"{n_outside} of {percent.size} analyzed samples "
+        rf"\({n_outside / percent.size:.1%}\).*outside bin_edges \[0, 1\]",
+    ):
+        curve = compute_tuning_curve(times[::3], times, percent, bin_edges=edges)
+    assert curve.n_samples_outside_range == n_outside
+    with pytest.warns(UserWarning, match="outside bin_edges"):
+        compute_tuning_curves([times[::3]], times, percent, bin_edges=edges)
+
+
+def test_no_out_of_range_warning_for_half_or_for_samples_outside_epochs(runs):
+    """Half outside is not most; values outside epochs are not analyzed."""
+    import warnings
+
+    times, progress = runs
+    half = np.where(np.arange(progress.size) % 2 == 0, progress, progress + 2.0)
+    late = np.where(times < 10.0, progress, progress + 2.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        curve = compute_tuning_curve(times[::3], times, half, bin_edges=EDGES)
+        compute_tuning_curve(
+            times[::3], times, late, bin_edges=EDGES, epochs=[(0.0, 10.0)]
+        )
+    assert curve.n_samples_outside_range == progress.size // 2
+
+
+def test_a_deliberately_narrow_range_does_not_warn(runs):
+    """Firing within the first fifth of the route: most samples out, on purpose."""
+    times, progress = runs
+    narrow = compute_tuning_curve(
+        times[::3], times, progress, bin_size=0.05, value_range=(0.0, 0.2)
+    )
+    assert narrow.n_samples_outside_range > progress.size // 2
+
+
+def test_values_in_another_frame_warn(runs):
+    """Same span, shifted origin: nearly every sample is outside."""
+    times, progress = runs
+    # The first 2% of samples stay in range, so the curve is not empty.
+    shifted = np.where(
+        np.arange(progress.size) < progress.size // 50, progress, progress + 50.0
+    )
+    with pytest.warns(UserWarning, match=r"outside bin_edges \[0, 1\]"):
+        compute_tuning_curve(times[::3], times, shifted, bin_edges=EDGES)
+
+
+def test_out_of_range_fraction_is_of_analyzed_samples(runs):
+    """NaN samples and samples outside epochs are not in the denominator.
+
+    In the first 10 s, 60 of 100 values are out of range; the other 100
+    samples are NaN (or outside epochs). Counted, they would make it 30%.
+    """
+    times, progress = runs
+    first = times < 10.0
+    out = first & (np.arange(times.size) % 5 < 3)
+    # In percent: outside the 0-1 edges, and spanning far more than them.
+    values = np.where(out, 100.0 * progress + 2.0, progress)
+    with pytest.warns(UserWarning, match=r"60 of 100 analyzed samples \(60\.0%\)"):
+        compute_tuning_curve(
+            times[::3], times, np.where(first, values, np.nan), bin_edges=EDGES
+        )
+    with pytest.warns(UserWarning, match=r"60 of 100 analyzed samples \(60\.0%\)"):
+        compute_tuning_curve(
+            times[::3], times, values, bin_edges=EDGES, epochs=[(0.0, 10.0)]
+        )
+
+
+def test_epochs_one_selected_trial_records_its_id(runs, trials):
+    """sel with a list keeps an Intervals, so its id is recorded."""
+    times, progress = runs
+    spikes = times[::3] + 0.01
+    one = trials.sel(interval_id=[3])
+    by_list = compute_tuning_curve(spikes, times, progress, bin_edges=EDGES, epochs=one)
+    record = trials.sel(interval_id=3)
+    by_record = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=record
+    )
+    assert by_list.analysis_settings["epoch_interval_ids"] == [3]
+    # A record carries no id, so none is recorded.
+    assert by_record.analysis_settings["epoch_interval_ids"] is None
+    np.testing.assert_array_equal(by_list.occupancy, by_record.occupancy)
+    assert by_list.occupancy.sum() == pytest.approx(2.0)
+
+
+def test_overlapping_epochs_count_shared_time_once(runs):
+    """Overlapping trials [0, 1.5) and [1, 2) analyze [0, 2) once."""
+    times, progress = runs
+    spikes = np.array([0.25, 1.25, 1.75, 2.5])
+    overlapping = Intervals.from_arrays([0.0, 1.0], [1.5, 2.0], interval_ids=[4, 9])
+    by_trials = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=overlapping
+    )
+    by_window = compute_tuning_curve(
+        spikes, times, progress, bin_edges=EDGES, epochs=[(0.0, 2.0)]
+    )
+    # Twenty 0.1-s samples of one run, one per 0.05 of progress: two per bin.
+    np.testing.assert_allclose(by_trials.occupancy, np.full(10, 0.2), rtol=1e-12)
+    np.testing.assert_array_equal(by_trials.occupancy, by_window.occupancy)
+    np.testing.assert_array_equal(by_trials.spike_counts, by_window.spike_counts)
+    assert by_trials.spike_counts.sum() == 3.0
+    assert by_trials.analysis_settings["epoch_interval_ids"] == [4, 9]

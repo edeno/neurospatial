@@ -1735,9 +1735,10 @@ These limits were measured in simulations of this task:
   progress as a fraction of the route, or the 2-D arena; wells and ports as
   regions with a size, `regions.add(name, point=..., radius=...)`.
 - **Trials.** `detect_trials(env, times, positions, regions=[...])` from
-  tracking (delete the rows of short tracking dropouts so they are bridged;
-  NaN rows end a trial), or your task log or port visits as above. Attach your
-  task's labels with `trials.with_fields(...)`.
+  tracking (short dropouts, as NaN rows or deleted rows, are bridged up to
+  `max_gap`, 1 s by default; a longer gap censors the trial under way), or your
+  task log or port visits as above. Attach your task's labels with
+  `trials.with_fields(...)`.
 - **Bins.** Choose `bin_edges` once for every condition you compare; 20 bins
   of progress (about 9 cm on this W-track) is a common start. Pass
   `min_occupancy` so a bin crossed for a few frames does not report a noisy

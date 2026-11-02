@@ -255,6 +255,13 @@ def detect_trials(
     RegionNotFoundError
         If a region does not exist.
 
+    Warns
+    -----
+    UserWarning
+        If no sampling interval is observed (for example ``epochs`` on
+        another clock, all-NaN positions, or every gap longer than
+        ``max_gap``), naming the gate to fix.
+
     See Also
     --------
     detect_region_visits : The visits themselves (time at each region).

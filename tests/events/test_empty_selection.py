@@ -103,3 +103,102 @@ def test_continuous_alignment_empty_selection():
         align_continuous_to_events(
             TIMES, signal, EVENTS, (-1.0, 1.0), dt=0.05, epochs=elsewhere
         )
+
+
+NO_TRIALS = TRIALS[TRIALS.cue == "up"]
+EVENT_SELECTIONS = {"no rows": NO_TRIALS, "empty array": np.array([])}
+PSTH_CALLS = {
+    "peri_event_histogram": lambda events, **kw: peri_event_histogram(
+        SPIKES, events, (-1.0, 1.0), bin_size=0.25, **kw
+    ),
+    "population_peri_event_histogram": lambda events, **kw: (
+        population_peri_event_histogram(
+            [SPIKES, SPIKES[::2]], events, (-1.0, 1.0), bin_size=0.25, **kw
+        )
+    ),
+}
+
+
+@pytest.mark.parametrize("selection", list(EVENT_SELECTIONS))
+@pytest.mark.parametrize("name", list(PSTH_CALLS))
+def test_psth_of_no_events_is_nan_with_a_warning(name, selection):
+    events = EVENT_SELECTIONS[selection]
+    with pytest.warns(UserWarning, match="event_times holds no event") as record:
+        result = PSTH_CALLS[name](events)
+    assert len(record) == 1
+    assert (result.n_events, result.n_events_dropped) == (0, 0)
+    assert result.event_indices.size == 0
+    assert np.isnan(_rates(result)).all()
+    assert np.isnan(result.sem).all()
+    assert isinstance(result.summary(), dict)
+    assert len(result.to_dataframe()) == _rates(result).size
+    if selection == "no rows":
+        assert result.align == "start"
+        np.testing.assert_array_equal(result.events_per_bin, 0)
+    else:
+        assert result.align is None
+        assert result.events_per_bin is None
+
+
+@pytest.mark.parametrize("selection", list(EVENT_SELECTIONS))
+def test_response_plot_of_no_events_draws_an_empty_raster(selection):
+    import matplotlib.pyplot as plt
+
+    from neurospatial.events import plot_peri_event_response
+
+    events = EVENT_SELECTIONS[selection]
+    with pytest.warns(UserWarning, match="event_times holds no event"):
+        result = peri_event_histogram(SPIKES, events, (-1.0, 1.0), bin_size=0.25)
+    raster_ax, _ = plot_peri_event_response(SPIKES, events, result)
+    assert raster_ax.get_ylim() == (-0.5, 0.5)
+    assert raster_ax.get_title() == "0 retained events"
+    plt.close(raster_ax.figure)
+
+
+def test_distance_histogram_of_no_events_is_nan_with_a_warning():
+    with pytest.warns(UserWarning, match="event_times holds no event") as record:
+        result = peri_event_distance_histogram(
+            SPIKES, np.array([]), TIMES, POSITIONS, (-10.0, 10.0), bin_size=2.0
+        )
+    assert len(record) == 1
+    assert (result.n_events, result.n_events_dropped) == (0, 0)
+    assert result.event_indices.size == 0
+    assert np.isnan(result.firing_rate).all()
+
+
+@pytest.mark.parametrize("name", list(PSTH_CALLS))
+def test_psth_of_no_trials_aligned_at_their_stop(name):
+    with pytest.warns(UserWarning, match="event_times holds no event"):
+        result = PSTH_CALLS[name](NO_TRIALS, align="stop")
+    assert result.align == "stop"
+    assert result.n_events == 0
+
+
+@pytest.mark.parametrize("selection", list(EVENT_SELECTIONS))
+def test_raster_of_no_events_is_empty(selection):
+    from neurospatial.events import align_spikes_to_events
+
+    assert (
+        align_spikes_to_events(SPIKES, EVENT_SELECTIONS[selection], (-1.0, 1.0)) == []
+    )
+
+
+@pytest.mark.parametrize("selection", list(EVENT_SELECTIONS))
+def test_continuous_alignment_of_no_events_is_nan_with_a_warning(selection):
+    events = EVENT_SELECTIONS[selection]
+    with pytest.warns(UserWarning, match="event_times holds no event") as record:
+        result = align_continuous_to_events(
+            TIMES, np.sin(TIMES), events, (-1.0, 1.0), dt=0.05
+        )
+    assert len(record) == 1
+    assert (result.n_events, result.n_events_dropped) == (0, 0)
+    assert result.event_status.size == 0
+    assert np.isnan(result.means).all()
+    assert result.values.shape == (0, result.relative_times.size, 1)
+    assert isinstance(result.summary(), dict)
+    if selection == "no rows":
+        assert result.align == "start"
+        assert result.event_ids.size == 0
+    else:
+        assert result.align is None
+        assert result.event_ids is None

@@ -72,13 +72,12 @@ from neurospatial._intervals import (
     run_sample_bounds,
     start_allocation,
     times_in_intervals,
-    warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-from neurospatial.behavior._position_bins import sample_bins
+from neurospatial.behavior._position_bins import bridge_missing_positions, sample_bins
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -131,10 +130,12 @@ def _event_runs(
 ) -> list[NDArray[np.intp]]:
     """Observed runs holding only samples inside the half-open ``epochs``.
 
-    As in ``env.occupancy``, an interval is observed when its gap passes
-    ``max_gap``, ``epochs`` and ``break_before`` and both of its samples are
-    in a bin: a sample at bin -1 (outside the environment, or missing) ends
-    the run.
+    Takes the samples left after NaN rows were dropped
+    (:func:`~neurospatial.behavior._position_bins.bridge_missing_positions`,
+    which also warns when nothing is observed). As in ``env.occupancy``, an
+    interval is observed when its gap passes ``max_gap``, ``epochs`` and
+    ``break_before`` and both of its samples are in a bin: a sample at bin
+    -1 (outside the environment) ends the run.
 
     An observed run keeps the sample at an epoch's ``stop``, because the
     interval that ends there lies inside the epoch. That instant is outside
@@ -150,7 +151,6 @@ def _event_runs(
         epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
     ).gates
-    warn_excluded_intervals(gates)
     runs = [
         np.arange(first, last + 1, dtype=np.intp)
         for first, last in run_sample_bounds(gates.mask)
@@ -290,9 +290,10 @@ class Trial:
         the half-open window ``[start_time, stop_time)``, so the sample at
         ``stop_time`` (for example the arrival) is outside it.
     start_region : str
-        Name of the region the trial started from.
+        Name of the region the trial started from (non-empty).
     end_region : str or None
-        Name of the region reached; None unless ``outcome == 'reached'``.
+        Name of the region reached, different from ``start_region``; None
+        unless ``outcome == 'reached'``.
     outcome : {'reached', 'returned', 'censored'}
         How the trial ended:
 
@@ -321,6 +322,27 @@ class Trial:
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "stop_time", stop)
         validate_choice(self.outcome, _OUTCOMES, name="outcome", owner="Trial")
+        for name in ("start_region", "end_region"):
+            value = getattr(self, name)
+            if name == "end_region" and value is None:
+                continue
+            if not isinstance(value, str) or value == "":
+                error = ValueError if isinstance(value, str) else TypeError
+                raise error(
+                    _format_error(
+                        f"Trial.{name} must be a region name (a non-empty str); "
+                        f"got {value!r}.",
+                        why="a trial runs between named regions of the environment.",
+                        fix="map port or well numbers to the environment's region "
+                        "names first"
+                        + (
+                            ", and pass end_region=None for a trial that reached "
+                            "no region."
+                            if name == "end_region"
+                            else "."
+                        ),
+                    )
+                )
         if (self.outcome == "reached") != (self.end_region is not None):
             raise ValueError(
                 _format_error(
@@ -330,6 +352,16 @@ class Trial:
                     "exactly when outcome == 'reached'.",
                     fix="pass end_region='<name>' with outcome='reached', and "
                     "end_region=None with any other outcome.",
+                )
+            )
+        if self.outcome == "reached" and self.end_region == self.start_region:
+            raise ValueError(
+                _format_error(
+                    f"Trial reached its own start region {self.start_region!r}.",
+                    why="'reached' means arriving at a different region; coming "
+                    "back to the start region is 'returned'.",
+                    fix="pass outcome='returned' and end_region=None for a trial "
+                    "that came back, or the different region it reached.",
                 )
             )
 
@@ -365,7 +397,8 @@ def detect_region_crossings(
         Timestamps in seconds; finite and strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Positions in the environment's coordinates; NaN where tracking was
-        lost. Each is located in its bin inside the function.
+        lost, bridged like a deleted row (see ``max_gap``). Each is located
+        in its bin inside the function.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
         Passed as a keyword-only argument.
@@ -419,13 +452,14 @@ def detect_region_crossings(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart.
+    A NaN position (lost tracking, a low-confidence frame) is a missing
+    sample, the same as a deleted row: the samples around it are joined
+    when no more than ``max_gap`` apart, and a longer gap splits the
+    recording. A position outside the environment is observed but not
+    located, so an interval with a sample there is not observed and splits
+    the recording too, like an ``epochs`` edge or a ``break_before``. Each
+    resulting stretch is analyzed on its own, so no crossing is reported
+    across a split.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -471,10 +505,21 @@ def detect_region_crossings(
     )
 
     times, position_bins = sample_bins(
-        env, times, positions, call="detect_region_crossings"
+        env,
+        times,
+        positions,
+        call="detect_region_crossings",
+        epochs=as_intervals(epochs, name="epochs"),
     )
-    breaks = validate_break_before(
-        break_before, len(times), call="detect_region_crossings"
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_region_crossings"
+        ),
     )
     results: list[Crossing] = []
     for run in _event_runs(
@@ -878,7 +923,8 @@ def detect_laps(
         Timestamps in seconds; finite and strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Positions in the environment's coordinates; NaN where tracking was
-        lost. Each is located in its bin inside the function.
+        lost, bridged like a deleted row (see ``max_gap``). Each is located
+        in its bin inside the function.
     method : {'auto', 'reference', 'region'}, optional
         Method for detecting laps:
         - 'auto': the first complete circuit is the template (default)
@@ -964,16 +1010,14 @@ def detect_laps(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart.
-
-    Laps never span recordings. Samples outside the environment are left
-    out as if their rows were deleted.
+    A NaN position (lost tracking, a low-confidence frame) is a missing
+    sample, the same as a deleted row: the samples around it are joined
+    when no more than ``max_gap`` apart, and a longer gap splits the
+    recording. A position outside the environment is observed but not
+    located, so an interval with a sample there is not observed and splits
+    the recording too, like an ``epochs`` edge or a ``break_before``. Each
+    resulting stretch is analyzed on its own, so no lap spans a split or a
+    recording boundary.
 
     **Lap Detection Methods:**
 
@@ -1176,8 +1220,23 @@ def detect_laps(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
-    times, position_bins = sample_bins(env, times, positions, call="detect_laps")
-    breaks = validate_break_before(break_before, len(times), call="detect_laps")
+    times, position_bins = sample_bins(
+        env,
+        times,
+        positions,
+        call="detect_laps",
+        epochs=as_intervals(epochs, name="epochs"),
+    )
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_laps"
+        ),
+    )
     runs = _event_runs(
         times,
         position_bins,
@@ -1975,8 +2034,8 @@ def detect_goal_directed_runs(
         are not a metric length.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
+        between consecutive samples (a dropped frame and a NaN row are the
+        same missing sample). Longer gaps are excluded as tracking losses;
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
@@ -2032,13 +2091,13 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located, so, as in ``env.occupancy``, an interval with either sample
-    unlocated is not observed and splits the recording, like a gap longer
-    than ``max_gap``, an ``epochs`` edge or a ``break_before``; each
-    resulting stretch is analyzed on its own, so no segment spans a pause.
-    To bridge missing samples instead, delete their rows: a deleted row is
-    bridged when the samples around it are no more than ``max_gap`` apart. A sample in a part of the
+    A NaN position (lost tracking) is a missing sample, the same as a
+    deleted row: it is bridged when the samples around it are no more than
+    ``max_gap`` apart. A position outside the environment is observed but
+    not located (bin -1), so an interval touching it is not observed and
+    splits the recording, like a gap longer than ``max_gap``, an ``epochs``
+    edge or a ``break_before``; each resulting stretch is analyzed on its
+    own, so no approach spans a pause. A sample in a part of the
     environment that is not connected to the goal has no distance to it and
     splits the recording the same way: no approach includes it, and the
     approaches before and after it are scored on their own.
@@ -2135,10 +2194,21 @@ def detect_goal_directed_runs(
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
     times, position_bins = sample_bins(
-        env, times, positions, call="detect_goal_directed_runs"
+        env,
+        times,
+        positions,
+        call="detect_goal_directed_runs",
+        epochs=as_intervals(epochs, name="epochs"),
     )
-    breaks = validate_break_before(
-        break_before, len(times), call="detect_goal_directed_runs"
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_goal_directed_runs"
+        ),
     )
 
     from neurospatial.behavior._environment_paths import environment_paths
@@ -2155,7 +2225,8 @@ def detect_goal_directed_runs(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
     # Complete-case rule, as in env.occupancy: an interval is observed only
-    # when both of its samples are in the environment.
+    # when both of its samples are in the environment. NaN rows are already
+    # dropped, and bridge_missing_positions warned if nothing is observed.
     gates = start_allocation(
         times,
         position_bins,
@@ -2164,7 +2235,6 @@ def detect_goal_directed_runs(
         epochs=as_intervals(epochs, name="epochs"),
         break_before=breaks,
     ).gates
-    warn_excluded_intervals(gates)
     results: list[tuple[float, float]] = []
     for first, last in run_sample_bounds(gates.mask):
         run = slice(first, last + 1)

@@ -16,6 +16,8 @@ from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import (
     compute_path_efficiency,
     compute_speed,
+    detect_region_visits,
+    detect_trials,
     heading_from_velocity,
 )
 from neurospatial.behavior.decisions import (
@@ -30,6 +32,7 @@ from neurospatial.behavior.navigation import (
 )
 from neurospatial.behavior.segmentation import (
     Trial,
+    detect_goal_directed_runs,
     detect_region_crossings,
     segment_by_velocity,
 )
@@ -104,6 +107,15 @@ CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
         env, t, p, region_name="mid_area", **kw
     ),
+    "detect_trials": lambda env, t, p, **kw: detect_trials(
+        env, t, p, regions=["mid_area"], **kw
+    ),
+    "detect_region_visits": lambda env, t, p, **kw: detect_region_visits(
+        env, t, p, regions=["mid_area"], **kw
+    ),
+    "detect_goal_directed_runs": lambda env, t, p, **kw: detect_goal_directed_runs(
+        env, t, p, goal_region="mid_area", min_progress=5.0, **kw
+    ),
     "segment_by_velocity": lambda env, t, p, **kw: segment_by_velocity(
         t, p, min_speed=1.0, min_duration=0.0, **kw
     ),
@@ -164,9 +176,18 @@ def test_coarse_sampling_warns_at_call_site(coarse_track, name):
     assert messages[0].filename == __file__
 
 
-# Bin-based detectors take bins, where a NaN row is bin -1: not located, so
-# it is never bridged (see test_unlocated_rows_are_not_bridged_by_bin_detectors).
-_POSITION_CALLS = sorted(set(CALLS) - {"detect_region_crossings"})
+# The detectors that bin positions into the environment.
+_REGION_DETECTORS = [
+    "detect_region_crossings",
+    "detect_trials",
+    "detect_region_visits",
+    "detect_goal_directed_runs",
+]
+
+# Every call bridges a NaN row like a deleted row; the region detectors still
+# break at a position outside the environment (see
+# test_rows_outside_the_environment_are_not_bridged_by_region_detectors).
+_POSITION_CALLS = sorted(CALLS)
 
 
 @pytest.mark.parametrize("name", _POSITION_CALLS)
@@ -193,13 +214,25 @@ def test_bridging_the_missing_samples_is_silent(nan_bridged_track, name):
         CALLS[name](env, times, positions, max_gap=0.25)
 
 
-def test_unlocated_rows_are_not_bridged_by_bin_detectors(nan_bridged_track):
-    """Every interval touches a bin -1 row, so none is observed at any max_gap."""
+@pytest.mark.parametrize("name", _REGION_DETECTORS)
+def test_rows_outside_the_environment_are_not_bridged_by_region_detectors(
+    nan_bridged_track, name
+):
+    """A position outside the environment is observed but not located.
+
+    Every interval touches such a row, so none is observed at any max_gap.
+    """
     env, times, positions = nan_bridged_track
-    with pytest.warns(
-        UserWarning, match=r"excluded ALL.*samples out of bounds or at NaN positions"
-    ) as record:
-        CALLS["detect_region_crossings"](env, times, positions, max_gap=None)
+    outside = positions.copy()
+    outside[1::2] = [500.0, 500.0]
+    with (
+        pytest.warns(UserWarning, match="outside the environment"),
+        pytest.warns(
+            UserWarning,
+            match=r"excluded ALL.*samples out of bounds or at NaN positions",
+        ) as record,
+    ):
+        CALLS[name](env, times, outside, max_gap=None)
     assert record[0].filename == __file__
 
 
@@ -251,3 +284,14 @@ def test_fewer_than_two_samples_is_silent():
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         segment_by_velocity(np.array([0.0]), np.array([[0.0, 0.0]]), min_speed=1.0)
+
+
+@pytest.mark.parametrize("name", _REGION_DETECTORS)
+def test_region_detectors_warn_when_nothing_is_observed(coarse_track, name):
+    """Epochs on another clock or all-NaN positions leave no observation."""
+    env, times, positions = coarse_track
+    with pytest.warns(UserWarning, match=r"excluded ALL.*epochs") as record:
+        assert len(CALLS[name](env, times, positions, epochs=[(1e4, 6e4)])) == 0
+    assert record[0].filename == __file__
+    with pytest.warns(UserWarning, match="excluded ALL"):
+        assert len(CALLS[name](env, times, np.full_like(positions, np.nan))) == 0

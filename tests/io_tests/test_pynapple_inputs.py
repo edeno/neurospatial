@@ -258,12 +258,46 @@ def test_tsdframe_positions_record_the_adopted_epochs(gapped, session):
     )
 
 
-def test_explicit_epochs_win_over_the_time_support(gapped, session):
+def test_explicit_epochs_intersect_the_time_support(gapped, session):
+    """Only time inside both the epochs and the sample's support is used."""
     env = session[0]
+    times, positions = gapped.t, gapped.to_numpy()
 
-    narrowed = env.occupancy(gapped.t, gapped, epochs=(0.0, 10.0))
+    narrowed = env.occupancy(times, gapped, epochs=(0.0, 10.0))
+    across_gap = env.occupancy(times, gapped, epochs=(10.0, 30.0))
+    # By hand: [10, 20] and [20.5, 30) of the support, without the 0.5 s gap.
+    by_hand = env.occupancy(times, positions, epochs=[(10.0, 20.0), (20.5, 30.0)])
 
     assert narrowed.sum() == pytest.approx(10.0)
+    assert across_gap.sum() == pytest.approx(19.5, abs=0.02)
+    np.testing.assert_allclose(across_gap, by_hand, atol=0.011)
+    # Epochs outside the support leave nothing, as for the arrays route.
+    with pytest.warns(UserWarning, match="occupancy is zero"):
+        nothing = env.occupancy(times, gapped, epochs=(20.1, 20.4))
+    assert nothing.sum() == 0.0
+
+
+def test_epochs_on_another_clock_are_reported_as_for_arrays(gapped, session):
+    """Epochs missing the support are a clock mismatch, not an empty condition."""
+    from neurospatial.events import peri_event_distance_histogram
+
+    times = gapped.t
+    events = np.array([5.0, 15.0, 25.0])
+    in_ms = [(5000.0, 25000.0)]
+    for positions in (gapped.to_numpy(), gapped):
+        with (
+            pytest.warns(UserWarning, match="check that epochs overlap"),
+            pytest.raises(ValueError, match="none of the 3 events falls"),
+        ):
+            peri_event_distance_histogram(
+                np.array([1.0]),
+                events,
+                times,
+                positions,
+                (-2.0, 2.0),
+                bin_size=1.0,
+                epochs=in_ms,
+            )
 
 
 def test_decode_session_uses_the_positions_time_support(gapped, session):
@@ -664,3 +698,37 @@ def test_interval_set_metadata_that_cannot_be_a_field_is_left_out(nap):
     with pytest.warns(UserWarning, match=r"\['trial type'\].*left out"):
         intervals = from_pynapple(iset)
     assert intervals.fields == ("goal",)
+
+
+def test_from_pynapple_reads_integral_float_interval_ids(nap):
+    """pynapple metadata can store integer ids as floats; they stay the ids."""
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[0.0, 5.0, 9.0],
+        end=[2.0, 7.0, 11.0],
+        metadata={"interval_id": [7.0, 12.0, 9.0]},
+    )
+
+    intervals = from_pynapple(iset)
+
+    assert intervals.interval_ids.tolist() == [7, 12, 9]
+    assert intervals.interval_ids.dtype == np.int64
+    assert intervals.fields == ()
+
+
+@pytest.mark.parametrize(
+    ("ids", "problem"),
+    [([7.5, 9.0, 12.0], "not whole numbers"), ([7, 7, 9], "repeat")],
+)
+def test_from_pynapple_refuses_ids_it_cannot_keep(nap, ids, problem):
+    """Bad ids raise instead of being silently renumbered 0 to n - 1."""
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[0.0, 5.0, 9.0], end=[2.0, 7.0, 11.0], metadata={"interval_id": ids}
+    )
+
+    with pytest.raises(ValueError, match=problem) as exc:
+        from_pynapple(iset)
+    assert "Fix:" in str(exc.value)

@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import (
+    EMPTY_RESULT,
+    start_allocation,
+    times_in_intervals,
+    warn_excluded_intervals,
+)
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -97,7 +105,12 @@ def validated_position_bins(
 
 
 def sample_bins(
-    env: Environment, times: ArrayLike, positions: ArrayLike, *, call: str
+    env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    call: str,
+    epochs: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
     """Validated ``times`` and each position's bin, ``-1`` outside or missing.
 
@@ -116,6 +129,9 @@ def sample_bins(
         Positions in the environment's coordinates; NaN where missing.
     call : str
         Public function name, used in messages.
+    epochs : ndarray of float64, shape (n_windows, 2), optional
+        The detector's resolved epochs; only samples inside them count
+        toward the outside-the-environment warning.
 
     Returns
     -------
@@ -127,6 +143,13 @@ def sample_bins(
     ValueError
         If times are invalid, the arrays do not match, or the positions do
         not have the environment's number of coordinates.
+
+    Warns
+    -----
+    UserWarning
+        If more than half of the positions with finite coordinates inside
+        ``epochs`` are outside the environment (usually a unit or
+        coordinate-frame mismatch).
     """
     from neurospatial._validation import validate_times_positions
 
@@ -144,4 +167,100 @@ def sample_bins(
             )
         )
     bins = np.asarray(env.bin_at(p), dtype=np.int64)
+    # Time outside the epochs (a sleep box, a home cage) is not analyzed, so
+    # positions there say nothing about the units.
+    counted = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
+    if epochs is not None:
+        counted &= times_in_intervals(epochs, t)
+    _warn_if_mostly_outside(bins, counted, call=call)
     return t, bins
+
+
+def _warn_if_mostly_outside(
+    bins: NDArray[np.int64], finite: NDArray[np.bool_], *, call: str
+) -> None:
+    """Warn once when more than half of the finite positions are outside.
+
+    NaN positions are missing, not outside, so they are left out of the
+    count. A majority outside usually means positions in other units (mm
+    against an environment in cm) or another coordinate frame, which leaves
+    a detector running on the few samples that happen to land inside.
+    """
+    n_finite = int(np.count_nonzero(finite))
+    n_outside = int(np.count_nonzero(finite & (bins < 0)))
+    if n_finite == 0 or 2 * n_outside <= n_finite:
+        return
+    warnings.warn(
+        f"{call}(): {n_outside} of {n_finite} positions with finite coordinates "
+        f"({n_outside / n_finite:.0%}) are outside the environment, so the "
+        "result rests on the few samples inside and is probably misleading. "
+        "Fix: check that positions and the environment use the same units "
+        "(for example mm against cm) and coordinate frame.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
+def bridge_missing_positions(
+    times: NDArray[np.float64],
+    bins: NDArray[np.int64],
+    positions: ArrayLike,
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None,
+    result: str = EMPTY_RESULT,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.int64], NDArray[np.bool_] | None, NDArray[np.intp]
+]:
+    """Drop NaN position rows as deleted rows, warning when nothing is observed.
+
+    A NaN position is a missing sample (lost tracking), the same as a
+    deleted row: the detector runs on the rows left, so the samples around
+    it are joined when no more than ``max_gap`` apart. A position outside
+    the environment (bin -1 at a finite position) stays a row, observed but
+    not located, so it still ends observation.
+
+    The warning judges the whole recording with the missing samples bridged
+    (as ``env.occupancy`` does), so epochs on another clock, all-NaN
+    positions or gaps longer than ``max_gap`` warn even when no row is left.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        Validated timestamps in seconds.
+    bins : ndarray of int64, shape (n_samples,)
+        Each sample's bin (:func:`sample_bins`), -1 outside or missing.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        The positions the bins came from; NaN where missing.
+    max_gap, epochs, break_before
+        The detector's validated gates; ``epochs`` as resolved windows.
+    result : str
+        What an all-excluded recording leaves, for the warning.
+
+    Returns
+    -------
+    times : ndarray of float64, shape (n_kept,)
+    bins : ndarray of int64, shape (n_kept,)
+    break_before : ndarray of bool, shape (n_kept,), or None
+        A break declared at a dropped row moves to the next kept row.
+    kept : ndarray of intp, shape (n_kept,)
+        Indices of the kept rows in the original arrays.
+    """
+    samples = np.asarray(positions, dtype=np.float64)
+    tracked: NDArray[np.bool_] = (
+        np.asarray(np.isfinite(samples.reshape(times.size, -1)).all(axis=1))
+        if times.size
+        else np.zeros(0, dtype=bool)
+    )
+    gates = start_allocation(
+        times, bins, tracked, max_gap=max_gap, epochs=epochs, break_before=break_before
+    ).gates
+    warn_excluded_intervals(gates, result=result)
+    kept = np.flatnonzero(tracked)
+    if break_before is not None:
+        declared = np.cumsum(np.asarray(break_before, dtype=np.intp))
+        moved = np.zeros(kept.size, dtype=bool)
+        moved[1:] = declared[kept[1:]] > declared[kept[:-1]]
+        break_before = moved
+    return times[kept], bins[kept], break_before, kept

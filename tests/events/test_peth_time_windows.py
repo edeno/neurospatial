@@ -190,3 +190,50 @@ def test_window_ending_at_an_epoch_stop_is_kept_despite_rounding():
         epochs=[(0.0, 0.3), (1.0, 1.3)],
     )
     assert (result.n_events, result.n_events_dropped) == (2, 0)
+
+
+@pytest.mark.parametrize("population", [False, True])
+@pytest.mark.parametrize("event", [0.3, 7.0, 1234.5678])
+@pytest.mark.parametrize(
+    ("window", "bin_size"),
+    [
+        ((-0.3, 0.3), 0.1),
+        ((-2.0, 0.5), 0.1),
+        ((-0.075, 0.05), 0.025),
+        ((-3.0, 1.0), 0.2),
+    ],
+)
+def test_a_spike_at_the_event_is_counted_in_the_bin_starting_at_zero(
+    population, event, window, bin_size
+):
+    """-0.3 + 3 * 0.1 is 5.6e-17, not 0: the zero edge must be exactly 0."""
+    function = population_peri_event_histogram if population else peri_event_histogram
+    spikes = np.array([event])
+    result = function(
+        [spikes] if population else spikes,
+        np.array([event, event]),
+        window,
+        bin_size=bin_size,
+    )
+    counts = result.histograms[0] if population else result.histogram
+    # By hand: the bin [0, bin_size) is number -window[0] / bin_size.
+    expected = np.zeros(counts.size)
+    expected[round(-window[0] / bin_size)] = 1.0
+    np.testing.assert_array_equal(counts, expected)
+
+
+@pytest.mark.parametrize("bin_size", [0.1, 0.025, 0.05, 0.2, 0.001, 0.3])
+def test_grid_aligned_bin_edges_are_grid_values_inside_the_window(bin_size):
+    from neurospatial.events._core import _make_bin_edges
+
+    for k_start in range(-12, 3):
+        for n_bins in range(1, 9):
+            window = (k_start * bin_size, (k_start + n_bins) * bin_size)
+            edges = _make_bin_edges(window, bin_size)
+            k = k_start + np.arange(n_bins + 1)
+            assert edges.size == n_bins + 1
+            # Interior edges are the grid values k * bin_size; 0 is exactly 0.
+            np.testing.assert_array_equal(edges[1:-1], k[1:-1] * bin_size)
+            assert (edges[k == 0] == 0.0).all()
+            # The outer edges are the window bounds.
+            assert (edges[0], edges[-1]) == window

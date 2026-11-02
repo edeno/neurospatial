@@ -103,7 +103,10 @@ class Interval:
         Window bounds in seconds, finite, ``start_time <= stop_time``. A
         sample at ``stop_time`` is outside the window.
     items : mapping or sequence of (str, value) pairs, optional
-        The fields. Values must be hashable; a missing value is ``None``. The
+        The fields. Names are identifiers not used by :class:`Intervals`
+        or ``Interval`` (``sel``, ``windows``, ``interval_id``, ``items``,
+        ...), so a record that builds can always join an ``Intervals``.
+        Values must be hashable; a missing value is ``None``. The
         empty string is refused, because NWB stores a missing string as
         ``""`` and reads it back as ``None``.
 
@@ -143,7 +146,7 @@ class Interval:
                 )
                 raise TypeError(msg)
             name, value = pair
-            _check_field_name(name, owner="Interval", reserved=_INTERVAL_MEMBERS)
+            _check_field_name(name, owner="Interval", reserved=_MEMBERS)
             items.append((name, _checked_value("Interval", name, value)))
         names = [name for name, _ in items]
         repeated = sorted({name for name in names if names.count(name) > 1})
@@ -167,9 +170,6 @@ class Interval:
         names = [key for key, _ in object.__getattribute__(self, "items")]
         msg = f"Interval has no field {name!r}; its fields are {names}."
         raise AttributeError(msg)
-
-
-_INTERVAL_MEMBERS = frozenset({*_TIME_FIELDS, "items", "fields"})
 
 
 def _check_field_name(name: object, *, owner: str, reserved: Iterable[str]) -> None:
@@ -205,6 +205,17 @@ def _record_schema(record_type: type) -> tuple[tuple[str, ...], dict[str, np.dty
             f"fields; got {record_type.__name__}."
         )
         raise TypeError(msg)
+    if not record_type.__dataclass_params__.frozen:  # type: ignore[attr-defined]
+        raise TypeError(
+            _format_error(
+                f"Intervals holds immutable records; {record_type.__name__} is a "
+                "dataclass that is not frozen.",
+                why="the container stores each record's times and fields once, "
+                "so a record edited afterwards would disagree with them.",
+                fix="declare it with @dataclass(frozen=True), or build "
+                "Intervals.from_arrays(start, stop, ...).",
+            )
+        )
     names = [f.name for f in dataclasses.fields(record_type)]
     missing = [name for name in _TIME_FIELDS if name not in names]
     if missing:
@@ -335,7 +346,8 @@ class Intervals(Generic[R]):
     ----------
     records : iterable of records
         Records of one type: the detector records (``Trial``) or
-        :class:`Interval`. Each has ``start_time`` and ``stop_time``.
+        :class:`Interval`, or another frozen dataclass. Each has finite
+        ``start_time <= stop_time`` in seconds.
     record_type : type, optional
         The record class. Inferred from the records; required when there are
         none.
@@ -465,8 +477,12 @@ class Intervals(Generic[R]):
             len(rows),
             owner="Intervals",
         )
-        start = np.array([r.start_time for r in rows], dtype=np.float64)  # type: ignore[attr-defined]
-        stop = np.array([r.stop_time for r in rows], dtype=np.float64)  # type: ignore[attr-defined]
+        times = [
+            _checked_times(kind.__name__, r.start_time, r.stop_time)  # type: ignore[attr-defined]
+            for r in rows
+        ]
+        start = np.array([t[0] for t in times], dtype=np.float64)
+        stop = np.array([t[1] for t in times], dtype=np.float64)
         order = np.lexsort((ids, stop, start))
         self._init_parts(
             records=tuple(rows[i] for i in order),
@@ -695,7 +711,7 @@ class Intervals(Generic[R]):
 
         Parameters
         ----------
-        interval_id : int or array-like of int
+        interval_id : int or 1-D array-like of int
             Id(s) from :attr:`interval_ids`.
 
         Returns
@@ -707,8 +723,10 @@ class Intervals(Generic[R]):
         Raises
         ------
         KeyError
-            If an id is not in :attr:`interval_ids`; every missing id is
-            listed.
+            If an id is not in :attr:`interval_ids`; the message lists the
+            first ten missing ids and how many more are missing.
+        ValueError
+            If ``interval_id`` is an array with more than one dimension.
         """
         wanted = np.asarray(interval_id)
         if wanted.size and wanted.dtype.kind not in "iu":
@@ -716,6 +734,12 @@ class Intervals(Generic[R]):
                 f"interval_id must be an integer or integer array; got {interval_id!r}."
             )
             raise TypeError(msg)
+        if wanted.ndim > 1:
+            msg = (
+                "interval_id must be one id or a 1-D array of ids; got shape "
+                f"{wanted.shape}. Flatten it first if every id is wanted."
+            )
+            raise ValueError(msg)
         where = {int(i): p for p, i in enumerate(self._ids.tolist())}
         flat = [int(i) for i in wanted.reshape(-1).tolist()]
         missing = [i for i in flat if i not in where]
@@ -966,6 +990,17 @@ class Intervals(Generic[R]):
             Join the intervals' fields with
             ``trials.intervals_table().join(counts)``.
 
+        Raises
+        ------
+        ValueError
+            If a spike time is NaN or infinite.
+
+        Warns
+        -----
+        UserWarning
+            If rows have duration but no spike falls in any (usually spikes
+            on another clock).
+
         Examples
         --------
         >>> import numpy as np
@@ -995,6 +1030,22 @@ class Intervals(Generic[R]):
             counts[:, unit] = np.searchsorted(
                 train, self._stop, side="left"
             ) - np.searchsorted(train, self._start, side="left")
+        # No spike in any row is a clock mismatch only when the spikes' span
+        # misses the rows' span: a sparse cell is often silent in short
+        # trials. No spikes at all is silence.
+        fired = [train for train in trains if train.size]
+        timed = self._stop > self._start
+        if fired and timed.any() and not counts.any():
+            first = min(float(train.min()) for train in fired)
+            last = max(float(train.max()) for train in fired)
+            overlaps = (
+                first < self._stop[timed].max() and last >= self._start[timed].min()
+            )
+            self._warn_if_no_sample_inside(
+                np.array([first, last]),
+                np.array([overlaps]),
+                "Intervals.spike_counts",
+            )
         return pd.DataFrame(
             counts,
             index=pd.Index(self._ids, name="interval_id"),
@@ -1045,14 +1096,20 @@ class Intervals(Generic[R]):
         Intervals of Interval
             The same ``interval_ids``, bounds and ``analysis_settings``, with
             the existing fields followed by the new ones. Consumers read
-            fields by name, so the record class does not matter.
+            fields by name, so the record class does not matter. A replaced
+            field that the record class defines (a ``Trial``'s ``outcome``)
+            keeps that class's rules: each row is rebuilt as the record class
+            with the new values, so ``outcome="reached"`` without an
+            ``end_region`` is refused as it is for a ``Trial``.
 
         Raises
         ------
         ValueError
             If a column does not have one value per interval, a name is
             reserved (``interval_id``, ``start_time``, ``stop_time``, a method
-            name or one starting with ``_``), or a value is ``""``.
+            name or one starting with ``_``), a value is ``""``, or a replaced
+            field breaks the record class's rules (``TypeError`` when the
+            class raises one).
 
         Examples
         --------
@@ -1080,9 +1137,40 @@ class Intervals(Generic[R]):
                 # A task log's missing label (NaN, pd.NA) is a missing value.
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
+        self._check_owned_fields(data, replaced=columns.keys())
         labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
         labelled._settings = deepcopy(self._settings)
         return labelled
+
+    def _check_owned_fields(
+        self, data: Mapping[str, NDArray[Any]], *, replaced: Iterable[str]
+    ) -> None:
+        """Rebuild each record with the replaced fields its class owns.
+
+        The record class's own checks (for example ``Trial``: ``end_region``
+        is set exactly when ``outcome == "reached"``) then apply to the new
+        values, so a relabelled row is never one the class forbids.
+        """
+        if self._record_type is Interval:
+            return
+        owned = [
+            name
+            for name in replaced
+            if name in {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
+        ]
+        if not owned:
+            return
+        for i, record in enumerate(self._records):
+            new = {name: _plain(data[name][i]) for name in owned}
+            try:
+                dataclasses.replace(record, **new)  # type: ignore[type-var]
+            except (TypeError, ValueError) as exc:
+                msg = (
+                    f"with_fields: interval {self._ids[i]} would not be a valid "
+                    f"{self._record_type.__name__}: {exc}"
+                )
+                error = TypeError if isinstance(exc, TypeError) else ValueError
+                raise error(msg) from exc
 
     @classmethod
     def from_arrays(
@@ -1160,7 +1248,10 @@ class Intervals(Generic[R]):
             ``[start, stop)``.
         id_column : str, optional
             Column with stable integer ids (for example trial numbers). Default:
-            ``0`` to ``n - 1`` in table order.
+            the table's integer index, ``0`` to ``n - 1`` for a fresh table.
+            A Series built from the table (``log.outcome == "correct"``) is
+            labelled by that index, so it selects the same rows after the
+            table was sorted or filtered.
 
         Returns
         -------
@@ -1169,7 +1260,10 @@ class Intervals(Generic[R]):
         Raises
         ------
         ValueError
-            If a named column is missing.
+            If a named column is missing, or the ids repeat or are negative.
+        TypeError
+            If ``id_column`` is not given and the index is not integers (call
+            ``df.reset_index(drop=True)`` or name ``id_column``).
         """
         import pandas as pd
 
@@ -1215,7 +1309,9 @@ class Intervals(Generic[R]):
             df[start_column].to_numpy(dtype=np.float64),
             df[stop_column].to_numpy(dtype=np.float64),
             columns,
-            interval_ids=None if id_column is None else df[id_column].to_numpy(),
+            interval_ids=_index_ids(df.index)
+            if id_column is None
+            else df[id_column].to_numpy(),
         )
 
     def __repr__(self) -> str:
@@ -1226,12 +1322,18 @@ class Intervals(Generic[R]):
         return f"{name}: {n} interval{'s' if n != 1 else ''}{span}; fields: {fields}"
 
 
-# interval_id names the stable ids (the index of intervals_table and the
-# pynapple metadata column), so no field may take it.
-_MEMBERS = frozenset(name for name in dir(Intervals) if not name.startswith("_")) | {
-    *_TIME_FIELDS,
-    "interval_id",
-}
+# One set of names no field may take, for Interval records and Intervals
+# alike, so a record that builds is never refused by the container: the
+# public attributes of both classes, the bounds, and interval_id, which
+# names the stable ids (the index of intervals_table and the pynapple
+# metadata column). Interval reads it when a record is made, after the
+# module has loaded.
+_MEMBERS = frozenset(
+    name
+    for cls in (Intervals, Interval)
+    for name in dir(cls)
+    if not name.startswith("_")
+) | {*_TIME_FIELDS, "interval_id"}
 
 
 def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]:
@@ -1268,6 +1370,43 @@ def _table_column(series: pd.Series) -> NDArray[Any]:
     ):
         return np.asarray(series.to_numpy(dtype=numpy_dtype))
     return _object_array([_missing_as_none(v) for v in series.tolist()])
+
+
+def _index_ids(index: pd.Index) -> NDArray[Any]:
+    """A table's integer index as interval ids; any other index is refused.
+
+    A Series built from the table (``log.outcome == "correct"``) is labelled
+    by this index, so ids taken from it keep such a Series aligned with its
+    rows after the table is sorted or filtered.
+    """
+    ids: NDArray[Any] = np.asarray(index.to_numpy())
+    if len(index) and (index.nlevels != 1 or ids.dtype.kind not in "iu"):
+        raise TypeError(
+            _format_error(
+                f"from_dataframe: the table index has dtype {index.dtype}, so it "
+                "cannot give the interval_ids.",
+                why="without id_column the ids are the table's integer index, "
+                "the labels a column of the table (log.outcome == 'correct') "
+                "selects rows by.",
+                fix="pass id_column='<column of integer ids>', or call "
+                "df.reset_index(drop=True) to number the rows 0 to n - 1 in "
+                "table order.",
+            )
+        )
+    if len(index) and (not index.is_unique or ids.min() < 0):
+        raise ValueError(
+            _format_error(
+                "from_dataframe: the table index has repeated or negative "
+                "values, so it cannot give the interval_ids.",
+                why="without id_column the ids are the table's index, and an "
+                "interval_id is unique and >= 0 (a table concatenated from "
+                "sessions repeats its index).",
+                fix="pass id_column='<column of unique integer ids>', or call "
+                "df.reset_index(drop=True) to number the rows 0 to n - 1 in "
+                "table order.",
+            )
+        )
+    return ids
 
 
 def _missing_as_none(value: Any) -> Any:

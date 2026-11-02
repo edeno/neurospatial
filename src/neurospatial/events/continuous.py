@@ -50,6 +50,7 @@ from neurospatial.events._core import (
     _validate_window,
     empty_selection_names,
     interval_events,
+    warn_no_events,
 )
 
 if TYPE_CHECKING:
@@ -150,7 +151,8 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         each row for intervals.
     align : {"start", "stop"} or None, default=None
         For intervals, the bound each row was aligned at; the window was cut
-        at the row's other bound. None for plain event times.
+        at the row's other bound. None for plain event times. When set,
+        ``event_ids`` holds the rows' unique non-negative ``interval_id``.
     """
 
     feature_ids: NDArray[Any]
@@ -325,6 +327,22 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             problems.append(f"window_coverage must be in {list(_WINDOW_COVERAGES)}")
         if self.align is not None and self.align not in ALIGNS:
             problems.append(f"align must be None or in {list(ALIGNS)}")
+        if self.align is not None:
+            # Aligned intervals are labelled by their interval_id; plain times
+            # (the caller's labels, any values) have no align.
+            ids = None if self.event_ids is None else np.asarray(self.event_ids)
+            if (
+                ids is None
+                or ids.shape != (n_input,)
+                or ids.dtype.kind not in "iu"
+                or np.any(ids < 0)
+                or np.unique(ids).size != ids.size
+            ):
+                problems.append(
+                    "align is set only for intervals, whose event_ids are their "
+                    f"unique non-negative integer interval_ids, one per input "
+                    f"event ({n_input}); plain event times need align=None"
+                )
         threshold = self.resultant_threshold
         if not (
             _is_real_number(threshold)
@@ -799,11 +817,14 @@ def align_continuous_to_events(
     events observed there (``counts``).
 
     For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, nothing after the trial's
-    stop is sampled (it would be the next trial); aligned at the stop, nothing
-    before the trial's start. The other side is sampled as for any event, so
-    the time at the well before a departure, or after an arrival, stays in the
-    window. "complete" asks only that the cut window was observed, each cell
+    from the alignment point: aligned at the start, nothing at or after the
+    trial's stop is sampled (it would be the next trial); aligned at the stop,
+    nothing before the trial's start. The other side is sampled as for any
+    event, so the time at the well before a departure, or after an arrival,
+    stays in the window. That side is not cut at the neighbouring trial: when
+    the time at the well is shorter than the window, it reaches into the
+    previous trial (aligned at the start) or the next one (aligned at the
+    stop), and those samples are used for both trials. "complete" asks only that the cut window was observed, each cell
     is averaged over the trials still under way at that time (``counts``),
     and the rows are labelled by ``interval_id``. Late cells therefore
     describe only the longer trials; to compare the same trials throughout,
@@ -901,8 +922,16 @@ def align_continuous_to_events(
         ``resultant_threshold`` or ``retain_aligned`` is invalid, the signals,
         feature metadata, ``event_times`` or ``event_ids`` are malformed,
         ``align`` is invalid or given with plain event times, ``event_ids`` is
-        given with an ``Intervals``, or every event is excluded by windows
-        with duration (usually another clock).
+        given with an ``Intervals``, ``align='stop'`` is given with censored
+        trials, or every event is excluded by windows with duration (usually
+        another clock).
+
+    Warns
+    -----
+    UserWarning
+        When ``epochs`` is an empty selection or ``event_times`` holds no
+        event (an empty condition); the summaries are then NaN with
+        ``n_events == 0``.
 
     Notes
     -----
@@ -1043,7 +1072,9 @@ def align_continuous_to_events(
                 "Intervals instead",
             )
         )
-    events = _finite_times(events, "event_times", non_empty=True)
+    events = _finite_times(events, "event_times")
+    if events.size == 0:
+        warn_no_events(result="every summary")
     ids = (
         interval_ids
         if interval_ids is not None
@@ -1080,9 +1111,13 @@ def align_continuous_to_events(
             kept_support.append(support[observed])
 
     retained = status == "retained"
-    # An empty selection (an Intervals with no windows) leaves no event by
-    # design; validated_signals has warned, and the summaries stay NaN.
-    if not retained.any() and not empty_selection_names(normalized_epochs, None):
+    # No events, or an empty selection (an Intervals with no windows), leaves
+    # no event by design; a warning has been given, and the summaries stay NaN.
+    if (
+        events.size
+        and not retained.any()
+        and not empty_selection_names(normalized_epochs, None)
+    ):
         reasons = ", ".join(
             f"{np.count_nonzero(status == reason)} {reason}"
             for reason in _EVENT_STATUSES[1:]

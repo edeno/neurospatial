@@ -20,6 +20,8 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     _is_pynapple_object,
+    as_intervals,
+    intersect_intervals,
     pynapple_end_to_stop,
     stop_to_pynapple_end,
 )
@@ -203,8 +205,10 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
     - if the function takes ``epochs`` and it is ``None``, the
       ``time_support`` of pynapple ``positions`` / ``headings`` (converted to
       half-open rows) becomes ``epochs``, so a recording gap shorter than
-      ``max_gap`` is not counted as observed time. An explicit ``epochs=``
-      wins; two samples with different supports are refused.
+      ``max_gap`` is not counted as observed time; two samples with
+      different supports are then refused. An explicit ``epochs=`` is
+      intersected with every such support: only time inside both is
+      analyzed, so a sample restricted to trials keeps that restriction.
 
     Every other call runs the function unchanged. The signature, docstring
     and ``__wrapped__`` are the function's own.
@@ -240,8 +244,13 @@ def reads_pynapple_samples(func: Callable[_P, _R]) -> Callable[_P, _R]:
             if name in _SUPPORT_ARGUMENTS and support is not None:
                 supports[name] = interval_rows(support)
             bound.arguments[name] = _plain_sample(name, value)
-        if takes_epochs and bound.arguments.get("epochs") is None and supports:
-            bound.arguments["epochs"] = _shared_support(supports)
+        if takes_epochs and supports:
+            given_epochs = bound.arguments.get("epochs")
+            bound.arguments["epochs"] = (
+                _shared_support(supports)
+                if given_epochs is None
+                else _epochs_within_supports(given_epochs, supports)
+            )
         return func(*bound.args, **bound.kwargs)
 
     wrapper.__reads_pynapple_samples__ = True  # type: ignore[attr-defined]
@@ -266,13 +275,39 @@ def _shared_support(supports: dict[str, NDArray[np.float64]]) -> Any:
     return rows
 
 
+def _epochs_within_supports(
+    epochs: Any, supports: dict[str, NDArray[np.float64]]
+) -> NDArray[np.float64]:
+    """The explicit ``epochs`` intersected with every pynapple time support.
+
+    A pynapple sample is defined only on its ``time_support`` (a ``Tsd``
+    restricted to trials holds no samples between them), so time outside it
+    is not observed whatever ``epochs`` says. Epochs that miss every
+    support are returned unchanged: no sample lies inside them, so the
+    analysis reports them as it does epochs that miss plain samples (often
+    another clock), not as a deliberately empty selection.
+    """
+    given = as_intervals(epochs, name="epochs")
+    assert given is not None  # epochs is not None here
+    rows = given
+    for support in supports.values():
+        if rows.shape[0] == 0:
+            break
+        merged = as_intervals(support, name="time_support")
+        assert merged is not None
+        rows = intersect_intervals(rows, merged)
+    return rows if rows.shape[0] else given
+
+
 def intervals_from_interval_set(intervals: Any) -> Any:
     """A pynapple ``IntervalSet`` as :class:`~neurospatial.Intervals`.
 
     Metadata columns become fields, with text ``""`` as ``None`` (the empty
     string is not a field value; an IntervalSet loaded from an NWB table
     holds ``""`` where a value is missing). An ``interval_id`` metadata
-    column (as ``to_pynapple`` writes) becomes the ids. Each inclusive
+    column (as ``to_pynapple`` writes) becomes the ids; whole-number floats
+    are read as integers, and ids that are not whole numbers or repeat are
+    refused. Each inclusive
     pynapple ``end`` becomes the next float above it, the half-open stop
     holding the same timestamps.
 
@@ -311,9 +346,34 @@ def intervals_from_interval_set(intervals: Any) -> Any:
         )
     id_column = None
     if "interval_id" in table.columns:
-        ids = table["interval_id"].to_numpy()
-        if ids.dtype.kind in "iu" and len(np.unique(ids)) == len(ids):
-            id_column = "interval_id"
-        else:
-            table = table.drop(columns="interval_id")
+        table["interval_id"] = _metadata_ids(table["interval_id"].to_numpy())
+        id_column = "interval_id"
     return Intervals.from_dataframe(table, id_column=id_column)
+
+
+def _metadata_ids(ids: NDArray[Any]) -> NDArray[np.integer[Any]]:
+    """An ``interval_id`` metadata column as int64 ids, else a refusal.
+
+    pynapple metadata may store integer ids as floats (``7.0``); whole
+    numbers are kept. Ids that are not whole numbers or that repeat are
+    refused rather than renumbered, which would lose the stable ids.
+    """
+    whole = ids.dtype.kind in "iu" or (
+        ids.dtype.kind == "f" and bool(np.all(np.isfinite(ids) & (ids % 1 == 0)))
+    )
+    if not whole or len(np.unique(ids)) != len(ids):
+        problem = "are not whole numbers" if not whole else "repeat"
+        raise ValueError(
+            _format_error(
+                "from_pynapple: the IntervalSet has an 'interval_id' metadata "
+                "column, which becomes the ids of the intervals, but its values "
+                f"{problem} (first values: {ids[:5].tolist()}).",
+                why="an interval_id identifies one interval; renumbering the "
+                "intervals would silently lose that identity, and sets from two "
+                "sessions concatenated together repeat them.",
+                fix="drop the column (iset.drop_info('interval_id')) to number "
+                "the intervals 0 to n - 1, or set it to unique integers.",
+            )
+        )
+    # Integer ids pass as they are, so the id check sees any beyond int64.
+    return ids if ids.dtype.kind in "iu" else ids.astype(np.int64)

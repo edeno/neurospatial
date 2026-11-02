@@ -535,6 +535,52 @@ class TestTrialHelpersOnAnotherClock:
             )
 
 
+class TestTimeToGoalOutcomes:
+    """time_to_goal reads only the trial outcomes it knows."""
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"outcome": ["correct", "error"]},
+            {"outcome": ["reached", "timeout"]},
+            {"choice": ["left", "right"]},
+        ],
+    )
+    def test_unreadable_outcomes_raise(self, fields):
+        """A task log's own labels would silently give all NaN."""
+        trials = Intervals.from_arrays([1.0, 5.0], [4.0, 8.0], **fields)
+        with pytest.raises(ValueError, match=r"with_fields\(outcome=") as info:
+            time_to_goal(np.arange(10.0), trials)
+        message = str(info.value)
+        if "outcome" in fields:
+            unknown = sorted(set(fields["outcome"]) - {"reached"})
+            for label in unknown:
+                assert repr(label) in message
+        else:
+            assert "no 'outcome' field" in message
+
+    def test_valid_outcomes_without_a_reached_trial_are_quietly_nan(self):
+        import warnings
+
+        trials = Intervals.from_arrays(
+            [1.0, 5.0], [4.0, 8.0], outcome=["returned", "censored"]
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            ttg = time_to_goal(np.arange(10.0), trials)
+        assert np.all(np.isnan(ttg))
+
+    def test_task_log_mapped_to_outcomes(self):
+        """Mapping a task's labels with with_fields gives the reached countdown."""
+        log = Intervals.from_arrays([1.0, 5.0], [4.0, 8.0], result=["correct", "error"])
+        mapping = {"correct": "reached", "error": "returned"}
+        trials = log.with_fields(outcome=log.result.map(mapping))
+        ttg = time_to_goal(np.arange(10.0), trials)
+        expected = np.full(10, np.nan)
+        expected[1:4] = 4.0 - np.arange(1.0, 4.0)
+        np.testing.assert_array_equal(ttg, expected)
+
+
 class TestDistanceToGoal:
     """distance_to_goal against independent known answers."""
 

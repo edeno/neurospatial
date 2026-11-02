@@ -111,7 +111,10 @@ or `align="stop"` (arrival). Each trial's window ends at its other bound:
 aligned at departure, nothing after the trial's arrival is used, so a short
 trial never borrows the next trial's data. The side of the alignment point is
 used as for any event, so the second before departure (the animal at the
-well) stays in.
+well) stays in. That side is not cut at the neighbouring trial: if the animal
+stays at the well for less time than the window reaches, the window runs into
+the previous run (aligned at departure) or the next one (aligned at arrival).
+Here the rat rests at least 1 s, so the 1 s before departure stays at the well.
 
 ```python
 from neurospatial.events import align_continuous_to_events, peri_event_histogram
@@ -157,8 +160,11 @@ so every bin averages the same trials, align plain times and restrict: `peri_eve
 
 **The same with pynapple.** `build_tensor` makes a trial × sample array.
 It aligns by sample index (so it assumes regular sampling without dropped
-frames), includes the sample at each trial's stop (pynapple intervals are
-closed), pads with NaN, and returns a plain array without trial ids. Trials
+frames), pads with NaN, and returns a plain array without trial ids.
+pynapple intervals include their end, so `to_pynapple` ends each exported
+interval one float below the trial's stop: each row holds the same
+`[start, stop)` samples as `trials.sample_slices(times)`, without the arrival
+sample. Trials
 without duration are dropped, so recover the row ids from the trials that
 have one:
 
@@ -181,7 +187,10 @@ print(tensor.shape, row_ids[:4])
 Progress from the start well to the goal well (0 to 1) puts every run on one
 axis whatever its speed. One tuning curve per trial, on shared bin edges,
 gives a trial × progress matrix for a stability plot. Select each trial by
-its id:
+its id, as a list: `east.sel(interval_id=[trial_id])` is a one-row
+`Intervals`, so each curve records which trial it came from in
+`analysis_settings["epoch_interval_ids"]` (a single id, without the list,
+gives the bare trial record, which carries no id):
 
 ```python
 progress = path_progress(track, times, positions, east, start="west", goal="east")
@@ -189,7 +198,7 @@ edges = np.linspace(0.0, 1.0, 11)
 per_trial = np.array([
     compute_tuning_curve(
         spike_times[0], times, progress, bin_edges=edges, variable="progress",
-        epochs=east.sel(interval_id=trial_id),
+        epochs=east.sel(interval_id=[trial_id]),
     ).firing_rate
     for trial_id in east.interval_ids
 ])  # (n_trials, n_bins), Hz; NaN where a trial spent no time
@@ -205,7 +214,8 @@ mean over trials (Hz): [ 1.   0.5  0.5  0.5  0.6  2.7 12.8 15.7 13.7  4.7]
 Each row is noisy: one pass through a bin lasts a fraction of a second. The
 plain mean over trials weights every trial equally; weighting each trial by
 its time in the bin gives the pooled curve, `compute_tuning_curve(...,
-epochs=east)`, exactly.
+epochs=east)`, exactly (with the default `min_occupancy=0` and no
+`bandwidth`).
 
 ## 4. One row per trial
 
@@ -239,9 +249,11 @@ rather than a shifted row.
 ## 5. Model inputs and trial-blocked cross-validation
 
 For a model, every input is one value per sample. `sample_values` gives each
-sample its trial's field (None between trials), and from the trial bounds the
-time since departure and the fraction of the trial elapsed. `basis_at_positions`
-evaluates a spatial basis at each position, with NaN rows outside the track:
+sample its trial's value; between trials it is NaN for float values (such as
+`trials.start`) and None for any other (labels, integers). From the trial
+bounds come the time since departure and the fraction of the trial elapsed.
+`basis_at_positions` evaluates a spatial basis at each position, with NaN rows
+outside the track:
 
 ```python
 from sklearn.model_selection import GroupKFold

@@ -24,6 +24,7 @@ compute_tuning_curves
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -43,9 +44,14 @@ from neurospatial._intervals import (
     value_frame_bins,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import interval_rows, reads_pynapple_samples
+from neurospatial._pynapple import (
+    _epochs_within_supports,
+    interval_rows,
+    reads_pynapple_samples,
+)
 from neurospatial._results import _copy_analysis_settings
 from neurospatial._spikes import spike_unit_table
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     refuse_infinite,
     validate_finite_scalar,
@@ -266,6 +272,8 @@ class _TuningCurveMixin:
         def peak_firing_rate(self) -> NDArray[np.float64] | float: ...
         def _accounting_columns(self) -> dict[str, Any]: ...
         def _analysis_attrs(self) -> dict[str, Any]: ...
+        def _check_recorded_settings(self, fields: Mapping[str, Any]) -> None: ...
+        def _refuse_negative(self, name: str, values: Any) -> None: ...
 
     @property
     def method(self) -> str:
@@ -294,6 +302,7 @@ class _TuningCurveMixin:
                         fix="pass the counts of the same computation, or None.",
                     )
                 )
+            self._refuse_negative("spike_counts", counts)
             object.__setattr__(self, "spike_counts", counts)
         n_outside = self.n_samples_outside_range
         if n_outside is not None:
@@ -309,6 +318,16 @@ class _TuningCurveMixin:
                 msg = f"{owner}: n_samples_outside_range must be >= 0, got {n_outside}."
                 raise ValueError(msg)
             object.__setattr__(self, "n_samples_outside_range", int(n_outside))
+        self._check_recorded_settings(
+            {
+                "variable": self.variable,
+                "units": self.units,
+                "bin_edges": self.bin_edges,
+                "bandwidth": self.bandwidth,
+                "method": self.method,
+                "n_samples_outside_range": self.n_samples_outside_range,
+            }
+        )
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -772,8 +791,9 @@ def compute_tuning_curve(
         occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
-        its ``time_support``, so time outside it (such as between trials of
-        a restricted series) is not analyzed.
+        its ``time_support``, and explicit epochs are intersected with it,
+        so time outside it (such as between trials of a restricted series)
+        is never analyzed.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``; that interval is excluded.
@@ -810,6 +830,12 @@ def compute_tuning_curve(
     UserWarning
         When every sampling interval is excluded, for example by an empty
         selection of trials; the rates are then NaN and the occupancy zero.
+        When the analyzed samples (finite values inside ``epochs`` and
+        ``spike_window``) outside ``bin_edges`` look like values in other
+        units than the edges: most are outside and the values span at least
+        ten times the edges, or at least 95% are outside. A deliberately
+        narrow ``value_range`` does not warn; the excluded samples are
+        counted in ``n_samples_outside_range`` either way.
 
     See Also
     --------
@@ -1013,8 +1039,9 @@ def compute_tuning_curves(
         occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
-        its ``time_support``, so time outside it (such as between trials of
-        a restricted series) is not analyzed.
+        its ``time_support``, and explicit epochs are intersected with it,
+        so time outside it (such as between trials of a restricted series)
+        is never analyzed.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``; that interval is excluded.
@@ -1046,8 +1073,10 @@ def compute_tuning_curves(
     -----
     UserWarning
         When every sampling interval is excluded (NaN rates, zero
-        occupancy), or when at least five units are all silent for at least
-        60 s and ``spike_window`` was not given.
+        occupancy), when the samples outside ``bin_edges`` look like values
+        in other units (as for :func:`compute_tuning_curve`), or when at least
+        five units are all silent for at least 60 s and ``spike_window`` was
+        not given.
 
     See Also
     --------
@@ -1154,6 +1183,46 @@ def compute_tuning_curves(
     )
 
 
+# Signs of values in other units than the edges, rather than a deliberately
+# narrow range: values spanning ten times the edges (percent against 0-1, mm
+# against cm, ms against s) with most of them outside, or nearly every value
+# outside (another origin or frame).
+_UNIT_MISMATCH_SPAN_RATIO = 10.0
+_NEARLY_ALL_OUTSIDE = 0.95
+
+
+def _warn_if_mostly_outside(
+    analyzed_values: NDArray[np.float64],
+    n_outside: int,
+    edges: NDArray[np.float64],
+    edges_source: str,
+    *,
+    call: str,
+) -> None:
+    """Warn when the samples in no bin suggest values in other units."""
+    n_analyzed = analyzed_values.size
+    if n_analyzed == 0 or 2 * n_outside <= n_analyzed:
+        return
+    span = float(analyzed_values.max() - analyzed_values.min())
+    wide = span >= _UNIT_MISMATCH_SPAN_RATIO * float(edges[-1] - edges[0])
+    if not wide and n_outside < _NEARLY_ALL_OUTSIDE * n_analyzed:
+        return
+    given = "value_range" if edges_source == "value_range" else "bin_edges"
+    warnings.warn(
+        f"{call}: {n_outside} of {n_analyzed} analyzed samples "
+        f"({n_outside / n_analyzed:.1%}) have a value outside {given} "
+        f"[{edges[0]:g}, {edges[-1]:g}] (values span "
+        f"[{analyzed_values.min():g}, {analyzed_values.max():g}]), so they are "
+        "in no bin and the rates describe only the rest. Values in other units "
+        "than the edges (percent against 0-1, cm against m) do this. Fix: check "
+        f"the units of values against {given}; if the narrow range is "
+        "deliberate, the excluded samples are counted in "
+        "n_samples_outside_range.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _tuning_curves(
     spike_times: Any,
     times: Any,
@@ -1187,21 +1256,27 @@ def _tuning_curves(
     from neurospatial.encoding._validation import validate_trajectory
 
     call = f"{owner}()"
-    if _is_pynapple_object(values):
-        # As for pynapple positions and headings: time outside the series'
-        # support (between trials, for a restricted series) is not analyzed.
-        support = getattr(values, "time_support", None)
-        if epochs is None and support is not None:
-            epochs = interval_rows(support)
-        values = np.asarray(values.d)
-    validate_instance(variable, str, name="variable", owner=call)
-    if units is not None:
-        validate_instance(units, str, name="units", owner=call)
     epoch_ids = (
         np.asarray(epochs.interval_ids).tolist()
         if isinstance(epochs, Intervals)
         else None
     )
+    if _is_pynapple_object(values):
+        # As for pynapple positions and headings: time outside the series'
+        # support (between trials, for a restricted series) is not analyzed,
+        # whether or not epochs are given.
+        support = getattr(values, "time_support", None)
+        if support is not None:
+            support_rows = interval_rows(support)
+            epochs = (
+                support_rows
+                if epochs is None
+                else _epochs_within_supports(epochs, {"values": support_rows})
+            )
+        values = np.asarray(values.d)
+    validate_instance(variable, str, name="variable", owner=call)
+    if units is not None:
+        validate_instance(units, str, name="units", owner=call)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     if single_unit:
@@ -1261,7 +1336,9 @@ def _tuning_curves(
 
     frame_bins = value_frame_bins(values, edges, closed_last=True)
     in_range = (values >= edges[0]) & (values <= edges[-1])
-    n_outside = int(np.count_nonzero(in_windows & np.isfinite(values) & ~in_range))
+    analyzed = in_windows & np.isfinite(values)
+    n_outside = int(np.count_nonzero(analyzed & ~in_range))
+    _warn_if_mostly_outside(values[analyzed], n_outside, edges, edges_source, call=call)
 
     if not single_unit:
         # Recording coverage is about time, whether or not the variable is

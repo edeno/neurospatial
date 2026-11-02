@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     )
     from neurospatial._interval_table import Interval as ConcreteInterval
     from neurospatial._interval_table import Intervals as ConcreteIntervals
+    from neurospatial.behavior import compute_vte_session, time_to_goal
     from neurospatial.decoding._result import DecodingResult as ConcreteDecodingResult
     from neurospatial.encoding.spatial import (
         SpatialRateResult as ConcreteSpatialRateResult,
@@ -57,4 +58,12 @@ if TYPE_CHECKING:
     assert_type(decode_position(env, counts, maps, dt=0.025), ConcreteDecodingResult)
     assert_type(
         peri_event_histogram(spikes, events, (-0.5, 0.5)), ConcretePeriEventResult
+    )
+
+    # Trial functions read only start, stop and ``outcome``, so a task log
+    # built with ``from_arrays`` (an ``Intervals[Interval]``) is accepted.
+    task_log = neurospatial.Intervals.from_arrays([0.0], [1.0], outcome=["reached"])
+    time_to_goal(times, task_log)
+    compute_vte_session(
+        env, times, positions, decision_region="center", trials=task_log
     )

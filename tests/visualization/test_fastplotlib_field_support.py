@@ -124,7 +124,9 @@ def test_track_windows_use_independent_sources_and_reread_only_new_rows(env):
 
 def test_isolated_field_samples_have_no_positive_duration_cells(env):
     track = Environment.linear_track(endpoints=[[0.0, 5], [20.0, 5]], bin_size=10)
-    field = AnimationField(np.ones((3, 2)), [0.0, 0.1, 0.2], max_gap=0.05)
+    # Every gap is longer than max_gap, so no sample holds for any time.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        field = AnimationField(np.ones((3, 2)), [0.0, 0.1, 0.2], max_gap=0.05)
     native = Animation(env, field, track=track).show(backend="fastplotlib").native
     try:
         shown(native, 0.05)

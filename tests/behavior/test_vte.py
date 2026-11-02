@@ -1216,6 +1216,48 @@ _SESSION_KWARGS = {
 }
 
 
+def test_trials_table_rows_join_their_input_intervals(t_maze_environment):
+    """With a subset of trials, each row joins the interval it describes."""
+    from neurospatial.behavior.vte import compute_vte_session
+
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 8.0])
+    subset = trials[[1, 3]]
+    result = compute_vte_session(
+        t_maze_environment, times, positions, trials=subset, **_SESSION_KWARGS
+    )
+    table = result.trials_table()
+
+    assert table.index.name == "interval_id"
+    assert table.index.tolist() == [1, 3]
+    joined = trials.intervals_table().join(table, how="inner")
+    assert joined.index.tolist() == [1, 3]
+    # Each trial lasts 2 s and starts 3 s after the previous one, so its
+    # pre-decision window lies inside its own interval only.
+    starts = 3.0 * np.array([1, 3])
+    np.testing.assert_array_equal(joined["start_time"], starts)
+    assert np.all(joined["window_start"] >= starts)
+    assert np.all(joined["window_end"] < starts + 2.0)
+    np.testing.assert_array_equal(
+        joined["head_sweep_magnitude"],
+        [t.head_sweep_magnitude for t in result.trial_results],
+    )
+
+
+def test_session_result_interval_ids_default_and_validation():
+    from neurospatial.behavior import VTESessionResult
+
+    trials = _two_trials()
+    assert VTESessionResult(trials).trials_table().index.tolist() == [0, 1]
+    assert VTESessionResult(trials, interval_ids=[7, 2]).interval_ids.tolist() == [
+        7,
+        2,
+    ]
+    with pytest.raises(ValueError, match="one interval_id per interval"):
+        VTESessionResult(trials, interval_ids=[0])
+    with pytest.raises(ValueError, match="repeated ids"):
+        VTESessionResult(trials, interval_ids=[4, 4])
+
+
 def test_session_trial_without_heading_is_unclassified(t_maze_environment):
     """A pause with no observed heading is not scored as "no head sweep".
 
@@ -1477,8 +1519,9 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
     assert result.n_classified == 2
 
     table = result.trials_table()
-    assert table.index.name == "trial"
-    assert table.index.tolist() == [0, 1, 2, 3]
+    assert table.index.name == "interval_id"
+    # Rows are in time order; each keeps the id of its position in the list.
+    assert table.index.tolist() == [0, 2, 3, 1]
     assert table["status"].tolist() == ["ok", "no_entry", "ok", "no_samples"]
     assert list(table.columns)[:3] == ["window_start", "window_end", "status"]
     assert list(table.columns)[-1] == "is_vte"

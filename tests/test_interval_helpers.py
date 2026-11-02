@@ -73,7 +73,8 @@ def test_as_intervals_real_intervalset():
         ([[0, np.nan]], "row(s) 0 contain NaN or inf"),
         ([[5, 5]], "row(s) 0 have stop <= start"),
         (IntervalSetLike(np.array([0, 1]), np.array([2])), "shapes (2,) and (1,)"),
-        ("bad", "could not be read as numbers"),
+        ("bad", "holds text"),
+        ([{}, 1.0], "could not be read as numbers"),
     ],
 )
 def test_as_intervals_errors_follow_contract(value, detail):
@@ -535,3 +536,104 @@ def test_linear_allocated_occupancy_clips_a_step_beyond_the_edges():
         ),
         [1.0, 1.0, 1.0, 1.0],
     )
+
+
+def test_starts_and_stops_stacked_as_two_rows_are_ambiguous() -> None:
+    from neurospatial._intervals import as_intervals
+
+    starts, stops = np.array([0.0, 10.0]), np.array([5.0, 15.0])
+    # Read as rows, [[0, 10], [5, 15]] would merge into one window [0, 15).
+    with pytest.raises(
+        ValueError, match=re.escape("pass np.column_stack([starts, stops])")
+    ):
+        as_intervals(np.vstack([starts, stops]), name="epochs")
+    np.testing.assert_array_equal(
+        as_intervals(np.column_stack([starts, stops]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    # Rows that do not overlap, or whose transpose is not two ordered
+    # windows, are read as rows.
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]), name="epochs"),
+        [[0.0, 5.0], [10.0, 15.0]],
+    )
+    np.testing.assert_array_equal(
+        as_intervals(np.array([[0.0, 30.0], [5.0, 10.0]]), name="epochs"),
+        [[0.0, 30.0]],
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "detail"),
+    [
+        (np.array([[0, 5]], dtype="timedelta64[s]"), "total_seconds()"),
+        (np.array([[0, 5]], dtype="datetime64[s]"), "datetime"),
+        (np.array([[False, True]]), "bool"),
+        (np.array([["0", "5"]]), "text"),
+        (np.array([["0", "5"]], dtype=object), "text"),
+        ([("0", "5")], "text"),
+    ],
+)
+def test_non_numeric_epochs_are_refused(value, detail) -> None:
+    from neurospatial._intervals import as_intervals
+
+    with pytest.raises(ValueError, match="float seconds") as exc:
+        as_intervals(value, name="epochs")
+    assert detail in str(exc.value)
+
+
+def test_timedelta_epochs_name_the_conversion() -> None:
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame(
+        {
+            "start_time": pd.to_timedelta([0, 10], unit="s"),
+            "stop_time": pd.to_timedelta([5, 15], unit="s"),
+        }
+    )
+    with pytest.raises(ValueError, match=re.escape("np.timedelta64(1, 's')")):
+        as_intervals(table, name="epochs")
+
+
+def test_a_table_is_read_by_its_start_and_stop_column_names() -> None:
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame(
+        {
+            "outcome": ["correct", "error"],
+            "stop_time": [5.0, 15.0],
+            "trial": [3, 4],
+            "start_time": [0.0, 10.0],
+        }
+    )
+    np.testing.assert_array_equal(
+        as_intervals(table, name="epochs"), [[0.0, 5.0], [10.0, 15.0]]
+    )
+
+
+def test_a_table_without_bound_columns_gets_a_table_hint() -> None:
+    pd = pytest.importorskip("pandas")
+    from neurospatial._intervals import as_intervals
+
+    table = pd.DataFrame({"a": [0.0, 10.0, 20.0], "b": [5.0, 15.0, 25.0]})
+    np.testing.assert_array_equal(
+        as_intervals(table, name="epochs"), [[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]]
+    )
+    with pytest.raises(ValueError, match="start_time and stop_time") as exc:
+        as_intervals(table.T, name="epochs")
+    assert "column_stack" not in str(exc.value)
+
+
+@pytest.mark.nwb
+def test_an_nwb_time_intervals_table_points_to_read_intervals() -> None:
+    epoch = pytest.importorskip("pynwb.epoch")
+    from neurospatial._intervals import as_intervals
+
+    table = epoch.TimeIntervals(name="trials", description="trials")
+    table.add_interval(start_time=0.0, stop_time=1.0)
+    table.add_interval(start_time=2.0, stop_time=3.0)
+    with pytest.raises(ValueError, match="read_intervals") as exc:
+        as_intervals(table, name="epochs")
+    assert "Intervals.from_dataframe" in str(exc.value)

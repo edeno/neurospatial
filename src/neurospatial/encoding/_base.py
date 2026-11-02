@@ -646,6 +646,27 @@ def _bandwidth_meets(bandwidth: float | None, rule: BandwidthRule) -> bool:
     )
 
 
+def _same_setting(value: Any, recorded: Any) -> bool:
+    """Whether a field and its recorded setting hold the same value.
+
+    Numbers and arrays compare exactly, element by element, so bin edges
+    stored as a list agree with the same edges as an array.
+    """
+    if value is None or recorded is None:
+        return value is None and recorded is None
+    if isinstance(value, str) or isinstance(recorded, str):
+        return bool(value == recorded)
+    try:
+        return bool(
+            np.array_equal(
+                np.asarray(value, dtype=np.float64),
+                np.asarray(recorded, dtype=np.float64),
+            )
+        )
+    except (TypeError, ValueError):
+        return bool(value == recorded)
+
+
 class _RateResultMixin(SpatialResultMixin):
     """Construction shared by every rate result dataclass.
 
@@ -724,6 +745,8 @@ class _RateResultMixin(SpatialResultMixin):
                     fix=fix,
                 )
             )
+        self._refuse_negative(self._RATES_FIELD, rates)
+        self._refuse_negative("occupancy", occupancy)
         method = self.method
         if method not in self._ESTIMATORS:
             raise ValueError(
@@ -755,6 +778,26 @@ class _RateResultMixin(SpatialResultMixin):
         object.__setattr__(
             self, "spike_window", as_intervals(self.spike_window, name="spike_window")
         )
+
+    def _refuse_negative(self, name: str, values: Any) -> None:
+        """Refuse a rate, occupancy or count below zero (NaN is missing)."""
+        from neurospatial._exceptions import _format_error
+
+        array = np.asarray(values)
+        negative = array < 0
+        n_negative = int(np.count_nonzero(negative))
+        if n_negative:
+            raise ValueError(
+                _format_error(
+                    f"{type(self).__name__}: {name} has {n_negative} negative "
+                    f"value(s); the smallest is {array[negative].min():g}.",
+                    why="Why: firing rates, occupancy and spike counts are "
+                    "never below zero; a negative value means the array is "
+                    "not a rate map (for example a difference or a z-score).",
+                    fix=f"pass the {name} of a rate computation; keep "
+                    "differences and normalized maps as plain arrays.",
+                )
+            )
 
     def _checked_counts(self) -> Any:
         """Spikes outside the analyzed intervals: one count per unit, or None."""
@@ -804,19 +847,38 @@ class _RateResultMixin(SpatialResultMixin):
                     "0.0 for no threshold.",
                 )
             )
-        recorded = (owned_analysis_settings(self) or {}).get("min_occupancy")
-        if recorded is not None and recorded != value:
+        # A GLM records None: it applies no occupancy threshold.
+        if (owned_analysis_settings(self) or {}).get("min_occupancy") is not None:
+            self._check_recorded_settings({"min_occupancy": value})
+        return value
+
+    def _check_recorded_settings(self, fields: Mapping[str, Any]) -> None:
+        """Refuse a field that disagrees with its value in ``analysis_settings``.
+
+        Parameters
+        ----------
+        fields : mapping of str to value
+            The result's own values, keyed by their ``analysis_settings``
+            name. A key absent from the recorded settings is not checked.
+        """
+        from neurospatial._exceptions import _format_error
+
+        recorded = owned_analysis_settings(self) or {}
+        for name, value in fields.items():
+            if name not in recorded or _same_setting(value, recorded[name]):
+                continue
+            shown = value.tolist() if isinstance(value, np.ndarray) else value
             raise ValueError(
                 _format_error(
-                    f"{kind}: min_occupancy={value} disagrees with the recorded "
-                    f"analysis_settings['min_occupancy']={recorded!r}.",
-                    why="Why: spatial_support is derived from min_occupancy; the "
-                    "recorded settings only describe it.",
-                    fix=f"pass min_occupancy={recorded!r}, or drop the recorded "
+                    f"{type(self).__name__}: {name}={shown!r} disagrees with the "
+                    f"recorded analysis_settings[{name!r}]={recorded[name]!r}.",
+                    why="Why: the result's fields are what its methods read; "
+                    "the recorded settings only describe them, so a different "
+                    "recorded value describes another analysis.",
+                    fix=f"pass {name}={recorded[name]!r}, or drop the recorded "
                     "value from analysis_settings.",
                 )
             )
-        return value
 
     def _check_family(self) -> None:
         """Family-specific invariants; results override this hook."""

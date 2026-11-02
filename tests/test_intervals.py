@@ -492,3 +492,145 @@ def test_a_record_with_a_missing_bound_is_refused():
 
     with pytest.raises(ValueError, match="NaN or inf"):
         as_intervals(pd.Series({"start_time": 0.0, "stop_time": np.nan}), name="epochs")
+
+
+def test_from_dataframe_ids_are_the_table_index() -> None:
+    log = pd.DataFrame(
+        {
+            "start_time": [10.0, 0.0, 20.0],
+            "stop_time": [15.0, 5.0, 25.0],
+            "outcome": ["error", "correct", "correct"],
+        }
+    )
+    trials = Intervals.from_dataframe(log.sort_values("start_time"))
+    # The log's own rows 1 and 2 are correct: they start at 0 and 20 s.
+    assert trials[log.outcome == "correct"].start.tolist() == [0.0, 20.0]
+    rewarded = trials.with_fields(reward=log.outcome == "correct")
+    assert rewarded.reward.tolist() == [True, False, True]  # time order
+    assert trials.interval_ids.tolist() == [1, 0, 2]
+    # A default index numbers the rows 0 to n - 1 in table order, as before.
+    assert Intervals.from_dataframe(log).interval_ids.tolist() == [1, 0, 2]
+
+
+@pytest.mark.parametrize(
+    "index",
+    [["a", "b", "c"], [0.0, 1.0, 2.0], pd.date_range("2026-01-01", periods=3)],
+)
+def test_from_dataframe_refuses_an_index_that_is_not_integer(index) -> None:
+    log = pd.DataFrame(
+        {"start_time": [0.0, 1.0, 2.0], "stop_time": [0.5, 1.5, 2.5]}, index=index
+    )
+    with pytest.raises(TypeError, match=r"id_column=.*reset_index\(drop=True\)"):
+        Intervals.from_dataframe(log)
+    by_column = Intervals.from_dataframe(log.reset_index(drop=True))
+    assert by_column.interval_ids.tolist() == [0, 1, 2]
+
+
+def test_from_dataframe_refuses_a_repeated_index() -> None:
+    log = pd.DataFrame({"start_time": [0.0, 1.0], "stop_time": [0.5, 1.5]})
+    with pytest.raises(ValueError, match=r"reset_index\(drop=True\)"):
+        Intervals.from_dataframe(pd.concat([log, log]))
+
+
+def test_spike_counts_warn_for_spikes_on_another_clock() -> None:
+    trials = Intervals.from_arrays([0.0, 20.0], [10.0, 30.0])
+    with pytest.warns(UserWarning, match="spike_counts: none of the 2 interval"):
+        counts = trials.spike_counts([np.array([1000.0, 1001.0]), np.array([1500.0])])
+    assert counts.to_numpy().sum() == 0
+    # No spikes at all is a silent population, not another clock.
+    assert trials.spike_counts([np.array([])]).to_numpy().sum() == 0
+
+
+def test_spike_counts_of_a_cell_silent_in_the_trials_do_not_warn() -> None:
+    """Spikes between and around short trials: zero counts are data."""
+    trials = Intervals.from_arrays([10.0, 50.0], [11.0, 51.0])
+    # Warnings are errors in this suite, so no warning may be emitted.
+    counts = trials.spike_counts(np.array([2.0, 20.0, 35.0, 70.0, 90.0]))
+    assert counts[0].tolist() == [0, 0]
+
+
+def test_spike_counts_of_an_empty_intervals_and_a_zero_duration_row() -> None:
+    empty = Intervals.from_arrays([], [])
+    counts = empty.spike_counts([np.array([0.5, 1.0])])
+    assert counts.shape == (0, 1)
+    assert counts.index.name == "interval_id"
+    # A row without duration holds no time, so a spike exactly on it is not
+    # counted there; the touching row [5, 8) counts it.
+    rows = Intervals.from_arrays([0.0, 5.0, 5.0], [5.0, 5.0, 8.0])
+    assert rows.spike_counts([np.array([5.0])])[0].tolist() == [0, 0, 1]
+
+
+def test_spike_counts_refuse_a_nan_spike() -> None:
+    trials = Intervals.from_arrays([0.0], [10.0])
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        trials.spike_counts([np.array([1.0, np.nan])])
+
+
+@pytest.mark.pynapple
+def test_spike_counts_of_a_tsgroup_keep_its_labels() -> None:
+    nap = pytest.importorskip("pynapple")
+    trials = Intervals.from_arrays([0.0, 5.0], [5.0, 10.0], interval_ids=[4, 8])
+    # pynapple drops a unit with one spike, so each has at least two.
+    group = nap.TsGroup(
+        {3: nap.Ts(np.array([1.0, 6.0, 7.0])), 9: nap.Ts(np.array([2.0, 3.0]))}
+    )
+    counts = trials.spike_counts(group)
+    assert counts.columns.tolist() == [3, 9]
+    assert counts.loc[4].tolist() == [1, 2]
+    assert counts.loc[8].tolist() == [2, 0]
+
+
+def test_every_record_needs_finite_ordered_times() -> None:
+    import dataclasses
+
+    @dataclasses.dataclass(frozen=True)
+    class Stay:
+        start_time: float
+        stop_time: float
+
+    assert Intervals([Stay(0.0, 1.0)]).stop.tolist() == [1.0]
+    for start, stop in [(5.0, 1.0), (np.nan, 1.0), (0.0, np.inf)]:
+        with pytest.raises(ValueError, match="start_time <= stop_time"):
+            Intervals([Stay(start, stop)])
+
+
+def test_records_must_be_frozen_dataclasses() -> None:
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Editable:
+        start_time: float
+        stop_time: float
+
+    with pytest.raises(TypeError, match="frozen"):
+        Intervals([Editable(0.0, 1.0)])
+    with pytest.raises(TypeError, match="frozen"):
+        Intervals([], record_type=Editable)
+
+
+def test_with_fields_keeps_the_record_class_rules(trials: Intervals[Trial]) -> None:
+    # Rows in time order: reached (right), returned, reached (left), censored.
+    with pytest.raises(ValueError, match="end_region=None does not match"):
+        trials.with_fields(outcome=["reached", "reached", "reached", "censored"])
+    with pytest.raises(ValueError, match="outcome"):
+        trials.with_fields(outcome=["won", "returned", "reached", "censored"])
+    # A valid replacement and a new label are kept.
+    relabelled = trials.with_fields(
+        end_region=["left", None, "right", None], goal=["a", "b", "a", "b"]
+    )
+    assert relabelled.end_region.tolist() == ["left", None, "right", None]
+    assert relabelled.goal.tolist() == ["a", "b", "a", "b"]
+
+
+def test_interval_refuses_the_names_intervals_reserves() -> None:
+    for name in ("sel", "windows", "interval_id", "durations"):
+        with pytest.raises(ValueError, match="already an attribute"):
+            Interval(0.0, 1.0, {name: 1})
+
+
+def test_sel_refuses_an_id_array_that_is_not_one_dimensional(
+    trials: Intervals[Trial],
+) -> None:
+    with pytest.raises(ValueError, match="1-D"):
+        trials.sel(interval_id=np.array([[3, 5]]))
+    assert trials.sel(interval_id=[5, 3]).interval_ids.tolist() == [3, 5]

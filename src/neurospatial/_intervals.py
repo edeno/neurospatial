@@ -24,7 +24,8 @@ from neurospatial._results import EMPTY_SELECTION, ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 _ACCEPTED_FORMS = (
-    "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows, "
+    "None, a (start, stop) pair, an (n, 2) array-like of [start, stop) rows "
+    "in seconds, a table with start_time and stop_time columns, "
     "an object with an (n, 2) .windows array (for example "
     "neurospatial.Intervals), one interval record with .start_time and "
     ".stop_time (for example a Trial), or an object with 1-D .start and .end "
@@ -246,6 +247,65 @@ def _format_rows(idx: NDArray[np.intp]) -> str:
     return shown + (f" (+{idx.size - 5} more)" if idx.size > 5 else "")
 
 
+_STARTS_STOPS_HINT = (
+    "; if its rows are starts and stops, pass np.column_stack([starts, stops])"
+)
+
+
+def _is_table(value: Any) -> bool:
+    """Return whether ``value`` is a pandas DataFrame, without importing pandas."""
+    return (
+        not _is_pynapple_object(value)
+        and hasattr(value, "columns")
+        and hasattr(value, "iloc")
+        and np.ndim(value) == 2
+    )
+
+
+def _is_time_intervals_table(value: Any) -> bool:
+    """Return whether ``value`` is an NWB ``TimeIntervals``-like table."""
+    columns = getattr(value, "colnames", None)
+    return (
+        not _is_table(value)
+        and callable(getattr(value, "to_dataframe", None))
+        and columns is not None
+        and {"start_time", "stop_time"} <= set(columns)
+    )
+
+
+def _non_numeric_problem(raw: NDArray[Any], name: str) -> str | None:
+    """The problem with window bounds that are not numbers, or None.
+
+    Timedeltas, datetimes, Booleans and text would otherwise be coerced to
+    numbers that are not seconds (a timedelta becomes nanoseconds).
+    """
+    kind = raw.dtype.kind
+    if kind == "m":
+        return (
+            f"{name} holds timedelta values; convert to float seconds, for "
+            f"example {name} / np.timedelta64(1, 's'), or "
+            "series.dt.total_seconds() for a pandas column"
+        )
+    if kind == "M":
+        return (
+            f"{name} holds datetime values; convert to float seconds on the "
+            f"clock of `times`, for example ({name} - t0) / np.timedelta64(1, 's')"
+        )
+    if kind == "b":
+        return (
+            f"{name} holds bool values, which are not times; convert to float "
+            "seconds (a Boolean mask over samples is not a set of windows)"
+        )
+    if kind in "US" or (
+        kind == "O" and any(isinstance(v, (str, bytes)) for v in raw.ravel())
+    ):
+        return (
+            f"{name} holds text; convert to float seconds, for example "
+            f"np.asarray({name}, dtype=float)"
+        )
+    return None
+
+
 def _parse_intervals(
     value: Any, name: str
 ) -> tuple[NDArray[np.float64] | None, list[str]]:
@@ -265,6 +325,15 @@ def _parse_intervals(
             f"intervals; pass the windows it was recorded in, "
             f"{name}={kind.lower()}.time_support"
         ]
+    if _is_time_intervals_table(value):
+        # An NWB TimeIntervals table: its columns are VectorData, which
+        # would read as a 3-D array or fail to read as numbers.
+        return None, [
+            f"{name} is an NWB {kind} table; read it as Intervals with "
+            "neurospatial.io.read_intervals(nwbfile, interval_name=...) or "
+            f"Intervals.from_dataframe({name}.to_dataframe()), and pass those"
+        ]
+    table = _is_table(value)
     if not _is_pynapple_object(value) and hasattr(value, "windows"):
         # An interval container (neurospatial.Intervals, or any object with
         # an (n, 2) ``windows`` array of [start, stop) rows with duration).
@@ -278,6 +347,21 @@ def _parse_intervals(
             return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
         if rows.shape[0] == 0:
             return EMPTY_SELECTION, []
+    elif table and {"start_time", "stop_time"} <= set(value.columns):
+        # A table (a task log, an NWB table's DataFrame): its bounds by name,
+        # whatever its other columns or their order.
+        bounds = [np.asarray(value[column]) for column in ("start_time", "stop_time")]
+        for bound in bounds:
+            problem = _non_numeric_problem(bound, name)
+            if problem is not None:
+                return None, [problem]
+        try:
+            rows = np.column_stack(bounds).astype(np.float64)
+        except (TypeError, ValueError) as exc:
+            return None, [
+                f"{name}['start_time'] and {name}['stop_time'] could not be "
+                f"read as numbers ({exc})"
+            ]
     elif (
         hasattr(value, "start_time")
         and hasattr(value, "stop_time")
@@ -332,23 +416,47 @@ def _parse_intervals(
         ]
     else:
         try:
-            rows = np.asarray(value, dtype=np.float64)
+            raw = np.asarray(value)
+            problem = _non_numeric_problem(raw, name)
+            rows = raw.astype(np.float64) if problem is None else raw
         except (TypeError, ValueError):
             return None, [
                 f"{name} could not be read as numbers "
                 f"(got {type(value).__name__}: {value!r:.80})"
             ]
+        if problem is not None:
+            return None, [problem]
         if rows.shape == (2,):
             rows = rows.reshape(1, 2)
         if rows.ndim != 2 or rows.shape[1] != 2:
-            hint = (
-                "; if its rows are starts and stops, pass "
-                "np.column_stack([starts, stops])"
-                if rows.ndim == 2 and rows.shape[0] == 2
-                else ""
-            )
+            if table:
+                hint = (
+                    "; name the table's bound columns start_time and stop_time "
+                    "(one row per window)"
+                )
+            else:
+                hint = (
+                    _STARTS_STOPS_HINT if rows.ndim == 2 and rows.shape[0] == 2 else ""
+                )
             return None, [
                 f"{name} has shape {rows.shape}; expected (2,) or (n, 2){hint}"
+            ]
+        if (
+            rows.shape == (2, 2)
+            and not table
+            and not isinstance(value, (list, tuple))
+            and rows[0, 0] < rows[1, 0] < rows[0, 1] < rows[1, 1]
+        ):
+            # Overlapping rows whose columns are two ordered windows: most
+            # likely np.vstack([starts, stops]), which read as rows would
+            # silently merge into one window.
+            (a, b), (c, d) = rows.tolist()
+            return None, [
+                f"{name} is a (2, 2) array whose rows [{a:g}, {b:g}) and "
+                f"[{c:g}, {d:g}) overlap, while its columns are two ordered "
+                f"windows [{a:g}, {c:g}) and [{b:g}, {d:g}), so it is "
+                f"ambiguous{_STARTS_STOPS_HINT}; if they are two overlapping "
+                f"rows, pass the merged row [[{a:g}, {d:g}]]"
             ]
     if rows.shape[0] == 0:
         return None, [f"{name} has no rows, so it would exclude all data"]
@@ -419,9 +527,15 @@ IntervalSet-like
         without duration are not windows, and no windows is a valid, empty
         selection. One interval record (``start_time`` and ``stop_time``,
         such as a :class:`~neurospatial.behavior.Trial`) is its own window,
-        or an empty selection without duration. An object exposing 1-D
-        ``.start`` and ``.end`` arrays
-        (for example a pynapple ``IntervalSet``) is accepted by duck typing;
+        or an empty selection without duration. A pandas DataFrame with
+        ``start_time`` and ``stop_time`` columns is read by those columns,
+        whatever its other columns; an NWB ``TimeIntervals`` table is
+        refused with a pointer to ``read_intervals``. Bounds must be numbers
+        in seconds: timedeltas, datetimes, Booleans and text are refused. An
+        ``np.ndarray`` of shape ``(2, 2)`` whose rows overlap while its
+        columns are two ordered windows (``np.vstack([starts, stops])``) is
+        refused as ambiguous. An object exposing 1-D ``.start`` and ``.end``
+        arrays (for example a pynapple ``IntervalSet``) is accepted by duck typing;
         pynapple is never imported. A pynapple interval includes its end, so
         its stop becomes the next float above ``end``: a sample exactly at
         ``end`` stays inside, as in pynapple.

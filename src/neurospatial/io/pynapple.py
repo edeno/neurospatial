@@ -86,8 +86,9 @@ ndarray of shape (n_epochs, 2)
         For an ``IntervalSet``: one ``[start, stop)`` row per interval, its
         metadata columns as fields (text ``""`` as ``None``). An
         ``interval_id`` column, as :func:`to_pynapple` writes, gives the
-        ids, so ``from_pynapple(to_pynapple(trials))`` keeps them; otherwise
-        the ids are ``0`` to ``n - 1`` in time order. Select rows by field
+        ids, so ``from_pynapple(to_pynapple(trials))`` keeps them (whole
+        numbers stored as floats are read as integers); otherwise the ids
+        are ``0`` to ``n - 1`` in time order. Select rows by field
         (``trials[trials.outcome == "reached"]``) and pass them as
         ``epochs=``.
 
@@ -103,7 +104,9 @@ ndarray of shape (n_epochs, 2)
         or ``IntervalSet`` (a ``TsdTensor`` has no spatial reading).
     ValueError
         If a ``TsdFrame``'s columns are spatial axis names (``x``, ``y``,
-        ``z``) in another order, such as ``["y", "x"]``.
+        ``z``) in another order, such as ``["y", "x"]``, or an
+        ``IntervalSet``'s ``interval_id`` metadata is not unique whole
+        numbers.
 
     Notes
     -----

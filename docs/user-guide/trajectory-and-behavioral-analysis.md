@@ -705,15 +705,17 @@ there are two visits to `A`, and the first trial is `"returned"`. The visit
 to `C` is seen in a single sample: it is kept as an observation with zero
 duration, not in `visits.windows`.
 
-A NaN position (lost tracking) or one outside the environment is not located.
-As in `env.occupancy`, an interval with either sample unlocated is not
-observed, so it breaks observation like a gap longer than `max_gap`, a
-declared break (`break_before`, see [Joined Recordings](#joined-recordings))
-or an epoch edge; none of them fabricates an exit or an entry. The same rule
-holds for crossings, laps and trials. To bridge short tracking dropouts
-instead, delete the missing rows: a deleted row is bridged when the samples on
-either side are no more than `max_gap` apart. Positions outside all selected
-regions are observed travel.
+Every detector here (visits, trials, crossings, laps and goal-directed runs)
+treats a NaN position (lost tracking, a low-confidence frame) as a missing
+sample, the same as a deleted row: as in `env.occupancy`, it is bridged when
+the samples on either side are no more than `max_gap` apart. A position
+outside the environment is observed but not located, and it breaks
+observation in every detector. Any break in
+observation, such as a gap longer than `max_gap`, a declared break
+(`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch
+edge, never fabricates an exit or an entry: the visit around it is kept with
+`exit_observed` or `entry_observed` set to `False`. Positions outside all
+selected regions are observed travel.
 
 Epochs are half-open `[start, stop)` for events: entry exactly at `stop` is
 excluded. A fully observed sampling interval ending at that boundary can still
@@ -1155,25 +1157,33 @@ route_of_sample = trials[trials.outcome == "reached"].sample_values(
 To attach columns of a task log with one row per trial, find each trial's log
 row with `log.sample_interval_ids(trials.start)`.
 
-**Lost tracking ends a trial.** A NaN position (lost tracking) is not
-observed: the trial under way becomes `"censored"`, and the next trial starts
-only after the animal is seen leaving a region again. For short dropouts, such
-as a few frames where the tracker lost the head, delete those rows instead of
-keeping them as NaN: a deleted row is bridged when the samples around it are
-no more than `max_gap` (1 s by default) apart.
+**Lost tracking.** A NaN position (lost tracking, a low-confidence frame) is
+a missing sample, the same as a deleted row. A short dropout, such as a few
+frames where the tracker lost the head, is bridged when the samples around it
+are no more than `max_gap` (1 s by default) apart, and the trial goes on. A
+longer gap ends observation: the trial under way becomes `"censored"`, and the
+next trial starts only after the animal is seen leaving a region again.
 
 <!-- docs-test: run setup=docs_trials_from_positions -->
 ```python
-lost = positions.copy()
 middle = 0.5 * (trials.start[1] + trials.stop[1])  # during the second run
-lost[(times >= middle) & (times < middle + 0.5)] = np.nan  # 0.5 s lost
-print(detect_trials(env, times, lost, regions=list(wells)).outcome.tolist())
 
-tracked = ~np.isnan(lost).any(axis=1)  # delete the lost rows to bridge them
-bridged = detect_trials(env, times[tracked], lost[tracked], regions=list(wells))
+short = positions.copy()
+short[(times >= middle) & (times < middle + 0.5)] = np.nan  # 0.5 s lost
+bridged = detect_trials(env, times, short, regions=list(wells))
 print(bridged.outcome.tolist())
 assert bridged.outcome.tolist() == ["reached"] * 4
+
+long = positions.copy()
+long[(times >= middle) & (times < middle + 1.5)] = np.nan  # 1.5 s lost
+cut = detect_trials(env, times, long, regions=list(wells))
+print(cut.outcome.tolist())
+assert cut.outcome.tolist() == ["reached", "censored", "reached", "reached"]
 ```
+
+The 1.5 s gap hides the arrival at `well_2`, so the second trial is censored
+at the last tracked time, the start of the gap. Tracking returns while the
+animal rests at `well_2`, and the next trial starts normally when it leaves.
 
 ---
 
@@ -1362,7 +1372,8 @@ trials on another clock.
 time: it is not in `trials.windows` (the windows `epochs=` uses), contains no
 sample, and never overlaps another row.
 
-**Overlap.** Rows may overlap, for example visits to two overlapping regions.
+**Overlap.** Rows may overlap, for example in a task log whose cue periods
+overlap, or in a table you build from two sources.
 Functions that give each sample one trial (`sample_interval_ids`,
 `sample_values`, `time_to_goal`) refuse
 overlapping rows and name them; select a non-overlapping subset first.

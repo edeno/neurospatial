@@ -580,7 +580,8 @@ With `epochs=None`, every public function that takes `epochs` and `positions`
 or `headings` uses the sample's `time_support` as its epochs, so a tracking
 gap shorter than `max_gap` is not counted as occupancy. Results that carry
 `analysis_settings` record the adopted windows in
-`analysis_settings["epochs"]`. An explicit `epochs=` wins; when `positions`
+`analysis_settings["epochs"]`. An explicit `epochs=` is intersected with
+the sample's `time_support`, so only time inside both is analyzed; when `positions`
 and `headings` are both pynapple objects with different supports, the call is
 refused until you pass `epochs=` (for example their intersection). Every
 public function with a `positions` argument (also `true_positions`,

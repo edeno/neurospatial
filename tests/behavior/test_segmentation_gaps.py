@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 from shapely.geometry import Point
 
@@ -317,36 +318,85 @@ def test_max_gap_none_preserves_requested_window(pause_track):
     assert times[0] == 99.5
 
 
-def test_auto_laps_with_missing_template_rows_equal_deleted_rows_with_breaks():
-    """NaN rows in the first 10% end the recording there, as in env.occupancy.
-
-    A NaN row is bin -1, not located, so laps never span it: the result equals
-    that of the recording with those rows deleted and a break declared at the
-    first row after each. The automatic template is the first 10% of the
-    located samples, and the search begins after it.
-    """
-    from neurospatial import Environment
-
+def _ten_lap_circle():
+    """Ten laps round a circle at 30 Hz, 60 s."""
     theta = np.linspace(0, 20 * np.pi, 1801)
     positions = np.column_stack([50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)])
     times = np.linspace(0, 60, 1801)
-    env = Environment.from_samples(positions, bin_size=3.0)
+    return Environment.from_samples(positions, bin_size=3.0), times, positions
+
+
+@pytest.mark.parametrize("method", ["auto", "region"])
+def test_laps_bridge_nan_rows_like_deleted_rows(method):
+    """A NaN position is a missing sample, the same as a deleted row.
+
+    One lost frame mid-lap, and 0.67 s of lost tracking (bridged by the
+    default max_gap of 1 s), give the laps of the recording with those rows
+    deleted; a gap longer than max_gap still breaks observation.
+    """
+    env, times, positions = _ten_lap_circle()
+    options = {"method": method}
+    if method == "region":
+        regions = Regions(env.regions.values())
+        regions.add("home", polygon=Point(80.0, 50.0).buffer(6.0))
+        env = env.with_regions(regions)
+        options["start_region"] = "home"
+    complete = detect_laps(env, times, positions, **options)
     missing = np.zeros(times.size, dtype=bool)
-    missing[50:70] = True  # 0.67 s of lost tracking, bridged by max_gap=1
-    missing[150:170] = True
+    missing[50:70] = True
+    missing[400] = True  # one frame in the middle of a lap
+    positions = positions.copy()
     positions[missing] = np.nan
     kept = ~missing
-    breaks = np.zeros(times.size, dtype=bool)
-    breaks[[70, 170]] = True  # first rows after the lost tracking
-    expected = detect_laps(
-        env,
-        times[kept],
-        positions[kept],
-        method="auto",
-        break_before=breaks[kept],
+
+    bridged = detect_laps(env, times, positions, **options)
+    deleted = detect_laps(env, times[kept], positions[kept], **options)
+
+    assert len(complete) >= 8
+    # Tables compare NaN overlap scores (region laps) as equal.
+    pd.testing.assert_frame_equal(bridged.intervals_table(), deleted.intervals_table())
+    assert len(bridged) == len(complete)
+    # At max_gap=0.5 the 0.67 s gap breaks observation, as for deleted rows.
+    short = {**options, "max_gap": 0.5}
+    broken = detect_laps(env, times, positions, **short)
+    pd.testing.assert_frame_equal(
+        broken.intervals_table(),
+        detect_laps(env, times[kept], positions[kept], **short).intervals_table(),
     )
-    assert expected
-    assert list(detect_laps(env, times, positions, method="auto")) == list(expected)
+    assert len(broken) < len(complete)
+
+
+def test_crossings_bridge_nan_rows_like_deleted_rows():
+    env = _corridor_with_wells()
+    times = np.arange(0.0, 40.0, 0.1)
+    x = 50.0 - 49.0 * np.cos(2 * np.pi * times / 10.0)  # end to end every 5 s
+    positions = np.column_stack([x, np.zeros_like(x)])
+    complete = detect_region_crossings(env, times, positions, region_name="goal")
+    missing = np.zeros(times.size, dtype=bool)
+    missing[44] = True  # the first sample in the goal, at 4.4 s
+    missing[142:147] = True  # 0.6 s across the entry at 14.4 s
+    missing[[120, 300]] = True
+    positions = positions.copy()
+    positions[missing] = np.nan
+    kept = ~missing
+
+    bridged = detect_region_crossings(env, times, positions, region_name="goal")
+    deleted = detect_region_crossings(
+        env, times[kept], positions[kept], region_name="goal"
+    )
+
+    assert len(complete) == 8
+    assert bridged == deleted
+    assert [c.direction for c in bridged] == [c.direction for c in complete]
+    # A NaN gap longer than max_gap breaks observation: the entry in the
+    # 0.6 s gap is not observed at max_gap=0.3.
+    short = detect_region_crossings(
+        env, times, positions, region_name="goal", max_gap=0.3
+    )
+    assert short == detect_region_crossings(
+        env, times[kept], positions[kept], region_name="goal", max_gap=0.3
+    )
+    assert len(short) == len(complete) - 1
 
 
 def _corridor_with_wells():

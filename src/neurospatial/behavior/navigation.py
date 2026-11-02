@@ -136,7 +136,6 @@ if TYPE_CHECKING:
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
     from neurospatial.behavior._environment_paths import EnvironmentPaths
-    from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
     from neurospatial.ops._types import DistanceMetric
@@ -2325,10 +2324,47 @@ def _validated_bin_values(
     return array
 
 
+def _require_trial_outcomes(trials: Intervals[Any]) -> None:
+    """Raise unless every row's ``outcome`` is a trial outcome."""
+    from neurospatial.behavior.segmentation import _OUTCOMES
+
+    fix = (
+        "map your labels to trial outcomes first, for example "
+        "trials.with_fields(outcome=trials.<label>.map({'correct': 'reached', "
+        "'error': 'returned'})), using 'reached' (arrived at the goal), "
+        "'returned' (came back without arriving) or 'censored' (observation "
+        "stopped first)"
+    )
+    why = (
+        "time_to_goal counts down only in trials whose outcome is 'reached'; "
+        "any other label would leave those trials NaN without notice."
+    )
+    if "outcome" not in trials.fields:
+        raise ValueError(
+            _format_error(
+                f"time_to_goal() got trials with no 'outcome' field; its "
+                f"fields are {list(trials.fields)}.",
+                why=why,
+                fix=fix,
+            )
+        )
+    seen = list(dict.fromkeys(trials.outcome.tolist()))
+    unknown = [value for value in seen if value not in _OUTCOMES]
+    if unknown:
+        raise ValueError(
+            _format_error(
+                f"time_to_goal() got trial outcomes {unknown} that are not "
+                f"{list(_OUTCOMES)}; the outcomes seen are {seen}.",
+                why=why,
+                fix=fix,
+            )
+        )
+
+
 @reads_pynapple_samples
 def time_to_goal(
     times: NDArray[np.float64],
-    trials: Intervals[Trial],
+    trials: Intervals[Any],
 ) -> NDArray[np.float64]:
     """Compute time remaining until goal arrival for each trial.
 
@@ -2338,9 +2374,13 @@ def time_to_goal(
         Timestamps for entire session, strictly increasing (seconds).
     trials : Intervals
         Trials from detect_trials(), read_trials() or a task log, with an
-        ``outcome`` field. Only trials with ``outcome == "reached"`` are
-        included; other trials (returned, censored or a task's own
-        outcomes), whose arrival was never observed, are not. The arrival is each trial's ``stop``.
+        ``outcome`` field holding trial outcomes: ``"reached"``,
+        ``"returned"`` or ``"censored"``. Only reached trials are included;
+        returned and censored trials, whose arrival was never observed, are
+        not. The arrival is each trial's ``stop``. Map a task log's own
+        labels first, for example
+        ``trials.with_fields(outcome=trials.result.map({"correct":
+        "reached", "error": "returned"}))``.
 
     Returns
     -------
@@ -2353,11 +2393,11 @@ def time_to_goal(
     ------
     ValueError
         If ``times`` is empty, not 1-D, holds a non-finite value or is not
-        strictly increasing, or if two reached trials overlap.
+        strictly increasing, if two reached trials overlap, or if
+        ``trials`` has no ``outcome`` field or holds an outcome other than
+        ``"reached"``, ``"returned"`` or ``"censored"``.
     TypeError
         If ``trials`` is not an Intervals.
-    AttributeError
-        If ``trials`` has no ``outcome`` field.
 
     Warns
     -----
@@ -2385,6 +2425,7 @@ def time_to_goal(
     from neurospatial._observation import _validated_signal_times
 
     require_intervals(trials, name="trials", owner="time_to_goal()")
+    _require_trial_outcomes(trials)
     times = _validated_signal_times(times, call="time_to_goal")
     # Only an observed arrival has a time to goal: timed-out, returned and
     # censored trials (cut off by a gap, an epoch edge, a break or the end of

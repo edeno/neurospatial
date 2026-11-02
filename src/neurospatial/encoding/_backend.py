@@ -131,7 +131,7 @@ def _enable_jax_float64(*inputs: Any) -> None:
                 fix='call jax.config.update("jax_enable_x64", True) before tracing.',
             )
         )
-    jax.config.update("jax_enable_x64", True)
+    jax.config.update("jax_enable_x64", True)  # type: ignore[no-untyped-call, unused-ignore]
 
 
 def get_backend(name: BackendType) -> Any:

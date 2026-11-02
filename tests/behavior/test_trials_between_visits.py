@@ -8,6 +8,7 @@ import pytest
 
 from neurospatial import Intervals, Regions
 from neurospatial.behavior import (
+    Trial,
     detect_region_visits,
     detect_trials,
     trials_between_visits,
@@ -206,3 +207,20 @@ def test_visits_are_intervals_with_region(w_track_session):
     assert visits.region.tolist() == sequence
     assert visits.interval_ids.tolist() == list(range(len(sequence)))
     assert visits.analysis_settings["regions"] == list(wells)
+
+
+@pytest.mark.parametrize(
+    ("start_region", "end_region", "outcome", "match"),
+    [
+        ("", None, "returned", "start_region"),
+        (None, None, "returned", "start_region"),
+        (3, None, "returned", "start_region"),
+        ("well_1", "", "reached", "end_region"),
+        ("well_1", 2, "reached", "end_region"),
+        ("well_1", "well_1", "reached", "different region"),
+    ],
+)
+def test_trial_regions_are_names(start_region, end_region, outcome, match):
+    with pytest.raises((TypeError, ValueError), match=match):
+        Trial(0.0, 1.0, start_region, end_region, outcome)
+    assert Trial(0.0, 1.0, "well_1", "well_2", "reached").success

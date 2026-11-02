@@ -13,7 +13,7 @@ the animal ran.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,7 @@ from neurospatial.events._core import (
     _make_bin_edges,
     empty_selection_names,
     warn_empty_selection,
+    warn_no_events,
 )
 
 if TYPE_CHECKING:
@@ -317,6 +318,7 @@ def peri_event_distance_histogram(
         One unit's spike times, in seconds.
     event_times : NDArray[np.float64], shape (n_events,)
         Event times, in seconds (for example cue passes or zone entries).
+        For trials, pass ``trials.start`` or ``trials.stop``.
     times : NDArray[np.float64], shape (n_samples,)
         Position sample times, in seconds, strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
@@ -361,13 +363,14 @@ or None
     ------
     ValueError
         If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
-        or not finite, ``event_times`` is empty, or no event falls on tracked
-        time inside windows with duration.
+        or not finite, ``event_times`` is an ``Intervals``, or no
+        event falls on tracked time inside windows with duration.
 
     Warns
     -----
     UserWarning
-        When ``epochs`` or ``spike_window`` is an empty selection.
+        When ``event_times`` is empty, or ``epochs`` or ``spike_window`` is
+        an empty selection; ``firing_rate`` is then NaN.
 
     Notes
     -----
@@ -402,6 +405,7 @@ or None
     >>> result.firing_rate.round(2).tolist()  # two spikes 2 and 4 cm after it
     [0.0, 0.0, 2.0, 0.0]
     """
+    from neurospatial._interval_table import Intervals
     from neurospatial.behavior.trajectory import compute_cumulative_distance
 
     window = _validated_distance_window(window, bin_size)
@@ -415,19 +419,33 @@ or None
                 fix="pass min_speed=None, or a speed such as min_speed=2.0 for 2 cm/s.",
             )
         )
+    if isinstance(cast("object", event_times), Intervals):
+        raise ValueError(
+            _format_error(
+                "peri_event_distance_histogram: event_times is an Intervals; it "
+                "takes event times in seconds.",
+                why="distance is measured from one time per event, and an "
+                "interval has two (its start and its stop).",
+                fix="pass trials.start to measure from each start, or "
+                "trials.stop to measure from each stop",
+            )
+        )
     edges = _make_bin_edges(window, bin_size)
     spikes = np.sort(_finite_times(spike_times, "spike_times"))
-    events = _finite_times(event_times, "event_times", non_empty=True)
+    events = _finite_times(event_times, "event_times")
     analyzed = as_intervals(epochs, name="epochs")
     recorded = as_intervals(spike_window, name="spike_window")
     empty = empty_selection_names(analyzed, recorded)
-    if empty:
+    if empty or events.size == 0:
         # Validate the recording as any call does, so the result never
         # depends on the selection being empty.
         compute_cumulative_distance(
             times, positions, max_gap=max_gap, break_before=break_before
         )
-        warn_empty_selection(empty, n_events=events.size, result="the rate")
+        if events.size == 0:
+            warn_no_events(result="the rate")
+        if empty:
+            warn_empty_selection(empty, n_events=events.size, result="the rate")
         no_events = np.zeros((0, edges.size - 1), dtype=np.float64)
         return PeriEventDistanceResult(
             spike_counts=no_events,

@@ -49,6 +49,7 @@ from neurospatial.environment._fastplotlib import (
     pair_segments,
     perceived_alpha,
     plot_title,
+    quiet_axes_setup,
     xyz,
 )
 from neurospatial.environment._fastplotlib_compat import (
@@ -1100,7 +1101,8 @@ def _playback(
     steps_per_second : int
     """
     played = min(speed, max_steps * frame_step)
-    if played < speed:
+    # Rounding in max_steps * frame_step (100 * 0.01) is not a slowdown.
+    if played < speed * (1 - 1e-9):
         warnings.warn(
             f"Playing every frame at speed {speed:g} needs "
             f"{speed / frame_step:.0f} steps a second; the controls take at most "
@@ -1393,13 +1395,15 @@ class FastplotlibAnimation:
                         raise ValueError(msg)
 
             # The slider stops at the last frame.
-            self.widget = fastplotlib.NDWidget(
-                ranges={"time": (0.0, self._clock[-1] + step, step)},
-                extents=extents,
-                cameras=[camera] * n_spatial + ["2d"] * len(panels),
-                controller_types=[controller] * n_spatial + ["panzoom"] * len(panels),
-                size=(1100 if panels or several else 800, 760),
-            )
+            with quiet_axes_setup():
+                self.widget = fastplotlib.NDWidget(
+                    ranges={"time": (0.0, self._clock[-1] + step, step)},
+                    extents=extents,
+                    cameras=[camera] * n_spatial + ["2d"] * len(panels),
+                    controller_types=[controller] * n_spatial
+                    + ["panzoom"] * len(panels),
+                    size=(1100 if panels or several else 800, 760),
+                )
             self.figure = self.widget.figure
             set_playback_fps(self.widget, steps_per_second)
             self._plots = [self.figure[name] for name in field_names]
