@@ -47,10 +47,8 @@ jobs:
         # nwb + jax extras let the NWB/JAX docstring examples execute headlessly.
         # napari-backed modules need a display and are exercised by the
         # dedicated napari job in test.yml, so they are ignored below.
-        # The executable widget example needs ipywidgets headlessly.
         run: |
           uv sync --locked --extra nwb --extra jax
-          uv pip install "ipywidgets>=8.0,<9.0"
 
       - name: Report test interpreter
         run: uv run python --version

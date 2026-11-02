@@ -467,6 +467,9 @@ dev = [
     "statsmodels>=0.14.0",  # GLM fitting in circular-basis doc snippet
     "psutil>=5.9",
     "jupytext>=1.16.0",  # paired example notebooks
+    "ipywidgets>=8.0,<9.0",  # notebook widget view and its docs example
+    "qtpy>=2.4",  # Qt imports in the animation tests
+    "imageio-ffmpeg>=0.5.1",  # ffmpeg that video export encodes with
 ]
 docs = [
     "mkdocs>=1.6.0",
