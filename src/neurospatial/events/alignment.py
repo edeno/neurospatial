@@ -29,6 +29,7 @@ from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
+    _cohort_fields,
     _event_times,
     _finite_times,
     _inner_bounds,
@@ -228,9 +229,17 @@ class _PeriEventCounts(NamedTuple):
     sem: NDArray[np.float64]
     mean_sem: NDArray[np.float64]
     event_indices: NDArray[np.intp]
-    n_dropped: int
+    n_events_dropped: int
     events_per_bin: NDArray[np.int64] | None
     event_ids: NDArray[np.int64] | None
+    window: tuple[float, float]
+    bin_size: float
+    align: str | None
+
+    @property
+    def n_events(self) -> int:
+        """Number of retained events."""
+        return self.event_indices.size
 
 
 def _peri_event_histograms(
@@ -259,13 +268,17 @@ def _peri_event_histograms(
         SEM across events of each event's mean over units.
     event_indices : NDArray[np.intp], shape (n_events,)
         Input positions of the retained events.
-    n_dropped : int
+    n_events_dropped : int
         Events whose windows leave ``epochs`` or ``spike_window``, or, for
         intervals, hold no whole bin.
     events_per_bin : NDArray[np.int64], shape (n_bins,), or None
         Retained rows covering each bin, for intervals; None for times.
     event_ids : NDArray[np.int64], shape (n_events,), or None
         ``interval_id`` of the retained rows, for intervals; None for times.
+    window, bin_size
+        As given.
+    align : str or None
+        ``align`` for intervals; None for times.
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
     event_times, interval_ids, limits = interval_events(
@@ -334,9 +347,12 @@ def _peri_event_histograms(
         sem=sem,
         mean_sem=mean_sem,
         event_indices=event_indices,
-        n_dropped=n_input_events - n_events,
+        n_events_dropped=n_input_events - n_events,
         events_per_bin=events_per_bin,
         event_ids=event_ids,
+        window=window,
+        bin_size=bin_size,
+        align=None if limits is None else align,
     )
 
 
@@ -515,16 +531,7 @@ or None
         align=align,
     )
     return PeriEventResult(
-        histogram=psth.histograms[0],
-        sem=psth.sem[0],
-        n_events=psth.event_indices.size,
-        window=window,
-        bin_size=bin_size,
-        n_events_dropped=psth.n_dropped,
-        event_indices=psth.event_indices,
-        events_per_bin=psth.events_per_bin,
-        align=None if psth.events_per_bin is None else align,
-        event_ids=psth.event_ids,
+        histogram=psth.histograms[0], sem=psth.sem[0], **_cohort_fields(psth)
     )
 
 
@@ -711,16 +718,9 @@ or None
         histograms=psth.histograms,
         sem=psth.sem,
         mean_sem=psth.mean_sem,
-        n_events=psth.event_indices.size,
-        window=window,
-        bin_size=bin_size,
         unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
-        n_events_dropped=psth.n_dropped,
-        event_indices=psth.event_indices,
-        events_per_bin=psth.events_per_bin,
-        align=None if psth.events_per_bin is None else align,
-        event_ids=psth.event_ids,
+        **_cohort_fields(psth),
     )
 
 

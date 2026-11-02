@@ -41,6 +41,8 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
+    from neurospatial.events.alignment import _PeriEventCounts
+
 
 def _validate_event_indices(
     event_indices: NDArray[np.intp] | None, n_events: int, n_events_dropped: int
@@ -608,6 +610,7 @@ class _PeriEventExports:
     bin_size: float
     n_events: int
     n_events_dropped: int
+    event_indices: NDArray[np.intp] | None
     events_per_bin: NDArray[np.int64] | None
     align: str | None
     event_ids: NDArray[np.int64] | None
@@ -665,6 +668,24 @@ class _PeriEventExports:
         )
         df.attrs = self._table_attrs()
         return df
+
+
+def _cohort_fields(source: _PeriEventExports | _PeriEventCounts) -> dict[str, Any]:
+    """The event-cohort fields a PSTH result forwards from ``source``.
+
+    ``source`` is a PSTH result, or the counts a PSTH call builds one from;
+    the caller adds the histograms, SEM and unit labels.
+    """
+    return {
+        "n_events": source.n_events,
+        "window": source.window,
+        "bin_size": source.bin_size,
+        "n_events_dropped": source.n_events_dropped,
+        "event_indices": source.event_indices,
+        "events_per_bin": source.events_per_bin,
+        "align": source.align,
+        "event_ids": source.event_ids,
+    }
 
 
 # --- Result Dataclasses ---
@@ -1124,15 +1145,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         return PeriEventResult(
             histogram=self.histograms[idx],
             sem=self.sem[idx],
-            n_events=self.n_events,
-            window=self.window,
-            bin_size=self.bin_size,
             unit_id=unit_id,
-            n_events_dropped=self.n_events_dropped,
-            event_indices=self.event_indices,
-            events_per_bin=self.events_per_bin,
-            align=self.align,
-            event_ids=self.event_ids,
+            **_cohort_fields(self),
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -1288,14 +1302,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         mean_result = PeriEventResult(
             histogram=self.mean_histogram,
             sem=self.mean_sem,
-            n_events=self.n_events,
-            window=self.window,
-            bin_size=self.bin_size,
-            n_events_dropped=self.n_events_dropped,
-            event_indices=self.event_indices,
-            events_per_bin=self.events_per_bin,
-            align=self.align,
-            event_ids=self.event_ids,
+            **_cohort_fields(self),
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 
