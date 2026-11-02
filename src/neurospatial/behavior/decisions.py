@@ -94,13 +94,15 @@ from neurospatial.behavior._kinematics import (
     validated_min_speed,
     validated_motion,
 )
-from neurospatial.behavior._position_bins import sample_bins, validated_position_bins
-from neurospatial.behavior._region_bins import region_representative_bin
+from neurospatial.behavior._position_bins import sample_bins
 from neurospatial.behavior.segmentation import _region_names
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from neurospatial.behavior._goals import Goal
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
 
@@ -1135,7 +1137,8 @@ _TIE_RTOL = 1e-9
 
 def geodesic_voronoi_labels(
     env: Environment[CartesianSystem],
-    goal_bins: list[int] | NDArray[np.int_],
+    *,
+    goals: Sequence[Any],
 ) -> NDArray[np.int_]:
     """Label each bin by its nearest goal using geodesic distance.
 
@@ -1143,26 +1146,37 @@ def geodesic_voronoi_labels(
     assigned to the goal with the shortest geodesic path. The geodesic distance
     is the length of the shortest path between two positions that stays inside
     the environment: it goes around walls and never leaves the environment, and
-    on a track it runs along the track's centerline. Bins and goals are
-    measured from their centers.
+    on a track it runs along the track's centerline. Bins are measured from
+    their centers, and each goal from its nearest bin center.
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
-    goal_bins : list[int] or NDArray[np.int_]
-        Bin indices of goal locations.
+    goals : sequence of str or array-like of shape (n_dims,)
+        The goals, each a region name or a point in environment coordinates,
+        as in :func:`~neurospatial.behavior.distance_to_goal`, for example
+        ``goals=["left_well", "right_well"]``. A polygon region is measured
+        to its nearest bin; a point region or a point to the point itself
+        (to the bin containing it for the per-bin labels).
 
     Returns
     -------
     NDArray[np.int_], shape (n_bins,)
-        Index of the nearest goal for each bin (indices into ``goal_bins``),
+        Index of the nearest goal for each bin (indices into ``goals``),
         or -1 where no goal is nearest: the bin is equidistant from its two
         nearest goals (it lies on the decision boundary, so the animal there
         is undecided), or no goal is reachable from it.
 
     Raises
     ------
+    ValueError
+        If ``goals`` is empty, a region covers no bin, or a goal point is
+        malformed or outside the environment.
+    TypeError
+        If ``goals`` is a single string instead of a sequence of goals.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
     CartesianOnlyError
         If ``env`` is an egocentric polar environment, whose bins are
         (distance, angle), not positions.
@@ -1175,7 +1189,7 @@ def geodesic_voronoi_labels(
     of the first goal keeps the labels independent of goal order and
     mirror-symmetric on a symmetric maze.
 
-    The shortest-path field of each goal bin is grown once and kept on the
+    The shortest-path field of each goal is grown once and kept on the
     environment, so later calls with the same goals are lookups.
 
     Examples
@@ -1187,21 +1201,12 @@ def geodesic_voronoi_labels(
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior import geodesic_voronoi_labels
     >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
-    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
-    >>> geodesic_voronoi_labels(env, goal_bins).tolist()
+    >>> geodesic_voronoi_labels(env, goals=[[0.0], [100.0]]).tolist()
     [0, 0, 0, 0, 0, -1, 1, 1, 1, 1, 1]
     """
-    from neurospatial.environment import _validate_target_bins
-
-    goal_bins_arr = _validate_target_bins(
-        goal_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation="geodesic_voronoi_labels()",
-        argument="goal_bins",
-    )
-    n_goals = len(goal_bins_arr)
-    distances = _goal_fields(env, goal_bins_arr, call="geodesic_voronoi_labels")
+    targets = _resolved_goals(env, goals, call="geodesic_voronoi_labels")
+    n_goals = len(targets)
+    distances = _goal_fields(env, targets, call="geodesic_voronoi_labels")
 
     labels_int: NDArray[np.int_] = np.argmin(distances, axis=0).astype(np.int_)
     sorted_distances = np.sort(distances, axis=0)
@@ -1218,10 +1223,37 @@ def geodesic_voronoi_labels(
     return labels_int
 
 
+def _resolved_goals(env: Environment, goals: Any, *, call: str) -> list[Goal]:
+    """Each goal of ``goals`` resolved on the geodesic engine."""
+    from neurospatial._exceptions import _format_error
+    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.behavior._goals import resolve_goal
+
+    if isinstance(goals, str):
+        msg = (
+            f"{call}(): goals must be a sequence of goals, for example "
+            f"goals=[{goals!r}, 'other_well']; got the single name {goals!r}."
+        )
+        raise TypeError(msg)
+    entries = list(goals)
+    if not entries:
+        raise ValueError(
+            _format_error(
+                f"{call}(): goals is empty.",
+                why="the decision boundary lies between goals.",
+                fix="pass the goals' region names, e.g. goals=['left', 'right'].",
+            )
+        )
+    paths = environment_paths(env, call=call)
+    return [resolve_goal(env, goal, paths=paths, call=call) for goal in entries]
+
+
 def _goal_fields(
-    env: Environment, goal_bins: NDArray[np.intp], *, call: str
+    env: Environment, goals: list[Goal], *, call: str
 ) -> NDArray[np.float64]:
-    """Geodesic distance from every bin center to each goal bin's center.
+    """Geodesic distance from every bin center to each goal's nearest bin center.
+
+    A goal point is measured at the bin containing it.
 
     Returns
     -------
@@ -1231,21 +1263,23 @@ def _goal_fields(
     from neurospatial.behavior._environment_paths import environment_paths
 
     paths = environment_paths(env, call=call)
-    goal_bins = np.asarray(goal_bins, dtype=np.intp)
-    paths.prepare(goal_bins)
-    if not goal_bins.size:
-        return np.full((0, env.n_bins), np.inf)
-    return np.vstack(
-        [paths.from_bins(goal_bins[i : i + 1]) for i in range(goal_bins.size)]
-    )
+    sources = [
+        goal.bins
+        if goal.bins is not None
+        else env.bin_at(np.asarray(goal.point)[None, :]).astype(np.intp)
+        for goal in goals
+    ]
+    return np.vstack([paths.from_bins(bins) for bins in sources])
 
 
 def distance_to_decision_boundary(
     env: Environment[CartesianSystem],
-    position_bins: NDArray[np.int_],
-    goal_bins: list[int] | NDArray[np.int_],
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    goals: Sequence[Any],
 ) -> NDArray[np.float64]:
-    """Geodesic distance from each trajectory bin to the decision boundary.
+    """Geodesic distance from each position to the decision boundary.
 
     The decision boundary is the set of points equidistant (geodesically)
     from the two nearest goals: the edge between their geodesic Voronoi
@@ -1255,138 +1289,135 @@ def distance_to_decision_boundary(
     ----------
     env : Environment
         Spatial environment.
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory, as from ``env.bin_at``; -1 marks a
-        sample outside every bin.
-    goal_bins : list[int] or NDArray[np.int_]
-        Bin indices of goal locations.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row or a position
+        outside the environment gives NaN.
+    goals : sequence of str or array-like of shape (n_dims,)
+        The goals, each a region name or a point in environment coordinates,
+        as in :func:`~neurospatial.behavior.distance_to_goal`, for example
+        ``goals=["left_well", "right_well"]``. A polygon region is measured
+        to its nearest bin; a point region or a point to the point itself
+        (to the bin containing it for the per-bin labels).
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Distance to the decision boundary in environment units:
         ``(d2 - d1) / 2``, where ``d1`` and ``d2`` are the geodesic distances
-        from the sample's bin to its nearest and second-nearest goal. 0 on
-        the boundary; small values = uncommitted. NaN for a sample outside
-        every bin; inf where the second-nearest goal is unreachable or with
-        fewer than two goals (there is no boundary).
+        from the position to its nearest and second-nearest goal. 0 on
+        the boundary; small values = uncommitted. NaN for a missing position
+        or one outside the environment; inf where the second-nearest goal is
+        unreachable or with fewer than two goals (there is no boundary).
 
     Raises
     ------
-    TypeError
-        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
     ValueError
-        If ``position_bins`` is not 1-D.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, env.n_bins)`` (and, in
-        ``position_bins``, is not ``-1``).
+        If ``times`` or ``positions`` are invalid, ``goals`` is empty, a
+        region covers no bin, or a goal point is malformed or outside the
+        environment.
+    TypeError
+        If ``goals`` is a single string instead of a sequence of goals.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
 
     Notes
     -----
-    Walking from the bin toward the second-nearest goal along the path
+    Walking from the position toward the second-nearest goal along the path
     between the two goals shortens ``d2`` and lengthens ``d1`` by the
     distance walked, so the two meet after ``(d2 - d1) / 2``. This is the
-    exact geodesic distance to the boundary for a bin on the path between
-    the goals (a linear track, the arms of a T-maze). Off that path, for
-    example in a dead-end side arm, it is a lower bound: each geodesic
+    exact geodesic distance to the boundary for a position on the path
+    between the goals (a linear track, the arms of a T-maze). Off that path,
+    for example in a dead-end side arm, it is a lower bound: each geodesic
     distance changes by at most the distance walked.
 
     The geodesic distance is the length of the shortest path between two
     positions that stays inside the environment: it goes around walls and never
     leaves the environment, and on a track it runs along the track's
-    centerline. Bins and goals are measured from their centers.
+    centerline. Distances are measured from the position itself, as in
+    :func:`~neurospatial.behavior.distance_to_goal`.
 
     Examples
     --------
-    A 100 cm linear track with a goal at each end. The bin at 30 cm is 30 cm
-    from one goal and 70 cm from the other, so the boundary at 50 cm is
-    20 cm away:
+    A 100 cm linear track with a goal at each end. The position at 30 cm is
+    30 cm from one goal and 70 cm from the other, so the boundary at 50 cm
+    is 20 cm away:
 
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior import distance_to_decision_boundary
     >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
-    >>> goal_bins = env.bin_at(np.array([[0.0], [100.0]]))
-    >>> position_bins = env.bin_at(np.array([[30.0], [50.0], [90.0]]))
-    >>> distance_to_decision_boundary(env, position_bins, goal_bins).tolist()
+    >>> positions = np.array([[30.0], [50.0], [90.0]])
+    >>> distance_to_decision_boundary(
+    ...     env, np.arange(3.0), positions, goals=[[0.0], [100.0]]
+    ... ).tolist()
     [20.0, 0.0, 40.0]
     """
-    from neurospatial.environment import _validate_target_bins
+    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.behavior.navigation import _validated_route_samples
 
-    position_bins = validated_position_bins(
-        position_bins, env, call="distance_to_decision_boundary"
+    call = "distance_to_decision_boundary"
+    targets = _resolved_goals(env, goals, call=call)
+    _, positions_arr, _ = _validated_route_samples(
+        env, times, positions, None, call=call
     )
-    goal_bins_arr = _validate_target_bins(
-        goal_bins,
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation="distance_to_decision_boundary()",
-        argument="goal_bins",
-    )
-    n_goals = len(goal_bins_arr)
-
-    if n_goals < 2:
+    located = env.bin_at(positions_arr) >= 0
+    boundary_distances = np.full(len(positions_arr), np.nan)
+    if len(targets) < 2:
         # With a single goal there is no boundary.
-        return np.full(len(position_bins), np.inf)
-
-    all_distances = _goal_fields(
-        env, goal_bins_arr, call="distance_to_decision_boundary"
-    )
-
-    # For each trajectory bin, the boundary lies halfway between the two
-    # nearest goals: (d2 - d1) / 2 after sorting the per-bin goal distances.
-    boundary_distances = np.full(len(position_bins), np.nan)
-
-    # Samples outside the environment (-1) are NaN; only located bins are
-    # indexed into the goal-distance table to avoid fancy-index wrap.
-    valid = position_bins >= 0
-    if not np.any(valid):
+        boundary_distances[located] = np.inf
         return boundary_distances
-
-    valid_bins = position_bins[valid]
-
-    # all_distances[:, valid_bins] -> (n_goals, n_valid); sort goals per sample.
-    sorted_dists = np.sort(all_distances[:, valid_bins], axis=0)
-    nearest = sorted_dists[0]
-    second = sorted_dists[1]
-
-    # When the nearest goal is unreachable (inf), the boundary distance is inf;
-    # otherwise it is half the gap to the second-nearest goal. Compute the gap
-    # only where the nearest goal is finite to avoid inf - inf = nan.
+    paths = environment_paths(env, call=call)
+    distances = np.vstack(
+        [goal.distances(env, paths, positions_arr[located]) for goal in targets]
+    )
+    # The boundary lies halfway between the two nearest goals: (d2 - d1) / 2
+    # after sorting each position's goal distances.
+    sorted_dists = np.sort(distances, axis=0)
+    nearest, second = sorted_dists[0], sorted_dists[1]
+    # When the nearest goal is unreachable (inf), the boundary distance is
+    # inf; compute the gap only where it is finite to avoid inf - inf = nan.
     finite_nearest = np.isfinite(nearest)
-    valid_boundary = np.full(valid_bins.shape, np.inf)
-    valid_boundary[finite_nearest] = (
+    located_boundary = np.full(nearest.shape, np.inf)
+    located_boundary[finite_nearest] = (
         second[finite_nearest] - nearest[finite_nearest]
     ) / 2
-    boundary_distances[valid] = valid_boundary
-
+    boundary_distances[located] = located_boundary
     return boundary_distances
 
 
 @reads_pynapple_samples
 def detect_boundary_crossings(
-    position_bins: NDArray[np.int_],
-    voronoi_labels: NDArray[np.int_],
-    times: NDArray[np.float64],
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
+    goals: Sequence[Any],
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Detect when trajectory crosses decision boundaries.
 
+    A crossing is a change of nearest goal, by the bins of
+    :func:`geodesic_voronoi_labels`.
+
     Parameters
     ----------
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory; -1 marks a missing or out-of-bounds
-        position.
-    voronoi_labels : NDArray[np.int_], shape (n_bins,)
-        Nearest-goal label for each bin (from
-        :func:`geodesic_voronoi_labels`); -1 for a bin with no nearest goal
-        (equidistant from two goals, or unreachable).
-    times : NDArray[np.float64], shape (n_samples,)
+    env : Environment
+        Spatial environment.
+    times : ArrayLike, shape (n_samples,)
         Timestamps in seconds; finite and strictly increasing (a repeated
         timestamp raises).
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row, or a position
+        outside the environment, is missing.
+    goals : sequence of str or array-like of shape (n_dims,)
+        The goals, each a region name or a point in environment coordinates,
+        as in :func:`geodesic_voronoi_labels`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1410,27 +1441,31 @@ def detect_boundary_crossings(
         Times when trajectory crossed a decision boundary: the midpoint of
         the last sample with one nearest goal and the first with the other.
     crossing_directions : NDArray[np.intp], shape (n_crossings, 2)
-        ``(from_goal_idx, to_goal_idx)`` for each crossing.
+        ``(from_goal_idx, to_goal_idx)`` for each crossing, indices into
+        ``goals``.
 
     Raises
     ------
     ValueError
-        If ``position_bins`` and ``times`` differ in length, if there are no
-        samples, if ``times`` is not finite and strictly increasing, or if
-        ``break_before`` is not a Boolean array with one entry per sample.
+        If ``times`` and ``positions`` differ in length, if there are no
+        samples, if ``times`` is not finite and strictly increasing, if
+        ``break_before`` is not a Boolean array with one entry per sample,
+        or ``goals`` is empty or holds a goal point outside the environment.
     TypeError
-        If ``position_bins`` is not integer bin indices.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, len(voronoi_labels))`` and is not
-        ``-1``.
+        If ``goals`` is a single string instead of a sequence of goals.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
 
     Notes
     -----
     Each time segment with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording; no
-    crossing spans a pause. A sample at bin -1 is missing and skipped as if
-    its row were deleted, so a crossing across a bridged gap is timed at the
-    midpoint of the located samples on either side.
+    crossing spans a pause. A missing sample (a NaN row, or a position outside
+    the environment) is skipped as if its row were deleted, so a crossing
+    across a bridged gap is timed at the midpoint of the located samples on
+    either side.
 
     A crossing is a change of nearest goal. A sample in a bin labeled -1
     has no nearest goal and is skipped too: walking through the bins on the
@@ -1440,54 +1475,54 @@ def detect_boundary_crossings(
 
     Examples
     --------
+    A 100 cm linear track with a goal at each end, crossed once at 8 Hz:
+
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.behavior import detect_boundary_crossings
-    >>> voronoi_labels = np.array([0, 1])  # bin 0 is nearer goal 0, bin 1 goal 1
-    >>> position_bins = np.array([0, 0, 1, 1])
+    >>> env = Environment.from_samples(np.arange(101.0)[:, None], bin_size=10.0)
+    >>> positions = np.array([[30.0], [40.0], [60.0], [70.0]])
     >>> times = np.arange(4) / 8  # s
     >>> crossing_times, directions = detect_boundary_crossings(
-    ...     position_bins, voronoi_labels, times
+    ...     env, times, positions, goals=[[0.0], [100.0]]
     ... )
     >>> crossing_times.tolist(), directions.tolist()
     ([0.1875], [[0, 1]])
 
-    Passing through an equidistant bin (label -1) is one crossing, timed
-    between the samples on either side of it:
-
-    >>> crossing_times, directions = detect_boundary_crossings(
-    ...     np.array([0, 2, 2, 1]), np.array([0, 1, -1]), np.arange(4) / 8
-    ... )
-    >>> crossing_times.tolist(), directions.tolist()
-    ([0.1875], [[0, 1]])
-
-    The first example's samples from two recordings joined on one clock,
-    where the second recording starts in bin 1, have no crossing:
+    The same samples from two recordings joined on one clock, where the
+    second recording starts at 60 cm, have no crossing:
 
     >>> new_recording = np.array([False, False, True, False])
     >>> crossing_times, directions = detect_boundary_crossings(
-    ...     position_bins, voronoi_labels, times, break_before=new_recording
+    ...     env,
+    ...     times,
+    ...     positions,
+    ...     goals=[[0.0], [100.0]],
+    ...     break_before=new_recording,
     ... )
     >>> crossing_times.size, directions.shape
     (0, (0, 2))
     """
-    position_bins = validated_position_bins(
-        position_bins,
-        call="detect_boundary_crossings",
-        times=times,
-        n_bins=np.shape(voronoi_labels)[0],
+    from neurospatial.behavior.navigation import _validated_route_samples
+
+    call = "detect_boundary_crossings"
+    labels = geodesic_voronoi_labels(env, goals=goals)
+    times_arr, positions_arr, _ = _validated_route_samples(
+        env, times, positions, None, call=call
     )
-    # A sample at bin -1 is missing.
-    times, _, supports = validated_signals(
-        times,
+    position_bins = np.asarray(env.bin_at(positions_arr), dtype=np.int64)
+    # A NaN row or a position outside the environment (bin -1) is missing.
+    times_arr, _, supports = validated_signals(
+        times_arr,
         position_bins,
         valid=position_bins >= 0,
-        call="detect_boundary_crossings",
+        call=call,
         max_gap=max_gap,
         epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
         result="no boundary crossing was observed",
     )
-    return _boundary_crossings(position_bins, voronoi_labels, times, supports[0])
+    return _boundary_crossings(position_bins, labels, times_arr, supports[0])
 
 
 def _boundary_crossings(
@@ -1763,17 +1798,12 @@ def compute_decision_analysis(
         ),
     )
 
-    # Compute boundary metrics. Each goal region is represented by its
-    # centroid bin (the region bin nearest the centroid of its bins).
-    goal_bins: list[int] = []
-    for r in goal_regions:
-        goal_bin = region_representative_bin(env, r)
-        assert goal_bin is not None  # _require_region_mask refused empty regions
-        goal_bins.append(goal_bin)
+    # Compute boundary metrics. Each goal region is measured to its nearest
+    # bin, as everywhere a region is a goal.
     position_bins = np.asarray(position_bins, dtype=np.int64)
     boundary = None
-    if len(goal_bins) >= 2:
-        voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
+    if len(goal_regions) >= 2:
+        voronoi_labels = geodesic_voronoi_labels(env, goals=goal_regions)
         crossing_times, crossing_directions = _boundary_crossings(
             position_bins,
             voronoi_labels,
@@ -1784,7 +1814,7 @@ def compute_decision_analysis(
         boundary = DecisionBoundaryMetrics(
             goal_labels=np.where(position_bins >= 0, voronoi_labels[position_bins], -1),
             distance_to_decision_boundary=distance_to_decision_boundary(
-                env, position_bins, goal_bins
+                env, times, positions, goals=goal_regions
             ),
             crossing_times=crossing_times,
             crossing_directions=crossing_directions,

@@ -1628,9 +1628,9 @@ def _detect_laps_search_contiguous(
 
 
 def trajectory_similarity(
-    position_bins1: NDArray[np.int64],
-    position_bins2: NDArray[np.int64],
     env: Environment,
+    positions_a: ArrayLike,
+    positions_b: ArrayLike,
     *,
     method: Literal["jaccard", "correlation", "hausdorff", "dtw"] = "jaccard",
     metric: DistanceMetric | None = None,
@@ -1643,14 +1643,15 @@ def trajectory_similarity(
 
     Parameters
     ----------
-    position_bins1 : NDArray[np.int64], shape (n_samples1,)
-        First trajectory as sequence of bin indices. ``-1`` marks a sample
-        outside the environment or missing; such samples are left out.
-    position_bins2 : NDArray[np.int64], shape (n_samples2,)
-        Second trajectory as sequence of bin indices, with the same ``-1``
-        convention.
     env : Environment
-        Spatial environment containing bin information.
+        The environment both trajectories were recorded in.
+    positions_a : ArrayLike, shape (n_samples_a, n_dims)
+        First trajectory, in time order, in the environment's coordinates.
+        A NaN row (a missing sample) or a position outside the environment
+        is left out.
+    positions_b : ArrayLike, shape (n_samples_b, n_dims)
+        Second trajectory, with the same conventions; it may have a
+        different number of samples.
     method : {'jaccard', 'correlation', 'hausdorff', 'dtw'}, optional
         Similarity metric to use:
         - 'jaccard': Area (or length, or volume) of the visited bins that
@@ -1767,13 +1768,12 @@ def trajectory_similarity(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior.segmentation import trajectory_similarity
-    >>> positions = np.random.uniform(0, 100, (200, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> traj1 = np.array([0, 1, 2, 3, 4], dtype=np.int64)
-    >>> traj2 = np.array([2, 3, 4, 5, 6], dtype=np.int64)
-    >>> similarity = trajectory_similarity(traj1, traj2, env, method="jaccard")
-    >>> print(f"Jaccard similarity: {similarity:.3f}")  # doctest: +SKIP
-    Jaccard similarity: 0.429
+    >>> x, y = np.meshgrid(np.arange(0.0, 100.0), np.arange(0.0, 100.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=10.0)
+    >>> run_a = np.c_[np.linspace(5, 45, 5), np.full(5, 5.0)]  # 5 bins
+    >>> run_b = np.c_[np.linspace(25, 65, 5), np.full(5, 5.0)]  # 3 shared
+    >>> trajectory_similarity(env, run_a, run_b, method="jaccard")  # 3 of 7 bins
+    0.42857142857142855
 
     Compare two runs along a linear track using correlation (sensitive to
     sequence order):
@@ -1784,17 +1784,21 @@ def trajectory_similarity(
     ...     track_width=10.0,
     ...     units="cm",
     ... )
-    >>> outbound = track.bin_at(np.c_[np.linspace(0, 99, 20), np.zeros(20)])
+    >>> outbound = np.c_[np.linspace(0, 99, 20), np.zeros(20)]
     >>> inbound = outbound[::-1]
-    >>> same = trajectory_similarity(outbound, outbound, track, method="correlation")
-    >>> reverse = trajectory_similarity(outbound, inbound, track, method="correlation")
+    >>> same = trajectory_similarity(track, outbound, outbound, method="correlation")
+    >>> reverse = trajectory_similarity(track, outbound, inbound, method="correlation")
     >>> print(f"same run: {same:.2f}, reverse run: {reverse:.2f}")
     same run: 1.00, reverse run: 0.00
     """
-    # Input validation
-    if len(position_bins1) == 0 or len(position_bins2) == 0:
-        msg = "Trajectories cannot be empty"
-        raise ValueError(msg)
+    call = "trajectory_similarity"
+    trajectories = [
+        _trajectory_positions(env, positions, name=name, call=call)
+        for positions, name in (
+            (positions_a, "positions_a"),
+            (positions_b, "positions_b"),
+        )
+    ]
 
     validate_choice(
         method,
@@ -1838,28 +1842,19 @@ def trajectory_similarity(
             fix="use method='jaccard' or method='correlation', which compare bins",
         )
 
-    from neurospatial.environment import _validate_target_bins
-
     validated = []
-    for bins, argument in (
-        (position_bins1, "position_bins1"),
-        (position_bins2, "position_bins2"),
+    for positions, argument in zip(
+        trajectories, ("positions_a", "positions_b"), strict=True
     ):
-        bins = _validate_target_bins(
-            bins,
-            n_bins=env.n_bins,
-            coordinates=env.coordinate_system,
-            operation="trajectory_similarity()",
-            argument=argument,
-            allow_missing=True,
-        )
+        bins = np.asarray(env.bin_at(positions), dtype=np.int64)
         if not (bins >= 0).any():
             raise ValueError(
                 _format_error(
-                    f"{argument} has no sample inside the environment.",
-                    why="Every bin is -1, so the trajectory has no place to compare.",
-                    fix="pass bins from env.bin_at(positions) for positions "
-                    "inside the environment",
+                    f"{call}(): {argument} has no sample inside the environment.",
+                    why="every position is missing or outside the environment, "
+                    "so the trajectory has no place to compare.",
+                    fix="check that the positions are in the environment's "
+                    "coordinates and units (env.contains(positions)).",
                 )
             )
         validated.append(bins)
@@ -1932,6 +1927,32 @@ def trajectory_similarity(
     if largest == 0:
         return 1.0  # Degenerate environment
     return float(1.0 - min(distance / largest, 1.0))
+
+
+def _trajectory_positions(
+    env: Environment, positions: ArrayLike, *, name: str, call: str
+) -> NDArray[np.float64]:
+    """``positions`` as a non-empty ``(n_samples, env.n_dims)`` float array.
+
+    NaN marks a missing sample; an infinite coordinate is refused.
+    """
+    from neurospatial._validation import validate_finite
+
+    array = validate_finite(
+        np.asarray(positions, dtype=np.float64), name=name, allow_nan=True
+    )
+    if array.ndim == 1 and env.n_dims == 1:
+        array = array[:, None]
+    if array.ndim != 2 or array.shape[1] != env.n_dims:
+        msg = (
+            f"{call}(): {name} has shape {array.shape}; give one row of "
+            f"{env.n_dims} coordinate(s) per sample."
+        )
+        raise ValueError(msg)
+    if array.shape[0] == 0:
+        msg = f"{call}(): {name} is empty; a trajectory needs samples."
+        raise ValueError(msg)
+    return array
 
 
 def _dtw_distance(cost: NDArray[np.float64]) -> float:

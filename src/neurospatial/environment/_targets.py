@@ -185,7 +185,7 @@ def _validate_target_bins(
     coordinates : CartesianSystem or EgocentricPolarSystem
         The environment's coordinate descriptor, for the fix.
     operation : str
-        The call named in errors, e.g. ``"cost_to_goal()"``.
+        The call named in errors, e.g. ``"goal_reward_field()"``.
     argument : str
         The parameter name, e.g. ``"goal_bins"``.
     allow_missing : bool, default=False
@@ -205,74 +205,6 @@ def _validate_target_bins(
         argument=argument,
         allow_missing=allow_missing,
     )
-
-
-def _validate_sample_targets(
-    bins: object,
-    *,
-    n_samples: int,
-    n_bins: int,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
-    operation: str,
-    argument: str,
-) -> tuple[NDArray[np.intp], bool]:
-    """Validate a target that is either per sample or one bin for every sample.
-
-    Only an array of shape ``(n_samples,)`` is per sample, and only there does
-    ``-1`` mark a sample with no target. Any other input, including the
-    shape-``(1,)`` result of ``env.bin_at([[x, y]])``, is one target and must be
-    a bin: ``-1`` (the outside marker) is refused.
-
-    Parameters
-    ----------
-    bins : object
-        An int, a one-element array, or an integer array of shape
-        ``(n_samples,)``.
-    n_samples : int
-        Number of samples the targets align with.
-    n_bins : int
-        Number of active bins.
-    coordinates : CartesianSystem or EgocentricPolarSystem
-        The environment's coordinate descriptor, for the fix.
-    operation : str
-        The call named in errors, e.g. ``"cost_to_goal()"``.
-    argument : str
-        The parameter name, e.g. ``"goal_bins"``.
-
-    Returns
-    -------
-    targets : ndarray of intp
-        Shape ``(n_samples,)`` when per sample, else shape ``(1,)``.
-    per_sample : bool
-        Whether the targets are per sample.
-
-    Raises
-    ------
-    ValueError
-        If an array has neither one element nor ``n_samples`` elements.
-    """
-    shape = np.asarray(bins).shape
-    per_sample = shape == (n_samples,)
-    if not per_sample and shape not in ((), (1,)):
-        raise ValueError(
-            _format_error(
-                f"{operation} got {argument}= with shape {shape}, but there are "
-                f"{n_samples} samples.",
-                why=f"Why: {argument}= is one bin for every sample, or one bin "
-                "per sample.",
-                fix=f"pass one bin index, or an array of shape ({n_samples},) "
-                "with -1 for samples that have no target",
-            )
-        )
-    targets = _validate_target_bins(
-        bins,
-        n_bins=n_bins,
-        coordinates=coordinates,
-        operation=operation,
-        argument=argument,
-        allow_missing=per_sample,
-    )
-    return targets, per_sample
 
 
 def locate_points(
