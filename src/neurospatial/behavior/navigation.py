@@ -605,6 +605,26 @@ def _harmonic_progress(
     return u
 
 
+def _samples_by_row(rows: NDArray[np.intp]) -> list[tuple[int, NDArray[np.intp]]]:
+    """Each row with samples, in row order, and its sample indices in time order.
+
+    Parameters
+    ----------
+    rows : ndarray of intp, shape (n_samples,)
+        Row of each sample, ``-1`` outside every row (:func:`_rows_and_targets`).
+
+    Returns
+    -------
+    list of (int, ndarray of intp)
+    """
+    inside = np.flatnonzero(rows >= 0)
+    if not inside.size:
+        return []
+    order = inside[np.argsort(rows[inside], kind="stable")]
+    unique, first = np.unique(rows[order], return_index=True)
+    return list(zip(unique.tolist(), np.split(order, first[1:]), strict=True))
+
+
 def _as_point(target: object) -> NDArray[np.float64] | None:
     """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
     if isinstance(target, str) or target is None:
@@ -1131,8 +1151,7 @@ def path_progress(
             )
         return target_bins[key]
 
-    for row in np.unique(rows[rows >= 0]):
-        samples = np.flatnonzero(rows == row)
+    for row, samples in _samples_by_row(rows):
         st, gl = starts[row], goals[row]
         if st is None or gl is None:
             unknown[samples] = True
@@ -1290,8 +1309,7 @@ def distance_to_goal(
     distances = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)
     goal_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
-    for row in np.unique(rows[rows >= 0]):
-        samples = np.flatnonzero(rows == row)
+    for row, samples in _samples_by_row(rows):
         target = goals[row]
         if target is None:
             unknown[samples] = True
