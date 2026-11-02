@@ -25,7 +25,6 @@ from neurospatial._intervals import (
     pynapple_end_to_stop,
     stop_to_pynapple_end,
 )
-from neurospatial._results import EMPTY_SELECTION
 from neurospatial._validation import timestamps_of
 
 if TYPE_CHECKING:
@@ -283,18 +282,21 @@ def _epochs_within_supports(
 
     A pynapple sample is defined only on its ``time_support`` (a ``Tsd``
     restricted to trials holds no samples between them), so time outside it
-    is not observed whatever ``epochs`` says. No overlap gives an empty
-    selection, which the analysis reports as excluding all data.
+    is not observed whatever ``epochs`` says. Epochs that miss every
+    support are returned unchanged: no sample lies inside them, so the
+    analysis reports them as it does epochs that miss plain samples (often
+    another clock), not as a deliberately empty selection.
     """
-    rows = as_intervals(epochs, name="epochs")
-    assert rows is not None  # epochs is not None here
+    given = as_intervals(epochs, name="epochs")
+    assert given is not None  # epochs is not None here
+    rows = given
     for support in supports.values():
         if rows.shape[0] == 0:
             break
         merged = as_intervals(support, name="time_support")
         assert merged is not None
         rows = intersect_intervals(rows, merged)
-    return rows if rows.shape[0] else EMPTY_SELECTION
+    return rows if rows.shape[0] else given
 
 
 def intervals_from_interval_set(intervals: Any) -> Any:
