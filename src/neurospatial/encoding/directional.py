@@ -95,7 +95,6 @@ from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
-    resolve_shuffle_settings,
 )
 from neurospatial.encoding._smoothing import kernel_ratio_rates
 from neurospatial.encoding._spatial_counts import (
@@ -1413,9 +1412,9 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         return float(_tuning_pvalues(**_tuning_inputs(self))[0])
 
     def is_head_direction_cell(
-        self, *, min_mvl: float | None = None, alpha: float | None = None
+        self, *, min_mvl: float = 0.4, alpha: float = 0.05
     ) -> bool:
-        """Screen for a head direction cell.
+        """Screen one neuron for head direction tuning by MVL and a tuning test.
 
         A neuron passes the screen if it meets both criteria:
 
@@ -1424,13 +1423,12 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         Parameters
         ----------
-        min_mvl : float or None, default=None
-            Minimum mean vector length. None resolves to
-            ``HEAD_DIRECTION_THRESHOLDS["min_mvl"]`` (0.4), a common screening
-            convention rather than a calibrated threshold; check it against
-            the MVL distribution of your own recordings and brain region.
-        alpha : float or None, default=None
-            Level for :meth:`tuning_pvalue`. None resolves to 0.05.
+        min_mvl : float, default=0.4
+            Minimum mean vector length, a common screening convention rather
+            than a calibrated threshold; check it against the MVL
+            distribution of your own recordings and brain region.
+        alpha : float, default=0.05
+            Level for :meth:`tuning_pvalue`.
 
         Returns
         -------
@@ -1473,16 +1471,14 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         This is a threshold screen, not a verdict. :meth:`tuning_pvalue`
         tests one preferred direction given heading occupancy, corrected for
         bursting and slow rate drift by the estimated spike-count dispersion.
-        For a verdict, call
-        head_direction_cell_significance(...) or
-        is_head_direction_cell(..., criterion="shuffle") with the raw arrays;
-        a result does not keep the arrays it was computed from.
+        For a verdict, call the free function is_head_direction_cell(...)
+        (a circular-shift test by default) or
+        head_direction_cell_significance(...) with the raw arrays; a result
+        does not keep the arrays it was computed from.
         """
-        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
-        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
         return bool(_head_direction_classify(self, min_mvl=min_mvl, alpha=alpha)[0])
 
-    def interpretation(self, min_mvl: float | None = None) -> str:
+    def interpretation(self, min_mvl: float = 0.4, alpha: float = 0.05) -> str:
         """Human-readable interpretation of head direction metrics.
 
         Summarizes the neuron's directional tuning and the screen result.
@@ -1492,10 +1488,12 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         Parameters
         ----------
-        min_mvl : float or None, default=None
+        min_mvl : float, default=0.4
             Minimum mean vector length threshold for HD cell classification.
-            Same parameter as in :meth:`is_head_direction_cell`; None resolves
-            to HEAD_DIRECTION_THRESHOLDS["min_mvl"] (0.4).
+            Same parameter as in :meth:`is_head_direction_cell`.
+        alpha : float, default=0.05
+            Level for :meth:`tuning_pvalue`, as in
+            :meth:`is_head_direction_cell`.
 
         Returns
         -------
@@ -1544,8 +1542,6 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         tuning_pvalue : Occupancy-corrected test of directional tuning
         """
         lines = []
-        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
-        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"]
 
         mvl = self.mean_vector_length()
         pval = self.tuning_pvalue()
@@ -2031,7 +2027,7 @@ class DirectionalRatesResult(
         return _tuning_pvalues(**_tuning_inputs(self))
 
     def classify(
-        self, *, min_mvl: float | None = None, alpha: float | None = None
+        self, *, min_mvl: float = 0.4, alpha: float = 0.05
     ) -> NDArray[np.bool_]:
         """Screen neurons for head direction cells.
 
@@ -2045,11 +2041,11 @@ class DirectionalRatesResult(
 
         Parameters
         ----------
-        min_mvl : float or None, default=None
-            Minimum mean vector length. None resolves to 0.4, a common
-            screening convention; check it against your own recordings.
-        alpha : float or None, default=None
-            Level for the tuning test. None resolves to 0.05.
+        min_mvl : float, default=0.4
+            Minimum mean vector length, a common screening convention; check
+            it against your own recordings.
+        alpha : float, default=0.05
+            Level for the tuning test.
 
         Returns
         -------
@@ -2094,10 +2090,7 @@ class DirectionalRatesResult(
         verdict, call
         head_direction_cell_significance(...) with the raw arrays; a result
         does not keep the arrays it was computed from.
-        None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
         """
-        min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
-        alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
         return _head_direction_classify(self, min_mvl=min_mvl, alpha=alpha)
 
     def summary_table(
@@ -3035,11 +3028,11 @@ def is_head_direction_cell(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    criterion: Literal["threshold", "shuffle"] = "threshold",
-    min_mvl: float | None = None,
-    alpha: float | None = None,
-    n_shuffles: int | None = None,
-    min_shift: float | None = None,
+    criterion: Literal["threshold", "shuffle"] = "shuffle",
+    min_mvl: float = 0.4,
+    alpha: float = 0.05,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
     bin_size: float | None = None,
@@ -3052,7 +3045,17 @@ def is_head_direction_cell(
     backend: BackendType = "numpy",
     warn_on_drop: bool = True,
 ) -> bool:
-    """Classify one neuron by the head_direction_cell screen or circular-shift test.
+    """Test whether one neuron is a head direction cell with a circular-shift shuffle (default).
+
+    By default (``criterion="shuffle"``) the neuron is a head direction cell
+    when its directional tuning is significant (``p_value < alpha``) against
+    ``n_shuffles=1000`` circularly shifted spike trains. The shuffle costs
+    about ``n_shuffles`` tuning-curve recomputes; pass ``rng`` (an integer
+    seed or a Generator) to make the verdict reproducible.
+    ``criterion="threshold"`` is the fast screen of
+    :meth:`DirectionalRateResult.is_head_direction_cell`: mean vector length
+    at least ``min_mvl`` and an occupancy-corrected tuning test below
+    ``alpha``.
 
     Parameters
     ----------
@@ -3126,17 +3129,18 @@ def is_head_direction_cell(
         - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
 
-    criterion : {"threshold", "shuffle"}, default="threshold"
-        Screen the observed statistic or test circular-shift significance.
-    min_mvl : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
-    alpha : float or None, default=None
+    criterion : {"shuffle", "threshold"}, default="shuffle"
+        Test circular-shift significance (a verdict), or screen the observed
+        statistics only (fast).
+    min_mvl : float, default=0.4
+        Inclusive mean-vector-length cutoff of ``criterion="threshold"``.
+    alpha : float, default=0.05
         P-value level for the occupancy-corrected tuning test (threshold
-        mode) and the shuffle test; None resolves to 0.05.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
+        mode) and the shuffle test.
+    n_shuffles : int, default=1000
+        Number of circular shifts in shuffle mode.
+    min_shift : float, default=20.0
+        Minimum shift in analyzed seconds, in shuffle mode.
     rng : numpy.random.Generator, int or None, default=None
         Shuffle random source; an integer seed with the same unit label is stable
         across single and population calls.
@@ -3185,7 +3189,8 @@ def is_head_direction_cell(
     Compare p_value < alpha; a significant association alone does not establish
     cell identity. Results keep no raw arrays or recompute closures.
     Threshold keywords belong only to the screen; shuffle keywords belong
-    only to the shuffle. Passing a keyword for the other mode raises.
+    only to the shuffle. Passing a keyword for the other mode with a value
+    other than its default raises.
 
     See Also
     --------
@@ -3196,13 +3201,17 @@ def is_head_direction_cell(
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.directional import is_head_direction_cell
-    >>> # Screen many neurons
-    >>> times = np.linspace(0, 60, 1800)
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
-    >>> spike_times = np.sort(np.random.uniform(0, 60, 100))
-    >>> result = is_head_direction_cell(spike_times, times, headings)
-    >>> type(result)
-    <class 'bool'>
+    >>> rng = np.random.default_rng(0)
+    >>> times = np.linspace(0, 120, 3600)  # 2 minutes, in seconds
+    >>> headings = rng.uniform(0, 2 * np.pi, 3600)
+    >>> spike_times = np.sort(rng.uniform(0, 120, 200))  # untuned unit
+    >>> is_head_direction_cell(spike_times, times, headings, rng=1)
+    False
+
+    The threshold screen is fast and runs no null test:
+
+    >>> is_head_direction_cell(spike_times, times, headings, criterion="threshold")
+    False
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_head_direction_cell")
     _refuse_wrong_kind(
@@ -3221,6 +3230,7 @@ def is_head_direction_cell(
             "rng": rng,
             "unit_id": unit_id,
         },
+        defaults={**_SHUFFLE_DEFAULTS, **HEAD_DIRECTION_THRESHOLDS},
         call="is_head_direction_cell",
     )
     breaks = validate_break_before(
@@ -3228,13 +3238,13 @@ def is_head_direction_cell(
     )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
-        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         shuffle_result = head_direction_cell_significance(
             [spike_times],
             times,
             headings,
             unit_ids=[label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
+            n_shuffles=n_shuffles,
+            min_shift=min_shift,
             rng=rng,
             bin_size=bin_size,
             bandwidth=bandwidth,
@@ -3246,9 +3256,7 @@ def is_head_direction_cell(
             backend=backend,
             warn_on_drop=warn_on_drop,
         )[label]
-        return shuffle_result.p_value < level
-    min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
-    alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+        return bool(shuffle_result.p_value < alpha)
     result = compute_directional_rate(
         spike_times,
         times,

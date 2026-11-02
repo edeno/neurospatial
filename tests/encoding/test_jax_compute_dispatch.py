@@ -707,7 +707,8 @@ class TestComputeEgocentricRateJaxBackend:
             "distance_bin_size": 20.0,
             "direction_bin_size": np.pi / 4,
             "method": method,
-            "bandwidth": 10.0,
+            # Binned polar maps are not smoothed and refuse a bandwidth.
+            **({} if method == "binned" else {"bandwidth": 10.0}),
         }
         if frame == "egocentric":
             data = (None, spike_times, times, positions, headings, object_positions)
@@ -799,7 +800,8 @@ class TestComputeEgocentricRatesJaxBackend:
             "distance_bin_size": 20.0,
             "direction_bin_size": np.pi / 4,
             "method": method,
-            "bandwidth": 10.0,
+            # Binned polar maps are not smoothed and refuse a bandwidth.
+            **({} if method == "binned" else {"bandwidth": 10.0}),
         }
         if frame == "egocentric":
             data = (

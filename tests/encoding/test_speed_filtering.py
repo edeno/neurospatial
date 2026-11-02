@@ -22,10 +22,10 @@ import pytest
 
 from neurospatial import Environment, InputError
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._velocity import resolve_speed
 from neurospatial.encoding._spatial_counts import (
     bin_spike_trains,
     compute_occupancy,
-    resolve_speed,
 )
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
 
@@ -594,3 +594,42 @@ def test_final_sample_is_outside_sampling_intervals(env_1d) -> None:
     # Mirror: occupancy's last interval is non-empty (kept).
     occ = compute_occupancy(env_1d, times, positions, speed=speed, min_speed=min_speed)
     assert occ.sum() > 0
+
+
+def test_occupancy_min_speed_matches_rate_occupancy() -> None:
+    """``env.occupancy`` and the rate maps derive the same speed for ``min_speed``.
+
+    The animal rests 2 s at each end of a 100 cm corridor and runs between
+    the ends at 20 cm/s, sampled at 50 Hz. Away from the ends the speed is
+    20 cm/s however it is smoothed, so a 5 cm/s gate keeps every interval
+    there; at rest it is 0, so the gate drops the rest time.
+    """
+    fs, rest, run = 50.0, 2.0, 5.0
+    x = np.concatenate(
+        [
+            np.zeros(int(rest * fs)),
+            np.linspace(0.0, 100.0, int(run * fs), endpoint=False),
+            np.full(int(rest * fs), 100.0),
+            np.linspace(100.0, 0.0, int(run * fs), endpoint=False),
+            np.zeros(int(rest * fs)),
+        ]
+    )
+    times = np.arange(x.size) / fs
+    positions = np.column_stack([x, np.full(x.size, 2.5)])
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    spike_times = np.sort(np.random.default_rng(1).uniform(0, times[-1], 300))
+
+    gated = env.occupancy(times, positions, min_speed=5.0)
+    rate = compute_spatial_rate(env, spike_times, times, positions, min_speed=5.0)
+    np.testing.assert_array_equal(gated, rate.occupancy)
+
+    # Independent expectation away from the ends: every interval's time, by
+    # the bin of its start sample.
+    starts = env.bin_at(positions[:-1])
+    every = np.bincount(starts, weights=np.diff(times), minlength=env.n_bins)
+    interior = (env.bin_centers[:, 0] > 15.0) & (env.bin_centers[:, 0] < 85.0)
+    assert interior.sum() >= 10
+    np.testing.assert_allclose(gated[interior], every[interior], rtol=1e-12)
+    # The 6 s of rest are gated out: what is left is about the 10 s of running.
+    assert every.sum() == pytest.approx(times[-1])
+    assert gated.sum() == pytest.approx(2 * run, abs=0.5)

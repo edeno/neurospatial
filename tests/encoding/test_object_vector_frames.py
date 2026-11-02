@@ -179,7 +179,8 @@ def test_free_predicates_match_methods(
     trains = noise_trains(120)[:2]
     kwargs = {
         "method": method,
-        "bandwidth": 5,
+        # Binned polar maps are not smoothed and refuse a bandwidth.
+        **({} if method == "binned" else {"bandwidth": 5}),
         "min_occupancy": 0.05,
         "epochs": [0, 100],
         "spike_window": [5, 105],

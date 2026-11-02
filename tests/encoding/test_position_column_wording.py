@@ -88,7 +88,6 @@ def test_object_vectors_without_env_need_planar_positions(trajectory, function):
             times,
             positions,
             np.array([[25.0, 25.0]]),
-            bandwidth=5.0,
             distance_range=(0.0, 50.0),
             distance_bin_size=5.0,
             **kwargs,

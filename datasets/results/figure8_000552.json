@@ -1,0 +1,372 @@
+{
+  "dataset": "figure8_000552",
+  "session": "e14_2m2_201019",
+  "source": "https://dandiarchive.org/dandiset/000552/0.230630.2304 sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201019_behavior+ecephys.nwb",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: processing/behavior/LinearizedPosition/LinearizedSpatialSeries (cm), reshaped to (n, 1)",
+    "geometry['positions_2d']: processing/behavior/SubjectPosition/SpatialSeries (cm)",
+    "events['ripples']: Ripples table rows inside the maze epoch; every row in events['all_ripples']",
+    "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 113, got 113"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 1, got 1"
+    },
+    {
+      "key": "position_min",
+      "passed": true,
+      "detail": "expected Range(low=0.0, high=222.0), got array([0.31166058])"
+    },
+    {
+      "key": "position_max",
+      "passed": true,
+      "detail": "expected Range(low=0.0, high=222.0), got array([221.95658872])"
+    },
+    {
+      "key": "ripples_present",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "sleep_states_present",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 112,
+        "n_dims": 1,
+        "max_extent": 222.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.013,
+      "peak_mb": 1.6
+    },
+    "env.occupancy": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: min_speed=4.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.1
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 113,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 4.669271156659111,
+        "median_mean_hz": 1.5498982045523098
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.366,
+      "peak_mb": 135.9
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.2157257274741144,
+        "bits_per_spike_max": 2.318817475116134,
+        "bits_per_spike_n_finite": 113
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.9
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.2157257274741144,
+        "median_shifted_bits_per_spike": 0.05052252920926409,
+        "frac_above_every_shift": 0.9380530973451328,
+        "n_units": 113,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 4
+        }
+      ],
+      "seconds": 1.806,
+      "peak_mb": 181.4
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 21,
+        "n_units": 113
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.004,
+      "peak_mb": 0.9
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "summary": {},
+      "note": "grid score needs 2-D positions",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "summary": {},
+      "note": "border score needs 2-D positions",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 8.0,
+        "chance_median_error": 46.52557214799276,
+        "units": "cm",
+        "n_time_bins": 3024
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) fell outside the decode time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) fell outside the decode time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.327,
+      "peak_mb": 135.8
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 112
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 3.59,
+      "peak_mb": 2.5
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 395,
+        "running_s": 496.42516666666324
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.026,
+      "peak_mb": 8.8
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.01,
+      "peak_mb": 4.3
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "ok",
+      "summary": {
+        "n_events": 71,
+        "davidson_2009_rate": 0.0,
+        "davidson_2009_ci": "0.000-0.051",
+        "grosmark_2016_rate": 0.028169014084507043,
+        "grosmark_2016_ci": "0.003-0.098"
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        }
+      ],
+      "seconds": 22.709,
+      "peak_mb": 225.2
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_units": 113,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 4.669271156659111,
+        "median_mean_hz": 1.5498982045523098
+      },
+      "hazard_summary": {
+        "n_units": 113,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 112,
+        "n_dims": 1,
+        "max_extent": 222.0
+      },
+      "hazard_summary": {
+        "n_bins": 3,
+        "n_dims": 1,
+        "max_extent": 4.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_units": 113,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 4.669271156659111,
+        "median_mean_hz": 1.5498982045523098
+      },
+      "hazard_summary": {
+        "n_units": 113,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 1.361320454401902,
+        "median_mean_hz": 1.3600329426782618
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 395,
+        "running_s": 496.42516666666324
+      },
+      "hazard_summary": {
+        "n_segments": 0,
+        "running_s": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

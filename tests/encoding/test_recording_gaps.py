@@ -45,6 +45,7 @@ def test_predicates_forward_time_windows(
     answer = f.predicate(
         *f.args(r, r.spike_times),
         **options,
+        criterion="threshold",
         epochs=[(0, 100)],
         spike_window=(0, 1200),
         max_gap=1.0,
@@ -73,6 +74,8 @@ def test_spatial_recovers_true_rate_across_pause(two_epoch_recording, plural):
         r.times,
         r.positions,
         method="binned",
+        # Smoothed, so a bin's rate does not hinge on a single regular spike.
+        bandwidth=5.0,
     )
     rates = np.asarray(result.firing_rates if plural else result.firing_rate)
     assert np.nansum(

@@ -91,7 +91,7 @@ class TestNavigationFunctionality:
         result = PathEfficiencyResult(
             traveled_length=45.2,
             shortest_length=32.1,
-            time_efficiency=None,
+            time_efficiency=np.nan,
             angular_efficiency=0.85,
             start_position=np.array([0.0, 0.0]),
             goal=np.array([30.0, 10.0]),

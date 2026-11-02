@@ -175,7 +175,9 @@ def test_default_smoothing_is_invariant_to_physical_units(method):
         result = compute_spatial_rate(
             env, spikes, times, positions * scale, method=method
         )
-        assert result.bandwidth == pytest.approx(5.0 * scale)
+        # Binned maps are unsmoothed by default; the kernels use 5 cm.
+        expected = 0.0 if method == "binned" else 5.0 * scale
+        assert result.bandwidth == pytest.approx(expected)
         assert result.spatial_information() > 1.0
         if reference is None:
             reference = result.firing_rate

@@ -996,21 +996,16 @@ def _simulate_session(
             env, duration=duration, **kwargs
         )
     else:
-        # Ensure return_metadata is False for consistent return signature
         # Extract n_laps separately to avoid duplicate keyword argument
         n_laps = kwargs.pop("n_laps", 10)
-        laps_kwargs = {k: v for k, v in kwargs.items() if k != "return_metadata"}
-        result = _simulate_trajectory_laps(
+        positions, times, _ = _simulate_trajectory_laps(
             env,
             n_laps=n_laps,
             duration=duration,
             rng=trajectory_seed,
-            return_metadata=False,
             call='simulate_session(trajectory_method="laps")',
-            **laps_kwargs,
+            **kwargs,
         )
-        # Type narrowing: return_metadata=False guarantees 2-tuple
-        positions, times = result  # type: ignore[misc]
 
     field_rng = np.random.default_rng(field_center_seed)
 

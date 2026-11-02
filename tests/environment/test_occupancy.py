@@ -203,16 +203,42 @@ class TestOccupancySpeedFiltering:
         # Filtered occupancy should have less total time
         assert occ_filtered.sum() < occ_all.sum()
 
-    def test_occupancy_speed_requires_speed_array(self, minimal_2d_grid_env):
-        """Test that min_speed without speed array raises error or is ignored."""
+    def test_occupancy_min_speed_derives_speed(self, minimal_2d_grid_env):
+        """min_speed without speed derives speed from positions, as rate maps do."""
         env = minimal_2d_grid_env
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]])
 
-        # Providing min_speed without speed should raise ValueError
-        with pytest.raises(ValueError, match=r".*speed.*"):
-            env.occupancy(times, positions, min_speed=2.0)
+        # A still animal has speed 0: the gate drops every interval.
+        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+            gated = env.occupancy(times, positions, min_speed=2.0)
+        assert gated.sum() == 0.0
+
+    def test_polar_occupancy_min_speed_needs_speed(self):
+        """A polar env cannot derive speed: (distance, angle) is not Cartesian."""
+        from neurospatial import CartesianOnlyError
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0, 50),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5,
+            angle_bin_size=np.pi / 6,
+            units="cm",
+        )
+        times = np.arange(2000) * 0.033
+        # Rotating at 2 rad/s across the ±π wrap at a nearly fixed distance.
+        positions = np.column_stack(
+            [25 + 10 * np.sin(times / 3), np.angle(np.exp(2j * times))]
+        )
+        with pytest.raises(CartesianOnlyError, match="pass speed=") as caught:
+            env.occupancy(times, positions, min_speed=5.0)
+        assert "Fix:" in str(caught.value)
+        # With the caller's own speed the gate applies: all fast, all kept.
+        kept = env.occupancy(
+            times, positions, speed=np.full(times.size, 10.0), min_speed=5.0
+        )
+        assert kept.sum() == pytest.approx(env.occupancy(times, positions).sum())
 
 
 class TestOccupancySmoothing:

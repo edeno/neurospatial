@@ -586,9 +586,8 @@ class TestHasPhasePrecession:
         phases = (np.pi - 5.0 * positions / 40 + stimulus.vonmises(0, 0.7, 25)) % (
             2 * np.pi
         )
-        p_value = compute_phase_precession(
-            positions, phases, n_shuffles=200, rng=0
-        ).p_value
+        # Both default to 1000 shuffles, so one seed gives one p-value.
+        p_value = compute_phase_precession(positions, phases, rng=0).p_value
         assert 0.0 < p_value < 1.0
         assert has_phase_precession(positions, phases, alpha=p_value, rng=0) is False
         assert (

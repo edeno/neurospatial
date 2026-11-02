@@ -196,7 +196,7 @@ class BiasSequenceMethod:
 
     name: str
     reference: str
-    n_shuffles: int = 100
+    n_shuffles: int = 1000
     alpha: float = 0.05
     alternative: Literal["greater", "less", "two-sided"] = "greater"
     use_absolute: bool = True
@@ -522,7 +522,7 @@ def bias_similarity_significance(
     interval: tuple[float, float] | NDArray[np.float64],
     template_bias: NDArray[np.float64],
     *,
-    n_shuffles: int = 100,
+    n_shuffles: int = 1000,
     alternative: Literal["greater", "less", "two-sided"] = "greater",
     use_absolute: bool = True,
     rng: np.random.Generator | int | None = None,
@@ -545,9 +545,10 @@ def bias_similarity_significance(
     template_bias : NDArray[np.float64], shape (n_units, n_units)
         The template's skew-bias matrix, such as :func:`mean_pairwise_bias`
         of the task's theta cycles.
-    n_shuffles : int, default=100
-        Label permutations (Liu et al. 2023: 100). A p-value is at least
-        ``1 / (n_shuffles + 1)``.
+    n_shuffles : int, default=1000
+        Label permutations. A p-value is at least ``1 / (n_shuffles + 1)``.
+        Liu et al. (2023) used 100; the ``LIU_2023_BIAS`` method reproduces
+        that.
     alternative : {"greater", "less", "two-sided"}, default="greater"
         Tail of the test, on ``|similarity|`` with ``use_absolute``.
     use_absolute : bool, default=True
@@ -579,8 +580,8 @@ def bias_similarity_significance(
     Notes
     -----
     The p-value is ``(k + 1) / (n + 1)`` with ``k`` the shuffles whose
-    ``|similarity|`` is at least the event's. With 100 shuffles, p < 0.05
-    allows at most 4 such shuffles, where "exceeded 5% of the shuffled
+    ``|similarity|`` is at least the event's. With Liu et al.'s 100
+    shuffles, p < 0.05 allows at most 4 such shuffles, where "exceeded 5% of the shuffled
     distribution" could allow 5. The cell set, and so the pairs compared,
     is the same in every shuffle.
 

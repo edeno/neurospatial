@@ -623,7 +623,7 @@ positions = np.array([[-1.0, 1.0], [7.0, 1.0]])
 spikes = [np.arange(0.5, 8.0, 1.0)]
 rates = compute_spatial_rates(
     env, spikes, times, positions,
-    method="binned", bandwidth=0, time_allocation="linear",
+    method="binned", time_allocation="linear",
     max_gap=None,  # This synthetic segment is known to be continuous.
 )
 np.testing.assert_allclose(rates.occupancy, [4.0])
@@ -931,7 +931,7 @@ env = Environment.from_grid_mask(
 def binned_rates(where):
     return compute_spatial_rates(
         where, spike_times, times, positions,
-        method="binned", bandwidth=0.0, unit_ids=[1, 2],
+        method="binned", unit_ids=[1, 2],
     )
 
 

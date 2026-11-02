@@ -39,7 +39,7 @@ class Recording:
 
 Invariants (checked by `validate_recording`, [designs.md#record-validation](designs.md#record-validation)):
 
-- `times` and `positions` are both set or both `None`; `positions.shape[0] == times.shape[0]`.
+- `times` is set exactly when `positions` or `headings` is (a head-direction recording can have headings without positions); `positions.shape[0] == times.shape[0]`.
 - `headings`, when set, has the same length as `times` and lies in `[-π, π]` (wrap with `neurospatial`'s convention, not modulo 2π in place).
 - Missing samples are NaN, never 0 or a sentinel. Replacing a sentinel (e.g. VR −500) with NaN is a conversion and gets a gap entry.
 - `spike_times[i]` is sorted and finite; `len(spike_times) == len(unit_ids)`.
@@ -128,8 +128,8 @@ datasets/
   GAPS.md                 # gap log (hand-written, tracked)
   _fetch.py               # download + verify + cache
   _record.py              # Recording + validate_recording + check_expectations
-  _warnings.py            # warning capture, generic hazards, hazard probes
-  warning_verdicts.json   # hand-written verdicts joined into results/warnings.md
+  _calibration.py            # warning capture, generic hazards, hazard probes
+  verdicts.json   # hand-written verdicts joined into results/warnings.md
   operations.py           # operation registry
   reference_checks.py     # cross-tool comparisons
   run.py                  # driver: datasets x operations -> results/

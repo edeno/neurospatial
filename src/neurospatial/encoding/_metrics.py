@@ -653,9 +653,8 @@ def _debiased_information(
 
 def _information_screen(
     result: Any,
-    min_info: float | None = None,
+    min_info: float,
     *,
-    default: float,
     bias: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """Inclusive information screen of every unit of ``result``.
@@ -668,10 +667,8 @@ def _information_screen(
     ----------
     result : rate result
         A spatial, view or object-vector rate result, single or population.
-    min_info : float or None, default=None
-        Cutoff in bits/spike; ``None`` uses ``default``.
-    default : float
-        The cell type's default cutoff.
+    min_info : float
+        Cutoff in bits/spike.
     bias : ndarray, shape (n_units,), optional
         :func:`_information_bias` of ``result`` when the caller already has
         it, so it is not recomputed.
@@ -681,8 +678,7 @@ def _information_screen(
     ndarray of bool, shape (n_units,)
         Whether each unit passes.
     """
-    cutoff = default if min_info is None else min_info
-    passed: NDArray[np.bool_] = _debiased_information(result, bias) >= cutoff
+    passed: NDArray[np.bool_] = _debiased_information(result, bias) >= min_info
     return passed
 
 

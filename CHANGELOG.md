@@ -95,6 +95,119 @@
   far beyond every time and window bound, or spikes of which none falls
   inside the windows or inside the tracked time (a clock offset).
 
+### Consistent defaults and one return type per function
+
+**Breaking**
+
+Cell-type predicates on raw arrays now give a verdict by default. The five
+free predicates `is_place_cell`, `is_head_direction_cell`,
+`is_object_vector_cell`, `is_egocentric_object_vector_cell` and
+`is_spatial_view_cell` default to `criterion="shuffle"`: 1000 circular shifts
+of the spike train (pass `rng=` to reproduce a verdict). The shuffle needs a
+recording longer than `2 * min_shift` (40 s by default).
+`criterion="threshold"` is still the fast screen. Result methods are screens
+only: `SpatialRateResult.is_place_cell()` no longer takes `criterion=`, and
+passing it raises `TypeError`.
+
+`method="binned"` is now the unsmoothed occupancy-normalized histogram, spike
+count divided by occupancy in each bin. It used to smooth with the kernel
+methods' 5 cm default bandwidth unless `bandwidth=0` was passed. Pass
+`bandwidth=` to smooth a binned map. This changes binned rate maps and the
+statistics computed from them: spatial information, bias, peaks and fields,
+and decoders and shuffle tests run with `method="binned"`. Spatial rate maps
+(`compute_spatial_rate(s)`, `has_place_field`, `is_place_cell`,
+`place_cell_significance`, `spatial_cell_type_significance`,
+`compute_directional_place_fields`, `decode_session(_summary)`,
+`BayesianDecoder`) and view rate maps (`compute_view_rate(s)`,
+`is_spatial_view_cell`, `spatial_view_cell_significance`) change. An
+unsmoothed map has as many independent bins as visited bins, so on short
+recordings a binned verdict can become undetermined: a unit with fewer spikes
+than that has an unknown information bias, so its place screen and verdict
+are False ("undetermined" in labels). Pass `bandwidth=` or record longer.
+Directional,
+tuning-curve, object-vector and boundary-vector binned maps were already
+unsmoothed. Object-vector and boundary-vector binned maps used to ignore an
+explicit `bandwidth` silently; a positive `bandwidth` with `method="binned"`
+now raises `ValueError` there. Use `method="diffusion_kde"` (or
+`"gaussian_kde"`) to smooth, or omit `bandwidth`. This applies to
+`compute_object_vector_rate(s)`, `compute_egocentric_rate(s)`,
+`compute_boundary_vector_rate(s)`, the object-vector significance tests and
+predicates.
+
+| Default | Old | New |
+| --- | --- | --- |
+| `criterion` of the five free `is_*_cell` predicates | `"threshold"` (`is_place_cell`: required) | `"shuffle"` |
+| `bandwidth` with `method="binned"` (spatial and view rate maps) | 5 cm in metric units, else 2.5 graph-edge lengths | 0, no smoothing |
+| `n_shuffles` of `has_phase_precession` | 200 | 1000 |
+| `n_shuffles` of `pairwise_order_significance` and `PairwiseOrderMethod` | 300 | 1000; the `GUPTA_2010` recipe keeps the paper's 300 |
+| `n_shuffles` of `bias_similarity_significance` and `BiasSequenceMethod` | 100 | 1000; the `LIU_2023_BIAS` recipe keeps the paper's 100 |
+
+The 1000-shuffle tests run in under 50 ms on their documented examples.
+
+These defaults keep their values but are now written in the signature instead
+of a `None` that resolved to them:
+
+| Parameter | Functions | Was `None` meaning |
+| --- | --- | --- |
+| `min_info` | the free and result-method place, view and object-vector screens, `classify()`, `count_place_cells` | 0.5 bits/spike (0.3 for object-vector cells) |
+| `alpha` | the free predicates, `DirectionalRateResult.is_head_direction_cell`, `DirectionalRatesResult.classify`, `CellTypeSignificanceResult.label_cell_types` and `.summary_table` | 0.05 |
+| `n_shuffles`, `min_shift` | the free predicates | 1000, 20.0 s |
+| `min_mvl` | `is_head_direction_cell`, `DirectionalRateResult.is_head_direction_cell` and `.interpretation`, `DirectionalRatesResult.classify` | 0.4 |
+| `min_spatial_info`, `min_grid_score`, `min_border_score` | `SpatialRatesResult.label_cell_types` | 0.5, 0.4, 0.5 |
+| `min_spatial_info` | `CellTypeSignificanceResult.label_cell_types` and `.summary_table` | 0.5 |
+| `min_occupancy` | `compute_spatial_rate(s)`, `has_place_field`, `is_place_cell`, `place_cell_significance`, `spatial_cell_type_significance`, `decode_session(_summary)`, `BayesianDecoder` | 0.0 s |
+
+`env.occupancy(times, positions, min_speed=...)` without `speed=` no longer
+raises. It derives speed from the positions as `compute_spatial_rate(s)` and
+`BayesianDecoder.fit` do: `compute_speed`, the magnitude of the 0.1 s
+Gaussian-smoothed velocity. The same helper serves all three, so the
+occupancy of `env.occupancy` and of a rate map with the same `min_speed`
+match bin for bin. On a polar environment `env.occupancy(min_speed=...)`
+still needs `speed=`, because speed cannot be derived from (distance, angle)
+rows; it raises `CartesianOnlyError`. `compute_tuning_curve(s)` still needs
+`speed=` with `min_speed`, because it has no positions to derive speed from.
+
+`min_occupancy` is now `0.0` seconds (no masking) on every encoder and
+decoder, and `min_occupancy=None` raises `ValueError` everywhere: pass
+`min_occupancy=0.0` for no masking. `method="glm"` fits every bin and accepts
+only `0.0`; a positive value with `"glm"` still raises.
+`DirectionalRateResult.interpretation` takes `alpha=` (default 0.05) next to
+`min_mvl=`. A shuffle predicate keyword left at its
+default no longer counts as passed for the other criterion. For example,
+`criterion="threshold", n_shuffles=1000` is accepted; a non-default value
+still raises.
+
+One return type per function:
+
+- `compute_path_efficiency` always returns a `PathEfficiencyResult`. With
+  `intervals`, each metric is an array with one value per interval,
+  `interval_ids` names them, and `result.summary_table()` gives the old
+  per-interval table. That table is indexed by `interval_id`, holds
+  `attrs["units"]`, and has a bool `fully_observed` column. Its `goal`
+  column is a string column, present only for region goals. Without a
+  `reference_speed`, `time_efficiency` is NaN instead of None. The result
+  gains `interval_ids` and `units` fields. `fully_observed` describes
+  tracking only, so an interval with an unknown goal still says whether its
+  tracking was complete. The segments of `subgoal_efficiency` are
+  `PathEfficiencyResult`s too: their `time_efficiency` is NaN instead of
+  None, and they carry `units`. Both results refuse `None` for a metric:
+  pass NaN for a value that was not measured.
+- `compute_goal_directed_metrics` always returns a `GoalDirectedMetrics`,
+  laid out like `PathEfficiencyResult`: with `intervals`, each metric is an
+  array per interval, with `interval_ids`. `result.summary_table()` gives
+  the old per-interval table, with `attrs["units"]` and a bool
+  `arrival_tested` column. `time_to_reach_goal` is now always a float: NaN
+  when the goal was never reached or arrival was not tested. The new
+  `arrival_tested` field is False for a point goal without `goal_radius`,
+  which used to be `time_to_reach_goal=None`.
+- `regions_containing_points` always returns the bool DataFrame; its
+  `return_dataframe=` flag is removed. For each position's region names, use
+  `[list(table.columns[row]) for row in table.to_numpy(dtype=bool)]`,
+  which also works with no regions.
+- `simulate_trajectory_laps` always returns `(positions, times, metadata)`;
+  its `return_metadata=` flag is removed. Unpack with
+  `positions, times, _ = simulate_trajectory_laps(...)`.
+
 ### One name per concept in every argument
 
 **Breaking**

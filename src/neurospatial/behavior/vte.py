@@ -625,11 +625,12 @@ def head_sweep_from_positions(
         sample: it has no heading of its own and is bridged like a deleted
         row when the observed samples on either side are within ``max_gap``.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed for valid heading (units/s); finite and non-negative.
-        Stationary periods are excluded.
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
+        in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
+        this function sees no environment, so it cannot know the positions' unit.
+        Minimum speed for valid heading (units/s); finite and non-negative. Stationary
+        periods are excluded.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -1051,9 +1052,10 @@ def compute_vte_trial(
     window_duration : float
         Duration of pre-decision window (seconds); finite and positive.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
+        in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
+        this function sees no environment, so it cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
@@ -1292,10 +1294,11 @@ def compute_vte_session(
         The window is clipped at the trial start; samples before
         ``trial.start_time`` are never used.
     min_speed : float or None, default=None
-        In position units per second. None is 5 cm/s expressed in
-        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
-        units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s); finite and non-negative.
+        Minimum speed for valid heading, in position units per second (finite and
+        non-negative); None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
+        ``50.0`` for millimeters), the speed below which Davidson, Kloosterman & Wilson
+        (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
+        as stopped. With units that are not a metric length, pass it explicitly.
     head_sweep_weight : float, default=0.5
         Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
         Default 0.5 weights both equally.

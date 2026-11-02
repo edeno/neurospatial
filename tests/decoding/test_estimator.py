@@ -239,7 +239,7 @@ def test_fit_epochs_matches_compute_spatial_rates(continuous_recording):
         r.positions,
         method="binned",
         bandwidth=None,
-        min_occupancy=None,
+        min_occupancy=0.0,
         max_gap=0.5,
         epochs=[(0, 100)],
     )
@@ -288,7 +288,7 @@ def test_epochs_restrict_encoding(sim) -> None:
         epochs=epoch,
         bandwidth=None,
         method="diffusion_kde",
-        min_occupancy=None,
+        min_occupancy=0.0,
     ).firing_rates
     assert_array_equal(fitted.encoding_models, models)
     held_out = (mid, float(times[-1]))
@@ -327,7 +327,7 @@ def test_epochs_keep_speed_aligned_to_original_samples(sim) -> None:
         min_speed=5.0,
         bandwidth=None,
         method="diffusion_kde",
-        min_occupancy=None,
+        min_occupancy=0.0,
     ).firing_rates
     assert fitted.is_fitted
     assert_array_equal(fitted.encoding_models, expected)

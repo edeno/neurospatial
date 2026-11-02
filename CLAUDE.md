@@ -62,8 +62,13 @@ NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.
   prior is uniform over space (mass proportional to `env.bin_sizes`), and the
   MAP bin and credible region rank bins by density, mass / bin size.
 - `min_occupancy` is seconds of occupancy per bin, not a density.
-- `has_place_field` detects a field, and result-method cell-type checks are
-  threshold screens. A shuffle verdict needs `criterion="shuffle"` on raw arrays.
+- `has_place_field` detects a field. The free `is_*_cell` predicates are
+  verdicts: they default to `criterion="shuffle"` (1000 circular shifts; pass
+  `rng=` to reproduce) and take `criterion="threshold"` for the fast screen.
+  Result methods (`is_*_cell()`, `classify()`, `label_cell_types()`) are
+  threshold screens and take no `criterion=`.
+- `method="binned"` is the unsmoothed occupancy-normalized histogram unless a
+  `bandwidth` is passed; the kernel methods default to a 5 cm bandwidth.
 
 ## Canonical argument order
 

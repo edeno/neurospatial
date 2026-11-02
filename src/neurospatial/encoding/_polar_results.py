@@ -210,22 +210,38 @@ def require_known_bandwidth(
     *,
     context: str,
 ) -> None:
-    """Refuse a default kernel bandwidth that has no physical length.
+    """Refuse a bandwidth the polar map cannot use or cannot convert.
 
-    The default is 5 cm converted to ``units``. A polar grid's graph edges
-    mix radial steps with arcs that grow with distance, so no length can be
-    inferred from them; without known units the caller must choose.
+    The default kernel bandwidth is 5 cm converted to ``units``. A polar
+    grid's graph edges mix radial steps with arcs that grow with distance, so
+    no length can be inferred from them; without known units the caller must
+    choose. Binned polar maps are never smoothed, so a positive ``bandwidth``
+    with ``method="binned"`` is refused rather than ignored.
 
     Raises
     ------
     ValueError
-        If a kernel method has no ``bandwidth`` and ``units`` is not a known
-        length unit.
+        If ``method="binned"`` gets a positive ``bandwidth``, or a kernel
+        method has no ``bandwidth`` and ``units`` is not a known length unit.
     """
-    from neurospatial._exceptions import _format_error
+    from neurospatial._exceptions import InputError, _format_error
     from neurospatial._units import units_per_centimeter
 
-    if method == "binned" or bandwidth is not None:
+    if method == "binned":
+        if bandwidth is not None and bandwidth > 0:
+            raise InputError(
+                _format_error(
+                    f"{context}: method='binned' got bandwidth={bandwidth!r}, "
+                    "but binned polar maps are not smoothed.",
+                    why="Why: the binned map is spike count / occupancy in each "
+                    "distance-direction bin, so the bandwidth would be silently "
+                    "ignored",
+                    fix="use method='diffusion_kde' (or 'gaussian_kde') for "
+                    "smoothing, or omit bandwidth",
+                )
+            )
+        return
+    if bandwidth is not None:
         return
     if units_per_centimeter(units) is None:
         raise ValueError(

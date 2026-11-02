@@ -562,7 +562,7 @@ def test_directionality_index_separates_bidirectional_and_one_way_cells():
         np.linspace(0, 200, 401)[:, None], bin_size=2.0
     ).with_metadata(units="cm")
     for seed in range(3):
-        positions, times = simulate_trajectory_laps(
+        positions, times, _ = simulate_trajectory_laps(
             env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
         )
         x = positions[:, 0]

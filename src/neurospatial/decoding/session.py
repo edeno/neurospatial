@@ -178,7 +178,7 @@ def decode_session(
     dt: float = 0.025,
     bandwidth: float | None = None,
     method: str = "diffusion_kde",
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
@@ -229,19 +229,19 @@ def decode_session(
         Decoding time-bin width in seconds.  Default is 0.025 (25 ms).
     bandwidth : float or None, optional
         Smoothing bandwidth (same units as positions) for the ratio-method
-        encoding step. ``None`` (default) resolves to the encoder's default
-        (5 cm in declared metric units, otherwise 2.5 median bin spacings); a ratio-only param, so it must stay ``None`` when
-        ``method="glm"``.
+        encoding step; ``None`` (default) is 0 (no smoothing) for
+        ``method="binned"``, and 5 cm in declared metric units, otherwise 2.5
+        median bin spacings, for the kernel methods. A ratio-only param, so
+        it must stay ``None`` when ``method="glm"``.
     method : str, optional
         Estimator passed to :func:`~neurospatial.encoding.compute_spatial_rates`.
         Options: ``"diffusion_kde"`` (default), ``"gaussian_kde"``, ``"binned"``,
         and ``"glm"`` (penalized-Poisson GAM, tuned with ``penalty`` / ``rank``).
-    min_occupancy : float or None, optional
+    min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a spatial bin to be included in the
-        ratio-method encoding model. Unoccupied bins and bins below this
-        threshold have zero posterior probability. ``None``
-        (default) resolves to the encoder's default (0.0, no threshold); a
-        ratio-only param, so it must stay ``None`` when ``method="glm"``.
+        encoding model. Unoccupied bins and bins below this threshold have
+        zero posterior probability; ``0.0`` excludes only unoccupied bins.
+        ``method="glm"`` fits every bin and accepts only ``0.0``.
     penalty : float or None, optional
         ``method="glm"`` smoothness penalty ``lambda``. ``None`` (default)
         chooses it by REML. Mutually exclusive with the ratio params
@@ -695,7 +695,7 @@ def _fit_encoding_model(
     *,
     bandwidth: float | None,
     method: str,
-    min_occupancy: float | None,
+    min_occupancy: float,
     penalty: float | None = None,
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
@@ -782,7 +782,7 @@ def _fit_encoding_model(
     # Training requires observed spatial support, independent of whether a
     # prediction bin of any particular width fits in the training intervals.
     occupancy = np.asarray(rates_result.occupancy)
-    if not np.any((occupancy > 0) & (occupancy >= (min_occupancy or 0.0))):
+    if not np.any((occupancy > 0) & (occupancy >= min_occupancy)):
         raise ValueError(
             _format_error(
                 f"{context}: the encoding model has no occupied bin, so every "
@@ -874,7 +874,7 @@ def decode_session_summary(
     dt: float = 0.025,
     bandwidth: float | None = None,
     method: str = "diffusion_kde",
-    min_occupancy: float | None = None,
+    min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,

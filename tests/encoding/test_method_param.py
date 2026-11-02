@@ -338,3 +338,181 @@ def test_invalid_method_message_lists_options_in_declared_order():
         "compute_view_rates() got method='invalid'; method must be one of "
         "'diffusion_kde', 'gaussian_kde', 'binned'."
     )
+
+
+@pytest.fixture(scope="module")
+def binned_recording():
+    """A 5-minute random walk in a 100 cm box, 10 cm bins, and 900 spikes."""
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0.0, 300.0, 1 / 30)
+    positions = np.cumsum(rng.normal(0.0, 1.0, (times.size, 2)), axis=0) % 100.0
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
+    spike_times = np.sort(np.random.default_rng(1).uniform(0.0, 300.0, 900))
+    return env, spike_times, times, positions
+
+
+def _histogram_rate(env, spike_times, times, positions):
+    """Spike count / occupancy per bin, NaN where unvisited, from first principles.
+
+    Each interval between samples k and k + 1 counts toward the bin of sample
+    k, as do the spikes inside it.
+    """
+    bins = env.bin_at(positions)
+    occupancy = np.bincount(bins[:-1], weights=np.diff(times), minlength=env.n_bins)
+    interval = np.searchsorted(times, spike_times, side="right") - 1
+    inside = (interval >= 0) & (interval < times.size - 1)
+    counts = np.bincount(bins[interval[inside]], minlength=env.n_bins)
+    visited = occupancy > 0
+    return np.where(visited, counts / np.where(visited, occupancy, 1.0), np.nan)
+
+
+@pytest.mark.filterwarnings("error::UserWarning")
+def test_binned_defaults_to_no_smoothing(binned_recording):
+    env, spike_times, times, positions = binned_recording
+    expected = _histogram_rate(env, spike_times, times, positions)
+    assert np.isfinite(expected).sum() > 0.9 * env.n_bins
+    single = compute_spatial_rate(
+        env, spike_times, times, positions, method="binned", max_gap=None
+    )
+    plural = compute_spatial_rates(
+        env, [spike_times], times, positions, method="binned", max_gap=None
+    )
+    for rate in (single.firing_rate, plural.firing_rates[0]):
+        np.testing.assert_array_equal(np.isnan(rate), np.isnan(expected))
+        np.testing.assert_allclose(rate, expected, rtol=1e-12, equal_nan=True)
+    assert single.bandwidth == 0.0
+    assert single.analysis_settings["bandwidth"] == 0.0
+    # An explicit bandwidth still smooths a binned map.
+    smoothed = compute_spatial_rate(
+        env,
+        spike_times,
+        times,
+        positions,
+        method="binned",
+        bandwidth=5.0,
+        max_gap=None,
+    )
+    assert smoothed.bandwidth == 5.0
+    finite = np.isfinite(expected)
+    assert np.max(np.abs(smoothed.firing_rate[finite] - expected[finite])) > 0.5
+    assert np.nanstd(smoothed.firing_rate) < np.nanstd(expected)
+
+
+@pytest.mark.filterwarnings("error::UserWarning")
+def test_binned_view_defaults_to_no_smoothing(ovc_session):
+    env, spike_times, times, positions, headings, _ = ovc_session
+    kwargs = {"method": "binned", "boundary_source": "analysis"}
+    default = compute_view_rate(env, spike_times, times, positions, headings, **kwargs)
+    unsmoothed = compute_view_rate(
+        env, spike_times, times, positions, headings, bandwidth=0.0, **kwargs
+    )
+    np.testing.assert_array_equal(default.firing_rate, unsmoothed.firing_rate)
+    smoothed = compute_view_rate(
+        env, spike_times, times, positions, headings, bandwidth=5.0, **kwargs
+    )
+    assert not np.allclose(smoothed.firing_rate, default.firing_rate, equal_nan=True)
+
+
+def _polar_calls(session):
+    """Every object-vector and boundary-vector entry point, given ``bandwidth``."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+    from neurospatial.encoding import (
+        compute_boundary_vector_rate,
+        compute_boundary_vector_rates,
+        compute_object_vector_rate,
+        compute_object_vector_rates,
+        is_egocentric_object_vector_cell,
+        object_vector_cell_significance,
+    )
+
+    _env, st, t, pos, hd, obj = session
+    grid = {"distance_range": (0.0, 50.0), "distance_bin_size": 5.0}
+    arena = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+    walk = np.random.default_rng(0).uniform(5.0, 95.0, (t.size, 2))
+    return {
+        "compute_egocentric_rate": lambda **k: compute_egocentric_rate(
+            None, st, t, pos, hd, obj, **grid, **k
+        ),
+        "compute_egocentric_rates": lambda **k: compute_egocentric_rates(
+            None, [st], t, pos, hd, obj, **grid, **k
+        ),
+        "compute_object_vector_rate": lambda **k: compute_object_vector_rate(
+            None, st, t, pos, obj, **grid, **k
+        ),
+        "compute_object_vector_rates": lambda **k: compute_object_vector_rates(
+            None, [st], t, pos, obj, **grid, **k
+        ),
+        "object_vector_cell_significance": lambda **k: (
+            object_vector_cell_significance(
+                None, [st], t, pos, obj, n_shuffles=2, min_shift=1.0, rng=0, **grid, **k
+            )
+        ),
+        "is_egocentric_object_vector_cell": lambda **k: (
+            is_egocentric_object_vector_cell(
+                None, st, t, pos, hd, obj, criterion="threshold", **grid, **k
+            )
+        ),
+        "compute_boundary_vector_rate": lambda **k: compute_boundary_vector_rate(
+            arena, st, t, walk, direction_frame="allocentric", **k
+        ),
+        "compute_boundary_vector_rates": lambda **k: compute_boundary_vector_rates(
+            arena, [st], t, walk, direction_frame="allocentric", **k
+        ),
+    }
+
+
+def test_binned_polar_maps_refuse_bandwidth(ovc_session):
+    """A binned polar map is never smoothed, so a bandwidth is refused, not ignored."""
+    for name, call in _polar_calls(ovc_session).items():
+        with pytest.raises(
+            ValueError, match=r"method='binned' got bandwidth=5\.0"
+        ) as e:
+            call(method="binned", bandwidth=5.0)
+        message = str(e.value)
+        assert "Why:" in message, name
+        assert "Fix: use method='diffusion_kde'" in message, name
+        assert "omit bandwidth" in message, name
+        # No bandwidth and an explicit zero are the same unsmoothed map.
+        call(method="binned")
+        call(method="binned", bandwidth=0.0)
+
+
+def test_min_occupancy_none_is_refused(ovc_session):
+    """No encoder or decoder takes ``min_occupancy=None``; 0.0 is no masking."""
+    from neurospatial.decoding import BayesianDecoder, decode_session
+    from neurospatial.encoding import compute_object_vector_rate
+
+    env, st, t, pos, hd, obj = ovc_session
+    calls = {
+        "compute_spatial_rate": lambda: compute_spatial_rate(
+            env, st, t, pos, min_occupancy=None
+        ),
+        "compute_view_rate": lambda: compute_view_rate(
+            env, st, t, pos, hd, boundary_source="analysis", min_occupancy=None
+        ),
+        "compute_object_vector_rate": lambda: compute_object_vector_rate(
+            None,
+            st,
+            t,
+            pos,
+            obj,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
+            min_occupancy=None,
+        ),
+        "BayesianDecoder": lambda: BayesianDecoder(env, dt=0.25, min_occupancy=None),
+        "decode_session": lambda: decode_session(
+            env, [st], t, pos, dt=0.25, min_occupancy=None
+        ),
+        "decode_session(glm)": lambda: decode_session(
+            env, [st], t, pos, dt=0.25, method="glm", min_occupancy=None
+        ),
+    }
+    for name, call in calls.items():
+        with pytest.raises(ValueError, match="min_occupancy=None") as caught:
+            call()
+        assert "Fix: pass min_occupancy=0.0 for no masking" in str(caught.value), name

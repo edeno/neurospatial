@@ -96,7 +96,7 @@ def test_trajectory_and_spike_simulators_match_between_int_and_generator():
         "ou": lambda rng: simulate_trajectory_ou(
             env, duration=5.0, speed_units="cm", rng=rng
         ),
-        "laps": lambda rng: simulate_trajectory_laps(env, n_laps=1, rng=rng),
+        "laps": lambda rng: simulate_trajectory_laps(env, n_laps=1, rng=rng)[:2],
         "poisson": lambda rng: (generate_poisson_spikes(rate, times, rng=rng),),
         "session": lambda rng: _content(
             simulate_session(
