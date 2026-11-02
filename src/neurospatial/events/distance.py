@@ -363,7 +363,8 @@ or None
     ------
     ValueError
         If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
-        or not finite, ``event_times`` is an ``Intervals``, or no
+        or not finite, ``event_times`` is an ``Intervals``, ``epochs`` and
+        ``spike_window`` do not overlap, or no
         event falls on tracked time inside windows with duration.
 
     Warns
@@ -459,6 +460,18 @@ or None
         analyzed = recorded
     elif recorded is not None:
         analyzed = intersect_intervals(analyzed, recorded)
+        if analyzed.shape[0] == 0:
+            raise ValueError(
+                _format_error(
+                    "peri_event_distance_histogram: epochs and spike_window do "
+                    f"not overlap, so none of the {events.size} events can be "
+                    "measured.",
+                    why="distance and spikes are counted only inside both "
+                    "(epochs ∩ spike_window).",
+                    fix="check that epochs and spike_window are on the same "
+                    "clock as `times`, in seconds, or pass only one of them.",
+                )
+            )
     path = compute_cumulative_distance(
         times,
         positions,

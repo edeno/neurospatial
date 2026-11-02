@@ -114,6 +114,25 @@ by its trial.
   axis setup, and playback no longer warns of a slowdown when every frame
   fits exactly in `max_playback_fps`.
 
+### Every rate result records which trials it used
+
+**Changed**
+
+- Spatial, directional, view, object-vector, egocentric and
+  boundary-vector rate results record `analysis_settings["epoch_interval_ids"]`
+  when `epochs` is an `Intervals` (None otherwise), as tuning curves already
+  did. One resolver handles `epochs`, `spike_window` and pynapple time
+  supports for every analysis.
+- With pynapple `positions`, `headings` or tuning `values`,
+  `epoch_interval_ids` lists only the trials that overlap the sample's
+  `time_support`; a trial entirely inside a gap of the support is no longer
+  listed.
+- A result's empty `spike_window` (from an `Intervals` with no windows)
+  passed back as `epochs=` or `spike_window=` to another analysis is refused
+  like any empty array; pass the `Intervals` instead.
+- `peri_event_distance_histogram` says that `epochs` and `spike_window` do
+  not overlap, instead of "epochs has no rows".
+
 ### Trials keep their record type; pynapple IntervalSet as trials
 
 **Changed**
