@@ -361,6 +361,25 @@ def test_field_named_id_is_refused(empty_nwb):
     assert empty_nwb.trials is None
 
 
+@pytest.mark.parametrize("writer", ["write_trials", "write_laps"])
+def test_missing_numbers_mixed_with_none_name_the_real_cause(empty_nwb, writer):
+    """None among numbers is the problem, not the numbers; the writer is named."""
+    from neurospatial.io import nwb
+
+    intervals = Intervals.from_arrays(
+        [0.0, 2.0, 4.0], [1.0, 3.0, 5.0], goal_well=[1, None, 2]
+    )
+    with pytest.raises(TypeError, match=rf"^{writer}: field 'goal_well'") as exc:
+        getattr(nwb, writer)(empty_nwb, intervals)
+    message = str(exc.value)
+    assert "None" in message
+    assert "NaN" in message
+    # A text field with a stray number names the number's type.
+    mixed = Intervals.from_arrays([0.0], [1.0], label=[("a", 1)])
+    with pytest.raises(TypeError, match=rf"^{writer}: field 'label' holds a tuple"):
+        getattr(nwb, writer)(empty_nwb, mixed)
+
+
 def test_detected_and_reloaded_trials_give_the_same_progress(empty_nwb):
     """Route functions read fields, so NWB-reloaded trials behave identically."""
     from neurospatial.behavior import distance_to_goal, path_progress

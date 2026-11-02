@@ -7,6 +7,7 @@ EventsTables; intervals (trials, laps) in NWB TimeIntervals tables.
 
 from __future__ import annotations
 
+import numbers
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import repeat
@@ -647,7 +648,7 @@ def _interval_columns(
         **{
             name: (
                 descriptions.get(name, f"Field {name!r} of each {what}"),
-                _field_column(intervals._field_array(name), name),
+                _field_column(intervals._field_array(name), name, call=call),
             )
             for name in intervals.fields
         },
@@ -1148,18 +1149,37 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     return read_intervals(nwbfile, interval_name=PREDEFINED_TRIALS)
 
 
-def _field_column(values: NDArray[Any], name: str) -> NDArray[np.generic]:
-    """One field as an NWB column: numbers as they are, text with ``""`` for None."""
+def _field_column(values: NDArray[Any], name: str, *, call: str) -> NDArray[np.generic]:
+    """One field as an NWB column: numbers as they are, text with ``""`` for None.
+
+    ``call`` is the public writer, named in the refusal.
+    """
     if values.dtype.kind in "biuf":
         return values
     if all(value is None or isinstance(value, str) for value in values):
         return np.array(["" if value is None else value for value in values], dtype=str)
+    if any(value is None for value in values) and all(
+        value is None or isinstance(value, (numbers.Number, np.bool_))
+        for value in values
+    ):
+        # The numbers are storable; the None among them is not.
+        raise TypeError(
+            _format_error(
+                f"{call}: field {name!r} mixes None with numbers, which an NWB "
+                "column cannot store.",
+                why="an NWB column holds one type (numbers, Booleans or text), "
+                "and None is not a number.",
+                fix=f"mark a missing number as NaN (a float column, for example "
+                f"with_fields({name}=[np.nan if v is None else v for v in "
+                f"intervals.{name}])), store {name} as text, or leave it out.",
+            )
+        )
     bad = next(v for v in values if not (v is None or isinstance(v, str)))
     raise TypeError(
         _format_error(
-            f"write_trials: field {name!r} holds a {type(bad).__name__} "
+            f"{call}: field {name!r} holds a {type(bad).__name__} "
             f"({bad!r}), which an NWB column cannot store.",
-            why="NWB trials columns hold numbers, Booleans or text.",
+            why="NWB interval columns hold numbers, Booleans or text.",
             fix=f"convert {name} to text or numbers before writing, or leave it out.",
         )
     )
