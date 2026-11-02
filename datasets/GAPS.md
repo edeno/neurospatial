@@ -279,14 +279,17 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-017: Missing positions stored as 0 silently change movement segments and turns
 
-- Datasets: rosenberg_labyrinth (hazard probe `missing_positions_as_zero`)
+- Datasets: rosenberg_labyrinth, yartsev_bat_demo (hazard probe `missing_positions_as_zero`)
 - Operation / step: behavior.segment_by_velocity, behavior.turn_sequence
 - Kind: silent-hazard
 - Evidence: 4.9 % of the labyrinth's frames have no nose keypoint (NaN). With
   them set to (0, 0), a corner of the maze, velocity segmentation finds 2936
   movement segments instead of 2637 and the turn sequence 4604 turns instead
   of 4415, with no warning. On 000582 the same hazard touches one sample and
-  is undetectable; here the zeros are 12,400 samples at exactly (0, 0).
+  is undetectable; here the zeros are 12,400 samples at exactly (0, 0). On
+  the bat (0.24 % missing), the zeros land at (0, 0, 0), below the lowest
+  tracked height (0.28 m): the environment loses 3 bins and the median mean
+  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning.
 - Harness workaround: none
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.
@@ -347,3 +350,65 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (cell is `err`)
 - Proposed change: none
 - Status: won't fix (behaves as documented)
+
+## G-022: In sparse 3-D occupancy, spatial information sits at the shuffle level while its bias estimate is small
+
+- Datasets: yartsev_bat_demo
+- Operation / step: rates.spatial_information, cells.place_screen
+- Kind: wrong-result (candidate; needs a proper shuffle test)
+- Evidence: 3-D rate maps of 289 units over 1352 bins of 0.2 m, restricted to
+  the 38 flights (129.6 s of occupancy; median 0.067 s per visited bin, 63 %
+  of visited bins under 0.1 s). Median spatial information is 3.45 bits/spike
+  and median peak rate 71 Hz. One random circular shift of each unit's spikes
+  gives a median of 3.61 bits/spike, so the median unit carries no more
+  information than chance by this measure. `spatial_information_bias`, the
+  "expected untuned information" that `classify()` compares with, has a
+  median of 0.37 bits/spike; it appears to miss most of the sampling bias of
+  such sparse occupancy. `min_occupancy` defaults to 0 s, so every visited
+  bin counts.
+- Harness workaround: none
+- Proposed change: undecided — test `spatial_information_bias` against a
+  shuffle null on sparse occupancy; warn when most visited bins hold very
+  little time, and point to `min_occupancy` or larger bins.
+- Status: open
+
+## G-023: 3-D position decoding is near chance on the bat session
+
+- Datasets: yartsev_bat_demo
+- Operation / step: decode.position
+- Kind: docs
+- Evidence: training on even flights and testing on odd ones (250 ms bins,
+  0.2 m bins), the median error is 2.19 m against a chance level of 2.68 m.
+  Likely related to G-022 (rate maps from sparse flight occupancy); not
+  investigated further.
+- Harness workaround: none
+- Proposed change: undecided (revisit after G-022)
+- Status: open
+
+## G-024: Grid and border scores refuse 3-D environments
+
+- Datasets: yartsev_bat_demo
+- Operation / step: cells.grid_score, cells.border_score
+- Kind: friction
+- Evidence: `grid_scores()` raises "needs a regular 2D grid of rectangular
+  cells … Fix: use spatial_autocorrelation_radial(env, firing_rate) … a radial
+  profile does not test for sixfold symmetry"; `border_scores()` raises "Wall
+  geometry needs a 2-D environment; this one is 3-D". Both messages say what
+  to do; 3-D grid and border measures are a research question, not a missing
+  convenience.
+- Harness workaround: none (cells are `err`)
+- Proposed change: none
+- Status: won't fix (behaves as documented)
+
+## G-025: 3.6 % of the bat's positions lie outside the room bounds the file states
+
+- Datasets: yartsev_bat_demo
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: 23,454 of 642,724 samples have y outside `r_lim` [−2.6, 2.6] m
+  (down to −4.23 m); x and z are inside. Only 17 of them fall in flights,
+  so they look like resting positions beyond the flight volume rather than
+  tracking errors.
+- Harness workaround: none (positions kept as recorded; rate maps use flights)
+- Proposed change: none
+- Status: open

@@ -126,6 +126,51 @@
       "verdict": "undetectable",
       "gap": "G-020",
       "reason": "Every left becomes a right; the symmetric maze keeps the share of left turns near 0.5, so no value check can see it."
+    },
+    "yartsev_bat_demo/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Zeros at (0, 0, 0), below the floor of the tracked volume: 1349 bins instead of 1352."
+    },
+    "yartsev_bat_demo/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Share of visited bins changes (0.899 to 0.895)."
+    },
+    "yartsev_bat_demo/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median mean rate in flight 0.945 to 0.909 Hz."
+    },
+    "yartsev_bat_demo/missing_positions_as_zero/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "No laps either way."
+    },
+    "yartsev_bat_demo/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that the spike span is about 1000 times the tracking: divide by 1000."
+    },
+    "yartsev_bat_demo/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Refuses a 9e9-bin grid and says to check that bin_size is in the units of positions (it also suggests a transposed array)."
+    },
+    "yartsev_bat_demo/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "Same refusal while building the environment."
+    },
+    "yartsev_bat_demo/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "Same refusal while building the environment."
+    },
+    "yartsev_bat_demo/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "Same refusal while building the environment."
     }
   },
   "errors": {
@@ -140,6 +185,12 @@
     },
     "figure8_000552/behavior.laps": {
       "gap": "G-021"
+    },
+    "yartsev_bat_demo/cells.grid_score": {
+      "gap": "G-024"
+    },
+    "yartsev_bat_demo/cells.border_score": {
+      "gap": "G-024"
     }
   }
 }
