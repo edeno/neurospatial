@@ -1422,20 +1422,21 @@ earlier_grid_orientation = 0.0
 cell = GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orientation + np.pi / 6)
 ```
 
-## `graph_turn_sequence` takes the bins only
+## `graph_turn_sequence` drops `start_bin` and `end_bin`
 
 `start_bin` and `end_bin` were never used: the order of the samples already
 sets the direction of travel. Drop them from the call. The labels are now the
 animal's own left and right in the y-up frame (heading North and then West
-is `"left"`); earlier versions swapped them, so recompute saved sequences:
+is `"left"`); earlier versions swapped them, so recompute saved sequences.
+The function now takes times and positions, like the other behavior
+functions:
 
 <!-- docs-test: run -->
 ```python
 from neurospatial.behavior import graph_turn_sequence
 
-position_bins = env.bin_at(positions)
 # Before: graph_turn_sequence(env, position_bins, start_bin, end_bin)
-turns = graph_turn_sequence(env, position_bins)
+turns = graph_turn_sequence(env, times, positions)
 ```
 
 ## Smoothing several fields at once

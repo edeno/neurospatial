@@ -11,6 +11,13 @@ import pytest
 
 from neurospatial import Environment, Intervals, Regions
 
+
+def _open_arena() -> Environment:
+    """A 100 x 100 arena of 2-unit bins covering every test trajectory."""
+    x, y = np.meshgrid(np.linspace(0, 100, 101), np.linspace(0, 100, 101))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+
+
 # =============================================================================
 # Test: VTE uses decision_analysis functions correctly
 # =============================================================================
@@ -222,10 +229,8 @@ class TestPathEfficiencyPathProgressConsistency:
         """Straight path should have efficiency = 1.0."""
         from neurospatial.behavior.navigation import compute_path_efficiency
 
-        # Create environment
-        rng = np.random.default_rng(42)
-        positions = rng.random((200, 2)) * 100
-        env = Environment.from_samples(positions, bin_size=5.0)
+        # An arena that covers the whole path
+        env = _open_arena()
 
         # Straight trajectory
         trajectory = np.column_stack(
@@ -238,7 +243,7 @@ class TestPathEfficiencyPathProgressConsistency:
         goal = np.array([90.0, 50.0])
 
         efficiency = compute_path_efficiency(
-            env, times, trajectory, goal, metric="euclidean"
+            env, times, trajectory, goal=goal, metric="euclidean"
         ).efficiency
 
         # Should be very close to 1.0 for straight path
@@ -305,7 +310,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
         # Path efficiency should be low (traveled much more than needed)
         efficiency = compute_path_efficiency(
-            env, times, trajectory, goal, metric="euclidean"
+            env, times, trajectory, goal=goal, metric="euclidean"
         ).efficiency
         assert efficiency < 0.1  # Should be very inefficient
 
@@ -335,8 +340,11 @@ class TestGoalDirectedConsistency:
         )
         goal = np.array([100.0, 50.0])
 
-        bias = goal_bias(times, positions, goal, min_speed=1.0)
-        rates = approach_rate(times, positions, goal, metric="euclidean")
+        env = _open_arena()
+        bias = goal_bias(
+            env, times, positions, goal=goal, min_speed=1.0, metric="euclidean"
+        )
+        rates = approach_rate(env, times, positions, goal=goal, metric="euclidean")
 
         # Approaching: bias > 0, mean rate < 0
         assert bias > 0.5
@@ -360,7 +368,14 @@ class TestGoalDirectedConsistency:
             ]
         )
 
-        bias = goal_bias(times, positions, center, min_speed=1.0)
+        bias = goal_bias(
+            _open_arena(),
+            times,
+            positions,
+            goal=center,
+            min_speed=1.0,
+            metric="euclidean",
+        )
 
         # Should be near zero for circular path
         assert abs(bias) < 0.3
@@ -383,10 +398,10 @@ class TestDecisionAnalysisConsistency:
         positions = rng.random((500, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        # Use first and last bins as goals
-        goal_bins = np.array([0, env.n_bins - 1])
+        # Use the first and last bins' centers as goals
+        goals = env.bin_centers[[0, env.n_bins - 1]]
 
-        labels = geodesic_voronoi_labels(env, goal_bins)
+        labels = geodesic_voronoi_labels(env, goals=goals)
 
         # All bins should be labeled 0 or 1 (or -1 if unreachable)
         unique_labels = set(np.unique(labels))

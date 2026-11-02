@@ -31,9 +31,6 @@ from neurospatial.environment._queries import (
 )
 from neurospatial.environment._queries import _track_extents as _track_extents
 from neurospatial.environment._targets import (
-    _validate_sample_targets as _validate_sample_targets,
-)
-from neurospatial.environment._targets import (
     _validate_target_bins as _validate_target_bins,
 )
 from neurospatial.environment._trajectory import BinSequenceWithRuns

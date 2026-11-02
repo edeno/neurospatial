@@ -1,4 +1,4 @@
-"""Known-answer tests for the bin-based navigation covariates.
+"""Known-answer tests for the navigation covariates.
 
 Every expected value here is derived from the geometry of the environment,
 not from the code under test.
@@ -9,9 +9,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import BinIndexOutOfRangeError, Environment, Intervals
+from neurospatial import Environment, Intervals
 from neurospatial.behavior import (
-    cost_to_goal,
+    distance_to_goal,
     distance_to_reward,
     graph_turn_sequence,
     heading_direction_labels,
@@ -59,28 +59,24 @@ class TestPathProgress:
 @pytest.mark.parametrize(
     "call",
     [
-        lambda bins, env: cost_to_goal(bins, env, goal_bins=5),
-        lambda bins, env: cost_to_goal(
-            bins, env, goal_bins=5, cost_map=np.zeros(env.n_bins)
+        lambda positions, env: distance_to_goal(
+            env, np.arange(len(positions), dtype=float), positions, goal=[5.5, 0.0]
+        ),
+        lambda positions, env: distance_to_goal(
+            env,
+            np.arange(len(positions), dtype=float),
+            positions,
+            goal=[5.5, 0.0],
+            cost_map=np.zeros(env.n_bins),
         ),
     ],
-    ids=["cost_to_goal", "cost_to_goal_weighted"],
+    ids=["distance_to_goal", "distance_to_goal_weighted"],
 )
-class TestPositionBinsValidation:
-    def test_minus_two_is_refused(self, corridor, call):
-        with pytest.raises(BinIndexOutOfRangeError):
-            call(np.array([0, -2, 3]), corridor)
-
-    def test_past_the_last_bin_is_refused(self, corridor, call):
-        with pytest.raises(BinIndexOutOfRangeError):
-            call(np.array([0, corridor.n_bins]), corridor)
-
-    def test_floats_are_refused(self, corridor, call):
-        with pytest.raises(TypeError, match=r"position_bins"):
-            call(np.array([0.7, 3.2]), corridor)
-
-    def test_minus_one_is_missing(self, corridor, call):
-        result = call(np.array([0, -1, 5]), corridor)
+class TestMissingPositions:
+    @pytest.mark.parametrize("missing", [[500.0, 0.0], [np.nan, np.nan]])
+    def test_outside_or_nan_position_is_missing(self, corridor, call, missing):
+        positions = np.array([[0.5, 0.0], missing, [5.5, 0.0]])
+        result = call(positions, corridor)
         assert np.isnan(result[1])
         np.testing.assert_allclose(result[[0, 2]], [5.0, 0.0])
 
@@ -91,36 +87,41 @@ def _corridor(bin_size: float) -> Environment:
     return Environment.from_samples(np.c_[x, np.zeros_like(x)], bin_size=bin_size)
 
 
-class TestCostToGoal:
+class TestDistanceToGoalCost:
     """Cost is a per-unit-length rate integrated along the path.
 
     The start bin centre is at 20 - b/2 and the goal bin centre at 100 - b/2,
     80 cm apart for every bin size b.
     """
 
+    @staticmethod
+    def _cost(env, positions, goal, **costs):
+        times = np.arange(len(positions), dtype=float)
+        return distance_to_goal(env, times, positions, goal=goal, **costs)
+
     @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
     def test_uniform_cost_scales_the_length_independent_of_bin_size(self, bin_size):
         env = _corridor(bin_size)
-        start = _bin(env, 20 - bin_size / 2)
-        goal = _bin(env, 100 - bin_size / 2)
-        bins = np.array([start, goal])
+        start = np.array([20 - bin_size / 2, 0.0])
+        goal = np.array([100 - bin_size / 2, 0.0])
+        positions = np.array([start, goal])
         ones = np.ones(env.n_bins)
 
-        np.testing.assert_allclose(cost_to_goal(bins, env, goal_bins=goal), [80, 0])
+        np.testing.assert_allclose(self._cost(env, positions, goal), [80, 0])
         np.testing.assert_allclose(
-            cost_to_goal(bins, env, goal_bins=goal, cost_map=np.zeros(env.n_bins)),
+            self._cost(env, positions, goal, cost_map=np.zeros(env.n_bins)),
             [80, 0],
         )
         np.testing.assert_allclose(
-            cost_to_goal(bins, env, goal_bins=goal, cost_map=ones), [160, 0]
+            self._cost(env, positions, goal, cost_map=ones), [160, 0]
         )
         np.testing.assert_allclose(
-            cost_to_goal(bins, env, goal_bins=goal, terrain_difficulty=2 * ones),
+            self._cost(env, positions, goal, terrain_difficulty=2 * ones),
             [160, 0],
         )
         np.testing.assert_allclose(
-            cost_to_goal(
-                bins, env, goal_bins=goal, cost_map=ones, terrain_difficulty=2 * ones
+            self._cost(
+                env, positions, goal, cost_map=ones, terrain_difficulty=2 * ones
             ),
             [320, 0],
         )
@@ -129,12 +130,12 @@ class TestCostToGoal:
     def test_a_punished_stretch_adds_its_length_times_the_cost(self, bin_size):
         """Bins centred in [40, 60) cost 9 extra per cm: 80 + 9 * 20 = 260."""
         env = _corridor(bin_size)
-        start = _bin(env, 20 - bin_size / 2)
-        goal = _bin(env, 100 - bin_size / 2)
+        start = np.array([[20 - bin_size / 2, 0.0]])
+        goal = np.array([100 - bin_size / 2, 0.0])
         centers = env.bin_centers[:, 0]
         cost_map = np.where((centers >= 40) & (centers < 60), 9.0, 0.0)
 
-        result = cost_to_goal(np.array([start]), env, goal_bins=goal, cost_map=cost_map)
+        result = self._cost(env, start, goal, cost_map=cost_map)
 
         np.testing.assert_allclose(result, [260.0])
 
@@ -157,17 +158,29 @@ class TestCostToGoal:
             "nan": np.r_[np.nan, np.ones(corridor.n_bins - 1)],
             "short": np.ones(corridor.n_bins - 1),
         }[kind]
+        positions = np.array([[0.5, 0.0], [1.5, 0.0]])
         with pytest.raises(ValueError, match=match):
-            cost_to_goal(np.array([0, 1]), corridor, goal_bins=5, **{name: values})
+            self._cost(corridor, positions, [5.5, 0.0], **{name: values})
+
+    def test_costs_need_the_geodesic_metric(self, corridor):
+        positions = np.array([[0.5, 0.0], [1.5, 0.0]])
+        with pytest.raises(ValueError, match=r"metric='geodesic'"):
+            self._cost(
+                corridor,
+                positions,
+                [5.5, 0.0],
+                cost_map=np.ones(corridor.n_bins),
+                metric="euclidean",
+            )
 
     def test_samples_outside_the_environment_are_nan(self, corridor):
-        result = cost_to_goal(
-            np.array([0, -1]),
+        result = self._cost(
             corridor,
-            goal_bins=5,
+            np.array([[0.5, 0.0], [500.0, 0.0], [5.5, 0.0]]),
+            [5.5, 0.0],
             cost_map=np.ones(corridor.n_bins),
         )
-        np.testing.assert_array_equal(result, [10.0, np.nan])
+        np.testing.assert_array_equal(result, [10.0, np.nan, 0.0])
 
 
 @pytest.fixture(scope="module")
@@ -190,12 +203,17 @@ def t_maze() -> Environment:
     )
 
 
-def _t_maze_run(env: Environment, arm_x: float, rate_hz: float) -> np.ndarray:
-    """Bins of a 20 cm/s run up the stem and out to the arm end at ``arm_x``."""
+def _t_maze_run(arm_x: float, rate_hz: float) -> tuple[np.ndarray, np.ndarray]:
+    """Times and positions of a 20 cm/s run up the stem and out to ``arm_x``."""
     n = round(50 / 20 * rate_hz)
     stem = np.c_[np.zeros(n), np.linspace(-49.0, -1.0, n)]
     arm = np.c_[np.linspace(0.0, arm_x, n), np.zeros(n)]
-    return env.bin_at(np.vstack([stem, arm]))
+    return np.arange(2 * n) / rate_hz, np.vstack([stem, arm])
+
+
+def _times(positions: np.ndarray) -> np.ndarray:
+    """30 Hz sample times for ``positions``."""
+    return np.arange(len(positions)) / 30.0
 
 
 class TestGraphTurnSequence:
@@ -205,8 +223,8 @@ class TestGraphTurnSequence:
         self, t_maze, rate_hz, arm_x, expected
     ):
         """Heading North, the West arm is a left turn, the East arm a right."""
-        bins = _t_maze_run(t_maze, arm_x, rate_hz)
-        assert graph_turn_sequence(t_maze, bins) == expected
+        times, positions = _t_maze_run(arm_x, rate_hz)
+        assert graph_turn_sequence(t_maze, times, positions) == expected
 
     def test_a_straight_oblique_run_has_no_turns(self):
         """A lattice staircase along a straight line is not a sequence of turns."""
@@ -214,7 +232,7 @@ class TestGraphTurnSequence:
         field = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         t = np.linspace(0, 1, 2000)
         run = np.c_[5 + 30 * t, 5 + 20 * t]
-        assert graph_turn_sequence(field, field.bin_at(run)) == ""
+        assert graph_turn_sequence(field, _times(run), run) == ""
 
     def test_jitter_at_a_bin_border_is_not_a_turn(self):
         """Flicking between two bins, then running straight East: no turn."""
@@ -223,9 +241,9 @@ class TestGraphTurnSequence:
         rng = np.random.default_rng(0)
         dwell = np.c_[np.full(200, 10.0), 20.0 + rng.normal(0, 0.3, 200)]
         run = np.c_[np.linspace(10.0, 40.0, 300), 20.0 + rng.normal(0, 0.3, 300)]
-        bins = field.bin_at(np.vstack([dwell, run]))
-        assert len(np.unique(bins[:200])) == 2  # the dwell does flicker
-        assert graph_turn_sequence(field, bins) == ""
+        positions = np.vstack([dwell, run])
+        assert len(np.unique(field.bin_at(dwell))) == 2  # the dwell does flicker
+        assert graph_turn_sequence(field, _times(positions), positions) == ""
 
     def test_noisy_corner_in_an_open_field_is_one_left_turn(self):
         """East 30 cm, then North 30 cm, with 0.3 cm tracking noise: one left."""
@@ -235,21 +253,14 @@ class TestGraphTurnSequence:
         east = np.c_[np.linspace(5.0, 35.0, 300), np.full(300, 5.0)]
         north = np.c_[np.full(300, 35.0), np.linspace(5.0, 35.0, 300)]
         run = np.vstack([east, north]) + rng.normal(0, 0.3, (600, 2))
-        assert graph_turn_sequence(field, field.bin_at(run)) == "left"
+        assert graph_turn_sequence(field, _times(run), run) == "left"
 
-    def test_samples_outside_the_environment_are_skipped(self, t_maze):
-        """-1 must not read as the last bin and invent a turn there."""
-        bins = _t_maze_run(t_maze, -49.0, 30.0)
-        bins[::7] = -1
-        assert graph_turn_sequence(t_maze, bins) == "left"
-
-    def test_float_bins_are_refused(self, t_maze):
-        with pytest.raises(TypeError, match=r"position_bins"):
-            graph_turn_sequence(t_maze, np.array([0.0, 1.0, 2.0]))
-
-    def test_out_of_range_bins_are_refused(self, t_maze):
-        with pytest.raises(BinIndexOutOfRangeError):
-            graph_turn_sequence(t_maze, np.array([0, 1, t_maze.n_bins]))
+    @pytest.mark.parametrize("missing", [[500.0, 500.0], [np.nan, np.nan]])
+    def test_samples_outside_the_environment_are_skipped(self, t_maze, missing):
+        """Bin -1 must not read as the last bin and invent a turn there."""
+        times, positions = _t_maze_run(-49.0, 30.0)
+        positions[::7] = missing
+        assert graph_turn_sequence(t_maze, times, positions) == "left"
 
 
 @pytest.fixture(scope="module")

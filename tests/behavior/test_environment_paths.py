@@ -206,7 +206,7 @@ def test_geodesic_approach_rate_of_a_ten_minute_session_is_fast(maze, budget):
     times = np.arange(18_000) / 30
     goal = env.bin_centers[np.argmax(env.bin_centers[:, 0])]
     start = time.perf_counter()
-    approach_rate(times, positions, goal, metric="geodesic", env=env, max_gap=None)
+    approach_rate(env, times, positions, goal=goal, metric="geodesic", max_gap=None)
     assert time.perf_counter() - start <= budget
 
 
@@ -217,9 +217,6 @@ class TestBinInputsUseBinCenters:
     # Between the left and right centers the path climbs to the centers just
     # above the wall end: hypot(5, 60) up, 5 across, hypot(5, 60) down.
     CLIMB = float(np.hypot(5.0, 60.0))
-
-    def _bins(self, env, *points):
-        return env.bin_at(np.array(points, dtype=float))
 
     def test_distance_to_goal_goes_around_the_wall(self, divider_arena):
         from neurospatial.behavior import distance_to_goal
@@ -261,27 +258,30 @@ class TestBinInputsUseBinCenters:
         assert with_wall[0] < without[0] - 0.2
 
     def test_uniform_cost_is_a_multiple_of_the_geodesic_distance(self, divider_arena):
-        from neurospatial.behavior import cost_to_goal
+        from neurospatial.behavior import distance_to_goal
 
-        left, right = self._bins(divider_arena, self.LEFT, self.RIGHT)
-        cost = cost_to_goal(
-            np.array([left]),
+        cost = distance_to_goal(
             divider_arena,
-            goal_bins=int(right),
+            [0.0],
+            np.array([self.LEFT]),
+            goal=self.RIGHT,
             cost_map=np.ones(divider_arena.n_bins),
         )
         np.testing.assert_allclose(cost, [2 * (2 * self.CLIMB + 5.0)], rtol=1e-12)
 
     def test_oblique_cost_in_an_open_field_is_not_a_staircase(self):
-        from neurospatial.behavior import cost_to_goal
+        from neurospatial.behavior import distance_to_goal
 
         edges = np.arange(0.0, 51.0, 1.0)
         env = Environment.from_grid_mask(
             np.ones((50, 50), dtype=bool), grid_edges=(edges, edges)
         )
-        start, goal = env.bin_at(np.array([[0.5, 0.5], [30.5, 40.5]]))
-        cost = cost_to_goal(
-            np.array([start]), env, goal_bins=int(goal), cost_map=np.ones(env.n_bins)
+        cost = distance_to_goal(
+            env,
+            [0.0],
+            np.array([[0.5, 0.5]]),
+            goal=[30.5, 40.5],
+            cost_map=np.ones(env.n_bins),
         )
         # Twice the 50 cm straight line; the bin graph would read 2 * 52.4.
         np.testing.assert_allclose(cost, [100.0], rtol=1e-12)
@@ -402,14 +402,17 @@ class TestDecisionBoundaries:
             geodesic_voronoi_labels,
         )
 
-        goals = divider_arena.bin_at(np.array([[42.5, 12.5], [57.5, 12.5]]))
-        above = divider_arena.bin_at(np.array([[47.5, 72.5], [52.5, 72.5]]))
-        labels = geodesic_voronoi_labels(divider_arena, goals)
+        goals = [[42.5, 12.5], [57.5, 12.5]]
+        above_positions = np.array([[47.5, 72.5], [52.5, 72.5]])
+        above = divider_arena.bin_at(above_positions)
+        labels = geodesic_voronoi_labels(divider_arena, goals=goals)
         assert labels[above].tolist() == [0, 1]
         # (47.5, 72.5) is hypot(5, 60) from the left goal and 5 cm further
         # from the right one (across to (52.5, 72.5), then down), so the
         # equidistant boundary is (65.21 - 60.21) / 2 = 2.5 cm away.
-        distances = distance_to_decision_boundary(divider_arena, above, goals)
+        distances = distance_to_decision_boundary(
+            divider_arena, np.arange(2.0), above_positions, goals=goals
+        )
         np.testing.assert_allclose(distances, [2.5, 2.5], atol=1e-9)
 
 
@@ -459,18 +462,21 @@ class TestGeodesicGoalDirection:
         )  # Samples 0.5 s apart lie beyond the 0.1 s position smoothing, so the path is exact.
         goal = positions[-1]
         geodesic = angular_efficiency(
-            times, positions, goal, metric="geodesic", env=narrow_u
+            narrow_u, times, positions, goal=goal, metric="geodesic"
         )
         assert geodesic == pytest.approx(1.0, abs=1e-12)
         # The straight-line bearing points across the U's gap instead.
-        assert angular_efficiency(times, positions, goal) < 0.7
+        straight = angular_efficiency(
+            narrow_u, times, positions, goal=goal, metric="euclidean"
+        )
+        assert straight < 0.7
 
     def test_path_efficiency_passes_its_metric(self, narrow_u):
         from neurospatial.behavior import compute_path_efficiency
 
         positions = self._shortest_route()
         result = compute_path_efficiency(
-            narrow_u, np.arange(len(positions)) * 0.5, positions, positions[-1]
+            narrow_u, np.arange(len(positions)) * 0.5, positions, goal=positions[-1]
         )
         assert result.angular_efficiency == pytest.approx(1.0, abs=1e-12)
 
@@ -489,7 +495,7 @@ class TestGeodesicGoalDirection:
             np.arange(len(positions)) * 0.5
         )  # Samples 0.5 s apart lie beyond the 0.1 s position smoothing, so the path is exact.
         efficiency = angular_efficiency(
-            times, positions, positions[-1], metric="geodesic", env=env
+            env, times, positions, goal=positions[-1], metric="geodesic"
         )
         assert efficiency == pytest.approx(1.0, abs=1e-12)
 

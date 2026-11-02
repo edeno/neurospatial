@@ -33,6 +33,14 @@ def _east_run(n: int, step: float) -> np.ndarray:
     return np.column_stack([step * np.arange(n, dtype=float), np.zeros(n)])
 
 
+def _arena() -> Environment:
+    """Open square arena in cm covering x and y in [-10, 110]."""
+    x, y = np.meshgrid(np.arange(-10.0, 111.0), np.arange(-10.0, 111.0))
+    return Environment.from_samples(
+        np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+    )
+
+
 class TestHeadingDirectionLabels:
     def test_still_animal_is_stationary_at_min_speed_zero(self):
         labels = heading_direction_labels(_times(10), np.zeros((10, 2)), min_speed=0.0)
@@ -90,11 +98,14 @@ class TestGoalAlignment:
     def test_never_moving_animal_has_no_goal_bias(self):
         times, positions = _times(10), np.zeros((10, 2))
         goal = np.array([100.0, 0.0])
+        env = _arena()
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
-            bias = goal_bias(times, positions, goal, min_speed=0.0)
+            bias = goal_bias(
+                env, times, positions, goal=goal, metric="euclidean", min_speed=0.0
+            )
             alignment = instantaneous_goal_alignment(
-                times, positions, goal, min_speed=0.0
+                env, times, positions, goal=goal, metric="euclidean", min_speed=0.0
             )
         assert np.isnan(bias)
         assert np.isnan(alignment).all()
@@ -104,13 +115,16 @@ class TestGoalAlignment:
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
         positions[10] = np.nan
         goal = np.array([200.0, 0.0])
-        alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=1.0)
-        before = instantaneous_goal_alignment(
-            times[:10], positions[:10], goal, min_speed=1.0
-        )
-        after = instantaneous_goal_alignment(
-            times[11:], positions[11:], goal, min_speed=1.0
-        )
+        env = _arena()
+
+        def align(t, p):
+            return instantaneous_goal_alignment(
+                env, t, p, goal=goal, metric="euclidean", min_speed=1.0
+            )
+
+        alignment = align(times, positions)
+        before = align(times[:10], positions[:10])
+        after = align(times[11:], positions[11:])
         assert np.isnan(alignment[10])
         np.testing.assert_array_equal(alignment[:10], before)
         np.testing.assert_array_equal(alignment[11:], after)
@@ -127,12 +141,16 @@ def test_goal_metrics_with_missing_rows():
         bin_size=5.0,
         units="cm",
     )
-    result = compute_goal_directed_metrics(env, times, positions, goal, min_speed=1.0)
+    result = compute_goal_directed_metrics(
+        env, times, positions, goal=goal, metric="euclidean", min_speed=1.0
+    )
     assert np.isfinite(result.goal_bias)
     assert result.min_distance_to_goal == 0.0
 
     positions[0] = np.nan
-    result = compute_goal_directed_metrics(env, times, positions, goal, min_speed=1.0)
+    result = compute_goal_directed_metrics(
+        env, times, positions, goal=goal, metric="euclidean", min_speed=1.0
+    )
     # The first observed sample is at x = 5.
     assert result.goal_distance_at_start == 95.0
 
@@ -158,11 +176,11 @@ def test_errors_name_the_called_function(name):
             times, positions, min_speed=1.0
         ),
         "instantaneous_goal_alignment": lambda: instantaneous_goal_alignment(
-            times, positions, goal, min_speed=1.0
+            env, times, positions, goal=goal, min_speed=1.0
         ),
-        "goal_bias": lambda: goal_bias(times, positions, goal, min_speed=1.0),
+        "goal_bias": lambda: goal_bias(env, times, positions, goal=goal, min_speed=1.0),
         "compute_goal_directed_metrics": lambda: compute_goal_directed_metrics(
-            env, times, positions, goal, min_speed=1.0
+            env, times, positions, goal=goal, min_speed=1.0
         ),
     }
     with pytest.raises(ValueError, match=r"times must be strictly increasing") as error:
@@ -181,7 +199,12 @@ def test_goal_distances_are_nan_when_nothing_is_observed():
     positions = np.full((10, 2), np.nan)
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
         result = compute_goal_directed_metrics(
-            env, _times(10), positions, np.array([100.0, 0.0]), min_speed=1.0
+            env,
+            _times(10),
+            positions,
+            goal=np.array([100.0, 0.0]),
+            metric="euclidean",
+            min_speed=1.0,
         )
     assert np.isnan(result.min_distance_to_goal)
     assert np.isnan(result.goal_distance_at_start)
@@ -218,11 +241,11 @@ def _calls_with(times, positions, goal):
             times, positions, min_speed=1.0
         ),
         "instantaneous_goal_alignment": lambda: instantaneous_goal_alignment(
-            times, positions, goal, min_speed=1.0
+            env, times, positions, goal=goal, min_speed=1.0
         ),
-        "goal_bias": lambda: goal_bias(times, positions, goal, min_speed=1.0),
+        "goal_bias": lambda: goal_bias(env, times, positions, goal=goal, min_speed=1.0),
         "compute_goal_directed_metrics": lambda: compute_goal_directed_metrics(
-            env, times, positions, goal, min_speed=1.0
+            env, times, positions, goal=goal, min_speed=1.0
         ),
         "pre_decision_heading_stats": lambda: pre_decision_heading_stats(
             times, positions, min_speed=1.0
@@ -254,7 +277,7 @@ def _calls_with(times, positions, goal):
         ),
         "goal_vector": lambda: goal_vector(positions, goal),
         "goal_direction": lambda: goal_direction(positions, goal),
-        "approach_rate": lambda: approach_rate(times, positions, goal),
+        "approach_rate": lambda: approach_rate(env, times, positions, goal=goal),
     }
 
 
@@ -288,17 +311,7 @@ def test_one_dimensional_positions_error_names_the_call(name):
     assert "Fix:" in message
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "goal_vector",
-        "goal_direction",
-        "instantaneous_goal_alignment",
-        "goal_bias",
-        "approach_rate",
-        "compute_goal_directed_metrics",
-    ],
-)
+@pytest.mark.parametrize("name", ["goal_vector", "goal_direction"])
 def test_goal_dimension_error_names_the_call(name):
     times = _times(10)
     positions = _east_run(10, 1.0)
@@ -314,6 +327,32 @@ def test_goal_dimension_error_names_the_call(name):
     assert "goal has 3 coordinates but positions have 2" in message
     assert "Why:" in message
     assert "Fix: pass goal with shape (2,)" in message
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "instantaneous_goal_alignment",
+        "goal_bias",
+        "approach_rate",
+        "compute_goal_directed_metrics",
+    ],
+)
+def test_goal_function_dimension_error_names_the_call(name):
+    """A goal point needs one coordinate per environment dimension."""
+    times = _times(10)
+    positions = _east_run(10, 1.0)
+    goal = np.array([10.0, 0.0, 0.0])
+    with pytest.raises(
+        ValueError, match=r"one coordinate per environment dimension \(2\)"
+    ) as error:
+        _calls_with(times, positions, goal)[name]()
+    message = str(error.value)
+    assert message.startswith(f"{name}(): goal= has shape (3,)")
+    assert "Why:" in message
+    assert "Fix: pass a region name from env.regions, or a point of shape (2,)" in (
+        message
+    )
 
 
 class TestGeodesicApproachOutsideTheEnvironment:
@@ -353,15 +392,15 @@ class TestGeodesicApproachOutsideTheEnvironment:
             breaks[np.flatnonzero(times >= break_at - 1e-9)[0]] = True
         np.testing.assert_array_equal(
             approach_rate(
-                times, away, goal, metric="geodesic", env=env, break_before=breaks
+                env, times, away, goal=goal, metric="geodesic", break_before=breaks
             ),
             approach_rate(
-                times, missing, goal, metric="geodesic", env=env, break_before=breaks
+                env, times, missing, goal=goal, metric="geodesic", break_before=breaks
             ),
         )
         away_mean, missing_mean = (
             compute_goal_directed_metrics(
-                env, times, rows, goal, metric="geodesic", break_before=breaks
+                env, times, rows, goal=goal, metric="geodesic", break_before=breaks
             ).mean_approach_rate
             for rows in (away, missing)
         )

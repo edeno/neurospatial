@@ -52,9 +52,6 @@ class TestFullTrajectoryAnalysisWorkflow:
         traj_positions = center + radius * np.column_stack([np.cos(t), np.sin(t)])
         times = np.linspace(0, 30, n_samples)  # 30 seconds, 10s per lap
 
-        # Map to bins
-        position_bins = env.bin_at(traj_positions)
-
         # Step 1: Detect laps
         # Create circular start region at x=16, y=10 (radius point)
         region_builder = Regions(env.regions.values())
@@ -81,7 +78,6 @@ class TestFullTrajectoryAnalysisWorkflow:
         for lap in laps[:2]:  # Analyze first 2 complete laps
             # Get lap segment
             lap_mask = (times >= lap.start_time) & (times <= lap.stop_time)
-            lap_bins = position_bins[lap_mask]
             lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
             # Compute metrics (both functions expect continuous positions, not bins)
@@ -93,20 +89,23 @@ class TestFullTrajectoryAnalysisWorkflow:
                     "duration": lap.stop_time - lap.start_time,
                     "mean_turn_angle": np.abs(np.nanmean(turn_angles)),
                     "mean_step_length": np.mean(step_lengths),
-                    "bins": lap_bins,
+                    "positions": lap_positions,
                 }
             )
 
         # Step 3: Compare lap similarity
         if len(lap_metrics) >= 2:
             similarity = trajectory_similarity(
-                lap_metrics[0]["bins"], lap_metrics[1]["bins"], env, method="jaccard"
+                env,
+                lap_metrics[0]["positions"],
+                lap_metrics[1]["positions"],
+                method="jaccard",
             )
             # Laps on circular track should have high spatial overlap
             assert similarity > 0.5, "Consecutive laps should have high similarity"
 
         # Step 4: Compute home range (should be annular region)
-        home_range = compute_home_range(position_bins, env, percentile=95.0)
+        home_range = compute_home_range(env, times, traj_positions, percentile=95.0)
         assert len(home_range) > 10, "Home range should include multiple bins"
 
         # Step 5: Compute MSD (should show ballistic movement within laps)
@@ -165,7 +164,6 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Combine all trials
         traj_positions = np.vstack(trial_trajs)
         times = np.concatenate(times_list)
-        position_bins = env.bin_at(traj_positions)
 
         # Step 1: Segment into trials
         trials = detect_trials(
@@ -225,11 +223,10 @@ class TestFullTrajectoryAnalysisWorkflow:
             mask1 = (times >= trial1.start_time) & (times <= trial1.stop_time)
             mask2 = (times >= trial2.start_time) & (times <= trial2.stop_time)
 
-            bins1 = position_bins[mask1]
-            bins2 = position_bins[mask2]
-
             # Compute similarity
-            similarity = trajectory_similarity(bins1, bins2, env, method="jaccard")
+            similarity = trajectory_similarity(
+                env, traj_positions[mask1], traj_positions[mask2], method="jaccard"
+            )
 
             # If same end_region, similarity should be higher
             if trial1.end_region == trial2.end_region:
@@ -303,19 +300,18 @@ class TestFullTrajectoryAnalysisWorkflow:
         )
 
         # Step 2: Compare exploration vs goal-directed similarity
-        explore_bins = position_bins[:100]
-        goal_bins = position_bins[100:]
-
         # Should have low overlap (different spatial regions)
         similarity = trajectory_similarity(
-            explore_bins, goal_bins, env, method="jaccard"
+            env, explore_positions, goal_positions, method="jaccard"
         )
         # Valid similarity (may be low if different spatial regions)
         assert 0.0 <= similarity <= 1.0
 
         # Step 3: Compute home range for each phase
-        explore_home = compute_home_range(explore_bins, env, percentile=95.0)
-        goal_home = compute_home_range(goal_bins, env, percentile=95.0)
+        explore_home = compute_home_range(
+            env, explore_times, explore_positions, percentile=95.0
+        )
+        goal_home = compute_home_range(env, goal_times, goal_positions, percentile=95.0)
 
         assert len(explore_home) > 0
         assert len(goal_home) > 0

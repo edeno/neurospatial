@@ -18,8 +18,6 @@ ENV_LESS = [
     "pre_decision_heading_stats",
     "compute_pre_decision_metrics",
     "heading_direction_labels",
-    "instantaneous_goal_alignment",
-    "goal_bias",
     "head_sweep_from_positions",
     "compute_vte_trial",
 ]
@@ -50,12 +48,14 @@ def test_goal_metrics_default_threshold_is_five_cm_per_second_in_any_units(
     env_cm, times, positions_cm, goal_cm = _run_to_goal(1.0, "cm")
     env, _, positions, goal = _run_to_goal(scale, units)
     reference = behavior.compute_goal_directed_metrics(
-        env_cm, times, positions_cm, goal_cm
+        env_cm, times, positions_cm, goal=goal_cm, metric="euclidean"
     )
-    scaled = behavior.compute_goal_directed_metrics(env, times, positions, goal)
+    scaled = behavior.compute_goal_directed_metrics(
+        env, times, positions, goal=goal, metric="euclidean"
+    )
     np.testing.assert_allclose(scaled.goal_bias, reference.goal_bias)
     explicit = behavior.compute_goal_directed_metrics(
-        env, times, positions, goal, min_speed=5.0 * scale
+        env, times, positions, goal=goal, metric="euclidean", min_speed=5.0 * scale
     )
     np.testing.assert_allclose(scaled.goal_bias, explicit.goal_bias)
 
@@ -64,9 +64,11 @@ def test_unknown_units_require_an_explicit_threshold():
     env, times, positions, goal = _run_to_goal(1.0, "cm")
     env = env.with_metadata(units=None)
     with pytest.raises(ValueError, match="min_speed"):
-        behavior.compute_goal_directed_metrics(env, times, positions, goal)
+        behavior.compute_goal_directed_metrics(
+            env, times, positions, goal=goal, metric="euclidean"
+        )
     result = behavior.compute_goal_directed_metrics(
-        env, times, positions, goal, min_speed=5.0
+        env, times, positions, goal=goal, metric="euclidean", min_speed=5.0
     )
     assert np.isfinite(result.goal_bias)
 
@@ -79,11 +81,13 @@ _MIN_SPEED_CALLS = {
         behavior.heading_direction_labels(t, x, min_speed=m)
     ),
     "instantaneous_goal_alignment": lambda env, t, x, goal, m: (
-        behavior.instantaneous_goal_alignment(t, x, goal, min_speed=m)
+        behavior.instantaneous_goal_alignment(env, t, x, goal=goal, min_speed=m)
     ),
-    "goal_bias": lambda env, t, x, goal, m: behavior.goal_bias(t, x, goal, min_speed=m),
+    "goal_bias": lambda env, t, x, goal, m: behavior.goal_bias(
+        env, t, x, goal=goal, min_speed=m
+    ),
     "compute_goal_directed_metrics": lambda env, t, x, goal, m: (
-        behavior.compute_goal_directed_metrics(env, t, x, goal, min_speed=m)
+        behavior.compute_goal_directed_metrics(env, t, x, goal=goal, min_speed=m)
     ),
     "pre_decision_heading_stats": lambda env, t, x, goal, m: (
         behavior.pre_decision_heading_stats(t, x, min_speed=m)

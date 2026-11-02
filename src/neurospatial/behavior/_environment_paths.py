@@ -409,6 +409,37 @@ class EnvironmentPaths(ABC):
             out[rows] = self._from_bins_at(source_bins, points[rows], point_bins[rows])
         return out
 
+    def directions_to_bins(
+        self, source_bins: NDArray[np.intp], points: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Direction in which the shortest path to the nearest source leaves each point.
+
+        The path is the one :meth:`from_bins_at` measures.
+
+        Parameters
+        ----------
+        source_bins : ndarray of int, shape (n_sources,)
+            Valid, distinct bin indices.
+        points : ndarray, shape (n_points, n_dims)
+            Positions; NaN rows and rows outside the environment give NaN.
+
+        Returns
+        -------
+        ndarray, shape (n_points, n_dims)
+            Unit vectors toward the path's first waypoint, as in
+            :meth:`directions`. NaN in a source bin (at the goal), at a point
+            that reaches no source, and outside the environment.
+        """
+        source_bins = np.asarray(source_bins, dtype=np.intp)
+        out = np.full(points.shape, np.nan)
+        point_bins = self.bins(points)
+        rows = np.flatnonzero((point_bins >= 0) & ~np.isin(point_bins, source_bins))
+        if rows.size:
+            out[rows] = self._directions_to_bins(
+                source_bins, points[rows], point_bins[rows]
+            )
+        return out
+
     @abstractmethod
     def costs_from_bins(
         self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
@@ -474,6 +505,15 @@ class EnvironmentPaths(ABC):
         point_bins: NDArray[np.intp],
     ) -> NDArray[np.float64]:
         """:meth:`from_bins_at` for points in ``point_bins``."""
+
+    @abstractmethod
+    def _directions_to_bins(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        """:meth:`directions_to_bins` for points in ``point_bins``, none a source."""
 
 
 class _OpenPaths(EnvironmentPaths):
@@ -657,6 +697,42 @@ class _OpenPaths(EnvironmentPaths):
         if source_bins.size == 1:
             source = int(source_bins[0])
             return self._to_point(points, point_bins, self._centers[source], source)
+        return self._source_corners(source_bins, points, point_bins)[0]
+
+    def _directions_to_bins(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        if source_bins.size == 1:
+            source = int(source_bins[0])
+            return self._directions(points, point_bins, self._centers[source], source)
+        _, corner = self._source_corners(source_bins, points, point_bins)
+        out = np.full(points.shape, np.nan)
+        found = np.flatnonzero(corner >= 0)
+        vector = self._centers[corner[found]] - points[found]
+        norm = np.linalg.norm(vector, axis=1)
+        moving = norm > 0
+        out[found[moving]] = vector[moving] / norm[moving, None]
+        return out
+
+    def _source_corners(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+        """Each point's shortest path to the nearest of several sources.
+
+        Returns
+        -------
+        length : ndarray, shape (n_points,)
+            Path length; ``inf`` where no source is reachable.
+        corner : ndarray of int, shape (n_points,)
+            The bin whose center the path goes to first; -1 where no source
+            is reachable.
+        """
         length, anchor = self._source_field(source_bins)
         n_points = points.shape[0]
         # Candidate corners: the anchor of the point's bin and the anchors of
@@ -689,9 +765,15 @@ class _OpenPaths(EnvironmentPaths):
             np.linalg.norm(points[owner] - self._centers[corner], axis=1)
             + (length[corner])
         )
+        # The shortest candidate of each point, and the corner it goes through.
+        order = np.lexsort((total, owner))
+        owner, total, corner = owner[order], total[order], corner[order]
+        first = np.r_[True, owner[1:] != owner[:-1]] if owner.size else owner > 0
         best = np.full(n_points, np.inf)
-        np.minimum.at(best, owner, total)
-        return best
+        best_corner = np.full(n_points, -1, dtype=np.intp)
+        best[owner[first]] = total[first]
+        best_corner[owner[first]] = corner[first]
+        return best, best_corner
 
     # ------------------------------------------------------------------
     # Internals
@@ -3141,6 +3223,33 @@ class _TrackPaths(EnvironmentPaths):
             .min(axis=1)
         )
         return nearest
+
+    @override
+    def _directions_to_bins(
+        self,
+        source_bins: NDArray[np.intp],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> NDArray[np.float64]:
+        """Direction along the track toward each point's nearest source."""
+        seg_p, off_p = self.project(points)
+        seg_s, off_s = self.project(self._centers[source_bins])
+        n_points, n_sources = points.shape[0], source_bins.size
+        along = self._pair(
+            np.repeat(seg_p, n_sources),
+            np.repeat(off_p, n_sources),
+            np.tile(seg_s, n_points),
+            np.tile(off_s, n_points),
+        ).reshape(n_points, n_sources)
+        nearest = np.argmin(along, axis=1)
+        out = np.full(points.shape, np.nan)
+        for source in np.unique(nearest):
+            rows = np.flatnonzero(nearest == source)
+            root = int(source_bins[source])
+            out[rows] = self._directions(
+                points[rows], point_bins[rows], self._centers[root], root
+            )
+        return out
 
     # ------------------------------------------------------------------
     # Internals

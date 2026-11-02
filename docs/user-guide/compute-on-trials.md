@@ -247,6 +247,32 @@ Both are aligned by `interval_id`, not by row position: the `-1` group of
 samples between trials matches no trial, and a trial without samples gets NaN
 rather than a shifted row.
 
+Goal measures take the trials too, with one goal per trial. Each trial is
+measured from its own samples, toward the well it ran to:
+
+```python
+from neurospatial.behavior import compute_path_efficiency, goal_bias
+
+efficiency = compute_path_efficiency(
+    track, times, positions, trials, goal=trials.end_region
+)  # one row per trial, indexed by interval_id
+table["efficiency"] = efficiency["efficiency"]
+table["goal_bias"] = goal_bias(track, times, positions, trials, goal=trials.end_region)
+print(table.groupby("end_region")[["efficiency", "goal_bias"]].mean().round(2))
+```
+
+```text
+            efficiency  goal_bias
+end_region
+east              0.97       0.99
+west              0.96       0.99
+```
+
+These simulated runs go straight from well to well, so both measures are
+close to 1; the 0.5 cm of sideways tracking jitter adds a few percent to the
+path. A goal named by a region is approached at its nearest bin, so a run
+counts as efficient once it reaches the edge of the well, not its center.
+
 ## 5. Model inputs and trial-blocked cross-validation
 
 For a model, every input is one value per sample. `sample_values` gives each

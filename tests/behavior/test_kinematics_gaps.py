@@ -91,15 +91,23 @@ def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording
         r.env,
         r.times,
         r.positions,
-        r.positions[-1],
+        goal=r.positions[-1],
         metric="euclidean",
         reference_speed=10,
     )
     first = compute_path_efficiency(
-        r.env, r.times[:5000], r.positions[:5000], r.positions[4999], metric="euclidean"
+        r.env,
+        r.times[:5000],
+        r.positions[:5000],
+        goal=r.positions[4999],
+        metric="euclidean",
     )
     second = compute_path_efficiency(
-        r.env, r.times[5000:], r.positions[5000:], r.positions[-1], metric="euclidean"
+        r.env,
+        r.times[5000:],
+        r.positions[5000:],
+        goal=r.positions[-1],
+        metric="euclidean",
     )
     assert result.traveled_length == traveled_path_length(r.times, r.positions)
     assert result.traveled_length == pytest.approx(
@@ -108,7 +116,7 @@ def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording
     assert np.isnan(result.efficiency)
     # A mean over the observed steps of both epochs; the pause is no step.
     assert result.angular_efficiency == angular_efficiency(
-        r.times, r.positions, r.positions[-1]
+        r.env, r.times, r.positions, goal=r.positions[-1], metric="euclidean"
     )
     assert np.isfinite(result.angular_efficiency)
     assert np.isfinite(result.shortest_length)
@@ -123,7 +131,8 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
     totals = r.env.occupancy(r.times, r.positions, max_gap=0.5)
     dt = np.diff(r.times)
     assert totals.sum() == pytest.approx(dt[dt <= 0.5].sum(), rel=0, abs=1e-9)
-    bins = r.env.bin_at(r.positions)
+    # Equal bins: the home range ranks them by occupancy alone.
+    np.testing.assert_allclose(r.env.bin_sizes, r.env.bin_sizes[0])
     visited = np.flatnonzero(totals)
     ordered = visited[np.argsort(totals[visited])[::-1]]
     count = np.searchsorted(np.cumsum(totals[ordered]) / totals.sum() * 100, 95) + 1
@@ -133,7 +142,7 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
     level = totals[ordered[count - 1]]
     expected = visited[totals[visited] >= level * (1 - 1e-9)]
     np.testing.assert_array_equal(
-        np.sort(compute_home_range(bins, _HOME_ENV, times=r.times)), expected
+        np.sort(compute_home_range(r.env, r.times, r.positions)), expected
     )
 
 
@@ -151,12 +160,22 @@ def test_goal_alignment_nan_outside_runs(two_epoch_recording):
     r = two_epoch_recording
     selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
     actual = instantaneous_goal_alignment(
-        r.times[selected], r.positions[selected], r.positions[-1], min_speed=0
+        r.env,
+        r.times[selected],
+        r.positions[selected],
+        goal=r.positions[-1],
+        metric="euclidean",
+        min_speed=0,
     )
     assert np.isnan(actual[3])
     assert np.isfinite(actual[[0, 1, 2, 4, 5, 6]]).all()
     full = instantaneous_goal_alignment(
-        r.times, r.positions, r.positions[-1], min_speed=0
+        r.env,
+        r.times,
+        r.positions,
+        goal=r.positions[-1],
+        metric="euclidean",
+        min_speed=0,
     )
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_velocity
 
@@ -177,7 +196,9 @@ def test_goal_alignment_nan_outside_runs(two_epoch_recording):
 
 def test_approach_rate_masks_backward_gap(two_epoch_recording):
     r = two_epoch_recording
-    actual = approach_rate(r.times, r.positions, r.positions[-1])
+    actual = approach_rate(
+        r.env, r.times, r.positions, goal=r.positions[-1], metric="euclidean"
+    )
     assert np.isnan(actual[5000])
     assert np.isfinite(actual[[4999, 5001]]).all()
 
@@ -234,9 +255,7 @@ def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
 def test_home_range_without_observations_is_empty(two_epoch_recording):
     r = two_epoch_recording
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = compute_home_range(
-            r.env.bin_at(r.positions), r.env, times=r.times, epochs=(500, 600)
-        )
+        result = compute_home_range(r.env, r.times, r.positions, epochs=(500, 600))
     assert result.size == 0
 
 
@@ -248,11 +267,10 @@ def test_full_home_range_excludes_zero_dwell_bins():
     """
     times = np.r_[np.arange(215) * 0.02, 1000.0]
     bins = np.arange(len(times))
-    observed = compute_home_range(bins, _HOME_ENV, times=times, percentile=100)
+    observed = compute_home_range(
+        _HOME_ENV, times, _HOME_ENV.bin_centers[bins], percentile=100
+    )
     np.testing.assert_array_equal(np.sort(observed), bins[:-2])
-    # The isolated sample is still a visit when timestamps are absent.
-    untimed = compute_home_range(bins, _HOME_ENV, percentile=100)
-    np.testing.assert_array_equal(np.sort(untimed), bins)
 
 
 def test_smoothed_turns_isolated_sample_nan(two_epoch_recording):
@@ -278,10 +296,16 @@ def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
     r = two_epoch_recording
     goal = r.positions[5000]  # first sample of the second recording, t = 1100 s
     across_pause = compute_goal_directed_metrics(
-        r.env, r.times, r.positions, goal, goal_radius=0
+        r.env, r.times, r.positions, goal=goal, metric="euclidean", goal_radius=0
     )
     second_recording = compute_goal_directed_metrics(
-        r.env, r.times, r.positions, goal, goal_radius=0, epochs=(1100, 1200)
+        r.env,
+        r.times,
+        r.positions,
+        goal=goal,
+        metric="euclidean",
+        goal_radius=0,
+        epochs=(1100, 1200),
     )
     assert across_pause.time_to_reach_goal == 1100
     assert second_recording.time_to_reach_goal == 0.0
@@ -300,7 +324,8 @@ def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
             r.env,
             r.times,
             r.positions,
-            r.positions[5000],
+            goal=r.positions[5000],
+            metric="euclidean",
             goal_radius=0,
             epochs=(500, 600),
         )

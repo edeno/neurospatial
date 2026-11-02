@@ -1,8 +1,8 @@
-"""Analysis functions validate their bin targets like the environment queries.
+"""Analysis functions validate their targets like the environment queries.
 
 A coordinate passed where a bin index is expected is refused, not truncated
-to an unrelated bin; ``-1`` keeps meaning "no target for this sample" where
-the targets are per-sample.
+to an unrelated bin, and a goal point outside the environment is refused
+where a geodesic distance needs it inside.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ import pytest
 
 from neurospatial import BinIndexOutOfRangeError, Environment
 from neurospatial.behavior import (
-    cost_to_goal,
     distance_to_decision_boundary,
+    distance_to_goal,
     geodesic_voronoi_labels,
     goal_reward_field,
     shortest_path_length,
@@ -31,67 +31,37 @@ def position_bins(env) -> np.ndarray:
     return np.arange(10, dtype=np.intp) % env.n_bins
 
 
-def _calls(env, position_bins, target):
-    """Each analysis function with ``target`` as its bin target."""
-    return {
-        "cost_to_goal": lambda: cost_to_goal(position_bins, env, goal_bins=target),
-        "cost_to_goal_weighted": lambda: cost_to_goal(
-            position_bins, env, goal_bins=target, cost_map=np.ones(env.n_bins)
-        ),
-        "geodesic_voronoi_labels": lambda: geodesic_voronoi_labels(
-            env, np.r_[target, target]
-        ),
-        "distance_to_decision_boundary": lambda: distance_to_decision_boundary(
-            env, position_bins, np.r_[target, target]
-        ),
-        "goal_reward_field": lambda: goal_reward_field(env, target),
-    }
+def _bin_calls(env, target):
+    """Each analysis function that takes ``target`` as a bin index."""
+    return {"goal_reward_field": lambda: goal_reward_field(env, target)}
 
 
-_NAMES = sorted(_calls(None, np.zeros(1), 0))
+_BIN_NAMES = sorted(_bin_calls(None, 0))
 
 
-@pytest.mark.parametrize("name", _NAMES)
-def test_float_target_points_to_points(env, position_bins, name):
-    call = _calls(env, position_bins, 12.7)[name]
+@pytest.mark.parametrize("name", _BIN_NAMES)
+def test_float_target_points_to_points(env, name):
+    call = _bin_calls(env, 12.7)[name]
     with pytest.raises(TypeError, match=r"integer bin indices[\s\S]*points="):
         call()
 
 
-@pytest.mark.parametrize("name", _NAMES)
-def test_out_of_range_target_raises(env, position_bins, name):
-    call = _calls(env, position_bins, env.n_bins + 5)[name]
+@pytest.mark.parametrize("name", _BIN_NAMES)
+def test_out_of_range_target_raises(env, name):
+    call = _bin_calls(env, env.n_bins + 5)[name]
     with pytest.raises(BinIndexOutOfRangeError):
         call()
 
 
-@pytest.mark.parametrize("name", ["cost_to_goal", "cost_to_goal_weighted"])
-def test_boolean_target_is_refused(env, position_bins, name):
+@pytest.mark.parametrize("name", _BIN_NAMES)
+def test_boolean_target_is_refused(env, name):
     with pytest.raises(TypeError, match="booleans"):
-        _calls(env, position_bins, True)[name]()
+        _bin_calls(env, True)[name]()
 
 
-def test_integer_targets_give_the_query_answer(env, position_bins):
-    goal = 40
-    # The square arena is convex, so the shortest path inside it between two
-    # bin centers is the straight line between them.
-    centers = env.bin_centers
-    expected = np.linalg.norm(centers[position_bins] - centers[goal], axis=1)
-    np.testing.assert_array_equal(
-        cost_to_goal(position_bins, env, goal_bins=np.int64(goal)), expected
-    )
-
-
-def test_minus_one_still_marks_samples_without_a_target(env, position_bins):
-    targets = np.where(np.arange(len(position_bins)) < 5, 40, -1)
-    costs = cost_to_goal(position_bins, env, goal_bins=targets)
-    assert np.all(np.isnan(costs[5:]))
-    assert np.all(np.isfinite(costs[:5]))
-
-
-@pytest.mark.parametrize("name", _NAMES)
+@pytest.mark.parametrize("name", _BIN_NAMES)
 @pytest.mark.parametrize("shape", ["scalar", "one_element"])
-def test_minus_one_is_never_a_single_target(env, position_bins, name, shape):
+def test_minus_one_is_never_a_single_target(env, name, shape):
     """-1 is bin_at's outside marker; as one target it is refused, not NaN.
 
     ``env.bin_at([[x, y]])`` returns a one-element array, so a shape-(1,)
@@ -99,29 +69,65 @@ def test_minus_one_is_never_a_single_target(env, position_bins, name, shape):
     """
     target = -1 if shape == "scalar" else np.array([-1])
     with pytest.raises(BinIndexOutOfRangeError, match=r"-1 is the value bin_at gives"):
-        _calls(env, position_bins, target)[name]()
+        _bin_calls(env, target)[name]()
 
 
-@pytest.mark.parametrize("weighted", [False, True])
-def test_bin_at_output_of_an_outside_goal_is_refused(env, position_bins, weighted):
-    goal = env.bin_at(np.array([[500.0, 500.0]]))  # shape (1,), value -1
-    cost_map = np.ones(env.n_bins) if weighted else None
-    with pytest.raises(BinIndexOutOfRangeError):
-        cost_to_goal(position_bins, env, goal_bins=goal, cost_map=cost_map)
+def _goal_calls(env, position_bins, goal):
+    """Each goal function with the goal point ``goal``."""
+    positions = env.bin_centers[position_bins]
+    times = np.arange(len(positions), dtype=float)
+    return {
+        "distance_to_goal": lambda: distance_to_goal(env, times, positions, goal=goal),
+        "distance_to_goal_weighted": lambda: distance_to_goal(
+            env, times, positions, goal=goal, cost_map=np.ones(env.n_bins)
+        ),
+        "geodesic_voronoi_labels": lambda: geodesic_voronoi_labels(
+            env, goals=[goal, env.bin_centers[0]]
+        ),
+        "distance_to_decision_boundary": lambda: distance_to_decision_boundary(
+            env, times, positions, goals=[goal, env.bin_centers[0]]
+        ),
+    }
 
 
-@pytest.mark.parametrize("weighted", [False, True])
-def test_one_element_target_equals_the_scalar_target(env, position_bins, weighted):
-    cost_map = np.ones(env.n_bins) if weighted else None
-    np.testing.assert_array_equal(
-        cost_to_goal(position_bins, env, goal_bins=np.array([40]), cost_map=cost_map),
-        cost_to_goal(position_bins, env, goal_bins=40, cost_map=cost_map),
+_GOAL_NAMES = [
+    "distance_to_decision_boundary",
+    "distance_to_goal",
+    "distance_to_goal_weighted",
+    "geodesic_voronoi_labels",
+]
+
+
+@pytest.mark.parametrize("name", _GOAL_NAMES)
+def test_goal_point_outside_the_environment_is_refused(env, position_bins, name):
+    """A geodesic path cannot end outside the environment."""
+    with pytest.raises(ValueError, match="outside the environment"):
+        _goal_calls(env, position_bins, np.array([500.0, 500.0]))[name]()
+
+
+@pytest.mark.parametrize("name", _GOAL_NAMES)
+def test_goal_point_of_the_wrong_dimension_is_refused(env, position_bins, name):
+    with pytest.raises(ValueError, match=r"one\s+coordinate per environment"):
+        _goal_calls(env, position_bins, np.array([5.0, 5.0, 5.0]))[name]()
+
+
+def test_point_goal_gives_the_query_answer(env, position_bins):
+    goal = 40
+    # The square arena is convex, so the shortest path inside it between two
+    # bin centers is the straight line between them.
+    centers = env.bin_centers
+    expected = np.linalg.norm(centers[position_bins] - centers[goal], axis=1)
+    np.testing.assert_allclose(
+        distance_to_goal(
+            env,
+            np.arange(len(position_bins), dtype=float),
+            centers[position_bins],
+            goal=centers[goal],
+        ),
+        expected,
+        rtol=1e-12,
+        atol=1e-12,
     )
-
-
-def test_per_sample_targets_of_the_wrong_length_raise(env, position_bins):
-    with pytest.raises(ValueError, match=r"shape \(3,\), but there are 10 samples"):
-        cost_to_goal(position_bins, env, goal_bins=np.array([1, 2, 3]))
 
 
 def test_approach_rate_refuses_a_goal_outside(env):
@@ -130,8 +136,8 @@ def test_approach_rate_refuses_a_goal_outside(env):
     times = np.arange(5) / 10.0
     positions = np.c_[np.linspace(2.0, 20.0, 5), np.full(5, 5.0)]
     with pytest.raises(ValueError, match="outside the environment"):
-        approach_rate(times, positions, [500.0, 3.0], env=env, metric="geodesic")
-    rates = approach_rate(times, positions, [27.0, 5.0], env=env, metric="geodesic")
+        approach_rate(env, times, positions, goal=[500.0, 3.0], metric="geodesic")
+    rates = approach_rate(env, times, positions, goal=[27.0, 5.0], metric="geodesic")
     assert np.all(rates[1:] < 0)  # moving east toward the goal
 
 
@@ -149,7 +155,7 @@ def test_polar_hint_names_a_polar_lookup():
         angle_bin_size=np.pi / 6,
     )
     with pytest.raises(TypeError) as caught:
-        cost_to_goal(np.arange(3), polar, goal_bins=1.5)
+        goal_reward_field(polar, 1.5)
     assert "(distance, angle) rows, use env.bin_at(points)" in str(caught.value)
 
 
@@ -195,4 +201,4 @@ def test_approach_rate_refuses_polar_environments(polar):
     times = np.arange(3) / 10.0
     positions = np.array([[10.0, 0.0], [12.0, 0.0], [14.0, 0.0]])
     with pytest.raises(CartesianOnlyError, match="approach_rate"):
-        approach_rate(times, positions, [20.0, 0.0], env=polar, metric="geodesic")
+        approach_rate(polar, times, positions, goal=[20.0, 0.0], metric="geodesic")

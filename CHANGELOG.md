@@ -2,6 +2,82 @@
 
 ## [Unreleased]
 
+### One goal argument for every goal measure
+
+Every behavior function that measures movement toward a goal takes the
+environment, times and positions first, then the goal by keyword, the way
+`path_progress` and `distance_to_goal` already did. A goal is a region name
+(a reward well, an arm), a point, or one per trial, so efficiency, goal bias
+and approach rate come per trial in one call.
+
+**Breaking**
+
+- `approach_rate`, `angular_efficiency`, `goal_bias`,
+  `instantaneous_goal_alignment`, `compute_path_efficiency` and
+  `compute_goal_directed_metrics` take
+  `(env, times, positions[, intervals], *, goal=...)`. `env` is required and
+  first; `goal` is keyword-only. Before:
+  `goal_bias(times, positions, goal, min_speed=5.0)`; now:
+  `goal_bias(env, times, positions, goal="reward")`.
+- Their default `metric` is now `"geodesic"` (the shortest path inside the
+  environment, around walls), as for `distance_to_goal`; four of them used
+  `"euclidean"`. In an arena with no walls between the animal and the goal
+  the two agree; pass `metric="euclidean"` for the straight line.
+- `goal_bias` and `instantaneous_goal_alignment` take `metric=`, and
+  `min_speed` defaults to 5 cm/s in `env.units`, as in
+  `compute_goal_directed_metrics`.
+- A position outside the environment has no distance or direction to the
+  goal, under both metrics: it is NaN, and bridged like a lost frame where a
+  rate or a step's angle is measured. Before, the straight-line measures
+  counted it. Path lengths are unchanged: `traveled_length` follows
+  `traveled_path_length`.
+- `PathEfficiencyResult.goal_position` and `GoalDirectedMetrics.goal_position`
+  are `goal`: the goal as given, a region name or a point.
+- `cost_to_goal` is removed. `distance_to_goal(..., cost_map=,
+  terrain_difficulty=)` gives the travel cost, from goal regions or points
+  instead of bin indices.
+- `compute_home_range(env, times, positions, ...)` replaces
+  `compute_home_range(position_bins, env, times=...)`. Occupancy is always
+  time-weighted, as in `env.occupancy`, and a lost frame is bridged like a
+  deleted row.
+- `geodesic_voronoi_labels(env, goals=[...])`,
+  `distance_to_decision_boundary(env, times, positions, goals=[...])` and
+  `detect_boundary_crossings(env, times, positions, goals=[...])` take goals
+  as region names or points instead of bin indices; crossings name goals by
+  their index in `goals`. The boundary distance is measured from the
+  position, not its bin centre.
+- `graph_turn_sequence(env, times, positions)` and
+  `trajectory_similarity(env, positions_a, positions_b)` take positions
+  instead of bin indices.
+- `distance_to_goal` with a point goal measures to the point itself; it used
+  to measure to the centre of the bin holding it.
+- `compute_decision_analysis` measures each goal region to its nearest bin;
+  it used the bin nearest the region's centroid.
+
+**Added**
+
+- With trials (an `Intervals`) as the fourth argument, `goal` can be one per
+  trial, such as `goal=trials.end_region`. Per-sample measures
+  (`approach_rate`, `instantaneous_goal_alignment`) are NaN outside the
+  trials; `angular_efficiency` and `goal_bias` return a Series, and
+  `compute_path_efficiency` and `compute_goal_directed_metrics` a table, with
+  one row per trial indexed by `interval_id`. Each trial is measured from its
+  own samples, so nothing spans two trials.
+- `graph_turn_sequence(env, times, positions, trials)` gives one turn
+  sequence per trial.
+- A region goal is approached at its nearest bin: the goal direction is the
+  direction of the shortest path to the region's nearest bin, the direction
+  in which `distance_to_goal` falls fastest, so goal bias and approach rate
+  measure the same approach. For a round well
+  (`regions.add(name, point=..., radius=...)`) this is the direction to its
+  centre. `compute_goal_directed_metrics` times arrival as entering the
+  region; `goal_radius` is for point goals.
+
+**Fixed**
+
+- `path_progress` and `distance_to_goal` with no samples said "cannot reshape
+  array of size 0"; they now say that `times` and `positions` are empty.
+
 ### Trials aligned by time
 
 Trials, visits or laps can be laid out by time since their start or until

@@ -124,6 +124,13 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # The trials or other intervals that select samples and their targets.
     ("path_progress", "intervals"),
     ("distance_to_goal", "intervals"),
+    ("approach_rate", "intervals"),
+    ("angular_efficiency", "intervals"),
+    ("compute_goal_directed_metrics", "intervals"),
+    ("compute_path_efficiency", "intervals"),
+    ("goal_bias", "intervals"),
+    ("graph_turn_sequence", "intervals"),
+    ("instantaneous_goal_alignment", "intervals"),
     # The control period of a reactivation comparison (rest before the task).
     ("compare_reactivation_methods", "control_epochs"),
     # Covariance of the fitted coefficients, for the Wald test.
@@ -195,7 +202,7 @@ REQUIRED_DATA_NAMES = {
     *("nwbfile", "session", "obj", "data", "df", "path"),
     *("video_path", "xml_path", "json_path", "mask", "project"),
     *("times", "t", "positions", "position", "points"),
-    *("position_bins", "position_bins1", "position_bins2"),
+    *("positions_a", "positions_b"),
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
     *("spike_times", "spike_counts", "control_counts", "match_counts"),
     *("targets", "ego_points", "object_positions", "cue_positions"),
@@ -206,7 +213,7 @@ REQUIRED_DATA_NAMES = {
     *("entry_time", "reward_times"),
     *("interval", "intervals", "epochs", "windows", "trials", "trial_labels"),
     *("template_epochs", "match_epochs"),
-    *("laps", "visits", "labels", "direction_labels", "voronoi_labels"),
+    *("laps", "visits", "labels", "direction_labels"),
     # The window of each event, by position in the canonical events order
     # f(spike_times, event_times, window, *, bin_size).
     "window",

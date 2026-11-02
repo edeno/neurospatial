@@ -4,7 +4,7 @@ This module provides comprehensive tools for analyzing goal-directed navigation
 and path efficiency in spatial environments. It combines:
 
 - **Path progress and distance metrics**: Compute progress toward goals, distances
-  to regions, boundaries and rewards, and cost-aware navigation
+  (or travel costs) to goals, boundaries and rewards
 - **Path efficiency**: Compare actual vs. optimal paths (geodesic or Euclidean)
 - **Goal-directed metrics**: Measure how directly animals navigate toward goals
 - **Direction labeling**: Generate per-timepoint direction labels for directional
@@ -20,7 +20,6 @@ All navigation functions are importable from ``behavior.navigation``::
         distance_to_goal,
         distance_to_boundary,
         distance_to_reward,
-        cost_to_goal,
         time_to_goal,
         graph_turn_sequence,
         heading_direction_labels,
@@ -57,12 +56,13 @@ Typical Workflows
        ``path_progress()``, ``distance_to_goal()``, ``time_to_goal()``
 
 **Path efficiency analysis**:
-    1. Compute efficiency: ``result = compute_path_efficiency(env, times, positions, goal)``
+    1. Compute efficiency: ``result = compute_path_efficiency(env, times, positions, goal="reward")``
     2. Check efficiency: ``if result.is_efficient(threshold=0.8): ...``
     3. Print summary: ``print(result)``
+    4. One row per trial: ``compute_path_efficiency(env, times, positions, trials, goal=trials.end_region)``
 
 **Goal-directed analysis**:
-    1. Compute metrics: ``result = compute_goal_directed_metrics(env, times, positions, goal)``
+    1. Compute metrics: ``result = compute_goal_directed_metrics(env, times, positions, goal="reward")``
     2. Check goal-directed: ``if result.is_goal_directed(): ...``
 
 Example
@@ -92,13 +92,17 @@ Complete analysis pipeline for a spatial navigation task::
         goal=reached.end_region,
     )
 
-    # 3. Compute efficiency
-    result = compute_path_efficiency(env, times, positions, goal)
-    print(result)
+    # 3. Efficiency of each trial toward its own destination
+    efficiency = compute_path_efficiency(
+        env, times, positions, reached, goal=reached.end_region
+    )
+    print(efficiency[["efficiency", "angular_efficiency"]])
 
-    # 4. Compute goal-directed metrics
-    gd_result = compute_goal_directed_metrics(env, times, positions, goal)
-    print(f"Goal bias: {gd_result.goal_bias:.2f}")
+    # 4. Goal-directed metrics of each trial
+    goal_directed = compute_goal_directed_metrics(
+        env, times, positions, reached, goal=reached.end_region
+    )
+    print(goal_directed["goal_bias"].mean())
 
 References
 ----------
@@ -110,7 +114,6 @@ References
 
 from __future__ import annotations
 
-import numbers
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -119,7 +122,6 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._interval_table import _missing_as_none
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     break_sample_times,
@@ -131,13 +133,15 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.behavior._metric import metric_paths, require_metric
-from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
     from neurospatial.behavior._environment_paths import EnvironmentPaths
+    from neurospatial.behavior._goals import Goal, GoalRow
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
     from neurospatial.ops._types import DistanceMetric
@@ -145,7 +149,6 @@ if TYPE_CHECKING:
 
 __all__ = [  # noqa: RUF022
     # Path progress and distance
-    "cost_to_goal",
     "distance_to_boundary",
     "distance_to_goal",
     "distance_to_reward",
@@ -182,6 +185,23 @@ __all__ = [  # noqa: RUF022
 def _result_error(result: str, what: str, *, why: str, fix: str) -> ValueError:
     """A ValueError for an invalid result field, naming the result class."""
     return ValueError(_format_error(f"{result}: {what}", why=why, fix=fix))
+
+
+def _result_goal(
+    result: str, goal: object, *, n_dims: int | None
+) -> str | NDArray[np.float64]:
+    """A result's goal: a region name, or a point of shape ``(n_dims,)``."""
+    if isinstance(goal, str):
+        return goal
+    point = np.asarray(goal, dtype=float)
+    if point.ndim != 1 or (n_dims is not None and point.shape != (n_dims,)):
+        raise _result_error(
+            result,
+            f"goal has shape {point.shape}.",
+            why="the goal is a region name or one position.",
+            fix="pass a region name, or an array of shape (n_dims,).",
+        )
+    return point
 
 
 def _require_length(result: str, name: str, value: float) -> float:
@@ -229,8 +249,8 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         movement, or fewer than two observed samples).
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
-    goal_position : NDArray[np.float64]
-        Goal position coordinates, shape (n_dims,).
+    goal : str or NDArray[np.float64]
+        The goal as given: a region name, or a point of shape (n_dims,).
     metric : {"euclidean", "geodesic"}
         Distance metric used.
     fully_observed : bool
@@ -247,7 +267,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     time_efficiency: float | None
     angular_efficiency: float
     start_position: NDArray[np.float64]
-    goal_position: NDArray[np.float64]
+    goal: str | NDArray[np.float64]
     metric: Literal["euclidean", "geodesic"]
     fully_observed: bool
 
@@ -258,14 +278,13 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         traveled = _require_length(name, "traveled_length", self.traveled_length)
         shortest = _require_length(name, "shortest_length", self.shortest_length)
         start = np.asarray(self.start_position, dtype=float)
-        goal = np.asarray(self.goal_position, dtype=float)
-        if start.ndim != 1 or start.shape != goal.shape:
+        goal = _result_goal(name, self.goal, n_dims=start.shape[-1])
+        if start.ndim != 1:
             raise _result_error(
                 name,
-                f"start_position has shape {start.shape} and goal_position "
-                f"{goal.shape}.",
-                why="both are one position in the same coordinates.",
-                fix="pass two arrays of shape (n_dims,).",
+                f"start_position has shape {start.shape}.",
+                why="the start is one position.",
+                fix="pass an array of shape (n_dims,).",
             )
         object.__setattr__(self, "traveled_length", traveled)
         object.__setattr__(self, "shortest_length", shortest)
@@ -274,7 +293,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
             object.__setattr__(self, "time_efficiency", float(self.time_efficiency))
         object.__setattr__(self, "fully_observed", bool(self.fully_observed))
         object.__setattr__(self, "start_position", start)
-        object.__setattr__(self, "goal_position", goal)
+        object.__setattr__(self, "goal", goal)
         defined = self.fully_observed and traveled > 0 and np.isfinite(shortest)
         object.__setattr__(
             self, "efficiency", shortest / traveled if defined else float("nan")
@@ -429,10 +448,11 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         the goal. Interpretation: -10 cm/s means closing 10 cm per second on
         average.
     time_to_reach_goal : float or None
-        Seconds from the first measured sample to the first sample within
-        ``goal_radius`` of the goal. None when no ``goal_radius`` was given
-        (arrival not tested); NaN when the goal was never reached. Not to be
-        confused with :func:`time_to_goal`, which returns a per-sample array.
+        Seconds from the first measured sample to arrival: the first sample
+        in a goal bin for a region goal, or within ``goal_radius`` of a point
+        goal. None for a point goal without ``goal_radius`` (arrival not
+        tested); NaN when the goal was never reached. Not to be confused with
+        :func:`time_to_goal`, which returns a per-sample array.
     min_distance_to_goal : float
         Closest distance to the goal (under ``metric``) over the measured
         samples, in environment units. NaN when no sample is measured.
@@ -442,8 +462,8 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     goal_distance_at_end : float
         Distance to the goal at the last measured sample, in environment
         units. NaN when no sample is measured.
-    goal_position : NDArray[np.float64]
-        Goal position used for computation, shape (n_dims,).
+    goal : str or NDArray[np.float64]
+        The goal as given: a region name, or a point of shape (n_dims,).
     metric : {"euclidean", "geodesic"}
         Distance metric used.
 
@@ -461,7 +481,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
     >>> positions[0] = np.nan  # a lost frame
     >>> metrics = compute_goal_directed_metrics(
-    ...     env, times, positions, np.array([100.0, 0.0])
+    ...     env, times, positions, goal=[100.0, 0.0]
     ... )
     >>> metrics.goal_distance_at_start, metrics.goal_distance_at_end
     (95.0, 0.0)
@@ -473,7 +493,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     min_distance_to_goal: float
     goal_distance_at_start: float
     goal_distance_at_end: float
-    goal_position: NDArray[np.float64]
+    goal: str | NDArray[np.float64]
     metric: Literal["euclidean", "geodesic"]
 
     def __post_init__(self) -> None:
@@ -495,15 +515,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
             )
         object.__setattr__(self, "goal_bias", float(self.goal_bias))
         object.__setattr__(self, "mean_approach_rate", float(self.mean_approach_rate))
-        goal = np.asarray(self.goal_position, dtype=float)
-        if goal.ndim != 1:
-            raise _result_error(
-                name,
-                f"goal_position has shape {goal.shape}.",
-                why="the goal is one position.",
-                fix="pass an array of shape (n_dims,).",
-            )
-        object.__setattr__(self, "goal_position", goal)
+        object.__setattr__(self, "goal", _result_goal(name, self.goal, n_dims=None))
         self._own_arrays()
 
     def is_goal_directed(self, threshold: float = 0.3) -> bool:
@@ -625,19 +637,6 @@ def _samples_by_row(rows: NDArray[np.intp]) -> list[tuple[int, NDArray[np.intp]]
     return list(zip(unique.tolist(), np.split(order, first[1:]), strict=True))
 
 
-def _as_point(target: object) -> NDArray[np.float64] | None:
-    """``target`` as one point (real numbers, 0-D or 1-D), or None if it is not one."""
-    if isinstance(target, str) or target is None:
-        return None
-    try:
-        raw = np.asarray(target)
-    except ValueError:  # ragged: points mixed with None, one per interval
-        return None
-    if raw.dtype.kind not in "iuf" or raw.ndim > 1:
-        return None  # names, None entries or one point per interval
-    return raw.astype(np.float64).reshape(-1)
-
-
 def _rows_and_targets(
     intervals: Intervals[Any] | None,
     times: NDArray[np.float64],
@@ -652,86 +651,19 @@ def _rows_and_targets(
 
     Without ``intervals`` every sample is row 0 and ``target`` is one target.
     With them, each sample's row comes from the intervals (``-1`` outside
-    every row; overlapping rows are refused), and ``target`` is one target
-    for every row or one per row: a sequence of region names, points or
-    ``None`` in row order, or a ``pandas.Series`` indexed by
-    ``interval_id``. In an environment of more than one dimension a number
-    per interval (a well number) is refused: a field (a Series) of numbers,
-    or integers with one per interval, cannot be a point there.
+    every row; overlapping rows are refused); the targets are read by
+    :func:`~neurospatial.behavior._goals.interval_targets`.
     """
-    # A Series is one value per interval_id, whatever its values are.
-    by_id = hasattr(target, "reindex") and hasattr(target, "index")
-    point = None if by_id else _as_point(target)
-    single = isinstance(target, str) or point is not None
-    one = target if point is None else point
+    from neurospatial.behavior._goals import interval_targets
+
+    targets, single = interval_targets(
+        intervals, target, name=name, call=call, n_dims=n_dims
+    )
     if intervals is None:
-        if not single:
-            raise ValueError(
-                _format_error(
-                    f"{call}: {name}= has one value per interval, but no "
-                    "intervals were given.",
-                    why="per-interval targets need the intervals they belong to.",
-                    fix=f"pass intervals=trials, or one {name} for every sample "
-                    "(a region name or a point).",
-                )
-            )
-        return np.zeros(times.size, dtype=np.intp), [one], True
-    if (
-        point is not None
-        and n_dims > 1
-        and np.asarray(target).dtype.kind in "iu"
-        and point.size == len(intervals)
-    ):
-        raise TypeError(
-            _format_error(
-                f"{call}: {name}={list(np.asarray(target).tolist())} has one "
-                f"integer per interval ({len(intervals)}), like well numbers.",
-                why="well numbers are not region names, and integers read as one "
-                "point would silently move the target.",
-                fix=f"map the numbers to the environment's region names, e.g. "
-                f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}); for "
-                "one point, give float coordinates.",
-            )
-        )
+        return np.zeros(times.size, dtype=np.intp), targets, single
     if rows is None:
         rows = intervals._sample_positions(times, call)
-    if single:
-        return rows, [one] * len(intervals), True
-    values = list(intervals._per_row(target, name=name)) if by_id else list(target)
-    # A missing entry in a pandas column (NaN, pd.NA; pandas 3 stores a
-    # missing string as NaN) is an unknown target, like None.
-    values = [_missing_as_none(value) for value in values]
-    if len(values) != len(intervals):
-        msg = (
-            f"{call}: {name}= has {len(values)} entries; give one per interval "
-            f"({len(intervals)}), in row order, or one {name} for all."
-        )
-        raise ValueError(msg)
-    targets: list[Any] = []
-    for interval_id, value in zip(intervals.interval_ids, values, strict=True):
-        if n_dims > 1 and (
-            isinstance(value, numbers.Number)
-            or (isinstance(value, np.ndarray) and value.ndim == 0)
-        ):
-            raise TypeError(
-                _format_error(
-                    f"{call}: {name}= for interval_id {interval_id} is the number "
-                    f"{value}, not a region name or a point.",
-                    why="a number per interval, such as a well number, is not a "
-                    "region name, and a point is a sequence of coordinates.",
-                    fix=f"map the numbers to the environment's region names, e.g. "
-                    f"{name}=trials.goal_well.map({{1: 'well_1', 2: 'well_2'}}).",
-                )
-            )
-        entry = _as_point(value)
-        if entry is None and value is not None and not isinstance(value, str):
-            msg = (
-                f"{call}: {name}= entries must be region names, points or None; "
-                f"got {value!r}."
-            )
-            raise TypeError(msg)
-        targets.append(value if entry is None else entry)
-    return rows, targets, False
+    return rows, targets, single
 
 
 def _target_key(target: Any) -> tuple[Any, ...]:
@@ -889,6 +821,10 @@ def _validated_route_samples(
     if intervals is not None:
         intervals = require_intervals(intervals, name="intervals", owner=f"{call}()")
     t, p = validate_times_positions(times, positions, call=call)
+    if t.size == 0:
+        from neurospatial._observation import empty_samples_error
+
+        raise empty_samples_error(call, ("times", "positions"))
     p = p.reshape(len(p), -1)
     if p.shape[1] != env.n_dims:
         msg = (
@@ -1209,16 +1145,19 @@ def distance_to_goal(
     *,
     goal: Any,
     metric: DistanceMetric = "geodesic",
+    cost_map: ArrayLike | None = None,
+    terrain_difficulty: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
-    """Distance from each sample's position to the nearest goal bin.
+    """Distance from each sample's position to the goal.
 
     Answers "how far is the goal from here": the length of the shortest path
     inside the environment (``metric="geodesic"``, around walls) or the
     straight-line distance, in environment units, from the position to the
-    nearest bin of the goal. It needs no start. For progress as a fraction of
-    the route, use :func:`path_progress`; for distance to the reward
-    actually delivered, :func:`distance_to_reward`; for distance weighted by
-    terrain or learned costs, :func:`cost_to_goal`.
+    goal. It needs no start. With ``cost_map`` or ``terrain_difficulty`` it
+    is the cost of the cheapest path instead, the spatial equivalent of a
+    value function in reinforcement learning. For progress as a fraction of
+    the route, use :func:`path_progress`; for distance to the reward that
+    was actually delivered, chosen by time, :func:`distance_to_reward`.
 
     Parameters
     ----------
@@ -1235,35 +1174,47 @@ def distance_to_goal(
         :func:`~neurospatial.io.from_pynapple` reads it: metadata as fields,
         its inclusive ``end`` as the half-open stop.
     goal : str, array-like of shape (n_dims,), or per-interval sequence
-        A region name (its bins: the bin containing a point region, the bins
-        whose centres lie in a polygon region), a point in environment
-        coordinates (the bin containing it), or, with ``intervals``, one per
-        interval in row order (a ``pandas.Series`` indexed by
-        ``interval_id`` is aligned by id), for example
-        ``goal=trials.end_region``. ``None`` marks an unknown goal: that
-        interval's samples are NaN. Well or port numbers are not region
-        names: map them first (``trials.goal_well.map({1: "well_1", ...})``).
-        In 2-D and 3-D a field of numbers or integers with one per interval
-        are refused; in 1-D a number is a position, so a well number there
-        would be read as that many units along the track without an error.
+        A region name (a polygon region is its bins, measured to the nearest
+        bin centre; a point region is its location), a point in environment
+        coordinates, or, with ``intervals``, one per interval in row order
+        (a ``pandas.Series`` indexed by ``interval_id`` is aligned by id),
+        for example ``goal=trials.end_region``. ``None`` marks an unknown
+        goal: that interval's samples are NaN. Well or port numbers are not
+        region names: map them first
+        (``trials.goal_well.map({1: "well_1", ...})``). In 2-D and 3-D a
+        field of numbers or integers with one per interval are refused; in
+        1-D a number is a position, so a well number there would be read as
+        that many units along the track without an error.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         ``"geodesic"`` is the length of the shortest path that stays inside
         the environment, measured from the position itself; ``"euclidean"``
-        is the straight line to the nearest goal bin centre.
+        is the straight line. A geodesic goal point must lie inside the
+        environment.
+    cost_map : array-like, shape (n_bins,), optional
+        Extra cost per unit length of travel through each bin, dimensionless
+        and ``>= 0``: ``0`` is plain travel and ``9`` makes moving through
+        the bin cost ten times its length (learned avoidance, punishment
+        zones). Default: no extra cost. Needs ``metric="geodesic"``.
+    terrain_difficulty : array-like, shape (n_bins,), optional
+        Movement difficulty multiplier per bin, dimensionless and ``> 0``.
+        Default: 1 everywhere. Needs ``metric="geodesic"``.
 
     Returns
     -------
     ndarray of float64, shape (n_samples,)
-        Distance in environment units; 0 at a goal bin centre. NaN outside
-        the environment, outside every interval, or with an unknown goal;
-        ``inf`` (geodesic) where the goal cannot be reached.
+        Distance in environment units (or travel cost, see Notes); 0 at the
+        goal point or a goal bin centre. NaN outside the environment, outside
+        every interval, or with an unknown goal; ``inf`` (geodesic) where
+        the goal cannot be reached.
 
     Raises
     ------
     ValueError
-        If a point goal is outside the environment, a region covers no bin,
-        ``metric`` is not recognized, ``times`` or ``positions`` are
-        invalid, or intervals overlap.
+        If a geodesic goal point is outside the environment, a region covers
+        no bin, ``metric`` is not recognized, a cost is given with
+        ``metric="euclidean"``, ``cost_map`` or ``terrain_difficulty`` does
+        not have one finite value per bin in range, ``times`` or
+        ``positions`` are invalid, or intervals overlap.
     TypeError
         If ``intervals`` is not an Intervals or a pynapple IntervalSet.
     RegionNotFoundError
@@ -1282,6 +1233,19 @@ def distance_to_goal(
     ``goal=trials.end_region`` is where the animal went, known only after the
     trial; for a predictive model use the instructed goal from the task log.
 
+    **Travel cost.** Each bin has a cost rate per unit length,
+    ``rate = terrain_difficulty * (1 + cost_map)``. The cost of a path is the
+    integral of the rate along it, each stretch taking the rate of the bin it
+    runs through, and the result is the cheapest path inside the environment
+    to the nearest goal bin (the bin holding a goal point). Paths are the same
+    any-angle paths as the geodesic distance, so with a rate of 1 everywhere
+    the cost is the geodesic distance between bin centres. Because cost is per
+    unit length it does not depend on the bin size: on a 100 cm corridor with
+    ``cost_map = np.ones(n_bins)``, a bin 80 cm from the goal costs 160 at
+    every bin size. The cost is measured from the centre of the position's
+    bin, so it changes in steps of one bin, while the plain distance is
+    measured from the position itself.
+
     Examples
     --------
     >>> import numpy as np
@@ -1292,56 +1256,90 @@ def distance_to_goal(
     >>> regions = Regions()
     >>> _ = regions.add("reward", point=(100.0, 0.0))
     >>> env = env.with_regions(regions)
-    >>> positions = np.array([[5.0, 0.0], [55.0, 0.0], [100.0, 0.0]])
+    >>> positions = np.array([[0.0, 0.0], [50.0, 0.0], [100.0, 0.0]])
     >>> distance_to_goal(env, np.arange(3.0), positions, goal="reward").tolist()
-    [95.0, 45.0, 0.0]
+    [100.0, 50.0, 0.0]
+
+    Crossing a punished stretch (the bins centred at 60 and 70, 20 cm in
+    all) costs ten times its length, 180 more than the distance:
+
+    >>> cost_map = np.zeros(env.n_bins)
+    >>> cost_map[env.bin_at(np.array([[60.0, 0.0], [70.0, 0.0]]))] = 9.0
+    >>> distance_to_goal(
+    ...     env, np.arange(3.0), positions, goal="reward", cost_map=cost_map
+    ... ).round(6).tolist()
+    [280.0, 230.0, 0.0]
 
     See Also
     --------
     path_progress : Progress from start to goal, between 0 and 1.
-    distance_to_reward : Distance to the reward location at each sample.
-    cost_to_goal : Distance with terrain or learned costs.
+    distance_to_reward : Distance to the reward location chosen by time.
     """
+    from neurospatial.behavior._goals import goal_rows
+
     call = "distance_to_goal"
     paths = metric_paths(metric, env, call=call)
     times, positions, intervals = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
-    rows, goals, _ = _rows_and_targets(
-        intervals, times, goal, name="goal", call=f"{call}()", n_dims=env.n_dims
-    )
-    distances = np.full(times.size, np.nan)
-    unknown = np.zeros(times.size, dtype=bool)
-    goal_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
-    goal_samples: dict[tuple[Any, ...], list[NDArray[np.intp]]] = {}
-    for row, samples in _samples_by_row(rows):
-        target = goals[row]
-        if target is None:
-            unknown[samples] = True
-            continue
-        key = _target_key(target)
-        if key not in goal_bins:
-            goal_bins[key] = np.unique(
-                _target_bins(
-                    env,
-                    target,
-                    name="goal",
-                    call=f"{call}()",
-                    point_radius=None,
-                    sized=False,
+    rate = None
+    if cost_map is not None or terrain_difficulty is not None:
+        if paths is None:
+            raise ValueError(
+                _format_error(
+                    f"{call}(): cost_map and terrain_difficulty need "
+                    "metric='geodesic'.",
+                    why="a cost is integrated along a path inside the environment; "
+                    "a straight line has no bins to weight.",
+                    fix="pass metric='geodesic' (the default), or drop the costs.",
                 )
             )
-            goal_samples[key] = []
-        goal_samples[key].append(samples)
-    # One distance query per distinct goal: each sample's distance depends
-    # only on its own position.
-    for key, parts in goal_samples.items():
-        samples = np.concatenate(parts)
-        distances[samples] = _distance_to_bins(
-            env, paths, goal_bins[key], positions[samples]
+        extra = _validated_bin_values(
+            cost_map, env, name="cost_map", default=0.0, positive=False, call=call
         )
+        difficulty = _validated_bin_values(
+            terrain_difficulty,
+            env,
+            name="terrain_difficulty",
+            default=1.0,
+            positive=True,
+            call=call,
+        )
+        rate = difficulty * (1.0 + extra)
+    rows = goal_rows(env, times, intervals, goal, paths=paths, call=call, disjoint=True)
+    distances = np.full(times.size, np.nan)
+    analyzed = np.zeros(times.size, dtype=bool)
+    unknown = np.zeros(times.size, dtype=bool)
+    # One query per distinct goal: each sample's distance depends only on
+    # its own position.
+    samples_of: dict[int, list[NDArray[np.intp]]] = {}
+    goals = {}
+    for row in rows:
+        analyzed[row.samples] = True
+        if row.goal is None:
+            unknown[row.samples] = True
+            continue
+        goals[id(row.goal)] = row.goal
+        samples_of.setdefault(id(row.goal), []).append(
+            np.arange(times.size)[row.samples]
+        )
+    for key, parts in samples_of.items():
+        samples = np.concatenate(parts)
+        target = goals[key]
+        if rate is None:
+            distances[samples] = target.distances(env, paths, positions[samples])
+            continue
+        assert paths is not None
+        source = (
+            target.bins
+            if target.bins is not None
+            else env.bin_at(np.asarray(target.point)[None, :]).astype(np.intp)
+        )
+        field = paths.costs_from_bins(source, rate)
+        bins = env.bin_at(positions[samples])
+        located = bins >= 0
+        distances[samples[located]] = field[bins[located]]
 
-    analyzed = rows >= 0
     _warn_if_mostly_nan(
         distances,
         analyzed,
@@ -2142,149 +2140,6 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
     return boundary_bins
 
 
-def cost_to_goal(
-    position_bins: NDArray[np.int_],
-    env: Environment[CartesianSystem],
-    *,
-    goal_bins: NDArray[np.int_] | int,
-    cost_map: NDArray[np.float64] | None = None,
-    terrain_difficulty: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
-    """Compute cost-to-goal incorporating terrain difficulty and learned costs.
-
-    Unlike simple geometric distance, cost-to-goal accounts for:
-
-    - Movement difficulty (e.g., barriers, narrow passages)
-    - Learned avoidance (e.g., punishment zones, risky areas)
-
-    This is the spatial equivalent of a value function in RL.
-
-    Parameters
-    ----------
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices over time, as from ``env.bin_at``; ``-1`` marks a sample
-        outside the environment (NaN).
-    env : Environment
-        Spatial environment.
-    goal_bins : NDArray[np.int_] or int
-        Target bin(s). One bin for every sample (an int or a one-element
-        array, in ``[0, n_bins)``), or an array of shape ``(n_samples,)``
-        (dynamic goal, where ``-1`` marks a sample with no goal).
-    cost_map : NDArray[np.float64], shape (n_bins,), optional
-        Extra cost per unit length of travel through each bin, dimensionless
-        and ``>= 0``: ``0`` is plain travel and ``9`` makes moving through
-        the bin cost ten times its length. Default: no extra cost.
-    terrain_difficulty : NDArray[np.float64], shape (n_bins,), optional
-        Movement difficulty multiplier per bin, dimensionless and ``> 0``.
-        Default: 1.0 (uniform).
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples,)
-        Cost of the cheapest path inside the environment from the current
-        bin's center to the goal bin's center, in the environment's length
-        units (e.g. cm) weighted by the cost rate. With neither ``cost_map``
-        nor ``terrain_difficulty`` it is the geodesic distance between the
-        two bin centers (as :func:`distance_to_goal` measures from a
-        position): the length of the shortest path that stays inside the
-        environment. Lower cost =
-        preferred path. NaN where the position or the goal is ``-1``;
-        ``inf`` where no path exists.
-
-    Raises
-    ------
-    ValueError
-        If ``cost_map`` or ``terrain_difficulty`` does not have shape
-        ``(n_bins,)`` or holds a non-finite value, a ``cost_map`` entry is
-        negative, or a ``terrain_difficulty`` entry is not positive.
-    TypeError
-        If ``position_bins`` or ``goal_bins`` is not integer bin indices.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
-    CartesianOnlyError
-        If ``env`` is an egocentric polar environment, whose bins are
-        (distance, angle), not positions.
-
-    Notes
-    -----
-    Each bin has a cost rate per unit length,
-    ``rate = terrain_difficulty * (1 + cost_map)``. Travel cost is the
-    integral of the rate along a path inside the environment, each stretch
-    taking the rate of the bin it runs through (averaged across a bin
-    boundary), and the result is the cheapest such path. Paths are the same
-    any-angle paths as the geodesic distance: straight segments that stay
-    inside the environment, bending only at bin centers. With a rate of 1
-    everywhere the cost is the geodesic distance itself.
-
-    Because cost is per unit length, the result does not depend on the bin
-    size: on a 100 cm corridor with ``cost_map = np.ones(n_bins)``, a bin
-    80 cm from the goal costs 160 at every bin size, and a 20 cm stretch
-    with ``cost_map = 9`` adds about ``9 * 20 = 180`` (exactly when the
-    stretch ends on bin edges, within a bin's length otherwise). A uniform
-    ``cost_map`` only rescales every cost, so it never changes which path is
-    cheapest.
-
-    Examples
-    --------
-    >>> # Simple: uniform cost (equivalent to geodesic distance)
-    >>> cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)  # doctest: +SKIP
-
-    >>> # Learned avoidance: crossing a punished bin costs ten times its length
-    >>> cost_map = np.zeros(env.n_bins)  # doctest: +SKIP
-    >>> cost_map[punishment_bins] = 9.0  # doctest: +SKIP
-    >>> cost = cost_to_goal(
-    ...     position_bins, env, goal_bins=goal_bin, cost_map=cost_map
-    ... )  # doctest: +SKIP
-
-    See Also
-    --------
-    distance_to_goal : Distance from each position to a goal, without costs
-    """
-    from neurospatial.environment import _validate_sample_targets
-
-    position_bins = validated_position_bins(position_bins, env, call="cost_to_goal")
-    goals, per_sample = _validate_sample_targets(
-        goal_bins,
-        n_samples=len(position_bins),
-        n_bins=env.n_bins,
-        coordinates=env.coordinate_system,
-        operation="cost_to_goal()",
-        argument="goal_bins",
-    )
-
-    from neurospatial.behavior._environment_paths import environment_paths
-
-    paths = environment_paths(env, call="cost_to_goal")
-    # Case 1: No cost modifications: the geodesic distance between bin centres.
-    if cost_map is None and terrain_difficulty is None:
-        return paths.between_bins(
-            position_bins,
-            np.broadcast_to(goals if per_sample else goals[0], position_bins.shape),
-        )
-
-    # Case 2: per-bin cost rate per unit length, integrated along the
-    # cheapest path inside the environment.
-    extra = _validated_bin_values(
-        cost_map, env, name="cost_map", default=0.0, positive=False
-    )
-    difficulty = _validated_bin_values(
-        terrain_difficulty, env, name="terrain_difficulty", default=1.0, positive=True
-    )
-    rate = difficulty * (1.0 + extra)
-    if not per_sample:
-        goal_costs = paths.costs_from_bins(goals, rate)
-        costs = np.full(len(position_bins), np.nan)
-        located = position_bins >= 0
-        costs[located] = goal_costs[position_bins[located]]
-        return costs
-
-    costs = np.full(len(position_bins), np.nan, dtype=np.float64)
-    for goal in np.unique(goals[goals >= 0]):
-        mask = (goals == goal) & (position_bins >= 0)
-        costs[mask] = paths.costs_from_bins(np.array([goal]), rate)[position_bins[mask]]
-    return costs
-
-
 def _validated_bin_values(
     values: ArrayLike | None,
     env: Environment,
@@ -2292,6 +2147,7 @@ def _validated_bin_values(
     name: str,
     default: float,
     positive: bool,
+    call: str,
 ) -> NDArray[np.float64]:
     """Check a per-bin cost array: shape ``(n_bins,)``, finite, and in range.
 
@@ -2307,6 +2163,8 @@ def _validated_bin_values(
         Value of every bin when ``values`` is None.
     positive : bool
         Require ``> 0`` (a multiplier) instead of ``>= 0`` (an extra cost).
+    call : str
+        Public function name, used in messages.
 
     Returns
     -------
@@ -2318,7 +2176,7 @@ def _validated_bin_values(
     if array.shape != (env.n_bins,):
         raise ValueError(
             _format_error(
-                f"cost_to_goal() got {name} with shape {array.shape}, but the "
+                f"{call}() got {name} with shape {array.shape}, but the "
                 f"environment has {env.n_bins} bins.",
                 why=f"{name} holds one value per bin.",
                 fix=f"pass an array of shape ({env.n_bins},), for example "
@@ -2328,7 +2186,7 @@ def _validated_bin_values(
     if not np.all(np.isfinite(array)):
         raise ValueError(
             _format_error(
-                f"cost_to_goal() got {np.count_nonzero(~np.isfinite(array))} "
+                f"{call}() got {np.count_nonzero(~np.isfinite(array))} "
                 f"non-finite value(s) in {name}; every value must be finite.",
                 why="a NaN or infinite edge weight makes every cost infinite "
                 "or undefined.",
@@ -2341,7 +2199,7 @@ def _validated_bin_values(
         rule = "are not positive" if positive else "are negative"
         raise ValueError(
             _format_error(
-                f"cost_to_goal() got {np.count_nonzero(bad)} value(s) in {name} "
+                f"{call}() got {np.count_nonzero(bad)} value(s) in {name} "
                 f"that {rule}; the smallest is {array.min():g}.",
                 why="shortest paths need positive edge weights: a zero "
                 "difficulty makes travel free and a negative cost makes a "
@@ -2472,12 +2330,15 @@ def time_to_goal(
 _MAX_TURN_ANGLE = 5 * np.pi / 6
 
 
+@reads_pynapple_samples
 def graph_turn_sequence(
     env: Environment[CartesianSystem],
-    position_bins: NDArray[np.int_],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
     tolerance: float | None = None,
-) -> str:
+) -> str | pd.Series:
     """Extract discrete turn sequence from trajectory.
 
     Reduces the sequence of visited bins to the straight legs of the route
@@ -2497,11 +2358,17 @@ def graph_turn_sequence(
     ----------
     env : Environment
         Cartesian spatial environment (any layout type).
-    position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along trajectory (single trial or segment), in time
-        order, as from ``env.bin_at``. The order of the samples sets the
-        direction of travel. ``-1`` (outside the environment) is skipped as
-        if its sample were deleted.
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing. Their order
+        sets the direction of travel.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row or a position
+        outside the environment is skipped as if its sample were deleted.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals; each interval's route is its own samples,
+        ``[start, stop)``, and the result has one turn sequence per interval.
+        A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it.
     tolerance : float, optional
         How far, in the environment's units, the route may stray from a
         straight leg before the departure counts as a corner. Default: one
@@ -2513,9 +2380,10 @@ def graph_turn_sequence(
 
     Returns
     -------
-    str
+    str or pandas.Series
         Turn sequence like "left-right-left", or empty string "" if no
-        turns detected. Each turn is separated by "-". Only the first two
+        turns detected; with ``intervals``, one per interval indexed by
+        ``interval_id``. Each turn is separated by "-". Only the first two
         coordinates set the turn direction. A heading change of more than
         150 degrees is a reversal, neither left nor right, and is left out.
 
@@ -2525,11 +2393,10 @@ def graph_turn_sequence(
         If ``env`` is polar: left and right come from cross products of
         Cartesian bin-center displacements.
     TypeError
-        If ``position_bins`` is not integer bin indices.
-    BinIndexOutOfRangeError
-        If a bin index is outside ``[0, n_bins)`` and is not ``-1``.
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet.
     ValueError
-        If ``tolerance`` is not finite and non-negative.
+        If ``tolerance`` is not finite and non-negative, or ``times`` or
+        ``positions`` are invalid.
 
     Notes
     -----
@@ -2554,9 +2421,21 @@ def graph_turn_sequence(
 
     Examples
     --------
-    >>> for samples in trials.sample_slices(times):  # doctest: +SKIP
-    ...     turn_seq = graph_turn_sequence(env, position_bins[samples])
-    ...     print(f"Trial: {turn_seq}")  # "left" or "right"
+    An L-shaped run, north then west, is one left turn:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import graph_turn_sequence
+    >>> x, y = np.meshgrid(np.arange(0.0, 50.0), np.arange(0.0, 50.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> north = np.c_[np.full(20, 40.0), np.linspace(5, 40, 20)]
+    >>> west = np.c_[np.linspace(38, 5, 20), np.full(20, 40.0)]
+    >>> positions = np.r_[north, west]
+    >>> graph_turn_sequence(env, np.arange(40) / 10, positions)
+    'left'
+
+    One sequence per trial: ``graph_turn_sequence(env, times, positions,
+    trials)``.
 
     See Also
     --------
@@ -2576,7 +2455,10 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    bins = validated_position_bins(position_bins, env, call="graph_turn_sequence")
+    times, positions, intervals = _validated_route_samples(
+        env, times, positions, intervals, call="graph_turn_sequence"
+    )
+    bins = env.bin_at(positions)
     if tolerance is None:
         tolerance = float(np.sqrt(2.0) * env.bin_spacing)
     elif not (np.isfinite(tolerance) and tolerance >= 0):
@@ -2587,9 +2469,26 @@ def graph_turn_sequence(
                 fix="pass a finite tolerance >= 0, or None for one bin diagonal",
             )
         )
+    if intervals is None:
+        return _turn_sequence(env, bins, tolerance)
+    import pandas as pd
+
+    first = np.searchsorted(times, intervals.start, side="left")
+    last = np.searchsorted(times, intervals.stop, side="left")
+    return pd.Series(
+        [
+            _turn_sequence(env, bins[a:b], tolerance)
+            for a, b in zip(first, last, strict=True)
+        ],
+        index=pd.Index(intervals.interval_ids, name="interval_id"),
+        name="turn_sequence",
+    )
+
+
+def _turn_sequence(env: Environment, bins: NDArray[np.intp], tolerance: float) -> str:
+    """:func:`graph_turn_sequence` of one route, from its samples' bins."""
     if env.bin_centers.shape[1] < 2:
         return ""
-
     points = env.bin_centers[bins[bins >= 0], :2]
     if len(points) == 0:
         return ""
@@ -3459,18 +3358,84 @@ def time_efficiency(
     return float(optimal_time / actual_time)
 
 
-@reads_pynapple_samples
-def angular_efficiency(
+def _goal_observations(
+    env: Environment,
     times: ArrayLike,
     positions: ArrayLike,
-    goal: ArrayLike,
+    intervals: Any,
     *,
-    metric: DistanceMetric = "euclidean",
-    env: Environment | None = None,
+    call: str,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    result: str,
+    columns: Literal["xy"] | None = None,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], Intervals[Any] | None, ObservationSupport
+]:
+    """Validate a goal function's samples and resolve their observation support.
+
+    Tracking gaps, ``epochs`` and declared breaks are resolved once, on the
+    whole recording, so a warning that nothing was observed is given once.
+    """
+    from neurospatial._interval_table import require_intervals
+    from neurospatial._observation import validated_observations
+
+    require_cartesian(
+        env.coordinate_system,
+        f"{call}()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+    if intervals is not None:
+        intervals = require_intervals(intervals, name="intervals", owner=f"{call}()")
+    t, p, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result=result,
+        columns=columns,
+    )
+    if p.shape[1] != env.n_dims:
+        msg = (
+            f"{call}(): positions have {p.shape[1]} coordinate(s) per sample; "
+            f"the environment has {env.n_dims}."
+        )
+        raise ValueError(msg)
+    return t, p, intervals, support
+
+
+def _support_of(
+    times: NDArray[np.float64],
+    support: ObservationSupport,
+    samples: slice,
+    intervals: Intervals[Any] | None,
+) -> ObservationSupport:
+    """The support of one goal row: the whole recording's, or one interval's."""
+    if intervals is None:
+        return support
+    from neurospatial.behavior._goals import row_support
+
+    return row_support(times, support, samples)
+
+
+@reads_pynapple_samples
+def angular_efficiency(
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
+    *,
+    goal: Any,
+    metric: DistanceMetric = "geodesic",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> float:
+) -> float | pd.Series:
     """Compute how directly the path heads toward the goal.
 
     For every observed step, the angle between the step's direction and the
@@ -3483,25 +3448,37 @@ def angular_efficiency(
 
     Parameters
     ----------
+    env : Environment
+        The environment the positions were recorded in.
     times : ArrayLike, shape (n_samples,)
         Sample times in seconds; finite and strictly increasing.
-    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
-        Position coordinates in allocentric frame. Rows with a non-finite
-        coordinate are missing.
-    goal : ArrayLike, shape (n_dims,)
-        Goal position, in the coordinates and units of ``positions``.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
-        Which shortest path sets the goal direction. ``"euclidean"``: the
-        straight line, so the direction is the bearing to the goal.
-        ``"geodesic"``: the length of the shortest path between two positions
-        that stays inside the environment (it goes around walls and never
-        leaves the environment, and on a track it runs along the track's
-        centerline), so the direction is toward its first waypoint, the first
-        corner it turns around, and on a track along the track toward the goal.
-        Requires ``env``.
-    env : Environment, optional
-        Required when ``metric="geodesic"``. A step starting outside the
-        environment has no geodesic direction and is left out.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. A NaN row is a missing
+        sample; a step starting outside the environment has no goal
+        direction and is left out.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, and the result
+        has one value per interval. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -3509,9 +3486,11 @@ def angular_efficiency(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
-    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
-        Half-open ``[start, stop)`` windows in seconds, on the clock of
-        ``times``. A step must lie inside one window.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -3521,19 +3500,29 @@ def angular_efficiency(
 
     Returns
     -------
-    float
-        Angular efficiency in ``[0, 1]``. NaN when no step has a defined
-        direction toward the goal: fewer than two observed samples, the
-        animal never moves, or every step starts at the goal.
+    float or pandas.Series
+        Angular efficiency in ``[0, 1]``; with ``intervals``, one per interval
+        indexed by ``interval_id``. NaN when no step has a defined direction
+        toward the goal: fewer than two observed samples, the animal never
+        moves, every step starts at the goal, or the goal is unknown.
 
     Raises
     ------
     ValueError
-        If the inputs are empty or malformed, ``goal`` does not have one
-        coordinate per position dimension, ``metric`` is not recognized, or
-        (geodesic) ``env`` is None or the goal is outside the environment.
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
     CartesianOnlyError
-        For ``metric="geodesic"`` on an egocentric polar environment.
+        If ``env`` is an egocentric polar environment.
 
     Notes
     -----
@@ -3541,7 +3530,7 @@ def angular_efficiency(
     deleted row when its valid neighbours are no more than ``max_gap`` apart;
     only a longer gap, an ``epochs`` edge or a declared break leaves the step
     out. A step of zero length has no direction and is left out, as is a
-    step that starts at the goal (no goal direction).
+    step that starts at the goal (a goal bin, or the goal point).
 
     Steps are measured on positions smoothed by a Gaussian in time (0.1 s
     standard deviation, the smoothing of :func:`compute_speed`, weighted by
@@ -3562,32 +3551,49 @@ def angular_efficiency(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.behavior import angular_efficiency
+    >>> corridor = np.column_stack([np.linspace(-20, 20, 81), np.zeros(81)])
+    >>> env = Environment.from_samples(corridor, bin_size=1.0)
     >>> times = np.array([0.0, 0.1, 0.2])
     >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    >>> angular_efficiency(times, positions, np.array([10.0, 0.0]))  # toward
+    >>> angular_efficiency(env, times, positions, goal=[10.0, 0.0])  # toward
     1.0
-    >>> angular_efficiency(times, positions, np.array([-10.0, 0.0]))  # away
+    >>> angular_efficiency(env, times, positions, goal=[-10.0, 0.0])  # away
     0.0
     """
-    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._goals import by_interval, goal_rows
 
-    paths = metric_paths(metric, env, call="angular_efficiency")
-    times_arr, positions_arr, support = validated_observations(
+    call = "angular_efficiency"
+    paths = metric_paths(metric, env, call=call)
+    times_arr, positions_arr, intervals, support = _goal_observations(
+        env,
         times,
         positions,
-        call="angular_efficiency",
+        intervals,
+        call=call,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="the angular efficiency is NaN",
     )
-    starts, steps = _smoothed_steps(
-        times_arr, positions_arr, support.sample_valid, support.interval_mask
+    rows = goal_rows(
+        env, times_arr, intervals, goal, paths=paths, call=call, disjoint=False
     )
-    return _angular_efficiency(
-        starts, steps, goal, paths=paths, call="angular_efficiency"
-    )
+    values = []
+    for row in rows:
+        if row.goal is None:
+            values.append(np.nan)
+            continue
+        sl = row.samples
+        rs = _support_of(times_arr, support, sl, intervals)
+        starts, steps = _smoothed_steps(
+            times_arr[sl], positions_arr[sl], rs.sample_valid, rs.interval_mask
+        )
+        values.append(_angular_efficiency(env, starts, steps, row.goal, paths=paths))
+    if intervals is None:
+        return values[0]
+    return by_interval(rows, values, name="angular_efficiency")
 
 
 def _smoothed_steps(
@@ -3654,32 +3660,27 @@ def _observed_steps(
 
 
 def _angular_efficiency(
+    env: Environment,
     starts: NDArray[np.float64],
     step: NDArray[np.float64],
-    goal: ArrayLike,
+    goal: Goal,
     *,
     paths: EnvironmentPaths | None,
-    call: str,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
 
     Parameters
     ----------
+    env : Environment
     starts, step : ndarray, shape (n_steps, n_dims)
         Step start positions and (smoothed) displacements.
-    goal : array-like, shape (n_dims,)
+    goal : Goal
+        The resolved goal; its direction at each step start is the
+        direction in which the shortest path to it leaves the start.
     paths : EnvironmentPaths or None
-        Geodesic engine (``metric_paths``), whose shortest path's first
-        direction is the goal direction, or None for the straight line.
-    call : str
-        Public function name, used in messages.
+        Geodesic engine (``metric_paths``), or None for straight lines.
     """
-    goal_arr = _validated_goal(goal, starts.shape[1], call=call)
-    if paths is None:
-        to_goal = goal_arr[None, :] - starts
-    else:
-        _require_inside(paths, {"goal": goal_arr}, call=call)
-        to_goal = paths.directions(starts, goal_arr)
+    to_goal = goal.directions(env, paths, starts)
     step_norm = np.linalg.norm(step, axis=1)
     goal_norm = np.linalg.norm(to_goal, axis=1)
     with np.errstate(invalid="ignore"):
@@ -3821,6 +3822,7 @@ def subgoal_efficiency(
         result="no path was observed",
     )
     from neurospatial._velocity import time_smoothed_positions
+    from neurospatial.behavior._goals import resolve_goal
 
     smoothed = time_smoothed_positions(times_arr, positions_arr, support.interval_mask)
     n_dims = positions_arr.shape[1]
@@ -3843,7 +3845,8 @@ def subgoal_efficiency(
     segment_results = []
     start: int | None = None
     for index, subgoal in enumerate(subgoal_arr):
-        distances = _goal_distances(positions_arr, subgoal, paths=paths, call=call)
+        target = resolve_goal(env, subgoal, paths=paths, call=call)
+        distances = target.distances(env, paths, positions_arr)
         rows = np.flatnonzero(measured & ~np.isnan(distances))
         if start is None:
             if not rows.size:
@@ -3891,6 +3894,7 @@ def subgoal_efficiency(
                 shortest_length=float(distances[start]),
                 time_efficiency=None,
                 angular_efficiency=_angular_efficiency(
+                    env,
                     *_smoothed_steps(
                         times_arr[segment],
                         positions_arr[segment],
@@ -3898,12 +3902,11 @@ def subgoal_efficiency(
                         support.interval_mask[start:arrival],
                         smoothed=smoothed[segment],
                     ),
-                    subgoal,
+                    target,
                     paths=paths,
-                    call=call,
                 ),
                 start_position=positions_arr[start],
-                goal_position=subgoal,
+                goal=subgoal,
                 metric=metric,
                 fully_observed=complete,
             )
@@ -3917,45 +3920,52 @@ def subgoal_efficiency(
 
 @reads_pynapple_samples
 def compute_path_efficiency(
-    env: Environment,
+    env: Environment[CartesianSystem],
     times: ArrayLike,
     positions: ArrayLike,
-    goal: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
+    goal: Any,
     metric: DistanceMetric = "geodesic",
     reference_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> PathEfficiencyResult:
+) -> PathEfficiencyResult | pd.DataFrame:
     """Compute comprehensive path efficiency metrics.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment.
+        The environment the positions were recorded in.
     times : ArrayLike, shape (n_samples,)
         Sample times in seconds; finite and strictly increasing.
-    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
-        Position coordinates in allocentric frame. A 1-D array is one
-        coordinate (for example a linearized track). Rows with a non-finite
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates. Rows with a non-finite
         coordinate are missing.
-    goal : ArrayLike, shape (n_dims,)
-        Goal position.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, and the result
+        has one value per interval. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for both lengths and the goal direction.
-        ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
-        length of the shortest path between two positions that stays inside the
-        environment: it goes around walls and never leaves the environment, and
-        on a track it runs along the track's centerline: ``traveled_length`` as
-        in :func:`traveled_path_length`, ``shortest_length`` as in
-        :func:`shortest_path_length` and the goal direction as in
-        :func:`angular_efficiency`, so a straight run on an open field is
-        perfectly efficient at any bin size. An interval with an endpoint
-        outside the environment has no geodesic length and is left out, and an
-        interval between disconnected parts contributes ``inf`` (so a complete
-        path with such a step has ``traveled_length=inf`` and
-        ``efficiency=0.0``).
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
     reference_speed : float, optional
         Reference speed for time efficiency, in position units per second;
         finite and greater than zero. None leaves ``time_efficiency`` None.
@@ -3966,9 +3976,11 @@ def compute_path_efficiency(
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
-    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
-        Half-open ``[start, stop)`` windows in seconds, on the clock of
-        ``times``. An interval must lie inside one window.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -3978,28 +3990,40 @@ def compute_path_efficiency(
 
     Returns
     -------
-    PathEfficiencyResult
-        All path efficiency metrics combined, measured from the first
-        observed sample (the first row with finite coordinates) to ``goal``;
-        missing rows before the first or after the last observed sample are
-        treated as deleted, also for ``time_efficiency``. When the goal is
-        unreachable under
-        ``metric="geodesic"`` (it lies on a disconnected component),
-        ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
-        ``time_efficiency`` fields are ``nan`` (not ``0.0``).
+    PathEfficiencyResult or pandas.DataFrame
+        All path efficiency metrics, measured from the first observed sample
+        (the first row with finite coordinates) to ``goal``; missing rows
+        before the first or after the last observed sample are treated as
+        deleted, also for ``time_efficiency``. With ``intervals``, a table
+        with one row per interval indexed by ``interval_id`` and the columns
+        ``traveled_length``, ``shortest_length``, ``efficiency``,
+        ``time_efficiency``, ``angular_efficiency``, ``fully_observed`` and
+        ``goal``; an interval with an unknown goal has NaN metrics. When the
+        goal is unreachable under ``metric="geodesic"`` (it lies on a
+        disconnected component), ``shortest_length`` is ``inf`` and the
+        derived ``efficiency`` and ``time_efficiency`` are ``nan``; when the
+        first observed position is outside the environment,
+        ``shortest_length`` is NaN.
 
     Raises
     ------
     ValueError
-        If ``metric`` is not recognized, or if the inputs are empty or
-        malformed (for example ``times`` not strictly increasing, or
-        ``break_before`` not a Boolean array with one entry per sample),
-        ``goal`` does not have shape ``(n_dims,)`` or has a non-finite
-        coordinate, or ``reference_speed`` is not a finite speed greater than
-        zero. With ``metric="geodesic"``, also if the first observed position or
-        ``goal`` is outside the environment, or no position is observed.
-        With ``metric="euclidean"`` a
-        recording with no observed position gives ``shortest_length=nan``.
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    ValueError
+        If ``reference_speed`` is not a finite speed greater than zero.
 
     Notes
     -----
@@ -4012,16 +4036,16 @@ def compute_path_efficiency(
     route with the shortest one, so it is ``nan`` unless every interval from
     the first to the last observed sample is usable; with an unbridged
     stretch the observed length underestimates the route and the ratio would
-    be biased upward. ``shortest_length`` and the wall-clock
-    ``time_efficiency`` keep their meanings. When a long tracking loss makes
-    a trial's efficiency ``nan``, report its ``traveled_length`` instead, or
-    restrict the analysis to completely observed trials.
+    be biased upward. ``shortest_length`` is the distance from the start to
+    the goal, as :func:`distance_to_goal` measures it (to the nearest goal
+    bin centre for a region). ``time_efficiency`` is wall-clock. When a long
+    tracking loss makes a trial's efficiency ``nan``, report its
+    ``traveled_length`` instead, or restrict the analysis to completely
+    observed trials.
 
     ``angular_efficiency`` is a mean over the observed steps, as returned by
-    :func:`angular_efficiency` with the same arguments (including
-    ``metric``: under the geodesic metric each step is compared with the
-    direction of the shortest path inside the environment), so a tracking
-    loss removes steps from the mean but does not bias it.
+    :func:`angular_efficiency` with the same arguments, so a tracking loss
+    removes steps from the mean but does not bias it.
 
     Examples
     --------
@@ -4032,82 +4056,146 @@ def compute_path_efficiency(
     >>> times = np.arange(11) / 10  # seconds
     >>> env = Environment.from_samples(positions, bin_size=1.0)
     >>> goal = positions[-1]
-    >>> result = compute_path_efficiency(
-    ...     env, times, positions, goal, metric="euclidean"
-    ... )
+    >>> result = compute_path_efficiency(env, times, positions, goal=goal)
     >>> result.traveled_length, result.efficiency
     (10.0, 1.0)
     >>> positions[5] = np.nan  # one lost frame, bridged
-    >>> result = compute_path_efficiency(
-    ...     env, times, positions, goal, metric="euclidean"
-    ... )
+    >>> result = compute_path_efficiency(env, times, positions, goal=goal)
     >>> result.traveled_length, result.efficiency
     (10.0, 1.0)
-    >>> result = compute_path_efficiency(
-    ...     env, times, positions, goal, metric="euclidean", max_gap=0.15
-    ... )
+    >>> result = compute_path_efficiency(env, times, positions, goal=goal, max_gap=0.15)
     >>> result.traveled_length  # the 0.2 s gap is a tracking loss here
     8.0
     >>> bool(np.isnan(result.efficiency))  # the route is incomplete
     True
     """
-    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._goals import goal_rows
 
-    paths = metric_paths(metric, env, call="compute_path_efficiency")
-    times_arr, positions_arr, support = validated_observations(
+    call = "compute_path_efficiency"
+    paths = metric_paths(metric, env, call=call)
+    times_arr, positions_arr, intervals, support = _goal_observations(
+        env,
         times,
         positions,
-        call="compute_path_efficiency",
+        intervals,
+        call=call,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="no path was observed",
     )
-    goal = _validated_goal(goal, positions_arr.shape[1], call="compute_path_efficiency")
     if reference_speed is not None:
-        _validate_reference_speed(reference_speed, call="compute_path_efficiency")
+        _validate_reference_speed(reference_speed, call=call)
+    rows = goal_rows(
+        env, times_arr, intervals, goal, paths=paths, call=call, disjoint=False
+    )
+    results = [
+        None
+        if row.goal is None
+        else _path_efficiency(
+            env,
+            times_arr[row.samples],
+            positions_arr[row.samples],
+            _support_of(times_arr, support, row.samples, intervals),
+            row.goal,
+            paths=paths,
+            metric=metric,
+            reference_speed=reference_speed,
+        )
+        for row in rows
+    ]
+    if intervals is None:
+        assert results[0] is not None  # one goal without intervals
+        return results[0]
+    return _result_table(
+        rows,
+        results,
+        (
+            "traveled_length",
+            "shortest_length",
+            "efficiency",
+            "time_efficiency",
+            "angular_efficiency",
+            "fully_observed",
+        ),
+    )
 
+
+def _path_efficiency(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    support: ObservationSupport,
+    goal: Goal,
+    *,
+    paths: EnvironmentPaths | None,
+    metric: DistanceMetric,
+    reference_speed: float | None,
+) -> PathEfficiencyResult:
+    """:func:`compute_path_efficiency` of one recording or interval."""
     traveled, complete = _observed_path_length(
-        positions_arr,
-        support.sample_valid,
-        support.interval_mask,
-        paths=paths,
+        positions, support.sample_valid, support.interval_mask, paths=paths
     )
     ang_eff = _angular_efficiency(
-        *_smoothed_steps(
-            times_arr, positions_arr, support.sample_valid, support.interval_mask
-        ),
+        env,
+        *_smoothed_steps(times, positions, support.sample_valid, support.interval_mask),
         goal,
         paths=paths,
-        call="compute_path_efficiency",
     )
     # Missing rows before the first or after the last observed sample are
     # deleted rows: the path starts and ends where the animal was observed.
     observed = np.flatnonzero(support.sample_valid)
     if observed.size:
-        times_arr = times_arr[observed[0] : observed[-1] + 1]
-        positions_arr = positions_arr[observed[0] : observed[-1] + 1]
-    shortest = shortest_path_length(env, positions_arr[0], goal, metric=metric)
-
+        times = times[observed[0] : observed[-1] + 1]
+        positions = positions[observed[0] : observed[-1] + 1]
+    shortest = (
+        float(goal.distances(env, paths, positions[:1])[0])
+        if len(positions)
+        else np.nan
+    )
     time_eff = None
-    if reference_speed is not None and len(positions_arr) >= 2:
+    if reference_speed is not None and len(positions) >= 2:
         time_eff = time_efficiency(
-            times_arr,
-            positions_arr,
+            times,
+            positions,
             reference_speed=reference_speed,
             optimal_distance=shortest,
         )
-
+    start = positions[0] if len(positions) else np.full(env.n_dims, np.nan)
     return PathEfficiencyResult(
         traveled_length=traveled,
-        shortest_length=shortest,  # may be inf if the goal is unreachable
+        shortest_length=shortest,  # inf if the goal is unreachable
         time_efficiency=time_eff,
         angular_efficiency=ang_eff,
-        start_position=positions_arr[0],
-        goal_position=goal,
+        start_position=start,
+        goal=goal.label,
         metric=metric,
         fully_observed=complete,
     )
+
+
+def _result_table(
+    rows: list[GoalRow], results: list[Any], columns: tuple[str, ...]
+) -> pd.DataFrame:
+    """One row per interval of the results' ``columns`` and goal.
+
+    A row whose goal is unknown (no result) has NaN metrics and goal None.
+    """
+    import pandas as pd
+
+    records = [
+        {
+            **{
+                name: (np.nan if result is None else getattr(result, name))
+                for name in columns
+            },
+            "goal": None if row.goal is None else row.goal.label,
+        }
+        for row, result in zip(rows, results, strict=True)
+    ]
+    table = pd.DataFrame.from_records(records, columns=[*columns, "goal"])
+    table.index = pd.Index([row.interval_id for row in rows], name="interval_id")
+    return table
 
 
 # =============================================================================
@@ -4267,11 +4355,14 @@ def goal_direction(
 
 @reads_pynapple_samples
 def instantaneous_goal_alignment(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
-    min_speed: float,
+    goal: Any,
+    metric: DistanceMetric = "geodesic",
+    min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -4282,17 +4373,41 @@ def instantaneous_goal_alignment(
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
-    min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit. Samples slower than this have no
-        direction of movement and no alignment.
+    env : Environment
+        The environment the positions were recorded in.
+    times : ArrayLike, shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates, with x and y columns.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, so nothing spans
+        an interval's edge. Samples outside every interval are NaN;
+        overlapping intervals are refused. A pynapple ``IntervalSet`` is read
+        as :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
+    min_speed : float or None, default=None
+        Minimum speed for a direction of movement, in position units per
+        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
+        meters, ``50.0`` for millimeters); with units that are not a metric
+        length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -4330,20 +4445,33 @@ def instantaneous_goal_alignment(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Cosine of angle between velocity and goal direction, range [-1, 1].
-        NaN where the animal is not moving (speed zero or below
-        ``min_speed``), not observed (a missing position or a sample in no
-        observed run), or exactly at the goal, where there is no direction
-        to the goal.
+        Cosine of the angle between the direction of movement and the goal
+        direction in the x-y plane, range [-1, 1]. NaN where the animal is
+        not moving (speed zero or below ``min_speed``), not observed (a
+        missing position, one outside the environment, or a sample in no
+        observed run), at the goal (in a goal bin, or exactly at the goal
+        point), outside every interval, or with an unknown goal.
 
     Raises
     ------
     ValueError
-        If the inputs are empty, have different lengths, ``times`` is not
-        finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample,
-        ``min_speed`` is not finite and non-negative, or ``goal`` has a
-        different number of dimensions than ``positions``.
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    ValueError
+        If ``min_speed`` is not finite and non-negative, or is None and
+        ``env.units`` is not a metric length.
 
     Notes
     -----
@@ -4357,57 +4485,146 @@ def instantaneous_goal_alignment(
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import instantaneous_goal_alignment
     >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     >>> times = np.linspace(0, 10, 21)
-    >>> goal = np.array([100.0, 0.0])
-    >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+    >>> alignment = instantaneous_goal_alignment(
+    ...     env, times, positions, goal=[100.0, 0.0], min_speed=0.0
+    ... )
     >>> bool(np.nanmean(alignment) > 0.9)
     True
 
     A lost frame (NaN row) has no alignment:
 
     >>> positions[10] = np.nan
-    >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=1.0)
+    >>> alignment = instantaneous_goal_alignment(
+    ...     env, times, positions, goal=[100.0, 0.0], min_speed=1.0
+    ... )
     >>> bool(np.isnan(alignment[10])), bool(np.all(alignment[:10] > 0.99))
     (True, True)
     """
-    from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
-
-    times, positions, support = validated_observations(
+    call = "instantaneous_goal_alignment"
+    return _alignment_rows(
+        env,
         times,
         positions,
-        call="instantaneous_goal_alignment",
+        intervals,
+        goal=goal,
+        metric=metric,
+        min_speed=min_speed,
+        speed=speed,
+        headings=headings,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
+        call=call,
         result="every alignment is NaN",
-        columns="xy",
-    )
-    call = "instantaneous_goal_alignment"
-    min_speed = validated_min_speed(min_speed, call=call)
-    return _goal_alignment(
+        disjoint=True,
+    ).alignment
+
+
+def _alignment_rows(
+    env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Any,
+    *,
+    goal: Any,
+    metric: DistanceMetric,
+    min_speed: float | None,
+    speed: ArrayLike | None,
+    headings: ArrayLike | None,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    call: str,
+    result: str,
+    disjoint: bool,
+) -> _Alignment:
+    """Goal alignment of every sample, and the mean of each goal row."""
+    from neurospatial.behavior._goals import goal_rows
+    from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
+
+    paths = metric_paths(metric, env, call=call)
+    times_arr, positions_arr, intervals, support = _goal_observations(
+        env,
         times,
         positions,
-        goal,
-        support,
-        min_speed=min_speed,
+        intervals,
         call=call,
-        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
-        headings=validated_motion(
-            headings, name="headings", n_samples=len(times), call=call
-        ),
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result=result,
+        columns="xy",
     )
+    min_speed = resolve_min_speed(env, min_speed, call=call)
+    n = len(times_arr)
+    speed_arr = validated_motion(speed, name="speed", n_samples=n, call=call)
+    headings_arr = validated_motion(headings, name="headings", n_samples=n, call=call)
+    rows = goal_rows(
+        env, times_arr, intervals, goal, paths=paths, call=call, disjoint=disjoint
+    )
+    alignment = np.full(n, np.nan)
+    means = []
+    for row in rows:
+        if row.goal is None:
+            means.append(np.nan)
+            continue
+        sl = row.samples
+        values = _goal_alignment(
+            times_arr[sl],
+            positions_arr[sl],
+            row.goal.directions(env, paths, positions_arr[sl]),
+            _support_of(times_arr, support, sl, intervals),
+            min_speed=min_speed,
+            speed=None if speed_arr is None else speed_arr[sl],
+            headings=None if headings_arr is None else headings_arr[sl],
+        )
+        alignment[sl] = values
+        means.append(_mean_alignment(values))
+    return _Alignment(
+        alignment, rows, means, intervals, times_arr, positions_arr, support
+    )
+
+
+@dataclass(frozen=True)
+class _Alignment:
+    """:func:`_alignment_rows` output.
+
+    Attributes
+    ----------
+    alignment : ndarray, shape (n_samples,)
+        Per-sample alignment; NaN outside every row (with overlapping rows,
+        the last row's).
+    rows : list of GoalRow
+    means : list of float
+        Mean alignment of each row.
+    intervals : Intervals or None
+        The validated intervals.
+    times, positions, support
+        The validated samples and their observation support.
+    """
+
+    alignment: NDArray[np.float64]
+    rows: list[GoalRow]
+    means: list[float]
+    intervals: Intervals[Any] | None
+    times: NDArray[np.float64]
+    positions: NDArray[np.float64]
+    support: ObservationSupport
 
 
 def _goal_alignment(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    directions: NDArray[np.float64],
     support: ObservationSupport,
     *,
     min_speed: float,
-    call: str,
     speed: NDArray[np.float64] | None,
     headings: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
@@ -4421,27 +4638,24 @@ def _goal_alignment(
         Validated, strictly increasing timestamps in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Validated positions, ``n_dims >= 2``; NaN rows are missing.
-    goal : ndarray, shape (n_dims,)
-        Goal position.
+    directions : ndarray, shape (n_samples, n_dims)
+        Unit goal direction at each sample; NaN where there is none (at the
+        goal, outside the environment).
     support : ObservationSupport
         Usable intervals of ``(times, positions)``.
     min_speed : float
         Position units per second.
-    call : str
-        Public function name, used in the goal-dimension error.
 
     Returns
     -------
     ndarray, shape (n_samples,)
-        ``cos(heading - goal_direction)`` where the animal moves, else NaN;
-        also NaN at a sample exactly at the goal (no goal direction).
+        ``cos(heading - goal_direction)`` in the x-y plane where the animal
+        moves and the goal direction is defined, else NaN.
     """
     from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
     from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
-    # Checks the goal's dimensions before the velocity is computed.
-    vec = _goal_vector(positions, goal, call=call)
-    goal_heading = np.arctan2(vec[:, 1], vec[:, 0])
+    goal_heading = np.arctan2(directions[:, 1], directions[:, 0])
     # NaN where the animal is not moving: no direction of movement.
     heading, _ = _movement_heading_and_speed(
         times,
@@ -4452,43 +4666,69 @@ def _goal_alignment(
         speed=speed,
         headings=headings,
     )
-    # At the goal itself there is no direction to the goal (arctan2(0, 0)
-    # would read as East and score an arrival from the East as -1).
-    away_from_goal = np.any(vec != 0, axis=1)
-    alignment: NDArray[np.float64] = np.where(
-        away_from_goal, np.cos(heading - goal_heading), np.nan
-    )
+    # At the goal there is no goal direction (NaN), and arctan2 of a NaN
+    # direction stays NaN, so an arrival is never scored.
+    alignment: NDArray[np.float64] = np.cos(heading - goal_heading)
     return alignment
 
 
 @reads_pynapple_samples
 def goal_bias(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
-    min_speed: float,
+    goal: Any,
+    metric: DistanceMetric = "geodesic",
+    min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> float:
+) -> float | pd.Series:
     """Compute mean alignment toward goal over trajectory.
+
+    The mean of :func:`instantaneous_goal_alignment` over the samples where
+    the animal moves.
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
-    min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit. Samples slower than this are
-        excluded from the mean.
+    env : Environment
+        The environment the positions were recorded in.
+    times : ArrayLike, shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates, with x and y columns.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, and the result
+        has one value per interval. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
+    min_speed : float or None, default=None
+        Minimum speed for a direction of movement, in position units per
+        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
+        meters, ``50.0`` for millimeters); with units that are not a metric
+        length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -4525,74 +4765,77 @@ def goal_bias(
 
     Returns
     -------
-    float
-        Mean goal alignment over the samples where the animal moves and is
-        not exactly at the goal, range [-1, 1]. NaN if the animal is never
-        moving (speed zero or below ``min_speed``) at an observed sample.
+    float or pandas.Series
+        Goal bias in [-1, 1]; with ``intervals``, one per interval indexed by
+        ``interval_id``. Interpretation:
+
+        - > 0.5: strong goal-directed movement
+        - 0 to 0.5: weak goal direction, with wandering
+        - < 0: net movement away from the goal
+
+        NaN when the animal never moves at an observed sample away from the
+        goal, or the goal is unknown.
 
     Raises
     ------
     ValueError
-        If the inputs are empty, have different lengths, ``times`` is not
-        finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample,
-        ``min_speed`` is not finite and non-negative, or ``goal`` has a
-        different number of dimensions than ``positions``.
-
-    Notes
-    -----
-    A NaN row is bridged like a deleted row when its valid neighbours are no
-    more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
-    declared ``break_before`` splits the recording into runs, and no velocity
-    or heading spans a split.
-
-    Interpretation:
-    - > 0.5: Strong goal-directed navigation
-    - 0 to 0.5: Weak goal-directed with some wandering
-    - < 0: Net movement away from goal
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    ValueError
+        If ``min_speed`` is not finite and non-negative, or is None and
+        ``env.units`` is not a metric length.
 
     Examples
     --------
-    >>> positions = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
-    >>> times = np.linspace(0, 10, 101)
-    >>> goal = np.array([100.0, 0.0])
-    >>> float(goal_bias(times, positions, goal, min_speed=0.0))
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import goal_bias
+    >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    >>> times = np.linspace(0, 10, 21)
+    >>> goal_bias(env, times, positions, goal=[100.0, 0.0], min_speed=0.0)
     1.0
 
     An animal that never moves has no direction of movement, so no bias:
 
-    >>> still = np.zeros((10, 2))
-    >>> goal_bias(np.arange(10) / 10, still, goal, min_speed=0.0)
+    >>> still = np.zeros((21, 2))
+    >>> goal_bias(env, times, still, goal=[100.0, 0.0], min_speed=0.0)
     nan
     """
-    from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
-
-    times, positions, support = validated_observations(
+    aligned = _alignment_rows(
+        env,
         times,
         positions,
-        call="goal_bias",
+        intervals,
+        goal=goal,
+        metric=metric,
+        min_speed=min_speed,
+        speed=speed,
+        headings=headings,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
+        call="goal_bias",
         result="the goal bias is NaN",
-        columns="xy",
+        disjoint=False,
     )
-    call = "goal_bias"
-    min_speed = validated_min_speed(min_speed, call=call)
-    alignment = _goal_alignment(
-        times,
-        positions,
-        goal,
-        support,
-        min_speed=min_speed,
-        call=call,
-        speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
-        headings=validated_motion(
-            headings, name="headings", n_samples=len(times), call=call
-        ),
-    )
-    return _mean_alignment(alignment)
+    if aligned.intervals is None:
+        return aligned.means[0]
+    from neurospatial.behavior._goals import by_interval
+
+    return by_interval(aligned.rows, aligned.means, name="goal_bias")
 
 
 def _mean_alignment(alignment: NDArray[np.float64]) -> float:
@@ -4603,47 +4846,61 @@ def _mean_alignment(alignment: NDArray[np.float64]) -> float:
 
 @reads_pynapple_samples
 def approach_rate(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
-    metric: DistanceMetric = "euclidean",
-    env: Environment | None = None,
+    goal: Any,
+    metric: DistanceMetric = "geodesic",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute rate of distance change toward goal.
 
-    The rate at a valid sample ``k`` is the change in distance to the goal
-    since the previous valid sample, divided by the time between them.
-    Missing samples (non-finite coordinates) are skipped as if their rows
-    were deleted, and are NaN. The rate is measured only when the time
-    between the two valid samples is at most ``max_gap``, they fall inside
-    one of ``epochs`` and no break is declared between them; otherwise it is
-    NaN, so no rate is measured across a tracking loss or between
-    recordings.
+    The rate at a valid sample ``k`` is the change in the distance to the goal
+    (as :func:`distance_to_goal` measures it) since the previous valid
+    sample, divided by the time between them. Missing samples (non-finite
+    coordinates, or positions outside the environment) are skipped as if
+    their rows were deleted, and are NaN. The rate is measured only when the
+    time between the two valid samples is at most ``max_gap``, they fall
+    inside one of ``epochs`` and no break is declared between them;
+    otherwise it is NaN, so no rate is measured across a tracking loss or
+    between recordings.
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
+    env : Environment
+        The environment the positions were recorded in.
+    times : ArrayLike, shape (n_samples,)
         Timestamps in seconds; finite and strictly increasing.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates. Rows with a non-finite coordinate are missing.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
-        ``"euclidean"`` is the straight-line distance to the goal.
-        ``"geodesic"`` is the length of the shortest path between two positions
-        that stays inside the environment: it goes around walls and never
-        leaves the environment, and on a track it runs along the track's
-        centerline, measured from each position (not its bin center) as in
-        :func:`shortest_path_length`, so a constant-speed approach gives a
-        constant rate instead of a rate quantized by the bins. Requires
-        ``env``.
-    env : Environment, optional
-        Required when metric="geodesic". A position outside the environment
-        has no geodesic distance and is treated as missing.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, so nothing spans
+        an interval's edge. Samples outside every interval are NaN;
+        overlapping intervals are refused. A pynapple ``IntervalSet`` is read
+        as :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4667,62 +4924,86 @@ def approach_rate(
     -------
     NDArray[np.float64], shape (n_samples,)
         Rate of distance change (d(distance)/dt) in units per second.
-        Negative values indicate approaching the goal. The first sample, and
-        every sample whose backward interval is not usable, is NaN; a single
-        sample gives ``[nan]``.
+        Negative values indicate approaching the goal. The first sample of
+        the recording or of each interval, and every sample whose backward
+        interval is not usable, is NaN; a single sample gives ``[nan]``.
 
     Raises
     ------
     ValueError
-        If ``metric`` is not 'euclidean' or 'geodesic', ``goal`` does not have
-        shape ``(n_dims,)`` or has a non-finite coordinate, or
-        metric="geodesic" but env is None or the goal is outside the
-        environment.
-    ValueError
-        If the inputs are empty, have different lengths, or ``times`` is not
-        finite and strictly increasing.
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
     CartesianOnlyError
-        For ``metric="geodesic"`` on an egocentric polar environment.
+        If ``env`` is an egocentric polar environment.
 
     Examples
     --------
     Run toward a goal at x = 100 at 8 Hz, then jump 48 units ahead:
 
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.behavior import approach_rate
+    >>> corridor = np.column_stack([np.linspace(0, 100, 201), np.zeros(201)])
+    >>> env = Environment.from_samples(corridor, bin_size=1.0)
     >>> times = np.arange(6) / 8
     >>> positions = np.column_stack([[0.0, 1, 2, 50, 51, 52], np.zeros(6)])
-    >>> goal = np.array([100.0, 0.0])
-    >>> approach_rate(times, positions, goal).tolist()
+    >>> approach_rate(env, times, positions, goal=[100.0, 0.0]).tolist()
     [nan, -8.0, -8.0, -384.0, -8.0, -8.0]
 
     On one continuous clock the jump reads as a fast approach. If a new
     recording starts at sample 3, declare the break:
 
     >>> new_recording = np.array([False, False, False, True, False, False])
-    >>> approach_rate(times, positions, goal, break_before=new_recording).tolist()
+    >>> approach_rate(
+    ...     env, times, positions, goal=[100.0, 0.0], break_before=new_recording
+    ... ).tolist()
     [nan, -8.0, -8.0, nan, -8.0, -8.0]
 
     A missing position has no rate; the rate after it spans the bridged gap:
 
     >>> positions[1] = np.nan
-    >>> approach_rate(times, positions, goal).tolist()
+    >>> approach_rate(env, times, positions, goal=[100.0, 0.0]).tolist()
     [nan, nan, -8.0, -384.0, -8.0, -8.0]
     """
-    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._goals import goal_rows
 
-    paths = metric_paths(metric, env, call="approach_rate")
-    times, positions, support = validated_observations(
+    call = "approach_rate"
+    paths = metric_paths(metric, env, call=call)
+    times_arr, positions_arr, intervals, support = _goal_observations(
+        env,
         times,
         positions,
-        call="approach_rate",
+        intervals,
+        call=call,
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
         result="every approach rate is NaN",
     )
-    distances = _goal_distances(positions, goal, paths=paths, call="approach_rate")
-    return _distance_rates(times, distances, support)
+    rows = goal_rows(
+        env, times_arr, intervals, goal, paths=paths, call=call, disjoint=True
+    )
+    rates = np.full(len(times_arr), np.nan)
+    for row in rows:
+        if row.goal is None:
+            continue
+        sl = row.samples
+        rates[sl] = _distance_rates(
+            times_arr[sl],
+            row.goal.distances(env, paths, positions_arr[sl]),
+            _support_of(times_arr, support, sl, intervals),
+        )
+    return rates
 
 
 def _interval_distance_rates(
@@ -4760,56 +5041,15 @@ def _distance_rates(
     return rates
 
 
-def _goal_distances(
-    positions: NDArray[np.float64],
-    goal: ArrayLike,
-    *,
-    paths: EnvironmentPaths | None,
-    call: str,
-) -> NDArray[np.float64]:
-    """Distance from each position to the goal.
-
-    Parameters
-    ----------
-    positions : ndarray, shape (n_samples, n_dims)
-        NaN rows are missing.
-    goal : array-like, shape (n_dims,)
-    paths : EnvironmentPaths or None
-        Geodesic engine (``metric_paths``), measuring the shortest path inside
-        the environment from the position itself (not its bin center), as in
-        :func:`shortest_path_length`; None for the straight line.
-    call : str
-        Public function name, used in messages.
-
-    Returns
-    -------
-    ndarray, shape (n_samples,)
-        NaN for missing positions and, under the geodesic metric, positions
-        outside the environment; ``inf`` for positions disconnected from the
-        goal.
-
-    Raises
-    ------
-    ValueError
-        If ``goal`` has the wrong shape or a non-finite coordinate, or
-        (geodesic) the goal is outside the environment.
-    """
-    goal_arr = _validated_goal(goal, positions.shape[1], call=call)
-    if paths is None:
-        distances: NDArray[np.float64] = np.linalg.norm(goal_arr - positions, axis=1)
-        return distances
-    _require_inside(paths, {"goal": goal_arr}, call=call)
-    return paths.to_point(positions, goal_arr)
-
-
 @reads_pynapple_samples
 def compute_goal_directed_metrics(
-    env: Environment,
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    env: Environment[CartesianSystem],
+    times: ArrayLike,
+    positions: ArrayLike,
+    intervals: Intervals[Any] | None = None,
     *,
-    metric: DistanceMetric = "euclidean",
+    goal: Any,
+    metric: DistanceMetric = "geodesic",
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
@@ -4817,38 +5057,45 @@ def compute_goal_directed_metrics(
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
-) -> GoalDirectedMetrics:
+) -> GoalDirectedMetrics | pd.DataFrame:
     """Compute comprehensive goal-directed navigation metrics.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
-    metric : {"geodesic", "euclidean"}, default="euclidean"
-        Distance metric for the approach rate, the goal distances and goal
-        arrival. ``"euclidean"`` is the straight-line distance. ``"geodesic"``
-        is the length of the shortest path between two positions that stays
-        inside the environment: it goes around walls and never leaves the
-        environment, and on a track it runs along the track's centerline, from
-        each position to the goal as in :func:`approach_rate`; a position
-        outside the environment then has no distance and is left out of the
-        distance summaries.
+        The environment the positions were recorded in.
+    times : ArrayLike, shape (n_samples,)
+        Timestamps in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims)
+        Positions in the environment's coordinates, with x and y columns.
+    intervals : Intervals or IntervalSet, optional
+        Trials or other intervals. Each is measured from its own samples,
+        ``[start, stop)``, as if it were the whole recording, and the result
+        has one value per interval. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it.
+    goal : str, array-like of shape (n_dims,), or per-interval sequence
+        A region name, a point in environment coordinates, or, with
+        ``intervals``, one per interval (a ``pandas.Series`` indexed by
+        ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
+        goal), read as in :func:`distance_to_goal`. A polygon region is
+        approached at its nearest bin: the goal direction is the direction of
+        the shortest path to the nearest bin of the region, the direction in
+        which the distance to the goal falls fastest. For a round well
+        (``regions.add(name, point=..., radius=...)``) that is the direction
+        to its centre. A point region or a point is aimed at itself.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        ``"geodesic"``: the shortest path that stays inside the environment
+        (around walls, along a track's centerline), measured from each
+        position; the goal direction is the direction in which that path
+        leaves the position, toward its first corner. ``"euclidean"``: the
+        straight line. In an arena without walls between the animal and the
+        goal they agree. A geodesic goal point must lie inside the
+        environment.
     min_speed : float or None, default=None
-        Minimum speed for a defined heading, in position units per second.
-        None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
-        ``50.0`` for millimeters); with units that are not a metric length,
-        pass it explicitly.
-    goal_radius : float, optional
-        Arrival radius, in the units of ``positions``: the goal is reached at
-        the first measured sample whose distance to the goal (under
-        ``metric``) is at most ``goal_radius``. Finite and >= 0. None skips
-        arrival detection.
+        Minimum speed for a direction of movement, in position units per
+        second. None is 5 cm/s expressed in ``env.units`` (``0.05`` for
+        meters, ``50.0`` for millimeters); with units that are not a metric
+        length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -4864,6 +5111,13 @@ def compute_goal_directed_metrics(
         your own smoothed velocity, or head direction from a head-mounted LED
         or sensor. Samples slower than ``min_speed`` still have none. Default:
         the direction of movement of :func:`heading_from_velocity`.
+    goal_radius : float, optional
+        Arrival radius for a point goal, in the units of ``positions``: the
+        goal is reached at the first measured sample whose distance to the
+        goal (under ``metric``) is at most ``goal_radius``. Finite and >= 0.
+        None skips arrival detection for a point goal. A region goal is
+        reached at the first measured sample in one of its bins, so
+        ``goal_radius`` is refused with one: the region is the arrival zone.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4885,31 +5139,42 @@ def compute_goal_directed_metrics(
 
     Returns
     -------
-    GoalDirectedMetrics
-        Dataclass containing all goal-directed metrics. ``goal_bias`` is NaN
-        if the animal never moves at an observed sample. The distance
-        summaries use the measured samples: finite coordinates, inside
-        ``epochs`` when given, and (geodesic) inside the environment.
-        ``min_distance_to_goal`` is the minimum distance under ``metric``
-        over them; ``goal_distance_at_start`` and ``goal_distance_at_end``
-        are the distances at the first and last of them. All three are NaN
-        when no sample is measured. ``time_to_reach_goal`` is None without
-        ``goal_radius``, the seconds from the first measured sample to the
-        first measured sample within ``goal_radius``, or NaN when the goal
-        is never reached.
+    GoalDirectedMetrics or pandas.DataFrame
+        All goal-directed metrics. With ``intervals``, a table with one row
+        per interval indexed by ``interval_id`` and the columns of
+        :meth:`GoalDirectedMetrics.summary` plus ``goal``; an interval with
+        an unknown goal has NaN metrics. ``goal_bias`` is NaN if the animal
+        never moves at an observed sample. The distance summaries use the
+        measured samples: finite coordinates inside the environment, inside
+        ``epochs`` when given. ``min_distance_to_goal`` is the minimum
+        distance under ``metric`` over them; ``goal_distance_at_start`` and
+        ``goal_distance_at_end`` are the distances at the first and last of
+        them. All three are NaN when no sample is measured.
+        ``time_to_reach_goal`` is the seconds from the first measured sample
+        to arrival, NaN when the goal is never reached, and None for a point
+        goal without ``goal_radius``.
 
     Raises
     ------
     ValueError
-        If the inputs are empty, have different lengths, ``times`` is not
-        finite and strictly increasing, ``positions`` has no x and y columns,
-        ``break_before`` is not a Boolean array with one entry per sample,
-        ``goal`` does not have one finite coordinate per position dimension,
-        ``metric`` is not recognized, ``goal_radius`` is negative or not
-        finite, or (geodesic) the goal is outside the environment.
+        If the inputs are empty or malformed (``times`` not finite and
+        strictly increasing, positions without one coordinate per environment
+        dimension, ``break_before`` not a Boolean array with one entry per
+        sample), ``metric`` is not recognized, a region covers no bin, the
+        goal point is malformed or (geodesic) outside the environment, or
+        per-sample intervals overlap.
+    TypeError
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet, or a
+        per-interval goal is a number (a well number) instead of a region
+        name or a point.
+    RegionNotFoundError
+        If a region name is not in ``env.regions``.
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
     ValueError
-        If ``min_speed`` is not finite and non-negative, or is None and
-        ``env.units`` is not a metric length.
+        If ``goal_radius`` is negative or not finite, or is given with a
+        region goal; or ``min_speed`` is not finite and non-negative, or is
+        None and ``env.units`` is not a metric length.
 
     Notes
     -----
@@ -4936,31 +5201,13 @@ def compute_goal_directed_metrics(
     >>> times = np.arange(21) / 10  # s
     >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
     >>> positions[10] = np.nan  # a lost frame
-    >>> result = compute_goal_directed_metrics(
-    ...     env, times, positions, np.array([100.0, 0.0])
-    ... )
+    >>> result = compute_goal_directed_metrics(env, times, positions, goal=[100.0, 0.0])
     >>> bool(result.goal_bias > 0.9)
     True
     >>> result.min_distance_to_goal
     0.0
     """
-    from neurospatial._observation import validated_observations
-    from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
-
-    times, positions, support = validated_observations(
-        times,
-        positions,
-        call="compute_goal_directed_metrics",
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        result="the goal-directed metrics are NaN",
-        columns="xy",
-    )
     call = "compute_goal_directed_metrics"
-    paths = metric_paths(metric, env, call=call)
-    goal = _validated_goal(goal, positions.shape[1], call=call)
-    min_speed = resolve_min_speed(env, min_speed, call=call)
     if goal_radius is not None and not (np.isfinite(goal_radius) and goal_radius >= 0):
         raise ValueError(
             _format_error(
@@ -4976,24 +5223,96 @@ def compute_goal_directed_metrics(
                 ),
             )
         )
-    bias = _mean_alignment(
-        _goal_alignment(
-            times,
-            positions,
-            goal,
-            support,
-            min_speed=min_speed,
-            call=call,
-            speed=validated_motion(
-                speed, name="speed", n_samples=len(times), call=call
-            ),
-            headings=validated_motion(
-                headings, name="headings", n_samples=len(times), call=call
-            ),
+    paths = metric_paths(metric, env, call=call)
+    aligned = _alignment_rows(
+        env,
+        times,
+        positions,
+        intervals,
+        goal=goal,
+        metric=metric,
+        min_speed=min_speed,
+        speed=speed,
+        headings=headings,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        call=call,
+        result="the goal-directed metrics are NaN",
+        disjoint=False,
+    )
+    rows, intervals = aligned.rows, aligned.intervals
+    times_arr, positions_arr, support = (
+        aligned.times,
+        aligned.positions,
+        aligned.support,
+    )
+    if goal_radius is not None:
+        regions = sorted(
+            {
+                str(row.goal.name)
+                for row in rows
+                if row.goal is not None and row.goal.bins is not None
+            }
         )
+        if regions:
+            raise ValueError(
+                _format_error(
+                    f"{call}() got goal_radius={goal_radius!r} with the region "
+                    f"goal(s) {regions}.",
+                    why="a region goal is reached when the animal enters one of "
+                    "its bins: the region is the arrival zone.",
+                    fix="drop goal_radius, or give the region the size of the "
+                    "arrival zone (regions.add(name, point=..., radius=...)).",
+                )
+            )
+    results = [
+        None
+        if row.goal is None
+        else _goal_directed(
+            env,
+            times_arr[row.samples],
+            positions_arr[row.samples],
+            _support_of(times_arr, support, row.samples, intervals),
+            row.goal,
+            bias=bias,
+            paths=paths,
+            metric=metric,
+            goal_radius=goal_radius,
+        )
+        for row, bias in zip(rows, aligned.means, strict=True)
+    ]
+    if intervals is None:
+        assert results[0] is not None  # one goal without intervals
+        return results[0]
+    return _result_table(
+        rows,
+        results,
+        (
+            "goal_bias",
+            "mean_approach_rate",
+            "goal_distance_at_start",
+            "goal_distance_at_end",
+            "min_distance_to_goal",
+            "time_to_reach_goal",
+        ),
     )
 
-    distances = _goal_distances(positions, goal, paths=paths, call=call)
+
+def _goal_directed(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    support: ObservationSupport,
+    goal: Goal,
+    *,
+    bias: float,
+    paths: EnvironmentPaths | None,
+    metric: DistanceMetric,
+    goal_radius: float | None,
+) -> GoalDirectedMetrics:
+    """:func:`compute_goal_directed_metrics` of one recording or interval."""
+    distances = goal.distances(env, paths, positions)
     # Weighting each interval's rate by its duration averages over observed
     # time: the net change of distance divided by the usable time.
     rates = _interval_distance_rates(times, distances, support)
@@ -5002,9 +5321,8 @@ def compute_goal_directed_metrics(
     mean_rate = (
         float(rates[usable] @ durations / durations.sum()) if usable.any() else np.nan
     )
-
-    # Samples measured for the distance summaries: observed (and, with the
-    # geodesic metric, inside the environment) and inside ``epochs``.
+    # Samples measured for the distance summaries: observed, inside the
+    # environment and inside ``epochs``.
     measured = support.sample_valid & support.sample_in_epochs & ~np.isnan(distances)
     rows = np.flatnonzero(measured)
     if rows.size:
@@ -5013,14 +5331,16 @@ def compute_goal_directed_metrics(
         end_dist = float(distances[rows[-1]])
     else:
         min_dist = start_dist = end_dist = np.nan
-
     time_to_reach: float | None = None
-    if goal_radius is not None:
-        arrived = rows[distances[rows] <= goal_radius]
+    if goal.bins is not None or goal_radius is not None:
+        if goal.bins is not None:
+            arrived = rows[goal.contains(env, positions[rows])]
+        else:
+            assert goal_radius is not None  # a point goal is tested only with one
+            arrived = rows[distances[rows] <= goal_radius]
         time_to_reach = (
             float(times[arrived[0]] - times[rows[0]]) if arrived.size else np.nan
         )
-
     return GoalDirectedMetrics(
         goal_bias=bias,
         mean_approach_rate=mean_rate,
@@ -5028,6 +5348,6 @@ def compute_goal_directed_metrics(
         min_distance_to_goal=min_dist,
         goal_distance_at_start=start_dist,
         goal_distance_at_end=end_dist,
-        goal_position=goal,
+        goal=goal.label,
         metric=metric,
     )

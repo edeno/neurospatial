@@ -112,29 +112,28 @@ class TestSafeGatherVoronoiLabels:
         env = Environment.from_samples(
             np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
         )
-        left_bin = int(env.bin_at(np.array([[10.0, 50.0]]))[0])
-        right_bin = int(env.bin_at(np.array([[90.0, 50.0]]))[0])
-        labels = geodesic_voronoi_labels(env, [left_bin, right_bin])
-        return env, labels
+        goals = [np.array([10.0, 50.0]), np.array([90.0, 50.0])]
+        labels = geodesic_voronoi_labels(env, goals=goals)
+        return env, goals, labels
 
     def test_detect_boundary_crossings_minus_one_bin_is_unreachable(self, voronoi_env):
-        env, labels = voronoi_env
+        env, goals, labels = voronoi_env
 
         left_side = int(env.bin_at(np.array([[20.0, 50.0]]))[0])
         right_side = int(env.bin_at(np.array([[80.0, 50.0]]))[0])
         assert labels[left_side] == 0
         assert labels[right_side] == 1
+        # The last bin is on the other side, so a wrapped -1 would cross.
+        assert labels[-1] == 1
 
         # All on the left side, with an out-of-env (-1) sample. A wrapped -1 ->
         # last-bin label could differ from 0 and create a phantom crossing.
-        position_bins = np.array(
-            [left_side, left_side, -1, left_side, left_side],
-            dtype=np.int64,
-        )
-        times = np.linspace(0.0, 1.0, len(position_bins))
+        left, outside = [20.0, 50.0], [1000.0, 1000.0]
+        positions = np.array([left, left, outside, left, left])
+        times = np.linspace(0.0, 1.0, len(positions))
 
         crossing_times, crossing_dirs = detect_boundary_crossings(
-            position_bins, labels, times
+            env, times, positions, goals=goals
         )
 
         assert crossing_times.size == 0
@@ -223,17 +222,19 @@ class TestDtGuards:
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = duplicate_timestamps(n=11, total=5.0)
         goal = np.array([100.0, 0.0])
+        env = Environment.from_samples(positions, bin_size=5.0)
 
         with pytest.raises(ValueError, match="times"):
-            approach_rate(times, positions, goal)
+            approach_rate(env, times, positions, goal=goal, metric="euclidean")
 
     def test_approach_rate_nonfinite_times_raises(self):
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = nonfinite_timestamps(n=11, total=5.0)
         goal = np.array([100.0, 0.0])
+        env = Environment.from_samples(positions, bin_size=5.0)
 
         with pytest.raises(ValueError, match="times"):
-            approach_rate(times, positions, goal)
+            approach_rate(env, times, positions, goal=goal, metric="euclidean")
 
     def test_mean_square_displacement_all_duplicate_times_raises(self):
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
@@ -290,7 +291,7 @@ class TestPathEfficiencyCorrectness:
         times = np.linspace(0.0, 2.0, len(traj))
         goal = right[0]
 
-        result = compute_path_efficiency(env, times, traj, goal, metric="geodesic")
+        result = compute_path_efficiency(env, times, traj, goal=goal, metric="geodesic")
 
         assert np.isinf(result.shortest_length)
         assert np.isnan(result.efficiency)
@@ -340,7 +341,7 @@ class TestPathEfficiencyCorrectness:
             env,
             times,
             traj,
-            goal,
+            goal=goal,
             metric="geodesic",
             reference_speed=reference_speed,
         )

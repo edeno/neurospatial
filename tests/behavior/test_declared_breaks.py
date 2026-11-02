@@ -132,16 +132,22 @@ PAUSE_CASES: dict[str, Case] = {
         t, r.positions, min_speed=5.0, **kw
     ),
     "instantaneous_goal_alignment": lambda r, t, kw: instantaneous_goal_alignment(
-        t, r.positions, GOAL, min_speed=5.0, **kw
+        r.env, t, r.positions, goal=GOAL, metric="euclidean", min_speed=5.0, **kw
     ),
     "goal_bias": lambda r, t, kw: goal_bias(
-        t, r.positions, OFF_TRACK_GOAL, min_speed=5.0, **kw
+        r.env,
+        t,
+        r.positions,
+        goal=OFF_TRACK_GOAL,
+        metric="euclidean",
+        min_speed=5.0,
+        **kw,
     ),
     "compute_goal_directed_metrics": lambda r, t, kw: compute_goal_directed_metrics(
-        r.env, t, r.positions, GOAL, metric="geodesic", min_speed=5.0, **kw
+        r.env, t, r.positions, goal=GOAL, metric="geodesic", min_speed=5.0, **kw
     ),
     "compute_home_range": lambda r, t, kw: compute_home_range(
-        r.position_bins, r.env, times=t, percentile=100.0, **kw
+        r.env, t, r.positions, percentile=100.0, **kw
     ),
 }
 
@@ -280,25 +286,18 @@ def test_lap_spanning_break_is_dropped(laps):
     assert bounds(split) == bounds(joined)
 
 
-def test_home_range_refuses_breaks_without_times():
-    with pytest.raises(ValueError, match="break_before without times"):
-        compute_home_range(
-            np.array([0, 0, 1]), _HOME_ENV, break_before=np.zeros(3, dtype=bool)
-        )
-
-
 def test_home_range_break_isolates_sample():
     # Uniform sampling gives a run's last sample the same dwell as its
     # interval, so only a sample isolated by a break changes the home range.
-    position_bins = np.array([0, 1, 1, 1])
+    positions = _HOME_ENV.bin_centers[[0, 1, 1, 1]]
     times = np.arange(4.0)
     assert compute_home_range(
-        position_bins, _HOME_ENV, times=times, percentile=100.0, max_gap=None
+        _HOME_ENV, times, positions, percentile=100.0, max_gap=None
     ).tolist() == [1, 0]
     isolated = compute_home_range(
-        position_bins,
         _HOME_ENV,
-        times=times,
+        times,
+        positions,
         percentile=100.0,
         max_gap=None,
         break_before=np.array([False, True, False, False]),

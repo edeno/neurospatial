@@ -138,8 +138,11 @@ def test_auto_laps_keep_one_global_template(lap_track):
 
 def test_boundary_crossing_not_in_pause(pause_track):
     r = pause_track
-    labels = np.where(r.env.bin_centers[:, 0] < 50, 0, 1)
-    times, directions = detect_boundary_crossings(r.position_bins, labels, r.times)
+    # The source and target boxes mirror each other about x = 50 cm, so their
+    # Voronoi boundary splits the track there.
+    times, directions = detect_boundary_crossings(
+        r.env, r.times, r.positions, goals=["source", "target"]
+    )
     assert times.shape == (0,)
     assert directions.shape == (0, 2)
 

@@ -218,7 +218,9 @@ def test_path_efficiency_with_missing_end_rows_equals_deleted_rows(
     lost[lost_rows] = True
     goal = positions[-1] + np.array([2.0, 0.0])
     missing, deleted = (
-        compute_path_efficiency(env, t, p, goal, metric=metric, reference_speed=30.0)
+        compute_path_efficiency(
+            env, t, p, goal=goal, metric=metric, reference_speed=30.0
+        )
         for t, p in (
             (times, _with_nan(positions, lost)),
             (times[~lost], positions[~lost]),

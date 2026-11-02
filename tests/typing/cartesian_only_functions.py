@@ -15,8 +15,11 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.behavior import (
+        approach_rate,
+        compute_path_efficiency,
         detect_laps,
         distance_to_goal,
+        goal_bias,
         graph_turn_sequence,
         path_progress,
         trajectory_similarity,
@@ -61,8 +64,8 @@ if TYPE_CHECKING:
         map_probabilities(cartesian, polar, values)  # type: ignore[arg-type]
         spatial_basis(cartesian)
         spatial_basis(polar)  # type: ignore[arg-type]
-        graph_turn_sequence(cartesian, bins)
-        graph_turn_sequence(polar, bins)  # type: ignore[arg-type]
+        graph_turn_sequence(cartesian, values, values)
+        graph_turn_sequence(polar, values, values)  # type: ignore[arg-type]
         detect_laps(cartesian, values, values)
         detect_laps(polar, values, values)  # type: ignore[arg-type]
         # Both read positions as the animal's allocentric positions.
@@ -70,6 +73,13 @@ if TYPE_CHECKING:
         path_progress(polar, values, values, start="start", goal="goal")  # type: ignore[arg-type]
         distance_to_goal(cartesian, values, values, goal="goal")
         distance_to_goal(polar, values, values, goal="goal")  # type: ignore[arg-type]
+        # Goal measures read positions in the allocentric frame too.
+        approach_rate(cartesian, values, values, goal="goal")
+        approach_rate(polar, values, values, goal="goal")  # type: ignore[arg-type]
+        goal_bias(cartesian, values, values, goal="goal")
+        goal_bias(polar, values, values, goal="goal")  # type: ignore[arg-type]
+        compute_path_efficiency(cartesian, values, values, goal="goal")
+        compute_path_efficiency(polar, values, values, goal="goal")  # type: ignore[arg-type]
 
     def _graph_modes_accept_polar(
         polar: Environment[EgocentricPolarSystem],
@@ -80,7 +90,7 @@ if TYPE_CHECKING:
         rate_map_centroid(polar, values, bins, method="geodesic")
         compute_field_emd(polar, values, values, metric="geodesic")
         select_basis_centers(polar, n_centers=5, method="farthest_point")
-        trajectory_similarity(bins, bins, polar, method="jaccard")
+        trajectory_similarity(polar, values, values, method="jaccard")
         # Posterior means are egocentric-plane centroids on polar environments.
         mean_position(polar, values)
         decode_position_summary(polar, bins, values, dt=0.02)

@@ -7,6 +7,14 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 
 
+def _arena(lo=-10.0, hi=110.0, bin_size=5.0):
+    """Open square arena in cm covering ``[lo, hi]`` in x and y."""
+    x, y = np.meshgrid(np.arange(lo, hi + 1.0), np.arange(lo, hi + 1.0))
+    return Environment.from_samples(
+        np.c_[x.ravel(), y.ravel()], bin_size=bin_size, units="cm"
+    )
+
+
 class TestGoalVector:
     """Test goal_vector function."""
 
@@ -103,7 +111,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         # Exactly 1 at every sample but the last, which is at the goal.
         np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
@@ -121,7 +131,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, 21)
         goal = np.array([0.0, 0.0])
 
-        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         np.testing.assert_allclose(result[:-1], 1.0, rtol=1e-12)
         assert np.isnan(result[-1])
@@ -141,7 +153,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         np.testing.assert_allclose(result, -1.0, rtol=1e-12)
 
@@ -166,7 +180,9 @@ class TestInstantaneousGoalAlignment:
         times = np.linspace(0, 10, n_samples)
         goal = center  # Goal at center of circle
 
-        result = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
+        result = instantaneous_goal_alignment(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         # Should be ~0 (always orthogonal to radial direction)
         valid_alignment = result[~np.isnan(result)]
@@ -185,7 +201,13 @@ class TestInstantaneousGoalAlignment:
         goal = np.array([100.0, 0.0])
 
         result = instantaneous_goal_alignment(
-            times, positions, goal, min_speed=5.0, max_gap=None
+            _arena(),
+            times,
+            positions,
+            goal=goal,
+            metric="euclidean",
+            min_speed=5.0,
+            max_gap=None,
         )
 
         # All should be NaN due to zero speed
@@ -207,7 +229,9 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(times, positions, goal, min_speed=0.0)
+        result = goal_bias(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         assert result == pytest.approx(1.0, rel=1e-12)
 
@@ -218,7 +242,14 @@ class TestGoalBias:
         positions = np.column_stack([np.linspace(100, 0, 21), np.zeros(21)])
         times = np.linspace(0, 10, 21)
 
-        result = goal_bias(times, positions, np.array([0.0, 0.0]), min_speed=0.0)
+        result = goal_bias(
+            _arena(),
+            times,
+            positions,
+            goal=np.array([0.0, 0.0]),
+            metric="euclidean",
+            min_speed=0.0,
+        )
 
         assert result == pytest.approx(1.0, rel=1e-12)
 
@@ -237,7 +268,9 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(times, positions, goal, min_speed=0.0)
+        result = goal_bias(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         assert result == pytest.approx(-1.0, rel=1e-12)
 
@@ -256,7 +289,9 @@ class TestGoalBias:
         times = np.linspace(0, 10, n_samples)
         goal = center  # Goal at center of circle
 
-        result = goal_bias(times, positions, goal, min_speed=0.0)
+        result = goal_bias(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         # Should be close to 0 (equal time moving toward and away)
         assert abs(result) < 0.3
@@ -270,7 +305,15 @@ class TestGoalBias:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = goal_bias(times, positions, goal, min_speed=5.0, max_gap=None)
+        result = goal_bias(
+            _arena(),
+            times,
+            positions,
+            goal=goal,
+            metric="euclidean",
+            min_speed=5.0,
+            max_gap=None,
+        )
 
         assert np.isnan(result)
 
@@ -290,7 +333,9 @@ class TestApproachRate:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])
 
-        result = approach_rate(times, positions, goal, metric="euclidean")
+        result = approach_rate(
+            _arena(), times, positions, goal=goal, metric="euclidean"
+        )
 
         # Should be negative (distance decreasing)
         assert np.nanmean(result) < 0
@@ -310,7 +355,9 @@ class TestApproachRate:
         times = np.linspace(0, 5, n_samples)
         goal = np.array([100.0, 0.0])  # Goal in East
 
-        result = approach_rate(times, positions, goal, metric="euclidean")
+        result = approach_rate(
+            _arena(), times, positions, goal=goal, metric="euclidean"
+        )
 
         # Should be positive (distance increasing)
         assert np.nanmean(result) > 0
@@ -327,7 +374,9 @@ class TestApproachRate:
         times = np.linspace(0, 10, n_samples)  # 100 units in 10 seconds = 10 units/s
         goal = np.array([100.0, 0.0])
 
-        result = approach_rate(times, positions, goal, metric="euclidean", max_gap=None)
+        result = approach_rate(
+            _arena(), times, positions, goal=goal, metric="euclidean", max_gap=None
+        )
 
         # Approach rate magnitude should be ~10 units/s
         valid_rates = result[~np.isnan(result)]
@@ -346,21 +395,10 @@ class TestApproachRate:
         times = np.linspace(0.0, 4.0, 20)
         goal = np.array([90.0, 50.0])
 
-        rates = approach_rate(times, positions, goal, metric="geodesic", env=env)
+        rates = approach_rate(env, times, positions, goal=goal, metric="geodesic")
 
         assert np.isnan(rates[0])  # first value is NaN by contract
         assert np.nanmean(rates) < 0  # approaching => distance decreasing
-
-    def test_approach_rate_geodesic_requires_env(self):
-        """metric='geodesic' without env raises a clear ValueError."""
-        from neurospatial.behavior.navigation import approach_rate
-
-        positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
-        times = np.linspace(0, 5, 11)
-        with pytest.raises(
-            ValueError, match=r"approach_rate\(metric='geodesic'\) needs env="
-        ):
-            approach_rate(times, positions, np.array([100.0, 0.0]), metric="geodesic")
 
     def test_geodesic_rate_around_a_wall_is_smooth(self):
         """Walking up a U-maze arm, away from a goal hidden behind the wall.
@@ -381,7 +419,7 @@ class TestApproachRate:
         positions = np.column_stack([np.full(times.size, 5.0), 5.0 + 7.0 * times])
 
         rates = approach_rate(
-            times, positions, np.array([45.0, 5.0]), metric="geodesic", env=env
+            env, times, positions, goal=np.array([45.0, 5.0]), metric="geodesic"
         )
 
         assert np.all((rates[1:] >= -7.0 - 1e-9) & (rates[1:] < 0.0))
@@ -395,7 +433,13 @@ class TestApproachRate:
         times = np.linspace(0, 5, 11)
         misspelled = "euclidian"  # codespell:ignore euclidian
         with pytest.raises(ValueError, match=f"got metric='{misspelled}'"):
-            approach_rate(times, positions, np.array([100.0, 0.0]), metric=misspelled)
+            approach_rate(
+                _arena(),
+                times,
+                positions,
+                goal=np.array([100.0, 0.0]),
+                metric=misspelled,
+            )
 
     @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
     @pytest.mark.parametrize("heading", [0.0, 0.5])
@@ -415,7 +459,7 @@ class TestApproachRate:
         goal = start + 80.0 * direction
         positions = start + 20.0 * times[:, None] * direction  # 20 cm/s
 
-        rates = approach_rate(times, positions, goal, metric=metric, env=env)
+        rates = approach_rate(env, times, positions, goal=goal, metric=metric)
 
         assert np.isnan(rates[0])
         np.testing.assert_allclose(rates[1:], -20.0, rtol=1e-9)
@@ -427,50 +471,57 @@ class TestApproachRate:
         positions = np.column_stack(
             [np.array([0.0, 1.0, 2.0, 50.0, 51.0, 52.0]), np.zeros(6)]
         )
-        return times, positions, np.array([100.0, 0.0])
+        return _arena(), times, positions
+
+    @staticmethod
+    def _rates(env, times, positions, **kwargs):
+        """Euclidean approach rate toward (100, 0)."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        return approach_rate(
+            env, times, positions, goal=[100.0, 0.0], metric="euclidean", **kwargs
+        )
 
     def test_undeclared_jump_is_a_rate(self, jump):
         """On a continuous clock, a jump is measured as fast approach."""
-        from neurospatial.behavior.navigation import approach_rate
-
-        rates = approach_rate(*jump)
+        rates = self._rates(*jump)
         np.testing.assert_array_equal(rates, [np.nan, -8, -8, -384, -8, -8])
 
     def test_break_before_leaves_the_join_nan(self, jump):
         """No rate is measured across a declared recording break."""
-        from neurospatial.behavior.navigation import approach_rate
-
         break_before = np.zeros(6, dtype=bool)
         break_before[3] = True
-        rates = approach_rate(*jump, break_before=break_before)
+        rates = self._rates(*jump, break_before=break_before)
         np.testing.assert_array_equal(rates, [np.nan, -8, -8, np.nan, -8, -8])
 
     def test_nan_row_is_bridged_like_a_deleted_row(self, jump):
         """A missing position has no rate; the rate after it spans the gap."""
-        from neurospatial.behavior.navigation import approach_rate
-
-        times, positions, goal = jump
+        env, times, positions = jump
         positions = positions.copy()
         positions[1] = np.nan
-        rates = approach_rate(times, positions, goal)
+        rates = self._rates(env, times, positions)
         kept = np.delete(np.arange(len(times)), 1)
-        deleted = approach_rate(times[kept], positions[kept], goal)
+        deleted = self._rates(env, times[kept], positions[kept])
         np.testing.assert_array_equal(rates[kept], deleted)
         np.testing.assert_array_equal(rates, [np.nan, np.nan, -8, -384, -8, -8])
         # The 0.25 s gap is a tracking loss when max_gap is shorter.
-        rates = approach_rate(times, positions, goal, max_gap=0.2)
+        rates = self._rates(env, times, positions, max_gap=0.2)
         np.testing.assert_array_equal(rates, [np.nan, np.nan, np.nan, -384, -8, -8])
 
     def test_empty_input_raises(self):
         from neurospatial.behavior.navigation import approach_rate
 
         with pytest.raises(ValueError, match="got no samples"):
-            approach_rate(np.array([]), np.zeros((0, 2)), np.array([1.0, 0.0]))
+            approach_rate(
+                _arena(), np.array([]), np.zeros((0, 2)), goal=np.array([1.0, 0.0])
+            )
 
     def test_single_sample_is_nan(self):
         from neurospatial.behavior.navigation import approach_rate
 
-        rates = approach_rate(np.array([0.0]), np.array([[0.0, 0.0]]), [1.0, 0.0])
+        rates = approach_rate(
+            _arena(), np.array([0.0]), np.array([[0.0, 0.0]]), goal=[1.0, 0.0]
+        )
         np.testing.assert_array_equal(rates, [np.nan])
 
 
@@ -488,7 +539,7 @@ class TestGoalDirectedMetrics:
             min_distance_to_goal=2.0,
             goal_distance_at_start=50.0,
             goal_distance_at_end=2.0,
-            goal_position=np.array([100.0, 0.0]),
+            goal=np.array([100.0, 0.0]),
             metric="euclidean",
         )
 
@@ -519,7 +570,7 @@ class TestComputeGoalDirectedMetrics:
         goal = np.array([90.0, 50.0])
 
         result = compute_goal_directed_metrics(
-            env, times, positions, goal, metric="euclidean", min_speed=0.0
+            env, times, positions, goal=goal, metric="euclidean", min_speed=0.0
         )
 
         # Should show strong goal-directed behavior
@@ -536,13 +587,17 @@ class TestComputeGoalDirectedMetrics:
         """
         from neurospatial.behavior.navigation import compute_goal_directed_metrics
 
-        env = Environment.from_samples(
-            np.array([[0.0, -5.0], [60.0, 5.0]]), bin_size=5.0, units="cm"
-        )
+        env = _arena(0.0, 60.0)
         times = np.array([0.0, 0.01, 1.0])
         positions = np.array([[50.0, 0.0], [40.0, 0.0], [50.0, 0.0]])
         result = compute_goal_directed_metrics(
-            env, times, positions, np.zeros(2), min_speed=0.0, max_gap=None
+            env,
+            times,
+            positions,
+            goal=np.zeros(2),
+            metric="euclidean",
+            min_speed=0.0,
+            max_gap=None,
         )
         assert result.mean_approach_rate == pytest.approx(0.0, abs=1e-12)
 
@@ -550,9 +605,7 @@ class TestComputeGoalDirectedMetrics:
         """Extra samples on the same straight path leave the mean unchanged."""
         from neurospatial.behavior.navigation import compute_goal_directed_metrics
 
-        env = Environment.from_samples(
-            np.array([[0.0, -5.0], [100.0, 5.0]]), bin_size=5.0, units="cm"
-        )
+        env = _arena(0.0, 100.0)
         coarse = np.array([0.0, 1.0, 4.0])
         # Approach at 20 cm/s for 1 s, then retreat at 5 cm/s for 3 s.
         x_coarse = np.array([60.0, 40.0, 55.0])
@@ -563,7 +616,8 @@ class TestComputeGoalDirectedMetrics:
                 env,
                 t,
                 np.column_stack([x, np.zeros_like(x)]),
-                np.zeros(2),
+                goal=np.zeros(2),
+                metric="euclidean",
                 min_speed=0.0,
                 max_gap=None,
             ).mean_approach_rate
@@ -588,7 +642,7 @@ class TestErrorHandling:
         goal = np.array([50.0, 0.0])
 
         with pytest.raises(ValueError, match="same length"):
-            compute_goal_directed_metrics(env, times, positions, goal)
+            compute_goal_directed_metrics(env, times, positions, goal=goal)
 
     def test_single_position(self):
         """Test edge case with single position."""
@@ -599,7 +653,9 @@ class TestErrorHandling:
         goal = np.array([100.0, 0.0])
 
         # Should return NaN since can't compute velocity
-        result = goal_bias(times, positions, goal, min_speed=0.0)
+        result = goal_bias(
+            _arena(), times, positions, goal=goal, metric="euclidean", min_speed=0.0
+        )
 
         assert np.isnan(result)
 
@@ -614,7 +670,7 @@ def _goal_metrics(**overrides):
         "min_distance_to_goal": 2.0,
         "goal_distance_at_start": 50.0,
         "goal_distance_at_end": 2.0,
-        "goal_position": np.array([100.0, 0.0]),
+        "goal": np.array([100.0, 0.0]),
         "metric": "euclidean",
     }
     values.update(overrides)
@@ -631,8 +687,8 @@ def test_goal_directed_metrics_invariants():
         _goal_metrics(metric="taxicab")
     with pytest.raises(ValueError, match=r"goal_distance_at_start=-1\.0 is negative"):
         _goal_metrics(goal_distance_at_start=-1.0)
-    with pytest.raises(ValueError, match="goal_position has shape"):
-        _goal_metrics(goal_position=np.zeros((1, 2)))
+    with pytest.raises(ValueError, match="goal has shape"):
+        _goal_metrics(goal=np.zeros((1, 2)))
     assert type(_goal_metrics(goal_bias=np.float64(0.5)).goal_bias) is float
 
 
@@ -655,11 +711,17 @@ class TestGoalDirectedDistances:
 
         env, times, positions, goal = self._run()
         whole = compute_goal_directed_metrics(
-            env, times, positions, goal, goal_radius=50.0
+            env, times, positions, goal=goal, metric="euclidean", goal_radius=50.0
         )
         # Inside [2, 8) s the first sample is x = 20 and the last x = 79.
         window = compute_goal_directed_metrics(
-            env, times, positions, goal, goal_radius=50.0, epochs=(2.0, 8.0)
+            env,
+            times,
+            positions,
+            goal=goal,
+            metric="euclidean",
+            goal_radius=50.0,
+            epochs=(2.0, 8.0),
         )
         assert whole.time_to_reach_goal == pytest.approx(5.0)
         assert (whole.goal_distance_at_start, whole.goal_distance_at_end) == (
@@ -676,9 +738,17 @@ class TestGoalDirectedDistances:
 
         env, times, positions, goal = self._run()
         not_reached = compute_goal_directed_metrics(
-            env, times, positions, goal, goal_radius=1.0, epochs=(2.0, 8.0)
+            env,
+            times,
+            positions,
+            goal=goal,
+            metric="euclidean",
+            goal_radius=1.0,
+            epochs=(2.0, 8.0),
         )
-        not_tested = compute_goal_directed_metrics(env, times, positions, goal)
+        not_tested = compute_goal_directed_metrics(
+            env, times, positions, goal=goal, metric="euclidean"
+        )
         assert np.isnan(not_reached.time_to_reach_goal)
         assert not_tested.time_to_reach_goal is None
         assert "not reached" in str(not_reached)
@@ -691,7 +761,7 @@ class TestGoalDirectedDistances:
         env, times, positions, goal = self._run()
         with pytest.raises(ValueError, match="finite distance >= 0"):
             compute_goal_directed_metrics(
-                env, times, positions, goal, goal_radius=goal_radius
+                env, times, positions, goal=goal, goal_radius=goal_radius
             )
 
     def test_geodesic_distances_go_around_the_wall(self):
@@ -716,9 +786,11 @@ class TestGoalDirectedDistances:
         goal = np.array([45.0, 5.0])
 
         geodesic = compute_goal_directed_metrics(
-            env, times, positions, goal, metric="geodesic"
+            env, times, positions, goal=goal, metric="geodesic"
         )
-        euclidean = compute_goal_directed_metrics(env, times, positions, goal)
+        euclidean = compute_goal_directed_metrics(
+            env, times, positions, goal=goal, metric="euclidean"
+        )
 
         exact = 2 * np.hypot(5.0, 45.0) + 30.0
         assert euclidean.goal_distance_at_start == 40.0

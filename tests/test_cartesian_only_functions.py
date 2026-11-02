@@ -156,7 +156,9 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (lambda env: spatial_basis(env, n_features=6, rng=0), "spatial_basis()"),
         (
-            lambda env: graph_turn_sequence(env, np.array([0, 1, 9, 8])),
+            lambda env: graph_turn_sequence(
+                env, np.arange(4.0), env.bin_centers[[0, 1, 9, 8]]
+            ),
             "graph_turn_sequence()",
         ),
         (
@@ -211,13 +213,19 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (
             lambda env: trajectory_similarity(
-                np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="hausdorff"
+                env,
+                env.bin_centers[[0, 1, 2]],
+                env.bin_centers[[2, 3, 4]],
+                method="hausdorff",
             ),
             "trajectory_similarity(method='hausdorff')",
         ),
         (
             lambda env: trajectory_similarity(
-                np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="dtw"
+                env,
+                env.bin_centers[[0, 1, 2]],
+                env.bin_centers[[2, 3, 4]],
+                method="dtw",
             ),
             "trajectory_similarity(method='dtw')",
         ),
@@ -449,7 +457,10 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
             env, n_centers=3, center_method="farthest_point", rng=0
         ),
         lambda env: trajectory_similarity(
-            np.array([0, 1, 2]), np.array([2, 3, 4]), env, method="jaccard"
+            env,
+            env.bin_centers[[0, 1, 2]],
+            env.bin_centers[[2, 3, 4]],
+            method="jaccard",
         ),
     ],
 )

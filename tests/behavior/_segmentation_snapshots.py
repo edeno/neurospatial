@@ -26,7 +26,6 @@ def capture_segmentation_outputs(pause, laps):
 
     p = pause
     lap_recording = laps
-    labels = np.where(p.env.bin_centers[:, 0] < 50, 0, 1)
     reference = lap_recording.position_bins[100:501]
     trials = Intervals([Trial(0.0, p.times[-1], "source", "target", "reached")])
     return {
@@ -59,8 +58,10 @@ def capture_segmentation_outputs(pause, laps):
         "detect_goal_directed_runs": detect_goal_directed_runs(
             p.env, p.times, p.positions, goal_region="target"
         ).windows,
+        # The source and target boxes mirror each other about x = 50 cm, so
+        # their Voronoi boundary splits the track there.
         "detect_boundary_crossings": detect_boundary_crossings(
-            p.position_bins, labels, p.times
+            p.env, p.times, p.positions, goals=["source", "target"]
         ),
         # The golden stores (positions, times); the function returns times first.
         "extract_pre_decision_window": extract_pre_decision_window(

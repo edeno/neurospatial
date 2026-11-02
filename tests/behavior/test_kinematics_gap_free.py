@@ -68,7 +68,20 @@ def kinematic_outputs(continuous_recording):
 def kinematic_goldens():
     file = Path(__file__).parent / "data" / "kinematics_gap_free.npz"
     with np.load(file, allow_pickle=False) as archive:
-        return {name: json.loads(archive[name].item()) for name in archive.files}
+        goldens = {name: json.loads(archive[name].item()) for name in archive.files}
+    # The goal fields were captured as ``goal_position``; the field is now
+    # ``goal``, with the same point.
+    for name in (
+        "compute_path_efficiency",
+        "compute_path_efficiency_geodesic",
+        "compute_goal_directed_metrics",
+    ):
+        fields = goldens[name]["fields"]
+        goldens[name]["fields"] = {
+            ("goal" if key == "goal_position" else key): value
+            for key, value in fields.items()
+        }
+    return goldens
 
 
 @pytest.mark.parametrize(
@@ -89,7 +102,6 @@ def kinematic_goldens():
         "approach_rate_geodesic",
         "compute_goal_directed_metrics",
         "compute_home_range",
-        "compute_home_range_no_times",
         "add_positions",
         "compute_pre_decision_metrics",
         "compute_vte_trial",
