@@ -92,27 +92,39 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             min_speed=5.0,
         ),
         "compute_path_efficiency": compute_path_efficiency(
-            r.env, r.times, r.positions, goal, metric="euclidean", reference_speed=10
-        ),
-        "compute_path_efficiency_geodesic": compute_path_efficiency(
-            r.env, r.times, r.positions, goal, reference_speed=10
-        ),
-        "instantaneous_goal_alignment": instantaneous_goal_alignment(
+            r.env,
             r.times,
             r.positions,
-            goal,
+            goal=goal,
+            metric="euclidean",
+            reference_speed=10,
+        ),
+        "compute_path_efficiency_geodesic": compute_path_efficiency(
+            r.env, r.times, r.positions, goal=goal, reference_speed=10
+        ),
+        "instantaneous_goal_alignment": instantaneous_goal_alignment(
+            r.env,
+            r.times,
+            r.positions,
+            goal=goal,
+            metric="euclidean",
             min_speed=5.0,
         ),
-        "goal_bias": goal_bias(r.times, r.positions, goal, min_speed=5.0),
-        "approach_rate": approach_rate(r.times, r.positions, goal),
+        "goal_bias": goal_bias(
+            r.env, r.times, r.positions, goal=goal, metric="euclidean", min_speed=5.0
+        ),
+        "approach_rate": approach_rate(
+            r.env, r.times, r.positions, goal=goal, metric="euclidean"
+        ),
         "approach_rate_geodesic": approach_rate(
-            r.times, r.positions, goal, metric="geodesic", env=r.env
+            r.env, r.times, r.positions, goal=goal, metric="geodesic"
         ),
         "compute_goal_directed_metrics": compute_goal_directed_metrics(
-            r.env, r.times, r.positions, goal, goal_radius=5
+            r.env, r.times, r.positions, goal=goal, metric="euclidean", goal_radius=5
         ),
-        "compute_home_range": compute_home_range(home_bins, home_env, times=home_times),
-        "compute_home_range_no_times": compute_home_range(home_bins, home_env),
+        "compute_home_range": compute_home_range(
+            home_env, home_times, home_env.bin_centers[home_bins]
+        ),
         "add_positions": add_positions(
             pd.DataFrame({"timestamp": [0.0, 50.005, 120.01, r.times[-1]]}),
             times=r.times,

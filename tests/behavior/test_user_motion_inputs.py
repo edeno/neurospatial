@@ -51,13 +51,31 @@ DEFAULT_CALLS = {
         r.times, p, min_speed=MIN_SPEED, **kw
     ),
     "instantaneous_goal_alignment": lambda r, p, **kw: instantaneous_goal_alignment(
-        r.times, p, r.positions[-1], min_speed=MIN_SPEED, **kw
+        r.env,
+        r.times,
+        p,
+        goal=r.positions[-1],
+        metric="euclidean",
+        min_speed=MIN_SPEED,
+        **kw,
     ),
     "goal_bias": lambda r, p, **kw: goal_bias(
-        r.times, p, r.positions[-1], min_speed=MIN_SPEED, **kw
+        r.env,
+        r.times,
+        p,
+        goal=r.positions[-1],
+        metric="euclidean",
+        min_speed=MIN_SPEED,
+        **kw,
     ),
     "compute_goal_directed_metrics": lambda r, p, **kw: compute_goal_directed_metrics(
-        r.env, r.times, p, r.positions[-1], goal_radius=5, **kw
+        r.env,
+        r.times,
+        p,
+        goal=r.positions[-1],
+        metric="euclidean",
+        goal_radius=5,
+        **kw,
     ),
     "pre_decision_heading_stats": lambda r, p, **kw: pre_decision_heading_stats(
         r.times, p, min_speed=MIN_SPEED, **kw
@@ -157,10 +175,9 @@ def test_sensor_headings_replace_the_direction_of_movement(session):
     goal = r.positions[-1]
     toward = goal - positions
     headings = np.arctan2(toward[:, 1], toward[:, 0])
-    assert goal_bias(r.times, positions, goal, min_speed=MIN_SPEED, **support) < 0.5
-    bias = goal_bias(
-        r.times, positions, goal, min_speed=MIN_SPEED, headings=headings, **support
-    )
+    kwargs = {"goal": goal, "metric": "euclidean", "min_speed": MIN_SPEED}
+    assert goal_bias(r.env, r.times, positions, **kwargs, **support) < 0.5
+    bias = goal_bias(r.env, r.times, positions, **kwargs, headings=headings, **support)
     assert bias == pytest.approx(1.0, abs=1e-12)
     # A heading that never changes sweeps no angle.
     constant = np.full(len(r.times), 0.7)
@@ -179,7 +196,14 @@ def test_your_speed_decides_who_is_moving(session):
     stopped = (r.times >= 50.0) & (r.times < 60.0)
     speed[stopped] = 0.0
     alignment = instantaneous_goal_alignment(
-        r.times, positions, r.positions[-1], min_speed=MIN_SPEED, speed=speed, **support
+        r.env,
+        r.times,
+        positions,
+        goal=r.positions[-1],
+        metric="euclidean",
+        min_speed=MIN_SPEED,
+        speed=speed,
+        **support,
     )
     assert np.isnan(alignment[stopped]).all()
     epochs = segment_by_velocity(
@@ -200,9 +224,11 @@ def test_your_motion_stays_inside_the_time_support(session):
     speed = np.full(len(r.times), 20.0)
     headings = np.zeros(len(r.times))
     alignment = instantaneous_goal_alignment(
+        r.env,
         r.times,
         positions,
-        r.positions[-1],
+        goal=r.positions[-1],
+        metric="euclidean",
         min_speed=MIN_SPEED,
         speed=speed,
         headings=headings,
@@ -232,9 +258,11 @@ def test_invalid_motion_is_refused_with_a_fix(session, name, value, match):
     r, positions, support, _, _ = session
     with pytest.raises(ValueError, match=match) as caught:
         goal_bias(
+            r.env,
             r.times,
             positions,
-            r.positions[-1],
+            goal=r.positions[-1],
+            metric="euclidean",
             min_speed=MIN_SPEED,
             **{name: value},
             **support,

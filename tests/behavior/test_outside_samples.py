@@ -44,15 +44,24 @@ def _env_for(method: str, env: Environment) -> Environment:
     return env
 
 
+def _positions(env: Environment, bins) -> np.ndarray:
+    """Positions at the centers of ``bins``; ``-1`` is a position outside ``env``."""
+    bins = np.asarray(bins)
+    positions = env.bin_centers[np.maximum(bins, 0)].astype(float)
+    positions[bins < 0] = -500.0
+    assert np.array_equal(env.bin_at(positions), np.where(bins < 0, -1, bins))
+    return positions
+
+
 @pytest.mark.parametrize("method", METHODS)
 def test_similarity_outside_sample_is_not_the_last_bin(env, method):
     env = _env_for(method, env)
-    reference = np.array([0, 1, 2, 3, 4])
-    with_outside = np.array([0, 1, 2, -1, 4])
-    with_last_bin = np.array([0, 1, 2, env.n_bins - 1, 4])
+    reference = _positions(env, [0, 1, 2, 3, 4])
+    with_outside = _positions(env, [0, 1, 2, -1, 4])
+    with_last_bin = _positions(env, [0, 1, 2, env.n_bins - 1, 4])
 
-    outside = trajectory_similarity(reference, with_outside, env, method=method)
-    last_bin = trajectory_similarity(reference, with_last_bin, env, method=method)
+    outside = trajectory_similarity(env, reference, with_outside, method=method)
+    last_bin = trajectory_similarity(env, reference, with_last_bin, method=method)
 
     assert outside != last_bin
 
@@ -69,14 +78,19 @@ def test_similarity_ignores_outside_samples(env, method):
         first = np.array([-1, 0, 1, 2, 3, 4, -1])
 
     assert trajectory_similarity(
-        first, padded, env, method=method
-    ) == trajectory_similarity(first[first >= 0], second, env, method=method)
+        env, _positions(env, first), _positions(env, padded), method=method
+    ) == trajectory_similarity(
+        env, _positions(env, first[first >= 0]), _positions(env, second), method=method
+    )
 
 
 def test_similarity_outside_samples_are_not_shared_places(env):
     """Two trajectories that only share time outside have no overlap."""
     similarity = trajectory_similarity(
-        np.array([-1, -1, 5]), np.array([-1, -1, 6]), env, method="jaccard"
+        env,
+        _positions(env, [-1, -1, 5]),
+        _positions(env, [-1, -1, 6]),
+        method="jaccard",
     )
 
     assert similarity == 0.0
@@ -84,31 +98,23 @@ def test_similarity_outside_samples_are_not_shared_places(env):
 
 def test_similarity_refuses_a_trajectory_with_no_place(env):
     with pytest.raises(ValueError, match="no sample inside the environment"):
-        trajectory_similarity(np.array([-1, -1]), np.array([0, 1]), env)
+        trajectory_similarity(env, _positions(env, [-1, -1]), _positions(env, [0, 1]))
 
 
-def test_similarity_refuses_an_index_that_is_not_a_bin(env):
-    with pytest.raises(ValueError, match="out of range"):
-        trajectory_similarity(np.array([env.n_bins]), np.array([0, 1]), env)
+def test_home_range_leaves_out_outside_samples():
+    """Outside samples add nothing; dwell is env.occupancy's.
 
-
-@pytest.mark.parametrize(("timed", "expected"), [(False, [4, 3]), (True, [3, 4])])
-def test_home_range_leaves_out_outside_samples(timed, expected):
-    """Outside samples add nothing; timed dwell is env.occupancy's.
-
-    Counted, bin 4 has six samples and bin 3 five. Timed, each observed
-    interval goes to the bin of its first sample: bin 3 holds its five
+    Each observed interval goes to the bin of its first sample, and an
+    interval touching an outside sample is not observed: bin 3 holds its five
     intervals (the last one ends in bin 4) and bin 4 five (its last sample
     starts none), so they tie and are listed in ascending order.
     """
-    position_bins = np.array([-1] * 50 + [3] * 5 + [4] * 6)
-    times = np.arange(len(position_bins)) * 0.1 if timed else None
+    positions = _positions(_HOME_ENV, [-1] * 50 + [3] * 5 + [4] * 6)
+    times = np.arange(len(positions)) * 0.1
 
-    home_range = compute_home_range(
-        position_bins, _HOME_ENV, times=times, percentile=100.0
-    )
+    home_range = compute_home_range(_HOME_ENV, times, positions, percentile=100.0)
 
-    np.testing.assert_array_equal(home_range, expected)
+    np.testing.assert_array_equal(home_range, [3, 4])
 
 
 def test_home_range_dwell_matches_occupancy_across_an_excursion():
@@ -121,15 +127,8 @@ def test_home_range_dwell_matches_occupancy_across_an_excursion():
     positions[100:110] = [500.0, 500.0]
     occupancy = env.occupancy(times, positions)
     assert occupancy.sum() == pytest.approx(9.6)
-    home_range = compute_home_range(
-        env.bin_at(positions), env, times=times, percentile=100.0
-    )
+    home_range = compute_home_range(env, times, positions, percentile=100.0)
     np.testing.assert_array_equal(np.sort(home_range), np.flatnonzero(occupancy))
-
-
-def test_home_range_refuses_negative_indices_other_than_minus_one():
-    with pytest.raises(ValueError, match="not a bin"):
-        compute_home_range(np.array([-2, 3, 4]), _HOME_ENV)
 
 
 @pytest.fixture(scope="module")

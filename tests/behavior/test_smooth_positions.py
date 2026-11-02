@@ -86,15 +86,17 @@ def test_smoothed_positions_feed_every_path_analysis():
     """One smoothing step serves path length, resampling and efficiency alike."""
     times, positions = _noisy_stop()
     smoothed = smooth_positions(times, positions)
-    env = Environment.from_samples(
-        np.c_[np.linspace(-10, 110, 600), np.linspace(-6, 6, 600)], bin_size=2.0
-    )
+    x, y = np.meshgrid(np.linspace(-10, 110, 121), np.linspace(-6, 6, 13))
+    env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    assert env.contains(smoothed).all()
     goal = np.array([100.0, 0.0])
     length = traveled_path_length(times, smoothed)
     assert compute_cumulative_distance(times, smoothed).run_path_lengths.sum() == (
         pytest.approx(length)
     )
-    efficiency = compute_path_efficiency(env, times, smoothed, goal, metric="euclidean")
+    efficiency = compute_path_efficiency(
+        env, times, smoothed, goal=goal, metric="euclidean"
+    )
     assert efficiency.traveled_length == pytest.approx(length)
 
 

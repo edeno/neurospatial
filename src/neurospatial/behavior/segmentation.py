@@ -1688,9 +1688,9 @@ def trajectory_similarity(
     Raises
     ------
     ValueError
-        If a trajectory is empty or has no sample inside the environment.
-    ValueError
-        If a bin index is not ``-1`` or an active bin of ``env``.
+        If a trajectory is empty, has an infinite coordinate, does not have
+        one coordinate per environment dimension, or has no sample inside
+        the environment.
     ValueError
         If method is not one of the supported options, or ``metric`` is
         given with ``'jaccard'`` or ``'correlation'``.
@@ -1756,10 +1756,10 @@ def trajectory_similarity(
     Two routes in parts of the environment not connected to each other have
     no path between them and score 0.
 
-    Samples with bin ``-1`` have no place in the environment. Jaccard,
-    Hausdorff and DTW use only each trajectory's samples inside the
-    environment; correlation drops the aligned sample pairs in which either
-    sample is ``-1``.
+    A missing sample (NaN row) or a position outside the environment has no
+    place in it. Jaccard, Hausdorff and DTW use only each trajectory's
+    samples inside the environment; correlation drops the aligned sample
+    pairs in which either sample has no place.
 
     Examples
     --------

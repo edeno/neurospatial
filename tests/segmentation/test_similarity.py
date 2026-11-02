@@ -12,6 +12,14 @@ from neurospatial.behavior.segmentation import (
 )
 
 
+def _at(env, bins):
+    """Positions at the centers of ``bins``; bin ``-1`` is a missing (NaN) row."""
+    bins = np.asarray(bins, dtype=np.int64)
+    positions = env.bin_centers[np.maximum(bins, 0)].astype(float)
+    positions[bins < 0] = np.nan
+    return positions
+
+
 class TestTrajectorySimilarity:
     """Test trajectory similarity metrics."""
 
@@ -26,7 +34,7 @@ class TestTrajectorySimilarity:
 
         # Identical trajectories
         similarity = trajectory_similarity(
-            trajectory, trajectory, env, method="jaccard"
+            env, _at(env, trajectory), _at(env, trajectory), method="jaccard"
         )
 
         assert similarity == pytest.approx(1.0)
@@ -42,7 +50,7 @@ class TestTrajectorySimilarity:
         trajectory2 = np.array([10, 11, 12, 13, 14], dtype=np.int64)
 
         similarity = trajectory_similarity(
-            trajectory1, trajectory2, env, method="jaccard"
+            env, _at(env, trajectory1), _at(env, trajectory2), method="jaccard"
         )
 
         assert similarity == pytest.approx(0.0)
@@ -58,7 +66,7 @@ class TestTrajectorySimilarity:
         trajectory2 = np.array([2, 3, 4, 5, 6], dtype=np.int64)
 
         similarity = trajectory_similarity(
-            trajectory1, trajectory2, env, method="jaccard"
+            env, _at(env, trajectory1), _at(env, trajectory2), method="jaccard"
         )
 
         # Jaccard = |{2,3,4}| / |{0,1,2,3,4,5,6}| = 3/7 ≈ 0.428
@@ -70,7 +78,7 @@ class TestTrajectorySimilarity:
         trajectory = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
 
         similarity = trajectory_similarity(
-            trajectory, trajectory, env, method="correlation"
+            env, _at(env, trajectory), _at(env, trajectory), method="correlation"
         )
 
         assert similarity == pytest.approx(1.0)
@@ -92,14 +100,16 @@ class TestTrajectorySimilarity:
         """Fewer than 3 aligned pairs or a flat run give NaN, never 0 or 1."""
         env = Environment.from_samples(np.linspace(0, 100, 50)[:, None], bin_size=5.0)
         similarity = trajectory_similarity(
-            np.array(first), np.array(second), env, method="correlation"
+            env, _at(env, first), _at(env, second), method="correlation"
         )
         assert np.isnan(similarity)
 
     def test_correlation_with_three_pairs_is_their_pearson_r(self):
         env = Environment.from_samples(np.linspace(0, 100, 50)[:, None], bin_size=5.0)
         first, second = np.array([0, 1, 2, -1]), np.array([0, 2, 1, 3])
-        similarity = trajectory_similarity(first, second, env, method="correlation")
+        similarity = trajectory_similarity(
+            env, _at(env, first), _at(env, second), method="correlation"
+        )
         centers = env.bin_centers[:, 0]
         expected = np.corrcoef(centers[[0, 1, 2]], centers[[0, 2, 1]])[0, 1]
         assert similarity == pytest.approx(expected)
@@ -113,7 +123,9 @@ class TestTrajectorySimilarity:
         trajectory = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
 
         with pytest.raises(ValueError, match="method='dtw'"):
-            trajectory_similarity(trajectory, trajectory, env, method="correlation")
+            trajectory_similarity(
+                env, _at(env, trajectory), _at(env, trajectory), method="correlation"
+            )
 
     def test_correlation_and_jaccard_ignore_bin_numbering(self):
         """Renumbering the bins of a track leaves both scores unchanged."""
@@ -129,9 +141,14 @@ class TestTrajectorySimilarity:
 
         for first, second in ((outbound, shifted), (outbound, partial)):
             for method in ("correlation", "jaccard"):
-                original = trajectory_similarity(first, second, env, method=method)
+                original = trajectory_similarity(
+                    env, _at(env, first), _at(env, second), method=method
+                )
                 renumbered_score = trajectory_similarity(
-                    new_index[first], new_index[second], shuffled_env, method=method
+                    shuffled_env,
+                    _at(shuffled_env, new_index[first]),
+                    _at(shuffled_env, new_index[second]),
+                    method=method,
                 )
                 assert renumbered_score == pytest.approx(original)
 
@@ -144,10 +161,10 @@ class TestTrajectorySimilarity:
 
         # Both runs cover the 8 cm bin; one also the first, one the second.
         on_coarse = trajectory_similarity(
-            np.array([0, 2]), np.array([1, 2]), coarse, method="jaccard"
+            coarse, _at(coarse, [0, 2]), _at(coarse, [1, 2]), method="jaccard"
         )
         on_fine = trajectory_similarity(
-            np.array([0, 2, 3]), np.array([1, 2, 3]), fine, method="jaccard"
+            fine, _at(fine, [0, 2, 3]), _at(fine, [1, 2, 3]), method="jaccard"
         )
 
         assert on_coarse == pytest.approx(8.0 / 12.0)
@@ -163,7 +180,7 @@ class TestTrajectorySimilarity:
         trajectory = np.array([0, 5, 10, 15], dtype=np.int64)
 
         similarity = trajectory_similarity(
-            trajectory, trajectory, env, method="hausdorff"
+            env, _at(env, trajectory), _at(env, trajectory), method="hausdorff"
         )
 
         # Identical should give similarity 1.0 (distance normalized to [0,1])
@@ -179,7 +196,9 @@ class TestTrajectorySimilarity:
         trajectory1 = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
         trajectory2 = np.array([0, 0, 1, 2, 3, 4, 5, 5], dtype=np.int64)  # slower
 
-        similarity = trajectory_similarity(trajectory1, trajectory2, env, method="dtw")
+        similarity = trajectory_similarity(
+            env, _at(env, trajectory1), _at(env, trajectory2), method="dtw"
+        )
 
         # DTW should recognize similar spatial paths despite timing differences
         assert similarity > 0.7
@@ -197,7 +216,7 @@ class TestTrajectorySimilarity:
 
         for method in methods:
             similarity = trajectory_similarity(
-                trajectory1, trajectory2, env, method=method
+                env, _at(env, trajectory1), _at(env, trajectory2), method=method
             )
             assert 0.0 <= similarity <= 1.0, f"Method {method} returned {similarity}"
 
@@ -211,18 +230,20 @@ class TestTrajectorySimilarity:
         with pytest.raises(
             ValueError, match=r"got method='invalid'; method must be one of"
         ):
-            trajectory_similarity(trajectory, trajectory, env, method="invalid")
+            trajectory_similarity(
+                env, _at(env, trajectory), _at(env, trajectory), method="invalid"
+            )
 
     def test_trajectory_similarity_empty_trajectories(self):
         """Empty trajectories should raise ValueError."""
         positions = np.linspace(0, 100, 50)[:, None]
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        empty = np.array([], dtype=np.int64)
-        trajectory = np.array([0, 1, 2], dtype=np.int64)
+        empty = np.empty((0, 1))
+        trajectory = _at(env, [0, 1, 2])
 
-        with pytest.raises(ValueError, match=r"Trajectories cannot be empty"):
-            trajectory_similarity(empty, trajectory, env, method="jaccard")
+        with pytest.raises(ValueError, match=r"positions_a is empty"):
+            trajectory_similarity(env, empty, trajectory, method="jaccard")
 
 
 class TestDetectGoalDirectedRuns:
@@ -543,8 +564,12 @@ class TestSimilarityIntegration:
         traj_c = np.array([50, 55, 60, 65, 70], dtype=np.int64)  # different
 
         # A and B should be more similar than A and C
-        sim_ab = trajectory_similarity(traj_a, traj_b, env, method="jaccard")
-        sim_ac = trajectory_similarity(traj_a, traj_c, env, method="jaccard")
+        sim_ab = trajectory_similarity(
+            env, _at(env, traj_a), _at(env, traj_b), method="jaccard"
+        )
+        sim_ac = trajectory_similarity(
+            env, _at(env, traj_a), _at(env, traj_c), method="jaccard"
+        )
 
         assert sim_ab > sim_ac
         assert sim_ac == 0.0  # completely disjoint
@@ -595,7 +620,7 @@ class TestSimilarityIntegration:
 
         # Compare similarity of the two trajectories
         similarity = trajectory_similarity(
-            traj1_bins, traj2_bins, env, method="jaccard"
+            env, _at(env, traj1_bins), _at(env, traj2_bins), method="jaccard"
         )
 
         # Should have some overlap (partial similarity)

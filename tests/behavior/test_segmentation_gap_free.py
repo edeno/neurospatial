@@ -34,7 +34,13 @@ speed moved to 42.219 cm/s, and the minimum speed, during a true pause, from
 0.063 to exactly 0 cm/s because movement before and after the pause no longer
 leaks into it. ``compute_vte_session`` was captured again when the session
 result began to keep the input trials' ``interval_ids``; its trial results
-are unchanged.
+are unchanged. ``compute_decision_analysis``'s ``distance_to_decision_boundary``
+is no longer read from the stored capture: since each goal region is measured
+to its nearest bin and the distance is taken from the position itself, it is
+computed here independently. The track is a fully binned rectangle, so a
+shortest path inside it is a straight line, and the distance is half the
+difference of the straight-line distances from each position to the nearest
+bin center of each goal region.
 """
 
 import json
@@ -42,6 +48,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.spatial.distance import cdist
 
 from ._segmentation_snapshots import capture_segmentation_outputs, structural_snapshot
 
@@ -51,8 +58,24 @@ def gap_free_outputs(continuous_pause_track, continuous_lap_track):
     return capture_segmentation_outputs(continuous_pause_track, continuous_lap_track)
 
 
+def _boundary_distance_by_hand(track):
+    """Half the gap between straight-line distances to the two goal regions.
+
+    The track's bins tile a rectangle, so the shortest path inside it from a
+    position to a bin center is the straight line.
+    """
+    env = track.env
+    distances = np.stack(
+        [
+            cdist(track.positions, env.bin_centers[env.bins_in_region(name)]).min(1)
+            for name in ("source", "target")
+        ]
+    )
+    return np.abs(distances[1] - distances[0]) / 2
+
+
 @pytest.fixture(scope="session")
-def gap_free_goldens():
+def gap_free_goldens(continuous_pause_track):
     path = Path(__file__).parent / "data" / "segmentation_gap_free.npz"
     with np.load(path, allow_pickle=False) as archive:
         goldens = {name: json.loads(archive[name].item()) for name in archive.files}
@@ -62,6 +85,10 @@ def gap_free_goldens():
         "goal_labels"
     ]
     labels["array"] = str(np.dtype(np.int_))
+    boundary = goldens["compute_decision_analysis"]["fields"]["boundary"]["fields"][
+        "distance_to_decision_boundary"
+    ]
+    boundary["values"] = _boundary_distance_by_hand(continuous_pause_track).tolist()
     return goldens
 
 

@@ -7,6 +7,12 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment
 
 
+def _arena(lo=-30.0, hi=110.0, bin_size=5.0):
+    """Open square arena covering ``[lo, hi]`` in x and y."""
+    x, y = np.meshgrid(np.arange(lo, hi + 1.0), np.arange(lo, hi + 1.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=bin_size)
+
+
 class TestTraveledPathLength:
     """Test traveled_path_length function."""
 
@@ -298,7 +304,7 @@ class TestPathEfficiency:
 
         times = np.linspace(0.0, 1.0, len(positions))
         return compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean"
+            env, times, positions, goal=goal, metric="euclidean"
         ).efficiency
 
     def test_straight_path_efficiency_is_one(self):
@@ -350,9 +356,7 @@ class TestPathEfficiency:
     def test_less_than_two_positions_returns_nan(self):
         """Test that < 2 positions returns NaN efficiency."""
         positions = np.array([[50.0, 50.0]])
-        env = Environment.from_samples(
-            np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
-        )
+        env = _arena()
         goal = np.array([60.0, 0.0])
 
         eff = self._efficiency(env, positions, goal)
@@ -363,9 +367,7 @@ class TestPathEfficiency:
         """Test that zero traveled distance returns NaN efficiency."""
         # All positions identical
         positions = np.tile([50.0, 50.0], (5, 1))
-        env = Environment.from_samples(
-            np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
-        )
+        env = _arena()
         goal = np.array([60.0, 0.0])
 
         eff = self._efficiency(env, positions, goal)
@@ -387,14 +389,14 @@ class TestPathEfficiencyObservedSupport:
         r = continuous_recording
         goal = r.positions[-1]
         result = compute_path_efficiency(
-            r.env, r.times, r.positions, goal, metric=metric
+            r.env, r.times, r.positions, goal=goal, metric=metric
         )
         assert result.traveled_length == float(
             np.sum(compute_step_lengths(r.positions, metric=metric, env=r.env))
         )
         assert result.efficiency == result.shortest_length / result.traveled_length
         assert result.angular_efficiency == angular_efficiency(
-            r.times, r.positions, goal, metric=metric, env=r.env
+            r.env, r.times, r.positions, goal=goal, metric=metric
         )
 
     POSITIONS = np.column_stack([np.arange(11.0), np.zeros(11)])  # cm
@@ -415,10 +417,10 @@ class TestPathEfficiencyObservedSupport:
         kept = np.delete(np.arange(len(times)), 5)
 
         result = compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean"
+            env, times, positions, goal=goal, metric="euclidean"
         )
         deleted = compute_path_efficiency(
-            env, times[kept], positions[kept], goal, metric="euclidean"
+            env, times[kept], positions[kept], goal=goal, metric="euclidean"
         )
 
         assert result.traveled_length == deleted.traveled_length == 10.0
@@ -437,7 +439,7 @@ class TestPathEfficiencyObservedSupport:
         max_gap = 0.75 * (times[6] - times[4])
 
         result = compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean", max_gap=max_gap
+            env, times, positions, goal=goal, metric="euclidean", max_gap=max_gap
         )
 
         assert result.traveled_length == 8.0
@@ -461,13 +463,18 @@ class TestPathEfficiencyObservedSupport:
         break_before = np.arange(11) == 5
 
         result = compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean", break_before=break_before
+            env,
+            times,
+            positions,
+            goal=goal,
+            metric="euclidean",
+            break_before=break_before,
         )
         first = compute_path_efficiency(
-            env, times[:5], positions[:5], goal, metric="euclidean"
+            env, times[:5], positions[:5], goal=goal, metric="euclidean"
         )
         second = compute_path_efficiency(
-            env, times[5:], positions[5:], goal, metric="euclidean"
+            env, times[5:], positions[5:], goal=goal, metric="euclidean"
         )
 
         assert (first.traveled_length, second.traveled_length) == (4.0, 5.0)
@@ -491,7 +498,7 @@ class TestPathEfficiencyObservedSupport:
             env,
             times[:1],
             positions[:1],
-            goal,
+            goal=goal,
             metric="euclidean",
             reference_speed=10.0,
         )
@@ -508,7 +515,7 @@ class TestPathEfficiencyObservedSupport:
         env, times, positions, goal = self._straight_run()
 
         result = compute_path_efficiency(
-            env, times, positions, goal, metric="euclidean"
+            env, times, positions, goal=goal, metric="euclidean"
         )
 
         assert (
@@ -530,7 +537,9 @@ class TestPathEfficiencyObservedSupport:
         times = np.arange(6) * 0.1
         goal = positions[-1]
 
-        result = compute_path_efficiency(env, times, positions, goal, metric="geodesic")
+        result = compute_path_efficiency(
+            env, times, positions, goal=goal, metric="geodesic"
+        )
 
         assert np.isfinite(result.traveled_length)
         assert result.traveled_length == traveled_path_length(
@@ -548,14 +557,14 @@ class TestPathEfficiencyObservedSupport:
                 env,
                 np.array([0.0, 0.1, 0.1, 0.2]),
                 self.POSITIONS[:4],
-                goal,
+                goal=goal,
                 metric="euclidean",
             )
         with pytest.raises(
             ValueError, match=r"compute_path_efficiency\(\) got no samples"
         ):
             compute_path_efficiency(
-                env, np.array([]), np.zeros((0, 2)), goal, metric="euclidean"
+                env, np.array([]), np.zeros((0, 2)), goal=goal, metric="euclidean"
             )
 
     def test_malformed_break_before_raises(self):
@@ -568,7 +577,7 @@ class TestPathEfficiencyObservedSupport:
                 env,
                 times,
                 positions,
-                goal,
+                goal=goal,
                 metric="euclidean",
                 break_before=np.zeros(11, dtype=int),
             )
@@ -583,14 +592,26 @@ class TestAngularEfficiency:
     def test_run_toward_goal_is_one(self):
         from neurospatial.behavior.navigation import angular_efficiency
 
-        eff = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([150.0, 0.0]))
+        eff = angular_efficiency(
+            _arena(),
+            self.TIMES,
+            self.EAST_RUN,
+            goal=np.array([150.0, 0.0]),
+            metric="euclidean",
+        )
         assert eff == 1.0
 
     def test_run_away_from_goal_is_zero(self):
         """The same straight run scores 0 when the goal is behind it."""
         from neurospatial.behavior.navigation import angular_efficiency
 
-        eff = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([-500.0, 0.0]))
+        eff = angular_efficiency(
+            _arena(),
+            self.TIMES,
+            self.EAST_RUN,
+            goal=np.array([-500.0, 0.0]),
+            metric="euclidean",
+        )
         assert eff == 0.0
 
     def test_steps_perpendicular_to_goal_are_one_half(self):
@@ -599,7 +620,9 @@ class TestAngularEfficiency:
 
         times = np.array([0.0, 0.1])
         positions = np.array([[0.0, 0.0], [1.0, 0.0]])
-        eff = angular_efficiency(times, positions, np.array([0.0, 5.0]))
+        eff = angular_efficiency(
+            _arena(), times, positions, goal=np.array([0.0, 5.0]), metric="euclidean"
+        )
         assert eff == pytest.approx(0.5, abs=1e-15)
 
     def test_angles_are_weighted_by_step_length(self):
@@ -614,7 +637,9 @@ class TestAngularEfficiency:
         # North, the second step East.
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[1.0, -10.0], [1.0, 0.0], [2.0, 0.0]])
-        eff = angular_efficiency(times, positions, np.array([1.0, 10.0]))
+        eff = angular_efficiency(
+            _arena(), times, positions, goal=np.array([1.0, 10.0]), metric="euclidean"
+        )
         assert eff == pytest.approx(1.0 - 1.0 / 22.0, abs=1e-15)
 
     def test_a_short_wiggle_after_a_run_weighs_little(self):
@@ -630,7 +655,11 @@ class TestAngularEfficiency:
         positions = np.vstack([run, wiggle])
         # 1 s apart: beyond the position smoothing, so the steps are exact.
         eff = angular_efficiency(
-            np.arange(len(positions)) * 1.0, positions, np.array([1e7, 0.0])
+            _arena(),
+            np.arange(len(positions)) * 1.0,
+            positions,
+            goal=np.array([1e7, 0.0]),
+            metric="euclidean",
         )
         assert eff == pytest.approx(1.0 - 0.5 / 101.0, abs=1e-6)
 
@@ -649,22 +678,44 @@ class TestAngularEfficiency:
         positions = np.vstack([run, pause])
         times = np.arange(len(positions)) / 30
         goal = np.array([100.0, 0.0])
-        assert angular_efficiency(times[:61], run, goal) == pytest.approx(1.0)
-        assert angular_efficiency(times, positions, goal) > 0.95
+        env = _arena()
+        assert angular_efficiency(
+            env, times[:61], run, goal=goal, metric="euclidean"
+        ) == pytest.approx(1.0)
+        assert (
+            angular_efficiency(env, times, positions, goal=goal, metric="euclidean")
+            > 0.95
+        )
 
     def test_independent_of_goal_distance_along_heading(self):
         """The old turn-angle score could not tell these goals apart."""
         from neurospatial.behavior.navigation import angular_efficiency
 
-        toward = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([150.0, 0.0]))
-        away = angular_efficiency(self.TIMES, self.EAST_RUN, np.array([-150.0, 0.0]))
+        toward = angular_efficiency(
+            _arena(),
+            self.TIMES,
+            self.EAST_RUN,
+            goal=np.array([150.0, 0.0]),
+            metric="euclidean",
+        )
+        away = angular_efficiency(
+            _arena(),
+            self.TIMES,
+            self.EAST_RUN,
+            goal=np.array([-150.0, 0.0]),
+            metric="euclidean",
+        )
         assert (toward, away) == (1.0, 0.0)
 
     def test_two_samples_define_one_step(self):
         from neurospatial.behavior.navigation import angular_efficiency
 
         eff = angular_efficiency(
-            np.array([0.0, 0.1]), self.EAST_RUN[:2], np.array([150.0, 0.0])
+            _arena(),
+            np.array([0.0, 0.1]),
+            self.EAST_RUN[:2],
+            goal=np.array([150.0, 0.0]),
+            metric="euclidean",
         )
         assert eff == 1.0
 
@@ -673,7 +724,13 @@ class TestAngularEfficiency:
         from neurospatial.behavior.navigation import angular_efficiency
 
         positions = np.tile([50.0, 50.0], (10, 1))
-        eff = angular_efficiency(np.arange(10) / 10, positions, np.array([0.0, 0.0]))
+        eff = angular_efficiency(
+            _arena(),
+            np.arange(10) / 10,
+            positions,
+            goal=np.array([0.0, 0.0]),
+            metric="euclidean",
+        )
         assert np.isnan(eff)
 
     def test_long_tracking_loss_drops_its_step(self):
@@ -684,12 +741,16 @@ class TestAngularEfficiency:
         # The pickup jumps back West across a 4.9 s gap: not a step.
         positions = np.array([[0.0, 0.0], [1.0, 0.0], [-20.0, 0.0], [-19.0, 0.0]])
         goal = np.array([100.0, 0.0])
-        assert angular_efficiency(times, positions, goal) == 1.0
+        env = _arena()
+        assert (
+            angular_efficiency(env, times, positions, goal=goal, metric="euclidean")
+            == 1.0
+        )
         # Bridged: 1 cm toward, 21 cm straight away (pi), 1 cm toward, so
         # 1 - 21 / 23 per unit of distance.
-        assert angular_efficiency(times, positions, goal, max_gap=None) == (
-            pytest.approx(2.0 / 23.0)
-        )
+        assert angular_efficiency(
+            env, times, positions, goal=goal, metric="euclidean", max_gap=None
+        ) == pytest.approx(2.0 / 23.0)
 
     def test_lost_frame_is_bridged_like_a_deleted_row(self):
         from neurospatial.behavior.navigation import angular_efficiency
@@ -698,15 +759,20 @@ class TestAngularEfficiency:
         positions[[5, 6]] = [[50.0, 50.0], [np.nan, np.nan]]
         kept = np.delete(np.arange(21), 6)
         goal = np.array([150.0, 0.0])
-        assert angular_efficiency(self.TIMES, positions, goal) == angular_efficiency(
-            self.TIMES[kept], positions[kept], goal
+        env = _arena()
+        assert angular_efficiency(
+            env, self.TIMES, positions, goal=goal, metric="euclidean"
+        ) == angular_efficiency(
+            env, self.TIMES[kept], positions[kept], goal=goal, metric="euclidean"
         )
 
     def test_goal_dimension_mismatch_raises(self):
         from neurospatial.behavior.navigation import angular_efficiency
 
-        with pytest.raises(ValueError, match="one coordinate per position"):
-            angular_efficiency(self.TIMES, self.EAST_RUN, np.array([1.0, 2.0, 3.0]))
+        with pytest.raises(ValueError, match="one coordinate per environment"):
+            angular_efficiency(
+                _arena(), self.TIMES, self.EAST_RUN, goal=np.array([1.0, 2.0, 3.0])
+            )
 
 
 class TestTimeEfficiency:
@@ -846,7 +912,7 @@ class TestSubgoalEfficiency:
         goal = positions[-1]
 
         sub = subgoal_efficiency(env, times, positions, goal)
-        direct = compute_path_efficiency(env, times, positions, goal)
+        direct = compute_path_efficiency(env, times, positions, goal=goal)
 
         (segment,) = sub.segment_results
         assert segment.traveled_length == pytest.approx(direct.traveled_length)
@@ -877,7 +943,7 @@ class TestErrorHandling:
         goal = np.array([50.0, 0.0])
 
         with pytest.raises(ValueError, match="same length"):
-            compute_path_efficiency(env, times, positions, goal)
+            compute_path_efficiency(env, times, positions, goal=goal)
 
     def test_unknown_metric_raises(self):
         """An unrecognized metric raises instead of falling back to geodesic."""
@@ -892,7 +958,11 @@ class TestErrorHandling:
             r".*\n.*\nFix: use metric='euclidean'",
         ):
             compute_path_efficiency(
-                env, np.arange(11) / 10, positions, positions[-1], metric="manhattan"
+                env,
+                np.arange(11) / 10,
+                positions,
+                goal=positions[-1],
+                metric="manhattan",
             )
 
     def test_empty_trajectory_error(self):
@@ -908,8 +978,15 @@ class TestErrorHandling:
         ):
             traveled_path_length(np.array([]), positions)
 
-    @pytest.mark.parametrize("goal", [[10.0], [10.0, 0.0, 0.0], [[10.0, 0.0]]])
-    def test_goal_of_wrong_shape_raises(self, goal):
+    @pytest.mark.parametrize(
+        ("goal", "message"),
+        [
+            ([10.0], "one coordinate per environment dimension"),
+            ([10.0, 0.0, 0.0], "one coordinate per environment dimension"),
+            ([[10.0, 0.0]], "one value per interval, but no intervals"),
+        ],
+    )
+    def test_goal_of_wrong_shape_raises(self, goal, message):
         """A one-coordinate goal used to broadcast: efficiency 1.414 on a 2-D run."""
         from neurospatial.behavior.navigation import (
             compute_path_efficiency,
@@ -918,9 +995,9 @@ class TestErrorHandling:
 
         positions = np.column_stack([np.arange(11.0), np.zeros(11)])
         env = Environment.from_samples(positions, bin_size=1.0)
-        with pytest.raises(ValueError, match="one coordinate per position dimension"):
+        with pytest.raises(ValueError, match=message):
             compute_path_efficiency(
-                env, np.arange(11) / 10, positions, goal, metric="euclidean"
+                env, np.arange(11) / 10, positions, goal=goal, metric="euclidean"
             )
         with pytest.raises(ValueError, match="one coordinate per position dimension"):
             shortest_path_length(env, positions[0], goal, metric="euclidean")
@@ -930,9 +1007,13 @@ class TestErrorHandling:
 
         positions = np.column_stack([np.arange(11.0), np.zeros(11)])
         env = Environment.from_samples(positions, bin_size=1.0)
-        with pytest.raises(ValueError, match="goal with a non-finite coordinate"):
+        with pytest.raises(ValueError, match="goal= has a non-finite coordinate"):
             compute_path_efficiency(
-                env, np.arange(11) / 10, positions, [np.nan, 0.0], metric="euclidean"
+                env,
+                np.arange(11) / 10,
+                positions,
+                goal=[np.nan, 0.0],
+                metric="euclidean",
             )
 
     @pytest.mark.parametrize("reference_speed", [0.0, -2.0, np.nan, np.inf])
@@ -951,7 +1032,7 @@ class TestErrorHandling:
                 env,
                 times,
                 positions,
-                positions[-1],
+                goal=positions[-1],
                 metric="euclidean",
                 reference_speed=reference_speed,
             )
@@ -973,7 +1054,7 @@ def _segment(traveled, shortest, *, fully_observed=True, metric="euclidean"):
         time_efficiency=None,
         angular_efficiency=1.0,
         start_position=np.zeros(2),
-        goal_position=np.ones(2),
+        goal=np.ones(2),
         metric=metric,
         fully_observed=fully_observed,
     )
@@ -1000,7 +1081,7 @@ class TestPathEfficiencyResultContract:
                 time_efficiency=None,
                 angular_efficiency=1.0,
                 start_position=np.zeros(2),
-                goal_position=np.ones(2),
+                goal=np.ones(2),
                 metric="euclidean",
                 fully_observed=True,
             )
@@ -1086,7 +1167,7 @@ class TestGeodesicPathLengthEstimands:
         times = 10 * s
 
         result = compute_path_efficiency(
-            env, times, positions, positions[-1], metric="geodesic"
+            env, times, positions, goal=positions[-1], metric="geodesic"
         )
 
         assert result.traveled_length == pytest.approx(np.hypot(70, 40), rel=1e-9)
@@ -1116,7 +1197,7 @@ class TestGeodesicPathLengthEstimands:
         times = np.arange(len(positions)) / 30
 
         result = compute_path_efficiency(
-            env, times, positions, positions[-1], metric="geodesic"
+            env, times, positions, goal=positions[-1], metric="geodesic"
         )
 
         exact = 2 * np.hypot(5.0, 45.0) + 30.0

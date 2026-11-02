@@ -26,9 +26,11 @@ and approach rate come per trial in one call.
 - `goal_bias` and `instantaneous_goal_alignment` take `metric=`, and
   `min_speed` defaults to 5 cm/s in `env.units`, as in
   `compute_goal_directed_metrics`.
-- A position outside the environment is missing for every goal measure
-  (NaN, bridged like a lost frame where a rate or step is measured), under
-  both metrics; before, the straight-line measures counted it.
+- A position outside the environment has no distance or direction to the
+  goal, under both metrics: it is NaN, and bridged like a lost frame where a
+  rate or a step's angle is measured. Before, the straight-line measures
+  counted it. Path lengths are unchanged: `traveled_length` follows
+  `traveled_path_length`.
 - `PathEfficiencyResult.goal_position` and `GoalDirectedMetrics.goal_position`
   are `goal`: the goal as given, a region name or a point.
 - `cost_to_goal` is removed. `distance_to_goal(..., cost_map=,

@@ -103,6 +103,10 @@ def _vte_session(env, times, positions, **kwargs):
     return result
 
 
+# Past the end of the track: a straight-line (euclidean) goal may lie outside
+# the environment.
+_GOAL = np.array([100.0, 5.0])
+
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
         env, t, p, region_name="mid_area", **kw
@@ -121,14 +125,16 @@ CALLS = {
     ),
     "heading_from_velocity": lambda env, t, p, **kw: heading_from_velocity(t, p, **kw),
     "goal_bias": lambda env, t, p, **kw: goal_bias(
-        t, p, np.array([100.0, 5.0]), min_speed=0.0, **kw
+        env, t, p, goal=_GOAL, metric="euclidean", min_speed=0.0, **kw
     ),
     "instantaneous_goal_alignment": lambda env, t, p, **kw: (
-        instantaneous_goal_alignment(t, p, np.array([100.0, 5.0]), min_speed=0.0, **kw)
+        instantaneous_goal_alignment(
+            env, t, p, goal=_GOAL, metric="euclidean", min_speed=0.0, **kw
+        )
     ),
     "compute_goal_directed_metrics": lambda env, t, p, **kw: (
         compute_goal_directed_metrics(
-            env, t, p, np.array([100.0, 5.0]), min_speed=1.0, **kw
+            env, t, p, goal=_GOAL, metric="euclidean", min_speed=1.0, **kw
         )
     ),
     "heading_direction_labels": lambda env, t, p, **kw: heading_direction_labels(
@@ -158,7 +164,7 @@ CALLS = {
     ),
     "compute_speed": lambda env, t, p, **kw: compute_speed(t, p, **kw),
     "compute_path_efficiency": lambda env, t, p, **kw: compute_path_efficiency(
-        env, t, p, np.array([45.0, 5.0]), **kw
+        env, t, p, goal=np.array([45.0, 5.0]), **kw
     ),
 }
 

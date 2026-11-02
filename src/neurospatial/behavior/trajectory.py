@@ -1929,14 +1929,26 @@ def compute_home_range(
                 fix="pass percentile=95.0 or another percent above 1.",
             )
         )
-    # Dwell is the start-allocated occupancy of env.occupancy: each interval
-    # passing the gates adds its duration to the bin of its first sample.
+    # Checked here so errors name this function, then measured by
+    # env.occupancy: each interval passing the gates adds its duration to the
+    # bin of its first sample.
+    from neurospatial._validation import validate_times_positions
+
+    times_arr, positions_arr = validate_times_positions(times, positions, call=call)
+    positions_arr = positions_arr.reshape(len(times_arr), -1)
+    if positions_arr.shape[1] != env.n_dims:
+        msg = (
+            f"{call}(): positions have {positions_arr.shape[1]} coordinate(s) per "
+            f"sample; the environment has {env.n_dims}."
+        )
+        raise ValueError(msg)
+    breaks = validate_break_before(break_before, len(times_arr), call=call)
     dwell = env.occupancy(
-        np.asarray(times, dtype=np.float64),
-        np.asarray(positions, dtype=np.float64),
+        times_arr,
+        positions_arr,
         max_gap=max_gap,
         epochs=epochs,
-        break_before=break_before,
+        break_before=breaks,
     )
     unique_bins = np.flatnonzero(dwell > 0)
     occupancy = dwell[unique_bins]
