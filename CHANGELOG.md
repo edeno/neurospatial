@@ -24,13 +24,82 @@ by its trial.
   record `align`. Each cell is averaged over the trials under way at that
   time (`counts`).
 - PSTH results have `events_per_bin`, the trials under way for the whole of
-  each bin (the bin's mean is over them; NaN where none is), and `align`.
-  A bin that a trial covers only in part does not count for that trial.
-  PSTH tables gain an `n_events` column per bin, and every PSTH and
-  continuous table records `align` in `df.attrs`.
+  each bin (the bin's mean is over them; NaN where none is), `align`, and
+  `event_ids`, the `interval_id` of each retained trial. A bin that a trial
+  covers only in part does not count for that trial, so late bins average
+  only the longer trials. PSTH tables gain an `events_per_bin` column, and
+  every PSTH and continuous table records `align` in `df.attrs`.
+- `align="stop"` refuses trials whose `outcome` is `"censored"`: their stop
+  is where observation ended, not an arrival. Select
+  `trials[trials.outcome != "censored"]`.
+- An empty event selection (an `Intervals` without rows or an empty array)
+  gives a NaN result with a warning, like an empty `epochs=` selection,
+  instead of raising, so a loop over conditions does not stop at an empty
+  one.
 - `plot_peri_event_response` takes the same `Intervals` for a trial
   histogram, and cuts each raster row like the histogram's bins; plain times
   with a trial result (or the reverse) are refused.
+
+### Trial analysis: review fixes
+
+**Changed**
+
+- `Intervals.from_dataframe` takes the ids from the table's integer index
+  when no `id_column` is named, so a mask built from a sorted task log
+  (`trials[log.outcome == "correct"]`) selects the right trials. A
+  non-integer, repeated or negative index is refused; pass `id_column=` or
+  call `reset_index(drop=True)`.
+- `epochs=` refuses a (2, 2) array whose rows overlap while its columns are
+  two ordered windows (`[starts, stops]` stacked as rows), and refuses
+  timedelta, datetime, bool and text values (convert to float seconds). A
+  table with `start_time`/`stop_time` columns is read by those names; an
+  NWB `TimeIntervals` points to `read_intervals`.
+- An explicit `epochs=` is intersected with a pynapple sample's
+  `time_support` instead of replacing it.
+- `from_pynapple` reads whole-number float `interval_id`s as ids and refuses
+  ids that are not whole numbers or repeat, instead of renumbering.
+- `Intervals` checks every record's times (finite, start <= stop) and
+  refuses records of a dataclass that is not frozen; `with_fields` checks a
+  replaced field against the record class's rules (a `Trial` with
+  `outcome="reached"` needs an `end_region`).
+- `Interval` refuses the field names `Intervals` reserves;
+  `sel(interval_id=...)` refuses ids that are not one-dimensional.
+- `RegionVisit.visit_id` is removed: `interval_id` is the identity.
+  `RegionVisit` requires finite times and non-negative indices; `Trial`
+  requires region names, and a reached trial ends at a different region.
+- `detect_region_crossings`, `detect_laps` and `detect_goal_directed_runs`
+  bridge a NaN position like a deleted row, as visits and trials do. A
+  position outside the environment still breaks observation.
+- The behavior detectors warn when more than half of the tracked positions
+  fall outside the environment (often mm against cm), and
+  `detect_trials`/`detect_region_visits` warn when nothing is observed
+  (epochs on another clock, all-NaN positions), as crossings did.
+- `Intervals.spike_counts` warns when no spike falls in any interval (spikes
+  on another clock).
+- `time_to_goal` refuses trials without an `outcome` field or with outcomes
+  other than `"reached"`, `"returned"` and `"censored"`, instead of
+  returning all NaN; it and `compute_vte_session` accept any `Intervals` in
+  type checking.
+- VTE `trials_table()` is indexed by `interval_id` (it was the row
+  position), so it joins the trial table correctly; `VTESessionResult` gains
+  `interval_ids`.
+- `compute_tuning_curve(s)` warn when more than half of the analyzed samples
+  fall outside `bin_edges`/`value_range` (often a unit mismatch).
+- Rate results refuse negative firing rates, occupancy and spike counts,
+  and tuning results refuse `analysis_settings` that contradict a field.
+- PSTH results check at construction that NaN marks exactly the bins
+  without trials (or, for the SEM, with fewer than two) and that
+  `events_per_bin` fits `n_events` and `align`; `ContinuousEventResult`
+  aligned on trials needs one unique `interval_id` per trial.
+- `peri_event_distance_histogram` says to pass `trials.start` or
+  `trials.stop` for an `Intervals`.
+- NWB writers name the real cause when a field mixes None with numbers.
+
+**Fixed**
+
+- A spike exactly at the event is counted in the bin starting at 0: PSTH
+  bin edges on the `bin_size` grid are exact grid values (with a window
+  such as `(-0.3, 0.3)` the zero edge was 5.6e-17).
 
 ### One row per trial
 
@@ -44,7 +113,8 @@ by its trial.
   from `sel(interval_id=...)` or from iterating an `Intervals`) is accepted
   wherever `epochs=` or `spike_window=` is, as its own window.
   One curve per trial is `compute_tuning_curve(..., bin_edges=edges,
-  epochs=trials.sel(interval_id=i))` for each id; on shared edges the
+  epochs=trials.sel(interval_id=[i]))` for each id, which records the id in
+  `analysis_settings["epoch_interval_ids"]`; on shared edges the
   occupancy-weighted mean of these curves is the pooled curve (tested).
 
 ### Compute on trials and segments guide
@@ -688,7 +758,7 @@ video export, and units outside the standard registry.
   interrupts is reported as censored, and an interval touching it is not observed. `compute_home_range`'s
   time-weighted dwell is now exactly `env.occupancy`'s start-allocated
   occupancy (a run's last sample no longer gets the run's median interval).
-  To bridge missing samples, delete their rows before binning.
+  A NaN position is a missing sample, bridged like a deleted row.
 - Spike times may be in any order and of any sign everywhere; each train is
   sorted once when read. Spatial rate functions and `add_modulation` no
   longer refuse unsorted or negative spike times. A 2-D padded spike matrix
@@ -998,8 +1068,9 @@ video export, and units outside the standard registry.
   `epochs` and `positions` or `headings` uses it as the epochs; results with
   `analysis_settings` record the windows in `analysis_settings["epochs"]`. A tracking gap shorter than `max_gap` was
   counted as occupancy before (39.99 s instead of 39.49 s for a 0.5 s gap in
-  40 s). An explicit `epochs=` wins; positions and headings with different
-  supports are refused until you pass `epochs=`.
+  40 s). An explicit `epochs=` is intersected with the time support;
+  positions and headings with different supports are refused until you pass
+  `epochs=`.
 - `restrict_spike_trains` returns a `SpikeTrains` that keeps the input's unit
   labels and metadata. It returned a plain list, so a restricted `TsGroup`
   with units 5, 6, 7 was renumbered 0, 1, 2 by every later analysis.

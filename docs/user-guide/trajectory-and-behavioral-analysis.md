@@ -705,13 +705,12 @@ there are two visits to `A`, and the first trial is `"returned"`. The visit
 to `C` is seen in a single sample: it is kept as an observation with zero
 duration, not in `visits.windows`.
 
-`detect_region_visits` and `detect_trials` treat a NaN position (lost
-tracking, a low-confidence frame) as a missing sample, the same as a deleted
-row: as in `env.occupancy`, it is bridged when the samples on either side are
-no more than `max_gap` apart. `detect_region_crossings` and `detect_laps` do
-not: for them a NaN row breaks observation, so delete the rows of short
-dropouts before calling them. A position outside the environment is observed
-but not located, and it breaks observation in every detector. Any break in
+Every detector here (visits, trials, crossings, laps and goal-directed runs)
+treats a NaN position (lost tracking, a low-confidence frame) as a missing
+sample, the same as a deleted row: as in `env.occupancy`, it is bridged when
+the samples on either side are no more than `max_gap` apart. A position
+outside the environment is observed but not located, and it breaks
+observation in every detector. Any break in
 observation, such as a gap longer than `max_gap`, a declared break
 (`break_before`, see [Joined Recordings](#joined-recordings)) or an epoch
 edge, never fabricates an exit or an entry: the visit around it is kept with
