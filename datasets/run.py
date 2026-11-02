@@ -33,6 +33,9 @@ from operations import OPERATIONS, Outcome
 LOADERS = {
     "sargolini_000582": "load_sargolini_000582",
     "peyrache_mouse32": "load_peyrache_mouse32",
+    "figure8_000552": "load_figure8_000552",
+    "rosenberg_labyrinth": "load_rosenberg_labyrinth",
+    "yartsev_bat_demo": "load_yartsev_bat_demo",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
