@@ -13,11 +13,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from neurospatial._exceptions import _format_error
 from neurospatial._intervals import _format_rows, _merge, times_in_intervals
 from neurospatial._pynapple import (
     interval_rows,
-    intervals_from_interval_set,
     is_pynapple_type,
 )
 from neurospatial._validation import validate_finite_scalar
@@ -27,33 +25,6 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial._interval_table import Interval, Intervals
-
-
-def _as_intervals(intervals: Any, *, call: str) -> Intervals[Any]:
-    """``intervals`` as :class:`~neurospatial.Intervals`; a pynapple set converted."""
-    from neurospatial._interval_table import Intervals
-
-    if isinstance(intervals, Intervals):
-        return intervals
-    if is_pynapple_type(intervals, "IntervalSet"):
-        converted: Intervals[Any] = intervals_from_interval_set(intervals)
-        return converted
-    hint = (
-        "wrap the table with Intervals.from_dataframe(table) (columns start_time, "
-        "stop_time, then any fields)"
-        if hasattr(intervals, "columns")
-        else "pass an Intervals, for example from Intervals.from_dataframe or a "
-        "detector"
-    )
-    raise TypeError(
-        _format_error(
-            f"{call}: intervals must be an Intervals or a pynapple IntervalSet, "
-            f"got {type(intervals).__name__}.",
-            why="intervals are half-open [start, stop) rows with named fields and "
-            "stable ids, whatever their source.",
-            fix=hint + ".",
-        )
-    )
 
 
 def intervals_to_events(
@@ -132,8 +103,10 @@ def intervals_to_events(
     """
     import pandas as pd
 
+    from neurospatial._interval_table import require_intervals
+
     call = "intervals_to_events"
-    rows = _as_intervals(intervals, call=call)
+    rows = require_intervals(intervals, name="intervals", owner=f"{call}()")
     valid_which = ("start", "stop", "both")
     if which not in valid_which:
         msg = (
@@ -521,7 +494,11 @@ def filter_by_intervals(
         bounds = interval_rows(intervals)
         windows = bounds[bounds[:, 1] > bounds[:, 0]]
     else:
-        windows = _as_intervals(intervals, call=call).windows
+        from neurospatial._interval_table import require_intervals
+
+        windows = require_intervals(
+            intervals, name="intervals", owner=f"{call}()"
+        ).windows
     timestamps = _event_times(events, timestamp_column, name="events", call=call)
     # Zero-length rows hold no time; merging the rest makes membership one
     # binary search per event.
