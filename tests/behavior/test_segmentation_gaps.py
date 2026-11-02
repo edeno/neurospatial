@@ -18,6 +18,7 @@ from neurospatial.behavior import (
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     compute_pre_decision_metrics,
+    decision_region_entry_time,
     detect_boundary_crossings,
     extract_pre_decision_window,
 )
@@ -397,6 +398,56 @@ def test_crossings_bridge_nan_rows_like_deleted_rows():
         env, times[kept], positions[kept], region_name="goal", max_gap=0.3
     )
     assert len(short) == len(complete) - 1
+
+
+def test_goal_directed_runs_bridge_nan_rows_like_deleted_rows():
+    """NaN rows mid-approach give the runs of the recording without them."""
+    env = _corridor_with_wells()
+    times = np.arange(0.0, 40.0, 0.1)
+    x = 50.0 - 49.0 * np.cos(2 * np.pi * times / 10.0)  # end to end every 5 s
+    positions = np.column_stack([x, np.zeros_like(x)])
+    options = {"goal_region": "goal", "min_progress": 20.0}
+    complete = detect_goal_directed_runs(env, times, positions, **options)
+    missing = np.zeros(times.size, dtype=bool)
+    missing[22] = True  # one frame mid-approach, at 2.2 s
+    missing[120:126] = True  # 0.7 s mid-approach, from 12.0 s
+    positions = positions.copy()
+    positions[missing] = np.nan
+    kept = ~missing
+
+    bridged = detect_goal_directed_runs(env, times, positions, **options)
+    deleted = detect_goal_directed_runs(env, times[kept], positions[kept], **options)
+
+    assert len(complete) == 4  # one approach per run toward the goal
+    pd.testing.assert_frame_equal(bridged.intervals_table(), deleted.intervals_table())
+    assert len(bridged) == len(complete)
+    # At max_gap=0.5 the 0.7 s gap splits the second approach, as for
+    # deleted rows.
+    short = {**options, "max_gap": 0.5}
+    broken = detect_goal_directed_runs(env, times, positions, **short)
+    pd.testing.assert_frame_equal(
+        broken.intervals_table(),
+        detect_goal_directed_runs(
+            env, times[kept], positions[kept], **short
+        ).intervals_table(),
+    )
+    assert not np.array_equal(broken.start, complete.start)
+
+
+def test_entry_time_skips_a_nan_row_at_the_entry():
+    """A lost frame at the entry gives the next tracked sample inside."""
+    env = _corridor_with_wells()
+    times = np.arange(0.0, 10.0, 0.1)
+    x = 50.0 - 49.0 * np.cos(2 * np.pi * times / 10.0)
+    positions = np.column_stack([x, np.zeros_like(x)])
+    entry = decision_region_entry_time(env, times, positions, region="goal")
+    first = int(np.flatnonzero(times == entry)[0])
+    positions = positions.copy()
+    positions[first] = np.nan
+
+    assert decision_region_entry_time(
+        env, times, positions, region="goal"
+    ) == pytest.approx(times[first + 1])
 
 
 def _corridor_with_wells():
