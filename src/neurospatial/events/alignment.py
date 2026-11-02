@@ -315,16 +315,6 @@ def _peri_event_histograms(
             raise ValueError(msg)
         else:
             warn_empty_selection(names, n_events=n_input_events, result="the histogram")
-        missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
-        return _PeriEventCounts(
-            histograms=missing,
-            sem=missing.copy(),
-            mean_sem=np.full(n_bins, np.nan, dtype=np.float64),
-            event_indices=event_indices,
-            n_dropped=n_input_events,
-            events_per_bin=events_per_bin,
-            event_ids=event_ids,
-        )
 
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
     sem = np.empty((len(trains), n_bins), dtype=np.float64)
