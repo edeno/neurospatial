@@ -36,6 +36,9 @@ LOADERS = {
     "figure8_000552": "load_figure8_000552",
     "rosenberg_labyrinth": "load_rosenberg_labyrinth",
     "yartsev_bat_demo": "load_yartsev_bat_demo",
+    "miniscope_002030": "load_miniscope_002030",
+    "giocomo_000405": "load_giocomo_000405",
+    "giocomo_001701": "load_giocomo_001701",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
