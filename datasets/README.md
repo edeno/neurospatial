@@ -37,8 +37,8 @@ Files are downloaded once into `data/datasets/` (git-ignored) or into
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
 The labyrinth's trajectories are Python pickles; its loader reads them with a
-restricted unpickler that resolves only NumPy arrays and the trajectory
-record, so no code from the file can run.
+restricted unpickler that resolves only the trajectory record and int64 or
+float64 NumPy arrays, and refuses every other global or dtype.
 
 | Dataset | What it is | Size | License |
 | --- | --- | --- | --- |

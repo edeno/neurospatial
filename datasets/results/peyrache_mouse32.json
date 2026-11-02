@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9e10cb06689e68249df6c040a862715de4469a70"
+    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
   },
   "load_warnings": [
     {
@@ -60,6 +60,11 @@
       "warnings": []
     },
     "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
       "status": "n/a",
       "note": "needs positions",
       "warnings": []
@@ -98,7 +103,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.268,
+      "seconds": 0.261,
       "peak_mb": 105.6
     },
     "decode.position": {

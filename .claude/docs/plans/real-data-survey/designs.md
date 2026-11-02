@@ -483,8 +483,10 @@ matrix prints. The renderer prints `unreviewed` for rows without a verdict, so
 verdicts survive regeneration. As implemented, a probe counts as `warned` only
 for warnings the clean run of that operation did not emit, every operation
 reading a changed field (its `requires` plus `times`, `position_units`,
-`epochs`, `params`) is probed, and a hazard reaching none gets a `not probed`
-row. Verdict vocabulary:
+`epochs`, `params`) is probed; an operation that was not `ok` on the clean
+recording, and a hazard reaching no operation, get `not probed` rows (no
+verdict needed); an `ok` operation that turns `n/a` under the hazard reports
+`n/a`. Verdict vocabulary:
 
 | Table | Verdict | Meaning | Gap kind |
 | --- | --- | --- | --- |

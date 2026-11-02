@@ -73,6 +73,9 @@ def test_simulated_place_cells_recovered(simulated_record):
         > 0.5
     )
     assert operations["decode.position"]["summary"]["median_error"] < 10.0
+    shifts = operations["rates.information_vs_shifts"]["summary"]
+    assert shifts["frac_above_every_shift"] > 0.8
+    assert shifts["median_shifted_bits_per_spike"] < shifts["median_bits_per_spike"] / 2
 
 
 def test_matrix_render(simulated_record):

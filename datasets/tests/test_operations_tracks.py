@@ -57,18 +57,18 @@ def test_ops_na_without_graph_or_ripples(linear_track):
     assert "ripples" in outcome.note
 
 
-def test_replay_op_detects_simulated_sweeps(linear_track):
+def _with_events(track: Recording, kinds: list[str]) -> Recording:
+    """``track`` plus simulated replay events of ``kinds`` after the run, as ripples."""
     from neurospatial import Environment
     from neurospatial.encoding import compute_spatial_rates
     from neurospatial.simulation import simulate_replay_event
 
-    env = Environment.from_samples(linear_track.positions, bin_size=4.0, units="cm")
+    env = Environment.from_samples(track.positions, bin_size=4.0, units="cm")
     rates = compute_spatial_rates(
-        env, list(linear_track.spike_times), linear_track.times, linear_track.positions
+        env, list(track.spike_times), track.times, track.positions
     )
     rng = np.random.default_rng(1)
-    kinds = ["sweep"] * 8 + ["stationary"] * 8
-    trains: list[list[np.ndarray]] = [[] for _ in linear_track.spike_times]
+    trains: list[list[np.ndarray]] = [[] for _ in track.spike_times]
     events = []
     for index, kind in enumerate(kinds):
         extra = (
@@ -84,16 +84,23 @@ def test_replay_op_detects_simulated_sweeps(linear_track):
             trains[cell].append(np.asarray(spikes) + start)
         events.append((start, start + event.duration))
     spikes = tuple(
-        np.sort(np.concatenate([original, *rest]))
-        for original, rest in zip(linear_track.spike_times, trains, strict=True)
+        np.sort(np.concatenate([original, *extra_spikes]))
+        for original, extra_spikes in zip(track.spike_times, trains, strict=True)
     )
-    rec = replace(
-        linear_track,
+    return replace(
+        track,
         spike_times=spikes,
         events={"ripples": np.asarray(events)},
-        params={**linear_track.params, "replay_dt": 0.01, "replay_n_shuffles": 100},
+        params={**track.params, "replay_dt": 0.01, "replay_n_shuffles": 100},
     )
-    outcome = replay_compare_methods(rec, {})
-    assert outcome.status == "ok"
-    assert outcome.summary["n_events"] == 16
-    assert outcome.summary["grosmark_2016_rate"] > 0.25  # sweeps are half the events
+
+
+def test_replay_op_detects_simulated_sweeps(linear_track):
+    sweeps = replay_compare_methods(_with_events(linear_track, ["sweep"] * 12), {})
+    still = replay_compare_methods(_with_events(linear_track, ["stationary"] * 12), {})
+    assert sweeps.status == still.status == "ok"
+    for method in ("davidson_2009", "grosmark_2016"):
+        assert sweeps.summary[f"{method}_rate"] > still.summary[f"{method}_rate"], (
+            method
+        )
+    assert sweeps.summary["grosmark_2016_rate"] > 0.5

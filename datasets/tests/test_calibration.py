@@ -214,3 +214,4 @@ def test_operation_failing_on_clean_data_is_not_probed(
         probe_ops=("p.fails",),
     )
     assert {row["response"] for row in rows} == {"not probed"}
+    assert {row["message"] for row in rows if row["op"]} == {"the clean run was error"}

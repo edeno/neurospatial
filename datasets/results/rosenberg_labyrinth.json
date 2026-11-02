@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9e10cb06689e68249df6c040a862715de4469a70"
+    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.575,
+      "seconds": 0.442,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -70,6 +70,11 @@
       "warnings": []
     },
     "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
       "status": "n/a",
       "note": "needs spike_times",
       "warnings": []
@@ -113,7 +118,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.305,
+      "seconds": 0.099,
       "peak_mb": 0.9
     },
     "behavior.segment_by_velocity": {
@@ -125,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.524,
+      "seconds": 0.405,
       "peak_mb": 16.1
     },
     "behavior.laps": {
@@ -139,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.364,
+      "seconds": 3.142,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -151,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.238,
+      "seconds": 1.724,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
@@ -177,6 +182,15 @@
         "n_dims": 2,
         "max_extent": 15.0
       }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -243,6 +257,15 @@
         "n_dims": 2,
         "max_extent": 15.0
       }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "image_y_down",

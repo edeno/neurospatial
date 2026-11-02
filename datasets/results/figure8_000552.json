@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9e10cb06689e68249df6c040a862715de4469a70"
+    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.017,
       "peak_mb": 1.6
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "ValueError: min_speed=4.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.0,
       "peak_mb": 0.1
     },
     "rates.spatial": {
@@ -93,7 +93,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.345,
+      "seconds": 0.341,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -108,6 +108,29 @@
       "warnings": [],
       "seconds": 0.002,
       "peak_mb": 0.9
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.2157257274741144,
+        "median_shifted_bits_per_spike": 0.05052252920926409,
+        "frac_above_every_shift": 0.9380530973451328,
+        "n_units": 113,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+          "count": 4
+        }
+      ],
+      "seconds": 2.006,
+      "peak_mb": 181.4
     },
     "cells.place_screen": {
       "status": "ok",
@@ -170,7 +193,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.353,
+      "seconds": 0.35,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -181,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.772,
+      "seconds": 3.412,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -202,7 +225,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.044,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -211,7 +234,7 @@
       "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.014,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -243,7 +266,7 @@
           "count": 1
         }
       ],
-      "seconds": 28.99,
+      "seconds": 22.846,
       "peak_mb": 225.2
     }
   },
@@ -286,6 +309,15 @@
     },
     {
       "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "silent",
       "message": "",
@@ -317,6 +349,24 @@
         "n_segments": 0,
         "running_s": 0.0
       }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
     }
   ]
 }

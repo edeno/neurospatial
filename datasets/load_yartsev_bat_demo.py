@@ -12,18 +12,27 @@ What the loader converts:
 
 - Spike times from the global clock in µs (``spikeTimes_usec``) to seconds.
   ``localSpikeTimes_usec`` is the probe's own clock and is not used.
-- Putative duplicate units in ``merges_Dataset_*.mat`` are pooled, keeping
-  the first cluster's id, and spikes closer than 1 ms are dropped, as the
-  record's ``NP_Bat_Demo.m`` does.
-- Flight epochs from the 1-based sample indices ``f_smp``.
+- Putative duplicate units in ``merges_Dataset_*.mat`` are pooled under the
+  first cluster's id, as the record's ``NP_Bat_Demo.m`` does; the pooled train
+  is sorted (the script concatenates without sorting). In every unit a spike
+  within 1 ms of its predecessor is dropped, the script's rule.
+- Flight epochs from the 1-based sample indices ``f_smp``. The behavior starts
+  before the neural recording (the first flight, −15.4 to −14.1 s, ends before
+  the first spike at −12.7 s), so the flights used for analysis are clipped to
+  the recording, taken as the first to last spike of any unit.
 - Positions are kept as recorded. 3.6 % of samples lie outside the room bounds
   ``r_lim`` the file states, all on y and almost all outside flights.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 0.2 m: 3-D bins about the size of a bat's body.
-- ``analysis_epochs``: flights; rate maps describe the bat in flight.
-- ``train_epochs``/``test_epochs``: even and odd flights, for held-out decoding.
+- ``bin_size`` 0.2 m: 3-D bins about the size of a bat's body (1,352 bins
+  over the volume the bat visited).
+- ``min_speed``: the file's ``v_th``, the velocity threshold the authors used
+  to segment flights (0.5 m/s).
+- ``analysis_epochs``: flights during the neural recording; rate maps
+  describe the bat in flight.
+- ``train_epochs``/``test_epochs``: even and odd of those flights, for held-out
+  decoding.
 - ``dt`` 0.25 s, as for the 2-D datasets.
 """
 
@@ -66,7 +75,7 @@ _FILES = {
     "SU_kilosort4_outdir_probe2.mat": "1efbec9057625bb92967da00045e5746b3c07aaeff37815fafcba28bf12a727d",
     "SU_kilosort4_outdir_probe3.mat": "7a1b3254f176b192ec0bfa44366946fff104b3cdb5f038daa25900c5eeea0882",
 }
-_REFRACTORY_S = 0.001
+_CLOSE_S = 0.001
 
 
 def _fetch(name: str, cache: Path | None) -> Path:
@@ -102,16 +111,32 @@ def _merge_groups(path: Path) -> list[list[list[int]]]:
     ]
 
 
-def _drop_refractory(spikes: np.ndarray) -> np.ndarray:
-    spikes = np.sort(spikes)
-    keep = np.ones(spikes.size, dtype=bool)
-    last = -np.inf
-    for i, time in enumerate(spikes):
-        if time - last < _REFRACTORY_S:
-            keep[i] = False
-        else:
-            last = time
-    return spikes[keep]
+def _drop_close_spikes(spikes: np.ndarray) -> np.ndarray:
+    """Drop each spike within 1 ms of the spike before it, as the record's script does.
+
+    ``NP_Bat_Demo.m`` removes ``s(find(diff(s) < 0.001) + 1)``: each spike is
+    compared with its predecessor in the train, whether or not that one is
+    kept.
+    """
+    close = np.flatnonzero(np.diff(spikes) < _CLOSE_S) + 1
+    return np.delete(spikes, close)
+
+
+def _pool(
+    trains: dict[int, np.ndarray], groups: list[list[int]]
+) -> dict[int, np.ndarray]:
+    """Pool each group of putative duplicates under its first cluster id, sorted.
+
+    The record's script concatenates the trains without sorting; sorting
+    first lets the 1 ms rule remove spikes the two clusters share.
+    """
+    pooled = dict(trains)
+    for group in groups:
+        pooled[group[0]] = np.sort(np.concatenate([pooled.pop(c) for c in group]))
+    return {
+        cluster: _drop_close_spikes(np.sort(pooled[cluster]))
+        for cluster in sorted(pooled)
+    }
 
 
 def _probe_units(
@@ -124,13 +149,17 @@ def _probe_units(
             table["cluster_id"], table["spikeTimes_usec"], strict=True
         )
     }
-    for group in groups:
-        pooled = np.concatenate([trains.pop(cluster) for cluster in group])
-        trains[group[0]] = _drop_refractory(pooled)
     return {
-        f"probe{probe}-{cluster}": np.sort(trains[cluster])
-        for cluster in sorted(trains)
+        f"probe{probe}-{cluster}": spikes
+        for cluster, spikes in _pool(trains, groups).items()
     }
+
+
+def _clip(windows: np.ndarray, span: tuple[float, float]) -> np.ndarray:
+    clipped = np.column_stack(
+        [np.maximum(windows[:, 0], span[0]), np.minimum(windows[:, 1], span[1])]
+    )
+    return clipped[clipped[:, 1] > clipped[:, 0]]
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -148,6 +177,13 @@ def load(cache: Path | None = None) -> Recording:
     flights = np.asarray(behavior["f_smp"], dtype=int) - 1
     flight_windows = np.column_stack([times[flights[:, 0]], times[flights[:, 1]]])
     room = np.asarray(behavior["r_lim"], dtype=float)
+    # The ephys start and stop are not in these files; the first and last
+    # spike of the 289 units (population rate about 800 spikes/s) bound them.
+    recorded = (
+        min(float(s[0]) for s in units.values() if s.size),
+        max(float(s[-1]) for s in units.values() if s.size),
+    )
+    neural_flights = _clip(flight_windows, recorded)
     return Recording(
         dataset=DATASET["key"],
         session="Dataset_3_14543_240419",
@@ -158,19 +194,23 @@ def load(cache: Path | None = None) -> Recording:
         position_units="m",
         spike_times=tuple(units.values()),
         unit_ids=np.asarray(list(units)),
-        epochs={"flight": flight_windows},
+        epochs={"flight": flight_windows, "neural_recording": np.array([recorded])},
         geometry={"room_bounds_m": room},
         params={
             "bin_size": 0.2,
             "dt": 0.25,
-            "analysis_epochs": flight_windows,
-            "train_epochs": flight_windows[::2],
-            "test_epochs": flight_windows[1::2],
+            "min_speed": float(behavior["v_th"]),
+            "analysis_epochs": neural_flights,
+            "train_epochs": neural_flights[::2],
+            "test_epochs": neural_flights[1::2],
         },
         conversions=(
             "spike_times: spikeTimes_usec (global clock) / 1e6",
-            "spike_times: merges_Dataset_*.mat groups pooled; spikes < 1 ms apart dropped",
-            "epochs['flight']: times at the 1-based sample indices f_smp",
+            "spike_times: merges_Dataset_*.mat groups pooled and sorted under the first id",
+            "spike_times: in every unit, a spike within 1 ms of its predecessor dropped",
+            "epochs['flight']: times at the 1-based sample indices f_smp (all 38)",
+            "epochs['neural_recording']: first to last spike of any unit",
+            "params flights: flights clipped to the neural recording",
             "unit_ids: probe<n>-<kilosort cluster id>",
         ),
     )

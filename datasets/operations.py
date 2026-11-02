@@ -146,6 +146,58 @@ def spatial_information(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+N_SHIFTS = 4
+MIN_SHIFT_S = 20.0
+
+
+def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Spatial information against circularly shifted spikes (seeded).
+
+    Each unit's spikes inside the tracking span are shifted by a random
+    amount between 20 s and the span minus 20 s, wrapping around, ``N_SHIFTS``
+    times (seeds 0, 1, …); spikes outside the span stay put. A unit whose
+    information does not beat its shifts carries no more than sampling noise.
+    """
+    from neurospatial.encoding import compute_spatial_rates
+
+    real = np.asarray(_rates(rec, cache).spatial_information(), dtype=float)
+    start, stop = float(rec.times[0]), float(rec.times[-1])
+    span = stop - start
+    shifted_info = []
+    for seed in range(N_SHIFTS):
+        rng = np.random.default_rng(seed)
+        trains = []
+        for train in rec.spike_times or ():
+            inside = (train >= start) & (train <= stop)
+            moved = train.copy()
+            shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
+            moved[inside] = (train[inside] - start + shift) % span + start
+            trains.append(np.sort(moved))
+        rates = compute_spatial_rates(
+            _env(rec, cache),
+            trains,
+            rec.times,
+            rec.positions,
+            min_speed=rec.params.get("min_speed"),
+            epochs=rec.params.get("analysis_epochs"),
+        )
+        shifted_info.append(np.asarray(rates.spatial_information(), dtype=float))
+    shifted = np.vstack(shifted_info)
+    finite = np.isfinite(real) & np.isfinite(shifted).all(axis=0)
+    return Outcome(
+        "ok",
+        {
+            "median_bits_per_spike": float(np.median(real[finite])),
+            "median_shifted_bits_per_spike": float(np.median(shifted[:, finite])),
+            "frac_above_every_shift": float(
+                np.mean(real[finite] > shifted[:, finite].max(axis=0))
+            ),
+            "n_units": int(finite.sum()),
+            "n_shifts": N_SHIFTS,
+        },
+    )
+
+
 def place_screen(rec: Recording, cache: dict[str, Any]) -> Outcome:
     passed = np.asarray(_rates(rec, cache).classify())
     return Outcome("ok", {"n_place_screen": int(passed.sum()), "n_units": passed.size})
@@ -275,9 +327,9 @@ def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     """The track-graph environment, or None when the source gives no graph.
 
     Edges are ordered by a depth-first walk from ``geometry["graph_root"]``
-    (or the graph's first node), the order in which a single path through the
-    maze visits them. ``geometry["track_width"]``, when the source states it,
-    is the corridor width.
+    (or the graph's first node), which lays a tree out branch by branch.
+    ``geometry["track_width"]``, when the source states it, is the corridor
+    width.
     """
     import networkx as nx
 
@@ -370,6 +422,9 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
     from neurospatial.replay.methods import DAVIDSON_2009, GROSMARK_2016
 
+    # The rate maps and spike counts use every unit; GROSMARK_2016's active-cell
+    # rule counts place cells in the paper, and both papers decoded each running
+    # direction with its own maps. Both are simplifications here.
     ripples = rec.events.get("ripples")
     if ripples is None or rec.params.get("replay_dt") is None:
         return Outcome("n/a", note="needs events['ripples'] and params['replay_dt']")
@@ -412,6 +467,9 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("env.occupancy", ("positions",), occupancy),
     Operation("rates.spatial", _SPIKES_AND_POSITIONS, rates_spatial),
     Operation("rates.spatial_information", _SPIKES_AND_POSITIONS, spatial_information),
+    Operation(
+        "rates.information_vs_shifts", _SPIKES_AND_POSITIONS, information_vs_shifts
+    ),
     Operation("cells.place_screen", _SPIKES_AND_POSITIONS, place_screen),
     Operation("cells.grid_score", _SPIKES_AND_POSITIONS, grid_scores),
     Operation("cells.border_score", _SPIKES_AND_POSITIONS, border_scores),

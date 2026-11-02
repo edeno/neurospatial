@@ -2,9 +2,11 @@
 
 What was recorded: 113 CA1 units in mouse ``e14_2m2`` across a sleep, maze,
 sleep session (18,557 s). On the figure-8 maze the animal ran 21 rewarded
-alternation trials; position was tracked at 30 Hz only during the maze epoch
-(7,891–9,483 s), as camera (x, y) in cm and as a linearized position along the
-track, 0–222 cm. The file also holds 4,297 detected ripples and Awake, Non-REM
+alternation trials; position was tracked at 30 Hz only on the maze (7,891–9,483
+s, inside the maze epoch 7,859–9,492 s), as camera (x, y) in cm and as a
+linearized position along the track, 0–222 cm. The linearization runs around
+the maze as a loop: 0 and 222 cm are the same place (both ends sit at camera
+(85, 43) cm), so the linear position jumps by about 216 cm 62 times. The file also holds 4,297 detected ripples and Awake, Non-REM
 and REM sleep states.
 
 Where it lives: DANDI 000552, version 0.230630.2304, one 96 MB NWB file,
@@ -18,7 +20,7 @@ search.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 2 cm: 111 bins along the 222 cm track, the position bin of the
+- ``bin_size`` 2 cm: 112 bins along the 222 cm track, the position bin of the
   ``GROSMARK_2016`` replay recipe.
 - ``min_speed`` 4 cm/s: excludes stops at the reward wells, where the animal
   is still and ripples happen, from the running rate maps.

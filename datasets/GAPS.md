@@ -214,7 +214,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-013: `env.occupancy(min_speed=)` needs `speed=`; the rate and decoder entry points compute it
 
-- Datasets: figure8_000552, rosenberg_labyrinth
+- Datasets: figure8_000552, rosenberg_labyrinth, yartsev_bat_demo
 - Operation / step: env.occupancy
 - Kind: friction
 - Evidence: `env.occupancy(times, positions, min_speed=4.0)` raises
@@ -230,7 +230,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-014: A length unit off by 100 on a 1-D track builds 3 bins without a warning
 
-- Datasets: figure8_000552 (hazard probe `length_unit_off_by_100`)
+- Datasets: figure8_000552, yartsev_bat_demo (hazard probe `length_unit_off_by_100`)
 - Operation / step: env.from_samples, rates.spatial, behavior.segment_by_velocity
 - Kind: silent-hazard
 - Evidence: positions ×0.01 (metres labelled cm) on the 222 cm track give a
@@ -238,7 +238,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   warning, rate maps flatten (median peak 4.67 → 1.36 Hz) and velocity
   segmentation finds 0 running segments instead of 395, all silently. On
   000582 the same hazard warns because the bin is at least the whole extent
-  in every dimension; here the extent (2.2) is just above the bin (2.0).
+  in every dimension; here the extent (2.2) is just above the bin (2.0). On
+  the bat (cm labelled m, positions ×100) the environment refuses a 9e9-bin
+  grid, but `segment_by_velocity` with the file's 0.5 m/s threshold silently
+  finds 668 movement segments (882 s) instead of 69 (146 s): speeds 100 times
+  too high pass any threshold.
 - Harness workaround: none
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
@@ -339,35 +343,42 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   y-up (right-handed) frame and that image coordinates must be flipped first.
 - Status: open
 
-## G-021: Laps cannot be counted on a linearized figure-8
+## G-021: No periodic 1-D track: a linearized loop is treated as a line
 
 - Datasets: figure8_000552
-- Operation / step: behavior.laps
-- Kind: friction
-- Evidence: the file gives the figure-8 only as a linearized 1-D position
-  (and camera x, y), no track graph. `detect_laps` on the 1-D environment
-  raises "this environment has no loop … for back-and-forth runs … use
-  detect_trials", which is right for the input. Counting laps around the
-  figure-8 needs a graph of the maze, which the dataset does not provide.
-- Harness workaround: none (cell is `err`)
-- Proposed change: none
-- Status: won't fix (behaves as documented)
+- Operation / step: behavior.laps, behavior.segment_by_velocity, env.from_samples
+- Kind: missing-feature
+- Evidence: the file's linearized position runs around the figure-8 as a loop
+  (G-026): 0 and 222 cm are the same place. A 1-D environment built from it is
+  a line, so `detect_laps` raises "this environment has no loop … use
+  detect_trials", the two ends are 222 cm apart for decoding and replay, and
+  57 of the 62 wraps fall inside `segment_by_velocity` running segments as
+  speed spikes of about 6,500 cm/s. `Environment.from_graph` cannot express
+  the loop either: its node positions must be in the positions' coordinates,
+  and on a 1-D axis 0 and 222 are different points.
+- Harness workaround: none (laps cell is `err`)
+- Proposed change: undecided — a periodic 1-D track (a length and a flag that
+  the ends meet), or a documented recipe that embeds a linearized loop as a
+  circle for `from_graph`.
+- Status: open
 
-## G-022: In sparse 3-D occupancy, spatial information sits at the shuffle level while its bias estimate is small
+## G-022: In sparse 3-D occupancy, spatial information is at the shuffle level while its bias estimate is small
 
 - Datasets: yartsev_bat_demo
-- Operation / step: rates.spatial_information, cells.place_screen
-- Kind: wrong-result (candidate; needs a proper shuffle test)
+- Operation / step: rates.spatial_information, rates.information_vs_shifts, cells.place_screen
+- Kind: wrong-result (candidate; needs a full shuffle test)
 - Evidence: 3-D rate maps of 289 units over 1352 bins of 0.2 m, restricted to
-  the 38 flights (129.6 s of occupancy; median 0.067 s per visited bin, 63 %
-  of visited bins under 0.1 s). Median spatial information is 3.45 bits/spike
-  and median peak rate 71 Hz. One random circular shift of each unit's spikes
-  gives a median of 3.61 bits/spike, so the median unit carries no more
-  information than chance by this measure. `spatial_information_bias`, the
-  "expected untuned information" that `classify()` compares with, has a
-  median of 0.37 bits/spike; it appears to miss most of the sampling bias of
-  such sparse occupancy. `min_occupancy` defaults to 0 s, so every visited
-  bin counts.
+  37 flights during the neural recording (121 s of occupancy; median 0.067 s
+  per visited bin, 70 % of the 1201 visited bins under 0.1 s). Median spatial
+  information is 3.38 bits/spike; with each unit's spikes circularly shifted
+  (4 seeded shifts, `rates.information_vs_shifts`) it is 3.55, and only 34 %
+  of units beat every shift (all 6 on 000582, 94 % on the figure-8).
+  `spatial_information_bias`, the "expected untuned information" that
+  `classify()` compares with, has a median of 0.37 bits/spike. The 101 units
+  firing above 2 Hz during flight (which the record's script sets aside as
+  putative interneurons) have a median of 1.36 bits/spike, the rest 4.62, so
+  the high values come from sparsely firing units on sparse occupancy.
+  `min_occupancy` defaults to 0 s.
 - Harness workaround: none
 - Proposed change: undecided — test `spatial_information_bias` against a
   shuffle null on sparse occupancy; warn when most visited bins hold very
@@ -379,8 +390,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Datasets: yartsev_bat_demo
 - Operation / step: decode.position
 - Kind: docs
-- Evidence: training on even flights and testing on odd ones (250 ms bins,
-  0.2 m bins), the median error is 2.19 m against a chance level of 2.68 m.
+- Evidence: training on even flights and testing on odd ones during the
+  neural recording (250 ms bins, 0.2 m bins), the median error is 2.18 m
+  against a chance level of 2.34 m.
   Likely related to G-022 (rate maps from sparse flight occupancy); not
   investigated further.
 - Harness workaround: none
@@ -413,4 +425,50 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   tracking errors.
 - Harness workaround: none (positions kept as recorded; rate maps use flights)
 - Proposed change: none
+- Status: open
+
+## G-026: The figure-8's linearized position wraps around
+
+- Datasets: figure8_000552
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: the linear coordinate jumps by a median of 215.6 cm 62 times while
+  the camera position moves a median of 0.69 cm (at most 1.99 cm) across the
+  same samples; samples below 3 cm and above 219 cm sit at the same camera
+  point, (85.3, 43.3) ± (2.3, 1.7) cm. The file's description says only
+  "Linearization of the (x,y) coordinates".
+- Harness workaround: none (kept as stored; consequences in G-021)
+- Proposed change: none for neurospatial beyond G-021
+- Status: open
+
+## G-027: `DAVIDSON_2009` verdicts depend on which other events are tested
+
+- Datasets: simulated linear track (offline test construction)
+- Operation / step: replay.compare_methods
+- Kind: docs
+- Evidence: with 100 shuffles per null, 7 of 8 simulated stationary events
+  are called replay when tested together with 8 sweeps, and 0 of 16 when
+  tested with stationary events only. The pseudo-event null draws from the
+  whole set of candidate events (the recipe's note), so the null for a
+  stationary event changes with the batch. The replay guide documents that
+  `DAVIDSON_2009` accepts stationary events; not that the verdict depends on
+  the batch.
+- Harness workaround: the offline test compares sweep-only and stationary-only batches
+- Proposed change: say in the recipe's notes and the replay guide that
+  pseudo-event verdicts depend on the set of events passed together.
+- Status: open
+
+## G-028: The bat's first flight precedes the neural recording
+
+- Datasets: yartsev_bat_demo
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: flight 0 runs from −15.40 to −14.05 s; the earliest spike of any
+  of the 289 units is at −12.68 s, with a population rate of about 800
+  spikes/s afterwards. Left in, it adds occupancy with no spikes: 13 bins
+  visited only then get rate 0 instead of NaN, and nothing warns (a silent
+  1.35 s is below what neurospatial's silent-unit check flags).
+  `NP_Bat_Demo.m` restricts the session to where behavior and ephys overlap.
+- Harness workaround: `datasets/load_yartsev_bat_demo.py` clips the analysis flights to the first–last spike span
+- Proposed change: none for neurospatial (`spike_window=` handles it when the recording span is known)
 - Status: open

@@ -181,6 +181,16 @@
       "verdict": "caught upstream",
       "gap": null,
       "reason": "The 4-bin environment already warned in env.from_samples; no lap is found on it."
+    },
+    "yartsev_bat_demo/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "One extra movement segment (70 vs 69)."
+    },
+    "yartsev_bat_demo/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Speeds 100 times too high: 668 movement segments (882 s) instead of 69 (146 s)."
     }
   },
   "errors": {
@@ -201,6 +211,9 @@
     },
     "yartsev_bat_demo/cells.border_score": {
       "gap": "G-024"
+    },
+    "yartsev_bat_demo/env.occupancy": {
+      "gap": "G-013"
     }
   }
 }

@@ -12,10 +12,12 @@ Meister), which lays the maze out as square cells one corridor wide, x and y in
 0–14, y running top to bottom.
 
 Reading the file: ``-tf`` files are Python pickles of a ``Traj`` dataclass of
-NumPy arrays. They are read with a restricted unpickler that allows only the
-four globals those files contain (the ``Traj`` class, mapped to a local
-dataclass, and NumPy's array reconstruction); any other global is refused, so
-no code from the file can run.
+NumPy arrays. They are read with a restricted unpickler that resolves only the
+four globals those files contain: the ``Traj`` class (mapped to a local
+dataclass), NumPy's array reconstruction, and ``dtype`` limited to the
+built-in int64 and float64 types the files use. Any other global or dtype is
+refused, which also blocks a dtype crafted to read raw bytes as object
+pointers.
 
 What the loader converts:
 
@@ -98,6 +100,20 @@ def _reconstruct() -> Any:
     return reconstruct
 
 
+# The files' arrays are int64 and float64 only. Returning NumPy's built-in
+# dtype objects (whose pickled state cannot be changed) instead of calling
+# np.dtype keeps a crafted stream from building a dtype whose flags let raw
+# bytes be read back as object pointers.
+_DTYPES = {"i8": np.dtype("i8"), "f8": np.dtype("f8")}
+
+
+def _dtype(spec: Any, align: bool = False, _copy: bool = False) -> np.dtype:
+    if align or not isinstance(spec, str) or spec not in _DTYPES:
+        msg = f"refusing dtype {spec!r} in a trajectory file (only i8 and f8 are expected)"
+        raise pickle.UnpicklingError(msg)
+    return _DTYPES[spec]
+
+
 class _TrajUnpickler(pickle.Unpickler):
     """Unpickler that resolves only the globals a ``-tf`` file holds."""
 
@@ -106,7 +122,7 @@ class _TrajUnpickler(pickle.Unpickler):
         ("numpy.core.multiarray", "_reconstruct"): _reconstruct(),
         ("numpy._core.multiarray", "_reconstruct"): _reconstruct(),
         ("numpy", "ndarray"): np.ndarray,
-        ("numpy", "dtype"): np.dtype,
+        ("numpy", "dtype"): _dtype,
     }
 
     def find_class(self, module: str, name: str) -> Any:

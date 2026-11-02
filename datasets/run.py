@@ -279,7 +279,9 @@ def render_warnings(records: Sequence[dict[str, Any]], verdicts: dict[str, Any])
                 group["total"] += row["count"]
                 group["max_per_call"] = max(group["max_per_call"], row["count"])
 
-    def verdict_cells(section: str, key: str) -> str:
+    def verdict_cells(section: str, key: str, response: str = "") -> str:
+        if response == "not probed":
+            return "– |  | "
         verdict = verdicts.get(section, {}).get(key)
         if verdict is None:
             return "unreviewed |  | "
@@ -318,7 +320,7 @@ def render_warnings(records: Sequence[dict[str, Any]], verdicts: dict[str, Any])
                 f" {_md(row['message'])} | {row.get('repeated_clean_warnings', 0)} |"
                 f" {_md(_summary(row['clean_summary']))} |"
                 f" {_md(_summary(row['hazard_summary']))} |"
-                f" {verdict_cells('hazards', hazard_key(record['dataset'], row))} |"
+                f" {verdict_cells('hazards', hazard_key(record['dataset'], row), row['response'])} |"
             )
     lines.append("")
     return "\n".join(lines)
