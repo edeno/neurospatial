@@ -129,6 +129,7 @@ from neurospatial._intervals import (
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.geometry import require_cartesian
@@ -819,15 +820,6 @@ def _target_bins(
     return bins
 
 
-def _validated_point_radius(point_radius: object) -> float | None:
-    from neurospatial._validation import validate_finite_scalar
-
-    if point_radius is None:
-        return None
-    validate_finite_scalar(point_radius, name="point_radius", positive=True)
-    return float(point_radius)  # type: ignore[arg-type]  # checked finite real above
-
-
 def _warn_if_mostly_nan(
     values: NDArray[np.float64],
     analyzed: NDArray[np.bool_],
@@ -1087,7 +1079,9 @@ def path_progress(
     times, positions = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
-    radius = _validated_point_radius(point_radius)
+    radius = validate_finite_scalar(
+        point_radius, name="point_radius", positive=True, none_allowed=True
+    )
     # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
     sized = env.n_dims > 1 and not env.is_linearized_track
     rows, starts, single_start = _rows_and_targets(
