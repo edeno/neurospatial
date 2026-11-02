@@ -594,9 +594,10 @@ class SampleSupports:
     """``epochs`` as passed, with the time supports of the pynapple samples.
 
     :func:`~neurospatial._pynapple.reads_pynapple_samples` passes this as
-    ``epochs`` when a pynapple sample (``positions``, ``headings``,
-    ``values``) carries a ``time_support``; :func:`resolve_time_windows` and
-    :func:`as_intervals` resolve it.
+    ``epochs`` when pynapple ``positions`` or ``headings`` carry a
+    ``time_support`` (and ``compute_tuning_curve(s)`` for pynapple
+    ``values``); :func:`resolve_time_windows` and :func:`as_intervals`
+    resolve it.
 
     Attributes
     ----------
@@ -640,7 +641,8 @@ def resolve_time_windows(epochs: Any, spike_window: Any) -> TimeWindows:
     TimeWindows
         The resolved rows, and the ids of an :class:`~neurospatial.Intervals`
         given as ``epochs``: those of its rows that overlap every sample
-        support (a row without duration: whose instant lies inside it).
+        support (a row without duration: whose instant lies inside it), or
+        all of them when there is no support or the epochs miss it.
     """
     epoch_rows, epoch_ids, epoch_problems = _resolve_epochs(epochs)
     window_rows, window_problems = _resolve_intervals(spike_window, "spike_window")
