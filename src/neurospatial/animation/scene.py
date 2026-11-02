@@ -166,6 +166,9 @@ class AnimationField:
             epochs=self.epochs,
             break_before=self.break_before,
             result="the animation shows exact samples only",
+            # The animation still shows every exact sample; only interpolation
+            # between samples is lost, so an empty mask is not an error.
+            raise_if_empty=False,
         )
         object.__setattr__(self, "sample_valid", read_only_copy(sample_valid))
         # A held [start, stop) row needs no observation at its excluded stop.

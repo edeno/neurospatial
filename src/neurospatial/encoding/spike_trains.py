@@ -168,7 +168,7 @@ class SpikeTrains(UnitSelectionMixin):
                 msg = (
                     f"Each spike train must be 1-D, but train {i} has shape "
                     f"{arr.shape}.\n"
-                    "  WHY: SpikeTrains holds one 1-D spike-time array per unit.\n"
+                    "  Why: SpikeTrains holds one 1-D spike-time array per unit.\n"
                     "  Fix: pass a 1-D array of spike times for each unit."
                 )
                 raise ValueError(msg)
@@ -299,7 +299,7 @@ class SpikeTrains(UnitSelectionMixin):
             msg = (
                 "Cannot filter a SpikeTrains with unit_table=None: there is no "
                 "per-unit metadata to query.\n"
-                "  WHY: filter() selects units by matching unit_table rows.\n"
+                "  Why: filter() selects units by matching unit_table rows.\n"
                 "  Fix: construct SpikeTrains with a unit_table (one row per "
                 "unit) before calling filter()."
             )

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_planar_turn_angles,
@@ -521,7 +521,7 @@ class TestMeanSquareDisplacement:
         assert result.msd[0] == 0.0
 
     @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-    def test_msd_without_observed_positions_is_missing(self, metric):
+    def test_msd_without_observed_positions_raises(self, metric):
         """Missing positions cannot establish zero displacement."""
         env = Environment.from_grid_mask(
             np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
@@ -529,12 +529,10 @@ class TestMeanSquareDisplacement:
         times = np.arange(4) * 0.1
         positions = np.full((4, 1), np.nan)
 
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            result = mean_square_displacement(
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            mean_square_displacement(
                 times, positions, metric=metric, env=env, max_tau=0.1
             )
-
-        assert np.isnan(result.msd).all()
 
     def test_geodesic_msd_without_connected_pairs_is_missing(self):
         """Disconnected positions supply no finite displacement estimate."""

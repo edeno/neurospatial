@@ -14,7 +14,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.animation._sampling import observed_support, sample_at_times
 from neurospatial.behavior import compute_speed
 from neurospatial.behavior.segmentation import segment_by_velocity
@@ -192,7 +192,7 @@ def test_all_gaps_too_long_warning_names_the_missing_samples(env, tracking, anal
             spikes, times, _with_nan(headings, sparse)
         ),
     }
-    with pytest.warns(UserWarning, match="lie in gaps across missing samples"):
+    with pytest.raises(InputError, match="lie in gaps across missing samples"):
         calls[analysis]()
 
 

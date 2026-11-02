@@ -210,7 +210,7 @@ class TestPlotField:
         # Wrong shape
         bad_field = rng.random(env.n_bins + 10)
 
-        with pytest.raises(ValueError, match="field must be 1D array"):
+        with pytest.raises(ValueError, match="field must be a 1-D array"):
             env.plot_field(bad_field)
 
     def test_invalid_field_2d(self):
@@ -221,7 +221,7 @@ class TestPlotField:
         # 2D array instead of 1D
         bad_field = rng.random((env.n_bins, 2))
 
-        with pytest.raises(ValueError, match="field must be 1D array"):
+        with pytest.raises(ValueError, match="field must be a 1-D array"):
             env.plot_field(bad_field)
 
     def test_3d_environment_not_supported(self):

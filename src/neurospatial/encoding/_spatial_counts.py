@@ -791,12 +791,15 @@ def _resolve_spatial_time_support(
     time_allocation: Literal["start", "linear"] = "start",
     linear_intervals: LinearSpatialIntervals | None = None,
     break_before: NDArray[np.bool_] | None = None,
+    raise_if_empty: bool = True,
 ) -> tuple[TimeSupport, str | None]:
     """Resolve training support shared by counting, occupancy and provenance.
 
     ``epochs`` and ``spike_window`` are resolved windows; ``break_before``
     is already validated and drops the interval ending at each declared
-    recording break.
+    recording break. A selection with no usable interval raises unless
+    ``raise_if_empty`` is False
+    (:func:`~neurospatial._intervals.excluded_intervals_message`).
 
     Returns
     -------
@@ -821,19 +824,21 @@ def _resolve_spatial_time_support(
             )
         support = linear_intervals.support
         message = None
-        if warn_on_drop:
-            if support.mask.any() and not len(support.runs):
-                message = (
-                    "Linear spatial encoding retained no spatial support: "
-                    "the observation-valid paths do not enter the active cells "
-                    "and Arena domain. Check trajectory coordinates and env.arena."
-                )
-            elif linear_intervals.gates is not None:
-                # Prepared from a supplied mask, already reported by its resolver.
-                message = excluded_intervals_message(
-                    linear_intervals.gates, result="the rate map is empty"
-                )
-        return support, message
+        if support.mask.any() and not len(support.runs):
+            message = (
+                "Linear spatial encoding retained no spatial support: "
+                "the observation-valid paths do not enter the active cells "
+                "and Arena domain. Check trajectory coordinates and env.arena."
+            )
+        elif linear_intervals.gates is not None:
+            # Prepared from a supplied mask, already reported by its resolver.
+            # Raises when nothing usable is left, whatever warn_on_drop.
+            message = excluded_intervals_message(
+                linear_intervals.gates,
+                result="the rate map is empty",
+                raise_if_empty=raise_if_empty,
+            )
+        return support, message if warn_on_drop else None
     gates = _spatial_interval_gates(
         env,
         times,
@@ -845,11 +850,12 @@ def _resolve_spatial_time_support(
         spike_window=spike_window,
         break_before=break_before,
     )
-    message = (
-        excluded_intervals_message(gates, result="the rate map is empty")
-        if warn_on_drop
-        else None
+    # Raises when nothing usable is left, whatever warn_on_drop.
+    message = excluded_intervals_message(
+        gates, result="the rate map is empty", raise_if_empty=raise_if_empty
     )
+    if not warn_on_drop:
+        message = None
     support = TimeSupport.from_mask(
         times,
         gates.mask,

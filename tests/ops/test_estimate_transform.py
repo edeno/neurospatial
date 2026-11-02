@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, Regions
+from neurospatial import Environment, InputError, Regions
 from neurospatial.ops.transforms import (
     AffineND,
     estimate_transform,
@@ -351,13 +351,12 @@ class TestApplyTransformToEnvironment:
         np.testing.assert_array_equal(transformed.contains(mapped), expected >= 0)
 
         times = np.arange(len(points)) / 10
-        # No interval joins two samples inside the arena, so occupancy is
-        # zero everywhere, and both environments say so.
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            transformed_occupancy = transformed.occupancy(times, mapped)
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            original_occupancy = env.occupancy(times, points)
-        np.testing.assert_allclose(transformed_occupancy, original_occupancy)
+        # No interval joins two samples inside the arena, so no time is
+        # usable, and both environments refuse it alike.
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            transformed.occupancy(times, mapped)
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            env.occupancy(times, points)
         # Applying another transform must preserve the same containment rules.
         again = transformed.apply_transform(translate(-3, 4))
         np.testing.assert_array_equal(

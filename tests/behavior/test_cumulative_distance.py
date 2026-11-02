@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import warnings
-from contextlib import nullcontext
 
 import numpy as np
 import pytest
 
+from neurospatial import InputError
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import compute_cumulative_distance, compute_step_lengths
 
@@ -92,14 +92,14 @@ def test_stationary_run_is_zero_not_nan():
         (np.arange(3) * 0.1, np.full((3, 2), np.nan), True),
     ],
 )
-def test_no_usable_interval_is_nan(times, positions, warns):
-    # Only the all-missing recording has samples to exclude, so only it warns.
-    with (
-        pytest.warns(UserWarning, match="excluded ALL trajectory intervals")
-        if warns
-        else nullcontext()
-    ):
-        result = compute_cumulative_distance(times, positions)
+def test_no_usable_interval_is_nan_or_refused(times, positions, warns):
+    # Only the all-missing recording has samples to exclude, so only it is
+    # refused; a single sample has no interval and gives NaN.
+    if warns:
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            compute_cumulative_distance(times, positions)
+        return
+    result = compute_cumulative_distance(times, positions)
     assert np.isnan(result.total_distance)
     assert (result.run_ids == -1).all()
     assert np.isnan(result.cumulative_distance).all()

@@ -682,7 +682,7 @@ or None
     if len(trains) == 0:
         msg = (
             "spike_times is empty.\n"
-            "  WHY: Cannot compute population PSTH without any units.\n"
+            "  Why: Cannot compute population PSTH without any units.\n"
             "  Fix: Provide at least one spike train."
         )
         raise ValueError(msg)

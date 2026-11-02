@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from neurospatial import InputError
+
 
 @pytest.mark.parametrize(("lag", "count"), [(1, 9998), (3, 9994)])
 def test_transitions_skip_pairs_across_pause(two_epoch_recording, lag, count):
@@ -113,7 +115,7 @@ def test_max_gap_none_preserves_unrestricted_sequence(two_epoch_recording):
     ],
     ids=["all-gaps", "excluded-epochs", "all-lagged-pairs-cross-gap"],
 )
-def test_no_valid_transition_pairs_returns_zero_matrix(
+def test_no_valid_transition_pairs_returns_zero_matrix_or_raises(
     small_2d_env, times, lag, epochs, warning, normalize
 ):
     times = np.asarray(times)
@@ -124,14 +126,13 @@ def test_no_valid_transition_pairs_returns_zero_matrix(
     )
     assert unrestricted[0, 0] == len(times) - lag
     kwargs = {"lag": lag, "epochs": epochs, "normalize": normalize}
-    if warning is None:
-        matrix = small_2d_env.transitions(times=times, positions=positions, **kwargs)
-    else:
-        # Every interval is excluded, so the empty matrix comes with a warning.
-        with pytest.warns(UserWarning, match=warning):
-            matrix = small_2d_env.transitions(
-                times=times, positions=positions, **kwargs
-            )
+    if warning is not None:
+        # Every interval is excluded, so nothing usable is left.
+        with pytest.raises(InputError, match=warning):
+            small_2d_env.transitions(times=times, positions=positions, **kwargs)
+        return
+    # Usable intervals with no lagged pair inside one run: an empty matrix.
+    matrix = small_2d_env.transitions(times=times, positions=positions, **kwargs)
     assert matrix.format == "csr"
     assert matrix.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
     assert matrix.nnz == 0

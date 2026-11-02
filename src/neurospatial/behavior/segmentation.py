@@ -64,7 +64,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.spatial.distance import cdist
 from scipy.stats import pearsonr
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._interval_table import Interval, Intervals
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
@@ -131,7 +131,7 @@ def _event_runs(
 
     Takes the samples left after NaN rows were dropped
     (:func:`~neurospatial.behavior._position_bins.bridge_missing_positions`,
-    which also warns when nothing is observed); ``windows`` are the resolved
+    which also refuses a recording with nothing observed); ``windows`` are the resolved
     ``epochs``. As in ``env.occupancy``, an
     interval is observed when its gap passes ``max_gap``, ``epochs`` and
     ``break_before`` and both of its samples are in a bin: a sample at bin
@@ -892,13 +892,13 @@ def _require_loop(graph: nx.Graph, method: str) -> None:
 
     Raises
     ------
-    ValueError
+    InputError
         If ``graph`` has no cycle, as on a 1-D linear track or arm.
     """
     n_forest_edges = graph.number_of_nodes() - nx.number_connected_components(graph)
     if graph.number_of_edges() > n_forest_edges:
         return
-    raise ValueError(
+    raise InputError(
         _format_error(
             f"detect_laps(method={method!r}) counts laps around a loop, but "
             "this environment has no loop: its bins connect without a cycle.",

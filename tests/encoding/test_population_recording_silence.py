@@ -116,6 +116,8 @@ def test_population_silence_respects_analysis_epochs(
 
 def test_population_silence_during_rest(continuous_recording):
     r = continuous_recording
+    # At rest for the first half, running in the second: silent throughout.
+    speed = np.where(r.times < r.times[-1] / 2, 0.0, 10.0)
     with pytest.warns(UserWarning, match="All 5 units are silent"):
         compute_spatial_rates(
             r.env,
@@ -123,7 +125,7 @@ def test_population_silence_during_rest(continuous_recording):
             r.times,
             r.positions,
             method="binned",
-            speed=np.zeros_like(r.times),
+            speed=speed,
             min_speed=1,
             warn_on_drop=False,
         )

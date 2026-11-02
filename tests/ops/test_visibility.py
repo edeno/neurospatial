@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
+from neurospatial import InputError
+
 
 class TestModuleSetup:
     """Test module imports and structure."""
@@ -1093,13 +1095,10 @@ class TestVisibilityOccupancySupport:
         # 40 samples: 39 intervals, minus the pause between samples 19 and 20.
         assert len(calls) == 38
 
-    def test_all_intervals_excluded_warns(self, open_square, walk):
+    def test_all_intervals_excluded_raises(self, open_square, walk):
         times, positions, headings = walk
-        with pytest.warns(UserWarning, match=r"excluded ALL[\s\S]*viewing time"):
-            seen = self._seen(
-                open_square, times, positions, headings, epochs=[(100.0, 200.0)]
-            )
-        assert not seen.any()
+        with pytest.raises(InputError, match=r"excluded ALL[\s\S]*viewing time"):
+            self._seen(open_square, times, positions, headings, epochs=[(100.0, 200.0)])
 
     def test_invalid_break_before_raises_the_shared_error(self, open_square, walk):
         times, positions, headings = walk

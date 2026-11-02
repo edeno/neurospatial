@@ -34,7 +34,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial.decoding._time_bins import validate_dt
 
 
@@ -186,7 +186,7 @@ class _PoissonRates:
             raise ValueError(msg)
         n_neurons = self.log_expected.shape[0]
         if spike_counts.shape[1] != n_neurons:
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} neurons (axis 1) but encoding_models has {n_neurons} neurons (axis 0). These must agree for the Poisson likelihood.",
                     fix="build spike_counts and encoding_models from the same unit list, in the same order",

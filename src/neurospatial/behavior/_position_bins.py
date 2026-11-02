@@ -217,7 +217,7 @@ def bridge_missing_positions(
 ) -> tuple[
     NDArray[np.float64], NDArray[np.int64], NDArray[np.bool_] | None, NDArray[np.intp]
 ]:
-    """Drop NaN position rows as deleted rows, warning when nothing is observed.
+    """Drop NaN position rows as deleted rows, refusing when nothing is observed.
 
     A NaN position is a missing sample (lost tracking), the same as a
     deleted row: the detector runs on the rows left, so the samples around
@@ -225,9 +225,10 @@ def bridge_missing_positions(
     the environment (bin -1 at a finite position) stays a row, observed but
     not located, so it still ends observation.
 
-    The warning judges the whole recording with the missing samples bridged
+    The check judges the whole recording with the missing samples bridged
     (as ``env.occupancy`` does), so epochs on another clock, all-NaN
-    positions or gaps longer than ``max_gap`` warn even when no row is left.
+    positions or gaps longer than ``max_gap`` raise
+    :class:`~neurospatial.InputError` even when no row is left.
 
     Parameters
     ----------
@@ -240,7 +241,7 @@ def bridge_missing_positions(
     max_gap, epochs, break_before
         The detector's validated gates; ``epochs`` as resolved windows.
     result : str
-        What an all-excluded recording leaves, for the warning.
+        What an all-excluded recording leaves, for the message.
 
     Returns
     -------

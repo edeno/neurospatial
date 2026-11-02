@@ -6,6 +6,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from neurospatial import InputError
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 
 
@@ -116,14 +117,19 @@ def test_silence_warning_uses_tracking_runs_not_view_bounds(
     frame_family, continuous_recording
 ):
     f, r = frame_family, continuous_recording
-    # Tracked positions far outside the arena have no frame bins. Every
-    # finite heading has a direction bin, and a NaN heading is not tracked,
-    # so the directional family has no such case.
+    # Tracked positions far outside the arena have no frame bins; the first
+    # second stays inside, so some time is analysed. Every finite heading has
+    # a direction bin, and a NaN heading is not tracked, so the directional
+    # family has no such case.
     if f.name != "directional":
-        r = replace(r, positions=np.full_like(r.positions, 1000.0))
+        outside = r.positions.copy()
+        outside[r.times >= 1.0] = 1000.0
+        r = replace(r, positions=outside)
     spikes = [r.spike_times[r.spike_times >= 100]] * 5
-    with pytest.warns(UserWarning, match="All 5 units are silent"):
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
         f.plural(*f.args(r, spikes), **f.defaults)
+    assert any("All 5 units are silent" in str(w.message) for w in record)
 
 
 def test_frame_silence_warning_respects_epochs_and_recording_pauses(
@@ -391,10 +397,10 @@ def test_epochs_and_spike_window_errors(continuous_recording):
     assert "\nFix:" in str(exc.value)
 
 
-def test_all_excluded_warning_names_epochs(continuous_recording):
+def test_all_excluded_error_names_epochs(continuous_recording):
     r = continuous_recording
-    with pytest.warns(UserWarning, match="ALL trajectory intervals.*epochs"):
-        result = compute_spatial_rate(
+    with pytest.raises(InputError, match=r"ALL trajectory intervals.*epochs"):
+        compute_spatial_rate(
             r.env,
             r.spike_times,
             r.times,
@@ -402,8 +408,6 @@ def test_all_excluded_warning_names_epochs(continuous_recording):
             method="binned",
             epochs=[(5000, 6000)],
         )
-    assert result.occupancy.sum() == 0
-    assert np.isnan(result.firing_rate).all()
 
 
 @pytest.mark.parametrize("method", ["binned", "glm"])

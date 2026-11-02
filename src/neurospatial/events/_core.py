@@ -111,7 +111,7 @@ def _finite_times(
     except (TypeError, ValueError):
         msg = (
             f"{name} must be numbers in seconds, got {type(values).__name__}.\n"
-            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Why: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat numeric array with one time per spike, sample or "
             "event."
         )
@@ -120,14 +120,14 @@ def _finite_times(
         msg = (
             f"{name} must be a 1-D array of times in seconds, got shape "
             f"{times.shape}.\n"
-            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Why: Each entry is one time on the recording clock.\n"
             "  Fix: Pass a flat array with one time per spike, sample or event."
         )
         raise ValueError(msg)
     if non_empty and times.size == 0:
         msg = (
             f"{name} is empty.\n"
-            "  WHY: The analysis needs at least one event to align to.\n"
+            "  Why: The analysis needs at least one event to align to.\n"
             "  Fix: Provide at least one event time."
         )
         raise ValueError(msg)
@@ -137,7 +137,7 @@ def _finite_times(
             msg = (
                 f"{name} contains {bad.size} {what} value(s), first at index "
                 f"{bad[0]}.\n"
-                "  WHY: Times must be finite seconds.\n"
+                "  Why: Times must be finite seconds.\n"
                 f"  Fix: Remove them before calling, e.g. "
                 f"{name}[np.isfinite({name})]."
             )
@@ -1377,7 +1377,7 @@ def _validate_events_dataframe(
     if not isinstance(df, pd.DataFrame):
         msg = (
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
-            "  WHY: Event tables are pandas DataFrames with one row per event.\n"
+            "  Why: Event tables are pandas DataFrames with one row per event.\n"
             "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
         raise TypeError(msg)
@@ -1389,7 +1389,7 @@ def _validate_events_dataframe(
         context_str = f" for {context}" if context else ""
         msg = (
             f"Missing required columns: {missing}.\n"
-            f"  WHY: These columns are needed{context_str}.\n"
+            f"  Why: These columns are needed{context_str}.\n"
             f"  Fix: Add missing columns to DataFrame.\n"
             f"  Available columns: {list(df.columns)}"
         )
@@ -1399,7 +1399,7 @@ def _validate_events_dataframe(
     if not np.issubdtype(df[timestamp_column].dtype, np.number):
         msg = (
             f"Timestamp column '{timestamp_column}' contains non-numeric values.\n"
-            "  WHY: Timestamps must be numeric (seconds from session start).\n"
+            "  Why: Timestamps must be numeric (seconds from session start).\n"
             f"  Fix: Convert timestamps: df['{timestamp_column}'] = "
             f"df['{timestamp_column}'].astype(float)"
         )
@@ -1438,7 +1438,7 @@ def _event_times(
         msg = (
             f"{call}: {name}[{column!r}] has {bad.size} NaN or inf time(s), "
             f"first at row {int(bad[0])}.\n"
-            "  WHY: a row without a time cannot be placed on the clock, and "
+            "  Why: a row without a time cannot be placed on the clock, and "
             "dropping or keeping it silently would change the result.\n"
             f"  Fix: drop or repair those rows first, e.g. "
             f"{name}.dropna(subset=[{column!r}])."

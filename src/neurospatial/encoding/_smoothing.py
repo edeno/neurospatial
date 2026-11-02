@@ -688,6 +688,7 @@ def validate_pooled(pooled: Any, method: str) -> None:
 def _validate_spatial_method_params(
     method: str,
     *,
+    owner: str,
     bandwidth: float | None,
     min_occupancy: float | None,
     penalty: float | None,
@@ -716,6 +717,8 @@ def _validate_spatial_method_params(
     ----------
     method : str
         The requested estimator.
+    owner : str
+        The public function, without parentheses, named in the error.
     bandwidth, min_occupancy : float or None
         Ratio-method params (``None`` = "not set").
     penalty : float or None
@@ -736,9 +739,7 @@ def _validate_spatial_method_params(
         On an unknown method, a mutual-exclusivity violation, or an out-of-domain
         ``penalty`` / ``rank``.
     """
-    if method not in _SPATIAL_METHODS:
-        msg = f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
-        raise ValueError(msg)
+    validate_choice(method, _SPATIAL_METHODS, name="method", owner=f"{owner}()")
 
     if method == "glm":
         ratio_values = {
@@ -768,13 +769,19 @@ def _validate_spatial_method_params(
     return validated_penalty, validated_rank
 
 
-def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
-    """Validate smoothing method and bandwidth without requiring count arrays."""
+def _validate_smoothing_parameters(
+    method: str, bandwidth: float, *, owner: str = "Rate estimation"
+) -> None:
+    """Validate smoothing method and bandwidth without requiring count arrays.
+
+    ``owner`` is the public call named in the error, e.g.
+    ``"compute_view_rate()"``.
+    """
     validate_choice(
         method,
         ("diffusion_kde", "gaussian_kde", "binned"),
         name="method",
-        owner="Rate estimation",
+        owner=owner,
     )
 
     # Validate bandwidth (binned allows 0). Bandwidth is in environment units

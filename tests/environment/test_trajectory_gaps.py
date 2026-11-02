@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 
 
 def _x_neighbors(env):
@@ -817,22 +817,14 @@ class TestTrajectoryIntegrationGaps:
         assert np.sum(occ) == pytest.approx(3.0)
 
     def test_trajectory_all_intervals_filtered(self, small_2d_env):
-        """Test trajectory where all intervals are filtered out.
-
-        Tests behavior when filters remove all intervals (should return
-        zero occupancy everywhere).
-        """
+        """Filters that remove every interval leave nothing usable: refused."""
         times = np.array([0.0, 0.1, 0.2, 0.3])
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
         # All speeds below threshold
         speeds = np.array([0.1, 0.2, 0.3, 0.4])
 
-        with pytest.warns(UserWarning, match="excluded ALL.*min_speed=2.0"):
-            occ = small_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
-
-        # All intervals filtered - no occupancy
-        assert np.sum(occ) == pytest.approx(0.0)
-        assert np.all(occ == 0.0)
+        with pytest.raises(InputError, match=r"excluded ALL.*min_speed=2\.0"):
+            small_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
 
     def test_bin_sequence_and_transitions_consistency(self, medium_2d_env):
         """Test consistency between bin_sequence and transitions.

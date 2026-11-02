@@ -56,9 +56,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import (
+    _refuse_wrong_kind,
     is_finite_real,
     validate_choice,
     validate_integer_at_least,
@@ -2265,7 +2266,7 @@ def _check_angular_widths(
     if bin_size is not None:
         size = _real_scalar(bin_size)
         if size is not None and not np.isfinite(size):
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"bin_size={bin_size!r} is not a finite angular bin width.",
                     why=f"the circle is cut into bins of this width, in {angle_unit}.",
@@ -2275,7 +2276,7 @@ def _check_angular_widths(
             )
         size_rad = None if size is None else float(to_radians(size, angle_unit))
         if size_rad is not None and size_rad > np.pi:
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"bin_size={bin_size!r} {angle_unit} is wider than half a "
                     "circle, so it leaves fewer than two heading bins.",
@@ -2298,7 +2299,7 @@ def _check_angular_widths(
     if bandwidth is not None:
         value = _real_scalar(bandwidth)
         if value is None or not (np.isfinite(value) and value > 0):
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"bandwidth={bandwidth!r} is not a smoothing width.",
                     why="Why: the tuning curve is smoothed with a circular "
@@ -2922,7 +2923,9 @@ def _directional_rates(
     validate_choice(angle_unit, ("rad", "deg"), name="angle_unit", owner=f"{context}()")
 
     if single_unit:
-        spike_times_list = [as_spike_train(spike_times)]
+        spike_times_list = [
+            as_spike_train(spike_times, call=context, population=f"{context}s")
+        ]
         resolved_unit_ids = None
     else:
         # Normalize spike times to canonical list-of-arrays format and resolve
@@ -3165,6 +3168,13 @@ def is_head_direction_cell(
     <class 'bool'>
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_head_direction_cell")
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller="is_head_direction_cell",
+        expected="spike_train",
+        population="compute_directional_rates",
+    )
     check_mode_keywords(
         criterion,
         threshold={"min_mvl": min_mvl},

@@ -762,8 +762,18 @@ def _spatial_autocorrelation_graph(
     rates_j = rates_j[finite_mask]
 
     if len(pair_distances) == 0:
-        msg = "No valid bin pairs found (graph may be disconnected)"
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                "spatial_autocorrelation_radial(): no pair of bins with a finite "
+                "rate is connected in the environment's graph.",
+                why="Why: the radial autocorrelation correlates rates of bin "
+                "pairs at each graph distance, so it needs connected bins with "
+                "finite rates.",
+                fix="check that firing_rate has finite values in connected bins "
+                "(np.isfinite(firing_rate).sum() > 1) and that the environment "
+                "is one connected piece.",
+            )
+        )
 
     # Determine max distance
     if max_distance is None:

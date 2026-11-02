@@ -589,7 +589,7 @@ class TestSpikeTimeOrderAndSign:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         env, times, positions = session
-        with pytest.warns(UserWarning, match="1/3 spike_times .* fell outside"):
+        with pytest.warns(UserWarning, match=r"1/3 spike_times .* fell outside"):
             with_early = compute_spatial_rate(
                 env, np.array([-2.0, 1.0, 3.0]), times, positions
             )
@@ -608,18 +608,21 @@ class TestSpikeTimeOrderAndSign:
         )
 
     @pytest.mark.parametrize(
-        ("spikes", "match"),
+        ("spikes", "error", "match"),
         [
-            (np.array([[0.5, 1.0], [1.5, 2.0]]), "1-D"),
-            (np.array([0.0, np.nan, 1.0]), "NaN or infinite"),
-            (np.array([0.0, 1.0, np.inf]), "NaN or infinite"),
+            (np.array([[0.5, 1.0], [1.5, 2.0]]), TypeError, "got 2 trains"),
+            (np.array([[0.5], [1.0], [1.5]]), ValueError, "1-D"),
+            (np.array([0.0, np.nan, 1.0]), ValueError, "NaN or infinite"),
+            (np.array([0.0, 1.0, np.inf]), ValueError, "NaN or infinite"),
         ],
     )
-    def test_single_unit_refuses_non_trains(self, session, spikes, match) -> None:
+    def test_single_unit_refuses_non_trains(
+        self, session, spikes, error, match
+    ) -> None:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         env, times, positions = session
-        with pytest.raises(ValueError, match=match):
+        with pytest.raises(error, match=match):
             compute_spatial_rate(env, spikes, times, positions)
 
 

@@ -826,8 +826,10 @@ def compute_tuning_curve(
     Warns
     -----
     UserWarning
-        When every sampling interval is excluded, for example by an empty
-        selection of trials; the rates are then NaN and the occupancy zero.
+        When the selection is empty (an ``Intervals`` with no rows, such as a
+        condition with no trials); the rates are then NaN and the occupancy
+        zero. Every interval excluded otherwise raises
+        :class:`~neurospatial.InputError`.
         When the analyzed samples (finite values inside ``epochs`` and
         ``spike_window``) outside ``bin_edges`` look like values in other
         units than the edges: most are outside and the values span at least
@@ -1058,8 +1060,9 @@ def compute_tuning_curves(
     Warns
     -----
     UserWarning
-        When every sampling interval is excluded (NaN rates, zero
-        occupancy), when the samples outside ``bin_edges`` look like values
+        When the selection is empty (NaN rates, zero occupancy; every
+        interval excluded otherwise raises :class:`~neurospatial.InputError`),
+        when the samples outside ``bin_edges`` look like values
         in other units (as for :func:`compute_tuning_curve`), or when at least
         five units are all silent for at least 60 s and ``spike_window`` was
         not given.
@@ -1256,7 +1259,7 @@ def _tuning_curves(
     )
 
     if single_unit:
-        spike_trains = [as_spike_train(spike_times)]
+        spike_trains = [as_spike_train(spike_times, call=owner, population=f"{owner}s")]
         resolved_unit_ids = None
     else:
         spike_trains, resolved_unit_ids = as_labelled_spike_trains(

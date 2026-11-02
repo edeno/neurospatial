@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import contextlib
-
 import numpy as np
 import pytest
 from environment_helpers import publish_environment
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.arena import MaskArena, OpenArena
 
 
@@ -46,20 +44,21 @@ def _wall_environment():
 )
 def test_polygon_linear_occupancy_exact_duration(positions, duration, expected):
     env = _one_cell_environment()
-    # A path that never enters the cell keeps no time, and a warning says so.
-    flagged = (
-        pytest.warns(UserWarning, match="excluded ALL.*out of bounds")
-        if expected == 0.0
-        else contextlib.nullcontext()
-    )
-    with flagged:
-        result = env.occupancy(
+
+    def occupancy():
+        return env.occupancy(
             np.array([0.0, duration]),
             np.asarray(positions, dtype=float),
             max_gap=None,
             time_allocation="linear",
         )
-    np.testing.assert_allclose(result, [expected], rtol=0, atol=1e-14)
+
+    if expected == 0.0:
+        # A path that never enters the cell keeps no time: refused.
+        with pytest.raises(InputError, match=r"excluded ALL.*out of bounds"):
+            occupancy()
+        return
+    np.testing.assert_allclose(occupancy(), [expected], rtol=0, atol=1e-14)
 
 
 def test_polygon_fractional_counts_do_not_renormalize_retained_support():
@@ -84,15 +83,14 @@ def test_polygon_observation_filters_precede_geometric_subdivision(gate):
         kwargs.update(speed=np.array([0.0, 1.0]), min_speed=0.5)
     else:
         kwargs["epochs"] = (0.0, 1.0)
-    # The one interval is excluded, so occupancy is empty and a warning says so.
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = env.occupancy(
+    # The one interval is excluded, so nothing usable is left.
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        env.occupancy(
             np.array([0.0, 2.0]),
             np.array([[-1.0, 1.0], [1.0, 1.0]]),
             time_allocation="linear",
             **kwargs,
         )
-    np.testing.assert_array_equal(result, [0.0])
 
 
 def test_linear_polygon_wall_crossing_refused():

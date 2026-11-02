@@ -136,6 +136,7 @@ def test_circular_exact_sample_is_wrapped():
         [0.0],
         interpolation="circular",
         kind="circular",
+        max_gap=None,
     )
     assert support.all()
     assert values[0] == pytest.approx(-np.pi / 2, abs=1e-12)

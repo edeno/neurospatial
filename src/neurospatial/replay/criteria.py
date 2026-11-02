@@ -642,8 +642,15 @@ def _empty_time_bins(
             )
         )
     if not np.isfinite(counts).all() or np.any(counts < 0):
-        msg = f"{operation}: spike_counts must be finite and non-negative."
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                f"{operation}: spike_counts must be finite and non-negative.",
+                why="Why: spike_counts are the number of spikes of each neuron "
+                "in each time bin.",
+                fix="pass the counts the event was decoded from, e.g. from "
+                "bin_spikes_in_time(spike_times, dt=...).",
+            )
+        )
     empty: NDArray[np.bool_] = counts.sum(axis=1) == 0
     return empty
 

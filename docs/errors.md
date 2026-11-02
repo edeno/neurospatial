@@ -1,12 +1,12 @@
 # Error Reference
 
-**Last Updated**: 2026-10-07
+**Last Updated**: 2026-11-02
 
 This reference explains common errors and how to correct their inputs. Environment errors use the codes below; other validation errors name the calling function and offending argument or shape.
 
 ## Catching neurospatial errors
 
-Import `NeurospatialError` from the package root to catch library-specific exceptions:
+Import `NeurospatialError` from the package root to catch the errors neurospatial raises for its own reasons:
 
 ```python
 from neurospatial import NeurospatialError
@@ -31,6 +31,7 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 
 | Exception | Standard Python bases | Use |
 |-----------|-----------------------|-----|
+| `InputError` | `ValueError` | An argument a public function cannot use: `times` and `positions` of different lengths or out of order, a selection that leaves no usable sampling interval (for example `times` in milliseconds), `unit_ids` of the wrong length, spike counts and rate maps with different numbers of neurons. See [InputError](#inputerror) |
 | `RegionNotFoundError` | `KeyError`, `ValueError` | Unknown region name anywhere a region is looked up by name, including `env.regions[name]`; suggests the closest existing name |
 | `BinIndexOutOfRangeError` | `ValueError` | Graph-query bin index outside `[0, env.n_bins)` |
 | `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
@@ -42,11 +43,84 @@ Two kinds of environment cannot run some analyses, and each kind has one error t
 - A **polar** environment (`from_polar_egocentric`) raises `CartesianOnlyError` for every operation that reads its `(distance, angle)` bins as Cartesian positions, for example `subset`, `interpolate`, wall-based border scores or `time_allocation="linear"`. Containment lookups such as `bin_at` and `contains` read `(distance, angle)` rows and work on polar environments.
 - An environment whose **geometry lacks what the computation needs** raises `NotImplementedError`: for example the 2D `spatial_autocorrelation` and grid scores on a hexagonal, mesh, track or 3-D environment, wall geometry outside 2-D, `bin_at()`, `contains()` and the other position lookups on a track built without `track_width`, or `rebin` on bins that are not a rectangular grid. The message names an alternative that works on that environment.
 
-Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. Ordinary input validation can also raise standard `TypeError` or `ValueError` directly.
+Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. `except NeurospatialError` does not catch everything: an argument of the wrong type or kind raises a plain `TypeError` (see [wrong-kind inputs](#wrong-kind-inputs)), and some value checks still raise a plain `ValueError`. `except ValueError` catches every `InputError` too.
 
 Diagnostics describe what is wrong, why it matters and a corrected call using the `Fix:` label (formerly `HOW:`). Shared trajectory validation reports shape, length and timestamp problems together. `RegionNotFoundError` prints its message without `KeyError`'s quotes; bare `KeyError` messages include their fix as a final sentence. Missing required arguments keep Python's own `TypeError` and truthful signatures.
 
 Warnings also use concrete fixes. A `bin_size` that covers every data axis warns about a possible units mismatch, and peri-event windows wider than 60 seconds suggest `window=(-0.5, 1.0)` when milliseconds were intended. Large-grid warnings are visible `UserWarning`s; the existing hard memory ceiling still applies.
+
+---
+
+## InputError
+
+`InputError` means an argument could not be used as given. Its message says
+what is wrong, why it matters, and how to fix the call:
+
+```text
+InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so the rate map is empty. Fix: the median sampling interval is 33.33 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 33.33, or pass max_gap=None to disable gap gating.
+```
+
+The common causes:
+
+- **No usable sampling interval.** `times` in milliseconds (or the integer
+  nanoseconds of a `pd.DatetimeIndex`) make every frame look like a long
+  recording gap; `epochs` on another clock select no recorded time; every
+  position is NaN or outside the environment; `min_speed` is above every
+  speed. Any of these would return an empty map or all-NaN values, so the
+  call refuses them. Convert times to seconds (`(index - index[0]).total_seconds()`
+  for a `DatetimeIndex`), or fix the gate the message names.
+- **`times` and `positions` that do not match.** Different lengths, repeated
+  or unsorted timestamps, or the two arguments swapped. Every problem is
+  listed in one message.
+- **Unit labels.** `unit_ids` of the wrong length, repeated, or missing.
+- **Population mismatch.** Spike counts and rate maps with different numbers
+  of neurons.
+- **Units of angles and time bins.** An angular `bin_size` wider than half a
+  circle, a decoding `dt` in milliseconds, or `detect_laps` on a track with
+  no loop.
+
+```python
+from neurospatial import InputError
+
+try:
+    rates = compute_spatial_rates(env, spike_times, times_ms, positions)
+except InputError as exc:
+    print(exc)  # names the gate and the fix
+```
+
+## Wrong-kind inputs
+
+Passing a population where one unit is expected, or a result where an array
+is expected, raises `TypeError` naming the call that takes it:
+
+| Call | Message starts with | Fix |
+| --- | --- | --- |
+| `compute_spatial_rate(env, [train_a, train_b], times, positions)` (also `is_place_cell` and the other single-unit functions; equal-length trains stacked in a 2-D array too) | `compute_spatial_rate() takes one unit's spike times; got 2 trains.` | `compute_spatial_rates(...)` for a population, or `spike_times[i]` |
+| `decode_position(env, [train_a, train_b], rates, dt=dt)` | `decode_position() takes a spike count matrix ... got 2 spike trains.` | bin them first: `counts, bin_edges = bin_spikes_in_time(spike_times, dt=dt)` |
+| `decode_position(env, bin_spikes_in_time(...), rates, dt=dt)` | `decode_position() got a tuple for spike_counts` | unpack the `(counts, bin_edges)` pair |
+| `spatial_information(r, occupancy=r.occupancy)` with a rate result `r` | `spatial_information() got a SpatialRateResult for firing_rate` | `r.spatial_information()` |
+| `decode_position(env, counts, rates[0], dt=dt)` | `decode_position() got a SpatialRateResult for encoding_models` | the population result from `compute_spatial_rates` |
+| `population_coverage(env, rates, bandwidth=...)` | `population_coverage() got a SpatialRatesResult for firing_rates` | `rates.firing_rates` |
+| `BayesianDecoder(env).fit(counts, times, positions)` with a count matrix | `BayesianDecoder.fit() takes spike times ... looks like a spike count matrix.` | `decode_position(env, counts, rates, dt=dt)` |
+
+A misspelled keyword or option names the closest valid one:
+
+```text
+TypeError: open_field_session() got an unexpected keyword argument 'n_plce_cells'. Did you mean 'n_place_cells'?
+ValueError: compute_spatial_rate() got method='gaussian'; method must be one of 'diffusion_kde', 'gaussian_kde', 'binned', 'glm'. Did you mean 'gaussian_kde'?
+```
+
+## What raises and what warns
+
+| Situation | Behavior |
+| --- | --- |
+| The input cannot mean what was asked (wrong kind, wrong shape, a unit that cannot be right, no usable sampling interval) | Raises (`InputError`, `TypeError` or another `ValueError`) |
+| Part of the input is discarded or looks mis-scaled, but a result remains (more than 5% of spikes outside the tracked time, runs of removed samples, a bandwidth far below the bin size) | One `UserWarning` per call naming every problem; silence it with `warn_on_drop=False` where the function has that argument |
+| A deliberately empty selection (`epochs` or `spike_window` given as an `Intervals` with no rows, such as a condition with no trials) | `UserWarning`; the result is empty or NaN, which is the answer |
+| A result that stays meaningful without any usable interval: `add_positions` (an event at a sample's own time keeps that position), `heading_from_velocity(allow_all_nan=True)`, animation overlays and decoding ground truth (exact samples only) | The call returns, with a `UserWarning` naming the gate |
+
+`warn_on_drop=False` never silences a refusal: a call with no usable interval
+raises whatever its value.
 
 ---
 
@@ -240,8 +314,9 @@ env = Environment.from_samples(
 
 **Error Message:**
 ```
-ValueError: [E1006] Environment cannot be constructed directly — use a factory method.
-Fix: env = Environment.from_samples(positions, bin_size=2.0)
+ValueError: [E1006] Environment cannot be constructed directly; use a factory method.
+Why: a factory builds the geometry and connectivity an Environment needs from the data you have.
+Fix: env = Environment.from_samples(positions, bin_size=2.0) for recorded positions; or from_polygon (a Shapely boundary), from_graph (a track graph), from_grid_mask (a boolean grid) or from_pixel_mask (an image mask). See https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly
 ```
 **Cause:** `Environment()` was called directly. `Environment` is always built through a factory that constructs the underlying layout/connectivity.
 
@@ -391,30 +466,33 @@ env.to_file(save_dir / "my_environment")
 Some inputs run to completion but quietly lose or mis-scale part of the
 data, which gives a plausible but wrong result. neurospatial warns when more
 than 5% of the input is discarded, and refuses inputs that cannot mean what
-was asked. Each message says what was lost, the likely cause and the fix.
+was asked, including a selection that leaves no usable sampling interval.
+Each message says what was lost, the likely cause and the fix.
 
 | Message starts with | Raised by | Likely cause | Fix |
 |---------------------|-----------|--------------|-----|
+| `Interval filtering excluded ALL trajectory intervals` (`InputError`) | Every analysis that gates sampling intervals (rate maps, `env.occupancy`, decoders, behavior detectors), when no interval is left | `times` in milliseconds or a `DatetimeIndex`, `epochs` on another clock, positions all NaN or outside the environment, `min_speed` above every speed | Fix the gate the message names; `warn_on_drop=False` does not silence it. A deliberately empty `Intervals` selection warns instead |
 | `About P% of the analysed time is in runs of removed samples` (`UserWarning`) | Spatial rate maps, `env.occupancy` and the other analyses that bridge gaps, when the kept intervals bridge runs of removed samples lasting 0.25 s to `max_gap` that add up to more than 5% of the analysed time (not checked with `max_gap=None`) | `times` and `positions` filtered the NumPy way, for example `times[speed > 5]`: runs shorter than `max_gap` are bridged, so the time and spikes inside them still count | Pass the full arrays and select with the function's `min_speed=` or `epochs=` where it has them, or set `max_gap` below the shortest removed run. Silence with `warn_on_drop=False` where the function has it |
 | `N/M spike_times (P%) fell outside the position time window` (`UserWarning`) | `compute_spatial_rate(s)`, `decode_session` and the other rate maps, when more than 5% of spikes fall outside `[times[0], times[-1])` | Spike times and position times on different clocks or in different units | Put both on one clock in seconds. Silence with `warn_on_drop=False` once the drop is intended |
 | `N/M spikes (P%) mapped to positions outside the active environment bins` (`UserWarning`) | Spatial spike binning, when more than 5% of spikes land outside the environment | Positions in another unit or frame than the environment | Convert positions to `env.units`. Silence with `warn_on_drop=False` |
 | `bandwidth=B is far below the L bin size` (`UserWarning`) | Spatial rate maps, when an explicit `bandwidth` is below a quarter of the median bin length | A bandwidth in metres on a cm environment | Pass `bandwidth` in `env.units`, or `method="binned", bandwidth=0` for no smoothing |
-| `bin_size=S rad is wider than half a circle` (`ValueError`) | `compute_directional_rate(s)`, `head_direction_cell_significance`, `is_head_direction_cell` | A bin size in degrees with the default `angle_unit="rad"` | Pass `angle_unit="deg"` |
+| `bin_size=S rad is wider than half a circle` (`InputError`) | `compute_directional_rate(s)`, `head_direction_cell_significance`, `is_head_direction_cell` | A bin size in degrees with the default `angle_unit="rad"` | Pass `angle_unit="deg"` |
 | `bin_size=S rad leaves N heading bins, fewer than eight` (`UserWarning`) | The same directional functions, when `bin_size` is wider than π/4 | A bin size of a few degrees with the default `angle_unit="rad"` (`bin_size=3` gives two bins) | Pass `angle_unit="deg"`, or a narrower bin size |
 | `bandwidth=B rad is wider than 1 radian` (`UserWarning`) | The same directional functions | A bandwidth in degrees with the default `angle_unit="rad"` | Pass `angle_unit="deg"`, or a narrower bandwidth |
 | `decode_position: N of M bins have rate 0 for every neuron` (`UserWarning`) | `decode_position`, `decode_position_summary` and `BayesianDecoder.predict`, when raw rates without a prior or `spatial_support` have more than 5% all-zero bins | Missing rates filled with zero (`np.nan_to_num(rates.firing_rates)`) | Pass the rate result itself, or `prior=rates.spatial_support * env.bin_sizes`; for a decoder, `BayesianDecoder.from_rates(rates)` or `from_models(..., spatial_support=...)` |
-| `decode_position: dt=D s is R times the S s spacing of times` (`ValueError`) | `decode_position`, `decode_position_summary`, when `dt` is at least 100 times the median spacing of `times` | `dt` in milliseconds | Pass `dt` in seconds. Overlapping windows (a step shorter than `dt`) are accepted |
+| `decode_position: dt=D s is R times the S s spacing of times` (`InputError`) | `decode_position`, `decode_position_summary`, when `dt` is at least 100 times the median spacing of `times` | `dt` in milliseconds | Pass `dt` in seconds. Overlapping windows (a step shorter than `dt`) are accepted |
 | `bin_spikes_in_time: dt=D s is longer than 1 second` (`UserWarning`) | `bin_spikes_in_time`, `decode_position`, `decode_position_summary`, `decode_session` and `BayesianDecoder.predict`, when `dt > 1` | `dt` in milliseconds | Pass `dt` in seconds, for example `dt=0.025` |
-| `detect_laps(method='auto') counts laps around a loop, but this environment has no loop` (`ValueError`) | `detect_laps` with `method="auto"` or `"region"` on an environment whose bins connect without a cycle | A linear track or single arm | Use `detect_trials(env, times, positions, regions=[start, end])` |
+| `detect_laps(method='auto') counts laps around a loop, but this environment has no loop` (`InputError`) | `detect_laps` with `method="auto"` or `"region"` on an environment whose bins connect without a cycle | A linear track or single arm | Use `detect_trials(env, times, positions, regions=[start, end])` |
 
 A call warns at most once: when it finds several problems, one warning
 names them all.
 
-Positions in the wrong units (pixels on a cm environment) have no warning of
-their own. They show up as a large `result.n_spikes_outside_intervals` and a
-low total occupancy, because the samples outside the environment are dropped.
-Compare the range of `positions` with `env.dimension_ranges` when either looks
-wrong.
+Positions in the wrong units (pixels on a cm environment) raise `InputError`
+when every sample falls outside the environment. When only part of them does,
+they have no warning of their own: they show up as a large
+`result.n_spikes_outside_intervals` and a low total occupancy, because the
+samples outside the environment are dropped. Compare the range of `positions`
+with `env.dimension_ranges` when either looks wrong.
 
 Filtering by speed with NaN instead of deleted rows
 (`positions[speed < 5] = np.nan`) is not detected. NaN rows are treated

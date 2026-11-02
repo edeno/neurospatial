@@ -13,12 +13,12 @@ import math
 import numbers
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypeGuard, TypeVar
+from typing import Any, Literal, TypeGuard, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._intervals import _is_pynapple_object
 
 _T = TypeVar("_T")
@@ -339,7 +339,7 @@ def validate_times_positions(
 
     Raises
     ------
-    ValueError
+    InputError
         Listing every problem, with a ``Fix:`` line that names the swap when the
         arguments look swapped; or when ``positions`` hold an infinite value
         (:func:`refuse_infinite`), since NaN is the only missing-sample marker.
@@ -358,7 +358,7 @@ def validate_times_positions(
     problems, looks_swapped = times_positions_problems(t, p)
     problems = conversion_problems + problems
     if problems:
-        raise ValueError(
+        raise InputError(
             format_times_positions_error(problems, looks_swapped, call=call)
         )
     assert t is not None
@@ -647,22 +647,41 @@ def validate_choice(
     Raises
     ------
     ValueError
-        If ``value`` is not one of ``choices``.
+        If ``value`` is not one of ``choices``. A string close to a string
+        choice (a typo or a shortened name) gets "Did you mean ...?".
 
     Examples
     --------
     >>> validate_choice("exit", ("entry", "exit"), name="direction", owner="f()")
     'exit'
+    >>> validate_choice("ext", ("entry", "exit"), name="direction", owner="f()")
+    Traceback (most recent call last):
+        ...
+    ValueError: f() got direction='ext'; direction must be one of 'entry', 'exit'. Did you mean 'exit'?
+    ...
     """
+    from difflib import get_close_matches
+
     for choice in choices:
         if value is choice or value == choice:
             return choice
     options = ", ".join(repr(choice) for choice in choices)
+    what = f"{owner} got {name}={value!r}; {name} must be one of {options}."
+    fix = f"pass {name}= one of {options}"
+    if isinstance(value, str):
+        names = [choice for choice in choices if isinstance(choice, str)]
+        # A shortened name ("gaussian" for "gaussian_kde") is a prefix, which
+        # difflib may rank below the cutoff.
+        matches: list[str] = [name for name in names if name.startswith(value)]
+        matches = matches or get_close_matches(value, names, n=1)
+        if len(matches) == 1:
+            what += f" Did you mean {matches[0]!r}?"
+            fix = f"pass {name}={matches[0]!r}"
     raise ValueError(
         _format_error(
-            f"{owner} got {name}={value!r}; {name} must be one of {options}.",
+            what,
             why=f"each {name} option has one documented meaning.",
-            fix=f"pass {name}= one of {options}",
+            fix=fix,
         )
     )
 
@@ -816,3 +835,223 @@ def check_writable(
                 + ".",
             )
         )
+
+
+def _train_count(value: object) -> int | None:
+    """Number of spike trains in a list, tuple or 2-D array, else None.
+
+    A list, tuple or 1-D object array holds trains when every element is a
+    1-D sequence (a list of scalars is one train; a pynapple ``Ts`` is 1-D).
+    A 2-D array with several rows holds one train per row, except an
+    ``(n_spikes, 2)`` array with more than two rows, which is read as a table
+    of spike time and unit. A ``(1, n)`` row vector (as from
+    ``scipy.io.loadmat``) is one unit stored as a row, not a population.
+    """
+    if isinstance(value, (list, tuple)) or (
+        isinstance(value, np.ndarray) and value.ndim == 1 and value.dtype == object
+    ):
+        # A pynapple ``Ts`` contributes its timestamps, as when trains are read.
+        if len(value) and all(
+            np.ndim(timestamps_of(item, name="spike_times")) == 1 for item in value
+        ):
+            return len(value)
+        return None
+    if isinstance(value, np.ndarray) and value.ndim == 2:
+        n_rows, n_columns = value.shape
+        if n_rows > 1 and n_columns > 1 and not (n_columns == 2 and n_rows > 2):
+            return int(n_rows)
+    return None
+
+
+def _zero_padded_trains(value: NDArray[Any]) -> bool:
+    """Whether every row of a 2-D array is increasing, then only zeros."""
+    for row in value:
+        nonzero = np.flatnonzero(row)
+        end = nonzero[-1] + 1 if nonzero.size else 0
+        if np.any(row[end:] != 0) or np.any(np.diff(row[:end]) <= 0):
+            return False
+    return True
+
+
+def _is_result(value: object) -> bool:
+    """Whether ``value`` is a neurospatial analysis result."""
+    from neurospatial._results import ResultMixin
+
+    return isinstance(value, ResultMixin)
+
+
+def _result_fix(value: object, *, caller: str, expected: str) -> str:
+    """What to pass instead of the result object ``value``."""
+    kind = type(value).__name__
+    if expected == "rates" and kind == "SpatialRateResult":
+        return (
+            "pass the population result from compute_spatial_rates(env, "
+            "spike_times, times, positions); decoding compares the rate maps "
+            "of every unit"
+        )
+    method = caller.rsplit(".", 1)[-1]
+    if callable(getattr(value, method, None)):
+        return f"call r.{method}() on the result r instead"
+    for attribute in ("firing_rates", "firing_rate"):
+        if hasattr(value, attribute):
+            return f"pass the result's array, r.{attribute}"
+    return f"pass the array {caller}() documents, not a {kind}"
+
+
+def _refuse_wrong_kind(
+    value: object,
+    *,
+    name: str,
+    caller: str,
+    expected: Literal["spike_train", "spike_counts", "spike_times", "rates", "array"],
+    population: str | None = None,
+) -> None:
+    """Refuse an input of the wrong kind with the call that takes it.
+
+    NumPy would otherwise fail later with a message about shapes
+    ("inhomogeneous shape", "got shape ()") that does not say what was
+    passed. Inputs of the expected kind pass silently.
+
+    Parameters
+    ----------
+    value : object
+        The argument as the caller passed it.
+    name : str
+        The argument's name, e.g. ``"spike_times"``.
+    caller : str
+        The public function, without parentheses, e.g.
+        ``"compute_spatial_rate"`` or ``"BayesianDecoder.fit"``.
+    expected : {"spike_train", "spike_counts", "spike_times", "rates", "array"}
+        What ``name`` takes:
+
+        - ``"spike_train"``: one unit's spike times. A list or tuple of
+          trains, or a 2-D array of two or more equal-length trains, is
+          refused and ``population`` named.
+        - ``"spike_counts"``: a ``(n_time_bins, n_neurons)`` count matrix. A
+          list or tuple of spike trains (lengths that differ, or every row in
+          time order) is refused with the binning call, and so
+          is the ``(counts, bin_edges)`` tuple ``bin_spikes_in_time``
+          returns.
+        - ``"spike_times"``: spike times of several units. A 2-D array of
+          non-negative whole numbers, some above 1, with a value repeated in
+          a row is a count matrix, not spike times (one unit cannot fire
+          twice at the same instant), and is refused. Only 0s and 1s is left
+          to the spike-raster refusal.
+        - ``"rates"``: population rate maps; a one-unit rate result is
+          refused with the population call.
+        - ``"array"``: any array.
+
+        For every kind, a neurospatial result object is refused with the
+        method or attribute that gives what was meant.
+    population : str, optional
+        The population function, for ``"spike_train"``; None when there is
+        none, and the fix says to call ``caller`` once per unit.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is of the wrong kind.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> trains = [np.array([0.1, 0.5]), np.array([0.2])]
+    >>> _refuse_wrong_kind(
+    ...     trains,
+    ...     name="spike_times",
+    ...     caller="compute_spatial_rate",
+    ...     expected="spike_train",
+    ...     population="compute_spatial_rates",
+    ... )
+    Traceback (most recent call last):
+        ...
+    TypeError: compute_spatial_rate() takes one unit's spike times; got 2 trains.
+    ...
+    """
+    if _is_result(value):
+        raise TypeError(
+            _format_error(
+                f"{caller}() got a {type(value).__name__} for {name}, which "
+                "takes an array.",
+                fix=_result_fix(value, caller=caller, expected=expected),
+            )
+        )
+    if expected == "spike_train":
+        n_trains = _train_count(value)
+        if n_trains is not None:
+            plural = "train" if n_trains == 1 else "trains"
+            raise TypeError(
+                _format_error(
+                    f"{caller}() takes one unit's spike times; got {n_trains} "
+                    f"{plural}.",
+                    why="a list of trains or a 2-D array holds several units' "
+                    f"spike times, and {caller}() gives one unit's result.",
+                    fix=(
+                        f"call {caller}() once per unit"
+                        if population is None
+                        else f"use {population}(...) for a population"
+                    )
+                    + f", or pass {name}[i] for unit i.",
+                )
+            )
+    elif expected == "spike_counts" and isinstance(value, (list, tuple)):
+        if isinstance(value, tuple) and len(value) == 2 and np.ndim(value[0]) == 2:
+            raise TypeError(
+                _format_error(
+                    f"{caller}() got a tuple for {name}: the (counts, bin_edges) "
+                    "pair bin_spikes_in_time returns.",
+                    fix="unpack it and pass the counts: counts, bin_edges = "
+                    "bin_spikes_in_time(spike_times, dt=...).",
+                )
+            )
+        n_trains = _train_count(value)
+        if n_trains is not None:
+            rows = [
+                np.asarray(timestamps_of(item, name=name), dtype=np.float64)
+                for item in value
+            ]
+            ragged = len({row.size for row in rows}) > 1
+            # Spike trains are in time order; rows of counts are not (counts
+            # repeat), so fractional counts get the fractional-count refusal.
+            increasing = all(np.all(np.diff(row) > 0) for row in rows)
+            if ragged or increasing:
+                raise TypeError(
+                    _format_error(
+                        f"{caller}() takes a spike count matrix of shape "
+                        f"(n_time_bins, n_neurons) for {name}; got {n_trains} "
+                        "spike trains.",
+                        why="decoding compares the number of spikes of each "
+                        "neuron in each time bin with the rate maps.",
+                        fix="bin them first with bin_spikes_in_time(spike_times, "
+                        "dt=...), which returns (counts, bin_edges), and pass "
+                        "the counts.",
+                    )
+                )
+    elif expected == "spike_times" and isinstance(value, np.ndarray):
+        if (
+            value.ndim == 2
+            and value.size
+            and value.dtype.kind in "biuf"
+            and np.isfinite(value).all()
+            and value.min() >= 0
+            # Only 0s and 1s is a spike raster, refused more precisely when
+            # the trains are read.
+            and value.max() > 1
+            and np.all(value == np.round(value))
+            and np.any(np.diff(np.sort(value, axis=1), axis=1) == 0)
+            # Rows in time order followed by zeros are trains padded with
+            # zeros, refused with their own fix when the trains are read.
+            and not _zero_padded_trains(value)
+        ):
+            raise TypeError(
+                _format_error(
+                    f"{caller}() takes spike times, one array per unit; this "
+                    f"{value.shape} array of non-negative whole numbers looks "
+                    "like a spike count matrix.",
+                    why="a value repeats within a row, and one unit cannot fire "
+                    "twice at the same instant, so the rows are not spike times.",
+                    fix="decode a count matrix of shape (n_time_bins, n_neurons) "
+                    "with decode_position(env, counts, rates, dt=dt), with rates "
+                    f"from compute_spatial_rates; or pass spike times to {caller}().",
+                )
+            )

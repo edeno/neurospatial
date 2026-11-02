@@ -225,8 +225,8 @@ class Skeleton:
         # Validate nodes
         if len(self.nodes) == 0:
             msg = (
-                "WHAT: Skeleton must have at least one node.\n"
-                "WHY: A skeleton with no nodes cannot represent any body parts.\n"
+                "Skeleton must have at least one node.\n"
+                "Why: A skeleton with no nodes cannot represent any body parts.\n"
                 "Fix: Provide at least one node name in the 'nodes' parameter."
             )
             raise ValueError(msg)
@@ -235,8 +235,8 @@ class Skeleton:
         if len(self.nodes) != len(set(self.nodes)):
             duplicates = [n for n in self.nodes if self.nodes.count(n) > 1]
             msg = (
-                f"WHAT: Duplicate node names found: {sorted(set(duplicates))}\n"
-                "WHY: Each node name must be unique to identify body parts.\n"
+                f"Duplicate node names found: {sorted(set(duplicates))}\n"
+                "Why: Each node name must be unique to identify body parts.\n"
                 "Fix: Remove duplicate names or rename body parts."
             )
             raise ValueError(msg)
@@ -247,8 +247,8 @@ class Skeleton:
             edge = tuple(given)
             if len(edge) != 2:
                 msg = (
-                    f"WHAT: Invalid edge format: {edge}\n"
-                    "WHY: Edges must be (source, target) pairs.\n"
+                    f"Invalid edge format: {edge}\n"
+                    "Why: Edges must be (source, target) pairs.\n"
                     "Fix: Provide edges as tuple of 2-tuples: ((a, b), (b, c), ...)"
                 )
                 raise ValueError(msg)
@@ -260,8 +260,8 @@ class Skeleton:
                 missing.append(dst)
             if missing:
                 msg = (
-                    f"WHAT: Edge {edge} references unknown node(s): {missing}\n"
-                    f"WHY: All edge endpoints must be defined in 'nodes'.\n"
+                    f"Edge {edge} references unknown node(s): {missing}\n"
+                    f"Why: All edge endpoints must be defined in 'nodes'.\n"
                     f"Fix: Add missing nodes to 'nodes' parameter or fix edge names.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
@@ -272,8 +272,8 @@ class Skeleton:
             unknown_colors = set(self.node_colors.keys()) - node_set
             if unknown_colors:
                 msg = (
-                    f"WHAT: node_colors references unknown nodes: {sorted(unknown_colors)}\n"
-                    f"WHY: Colors can only be assigned to existing nodes.\n"
+                    f"node_colors references unknown nodes: {sorted(unknown_colors)}\n"
+                    f"Why: Colors can only be assigned to existing nodes.\n"
                     f"Fix: Remove unknown keys or add corresponding nodes.\n"
                     f"     Available nodes: {sorted(node_set)}"
                 )
@@ -399,8 +399,8 @@ class Skeleton:
             missing = inferred_nodes - order_set
             if missing:
                 msg = (
-                    f"WHAT: node_order is missing nodes from edges: {sorted(missing)}\n"
-                    "WHY: All nodes in edges must appear in node_order.\n"
+                    f"node_order is missing nodes from edges: {sorted(missing)}\n"
+                    "Why: All nodes in edges must appear in node_order.\n"
                     "Fix: Add missing nodes to node_order or remove edges referencing them."
                 )
                 raise ValueError(msg)
@@ -521,8 +521,8 @@ class Skeleton:
         # Get keypoint names from coordinates
         if "keypoints" not in dataset.coords:
             msg = (
-                "WHAT: Dataset missing 'keypoints' coordinate.\n"
-                "WHY: Cannot extract skeleton nodes without keypoint names.\n"
+                "Dataset missing 'keypoints' coordinate.\n"
+                "Why: Cannot extract skeleton nodes without keypoint names.\n"
                 "Fix: Ensure dataset has 'keypoints' coordinate from movement.io loaders."
             )
             raise ValueError(msg)

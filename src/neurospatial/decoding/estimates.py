@@ -42,6 +42,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
@@ -505,8 +507,15 @@ def credible_region(
     1
     """
     if not 0 < level < 1:
-        msg = f"level must be between 0 and 1 (exclusive), got {level}"
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                f"credible_region(): level must be between 0 and 1 (exclusive), "
+                f"got {level}.",
+                why="Why: level is the posterior probability mass the region "
+                "holds, a fraction.",
+                fix="pass a fraction, e.g. level=0.95 for a 95% region.",
+            )
+        )
 
     from neurospatial.decoding._support import relative_bin_measures
 

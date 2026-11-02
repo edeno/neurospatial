@@ -686,7 +686,7 @@ Each frame of the video is labeled with its recording time.
 
 ## Common Errors and Solutions
 
-The overlay system provides **actionable error messages** following WHAT/WHY/HOW format.
+The overlay system provides **actionable error messages** that say what went wrong, then `Why:` and `Fix:`.
 
 ### Non-Monotonic Times
 
@@ -696,9 +696,9 @@ ValueError: Overlay timestamps are not monotonically increasing.
   Found 5 non-monotonic points at indices: [10, 25, 47, ...].
   First violation: times[10] = 1.523 >= times[11] = 1.521
 
-  WHY: Interpolation requires strictly increasing timestamps.
+  Why: Interpolation requires strictly increasing timestamps.
 
-  HOW: Choose one of these solutions:
+  Fix: Choose one of these solutions:
     1. Sort timestamps and corresponding data: idx = np.argsort(times); times = times[idx]; data = data[idx]
     2. Remove duplicate or reversed timestamps
     3. Verify timestamp source for recording errors
@@ -721,9 +721,9 @@ overlay = PositionOverlay(positions=sorted_data, times=sorted_times, ...)
 ValueError: Found 12 NaN/Inf values in overlay data at indices: [5, 8, 23, ...].
   First invalid value at index 5: [nan, 45.2]
 
-  WHY: Rendering cannot place markers at invalid coordinates.
+  Why: Rendering cannot place markers at invalid coordinates.
 
-  HOW: Choose one of these solutions:
+  Fix: Choose one of these solutions:
     1. Remove invalid samples: mask = np.isfinite(data).all(axis=1); data = data[mask]; times = times[mask]
     2. Interpolate over gaps: from scipy.interpolate import interp1d; ...
     3. Mask invalid values and skip rendering: data[~np.isfinite(data)] = np.nan
@@ -747,9 +747,9 @@ ValueError: Overlay data has incorrect shape.
   Expected: (n_samples, 2) for 2D environment
   Got: (500, 3)
 
-  WHY: Coordinate dimensionality must match environment.n_dims = 2.
+  Why: Coordinate dimensionality must match environment.n_dims = 2.
 
-  HOW: Choose one of these solutions:
+  Fix: Choose one of these solutions:
     1. Project 3D data to 2D: data_2d = data[:, :2]
     2. Use correct dimensionality for environment
     3. Recreate environment with matching dimensions
@@ -772,9 +772,9 @@ ValueError: No temporal overlap between overlay and frames.
   Frame time range: [0.0, 8.7] seconds
   Overlap: 0.0%
 
-  WHY: Interpolation cannot generate values outside source data range.
+  Why: Interpolation cannot generate values outside source data range.
 
-  HOW: Choose one of these solutions:
+  Fix: Choose one of these solutions:
     1. Adjust frame_times to overlap with overlay times
     2. Provide overlay data that covers frame time range
     3. Verify timestamp alignment (check units: seconds vs milliseconds)
@@ -817,9 +817,9 @@ ValueError: Skeleton references bodyparts not in data.
   Missing: ['ear_left', 'tail_tip']
   Available: ['nose', 'ear_right', 'tail_base']
 
-  WHY: Cannot draw edges without both endpoint keypoints.
+  Why: Cannot draw edges without both endpoint keypoints.
 
-  HOW: Choose one of these solutions:
+  Fix: Choose one of these solutions:
     1. Fix bodypart names in skeleton (check for typos)
     2. Add missing bodyparts to data dict
     3. Remove edges with missing parts from skeleton

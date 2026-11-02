@@ -17,6 +17,8 @@ import pytest
 import scipy.sparse
 from numpy.testing import assert_array_equal
 
+from neurospatial import InputError
+
 
 class TestOccupancy:
     """Tests for Environment.occupancy() method."""
@@ -187,6 +189,11 @@ class TestOccupancy:
         times = np.array([0.0, 0.2, 2.0, 3.0])  # intervals 0.2, 1.8 and 1.0 s
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
+        if expected == 0.0:
+            # Every interval exceeds max_gap: nothing usable is left.
+            with pytest.raises(InputError, match="probably not in seconds"):
+                small_2d_env.occupancy(times, positions, max_gap=max_gap)
+            return
         if max_gap < 1.0:
             # The median interval (1 s) exceeds max_gap, which is flagged.
             with pytest.warns(UserWarning, match="probably not in seconds"):

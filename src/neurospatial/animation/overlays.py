@@ -8,7 +8,7 @@ The module contains:
 - Public dataclasses: PositionOverlay, BodypartOverlay, HeadDirectionOverlay
 - Internal data containers: PositionData, BodypartData, HeadDirectionData
 - Conversion pipeline: Aligns overlay data to animation frame times
-- Validation functions: WHAT/WHY/HOW error messages for common issues
+- Validation functions: what / Why: / Fix: error messages for common issues
 
 Performance Considerations
 --------------------------
@@ -1131,8 +1131,8 @@ class EventOverlay(_Overlay):
 
         if has_explicit and has_trajectory:
             msg = (
-                "WHAT: Both event_positions and positions/position_times provided.\n\n"
-                "WHY: EventOverlay supports two mutually exclusive position modes:\n"
+                "Both event_positions and positions/position_times provided.\n\n"
+                "Why: EventOverlay supports two mutually exclusive position modes:\n"
                 "  - Mode A (explicit): Use event_positions for fixed-location events\n"
                 "  - Mode B (trajectory): Use positions + position_times for "
                 "events at animal location\n\n"
@@ -1143,8 +1143,8 @@ class EventOverlay(_Overlay):
 
         if not has_explicit and not has_trajectory:
             msg = (
-                "WHAT: No position data provided for events.\n\n"
-                "WHY: EventOverlay needs to know where to display each event.\n\n"
+                "No position data provided for events.\n\n"
+                "Why: EventOverlay needs to know where to display each event.\n\n"
                 "Fix: Provide either:\n"
                 "  - event_positions: for events at fixed locations "
                 "(rewards, stimuli, zone entries)\n"
@@ -1157,16 +1157,16 @@ class EventOverlay(_Overlay):
         if has_trajectory:
             if self.positions is None:
                 msg = (
-                    "WHAT: position_times provided without positions.\n\n"
-                    "WHY: Trajectory mode requires both the trajectory array (positions) "
+                    "position_times provided without positions.\n\n"
+                    "Why: Trajectory mode requires both the trajectory array (positions) "
                     "and its timestamps (position_times).\n\n"
                     "Fix: Provide positions array with shape (n_samples, n_dims)."
                 )
                 raise ValueError(msg)
             if self.position_times is None:
                 msg = (
-                    "WHAT: positions provided without position_times.\n\n"
-                    "WHY: Trajectory mode requires both the trajectory array (positions) "
+                    "positions provided without position_times.\n\n"
+                    "Why: Trajectory mode requires both the trajectory array (positions) "
                     "and its timestamps (position_times) for temporal interpolation.\n\n"
                     "Fix: Provide position_times array with shape (n_samples,)."
                 )
@@ -1186,8 +1186,8 @@ class EventOverlay(_Overlay):
                     len(times_arr),
                 ):
                     msg = (
-                        f"WHAT: event_positions for '{name}' has incompatible shape.\n\n"
-                        f"WHY: Got {pos_arr.shape[0]} positions for {len(times_arr)} "
+                        f"event_positions for '{name}' has incompatible shape.\n\n"
+                        f"Why: Got {pos_arr.shape[0]} positions for {len(times_arr)} "
                         f"events. Must be either 1 (broadcast) or {len(times_arr)} "
                         "(per-event).\n\n"
                         "Fix: Provide either:\n"
@@ -1201,18 +1201,18 @@ class EventOverlay(_Overlay):
         for name, times_arr in self.event_times.items():
             if times_arr.ndim != 1:
                 msg = (
-                    f"WHAT: Event times for '{name}' is not 1D "
+                    f"Event times for '{name}' is not 1D "
                     f"(got shape {times_arr.shape}).\n\n"
-                    "WHY: Event times must be a 1D array of timestamps.\n\n"
+                    "Why: Event times must be a 1D array of timestamps.\n\n"
                     "Fix: Flatten the array or ensure shape is (n_events,)."
                 )
                 raise ValueError(msg)
             if not np.all(np.isfinite(times_arr)):
                 n_invalid = np.sum(~np.isfinite(times_arr))
                 msg = (
-                    f"WHAT: Event times for '{name}' contains {n_invalid} "
+                    f"Event times for '{name}' contains {n_invalid} "
                     "non-finite values (NaN or Inf).\n\n"
-                    "WHY: Event timestamps must be finite numbers for temporal "
+                    "Why: Event timestamps must be finite numbers for temporal "
                     "alignment.\n\n"
                     "Fix: Remove or interpolate NaN/Inf values before creating overlay."
                 )
@@ -1840,9 +1840,9 @@ class TimeSeriesOverlay(_Overlay):
         # Validate data is 1D
         if self.data.ndim != 1:
             msg = (
-                f"WHAT: TimeSeriesOverlay.data must be 1D "
+                f"TimeSeriesOverlay.data must be 1D "
                 f"(got shape {self.data.shape}).\n\n"
-                "WHY: Time series visualization expects a single variable over time.\n\n"
+                "Why: Time series visualization expects a single variable over time.\n\n"
                 "Fix: Flatten the array or select a single column/variable."
             )
             raise ValueError(msg)
@@ -1850,9 +1850,9 @@ class TimeSeriesOverlay(_Overlay):
         # Validate times is 1D
         if self.times.ndim != 1:
             msg = (
-                f"WHAT: TimeSeriesOverlay.times must be 1D "
+                f"TimeSeriesOverlay.times must be 1D "
                 f"(got shape {self.times.shape}).\n\n"
-                "WHY: Timestamps must be a 1D array of time values.\n\n"
+                "Why: Timestamps must be a 1D array of time values.\n\n"
                 "Fix: Flatten the times array or ensure shape is (n_samples,)."
             )
             raise ValueError(msg)
@@ -1860,9 +1860,9 @@ class TimeSeriesOverlay(_Overlay):
         # Validate data and times have same length
         if len(self.data) != len(self.times):
             msg = (
-                f"WHAT: TimeSeriesOverlay.data and times have different lengths "
+                f"TimeSeriesOverlay.data and times have different lengths "
                 f"({len(self.data)} vs {len(self.times)}).\n\n"
-                "WHY: Each data point must have a corresponding timestamp.\n\n"
+                "Why: Each data point must have a corresponding timestamp.\n\n"
                 "Fix: Ensure both arrays have the same number of elements."
             )
             raise ValueError(msg)
@@ -1870,8 +1870,8 @@ class TimeSeriesOverlay(_Overlay):
         # Validate data has at least one sample
         if len(self.data) == 0:
             msg = (
-                "WHAT: TimeSeriesOverlay.data must have at least 1 sample (got 0).\n\n"
-                "WHY: Time series visualization requires at least one data point.\n\n"
+                "TimeSeriesOverlay.data must have at least 1 sample (got 0).\n\n"
+                "Why: Time series visualization requires at least one data point.\n\n"
                 "Fix: Provide non-empty data array."
             )
             raise ValueError(msg)
@@ -1880,9 +1880,9 @@ class TimeSeriesOverlay(_Overlay):
         if not np.all(np.isfinite(self.times)):
             n_invalid = np.sum(~np.isfinite(self.times))
             msg = (
-                f"WHAT: TimeSeriesOverlay.times contains {n_invalid} "
+                f"TimeSeriesOverlay.times contains {n_invalid} "
                 "non-finite values (NaN or Inf).\n\n"
-                "WHY: Timestamps must be finite numbers for window extraction.\n\n"
+                "Why: Timestamps must be finite numbers for window extraction.\n\n"
                 "Fix: Remove or fix NaN/Inf values in times array."
             )
             raise ValueError(msg)
@@ -1892,11 +1892,11 @@ class TimeSeriesOverlay(_Overlay):
             diffs = np.diff(self.times)
             first_bad_idx = np.where(diffs <= 0)[0][0] + 1
             msg = (
-                f"WHAT: Non-monotonic timestamps in TimeSeriesOverlay.times.\n"
+                f"Non-monotonic timestamps in TimeSeriesOverlay.times.\n"
                 f"  First violation at index {first_bad_idx}: "
                 f"times[{first_bad_idx - 1}]={self.times[first_bad_idx - 1]:.6f}, "
                 f"times[{first_bad_idx}]={self.times[first_bad_idx]:.6f}\n\n"
-                "WHY: Window extraction requires strictly increasing timestamps.\n\n"
+                "Why: Window extraction requires strictly increasing timestamps.\n\n"
                 "Fix: Sort the times array or remove duplicates."
             )
             raise ValueError(msg)
@@ -1904,9 +1904,9 @@ class TimeSeriesOverlay(_Overlay):
         # Validate alpha in [0, 1]
         if not (0.0 <= self.alpha <= 1.0):
             msg = (
-                f"WHAT: TimeSeriesOverlay.alpha must be in [0, 1] "
+                f"TimeSeriesOverlay.alpha must be in [0, 1] "
                 f"(got {self.alpha}).\n\n"
-                "WHY: Alpha is an opacity value between fully transparent (0) "
+                "Why: Alpha is an opacity value between fully transparent (0) "
                 "and fully opaque (1).\n\n"
                 "Fix: Use a value between 0.0 and 1.0."
             )
@@ -1915,9 +1915,9 @@ class TimeSeriesOverlay(_Overlay):
         # Validate linewidth is positive
         if self.linewidth <= 0:
             msg = (
-                f"WHAT: TimeSeriesOverlay.linewidth must be positive "
+                f"TimeSeriesOverlay.linewidth must be positive "
                 f"(got {self.linewidth}).\n\n"
-                "WHY: Line width must be a positive value for rendering.\n\n"
+                "Why: Line width must be a positive value for rendering.\n\n"
                 "Fix: Use a positive value like linewidth=1.0."
             )
             raise ValueError(msg)
@@ -1926,8 +1926,8 @@ class TimeSeriesOverlay(_Overlay):
         if np.any(np.isinf(self.data)):
             n_inf = np.sum(np.isinf(self.data))
             msg = (
-                f"WHAT: TimeSeriesOverlay.data contains {n_inf} Inf values.\n\n"
-                "WHY: Inf values cannot be rendered. NaN is allowed for gaps, "
+                f"TimeSeriesOverlay.data contains {n_inf} Inf values.\n\n"
+                "Why: Inf values cannot be rendered. NaN is allowed for gaps, "
                 "but Inf is not supported.\n\n"
                 "Fix: Replace Inf values with NaN or finite values."
             )
@@ -2512,10 +2512,10 @@ class ObjectVectorOverlay(_Overlay):
             )
             if len(self.firing_rates) != len(self.animal_positions):
                 msg = (
-                    f"WHAT: ObjectVectorOverlay.firing_rates length "
+                    f"ObjectVectorOverlay.firing_rates length "
                     f"({len(self.firing_rates)}) does not match "
                     f"animal_positions length ({len(self.animal_positions)}).\n\n"
-                    "WHY: Each firing rate value corresponds to an animal position "
+                    "Why: Each firing rate value corresponds to an animal position "
                     "sample, so they must have the same length.\n\n"
                     "Fix: Ensure firing_rates has shape (n_samples,) matching "
                     "animal_positions shape (n_samples, n_dims)."
@@ -2786,8 +2786,8 @@ class VideoOverlay(_Overlay):
         # Validate alpha bounds
         if not 0.0 <= self.alpha <= 1.0:
             msg = (
-                f"WHAT: alpha must be between 0.0 and 1.0, got {self.alpha}.\n"
-                f"WHY: Alpha controls transparency (0=invisible, 1=opaque).\n"
+                f"alpha must be between 0.0 and 1.0, got {self.alpha}.\n"
+                f"Why: Alpha controls transparency (0=invisible, 1=opaque).\n"
                 f"Fix: Use alpha=0.5 (default) for semi-transparent overlay."
             )
             raise ValueError(msg)
@@ -2851,9 +2851,9 @@ class VideoOverlay(_Overlay):
         # Check ndim (must be 4D: n_frames, height, width, channels)
         if arr.ndim != 4:
             msg = (
-                f"WHAT: Video array must be 4D (n_frames, height, width, channels), "
+                f"Video array must be 4D (n_frames, height, width, channels), "
                 f"got shape {arr.shape} ({arr.ndim}D).\n"
-                f"WHY: Video data requires frames, height, width, and color channels.\n"
+                f"Why: Video data requires frames, height, width, and color channels.\n"
                 f"Fix: Reshape array to (n_frames, height, width, 3) for RGB video."
             )
             raise ValueError(msg)
@@ -2861,8 +2861,8 @@ class VideoOverlay(_Overlay):
         # Check channels (must be 3 for RGB)
         if arr.shape[3] != 3:
             msg = (
-                f"WHAT: Video array must have 3 RGB channels, got {arr.shape[3]} channels.\n"
-                f"WHY: VideoOverlay requires RGB format for rendering.\n"
+                f"Video array must have 3 RGB channels, got {arr.shape[3]} channels.\n"
+                f"Why: VideoOverlay requires RGB format for rendering.\n"
                 f"Fix: Convert to RGB (drop alpha channel if RGBA, or convert grayscale)."
             )
             raise ValueError(msg)
@@ -2870,8 +2870,8 @@ class VideoOverlay(_Overlay):
         # Check dtype (must be uint8)
         if arr.dtype != np.uint8:
             msg = (
-                f"WHAT: Video array must have dtype uint8, got {arr.dtype}.\n"
-                f"WHY: Video pixels are 0-255 values stored as unsigned 8-bit integers.\n"
+                f"Video array must have dtype uint8, got {arr.dtype}.\n"
+                f"Why: Video pixels are 0-255 values stored as unsigned 8-bit integers.\n"
                 f"Fix: Convert with arr.astype(np.uint8) if values are in 0-255 range."
             )
             raise ValueError(msg)
@@ -3961,7 +3961,7 @@ OverlayData._LISTS.update(
 
 
 # =============================================================================
-# Validation Functions (WHAT/WHY/HOW error messages)
+# Validation Functions (what / Why: / Fix: error messages)
 # =============================================================================
 
 
@@ -4040,7 +4040,7 @@ def _validate_shape(
     ------
     ValueError
         If data dimensions don't match expected, with actual vs expected and
-        actionable WHAT/WHY/HOW guidance.
+        actionable what / Why: / Fix: guidance.
     """
     # Handle both 1D arrays (angles) and 2D arrays (coordinates)
     if data.ndim == 1:
@@ -4050,10 +4050,10 @@ def _validate_shape(
     else:
         # Invalid shape (3D+ arrays)
         msg = (
-            f"WHAT: Invalid array shape for '{name}'.\n"
+            f"Invalid array shape for '{name}'.\n"
             f"  Expected: (n_samples,) or (n_samples, n_dims)\n"
             f"  Got: {data.shape} with {data.ndim} dimensions\n\n"
-            f"WHY: Data must be either 1D (angles) or 2D (coordinates) for overlay "
+            f"Why: Data must be either 1D (angles) or 2D (coordinates) for overlay "
             f"rendering.\n\n"
             f"Fix: Reshape your data to 2D:\n"
             f"  data = data.reshape(-1, {expected_ndims})  # Flatten to 2D"
@@ -4062,10 +4062,10 @@ def _validate_shape(
 
     if actual_ndims != expected_ndims:
         msg = (
-            f"WHAT: Shape mismatch for '{name}'.\n"
+            f"Shape mismatch for '{name}'.\n"
             f"  Expected: (n_samples, {expected_ndims}) spatial dimensions\n"
             f"  Got: {data.shape} with {actual_ndims} spatial dimension(s)\n\n"
-            f"WHY: Coordinate dimensionality must match the environment's spatial "
+            f"Why: Coordinate dimensionality must match the environment's spatial "
             f"dimensions (env.n_dims={expected_ndims}) for proper rendering.\n\n"
             f"Fix: Reformat your data to match the environment dimensions:\n"
             f"  # If you have wrong dimensions, project or slice:\n"
@@ -4115,10 +4115,10 @@ def _validate_temporal_alignment(
     if overlap_start > overlap_end:
         # No overlap at all
         msg = (
-            f"WHAT: No temporal overlap between '{name}' and animation frames.\n"
+            f"No temporal overlap between '{name}' and animation frames.\n"
             f"  Overlay times: [{overlay_min:.3f}, {overlay_max:.3f}]\n"
             f"  Frame times: [{frame_min:.3f}, {frame_max:.3f}]\n\n"
-            f"WHY: Interpolation domain is disjoint - cannot align overlay data "
+            f"Why: Interpolation domain is disjoint - cannot align overlay data "
             f"to any animation frames.\n\n"
             f"Fix: Ensure overlapping time ranges:\n"
             f"  # Option 1: Adjust overlay timestamps to match animation\n"
@@ -4246,7 +4246,7 @@ def _validate_skeleton_consistency(
     ------
     ValueError
         If skeleton references missing bodypart names, with suggestions for
-        nearest matches and actionable WHAT/WHY/HOW guidance.
+        nearest matches and actionable what / Why: / Fix: guidance.
     """
     if skeleton is None or len(skeleton.edges) == 0:
         return  # Nothing to validate
@@ -4278,11 +4278,11 @@ def _validate_skeleton_consistency(
         )
 
         msg = (
-            f"WHAT: Skeleton '{skeleton.name}' for '{name}' references missing "
+            f"Skeleton '{skeleton.name}' for '{name}' references missing "
             f"bodypart(s): {sorted(missing_parts)}\n"
             f"  Available bodyparts in data: {sorted(bodypart_names)}\n"
             f"  Skeleton nodes: {sorted(skeleton.nodes)}\n\n"
-            f"WHY: Cannot draw skeleton edges without both endpoints defined in the "
+            f"Why: Cannot draw skeleton edges without both endpoints defined in the "
             f"bodypart data.\n\n"
             f"Fix: Fix the bodypart names in your skeleton or data:\n"
             f"{suggestion_str}\n"
@@ -4329,9 +4329,9 @@ def _validate_video_env(env: Any) -> None:
 
     Notes
     -----
-    WHAT: Video overlays require 2D environments with finite bounds.
+    Video overlays require 2D environments with finite bounds.
 
-    WHY: Video frames are 2D images that need to be transformed into
+    Why: Video frames are 2D images that need to be transformed into
     environment coordinates. Non-finite bounds make it impossible to
     compute a valid affine transform from pixel space to environment space.
 
@@ -4349,8 +4349,8 @@ def _validate_video_env(env: Any) -> None:
     if env.n_dims != 2:
         msg = (
             f"VideoOverlay requires a 2D environment.\n\n"
-            f"WHAT: Environment has n_dims={env.n_dims}, expected n_dims=2.\n\n"
-            f"WHY: Video frames are 2D images that must be transformed into "
+            f"Environment has n_dims={env.n_dims}, expected n_dims=2.\n\n"
+            f"Why: Video frames are 2D images that must be transformed into "
             f"environment coordinates. This requires a 2D coordinate system.\n\n"
             f"Fix: Create a 2D environment:\n"
             f"  env = Environment.from_samples(positions_2d, bin_size=5.0)"
@@ -4362,9 +4362,9 @@ def _validate_video_env(env: Any) -> None:
     if not np.all(np.isfinite(dim_ranges)):
         msg = (
             f"VideoOverlay requires finite dimension ranges.\n\n"
-            f"WHAT: Environment dimension_ranges contains non-finite values: "
+            f"Environment dimension_ranges contains non-finite values: "
             f"{dim_ranges}.\n\n"
-            f"WHY: Computing the video-to-environment transform requires "
+            f"Why: Computing the video-to-environment transform requires "
             f"finite bounds to establish the coordinate mapping.\n\n"
             f"Fix: Ensure your environment data has finite coordinates. "
             f"Check for infinite or NaN values in your position data."

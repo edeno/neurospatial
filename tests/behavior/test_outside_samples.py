@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     detect_laps,
@@ -172,19 +172,17 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
     np.testing.assert_array_equal(runs, [[times[0], times[19]], [times[21], times[-1]]])
 
 
-def test_goal_directed_runs_without_a_place_are_empty(strip):
+def test_goal_directed_runs_without_a_place_are_refused(strip):
     _, times = _approach()
 
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        runs = detect_goal_directed_runs(
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        detect_goal_directed_runs(
             strip,
             times,
             np.full((len(times), 2), np.nan),
             region="goal",
             min_progress=10.0,
-        ).windows
-
-    assert runs.shape == (0, 2)
+        )
 
 
 @pytest.fixture(scope="module")

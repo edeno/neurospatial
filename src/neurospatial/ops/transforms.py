@@ -566,9 +566,9 @@ def calibrate_from_scale_bar(
     # Validate inputs
     if not (np.isfinite(known_length_cm) and known_length_cm > 0):
         msg = (
-            f"WHAT: known_length_cm must be positive and finite (got "
+            f"known_length_cm must be positive and finite (got "
             f"{known_length_cm}).\n"
-            f"WHY: A scale bar must have a positive, finite real-world length.\n"
+            f"Why: A scale bar must have a positive, finite real-world length.\n"
             f"Fix: Provide a positive value for known_length_cm."
         )
         raise ValueError(msg)
@@ -580,8 +580,8 @@ def calibrate_from_scale_bar(
 
     if px_distance == 0:
         msg = (
-            f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
-            f"WHY: Cannot compute scale from coincident endpoints.\n"
+            f"Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
+            f"Why: Cannot compute scale from coincident endpoints.\n"
             f"Fix: Provide two distinct points for the scale bar."
         )
         raise ValueError(msg)
@@ -670,16 +670,16 @@ def calibrate_from_landmarks(
 
     if landmarks_px.ndim != 2 or landmarks_px.shape[1] != 2:
         msg = (
-            f"WHAT: landmarks_px must have shape (n_points, 2), got {landmarks_px.shape}.\n"
-            f"WHY: Each landmark needs (x, y) coordinates.\n"
+            f"landmarks_px must have shape (n_points, 2), got {landmarks_px.shape}.\n"
+            f"Why: Each landmark needs (x, y) coordinates.\n"
             f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
         raise ValueError(msg)
 
     if landmarks_cm.ndim != 2 or landmarks_cm.shape[1] != 2:
         msg = (
-            f"WHAT: landmarks_cm must have shape (n_points, 2), got {landmarks_cm.shape}.\n"
-            f"WHY: Each landmark needs (x, y) coordinates.\n"
+            f"landmarks_cm must have shape (n_points, 2), got {landmarks_cm.shape}.\n"
+            f"Why: Each landmark needs (x, y) coordinates.\n"
             f"Fix: Provide landmarks as shape (n_points, 2) array."
         )
         raise ValueError(msg)
@@ -689,17 +689,17 @@ def calibrate_from_landmarks(
 
     if n_px != n_cm:
         msg = (
-            f"WHAT: landmarks_px ({n_px} points) and landmarks_cm ({n_cm} points) "
+            f"landmarks_px ({n_px} points) and landmarks_cm ({n_cm} points) "
             f"must have the same number of points.\n"
-            f"WHY: Each pixel landmark must have a corresponding cm landmark.\n"
+            f"Why: Each pixel landmark must have a corresponding cm landmark.\n"
             f"Fix: Ensure both arrays have the same length."
         )
         raise ValueError(msg)
 
     if n_px < 3:
         msg = (
-            f"WHAT: Need at least 3 landmarks for transform estimation (got {n_px}).\n"
-            f"WHY: Each landmark gives 2 equations; rigid (3 degrees of freedom) "
+            f"Need at least 3 landmarks for transform estimation (got {n_px}).\n"
+            f"Why: Each landmark gives 2 equations; rigid (3 degrees of freedom) "
             f"and similarity (4) fits need 2 landmarks and affine (6) fits need 3, "
             f"and a third landmark lets the fit residual reveal a misplaced one.\n"
             f"Fix: Provide at least 3 non-collinear landmark pairs."
@@ -730,9 +730,9 @@ def calibrate_from_landmarks(
         if len(s) >= 2 and s[1] < 1e-6 * s[0]:
             ratio = s[0] / (s[1] + 1e-15)
             msg = (
-                f"WHAT: Landmark calibration has ill-conditioned {name} points "
+                f"Landmark calibration has ill-conditioned {name} points "
                 f"(spread ratio={ratio:.1e}).\n"
-                f"WHY: Landmarks are collinear or too close together. "
+                f"Why: Landmarks are collinear or too close together. "
                 f"2D transforms require points that span both x and y directions.\n"
                 f"Fix: Use landmarks that span the full video frame with good spread. "
                 f"Ensure at least 3 non-collinear points."

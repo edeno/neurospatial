@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 
 pytestmark = [
     pytest.mark.pynapple,
@@ -269,10 +269,9 @@ def test_explicit_epochs_intersect_the_time_support(gapped, session):
     assert narrowed.sum() == pytest.approx(10.0)
     assert across_gap.sum() == pytest.approx(19.5, abs=0.02)
     np.testing.assert_allclose(across_gap, by_hand, atol=0.011)
-    # Epochs outside the support leave nothing, as for the arrays route.
-    with pytest.warns(UserWarning, match="occupancy is zero"):
-        nothing = env.occupancy(times, gapped, epochs=(20.1, 20.4))
-    assert nothing.sum() == 0.0
+    # Epochs outside the support leave nothing, refused as for the arrays route.
+    with pytest.raises(InputError, match="occupancy is zero"):
+        env.occupancy(times, gapped, epochs=(20.1, 20.4))
 
 
 def test_epochs_on_another_clock_are_reported_as_for_arrays(gapped, session):
@@ -283,10 +282,7 @@ def test_epochs_on_another_clock_are_reported_as_for_arrays(gapped, session):
     events = np.array([5.0, 15.0, 25.0])
     in_ms = [(5000.0, 25000.0)]
     for positions in (gapped.to_numpy(), gapped):
-        with (
-            pytest.warns(UserWarning, match="check that epochs overlap"),
-            pytest.raises(ValueError, match="none of the 3 events falls"),
-        ):
+        with pytest.raises(InputError, match="check that epochs overlap"):
             peri_event_distance_histogram(
                 np.array([1.0]),
                 events,

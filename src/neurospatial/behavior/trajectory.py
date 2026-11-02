@@ -477,11 +477,13 @@ def heading_from_velocity(
         it, tracking jitter at rest gives random headings that pass
         ``min_speed``. Set to 0 to disable smoothing.
     allow_all_nan : bool, default False
-        Controls the degenerate case where **every observed** sample is below
-        ``min_speed`` or still (heading undefined everywhere). ``False`` (the
-        default) raises ``ValueError`` so the failure is loud; ``True`` returns
-        an all-NaN array instead, for batch pipelines that handle NaN
-        explicitly.
+        Controls the degenerate cases where **every observed** sample is below
+        ``min_speed`` or still, or where the gates leave no usable sampling
+        interval (heading undefined everywhere). ``False`` (the default)
+        raises ``ValueError`` (:class:`~neurospatial.InputError` for the gates)
+        so the failure is loud; ``True`` returns an all-NaN array instead,
+        with a warning when no interval is usable, for batch pipelines that
+        handle NaN explicitly.
 
     Returns
     -------
@@ -597,6 +599,8 @@ def heading_from_velocity(
         break_before=break_before,
         result="every heading is NaN",
         columns="xy",
+        # allow_all_nan opts in to an all-NaN result, whatever its cause.
+        raise_if_empty=not allow_all_nan,
     )
     min_speed = validated_min_speed(min_speed, call="heading_from_velocity")
     heading, speed = _movement_heading_and_speed(
@@ -848,6 +852,9 @@ def heading_from_body_orientation(
         break_before=breaks,
         sample_valid=observed,
         result="no missing frame is filled",
+        # Every observed frame still gets its heading; the gates only decide
+        # which missing frames are filled, so an empty mask is a valid answer.
+        raise_if_empty=False,
     )
     heading = np.full(t.size, np.nan)
     heading[observed] = np.arctan2(dy[observed], dx[observed])

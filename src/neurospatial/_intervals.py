@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import DISCARD_WARN_FRACTION
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
@@ -1181,8 +1181,10 @@ class IntervalGates:
         Normalized windows.
     min_speed : float or None
     start_bin_gate : bool
-        Whether intervals were also dropped at samples outside the
-        environment, at NaN positions or at samples without a bin.
+        Whether the bin check dropped an interval the other gates kept: at
+        samples outside the environment, at NaN positions or at samples
+        without a bin. Messages name the bin check only then, so ``times``
+        on the wrong clock are not blamed on the positions.
     break_before : ndarray of bool, shape (n_samples,), or None
     sample_valid : ndarray of bool, shape (n_samples,), or None
         False at the missing samples the mask bridged like deleted rows.
@@ -1209,13 +1211,13 @@ class IntervalGates:
         Returns
         -------
         IntervalGates
-            ``mask & keep``; the bin check is named when it could drop an
+            ``mask & keep``; the bin check is named when it drops an
             interval the other gates kept.
         """
         return replace(
             self,
             mask=self.mask & keep,
-            start_bin_gate=self.start_bin_gate or bool(self.mask.any()),
+            start_bin_gate=self.start_bin_gate or bool(np.any(self.mask & ~keep)),
         )
 
 
@@ -1241,17 +1243,28 @@ def interval_gates(
     IntervalGates
     """
     times = np.asarray(times, dtype=np.float64)
-    mask = interval_valid_mask(
-        times,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        start_bin=start_bin,
-        require_end_bin=require_end_bin,
-        epochs=epochs,
-        spike_window=spike_window,
-        break_before=break_before,
-        sample_valid=sample_valid,
+
+    def mask_for(bins: NDArray[np.intp] | None) -> NDArray[np.bool_]:
+        return interval_valid_mask(
+            times,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            start_bin=bins,
+            require_end_bin=require_end_bin and bins is not None,
+            epochs=epochs,
+            spike_window=spike_window,
+            break_before=break_before,
+            sample_valid=sample_valid,
+        )
+
+    mask = mask_for(start_bin)
+    # The bin check is named only when it drops an interval the other gates
+    # keep, so a wrong clock is not blamed on the positions. The flag is read
+    # only when every interval is excluded, so only then is the mask without
+    # the bin check evaluated.
+    bin_drops = start_bin is not None and (
+        bool(mask.any()) or bool(np.any(mask_for(None)))
     )
     return IntervalGates(
         times,
@@ -1260,7 +1273,7 @@ def interval_gates(
         epochs=epochs,
         spike_window=spike_window,
         min_speed=min_speed,
-        start_bin_gate=start_bin is not None,
+        start_bin_gate=bin_drops,
         break_before=break_before,
         sample_valid=sample_valid,
     )
@@ -1681,6 +1694,7 @@ def observed_interval_mask(
     break_before: NDArray[np.bool_] | None = None,
     sample_valid: NDArray[np.bool_] | None = None,
     result: str = EMPTY_RESULT,
+    raise_if_empty: bool = True,
 ) -> NDArray[np.bool_]:
     """Per-interval validity for position-only analyses (gap, epochs, breaks).
 
@@ -1688,7 +1702,8 @@ def observed_interval_mask(
     ``as_intervals(epochs, name="epochs")``. ``break_before`` is already
     validated (``validate_break_before``). ``sample_valid`` marks missing
     samples, which are bridged like deleted rows (:func:`interval_valid_mask`).
-    ``result`` names what an empty selection produces in the warning, as in
+    ``result`` names what an empty selection produces in the warning, and
+    ``raise_if_empty`` whether an all-excluded mask raises, as in
     :func:`warn_excluded_intervals`.
 
     Returns
@@ -1702,7 +1717,7 @@ def observed_interval_mask(
         break_before=break_before,
         sample_valid=sample_valid,
     )
-    warn_excluded_intervals(gates, result=result)
+    warn_excluded_intervals(gates, result=result, raise_if_empty=raise_if_empty)
     return gates.mask
 
 
@@ -1712,17 +1727,25 @@ def warn_excluded_intervals(
     samples: Literal["positions", "headings", "values"] = "positions",
     result: str = EMPTY_RESULT,
     suppress_hint: str = "",
+    raise_if_empty: bool = True,
 ) -> None:
     """Warn with :func:`excluded_intervals_message`, if it has one.
 
     Parameters
     ----------
-    gates, samples, result
+    gates, samples, result, raise_if_empty
         As for :func:`excluded_intervals_message`.
     suppress_hint : str, optional
         Closing sentence naming how to silence the warning.
+
+    Raises
+    ------
+    InputError
+        As for :func:`excluded_intervals_message`.
     """
-    message = excluded_intervals_message(gates, samples=samples, result=result)
+    message = excluded_intervals_message(
+        gates, samples=samples, result=result, raise_if_empty=raise_if_empty
+    )
     if message is not None:
         warnings.warn(
             f"{message} {suppress_hint}".rstrip(),
@@ -1736,6 +1759,7 @@ def excluded_intervals_message(
     *,
     samples: Literal["positions", "headings", "values"] = "positions",
     result: str = EMPTY_RESULT,
+    raise_if_empty: bool = True,
 ) -> str | None:
     """The warning for interval gates that leave no data or ``times`` that look wrong.
 
@@ -1745,10 +1769,15 @@ def excluded_intervals_message(
     everywhere. There is at most one message, and none for fewer than two
     samples:
 
-    - When every interval is excluded, the message names the active gates and
-      how to fix each one, so an empty result is not mistaken for a
-      measurement. When fewer than two samples are observed at all, it names
-      the missing samples instead, since no gate is to blame.
+    - When every interval is excluded, nothing usable is left, so this
+      raises :class:`~neurospatial.InputError` (or, with
+      ``raise_if_empty=False``, returns the message). The message names the
+      active gates and how to fix each one, so an empty result is not
+      mistaken for a measurement. When fewer than two samples are observed at
+      all, it names the missing samples instead, since no gate is to blame.
+      An empty selection (``epochs`` or ``spike_window`` with no windows,
+      such as a condition with no trials) is deliberate, so its empty result
+      is the answer: it only returns a message saying so.
     - Otherwise, when the kept intervals bridge runs of removed samples
       lasting from ``MASKED_RUN_MIN_DURATION`` to ``max_gap`` that add up to
       more than ``DISCARD_WARN_FRACTION`` of the analysed time, ``times``
@@ -1777,18 +1806,37 @@ def excluded_intervals_message(
         ``"values"`` for the variable of a tuning curve.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
+    raise_if_empty : bool, default=True
+        Raise when every interval is excluded. False only for callers whose
+        result is still meaningful with no usable interval, such as a display
+        that falls back to the exact samples.
 
     Returns
     -------
     str or None
         The message, without a closing hint on how to silence it.
+
+    Raises
+    ------
+    InputError
+        If every interval is excluded and ``raise_if_empty`` is True, unless
+        the selection itself is empty.
     """
     if gates.mask.size == 0:
         return None
     times, max_gap = gates.times, gates.max_gap
     dt = np.diff(times)
     if not gates.mask.any():
-        return _all_excluded_message(gates, dt, samples=samples, result=result)
+        empty = empty_selection_names(gates.epochs, gates.spike_window)
+        if empty:
+            # A deliberate empty selection, such as a condition with no trials:
+            # nothing is wrong with the clock, and the empty result is the
+            # answer, so say what happened without raising.
+            return empty_selection_message(empty, result)
+        refusal = _all_excluded_message(gates, dt, samples=samples, result=result)
+        if raise_if_empty:
+            raise InputError(refusal)
+        return refusal
     message = _masked_samples_message(times, gates.mask, max_gap)
     if message is not None:
         return message
@@ -1995,12 +2043,7 @@ def _all_excluded_message(
     samples: Literal["positions", "headings", "values"],
     result: str,
 ) -> str:
-    """The warning for a selection that excludes every interval."""
-    empty = empty_selection_names(gates.epochs, gates.spike_window)
-    if empty:
-        # A deliberate empty selection, such as a condition with no trials:
-        # nothing is wrong with the clock, so say what happened.
-        return empty_selection_message(empty, result)
+    """The message for a selection that excludes every interval."""
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
-from contextlib import nullcontext
 
 import numpy as np
 import pytest
 
+from neurospatial import InputError
 from neurospatial.behavior import (
     ResampledPathResult,
     compute_speed,
@@ -278,14 +278,14 @@ def test_isolated_sample_produces_no_output():
     ],
     ids=["single-sample", "all-missing"],
 )
-def test_no_runs_give_empty_arrays(times, positions, warns):
-    # Only the all-missing recording has samples to exclude, so only it warns.
-    with (
-        pytest.warns(UserWarning, match="excluded ALL trajectory intervals")
-        if warns
-        else nullcontext()
-    ):
-        result = resample_by_distance(times, positions, spacing=1.0)
+def test_no_runs_give_empty_arrays_or_raise(times, positions, warns):
+    # Only the all-missing recording has samples to exclude, so only it is
+    # refused; a single sample has no interval and gives empty arrays.
+    if warns:
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            resample_by_distance(times, positions, spacing=1.0)
+        return
+    result = resample_by_distance(times, positions, spacing=1.0)
     for name in (
         "times",
         "run_distance",
@@ -425,9 +425,7 @@ def test_break_before_marks_first_sample_of_each_run(two_epoch_recording):
 
 
 def test_break_before_empty_result():
-    times = np.arange(3) * 0.1
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = resample_by_distance(times, np.full((3, 2), np.nan), spacing=1.0)
+    result = resample_by_distance(np.array([0.0]), np.zeros((1, 2)), spacing=1.0)
     assert result.break_before.shape == (0,)
 
 

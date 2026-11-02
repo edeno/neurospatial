@@ -274,6 +274,7 @@ def resolve_observation_support(
     epochs: Any,
     break_before: NDArray[np.bool_] | None,
     result: str | None,
+    raise_if_empty: bool = True,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from validated inputs.
 
@@ -292,6 +293,8 @@ def resolve_observation_support(
     result : str or None
         What an all-excluded selection leaves, for the shared warning;
         None when the caller reports excluded data itself.
+    raise_if_empty : bool, default=True
+        As for :func:`resolve_sample_support`.
     """
     sample_valid: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
     return resolve_sample_support(
@@ -301,6 +304,7 @@ def resolve_observation_support(
         epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
         result=result,
+        raise_if_empty=raise_if_empty,
     )
 
 
@@ -312,6 +316,7 @@ def resolve_sample_support(
     epochs: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None,
     result: str | None,
+    raise_if_empty: bool = True,
 ) -> ObservationSupport:
     """Resolve usable intervals and runs from a per-sample validity vector.
 
@@ -331,6 +336,10 @@ def resolve_sample_support(
     result : str or None
         What an all-excluded selection leaves, for the shared warning;
         None when the caller reports excluded data itself.
+    raise_if_empty : bool, default=True
+        Raise :class:`~neurospatial.InputError` when every interval is
+        excluded (:func:`~neurospatial._intervals.excluded_intervals_message`);
+        False only when the caller's result stays meaningful without one.
 
     Examples
     --------
@@ -367,7 +376,9 @@ def resolve_sample_support(
         # Warn on the usable intervals, after missing samples are bridged: a
         # gap across missing samples can exceed max_gap although every
         # sampling interval passes it.
-        warn_excluded_intervals(support.gates(times), result=result)
+        warn_excluded_intervals(
+            support.gates(times), result=result, raise_if_empty=raise_if_empty
+        )
     return support
 
 
@@ -579,6 +590,7 @@ def validated_observations(
     break_before: Any,
     result: str,
     columns: Literal["xy", "xy_only"] | None = None,
+    raise_if_empty: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], ObservationSupport]:
     """Validate a ``(times, positions)`` pair and resolve its observation support.
 
@@ -600,6 +612,10 @@ def validated_observations(
         (before 1-D input is reshaped): ``"xy"`` needs at least x and y
         columns (a movement direction in the x-y plane), ``"xy_only"``
         exactly those two (a signed turn). None accepts any number.
+    raise_if_empty : bool, default=True
+        Raise :class:`~neurospatial.InputError` when every interval is
+        excluded; False warns instead, for a caller whose all-NaN result
+        is an accepted answer.
 
     Returns
     -------
@@ -627,7 +643,13 @@ def validated_observations(
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
     support = resolve_observation_support(
-        t, p, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
+        t,
+        p,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        result=result,
+        raise_if_empty=raise_if_empty,
     )
     return t, p, support
 

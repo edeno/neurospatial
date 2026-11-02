@@ -467,12 +467,23 @@ def _decode_options(
 
     unknown = sorted(set(decode_kwargs) - set(_DECODE_OPTIONS))
     if unknown:
-        msg = (
-            f"{caller} got unexpected keyword argument(s): {unknown}. Supported "
-            f"decode kwargs are {', '.join(_DECODE_OPTIONS)} (dtype is an "
-            "explicit parameter)."
+        import inspect
+
+        from neurospatial._keyword_hint import unexpected_keywords_error
+
+        function = decode_session_summary if summary else decode_session
+        explicit = [
+            name
+            for name, parameter in inspect.signature(function).parameters.items()
+            if parameter.kind is not parameter.VAR_KEYWORD
+        ]
+        raise unexpected_keywords_error(
+            unknown,
+            [*explicit, *_DECODE_OPTIONS],
+            call=caller,
+            fix=f"remove {', '.join(unknown)}; {caller}() takes its documented "
+            f"parameters and the decode options {', '.join(_DECODE_OPTIONS)}.",
         )
-        raise TypeError(msg)
     time_chunk = decode_kwargs.get(
         "time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK if summary else None
     )
@@ -697,6 +708,7 @@ def _fit_encoding_model(
 
     penalty, rank = _validate_spatial_method_params(
         method,
+        owner=context,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         penalty=penalty,

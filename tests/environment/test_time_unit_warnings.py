@@ -1,9 +1,10 @@
-"""Analyses sharing the max_gap gate warn alike when times are not in seconds.
+"""Analyses sharing the max_gap gate react alike when times are not in seconds.
 
 Timestamps in milliseconds make every 33 ms frame look like a 33 s recording
 gap. The occupancy family and spatial rate maps must not return an empty or
-mostly-empty result silently; they emit one warning that names the likely
-cause, from the user's own call site.
+mostly-empty result silently: when every interval is excluded they raise, and
+when most are they emit one warning from the user's own call site; both name
+the likely cause.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.encoding import compute_spatial_rate
 
@@ -54,13 +55,10 @@ def _run(call, env, times, **kwargs) -> list[warnings.WarningMessage]:
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
-def test_milliseconds_warn_that_every_interval_was_excluded(env, name):
-    record = _run(CALLS[name], env, _TIMES * 1000.0)
-    caught = _clock_warnings(record)
-    assert len(caught) == 1
-    message = str(caught[0].message)
-    assert caught[0].category is UserWarning
-    assert caught[0].filename == __file__
+def test_milliseconds_raise_that_every_interval_was_excluded(env, name):
+    with pytest.raises(InputError, match="probably not in seconds") as caught:
+        CALLS[name](env, _TIMES * 1000.0)
+    message = str(caught.value)
     assert "excluded ALL trajectory intervals" in message
     assert f"max_gap={DEFAULT_MAX_GAP}" in message
     assert "33.33 s" in message

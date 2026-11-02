@@ -34,6 +34,9 @@ peri_event_histogram, PeriEventResult : Peri-event analysis
     Compute and inspect a histogram aligned to event times.
 NeurospatialError : Base library exception
     Catch library-defined errors through one public exception hierarchy.
+InputError : Unusable input
+    An argument a public function cannot use: mismatched lengths, times not
+    in seconds, wrong unit labels. A ``ValueError``.
 RegionNotFoundError, BinIndexOutOfRangeError : Lookup errors
     An unknown region name; a bin index outside the environment.
 IncompatibleEnvironmentError, LayoutNotBuiltError, CartesianOnlyError : Usage errors
@@ -298,6 +301,7 @@ from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
     CartesianOnlyError,
     IncompatibleEnvironmentError,
+    InputError,
     LayoutNotBuiltError,
     NeurospatialError,
     RegionNotFoundError,
@@ -410,6 +414,7 @@ __all__ = [
     "DecodingResult",
     "Environment",
     "IncompatibleEnvironmentError",
+    "InputError",
     "Interval",
     "Intervals",
     "Landmark",

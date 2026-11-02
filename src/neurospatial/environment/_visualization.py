@@ -329,11 +329,15 @@ def _plot_1d(
 def check_field(field: NDArray[np.float64], n_bins: int) -> None:
     """Refuse a field that is not one value per bin."""
     if field.ndim != 1 or field.shape[0] != n_bins:
-        msg = (
-            f"field must be 1D array with length n_bins={n_bins}, "
-            f"got shape {field.shape}"
+        raise ValueError(
+            _format_error(
+                f"field must be a 1-D array with one value per bin (n_bins="
+                f"{n_bins}), got shape {field.shape}.",
+                fix="pass one value per active bin, such as result.firing_rate "
+                "or env.occupancy(times, positions); for a population result "
+                "pass one row, rates.firing_rates[i].",
+            )
         )
-        raise ValueError(msg)
 
 
 def field_color_limits(

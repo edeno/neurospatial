@@ -172,8 +172,8 @@ def calibrate_video(
     video_path = Path(video_path)
     if not video_path.exists():
         msg = (
-            f"WHAT: Video file not found at '{video_path}'.\n"
-            f"WHY: The video_path must point to an existing file.\n"
+            f"Video file not found at '{video_path}'.\n"
+            f"Why: The video_path must point to an existing file.\n"
             f"Fix: Check the file path and ensure the video file exists."
         )
         raise FileNotFoundError(msg)
@@ -192,8 +192,8 @@ def calibrate_video(
 
     if len(methods_provided) == 0:
         msg = (
-            "WHAT: No calibration method specified.\n"
-            "WHY: calibrate_video() requires one of: scale_bar, landmarks, or cm_per_px.\n"
+            "No calibration method specified.\n"
+            "Why: calibrate_video() requires one of: scale_bar, landmarks, or cm_per_px.\n"
             "Fix: Provide exactly one calibration parameter, e.g.:\n"
             "     - scale_bar=((x1, y1), (x2, y2), length_cm)\n"
             "     - landmarks_px=array, landmarks_env=array\n"
@@ -203,8 +203,8 @@ def calibrate_video(
 
     if len(methods_provided) > 1:
         msg = (
-            f"WHAT: Multiple calibration methods specified: {methods_provided}.\n"
-            f"WHY: scale_bar, landmarks, and cm_per_px are mutually exclusive.\n"
+            f"Multiple calibration methods specified: {methods_provided}.\n"
+            f"Why: scale_bar, landmarks, and cm_per_px are mutually exclusive.\n"
             f"Fix: Provide exactly one calibration method."
         )
         raise ValueError(msg)
@@ -218,8 +218,8 @@ def calibrate_video(
         # Validate inputs
         if known_length_cm <= 0:
             msg = (
-                f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
-                f"WHY: A scale bar must have positive real-world length.\n"
+                f"known_length_cm must be positive (got {known_length_cm}).\n"
+                f"Why: A scale bar must have positive real-world length.\n"
                 f"Fix: Provide a positive value for known_length_cm."
             )
             raise ValueError(msg)
@@ -231,8 +231,8 @@ def calibrate_video(
 
         if px_distance == 0:
             msg = (
-                f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
-                f"WHY: Cannot compute scale from coincident endpoints.\n"
+                f"Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
+                f"Why: Cannot compute scale from coincident endpoints.\n"
                 f"Fix: Provide two distinct points for the scale bar."
             )
             raise ValueError(msg)
@@ -251,15 +251,15 @@ def calibrate_video(
         # Validate both landmarks are provided
         if landmarks_px is None:
             msg = (
-                "WHAT: landmarks_px is required when landmarks_env is provided.\n"
-                "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
+                "landmarks_px is required when landmarks_env is provided.\n"
+                "Why: Landmark calibration needs corresponding pixel and environment points.\n"
                 "Fix: Provide landmarks_px array of shape (n_points, 2)."
             )
             raise ValueError(msg)
         if landmarks_env is None:
             msg = (
-                "WHAT: landmarks_env is required when landmarks_px is provided.\n"
-                "WHY: Landmark calibration needs corresponding pixel and environment points.\n"
+                "landmarks_env is required when landmarks_px is provided.\n"
+                "Why: Landmark calibration needs corresponding pixel and environment points.\n"
                 "Fix: Provide landmarks_env array of shape (n_points, 2)."
             )
             raise ValueError(msg)
@@ -271,9 +271,9 @@ def calibrate_video(
         # Validate same length
         if len(landmarks_px) != len(landmarks_env):
             msg = (
-                f"WHAT: landmarks_px has {len(landmarks_px)} points but landmarks_env "
+                f"landmarks_px has {len(landmarks_px)} points but landmarks_env "
                 f"has {len(landmarks_env)} points.\n"
-                f"WHY: Each pixel landmark must have a corresponding environment point.\n"
+                f"Why: Each pixel landmark must have a corresponding environment point.\n"
                 f"Fix: Ensure landmarks_px and landmarks_env have the same number of points."
             )
             raise ValueError(msg)
@@ -290,8 +290,8 @@ def calibrate_video(
         assert cm_per_px is not None  # Asserted by method validation above
         if cm_per_px <= 0:
             msg = (
-                f"WHAT: cm_per_px must be positive (got {cm_per_px}).\n"
-                f"WHY: Scale factor must be positive to produce valid transforms.\n"
+                f"cm_per_px must be positive (got {cm_per_px}).\n"
+                f"Why: Scale factor must be positive to produce valid transforms.\n"
                 f"Fix: Provide a positive value, e.g., cm_per_px=0.25."
             )
             raise ValueError(msg)
@@ -428,8 +428,8 @@ def _validate_calibration_coverage(
 
     if exceeds:
         warnings.warn(
-            f"WHAT: Environment bounds extend beyond calibrated video coverage.\n"
-            f"WHY: Environment range x=[{env_x_min:.1f}, {env_x_max:.1f}], "
+            f"Environment bounds extend beyond calibrated video coverage.\n"
+            f"Why: Environment range x=[{env_x_min:.1f}, {env_x_max:.1f}], "
             f"y=[{env_y_min:.1f}, {env_y_max:.1f}] exceeds "
             f"video range x=[{video_x_min:.1f}, {video_x_max:.1f}], "
             f"y=[{video_y_min:.1f}, {video_y_max:.1f}].\n"

@@ -3226,7 +3226,9 @@ def _object_vector_rates(
     # "auto" resolves to "numpy" or "jax".
     resolved_backend = validate_and_resolve_backend(backend)
 
-    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
+    _validate_smoothing_parameters(
+        method, 1.0 if bandwidth is None else bandwidth, owner=f"{context}()"
+    )
 
     _validate_object_vector_metric(env, metric, context=context)
     units = env.units if env is not None else None
@@ -3234,7 +3236,9 @@ def _object_vector_rates(
 
     resolved_unit_ids: NDArray[Any] | None = None
     if single_unit:
-        spike_times_list = [as_spike_train(spike_times)]
+        spike_times_list = [
+            as_spike_train(spike_times, call=context, population=f"{context}s")
+        ]
     else:
         # Normalize spike times to canonical list-of-arrays format and resolve
         # the per-unit identity labels (defaults to arange). A labelled input
@@ -4081,6 +4085,17 @@ def _is_object_vector_cell(
     egocentric = direction_frame == "egocentric"
     call = "is_egocentric_object_vector_cell" if egocentric else "is_object_vector_cell"
     check_criterion(criterion, ("threshold", "shuffle"), call=call)
+    from neurospatial._validation import _refuse_wrong_kind
+
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller=call,
+        expected="spike_train",
+        population="compute_egocentric_rates"
+        if egocentric
+        else "compute_object_vector_rates",
+    )
     check_mode_keywords(
         criterion,
         threshold={},

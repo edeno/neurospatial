@@ -208,6 +208,9 @@ def _align_true_positions(
     warn_excluded_intervals(
         interval_gates(true_times, max_gap=max_gap, break_before=breaks),
         result="true positions are known only at exact sample times",
+        # Exact finite truth samples stay observed beside any gap, so decode
+        # times that match them still get a true position.
+        raise_if_empty=False,
     )
     # A missing true position is bridged like a deleted row: the gap between
     # the finite samples around it is interpolated when it passes max_gap.

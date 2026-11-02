@@ -464,9 +464,15 @@ class Environment(Generic[_C]):
         """Use an Environment factory to build owned geometry and metadata."""
         raise ValueError(
             _format_error(
-                "[E1006] Environment cannot be constructed directly — use a factory method.\n\nMost common (from positions you recorded):\n    env = Environment.from_samples(positions, bin_size=2.0)\n\nOther factories, chosen by the data you have:\n    from_polygon     — a Shapely polygon boundary\n    from_graph       — a track/maze graph (linearized 1D)\n    from_grid_mask   — an N-D boolean mask + grid edges\n    from_pixel_mask  — a 2D image / pixel mask\n\nAvoid:\n    env = Environment()  # not supported\n\nSee each factory's docstring for its exact arguments, or:\n    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
-                fix="env = Environment.from_samples(positions, bin_size=2.0)",
-                why="Why: a factory builds the geometry and connectivity required by Environment.",
+                "[E1006] Environment cannot be constructed directly; use a "
+                "factory method.",
+                why="Why: a factory builds the geometry and connectivity an "
+                "Environment needs from the data you have.",
+                fix="env = Environment.from_samples(positions, bin_size=2.0) for "
+                "recorded positions; or from_polygon (a Shapely boundary), "
+                "from_graph (a track graph), from_grid_mask (a boolean grid) or "
+                "from_pixel_mask (an image mask). See "
+                "https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly",
             )
         )
 

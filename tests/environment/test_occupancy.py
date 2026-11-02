@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 
 
 @pytest.mark.parametrize("time_allocation", ["start", "linear"])
@@ -290,12 +290,9 @@ class TestOccupancyOutsideBehavior:
             ]
         )
 
-        with pytest.warns(UserWarning, match="excluded ALL.*out of bounds"):
-            occ = env.occupancy(times, positions)
-
-        # All bins should have zero occupancy
-        assert_allclose(occ.sum(), 0.0)
-        assert np.all(occ == 0.0)
+        # No bin would get any time, so nothing usable is left.
+        with pytest.raises(InputError, match=r"excluded ALL.*out of bounds"):
+            env.occupancy(times, positions)
 
     def test_occupancy_mixed_inside_outside(self):
         """Test occupancy with mix of inside and outside samples.
@@ -698,18 +695,17 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
                 [5.0, 5.0],  # inside
             ]
         )
-        with pytest.warns(UserWarning, match="excluded ALL"):
-            occ = env.occupancy(times, positions, max_gap=None)
+        # Both intervals have the out-of-env sample at one end, so neither
+        # keeps time: the animal's place during them is unknown, and nothing
+        # usable is left.
+        with pytest.raises(InputError, match="excluded ALL"):
+            env.occupancy(times, positions, max_gap=None)
 
         # bin_sequence agrees: the middle sample is -1.
         bin_seq = env.bin_sequence(
             times, positions, dedup=False, outside_value=-1, max_gap=None
         )
         assert bin_seq[1] == -1
-
-        # Both intervals have the out-of-env sample at one end, so neither
-        # keeps time: the animal's place during them is unknown.
-        assert occ.sum() == pytest.approx(0.0, abs=1e-9)
 
     def test_in_env_sample_consistent_between_occupancy_and_bin_sequence(self):
         """Every in-env sample maps to the same bin index in both methods."""

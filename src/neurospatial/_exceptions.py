@@ -14,6 +14,7 @@ __all__ = [
     "BinIndexOutOfRangeError",
     "CartesianOnlyError",
     "IncompatibleEnvironmentError",
+    "InputError",
     "LayoutNotBuiltError",
     "NeurospatialError",
     "RegionNotFoundError",
@@ -76,6 +77,37 @@ def _format_error(what: str, *, fix: str, why: str | None = None) -> str:
         lines.append(reason if reason.startswith("Why:") else f"Why: {reason}")
     lines.append(f"Fix: {fix.strip()}")
     return "\n".join(lines)
+
+
+class InputError(ValueError, NeurospatialError):
+    """Raised when an argument passed to a public function cannot be used.
+
+    The message says what is wrong with the input, why it matters and how
+    to fix the call. Typical causes: ``times`` and ``positions`` of different
+    lengths or not in time order, ``times`` in milliseconds so that every
+    sampling interval is excluded as a recording gap, or ``unit_ids`` of the
+    wrong length.
+
+    Inherits from :class:`ValueError`, so ``except ValueError`` also catches
+    it.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import InputError, compute_spatial_rate
+    >>> from neurospatial.simulation import open_field_session
+    >>> session = open_field_session(duration=10.0, n_place_cells=1, rng=0)
+    >>> try:
+    ...     compute_spatial_rate(
+    ...         session.env,
+    ...         session.spike_times[0],
+    ...         session.times * 1000,  # milliseconds, not seconds
+    ...         session.positions,
+    ...     )
+    ... except InputError as exc:
+    ...     print(exc)
+    Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so the rate map is empty. Fix: the median sampling interval is 10 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 10, or pass max_gap=None to disable gap gating.
+    """
 
 
 class RegionNotFoundError(KeyError, ValueError, NeurospatialError):

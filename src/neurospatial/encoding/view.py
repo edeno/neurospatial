@@ -1417,10 +1417,10 @@ bandwidth, min_occupancy, backend, boundary_source
     )
 
     resolved_bandwidth = resolve_spatial_bandwidth(env, bandwidth)
-    _validate_smoothing_parameters(method, resolved_bandwidth)
+    _validate_smoothing_parameters(method, resolved_bandwidth, owner=f"{context}()")
 
     if single_unit:
-        trains = [as_spike_train(spike_times)]
+        trains = [as_spike_train(spike_times, call=context, population=f"{context}s")]
         resolved_unit_ids = None
     else:
         # Canonical list-of-arrays trains and their identity labels (default
@@ -2429,6 +2429,15 @@ def is_spatial_view_cell(
     <class 'bool'>
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_spatial_view_cell")
+    from neurospatial._validation import _refuse_wrong_kind
+
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller="is_spatial_view_cell",
+        expected="spike_train",
+        population="compute_view_rates",
+    )
     check_mode_keywords(
         criterion,
         threshold={},

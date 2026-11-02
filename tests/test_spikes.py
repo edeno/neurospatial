@@ -682,9 +682,14 @@ class TestRastersAndZeroPadding:
     def test_single_train_is_sorted(self) -> None:
         from neurospatial._spikes import as_spike_train
 
-        np.testing.assert_array_equal(as_spike_train([0.4, -0.1]), [-0.1, 0.4])
+        def single(spike_times):
+            return as_spike_train(spike_times, call="f", population="fs")
+
+        np.testing.assert_array_equal(single([0.4, -0.1]), [-0.1, 0.4])
+        with pytest.raises(TypeError, match="got 2 trains"):
+            single(np.array([[0.1, 0.2], [0.3, 0.4]]))
         with pytest.raises(ValueError, match="1-D"):
-            as_spike_train(np.array([[0.1, 0.2], [0.3, 0.4]]))
+            single(np.zeros((2, 2, 2)))
 
     def test_decoding_counts_refuse_raster_and_zero_padding(self) -> None:
         from neurospatial.decoding import bin_spikes_in_time

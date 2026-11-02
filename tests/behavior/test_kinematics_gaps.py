@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, Intervals, Regions
+from neurospatial import Environment, InputError, Intervals, Regions
 from neurospatial._intervals import observed_interval_mask
 from neurospatial.behavior import Trial, compute_planar_turn_angles
 from neurospatial.behavior.decisions import (
@@ -245,18 +245,16 @@ def test_smoothed_turns_declared_break_equals_separate_calls(two_epoch_recording
 @pytest.mark.parametrize(
     "function", [pre_decision_speed_stats, compute_planar_turn_angles]
 )
-def test_kinematics_excluded_epochs_have_nan(two_epoch_recording, function):
+def test_kinematics_excluded_epochs_raise(two_epoch_recording, function):
     r = two_epoch_recording
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = function(positions=r.positions, times=r.times, epochs=(500, 600))
-    assert np.isnan(result).all()
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        function(positions=r.positions, times=r.times, epochs=(500, 600))
 
 
-def test_home_range_without_observations_is_empty(two_epoch_recording):
+def test_home_range_without_observations_raises(two_epoch_recording):
     r = two_epoch_recording
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = compute_home_range(r.env, r.times, r.positions, epochs=(500, 600))
-    assert result.size == 0
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        compute_home_range(r.env, r.times, r.positions, epochs=(500, 600))
 
 
 def test_full_home_range_excludes_zero_dwell_bins():
@@ -311,16 +309,16 @@ def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
     assert second_recording.time_to_reach_goal == 0.0
 
 
-def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
-    """Epochs in the pause hold no sample: nothing is measured or reached.
+def test_goal_metrics_with_no_sample_in_epochs_raise(two_epoch_recording):
+    """Epochs in the pause hold no sample: nothing can be measured or reached.
 
     Arrival used to be searched outside the epochs, giving 1100 s.
     """
     r = two_epoch_recording
-    with pytest.warns(
-        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
+    with pytest.raises(
+        InputError, match=r"Interval filtering excluded ALL trajectory intervals"
     ):
-        result = compute_goal_directed_metrics(
+        compute_goal_directed_metrics(
             r.env,
             r.times,
             r.positions,
@@ -329,10 +327,6 @@ def test_goal_metrics_with_no_sample_in_epochs_are_nan(two_epoch_recording):
             goal_radius=0,
             epochs=(500, 600),
         )
-    assert np.isnan(result.goal_bias)
-    assert np.isnan(result.mean_approach_rate)
-    assert np.isnan(result.goal_distance_at_start)
-    assert np.isnan(result.time_to_reach_goal)
 
 
 def test_composites_forward_coarse_sampling_optout(continuous_recording):

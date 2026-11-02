@@ -3248,6 +3248,7 @@ def _resolve_spatial_method(
     env: Environment,
     method: str,
     *,
+    context: str,
     bandwidth: float | None,
     min_occupancy: float | None,
     penalty: float | None,
@@ -3262,6 +3263,8 @@ def _resolve_spatial_method(
         Environment that sets the default bandwidth.
     method : str
         Spatial rate estimator.
+    context : str
+        The public function, named in errors.
     bandwidth, min_occupancy : float or None
         Ratio-method parameters as passed by the caller.
     penalty : float or None
@@ -3294,6 +3297,7 @@ def _resolve_spatial_method(
     # contract order, then resolve the ratio defaults.
     penalty, rank = _validate_spatial_method_params(
         method,
+        owner=context,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         penalty=penalty,
@@ -3311,7 +3315,7 @@ def _resolve_spatial_method(
         0.0 if min_occupancy is None else validate_min_occupancy(min_occupancy)
     )
     if method != "glm":
-        _validate_smoothing_parameters(method, resolved_bandwidth)
+        _validate_smoothing_parameters(method, resolved_bandwidth, owner=f"{context}()")
     return resolved_bandwidth, resolved_min_occupancy, penalty, rank
 
 
@@ -3543,6 +3547,7 @@ def _spatial_rate_maps(
     resolved_bandwidth, resolved_min_occupancy, penalty, rank = _resolve_spatial_method(
         env,
         method,
+        context=context,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         penalty=penalty,
@@ -3554,7 +3559,9 @@ def _spatial_rate_maps(
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises. A standalone unit has no label.
     if single_unit:
-        spike_times_list = [as_spike_train(spike_times)]
+        spike_times_list = [
+            as_spike_train(spike_times, call=context, population=f"{context}s")
+        ]
         result_unit_ids = None
     else:
         spike_times_list, result_unit_ids = as_labelled_spike_trains(
@@ -3570,7 +3577,7 @@ def _spatial_rate_maps(
     breaks = validate_break_before(break_before, len(times), call=context)
 
     # The speed gate is resolved once for the population, so a gate that
-    # excludes every interval warns once rather than per neuron.
+    # excludes every interval raises once rather than per neuron.
     support = _prepare_spatial_support(
         env,
         times,
@@ -5126,6 +5133,15 @@ def compute_directional_place_fields(
     from neurospatial.encoding._spatial_counts import require_allocentric
 
     require_allocentric(env, "compute_directional_place_fields()")
+    from neurospatial._validation import _refuse_wrong_kind
+
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller="compute_directional_place_fields",
+        expected="spike_train",
+        population=None,
+    )
 
     if len(direction_labels) != len(times):
         msg = (
@@ -6129,6 +6145,15 @@ def is_place_cell(
     <class 'bool'>
     """
     check_criterion(criterion, ("threshold", "shuffle"), call="is_place_cell")
+    from neurospatial._validation import _refuse_wrong_kind
+
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller="is_place_cell",
+        expected="spike_train",
+        population="compute_spatial_rates",
+    )
     check_mode_keywords(
         criterion,
         threshold={},

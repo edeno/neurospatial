@@ -70,6 +70,9 @@ def observed_support(
         epochs=None,
         break_before=breaks,
         result="overlay interpolation is unavailable between samples",
+        # The overlay still draws every exact sample; only interpolation
+        # between samples is lost, so an empty mask is not an error.
+        raise_if_empty=False,
     )
     return valid, np.array(support.interval_mask, copy=True)
 

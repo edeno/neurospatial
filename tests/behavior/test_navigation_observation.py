@@ -11,7 +11,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import Environment, Intervals
+from neurospatial import Environment, InputError, Intervals
 from neurospatial.behavior.navigation import (
     approach_rate,
     compute_goal_directed_metrics,
@@ -190,15 +190,15 @@ def test_errors_name_the_called_function(name):
     assert "heading_from_velocity" not in message
 
 
-def test_goal_distances_are_nan_when_nothing_is_observed():
+def test_goal_distances_are_refused_when_nothing_is_observed():
     env = Environment.from_samples(
         np.column_stack([np.linspace(0, 100, 101), np.zeros(101)]),
         bin_size=5.0,
         units="cm",
     )
     positions = np.full((10, 2), np.nan)
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        result = compute_goal_directed_metrics(
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        compute_goal_directed_metrics(
             env,
             _times(10),
             positions,
@@ -206,10 +206,6 @@ def test_goal_distances_are_nan_when_nothing_is_observed():
             metric="euclidean",
             min_speed=1.0,
         )
-    assert np.isnan(result.min_distance_to_goal)
-    assert np.isnan(result.goal_distance_at_start)
-    assert np.isnan(result.goal_distance_at_end)
-    assert np.isnan(result.goal_bias)
 
 
 def _calls_with(times, positions, goal):

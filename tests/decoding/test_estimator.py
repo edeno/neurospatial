@@ -27,7 +27,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial._intervals import resolve_time_windows
 from neurospatial.decoding import (
     BayesianDecoder,
@@ -832,13 +832,10 @@ def test_warn_on_drop_false_silences_out_of_window_warning(sim):
 def test_fit_epochs_excluding_all_intervals_reports_fix(sim):
     env, spikes, times, positions = sim
     epoch = (float(times[0]) - 5.0, float(times[0]) - 1.0)
-    with (
-        pytest.warns(UserWarning, match="epochs"),
-        pytest.raises(ValueError, match="no occupied bin") as caught,
-    ):
+    with pytest.raises(InputError, match="excluded ALL") as caught:
         BayesianDecoder(env, dt=0.5).fit(spikes, times, positions, epochs=epoch)
-    assert "epochs" in str(caught.value)
-    assert any(line.startswith("Fix:") for line in str(caught.value).splitlines())
+    assert "check that epochs overlap `times`" in str(caught.value)
+    assert "Fix:" in str(caught.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1220,12 +1217,10 @@ def test_from_rates_nan_bins_are_excluded_from_spatial_support(sim):
 def test_fit_without_surviving_data_raises(sim, fit_kwargs) -> None:
     """A model fit on no data would decode every time bin as uniform."""
     env, spike_times, times, positions = sim
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        with pytest.raises(ValueError, match=r"no occupied bin") as exc:
-            BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
-                spike_times, times, positions, **fit_kwargs
-            )
+    with pytest.raises(InputError, match=r"min_speed=1000000.0") as exc:
+        BayesianDecoder(env, dt=0.5, bandwidth=7.0).fit(
+            spike_times, times, positions, **fit_kwargs
+        )
     assert "Fix:" in str(exc.value)
 
 
