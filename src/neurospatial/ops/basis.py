@@ -207,11 +207,9 @@ def basis_at_positions(
                 "or transpose a (n_bins, n_basis) array",
             )
         )
-    bins = env.bin_at(np.asarray(positions, dtype=np.float64))
-    out = np.full((bins.size, basis.shape[0]), np.nan)
-    inside = bins >= 0
-    out[inside] = basis[:, bins[inside]].T
-    return out
+    from neurospatial.ops.feature_sampling import _values_at_bins
+
+    return _values_at_bins(basis, env.bin_at(np.asarray(positions, dtype=np.float64)))
 
 
 def select_basis_centers(
