@@ -116,6 +116,15 @@ defaults, renamed arguments) are listed as **Breaking**.
    final task, generated from the snapshot with a sync test. Drop it if the
    phase grows.
 
+4. **Decide before phase 3b:** should the analysis functions keep
+   `min_speed` at all? Ten encoding/decoding functions use it to select
+   running time; the behavior functions use it to define heading or runs.
+   Proposal: remove it from the analysis functions and select running time
+   once with `epochs=` from an epoch builder that can reproduce today's
+   per-sample threshold, as its own PR before 3b. If accepted, 3b drops its
+   `min_speed` default task. Phase 1 found that speed-masking by NaN rows is
+   undetectable, which argues for one documented selection path.
+
 ## Estimated Effort
 
 | Phase | Approx. diff |
