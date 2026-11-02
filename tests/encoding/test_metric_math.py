@@ -30,8 +30,8 @@ def xp(request):
 def test_missing_rates_do_not_create_selectivity(xp, missing):
     rates = xp.asarray([2.0, 2.0, missing])
     occupancy = xp.asarray([1.0, 1.0, 10.0])
-    assert_allclose(spatial_information(rates, occupancy), 0.0, atol=1e-7)
-    assert_allclose(sparsity(rates, occupancy), 1.0, atol=1e-7)
+    assert_allclose(spatial_information(rates, occupancy=occupancy), 0.0, atol=1e-7)
+    assert_allclose(sparsity(rates, occupancy=occupancy), 1.0, atol=1e-7)
 
 
 def test_population_metrics_normalize_each_neurons_observed_support(xp):
@@ -46,8 +46,8 @@ def test_population_metrics_normalize_each_neurons_observed_support(xp):
     )
     assert_allclose(batch_sparsity(rates, occupancy), expected_sparsity, atol=1e-6)
     for row, info, sparse in zip(rates, expected_info, expected_sparsity, strict=True):
-        assert_allclose(spatial_information(row, occupancy), info, atol=1e-6)
-        assert_allclose(sparsity(row, occupancy), sparse, atol=1e-6)
+        assert_allclose(spatial_information(row, occupancy=occupancy), info, atol=1e-6)
+        assert_allclose(sparsity(row, occupancy=occupancy), sparse, atol=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -62,8 +62,8 @@ def test_undefined_information_and_sparsity_are_nan(xp, rates, occupancy):
     """Bits per spike and sparsity need spikes and occupancy; 0 would mean 'measured'."""
     rates = xp.asarray(rates)
     occupancy = xp.asarray(occupancy)
-    assert np.isnan(float(spatial_information(rates, occupancy)))
-    assert np.isnan(float(sparsity(rates, occupancy)))
+    assert np.isnan(float(spatial_information(rates, occupancy=occupancy)))
+    assert np.isnan(float(sparsity(rates, occupancy=occupancy)))
     population = xp.stack([rates, xp.asarray([1.0, 3.0, 1.0])])
     info = np.asarray(batch_spatial_information(population, occupancy))
     spars = np.asarray(batch_sparsity(population, occupancy))
@@ -96,15 +96,15 @@ def test_silent_unit_summary_agrees_with_summary_table():
 def test_zero_activity_remains_observed(xp):
     rates = xp.asarray([0.0, 4.0, np.nan])
     occupancy = xp.asarray([1.0, 1.0, 100.0])
-    assert_allclose(spatial_information(rates, occupancy), 1.0, atol=1e-7)
-    assert_allclose(sparsity(rates, occupancy), 0.5, atol=1e-7)
+    assert_allclose(spatial_information(rates, occupancy=occupancy), 1.0, atol=1e-7)
+    assert_allclose(sparsity(rates, occupancy=occupancy), 0.5, atol=1e-7)
 
 
 def test_information_rate_uses_same_observed_support_as_spatial_information():
     rates = np.array([1.0, np.nan, 3.0])
     occupancy = np.array([1.0, 2.0, 3.0])
     expected = 0.25 * np.log2(1 / 2.5) + 0.75 * 3 * np.log2(3 / 2.5)
-    assert_allclose(information_per_second(rates, occupancy), expected)
+    assert_allclose(information_per_second(rates, occupancy=occupancy), expected)
 
 
 @pytest.mark.parametrize("base", [2.0, np.e, 10.0])
@@ -175,4 +175,4 @@ def test_sparsity_does_not_depend_on_rate_scale(xp, scale):
     scaled = xp.asarray(rates * scale)
     assert_allclose(batch_sparsity(scaled, occupancy), expected, rtol=1e-12)
     for row, value in zip(scaled, expected, strict=True):
-        assert_allclose(sparsity(row, occupancy), value, rtol=1e-12)
+        assert_allclose(sparsity(row, occupancy=occupancy), value, rtol=1e-12)

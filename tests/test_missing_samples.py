@@ -9,6 +9,8 @@ for either. A gap between consecutive valid samples no longer than
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -113,6 +115,17 @@ def test_spatial_rate_with_nan_rows_equals_deleted_rows(env, tracking, ends):
         with_nan.analysis_settings["observed_intervals"]
         == deleted.analysis_settings["observed_intervals"]
     )
+
+
+def test_deleted_tracking_rows_do_not_look_masked(env, tracking):
+    """Deleting 9% of rows in 1-6 frame bursts is lost tracking, not a speed mask."""
+    times, positions, _, spikes, lost = tracking
+    assert lost.mean() > 0.05
+    kept = ~lost
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rate(env, spikes, times[kept], positions[kept])
+        env.occupancy(times[kept], positions[kept])
 
 
 @pytest.mark.parametrize("ends", sorted(LOST_ENDS))

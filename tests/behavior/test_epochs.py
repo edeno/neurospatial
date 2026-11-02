@@ -575,7 +575,14 @@ def test_detector_outputs_as_epochs() -> None:
         "approaches": detect_goal_directed_runs(
             env, times, positions, goal_region="goal"
         ),
-        "laps": detect_laps(env, times, positions),
+        # A corridor has no loop, so its round trip is matched to a template.
+        "laps": detect_laps(
+            env,
+            times,
+            positions,
+            method="reference",
+            reference_lap=env.bin_at(positions),
+        ),
     }
     for name, intervals in outputs.items():
         assert isinstance(intervals, Intervals), name

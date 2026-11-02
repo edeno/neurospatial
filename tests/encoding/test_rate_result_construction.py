@@ -518,6 +518,10 @@ def spikes_with_known_exclusions() -> tuple[list[np.ndarray], list[int]]:
     return trains, outside
 
 
+# Some spikes come after tracking stops on purpose.
+@pytest.mark.filterwarnings(
+    "ignore:.*fell outside the position time window:UserWarning"
+)
 def test_spikes_outside_the_analyzed_intervals_are_counted_per_unit(
     family: str,
     recording: dict[str, Any],

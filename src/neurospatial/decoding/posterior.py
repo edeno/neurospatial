@@ -29,12 +29,17 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._constants import DISCARD_WARN_FRACTION
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_float_dtype
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
-from neurospatial.decoding._time_bins import centered_bin_support, validate_dt
+from neurospatial.decoding._time_bins import (
+    centered_bin_support,
+    validate_dt,
+    warn_if_dt_in_milliseconds,
+)
 from neurospatial.decoding.likelihood import _PoissonRates
 from neurospatial.ops.normalize import _zero_smoothing_noise
 
@@ -402,10 +407,18 @@ def decode_position(
         With ``validate=False``, Inf entries are excluded the same way; with
         ``validate=True`` they raise.
 
+        A raw array without ``prior`` whose rate is 0 for every neuron in
+        more than 5% of the bins warns: such bins are usually missing
+        estimates filled with zero (``np.nan_to_num``), and the uniform
+        prior gives them full weight.
+
         If no bin has a finite rate for every neuron, a :class:`ValueError`
         is raised, even with ``validate=False``.
     dt : float
         Time bin width in seconds, the width used to bin ``spike_counts``.
+        With ``times``, a ``dt`` at least 100 times their median spacing
+        raises: it is usually milliseconds. Overlapping windows (a step
+        shorter than ``dt``) are fine. Any ``dt`` above 1 s warns.
     prior : NDArray[np.float64] | None, default=None
         Non-negative weight per bin, normalized internally to a probability
         mass. Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
@@ -472,6 +485,8 @@ def decode_position(
         (see ``encoding_models``); checked even with ``validate=False``.
         If ``times`` is provided and its length does not match the number
         of posterior time bins, or it is not finite and strictly increasing.
+        If ``dt`` is at least 100 times the median spacing of ``times``
+        (``dt`` in milliseconds).
 
     Notes
     -----
@@ -524,6 +539,7 @@ def decode_position(
     dtype = validate_float_dtype(dtype, stored="posteriors")
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
     spike_counts = np.asarray(spike_counts)
+    _refuse_dt_in_milliseconds(times, dt, context="decode_position")
     rates, prior = _prepare_decode_inputs(
         env,
         encoding_models,
@@ -547,6 +563,42 @@ def decode_position(
         times=times,
         spike_window=None,
         time_support=centered_bin_support(times, dt),
+    )
+
+
+def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
+    """Refuse a ``dt`` at least 100 times the spacing of the bin centers.
+
+    ``dt`` is part of the likelihood, so ``dt=25`` meant as 25 ms on 25 ms
+    bins makes the posterior about 1000 times overconfident. Overlapping
+    windows (a step shorter than the window) and gaps between bins keep the
+    ratio far below 100. ``times`` that cannot label bins are left to the
+    result's own check.
+
+    Raises
+    ------
+    ValueError
+        If the median spacing of ``times`` is positive and ``dt`` is at least
+        100 times it.
+    """
+    if times is None:
+        return
+    centers = np.asarray(times, dtype=np.float64)
+    if centers.ndim != 1 or centers.size < 2:
+        return
+    spacing = float(np.median(np.diff(centers)))
+    if not (np.isfinite(spacing) and spacing > 0 and dt >= 100.0 * spacing):
+        return
+    raise ValueError(
+        _format_error(
+            f"{context}: dt={dt:g} s is {dt / spacing:.0f} times the {spacing:g} s "
+            "spacing of times.",
+            why="dt is the width of each time bin in seconds and scales the "
+            "likelihood; a dt given in milliseconds makes the posterior far "
+            "too confident.",
+            fix=f"pass dt in seconds (dt={dt / 1000.0:g} if you meant {dt:g} "
+            "milliseconds), the width used to bin spike_counts.",
+        )
     )
 
 
@@ -575,6 +627,11 @@ def _prepare_decode_inputs(
     ``validate=False``) is excluded the same way, with a warning. Leaving only
     the masked neurons out of such a bin would favour it, because each
     observed Poisson term is at most 1.
+
+    A bare array with neither ``spatial_support`` nor ``prior`` warns when
+    more than ``DISCARD_WARN_FRACTION`` of the bins have rate 0 for every
+    neuron: such bins are usually missing estimates filled with zero, and
+    the uniform prior gives them full weight.
 
     Parameters
     ----------
@@ -611,7 +668,9 @@ def _prepare_decode_inputs(
     )
     from neurospatial.encoding.spatial import SpatialRatesResult
 
+    prior_given = prior is not None
     _validate_encoding_environment(env, encoding_models, context=context)
+    warn_if_dt_in_milliseconds(dt, context=context)
     if method != "poisson":
         msg = f"Unknown method '{method}'. Currently only 'poisson' is supported."
         raise ValueError(msg)
@@ -706,8 +765,48 @@ def _prepare_decode_inputs(
         )
         models = np.where(excluded, 0.0, models).astype(models.dtype, copy=False)
         prior = exclude_bins(env, prior, excluded, context=context)
+    elif spatial_support is None and not prior_given:
+        _warn_if_zero_filled(models, context=context)
 
     return _PoissonRates.from_rates(models, dt), prior
+
+
+def _warn_if_zero_filled(models: NDArray[Any], *, context: str) -> None:
+    """Warn when many bins have rate 0 for every neuron, as zero-filled NaNs do.
+
+    Parameters
+    ----------
+    models : ndarray, shape (n_neurons, n_bins)
+        Finite, non-negative rate maps without a training support.
+    context : str
+        Caller name used in the message.
+    """
+    all_zero = ~np.any(models != 0.0, axis=0)
+    if all_zero.size == 0 or all_zero.mean() <= DISCARD_WARN_FRACTION:
+        return
+    if context.startswith("BayesianDecoder"):
+        fix = (
+            "build the decoder from the rate result, BayesianDecoder.from_rates("
+            "rates), or pass the training support, BayesianDecoder.from_models("
+            "env, models, spatial_support=rates.spatial_support)."
+        )
+    else:
+        fix = (
+            "pass the rate result itself (decode_position(env, counts, rates, "
+            "dt=dt)), or prior=rates.spatial_support * env.bin_sizes."
+        )
+    warnings.warn(
+        _format_error(
+            f"{context}: {int(all_zero.sum())} of {all_zero.size} bins have "
+            "rate 0 for every neuron.",
+            why="zero-filled bins usually mark missing rate estimates; the "
+            "default uniform prior gives them full weight, and a silent "
+            "population favors them.",
+            fix=fix,
+        ),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
@@ -1001,7 +1100,8 @@ def decode_position_summary(
     ValueError
         If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
         conditions as :func:`decode_position` (invalid method, no finite bins,
-        bin-count mismatch, bad ``times``, validation failures).
+        bin-count mismatch, bad ``times``, ``dt`` at least 100 times the
+        spacing of ``times``, validation failures).
 
     Notes
     -----
@@ -1036,6 +1136,7 @@ def decode_position_summary(
     dtype = validate_float_dtype(dtype, stored="posteriors")
     spike_counts = np.asarray(spike_counts)
     n_time = len(spike_counts)
+    _refuse_dt_in_milliseconds(times, dt, context="decode_position_summary")
     rates, prior = _prepare_decode_inputs(
         env,
         encoding_models,

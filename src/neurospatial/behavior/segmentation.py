@@ -884,6 +884,35 @@ def _detect_lap_direction(
     return "unknown"
 
 
+def _require_loop(graph: nx.Graph, method: str) -> None:
+    """Refuse lap detection on a connectivity graph without a cycle.
+
+    A graph has a cycle exactly when it has more edges than a spanning
+    forest, ``n_nodes - n_components``.
+
+    Raises
+    ------
+    ValueError
+        If ``graph`` has no cycle, as on a 1-D linear track or arm.
+    """
+    n_forest_edges = graph.number_of_nodes() - nx.number_connected_components(graph)
+    if graph.number_of_edges() > n_forest_edges:
+        return
+    raise ValueError(
+        _format_error(
+            f"detect_laps(method={method!r}) counts laps around a loop, but "
+            "this environment has no loop: its bins connect without a cycle.",
+            why="on a track the animal runs back and forth, every trip out "
+            "comes back the way it went, so no lap goes round a loop and the "
+            "laps found would have direction 'unknown'.",
+            fix="for back-and-forth runs on a linear track or arm, use "
+            "detect_trials(env, times, positions, regions=[start, end]); to "
+            "segment round trips against a template, pass "
+            "method='reference' with reference_lap=.",
+        )
+    )
+
+
 @reads_pynapple_samples
 def detect_laps(
     env: Environment[CartesianSystem],
@@ -978,6 +1007,10 @@ def detect_laps(
         If method='reference' but reference_lap is not provided, is empty,
         or holds bins outside the environment.
     ValueError
+        If method is 'auto' or 'region' and the environment has no loop (its
+        connectivity graph has no cycle, as on a 1-D linear track); use
+        :func:`detect_trials` for back-and-forth runs.
+    ValueError
         If method='region' but start_region not provided.
     ValueError
         If start_region not in env.regions, or (method='region') if it does
@@ -1009,6 +1042,9 @@ def detect_laps(
     resulting stretch is analyzed on its own, so no lap spans a split or a
     recording boundary.
 
+    The no-loop refusal checks the connectivity graph, so a corridor binned
+    two or more bins wide in 2-D (whose grid has cycles) is not refused.
+
     **Lap Detection Methods:**
 
     - **Reference**: The first bin of ``reference_lap`` is the start line.
@@ -1039,7 +1075,10 @@ def detect_laps(
       to the start line after a trip to the far side of the track (a bin at
       least half the greatest path distance away). This first circuit is
       itself the first lap. Useful when no canonical lap is at hand; use
-      'reference' when the first circuit is atypical.
+      'reference' when the first circuit is atypical. An environment whose
+      bins connect without any cycle (a 1-D linear track) raises: use
+      :func:`detect_trials` for its runs, or 'reference' to segment round
+      trips against a template.
     - **Region**: A lap is a trip out of a start region and round the loop
       back into it, useful for well-controlled tasks with clear start zones.
       The start region cuts the loop track into a stretch on each side of
@@ -1219,6 +1258,8 @@ def detect_laps(
         epochs=epochs,
         break_before=break_before,
     )
+    if method in ("auto", "region"):
+        _require_loop(env.connectivity, method)
     runs = _event_runs(
         times,
         position_bins,

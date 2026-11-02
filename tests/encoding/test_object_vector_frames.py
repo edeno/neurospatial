@@ -179,7 +179,7 @@ def test_free_predicates_match_methods(
     trains = noise_trains(120)[:2]
     kwargs = {
         "method": method,
-        "bandwidth": 1,
+        "bandwidth": 5,
         "min_occupancy": 0.05,
         "epochs": [0, 100],
         "spike_window": [5, 105],

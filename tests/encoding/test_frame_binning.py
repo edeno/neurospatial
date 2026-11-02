@@ -19,6 +19,10 @@ def short_frame_recording(continuous_recording):
     )
 
 
+# The recording's spikes sit at its last sample and in its pause on purpose.
+@pytest.mark.filterwarnings(
+    "ignore:.*fell outside the position time window:UserWarning"
+)
 def test_family_kernel_drops_pauses_and_final_sample(
     frame_family, short_frame_recording
 ):
@@ -30,6 +34,9 @@ def test_family_kernel_drops_pauses_and_final_sample(
 
 @pytest.mark.parametrize("n_units", [0, 1, 3])
 @pytest.mark.parametrize("n_jobs", [1, 2])
+@pytest.mark.filterwarnings(
+    "ignore:.*fell outside the position time window:UserWarning"
+)
 def test_family_kernel_shares_window_mask(
     frame_family, short_frame_recording, monkeypatch, n_units, n_jobs
 ):

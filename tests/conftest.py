@@ -235,6 +235,14 @@ def continuous_recording() -> Recording:
     return _make_recording(np.arange(10000) / 50, np.arange(0.1, 200, 0.2))
 
 
+@pytest.fixture(scope="session")
+def open_field_120s():
+    """A seeded two-minute open-field session (100 cm arena, 2 cm bins)."""
+    from neurospatial.simulation import open_field_session
+
+    return open_field_session(duration=120.0, n_place_cells=8, seed=0)
+
+
 # =============================================================================
 # --- Fixtures ---
 # =============================================================================

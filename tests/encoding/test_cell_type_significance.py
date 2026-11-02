@@ -239,7 +239,7 @@ def test_significance_isolated_from_caller_mutation(
             kwargs.update(speed=r.speed, min_speed=2.0)
     if f.name == "view":
         kwargs["gaze_offsets"] = r.gaze_offsets
-    kwargs["bandwidth"] = np.array(0.2 if f.name == "head_direction" else 1.0)
+    kwargs["bandwidth"] = np.array(0.2 if f.name == "head_direction" else 5.0)
     if f.name != "head_direction":
         kwargs["method"] = "gaussian_kde"
     clean = f.function(*f.args(r), n_shuffles=4, rng=0, **kwargs)

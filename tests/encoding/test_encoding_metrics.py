@@ -132,13 +132,13 @@ class TestSpatialInformation:
     def test_uniform_firing_zero_info(self, uniform_firing):
         """Uniform firing should give zero spatial information."""
         firing_rate, occupancy = uniform_firing
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         assert_allclose(info, 0.0, atol=1e-10)
 
     def test_selective_firing_high_info(self, selective_firing):
         """Highly selective firing should give high spatial information."""
         firing_rate, occupancy = selective_firing
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         # One-hot firing gives very high spatial information
         # log2(100) = 6.64 bits would be max
         assert info > 4.0  # Should be close to log2(n_bins)
@@ -146,20 +146,20 @@ class TestSpatialInformation:
     def test_place_cell_typical_info(self, place_cell_like):
         """Place cell-like firing should give typical 1-3 bits/spike."""
         firing_rate, occupancy = place_cell_like
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         # Typical place cells: 1-3 bits/spike
         assert 0.5 < info < 5.0
 
     def test_non_negative(self, place_cell_like):
         """Spatial information should always be non-negative."""
         firing_rate, occupancy = place_cell_like
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         assert info >= 0.0
 
     def test_returns_float(self, uniform_firing):
         """Should return a Python float, not array."""
         firing_rate, occupancy = uniform_firing
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         assert isinstance(info, float)
 
     def test_formula_matches_skaggs(self):
@@ -171,7 +171,7 @@ class TestSpatialInformation:
         firing_rate = np.array([0.0, 2.0, 4.0, 2.0])
         occupancy = np.array([1.0, 1.0, 1.0, 1.0])
 
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
 
         # Manual computation:
         # p_i = [0.25, 0.25, 0.25, 0.25]
@@ -188,8 +188,8 @@ class TestSpatialInformation:
         firing_rate = np.array([0.0, 2.0, 4.0, 2.0])
         occupancy = np.array([1.0, 1.0, 1.0, 1.0])
 
-        info_bits = spatial_information(firing_rate, occupancy, base=2.0)
-        info_nats = spatial_information(firing_rate, occupancy, base=np.e)
+        info_bits = spatial_information(firing_rate, occupancy=occupancy, base=2.0)
+        info_nats = spatial_information(firing_rate, occupancy=occupancy, base=np.e)
 
         # nats = bits * ln(2)
         expected_nats = info_bits * np.log(2)
@@ -199,7 +199,7 @@ class TestSpatialInformation:
         """Should handle NaN values in firing rate."""
         firing_rate = np.array([1.0, 2.0, np.nan, 3.0, 4.0])
         occupancy = np.ones(5)
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         # Should compute info ignoring NaN
         assert not np.isnan(info)
         assert info >= 0.0
@@ -210,7 +210,7 @@ class TestSpatialInformation:
         firing_rate = np.array([5.0, 5.0, 5.0, 5.0])
         occupancy = np.array([10.0, 1.0, 1.0, 1.0])
 
-        info = spatial_information(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
         # Still uniform firing rate, so info should still be ~0
         assert_allclose(info, 0.0, atol=1e-10)
 
@@ -226,33 +226,33 @@ class TestSparsity:
     def test_uniform_firing_high_sparsity(self, uniform_firing):
         """Uniform firing should give sparsity close to 1.0."""
         firing_rate, occupancy = uniform_firing
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         assert_allclose(spars, 1.0, atol=1e-6)
 
     def test_selective_firing_low_sparsity(self, selective_firing):
         """Highly selective firing should give low sparsity."""
         firing_rate, occupancy = selective_firing
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         # One-hot firing → very sparse
         assert spars < 0.1
 
     def test_place_cell_typical_sparsity(self, place_cell_like):
         """Place cell-like firing should give typical 0.1-0.3 sparsity."""
         firing_rate, occupancy = place_cell_like
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         # Typical place cells: 0.1-0.3
         assert 0.05 < spars < 0.5
 
     def test_range_zero_to_one(self, place_cell_like):
         """Sparsity should always be in [0, 1]."""
         firing_rate, occupancy = place_cell_like
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         assert 0.0 <= spars <= 1.0
 
     def test_returns_float(self, uniform_firing):
         """Should return a Python float, not array."""
         firing_rate, occupancy = uniform_firing
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         assert isinstance(spars, float)
 
     def test_formula_matches_skaggs(self):
@@ -263,7 +263,7 @@ class TestSparsity:
         firing_rate = np.array([0.0, 2.0, 4.0, 2.0])
         occupancy = np.array([1.0, 1.0, 1.0, 1.0])
 
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         # Manual computation:
         # p_i = [0.25, 0.25, 0.25, 0.25]
@@ -276,7 +276,7 @@ class TestSparsity:
         """Should handle NaN values in firing rate."""
         firing_rate = np.array([1.0, 2.0, np.nan, 3.0, 4.0])
         occupancy = np.ones(5)
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
         # Should compute sparsity ignoring NaN
         assert not np.isnan(spars)
         assert 0.0 <= spars <= 1.0
@@ -303,7 +303,7 @@ class TestBatchSpatialInformation:
 
         # Compute single-neuron for each
         single_info = np.array(
-            [spatial_information(fr, occupancy) for fr in firing_rates]
+            [spatial_information(fr, occupancy=occupancy) for fr in firing_rates]
         )
 
         assert_allclose(batch_info, single_info, rtol=1e-10)
@@ -326,7 +326,7 @@ class TestBatchSpatialInformation:
         firing_rates = firing_rate[np.newaxis, :]  # (1, n_bins)
         info = batch_spatial_information(firing_rates, occupancy)
         assert info.shape == (1,)
-        expected = spatial_information(firing_rate, occupancy)
+        expected = spatial_information(firing_rate, occupancy=occupancy)
         assert_allclose(info[0], expected, rtol=1e-10)
 
     def test_batch_uniform_vs_selective(self, batch_firing_rates):
@@ -357,7 +357,9 @@ class TestBatchSparsity:
         batch_spars = batch_sparsity(firing_rates, occupancy)
 
         # Compute single-neuron for each
-        single_spars = np.array([sparsity(fr, occupancy) for fr in firing_rates])
+        single_spars = np.array(
+            [sparsity(fr, occupancy=occupancy) for fr in firing_rates]
+        )
 
         assert_allclose(batch_spars, single_spars, rtol=1e-10)
 
@@ -379,7 +381,7 @@ class TestBatchSparsity:
         firing_rates = firing_rate[np.newaxis, :]  # (1, n_bins)
         spars = batch_sparsity(firing_rates, occupancy)
         assert spars.shape == (1,)
-        expected = sparsity(firing_rate, occupancy)
+        expected = sparsity(firing_rate, occupancy=occupancy)
         assert_allclose(spars[0], expected, rtol=1e-10)
 
     def test_batch_uniform_vs_selective(self, batch_firing_rates):
@@ -403,8 +405,8 @@ class TestEdgeCases:
         firing_rate = np.array([5.0])
         occupancy = np.array([1.0])
 
-        info = spatial_information(firing_rate, occupancy)
-        spars = sparsity(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         assert info == 0.0  # No spatial information with one bin
         assert spars == 1.0  # All firing in "everywhere"
@@ -415,8 +417,8 @@ class TestEdgeCases:
         occupancy = np.array([1.0, 1.0, 1.0, 1.0])
 
         # Should not raise, may return inf or handle gracefully
-        info = spatial_information(firing_rate, occupancy)
-        spars = sparsity(firing_rate, occupancy)
+        info = spatial_information(firing_rate, occupancy=occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         # Just verify no exceptions were raised
         assert isinstance(info, float)
@@ -428,10 +430,10 @@ class TestEdgeCases:
         occupancy = np.array([])
 
         with pytest.raises((ValueError, ZeroDivisionError)):
-            spatial_information(firing_rate, occupancy)
+            spatial_information(firing_rate, occupancy=occupancy)
 
         with pytest.raises((ValueError, ZeroDivisionError)):
-            sparsity(firing_rate, occupancy)
+            sparsity(firing_rate, occupancy=occupancy)
 
     def test_mismatched_shapes_raises(self):
         """Should raise on mismatched array shapes."""
@@ -439,10 +441,10 @@ class TestEdgeCases:
         occupancy = np.array([1.0, 1.0])
 
         with pytest.raises(ValueError, match=r"firing_rate shape"):
-            spatial_information(firing_rate, occupancy)
+            spatial_information(firing_rate, occupancy=occupancy)
 
         with pytest.raises(ValueError, match=r"firing_rate shape"):
-            sparsity(firing_rate, occupancy)
+            sparsity(firing_rate, occupancy=occupancy)
 
     def test_batch_mismatched_shapes_raises(self):
         """Should raise on mismatched batch shapes."""
@@ -474,8 +476,8 @@ class TestPublicApiConsistency:
 
         firing_rate, occupancy = place_cell_like
 
-        new_info = spatial_information(firing_rate, occupancy)
-        public_info = public_spatial_information(firing_rate, occupancy)
+        new_info = spatial_information(firing_rate, occupancy=occupancy)
+        public_info = public_spatial_information(firing_rate, occupancy=occupancy)
 
         assert_allclose(new_info, public_info, rtol=1e-10)
 

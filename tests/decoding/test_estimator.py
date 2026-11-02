@@ -248,6 +248,8 @@ def test_fit_epochs_matches_compute_spatial_rates(continuous_recording):
         BayesianDecoder(r.env).fit(trains, r.times, r.positions, epoch=(0, 100))
 
 
+# max_gap=2000 bridges the 1000 s pause between the recordings on purpose.
+@pytest.mark.filterwarnings("ignore:.*boolean-masked:UserWarning")
 def test_predict_forwards_max_gap_and_windows(two_epoch_recording):
     r = two_epoch_recording
     trains = [r.spike_times + 0.04 * u for u in range(5)]

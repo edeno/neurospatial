@@ -204,16 +204,16 @@ class TestDetectLaps:
 
     def test_detect_laps_no_laps_found(self):
         """Test lap detection when no laps match criteria."""
-        # Straight line trajectory (no laps)
-        positions = np.column_stack([np.linspace(0, 100, 100), np.ones(100) * 50])
-        env = Environment.from_samples(positions, bin_size=5.0)
+        # Half of a ring track: the animal never completes a circuit.
+        env = Environment.from_samples(_ring_arc(0, 2 * np.pi, 400), bin_size=5.0)
+        positions = _ring_arc(0, np.pi, 100)
         times = np.linspace(0, 20, 100)
 
         from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(env, times, positions, method="auto", min_overlap=0.8)
 
-        # Straight line should not produce laps
+        # Half a circuit should not produce laps
         assert len(laps) == 0
 
     def test_detect_laps_validation_method(self):
@@ -325,8 +325,19 @@ class TestLapRoundTrip:
             speed_mean=15.0,
         )
 
+        # A corridor has no loop, so the first circuit, out to the far end
+        # and back to the start, is the template.
+        x = positions[:, 0]
+        far = int(np.argmax(x > x.max() - 4.0))
+        back = far + int(np.argmax(x[far:] < x[0] + 4.0))
         laps = detect_laps(
-            env, times, positions, method="auto", min_overlap=0.7, direction="both"
+            env,
+            times,
+            positions,
+            method="reference",
+            reference_lap=env.bin_at(positions[: back + 1]),
+            min_overlap=0.7,
+            direction="both",
         )
 
         # The simulator's laps are one-way traversals of the corridor; a lap
@@ -637,7 +648,7 @@ class TestRegionLapsGoRoundTheLoop:
         regions.add("start", polygon=Point(0.0, 0.0).buffer(5.0))
         env = env.with_regions(regions)
         xs = np.r_[x, x[::-1][1:]]
-        with pytest.raises(ValueError, match="does not cut a loop"):
+        with pytest.raises(ValueError, match="has no loop"):
             detect_laps(
                 env,
                 np.arange(xs.size) / 30.0,

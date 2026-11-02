@@ -441,9 +441,12 @@ def test_pynapple_values_use_their_time_support(runs):
     from_series = compute_tuning_curve(
         np.array([1.0]), restricted.t, restricted, bin_edges=EDGES
     )
-    from_array = compute_tuning_curve(
-        np.array([1.0]), restricted.t, restricted.d, bin_edges=EDGES
-    )
+    # Without the support, the 0.5 s between the pieces is bridged, as a
+    # boolean-masked array's gaps are, and the warning says so.
+    with pytest.warns(UserWarning, match="boolean-masked"):
+        from_array = compute_tuning_curve(
+            np.array([1.0]), restricted.t, restricted.d, bin_edges=EDGES
+        )
 
     # The 0.5 s between the two pieces is shorter than max_gap: only the
     # series' support keeps it out.

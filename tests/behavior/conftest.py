@@ -96,6 +96,14 @@ def continuous_lap_track() -> SegmentationTrack:
     return make_lap_track(continuous=True)
 
 
+@pytest.fixture(scope="session")
+def linear_track():
+    """A seeded linear-track session: back-and-forth runs on a 1-D track."""
+    from neurospatial.simulation import linear_track_session
+
+    return linear_track_session(seed=0)
+
+
 @pytest.fixture
 def east_stop_north():
     """An eastward run, three seconds stationary, then a northward run."""

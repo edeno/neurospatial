@@ -844,8 +844,8 @@ class TestJaxArrayPreservation:
         firing_rate_jax = jnp.zeros(n_bins).at[5].set(10.0)
         occupancy_jax = jnp.ones(n_bins)
 
-        info = spatial_information(firing_rate_jax, occupancy_jax)
-        spars = sparsity(firing_rate_jax, occupancy_jax)
+        info = spatial_information(firing_rate_jax, occupancy=occupancy_jax)
+        spars = sparsity(firing_rate_jax, occupancy=occupancy_jax)
 
         assert isinstance(info, jax.Array), f"Expected jax.Array, got {type(info)}"
         assert isinstance(spars, jax.Array), f"Expected jax.Array, got {type(spars)}"

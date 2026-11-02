@@ -609,7 +609,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
         firing_rate = _to_numpy(self.firing_rate)
         occupancy = _to_numpy(self.occupancy)
-        return spatial_information(firing_rate, occupancy)
+        return spatial_information(firing_rate, occupancy=occupancy)
 
     def spatial_information_bias(self) -> float:
         """Expected spatial information of an untuned cell (bits/spike).

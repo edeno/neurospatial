@@ -386,6 +386,49 @@ env.to_file(save_dir / "my_environment")
 
 ---
 
+## Data discarded at the boundary
+
+Some inputs run to completion but quietly lose or mis-scale part of the
+data, which gives a plausible but wrong result. neurospatial warns when more
+than 5% of the input is discarded, and refuses inputs that cannot mean what
+was asked. Each message says what was lost, the likely cause and the fix.
+
+| Message starts with | Raised by | Likely cause | Fix |
+|---------------------|-----------|--------------|-----|
+| `About P% of the analysed time is in runs of removed samples` (`UserWarning`) | Spatial rate maps, `env.occupancy` and the other analyses that bridge gaps, when the kept intervals bridge runs of removed samples lasting 0.25 s to `max_gap` that add up to more than 5% of the analysed time (not checked with `max_gap=None`) | `times` and `positions` filtered the NumPy way, for example `times[speed > 5]`: runs shorter than `max_gap` are bridged, so the time and spikes inside them still count | Pass the full arrays and select with the function's `min_speed=` or `epochs=` where it has them, or set `max_gap` below the shortest removed run. Silence with `warn_on_drop=False` where the function has it |
+| `N/M spike_times (P%) fell outside the position time window` (`UserWarning`) | `compute_spatial_rate(s)`, `decode_session` and the other rate maps, when more than 5% of spikes fall outside `[times[0], times[-1])` | Spike times and position times on different clocks or in different units | Put both on one clock in seconds. Silence with `warn_on_drop=False` once the drop is intended |
+| `N/M spikes (P%) mapped to positions outside the active environment bins` (`UserWarning`) | Spatial spike binning, when more than 5% of spikes land outside the environment | Positions in another unit or frame than the environment | Convert positions to `env.units`. Silence with `warn_on_drop=False` |
+| `bandwidth=B is far below the L bin size` (`UserWarning`) | Spatial rate maps, when an explicit `bandwidth` is below a quarter of the median bin length | A bandwidth in metres on a cm environment | Pass `bandwidth` in `env.units`, or `method="binned", bandwidth=0` for no smoothing |
+| `bin_size=S rad is wider than half a circle` (`ValueError`) | `compute_directional_rate(s)`, `head_direction_cell_significance`, `is_head_direction_cell` | A bin size in degrees with the default `angle_unit="rad"` | Pass `angle_unit="deg"` |
+| `bin_size=S rad leaves N heading bins, fewer than eight` (`UserWarning`) | The same directional functions, when `bin_size` is wider than π/4 | A bin size of a few degrees with the default `angle_unit="rad"` (`bin_size=3` gives two bins) | Pass `angle_unit="deg"`, or a narrower bin size |
+| `bandwidth=B rad is wider than 1 radian` (`UserWarning`) | The same directional functions | A bandwidth in degrees with the default `angle_unit="rad"` | Pass `angle_unit="deg"`, or a narrower bandwidth |
+| `decode_position: N of M bins have rate 0 for every neuron` (`UserWarning`) | `decode_position`, `decode_position_summary` and `BayesianDecoder.predict`, when raw rates without a prior or `spatial_support` have more than 5% all-zero bins | Missing rates filled with zero (`np.nan_to_num(rates.firing_rates)`) | Pass the rate result itself, or `prior=rates.spatial_support * env.bin_sizes`; for a decoder, `BayesianDecoder.from_rates(rates)` or `from_models(..., spatial_support=...)` |
+| `decode_position: dt=D s is R times the S s spacing of times` (`ValueError`) | `decode_position`, `decode_position_summary`, when `dt` is at least 100 times the median spacing of `times` | `dt` in milliseconds | Pass `dt` in seconds. Overlapping windows (a step shorter than `dt`) are accepted |
+| `bin_spikes_in_time: dt=D s is longer than 1 second` (`UserWarning`) | `bin_spikes_in_time`, `decode_position`, `decode_position_summary`, `decode_session` and `BayesianDecoder.predict`, when `dt > 1` | `dt` in milliseconds | Pass `dt` in seconds, for example `dt=0.025` |
+| `detect_laps(method='auto') counts laps around a loop, but this environment has no loop` (`ValueError`) | `detect_laps` with `method="auto"` or `"region"` on an environment whose bins connect without a cycle | A linear track or single arm | Use `detect_trials(env, times, positions, regions=[start, end])` |
+
+A call warns at most once: when it finds several problems, one warning
+names them all.
+
+Positions in the wrong units (pixels on a cm environment) have no warning of
+their own. They show up as a large `result.n_spikes_outside_intervals` and a
+low total occupancy, because the samples outside the environment are dropped.
+Compare the range of `positions` with `env.dimension_ranges` when either looks
+wrong.
+
+Filtering by speed with NaN instead of deleted rows
+(`positions[speed < 5] = np.nan`) is not detected. NaN rows are treated
+exactly like deleted rows, so short NaN runs are bridged as occupancy in the
+same way, but they look like ordinary lost tracking. Select running samples
+with `min_speed=` (or `epochs=`) instead of masking the arrays yourself.
+
+`spatial_information`, `sparsity`, `selectivity` and `information_per_second`
+take `occupancy` by keyword (`spatial_information(rate, occupancy=occupancy)`).
+A rate map and its occupancy have the same shape, so a swapped positional pair
+would return a wrong number; passing it positionally raises `TypeError`.
+
+---
+
 ## Getting Help
 
 ### If you encounter an error not listed here:

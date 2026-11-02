@@ -68,9 +68,9 @@ def test_place_field_workflow_integration():
     assert centroid.shape == (2,)
 
     # Compute metrics
-    info = skaggs_information(firing_rate, occupancy)
-    spars = sparsity(firing_rate, occupancy)
-    select = selectivity(firing_rate, occupancy)
+    info = skaggs_information(firing_rate, occupancy=occupancy)
+    spars = sparsity(firing_rate, occupancy=occupancy)
+    select = selectivity(firing_rate, occupancy=occupancy)
 
     assert info > 0
     assert 0 <= spars <= 1
@@ -664,7 +664,7 @@ class TestSkaggsInformation:
             spatial_information as skaggs_information,
         )
 
-        info = skaggs_information(firing_rate, occupancy, base=2.0)
+        info = skaggs_information(firing_rate, occupancy=occupancy, base=2.0)
 
         # Mean rate: 2.0 Hz
         # Expected: Σ p_i (r_i / r̄) log₂(r_i / r̄)
@@ -701,12 +701,12 @@ class TestSkaggsInformation:
         peak = np.zeros(10)
         peak[3] = scale
 
-        assert float(spatial_information(to_array(uniform), to_array(occupancy))) == (
-            pytest.approx(0.0, abs=1e-12)
-        )
-        assert float(spatial_information(to_array(peak), to_array(occupancy))) == (
-            pytest.approx(np.log2(10))
-        )
+        assert float(
+            spatial_information(to_array(uniform), occupancy=to_array(occupancy))
+        ) == (pytest.approx(0.0, abs=1e-12))
+        assert float(
+            spatial_information(to_array(peak), occupancy=to_array(occupancy))
+        ) == (pytest.approx(np.log2(10)))
         np.testing.assert_allclose(
             np.asarray(
                 batch_spatial_information(
@@ -727,7 +727,7 @@ class TestSkaggsInformation:
             spatial_information as skaggs_information,
         )
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         # Uniform firing → no spatial information
         assert_allclose(info, 0.0, atol=1e-6)
@@ -744,7 +744,7 @@ class TestSkaggsInformation:
             spatial_information as skaggs_information,
         )
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         # Should have high information (selective firing)
         assert info > 1.0  # At least 1 bit/spike
@@ -760,7 +760,7 @@ class TestSparsity:
 
         from neurospatial.encoding._metrics import sparsity
 
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         # Formula: (Σ p_i r_i)² / Σ p_i r_i²
         # = (0.25*0 + 0.25*2 + 0.25*4 + 0.25*2)² / (0.25*0² + 0.25*2² + 0.25*4² + 0.25*2²)
@@ -785,7 +785,7 @@ class TestSparsity:
         from neurospatial.encoding._metrics import sparsity
 
         for pattern in patterns:
-            spars = sparsity(pattern, occupancy)
+            spars = sparsity(pattern, occupancy=occupancy)
             assert 0 <= spars <= 1
 
     def test_sparsity_sparse_field(self, medium_2d_env):
@@ -799,7 +799,7 @@ class TestSparsity:
 
         from neurospatial.encoding._metrics import sparsity
 
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         # Sparse firing → low sparsity value
         assert spars < 0.5
@@ -812,7 +812,7 @@ class TestSparsity:
 
         from neurospatial.encoding._metrics import sparsity
 
-        spars = sparsity(firing_rate, occupancy)
+        spars = sparsity(firing_rate, occupancy=occupancy)
 
         # Uniform firing → high sparsity value (close to 1)
         assert spars > 0.9
@@ -1127,7 +1127,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Mean rate: 0.25*0 + 0.25*2 + 0.25*8 + 0.25*2 = 3.0 Hz
         # Peak rate: 8.0 Hz
@@ -1145,7 +1145,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Uniform → selectivity = 1.0
         assert_allclose(select, 1.0, atol=1e-6)
@@ -1160,7 +1160,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Peak = 100.0, Mean = 100.0 / n_bins
         # Selectivity = 100.0 / (100.0 / n_bins) = n_bins
@@ -1175,7 +1175,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Mean rate: 0.4*1 + 0.3*1 + 0.2*1 + 0.1*10 = 1.9
         # Peak rate: 10.0
@@ -1193,7 +1193,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Mean rate is zero → selectivity undefined
         assert np.isnan(select) or np.isinf(select)
@@ -1205,7 +1205,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Should return NaN
         assert np.isnan(select)
@@ -1217,7 +1217,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Should compute on valid values only
         # Valid: [1.0, 2.0, 8.0, 3.0] with occupancy renormalized
@@ -1238,7 +1238,7 @@ class TestSelectivity:
 
             from neurospatial.encoding._metrics import selectivity
 
-            select = selectivity(firing_rate, occupancy)
+            select = selectivity(firing_rate, occupancy=occupancy)
 
             # Selectivity always >= 1.0 (peak >= mean)
             if not np.isnan(select) and not np.isinf(select):
@@ -1253,7 +1253,7 @@ class TestSelectivity:
 
         from neurospatial.encoding._metrics import selectivity
 
-        select = selectivity(firing_rate, occupancy)
+        select = selectivity(firing_rate, occupancy=occupancy)
 
         # Should return scalar
         assert np.ndim(select) == 0
@@ -1315,7 +1315,7 @@ class TestInformationMetrics:
 
         from neurospatial.encoding._metrics import information_per_second
 
-        info_rate = information_per_second(firing_rate, occupancy)
+        info_rate = information_per_second(firing_rate, occupancy=occupancy)
 
         # Should be positive
         assert info_rate > 0
@@ -1329,7 +1329,7 @@ class TestInformationMetrics:
 
         from neurospatial.encoding._metrics import information_per_second
 
-        info_rate = information_per_second(firing_rate, occupancy)
+        info_rate = information_per_second(firing_rate, occupancy=occupancy)
 
         # Uniform firing → 0 bits/spike → 0 bits/second
         assert_allclose(info_rate, 0.0, atol=1e-10)
@@ -2314,7 +2314,7 @@ class TestSelectivityEdgeCases:
         # With one non-zero firing rate and uniform occupancy, mean should be close to zero
         occupancy = np.ones(100)
 
-        result = selectivity(firing_rate, occupancy)
+        result = selectivity(firing_rate, occupancy=occupancy)
 
         # When mean is effectively zero but peak > 0, should return very high selectivity
         assert result >= 100  # Very high selectivity (exactly 100 in this case)
@@ -2380,7 +2380,7 @@ class TestInformationPerSecondEdgeCases:
         firing_rate = np.full(100, np.nan)
         occupancy = np.full(100, np.nan)
 
-        result = information_per_second(firing_rate, occupancy)
+        result = information_per_second(firing_rate, occupancy=occupancy)
         assert np.isnan(result)
 
 

@@ -1308,7 +1308,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import spatial_information
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return spatial_information(self._supported_rates(), self.occupancy)
+        return spatial_information(self._supported_rates(), occupancy=self.occupancy)
 
     def spatial_information_bias(self) -> float:
         """Expected spatial information of an untuned cell (bits/spike).
@@ -1452,7 +1452,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import sparsity
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return sparsity(self._supported_rates(), self.occupancy)
+        return sparsity(self._supported_rates(), occupancy=self.occupancy)
 
     def grid_score(self) -> float:
         """Grid score (hexagonal periodicity).
@@ -3322,6 +3322,7 @@ class _SpatialSupport(NamedTuple):
     linear_intervals: LinearSpatialIntervals | None  # time_allocation="linear"
     time_support: TimeSupport
     analysis_settings: dict[str, Any]
+    drop_message: str | None  # excluded-interval message, warned with spike drops
 
 
 def _prepare_spatial_support(
@@ -3417,7 +3418,7 @@ def _prepare_spatial_support(
         else None
     )
 
-    time_support = _resolve_spatial_time_support(
+    time_support, drop_message = _resolve_spatial_time_support(
         env,
         times,
         positions,
@@ -3451,6 +3452,7 @@ def _prepare_spatial_support(
         linear_intervals=linear_intervals,
         time_support=time_support,
         analysis_settings=settings,
+        drop_message=drop_message,
     )
 
 
@@ -3628,6 +3630,7 @@ def _spatial_rate_maps(
         time_allocation=time_allocation,
         linear_intervals=support.linear_intervals,
         drop_scope="" if single_unit else "across all neurons ",
+        drop_message=support.drop_message,
     )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).

@@ -239,7 +239,7 @@ def test_analysis_settings_survive_indexing_and_exports(partial_recording, tmp_p
         spike_window=(0, 10),
         max_gap=0.3,
         min_occupancy=0.2,
-        bandwidth=2.0,
+        bandwidth=3.0,
         speed=np.full(len(times), 10.0),
         min_speed=5.0,
     )

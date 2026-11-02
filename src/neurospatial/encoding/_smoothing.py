@@ -88,8 +88,12 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
     custom units, it is 2.5 median graph-edge lengths (or bin widths when no
     edges exist). Polar environments use physical graph lengths and radial
     extent; their angular coordinate never enters a length comparison.
-    An explicit value is always in environment coordinates.
+    An explicit value is always in environment coordinates; a positive one
+    below a quarter of the median bin length warns, since it barely smooths
+    and is usually in other units (metres on a cm environment).
     """
+    if bandwidth is not None and bandwidth > 0:
+        _warn_if_below_bin_length(env, float(bandwidth))
     if bandwidth is None:
         from neurospatial._units import units_per_centimeter
 
@@ -121,6 +125,31 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             stacklevel=_external_stacklevel(),
         )
     return float(bandwidth)
+
+
+def _warn_if_below_bin_length(env: Any, bandwidth: float) -> None:
+    """Warn when ``bandwidth`` is below a quarter of the median bin length.
+
+    A bin's length is its physical width: a Cartesian bin's length, or the
+    side of a square or cube of its area or volume; a polar bin's radial
+    width, since its arc grows with the distance from the animal.
+    """
+    length = float(np.median(env.coordinate_system.fallback_lengths(env)))
+    if bandwidth >= 0.25 * length:
+        return
+    units = f" {env.units}" if env.units else ""
+    warnings.warn(
+        _format_error(
+            f"bandwidth={bandwidth:g} is far below the {length:.3g}{units} bin "
+            "size, so almost no smoothing happens.",
+            why="a bandwidth in different units (for example metres on a cm "
+            "environment) looks like this.",
+            fix="pass bandwidth in env.units, or method='binned' with "
+            "bandwidth=0 for no smoothing.",
+        ),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def kernel_ratio_rates(

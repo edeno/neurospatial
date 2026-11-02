@@ -16,6 +16,7 @@ as a convenience for code that wants the transposed layout.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -26,6 +27,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_trains
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
 from neurospatial._validation import validate_choice, validate_finite_scalar
 
@@ -163,6 +165,11 @@ or None
     bin_centers : NDArray[np.float64]
         Shape ``(n_time_bins,)``; bin left edge plus ``dt / 2``.
 
+    Warns
+    -----
+    UserWarning
+        If ``dt`` is longer than 1 s, which usually means milliseconds.
+
     Raises
     ------
     ValueError
@@ -276,9 +283,32 @@ or None
             )
         windows = np.array([[t_start, t_stop]], dtype=np.float64)
     counts, bin_centers = spike_counts_in_windows(trains, windows, dt)
+    warn_if_dt_in_milliseconds(dt, context="bin_spikes_in_time")
     if orient == "neuron_x_time":
         counts = counts.T
     return counts, bin_centers
+
+
+def warn_if_dt_in_milliseconds(dt: float, *, context: str) -> None:
+    """Warn when a time-bin width ``dt``, in seconds, is longer than 1 s.
+
+    Bins for decoding and population analyses last milliseconds to hundreds
+    of milliseconds, and a 1 s bin smears a running animal over tens of
+    centimeters, so a ``dt`` above 1 s is usually milliseconds.
+    """
+    if dt <= 1.0:
+        return
+    warnings.warn(
+        _format_error(
+            f"{context}: dt={dt:g} s is longer than 1 second.",
+            why="time bins for decoding last milliseconds to hundreds of "
+            "milliseconds; a 1 s bin smears a running animal over tens of cm, "
+            "so dt may be specified in milliseconds instead of seconds.",
+            fix=f"use dt={dt / 1000.0:g} if you meant {dt:g} milliseconds.",
+        ),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def spike_counts_in_windows(

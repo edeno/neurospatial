@@ -526,7 +526,7 @@ class TestSparsityProperties:
         """Property: sparsity is in [0, 1], or NaN for a silent map."""
         firing_rate, occupancy = data
 
-        sp = sparsity(firing_rate, occupancy)
+        sp = sparsity(firing_rate, occupancy=occupancy)
 
         if not np.any((firing_rate > 0) & (occupancy > 0)):
             assert np.isnan(sp), f"Silent map gave sparsity {sp}, expected NaN"
@@ -550,7 +550,7 @@ class TestSparsityProperties:
         # Create uniform firing at the given rate
         firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
 
-        sp = sparsity(firing_rate, occupancy)
+        sp = sparsity(firing_rate, occupancy=occupancy)
 
         # Property: uniform firing → sparsity very close to 1.0
         # Allow small numerical tolerance
@@ -574,7 +574,7 @@ class TestSparsityProperties:
         peak_idx = n_bins // 2
         firing_rate[peak_idx] = 100.0
 
-        sp = sparsity(firing_rate, occupancy)
+        sp = sparsity(firing_rate, occupancy=occupancy)
 
         # Property: single-bin firing → sparsity ≈ occupancy fraction in that bin
         # (not always "low" - depends on occupancy distribution)
@@ -608,7 +608,7 @@ class TestSelectivityProperties:
         if np.all(firing_rate == 0):
             pytest.skip("All-zero firing rate")
 
-        sel = selectivity(firing_rate, occupancy)
+        sel = selectivity(firing_rate, occupancy=occupancy)
 
         # Property: selectivity >= 1.0 always
         # (peak rate is always >= mean rate by definition)
@@ -632,7 +632,7 @@ class TestSelectivityProperties:
         # Create uniform firing
         firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
 
-        sel = selectivity(firing_rate, occupancy)
+        sel = selectivity(firing_rate, occupancy=occupancy)
 
         # Property: uniform firing → selectivity = 1.0
         # Allow small numerical tolerance
@@ -654,7 +654,7 @@ class TestSelectivityProperties:
         n_active = max(2, n_bins // 10)  # At least 2 bins
         firing_rate[:n_active] = 100.0
 
-        sel = selectivity(firing_rate, occupancy)
+        sel = selectivity(firing_rate, occupancy=occupancy)
 
         # Property: sparse firing → selectivity > 1.0 (higher than uniform)
         # Note: Exact value depends on occupancy distribution
@@ -682,7 +682,7 @@ class TestSkaggsInformationProperties:
         """Property: Skaggs information is non-negative, or NaN for a silent map."""
         firing_rate, occupancy = data
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         if not np.any((firing_rate > 0) & (occupancy > 0)):
             assert np.isnan(info), f"Silent map gave information {info}, expected NaN"
@@ -706,7 +706,7 @@ class TestSkaggsInformationProperties:
         # Create uniform firing
         firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         # Property: uniform firing → information ≈ 0.0
         assert info < 0.01, f"Uniform firing information {info} should be close to 0.0"
@@ -727,7 +727,7 @@ class TestSkaggsInformationProperties:
         firing_rate[max(0, peak_idx - 2) : min(n_bins, peak_idx + 3)] = 10.0
         firing_rate[peak_idx] = 50.0  # Peak
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         # Property: selective firing → information > 0
         # Note: For highly non-uniform occupancy (which Hypothesis can generate),
@@ -842,8 +842,8 @@ class TestCrossMetricProperties:
         if np.all(firing_rate == 0):
             pytest.skip("All-zero firing rate")
 
-        sp = sparsity(firing_rate, occupancy)
-        sel = selectivity(firing_rate, occupancy)
+        sp = sparsity(firing_rate, occupancy=occupancy)
+        sel = selectivity(firing_rate, occupancy=occupancy)
 
         # For uniform firing (high sparsity ~ 1.0):
         # - sparsity should be high
@@ -871,7 +871,7 @@ class TestCrossMetricProperties:
         # Create uniform firing
         firing_rate = np.ones(n_bins, dtype=np.float64) * 10.0
 
-        info = skaggs_information(firing_rate, occupancy)
+        info = skaggs_information(firing_rate, occupancy=occupancy)
 
         # Property: uniform firing → information ≈ 0.0
         assert info < 0.01, (

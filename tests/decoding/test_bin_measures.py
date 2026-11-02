@@ -206,7 +206,8 @@ def test_mixed_measure_environment_needs_one_measure():
 def test_impossible_spikes_fall_back_to_the_prior_over_space():
     """A time bin no position can explain keeps the uniform-over-space prior."""
     silent = np.zeros((1, COARSE.n_bins))
-    result = decode_position(COARSE, np.array([[1]]), silent, dt=DT)
+    with pytest.warns(UserWarning, match="rate 0 for every neuron"):
+        result = decode_position(COARSE, np.array([[1]]), silent, dt=DT)
 
     np.testing.assert_allclose(result.posterior, [[0.5] + [0.1] * 5])
 

@@ -541,7 +541,7 @@ class ViewRateResult(SingleUnitRateMixin):
         from neurospatial.encoding._metrics import spatial_information
 
         return spatial_information(
-            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
+            _to_numpy(self.firing_rate), occupancy=_to_numpy(self.occupancy)
         )
 
     def spatial_information_bias(self) -> float:

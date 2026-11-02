@@ -709,9 +709,10 @@ def test_final_sample_is_outside_sampling_intervals(env_1d) -> None:
     # One spike just before the final timestamp, and one exactly on it.
     spike_times = np.array([times[-1] - 0.05, times[-1]])
 
-    counts = bin_spike_trains(
-        env_1d, [spike_times], times, positions, speed=speed, min_speed=min_speed
-    )[0][0]
+    with pytest.warns(UserWarning, match="1/2 spike_times .* fell outside"):
+        counts = bin_spike_trains(
+            env_1d, [spike_times], times, positions, speed=speed, min_speed=min_speed
+        )[0][0]
     # CHANGELOG: final-timestamp spikes are time-dropped; the interior spike
     # still uses the last interval's speed and is counted.
     assert counts.sum() == 1

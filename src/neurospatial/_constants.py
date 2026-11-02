@@ -14,6 +14,14 @@ RELATIVE_TOLERANCE = 1e-9
 #: Absolute tolerance for np.isclose() comparisons, in the compared values' units
 ABSOLUTE_TOLERANCE = 1e-9
 
+# Discarded-data warnings
+# -----------------------
+
+#: Fraction of the input (seconds of position samples, or spikes) an analysis
+#: may discard before it warns. Brief tracking dropouts lose well under 5%; a
+#: units or clock mismatch loses most of the data.
+DISCARD_WARN_FRACTION = 0.05
+
 # Numerical stability
 # -------------------
 

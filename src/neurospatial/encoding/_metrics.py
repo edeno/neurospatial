@@ -167,8 +167,8 @@ __all__ = [
 
 def spatial_information(
     firing_rate: ArrayLike,
-    occupancy: ArrayLike,
     *,
+    occupancy: ArrayLike,
     base: float = 2.0,
 ) -> float | Any:
     """Compute Skaggs spatial information (bits per spike) for single neuron.
@@ -185,7 +185,8 @@ def spatial_information(
     occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
         over bins with finite rates and occupancy. Observed zero rates remain
-        included.
+        included. Keyword-only: it has the shape of ``firing_rate``, so a
+        swapped positional pair would run silently.
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), np.e for nats.
 
@@ -230,7 +231,7 @@ def spatial_information(
     >>> # Uniform firing → zero information
     >>> firing_rate = np.ones(100) * 3.0
     >>> occupancy = np.ones(100)
-    >>> info = spatial_information(firing_rate, occupancy)
+    >>> info = spatial_information(firing_rate, occupancy=occupancy)
     >>> abs(info) < 1e-6  # Should be ~0
     True
 
@@ -238,7 +239,7 @@ def spatial_information(
     >>> firing_rate = np.zeros(100)
     >>> firing_rate[50] = 30.0  # Fires only in bin 50
     >>> occupancy = np.ones(100)
-    >>> info = spatial_information(firing_rate, occupancy)
+    >>> info = spatial_information(firing_rate, occupancy=occupancy)
     >>> info > 4.0  # High spatial info
     True
 
@@ -735,6 +736,7 @@ def _beyond_bias(result: Any, min_info: float, *, kind: str) -> bool:
 
 def sparsity(
     firing_rate: ArrayLike,
+    *,
     occupancy: ArrayLike,
 ) -> float | Any:
     """Compute sparsity of spatial firing for single neuron.
@@ -750,7 +752,8 @@ def sparsity(
     occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
         over bins with finite rates and occupancy. Observed zero rates remain
-        included.
+        included. Keyword-only: it has the shape of ``firing_rate``, so a
+        swapped positional pair would run silently.
 
     Returns
     -------
@@ -792,7 +795,7 @@ def sparsity(
     >>> # Uniform firing → high sparsity (close to 1)
     >>> firing_rate = np.ones(100) * 5.0
     >>> occupancy = np.ones(100)
-    >>> spars = sparsity(firing_rate, occupancy)
+    >>> spars = sparsity(firing_rate, occupancy=occupancy)
     >>> spars > 0.99
     True
 
@@ -800,7 +803,7 @@ def sparsity(
     >>> firing_rate = np.zeros(100)
     >>> firing_rate[50] = 30.0  # Fires only in bin 50
     >>> occupancy = np.ones(100)
-    >>> spars = sparsity(firing_rate, occupancy)
+    >>> spars = sparsity(firing_rate, occupancy=occupancy)
     >>> spars < 0.1
     True
 
@@ -1197,6 +1200,7 @@ def _score_units(
 
 def selectivity(
     firing_rate: ArrayLike,
+    *,
     occupancy: ArrayLike,
 ) -> float:
     """Compute spatial selectivity (peak rate / mean rate).
@@ -1211,7 +1215,9 @@ def selectivity(
     firing_rate : ArrayLike, shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     occupancy : ArrayLike, shape (n_bins,)
-        Occupancy probability (normalized to sum to 1).
+        Occupancy probability (normalized to sum to 1). Keyword-only: it
+        has the shape of ``firing_rate``, so a swapped positional pair would
+        run silently.
 
     Returns
     -------
@@ -1249,7 +1255,7 @@ def selectivity(
     >>> # Uniform firing -> selectivity = 1.0
     >>> firing_rate = np.ones(100) * 5.0
     >>> occupancy = np.ones(100) / 100
-    >>> select = selectivity(firing_rate, occupancy)
+    >>> select = selectivity(firing_rate, occupancy=occupancy)
     >>> abs(select - 1.0) < 1e-6
     True
 
@@ -1300,8 +1306,8 @@ def selectivity(
 
 def information_per_second(
     firing_rate: ArrayLike,
-    occupancy: ArrayLike,
     *,
+    occupancy: ArrayLike,
     base: float = 2.0,
 ) -> float:
     """Compute spatial information in bits per second.
@@ -1315,7 +1321,9 @@ def information_per_second(
     firing_rate : ArrayLike, shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     occupancy : ArrayLike, shape (n_bins,)
-        Occupancy probability (normalized to sum to 1).
+        Occupancy probability (normalized to sum to 1). Keyword-only: it
+        has the shape of ``firing_rate``, so a swapped positional pair would
+        run silently.
     base : float, default=2.0
         Logarithm base for information calculation. Use 2.0 for bits,
         np.e for nats.
@@ -1356,7 +1364,7 @@ def information_per_second(
     >>> firing_rate = np.zeros(100)
     >>> firing_rate[50] = 10.0  # 10 Hz in one bin, 0.1 Hz mean
     >>> occupancy = np.ones(100) / 100
-    >>> info_rate = information_per_second(firing_rate, occupancy)
+    >>> info_rate = information_per_second(firing_rate, occupancy=occupancy)
     >>> info_rate > 0
     True
 
@@ -1371,7 +1379,7 @@ def information_per_second(
            the spatial and directional firing of hippocampal neurons. J Neurosci 14(11).
     """
     # Compute Skaggs information (bits/spike)
-    info_content = spatial_information(firing_rate, occupancy, base=base)
+    info_content = spatial_information(firing_rate, occupancy=occupancy, base=base)
 
     firing_rate = np.asarray(firing_rate)
     occupancy = np.asarray(occupancy)
@@ -1450,7 +1458,7 @@ def mutual_information(
 
     Earlier versions returned Skaggs information rate under this name.
     To retain that rate-map calculation in bits/second, use
-    ``information_per_second(firing_rate, occupancy)``. A mean rate map does
+    ``information_per_second(firing_rate, occupancy=occupancy)``. A mean rate map does
     not specify response variability and cannot determine mutual information
     without an additional response model or observed joint histogram.
 
@@ -1469,7 +1477,7 @@ def mutual_information(
     migration = (
         "mutual_information requires a 2-D joint position-response histogram. "
         "Mean firing rates and occupancy do not determine mutual information. "
-        "For a rate map, use information_per_second(firing_rate, occupancy) "
+        "For a rate map, use information_per_second(firing_rate, occupancy=occupancy) "
         "for the Skaggs information rate in bits/second."
     )
     if occupancy is not None:
