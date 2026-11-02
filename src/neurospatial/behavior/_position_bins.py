@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,6 +14,7 @@ from neurospatial._intervals import (
     start_allocation,
     warn_excluded_intervals,
 )
+from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -132,6 +134,13 @@ def sample_bins(
     ValueError
         If times are invalid, the arrays do not match, or the positions do
         not have the environment's number of coordinates.
+
+    Warns
+    -----
+    UserWarning
+        If more than half of the positions with finite coordinates are
+        outside the environment (usually a unit or coordinate-frame
+        mismatch).
     """
     from neurospatial._validation import validate_times_positions
 
@@ -149,7 +158,34 @@ def sample_bins(
             )
         )
     bins = np.asarray(env.bin_at(p), dtype=np.int64)
+    finite = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
+    _warn_if_mostly_outside(bins, finite, call=call)
     return t, bins
+
+
+def _warn_if_mostly_outside(
+    bins: NDArray[np.int64], finite: NDArray[np.bool_], *, call: str
+) -> None:
+    """Warn once when more than half of the finite positions are outside.
+
+    NaN positions are missing, not outside, so they are left out of the
+    count. A majority outside usually means positions in other units (mm
+    against an environment in cm) or another coordinate frame, which leaves
+    a detector running on the few samples that happen to land inside.
+    """
+    n_finite = int(np.count_nonzero(finite))
+    n_outside = int(np.count_nonzero(finite & (bins < 0)))
+    if n_finite == 0 or 2 * n_outside <= n_finite:
+        return
+    warnings.warn(
+        f"{call}(): {n_outside} of {n_finite} positions with finite coordinates "
+        f"({n_outside / n_finite:.0%}) are outside the environment, so the "
+        "result rests on the few samples inside and is probably misleading. "
+        "Fix: check that positions and the environment use the same units "
+        "(for example mm against cm) and coordinate frame.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def bridge_missing_positions(

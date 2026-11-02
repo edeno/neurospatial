@@ -268,3 +268,52 @@ def test_an_outside_sample_ends_a_lap():
         )
     )
     assert not any(lap.start_time < times[k] < lap.stop_time for lap in laps)
+
+
+def _shuttle_in_cm():
+    """A 100 cm track and three runs between its end zones, in cm."""
+    times = np.arange(0.0, 30.0, 0.05)
+    x = 50.0 - 48.0 * np.cos(2 * np.pi * times / 20.0)
+    positions = np.column_stack([x, np.zeros_like(x)])
+    track = Environment.from_samples(positions, bin_size=4.0)
+    regions = Regions()
+    regions.add("left", polygon=box(0, -5, 10, 5))
+    regions.add("right", polygon=box(90, -5, 100, 5))
+    return track.with_regions(regions), times, positions
+
+
+@pytest.mark.parametrize(
+    "detect",
+    [
+        lambda e, t, p: detect_trials(e, t, p, regions=["left", "right"]),
+        lambda e, t, p: detect_region_crossings(e, t, p, region_name="left"),
+        lambda e, t, p: detect_goal_directed_runs(
+            e, t, p, goal_region="right", min_progress=5.0
+        ),
+    ],
+    ids=["detect_trials", "detect_region_crossings", "detect_goal_directed_runs"],
+)
+def test_positions_mostly_outside_the_environment_warn(detect):
+    """Positions in mm against an environment in cm fall mostly outside."""
+    track, times, positions = _shuttle_in_cm()
+    in_mm = positions * 10.0
+    # By hand: a sample is inside only within the track's 100 cm.
+    inside = np.abs(in_mm[:, 0] - 50.0) <= 52.0
+    assert inside.mean() < 0.5
+    with pytest.warns(UserWarning, match=r"outside the environment.*unit") as record:
+        detect(track, times, in_mm)
+    message = str(next(w.message for w in record if "outside" in str(w.message)))
+    n_outside = int(np.count_nonzero(track.bin_at(in_mm) < 0))
+    assert f"{n_outside} of {times.size}" in message
+    assert record[0].filename == __file__
+
+
+def test_nan_positions_do_not_count_as_outside():
+    track, times, positions = _shuttle_in_cm()
+    lost = positions.copy()
+    lost[: 2 * times.size // 3] = np.nan  # most samples missing, none outside
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*outside the environment.*")
+        detect_trials(track, times, lost, regions=["left", "right"])

@@ -215,9 +215,13 @@ def test_rows_outside_the_environment_are_not_bridged_by_region_detectors(
     env, times, positions = nan_bridged_track
     outside = positions.copy()
     outside[1::2] = [500.0, 500.0]
-    with pytest.warns(
-        UserWarning, match=r"excluded ALL.*samples out of bounds or at NaN positions"
-    ) as record:
+    with (
+        pytest.warns(UserWarning, match="outside the environment"),
+        pytest.warns(
+            UserWarning,
+            match=r"excluded ALL.*samples out of bounds or at NaN positions",
+        ) as record,
+    ):
         CALLS[name](env, times, outside, max_gap=None)
     assert record[0].filename == __file__
 
