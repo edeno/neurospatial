@@ -23,7 +23,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._observation import _validated_signal_times
-from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._pynapple import (
+    intervals_from_interval_set,
+    is_pynapple_type,
+    reads_pynapple_samples,
+)
 from neurospatial._results import marked_read_only, plain_value
 from neurospatial._stacklevel import _external_stacklevel
 
@@ -1375,16 +1379,33 @@ _MEMBERS = frozenset(
 
 
 def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]:
-    """Require an :class:`Intervals`; a list of records gets the fix."""
+    """``value`` as :class:`Intervals`; a pynapple ``IntervalSet`` is converted.
+
+    The set is read as :func:`neurospatial.io.from_pynapple` reads it:
+    metadata become fields, an ``interval_id`` column the ids, and each
+    inclusive ``end`` the half-open stop holding the same timestamps.
+    Anything else is refused with how to build an ``Intervals`` from it.
+    """
     if isinstance(value, Intervals):
         return value
+    if is_pynapple_type(value, "IntervalSet"):
+        converted: Intervals[Interval] = intervals_from_interval_set(value)
+        return converted
+    fix = (
+        "wrap the table with Intervals.from_dataframe(table) (columns "
+        "start_time, stop_time, then any fields)"
+        if hasattr(value, "columns")
+        else "pass the Intervals from detect_trials() or read_trials(), build "
+        "one with Intervals.from_arrays(start, stop), or wrap records with "
+        f"neurospatial.Intervals({name})"
+    )
     raise TypeError(
         _format_error(
-            f"{owner}: {name} must be an Intervals, got {type(value).__name__}.",
-            why="consumers read fields (for example outcome) by name, so trials "
-            "detected, loaded from a task log or read from NWB work the same way.",
-            fix=f"pass the Intervals from detect_trials() or read_trials(), or "
-            f"wrap records with neurospatial.Intervals({name}).",
+            f"{owner}: {name} must be an Intervals or a pynapple IntervalSet, got "
+            f"{type(value).__name__}.",
+            why="intervals are half-open [start, stop) rows with named fields and "
+            "stable ids, whatever their source.",
+            fix=fix + ".",
         )
     )
 

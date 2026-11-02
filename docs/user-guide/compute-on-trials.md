@@ -78,7 +78,8 @@ interval_id
 A trial runs from departure (leaving a well) to arrival (entering the next).
 Your own trials work the same way: a task log through
 `Intervals.from_dataframe`, an NWB trials table through `read_intervals`, or
-a pynapple `IntervalSet` through `from_pynapple`.
+a pynapple `IntervalSet` through `from_pynapple` (the trial functions also take
+the `IntervalSet` itself).
 
 ## 1. Restrict to some trials
 

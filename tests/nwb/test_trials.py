@@ -104,6 +104,34 @@ class TestWriteTrials:
             write_trials(empty_nwb, list(detected))
         assert empty_nwb.trials is None
 
+    @pytest.mark.pynapple
+    def test_an_intervalset_writes_as_from_pynapple_reads_it(self, empty_nwb):
+        """Ids and metadata kept; the inclusive end becomes the half-open stop."""
+        nap = pytest.importorskip("pynapple")
+        from neurospatial.io import from_pynapple
+        from neurospatial.io.nwb import write_trials
+
+        from .conftest import create_empty_nwb
+
+        iset = nap.IntervalSet(
+            start=[1.0, 10.0],
+            end=[6.0, 18.0],
+            metadata={"interval_id": [4, 2], "goal": ["left", "right"]},
+        )
+        expected = create_empty_nwb()
+        write_trials(expected, from_pynapple(iset))
+
+        write_trials(empty_nwb, iset)
+
+        table = empty_nwb.trials.to_dataframe()
+        pd.testing.assert_frame_equal(table, expected.trials.to_dataframe())
+        assert table["interval_id"].tolist() == [4, 2]
+        assert table["goal"].tolist() == ["left", "right"]
+        assert table["stop_time"].tolist() == [
+            np.nextafter(6.0, np.inf),
+            np.nextafter(18.0, np.inf),
+        ]
+
     def test_field_without_an_nwb_column_type_is_refused(self, empty_nwb):
         from neurospatial.io.nwb import write_trials
 

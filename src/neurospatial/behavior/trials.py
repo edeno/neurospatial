@@ -54,11 +54,14 @@ def trials_between_visits(
 
     Parameters
     ----------
-    visits : Intervals
+    visits : Intervals or IntervalSet
         One row per visit, ``[arrival, departure)`` in seconds, with a field
         naming the region. The names must be the environment's region names
         when the trials are used with it (map port labels first, for example
-        ``pokes["port"].map({"Poke_1": "well_1", ...})``).
+        ``pokes["port"].map({"Poke_1": "well_1", ...})``). A pynapple
+        ``IntervalSet`` is read as :func:`~neurospatial.io.from_pynapple`
+        reads it: metadata as fields, its inclusive ``end`` as the half-open
+        stop.
     region : str, default="region"
         The field holding each visit's region name.
 
@@ -79,7 +82,8 @@ def trials_between_visits(
     Raises
     ------
     TypeError
-        If ``visits`` is not an Intervals, or a region value is not a name.
+        If ``visits`` is not an Intervals or a pynapple IntervalSet, or a
+        region value is not a name.
     ValueError
         If two visits overlap (a trial would end before it starts), or
         ``region`` is not a field.

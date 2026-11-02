@@ -714,3 +714,22 @@ def test_sel_refuses_an_id_array_that_is_not_one_dimensional(
     with pytest.raises(ValueError, match="1-D"):
         trials.sel(interval_id=np.array([[3, 5]]))
     assert trials.sel(interval_id=[5, 3]).interval_ids.tolist() == [3, 5]
+
+
+def test_trial_consumers_say_how_to_make_intervals() -> None:
+    from neurospatial.behavior import time_to_goal
+
+    times = np.arange(3.0)
+    table = pd.DataFrame(
+        {"start_time": [0.0], "stop_time": [1.0], "outcome": ["reached"]}
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"(?s)trials must be an Intervals or a pynapple IntervalSet, got "
+        r"DataFrame.*Intervals\.from_dataframe\(table\)",
+    ):
+        time_to_goal(times, table)
+    with pytest.raises(
+        TypeError, match=r"(?s)got list.*wrap records with neurospatial\.Intervals"
+    ):
+        time_to_goal(times, [Interval(0.0, 1.0, {"outcome": "reached"})])

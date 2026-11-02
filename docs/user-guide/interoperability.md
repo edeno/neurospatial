@@ -606,7 +606,11 @@ env.occupancy(tsdframe.t, tsdframe.values, epochs=tsdframe.time_support)
 **An `IntervalSet`** is accepted wherever neurospatial takes intervals:
 `epochs=`, `spike_window=`, `filter_by_intervals`, `intervals_to_events`
 (its metadata columns are fields that `preserve_fields=` copies onto the
-events), the per-event replay functions such as `mean_pairwise_bias`, and, as
+events), the trial functions (`trials_between_visits`, `time_to_goal`,
+`path_progress`, `distance_to_goal`, `compute_vte_session`), `write_trials`
+and `write_laps`, which read it as `from_pynapple` does (metadata as fields,
+an `interval_id` column as the ids), the per-event replay functions such as
+`mean_pairwise_bias`, and, as
 a one-row set, the `interval=` of the one-event replay functions. Each inclusive
 `end` becomes the next float above it, so a point at `end` stays inside, as in
 pynapple. Pass the set itself rather than `iset.as_dataframe()`: that table's
