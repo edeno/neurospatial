@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import BinIndexOutOfRangeError, Environment, Intervals, Regions
+from neurospatial import Environment, Intervals, Regions
 from neurospatial.behavior.segmentation import Trial
 
 # =============================================================================
@@ -357,45 +357,38 @@ def test_time_to_goal_arrival_is_outside_the_trial():
 
 
 # =============================================================================
-# cost_to_goal() Tests
+# distance_to_goal() travel-cost Tests
 # =============================================================================
 
 
-def test_cost_to_goal_uniform(simple_environment_with_regions):
-    """Test cost to goal with uniform cost (equivalent to geodesic distance)."""
-    from neurospatial.behavior.navigation import cost_to_goal, distance_to_goal
+def _cost(env, position_bins, goal="goal1", intervals=None, **costs):
+    """distance_to_goal from the centres of ``position_bins``, one sample per second."""
+    from neurospatial.behavior.navigation import distance_to_goal
 
-    env = simple_environment_with_regions
-
-    # Get bins
-    start_bin = env.bins_in_region("start")[0]
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Create simple trajectory: start → intermediate → goal
-    position_bins = np.array([start_bin, 5, goal_bin])
-
-    # Compute cost with uniform cost (no cost_map or terrain_difficulty)
-    cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)
-
-    # Geodesic distance from the bin centres, for comparison
-    distance = distance_to_goal(
-        env, np.arange(3.0), env.bin_centers[position_bins], goal="goal1"
+    times = np.arange(len(position_bins), dtype=float)
+    return distance_to_goal(
+        env, times, env.bin_centers[position_bins], intervals, goal=goal, **costs
     )
 
-    # With uniform cost, cost should equal geodesic distance
+
+def test_cost_to_goal_uniform(simple_environment_with_regions):
+    """No extra cost is the geodesic distance."""
+    env = simple_environment_with_regions
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+    position_bins = np.array([start_bin, 5, goal_bin])
+
+    cost = _cost(env, position_bins, cost_map=np.zeros(env.n_bins))
+    distance = _cost(env, position_bins)
+
     np.testing.assert_array_almost_equal(cost, distance)
-
-    # Cost should decrease as we approach goal
     assert cost[0] > cost[1] > cost[2]
-
-    # Cost at goal should be 0
     assert cost[2] == 0.0
 
 
 def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     """Test cost to goal with cost map (punishment zones)."""
-    from neurospatial.behavior.navigation import cost_to_goal
-
     env = simple_environment_with_regions
 
     start_bin = env.bins_in_region("start")[0]
@@ -409,13 +402,8 @@ def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     # Trajectory through punishment zone
     position_bins = np.array([start_bin, 4, goal_bin])
 
-    # Compute cost with cost map
-    cost_with_map = cost_to_goal(
-        position_bins, env, goal_bins=goal_bin, cost_map=cost_map
-    )
-
-    # Compute cost without map
-    cost_uniform = cost_to_goal(position_bins, env, goal_bins=goal_bin)
+    cost_with_map = _cost(env, position_bins, cost_map=cost_map)
+    cost_uniform = _cost(env, position_bins)
 
     # Cost with punishment zone should be higher than uniform cost
     assert cost_with_map[0] > cost_uniform[0]
@@ -426,8 +414,6 @@ def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
 
 def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
     """Test cost to goal with terrain difficulty (narrow passages)."""
-    from neurospatial.behavior.navigation import cost_to_goal
-
     env = simple_environment_with_regions
 
     start_bin = env.bins_in_region("start")[0]
@@ -439,16 +425,10 @@ def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
     easy_bins = [start_bin, goal_bin]  # Only start and goal are easy
     terrain_difficulty[easy_bins] = 1.0
 
-    # Trajectory
     position_bins = np.array([start_bin, 5, goal_bin])
 
-    # Compute cost with terrain difficulty
-    cost_with_terrain = cost_to_goal(
-        position_bins, env, goal_bins=goal_bin, terrain_difficulty=terrain_difficulty
-    )
-
-    # Compute cost without terrain
-    cost_uniform = cost_to_goal(position_bins, env, goal_bins=goal_bin)
+    cost_with_terrain = _cost(env, position_bins, terrain_difficulty=terrain_difficulty)
+    cost_uniform = _cost(env, position_bins)
 
     # Cost with terrain difficulty should be higher (most bins are 2x harder)
     assert cost_with_terrain[0] > cost_uniform[0]
@@ -462,104 +442,70 @@ def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
 
 def test_cost_to_goal_combined(simple_environment_with_regions):
     """Test cost to goal with cost map + terrain combined."""
-    from neurospatial.behavior.navigation import cost_to_goal
-
     env = simple_environment_with_regions
 
     start_bin = env.bins_in_region("start")[0]
     goal_bin = env.bins_in_region("goal1")[0]
 
-    # Create both cost map and terrain difficulty
     cost_map = np.ones(env.n_bins)
     cost_map[3] = 5.0  # High cost at bin 3
 
     terrain_difficulty = np.ones(env.n_bins)
     terrain_difficulty[4] = 2.0  # 2x difficulty at bin 4
 
-    # Trajectory
     position_bins = np.array([start_bin, 3, 4, goal_bin])
 
-    # Compute with combined cost
-    cost_combined = cost_to_goal(
-        position_bins,
+    cost_combined = _cost(
         env,
-        goal_bins=goal_bin,
+        position_bins,
         cost_map=cost_map,
         terrain_difficulty=terrain_difficulty,
     )
 
-    # Combined cost should account for both factors
     # All costs should be positive and decrease toward goal
     assert cost_combined[0] > 0
-
-    # Cost should decrease as we approach goal
     assert cost_combined[0] > cost_combined[-1]
-
-    # Cost at goal should be 0
     assert cost_combined[-1] == 0.0
 
 
 def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
-    """Test cost to goal with array of goal bins (dynamic)."""
-    from neurospatial.behavior.navigation import cost_to_goal
-
+    """A goal per interval: the last sample sits at goal1 but targets goal2."""
     env = simple_environment_with_regions
-
-    # Check goal2 exists
-    goal2_bins = env.bins_in_region("goal2")
-    if len(goal2_bins) == 0:
-        pytest.skip("goal2 region has no bins in random environment")
 
     start_bin = env.bins_in_region("start")[0]
     goal1_bin = env.bins_in_region("goal1")[0]
-    goal2_bin = goal2_bins[0]
 
-    # Create trajectory with dynamic goals
     position_bins = np.array([start_bin, 5, goal1_bin])
-    goal_bins_array = np.array(
-        [goal1_bin, goal1_bin, goal2_bin]
-    )  # Goal changes at last step
+    trials = Intervals.from_arrays([0.0, 2.0], [2.0, 3.0])
 
-    # Compute cost with dynamic goals
-    cost = cost_to_goal(position_bins, env, goal_bins=goal_bins_array)
+    cost = _cost(env, position_bins, ["goal1", "goal2"], trials)
 
-    # Check shape
     assert cost.shape == (3,)
-
-    # All costs should be non-negative
     assert np.all(cost >= 0)
+    # goal1 (10, 10) to goal2 (10, 0) is a straight 10 cm in the open box.
+    assert cost[2] == pytest.approx(10.0, rel=1e-12)
 
-    # At goal1 but targeting goal2, cost should be positive (distance from goal1 to goal2)
-    assert cost[2] > 0.0
 
-
-def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
-    """Test cost to goal with invalid bins (should handle gracefully)."""
-    from neurospatial.behavior.navigation import cost_to_goal
+def test_cost_to_goal_missing_samples_and_goals(simple_environment_with_regions):
+    """A position outside the environment, or an unknown goal, gives NaN."""
+    from neurospatial.behavior.navigation import distance_to_goal
 
     env = simple_environment_with_regions
 
-    goal_bin = env.bins_in_region("goal1")[0]
-
-    # Test 1: Invalid trajectory bins
-    position_bins = np.array([0, -1, 2])  # -1 is invalid
-    cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)
+    # A position outside the environment
+    positions = np.array([[0.0, 0.0], [500.0, 500.0], [0.0, 4.0]])
+    cost = distance_to_goal(env, np.arange(3.0), positions, goal="goal1")
     assert cost.shape == (3,)
-    assert not np.isnan(cost[0])  # Valid bin
-    assert np.isnan(cost[1])  # Invalid bin → NaN
-    assert not np.isnan(cost[2])  # Valid bin
+    assert not np.isnan(cost[0])
+    assert np.isnan(cost[1])
+    assert not np.isnan(cost[2])
 
-    # Test 2: -1 is the outside marker, never a single goal
-    position_bins = np.array([0, 1, 2])
-    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
-        cost_to_goal(position_bins, env, goal_bins=-1)
-
-    # Test 3: Dynamic goals with some invalid
-    goal_bins_array = np.array([goal_bin, -1, goal_bin])
-    cost = cost_to_goal(position_bins, env, goal_bins=goal_bins_array)
-    assert not np.isnan(cost[0])  # Valid goal
-    assert np.isnan(cost[1])  # Invalid goal → NaN
-    assert not np.isnan(cost[2])  # Valid goal
+    # An unknown goal (None) for one interval
+    trials = Intervals.from_arrays([0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
+    cost = _cost(env, np.array([0, 1, 2]), ["goal1", None, "goal1"], trials)
+    assert not np.isnan(cost[0])
+    assert np.isnan(cost[1])
+    assert not np.isnan(cost[2])
 
 
 # =============================================================================
@@ -567,11 +513,17 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 # =============================================================================
 
 
+def _times(samples) -> np.ndarray:
+    """30 Hz sample times, one per sample."""
+    return np.arange(len(samples)) / 30.0
+
+
 def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
     """Walking South down the North arm, the Northwest arm is on the right."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
-    env = ymaze_env
+    # Bin centres lie on the centreline, so any width puts them in their bins.
+    env = ymaze_env.with_track_width(1.0)
 
     # Y-maze has bins along edges, not just at nodes
 
@@ -604,8 +556,7 @@ def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
 
     # Call function
     turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
+        env, _times(position_bins), env.bin_centers[position_bins]
     )
 
     assert turn_seq == "right"
@@ -615,7 +566,8 @@ def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
     """Walking South down the North arm, the Northeast arm is on the left."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
-    env = ymaze_env
+    # Bin centres lie on the centreline, so any width puts them in their bins.
+    env = ymaze_env.with_track_width(1.0)
 
     bin_centers = env.bin_centers
     node_positions = {
@@ -646,8 +598,7 @@ def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
 
     # Call function
     turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
+        env, _times(position_bins), env.bin_centers[position_bins]
     )
 
     assert turn_seq == "left"
@@ -693,8 +644,7 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
 
     # Call function
     turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
+        env, _times(position_bins), env.bin_centers[position_bins]
     )
 
     # East, then North, then West: two counterclockwise turns.
@@ -705,9 +655,10 @@ def _turns_along(env, corners, samples_per_bin=60):
     """Turn labels for a walk that dwells in the bin at each corner, in order."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
-    bins = env.bin_at(np.asarray(corners, dtype=float))
-    assert np.all(bins >= 0)
-    return graph_turn_sequence(env, np.repeat(bins, samples_per_bin))
+    corners = np.asarray(corners, dtype=float)
+    assert np.all(env.bin_at(corners) >= 0)
+    positions = np.repeat(corners, samples_per_bin, axis=0)
+    return graph_turn_sequence(env, _times(positions), positions)
 
 
 @pytest.fixture(scope="module")
@@ -741,7 +692,8 @@ def test_graph_turn_sequence_straight(ymaze_env):
     """Test turn sequence for straight path (no turns, empty string)."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
-    env = ymaze_env
+    # Bin centres lie on the centreline, so any width puts them in their bins.
+    env = ymaze_env.with_track_width(1.0)
 
     # Get bin centers to map nodes to bins
     bin_centers = env.bin_centers
@@ -765,8 +717,7 @@ def test_graph_turn_sequence_straight(ymaze_env):
 
     # Call function
     turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
+        env, _times(position_bins), env.bin_centers[position_bins]
     )
 
     # Center → straight ahead is one direction, so no turn.
@@ -777,7 +728,8 @@ def test_graph_turn_sequence_one_step_is_not_a_turn(ymaze_env):
     """Two visited bins make one leg, which has no corner to turn at."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
-    env = ymaze_env
+    # Bin centres lie on the centreline, so any width puts them in their bins.
+    env = ymaze_env.with_track_width(1.0)
     bin_centers = env.bin_centers
 
     def find_closest_bin(pos):
@@ -787,7 +739,8 @@ def test_graph_turn_sequence_one_step_is_not_a_turn(ymaze_env):
     left_bin = find_closest_bin((-7.0, 7.0))
     position_bins = np.r_[np.full(10, center_bin), np.full(5, left_bin)]
 
-    assert graph_turn_sequence(env, position_bins) == ""
+    positions = env.bin_centers[position_bins]
+    assert graph_turn_sequence(env, _times(position_bins), positions) == ""
 
 
 def test_graph_turn_sequence_3d(simple_3d_env):
@@ -810,8 +763,7 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 
     # Call function
     turn_seq = graph_turn_sequence(
-        env,
-        position_bins,
+        env, _times(position_bins), env.bin_centers[position_bins]
     )
 
     # Turns are read in the x-y plane. The walk climbs in z and steps along y
@@ -840,36 +792,27 @@ def test_path_progress_array_length_mismatch(environment_with_polygon_regions):
 
 
 def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions):
-    """Test cost_to_goal with dynamic goals AND cost_map."""
-    from neurospatial.behavior.navigation import cost_to_goal
-
+    """A goal per interval combined with a cost_map."""
     env = simple_environment_with_regions
 
-    # Create trajectory visiting multiple bins
     position_bins = np.array([0, 5, 10, 15, 20])
+    # The goal switches from the bin centred at (6, 4) to the one at (2, 8).
+    trials = Intervals.from_arrays([0.0, 3.0], [3.0, 5.0])
+    goals = [env.bin_centers[20], env.bin_centers[10]]
 
-    # Dynamic goals (changes over time)
-    goal_bins = np.array([20, 20, 20, 10, 10])  # Goal switches
-
-    # Create cost map (make some bins costly)
     cost_map = np.ones(env.n_bins)
     cost_map[10:15] = 5.0  # High cost zone
 
-    # Compute cost with dynamic goals
-    costs = cost_to_goal(
-        position_bins,
-        env,
-        goal_bins=goal_bins,
-        cost_map=cost_map,
-    )
+    costs = _cost(env, position_bins, goals, trials, cost_map=cost_map)
 
-    # Should return valid costs
     assert costs.shape == (5,)
-    # All values should be either non-negative or NaN
     assert np.all((costs >= 0) | np.isnan(costs))
-
     # First position (at bin 0, goal at bin 20) should have > 0 cost
     assert costs[0] > 0
+    # Bin 20 is the first interval's goal, but the last sample there aims
+    # at bin 10 of the second interval.
+    assert costs[4] > 0
+    assert _cost(env, np.array([20]), env.bin_centers[20], cost_map=cost_map)[0] == 0
 
 
 def test_distance_to_goal_refuses_a_goal_outside(simple_environment_with_regions):

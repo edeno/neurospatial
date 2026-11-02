@@ -73,6 +73,11 @@ and approach rate come per trial in one call.
   centre. `compute_goal_directed_metrics` times arrival as entering the
   region; `goal_radius` is for point goals.
 
+**Fixed**
+
+- `path_progress` and `distance_to_goal` with no samples said "cannot reshape
+  array of size 0"; they now say that `times` and `positions` are empty.
+
 ### Trials aligned by time
 
 Trials, visits or laps can be laid out by time since their start or until

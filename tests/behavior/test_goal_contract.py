@@ -287,3 +287,18 @@ def test_turn_sequence_per_trial(arena):
     turns = graph_turn_sequence(arena, times, positions, trials)
     assert turns.tolist() == ["left", "right"]
     assert turns.index.name == "interval_id"
+
+
+@pytest.mark.parametrize(
+    ("function", "options"),
+    [
+        (distance_to_goal, {"goal": "east_well"}),
+        (approach_rate, {"goal": "east_well"}),
+        (goal_bias, {"goal": "east_well"}),
+        (compute_path_efficiency, {"goal": "east_well"}),
+        (graph_turn_sequence, {}),
+    ],
+)
+def test_empty_input_says_there_are_no_samples(arena, function, options):
+    with pytest.raises(ValueError, match="no samples|empty"):
+        function(arena, np.array([]), np.empty((0, 2)), **options)

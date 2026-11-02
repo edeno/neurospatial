@@ -821,6 +821,10 @@ def _validated_route_samples(
     if intervals is not None:
         intervals = require_intervals(intervals, name="intervals", owner=f"{call}()")
     t, p = validate_times_positions(times, positions, call=call)
+    if t.size == 0:
+        from neurospatial._observation import empty_samples_error
+
+        raise empty_samples_error(call, ("times", "positions"))
     p = p.reshape(len(p), -1)
     if p.shape[1] != env.n_dims:
         msg = (

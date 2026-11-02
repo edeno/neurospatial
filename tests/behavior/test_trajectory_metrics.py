@@ -134,6 +134,25 @@ class TestComputeStepLengths:
         assert isinstance(step_lengths_geo, np.ndarray)
 
 
+def _dwell_samples(
+    position_bins: np.ndarray, env: Environment = _HOME_ENV, dt: float = 0.1
+) -> tuple[np.ndarray, np.ndarray]:
+    """Times and positions that dwell ``dt`` at each bin centre in turn.
+
+    Occupancy gives each interval to the bin of its first sample, so a
+    closing sample repeats the last position: every listed sample then
+    holds exactly ``dt``, and occupancy is proportional to sample counts.
+    """
+    positions = env.bin_centers[np.r_[position_bins, position_bins[-1]]]
+    return np.arange(len(positions)) * dt, positions
+
+
+def _home_range(position_bins, env: Environment = _HOME_ENV, **kwargs) -> np.ndarray:
+    """compute_home_range of ``position_bins`` visited for 0.1 s per sample."""
+    times, positions = _dwell_samples(np.asarray(position_bins), env)
+    return compute_home_range(env, times, positions, **kwargs)
+
+
 class TestComputeHomeRange:
     """Test compute_home_range function."""
 
@@ -150,7 +169,7 @@ class TestComputeHomeRange:
             ]
         )
 
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=95.0)
+        home_range = _home_range(position_bins, percentile=95.0)
 
         # 95% of 100 visits = 95 visits
         # Bin 0 (50) + Bin 1 (30) + Bin 2 (15) = 95 visits = 95%
@@ -161,7 +180,7 @@ class TestComputeHomeRange:
         """Test that 100% includes all visited bins."""
         position_bins = np.array([0, 1, 2, 3, 0, 1, 2, 0, 1, 0])
 
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=100.0)
+        home_range = _home_range(position_bins, percentile=100.0)
 
         # Should include all unique bins
         assert set(home_range) == {0, 1, 2, 3}
@@ -171,7 +190,7 @@ class TestComputeHomeRange:
         # Bin 0: 40 visits, bin 1: 30, bins 2-4: 10 each.
         position_bins = np.repeat(np.arange(5), [40, 30, 10, 10, 10])
 
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=50.0)
+        home_range = _home_range(position_bins, percentile=50.0)
 
         # 40 visits are not yet half of 100; adding bin 1 reaches 70.
         np.testing.assert_array_equal(home_range, [0, 1])
@@ -179,7 +198,7 @@ class TestComputeHomeRange:
     def test_bins_tied_at_the_cutoff_are_all_included(self):
         """Uniform use has no 50% core: every bin is at the cutoff level."""
         position_bins = np.repeat(np.arange(10), 10)
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=50.0)
+        home_range = _home_range(position_bins, percentile=50.0)
         np.testing.assert_array_equal(home_range, np.arange(10))
 
     def test_ties_are_independent_of_sample_order(self):
@@ -188,17 +207,17 @@ class TestComputeHomeRange:
         position_bins = np.r_[np.repeat(0, 40), np.repeat([1, 2, 3], 20)]
         expected = [0, 1, 2, 3]
         np.testing.assert_array_equal(
-            compute_home_range(position_bins, _HOME_ENV, percentile=70.0), expected
+            _home_range(position_bins, percentile=70.0), expected
         )
         np.testing.assert_array_equal(
-            compute_home_range(position_bins[::-1].copy(), _HOME_ENV, percentile=70.0),
+            _home_range(position_bins[::-1].copy(), percentile=70.0),
             expected,
         )
 
     def test_equal_occupancy_is_ordered_by_bin_index(self):
         position_bins = np.r_[np.repeat(5, 30), np.repeat([3, 1, 4], 10)]
         np.testing.assert_array_equal(
-            compute_home_range(position_bins, _HOME_ENV, percentile=100.0), [5, 1, 3, 4]
+            _home_range(position_bins, percentile=100.0), [5, 1, 3, 4]
         )
 
     def test_time_weighted_ties_within_roundoff_are_ties(self):
@@ -208,7 +227,11 @@ class TestComputeHomeRange:
         times = np.r_[np.arange(9) * 0.1, 0.9]
         times = np.round(times, 10)
         home_range = compute_home_range(
-            position_bins, _HOME_ENV, times=times, percentile=50.0, max_gap=None
+            _HOME_ENV,
+            times,
+            _HOME_ENV.bin_centers[position_bins],
+            percentile=50.0,
+            max_gap=None,
         )
         np.testing.assert_array_equal(home_range, [0, 1, 2])
 
@@ -216,26 +239,26 @@ class TestComputeHomeRange:
         """Test that home_range returns bin indices (integers)."""
         position_bins = np.array([0, 1, 2, 1, 0, 1, 2])
 
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=95.0)
+        home_range = _home_range(position_bins, percentile=95.0)
 
         # Should be numpy array of integers
         assert isinstance(home_range, np.ndarray)
         assert home_range.dtype in [np.int32, np.int64, np.intp]
 
     def test_parameter_order(self):
-        """Test that parameter order is (position_bins, *, percentile)."""
-        position_bins = np.array([0, 1, 2, 1, 0])
+        """Test that parameter order is (env, times, positions, *, percentile)."""
+        times, positions = _dwell_samples(np.array([0, 1, 2, 1, 0]))
 
         # This should work without error
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=95.0)
+        home_range = compute_home_range(_HOME_ENV, times, positions, percentile=95.0)
         assert isinstance(home_range, np.ndarray)
 
     def test_time_weighted_occupancy_changes_ranking(self):
         """Time-weighted occupancy ranks long-dwell bins above high-count bins.
 
         Bin 0 is visited many times but each visit is brief, while bin 1 is
-        visited fewer times but with long dwells. Count-based occupancy ranks
-        bin 0 first; time-weighted occupancy must rank bin 1 first.
+        visited fewer times but with long dwells. Equal dwells rank bin 0
+        first; the recorded times must rank bin 1 first.
         """
         # 6 brief samples in bin 0, then 2 long-dwell samples in bin 1.
         position_bins = np.array([0, 0, 0, 0, 0, 0, 1, 1])
@@ -244,13 +267,17 @@ class TestComputeHomeRange:
         # samples.
         times = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 10.6])
 
-        # Count-based: bin 0 has 6 counts, bin 1 has 2 -> bin 0 first.
-        count_based = compute_home_range(position_bins, _HOME_ENV, percentile=100.0)
+        # Equal dwell per sample: bin 0 has 6, bin 1 has 2 -> bin 0 first.
+        count_based = _home_range(position_bins, percentile=100.0)
         assert count_based[0] == 0
 
         # Time-weighted: bin 1 dwell time dominates -> bin 1 first.
         time_weighted = compute_home_range(
-            position_bins, _HOME_ENV, times=times, percentile=100.0, max_gap=None
+            _HOME_ENV,
+            times,
+            _HOME_ENV.bin_centers[position_bins],
+            percentile=100.0,
+            max_gap=None,
         )
         assert time_weighted[0] == 1, (
             f"Time-weighted home range should rank long-dwell bin 1 first, "
@@ -264,20 +291,20 @@ class TestComputeHomeRange:
         )
         times = np.arange(len(position_bins), dtype=np.float64) * 0.05  # uniform dt
 
-        count_based = compute_home_range(position_bins, _HOME_ENV, percentile=95.0)
+        count_based = _home_range(position_bins, percentile=95.0)
         time_weighted = compute_home_range(
-            position_bins, _HOME_ENV, times=times, percentile=95.0
+            _HOME_ENV, times, _HOME_ENV.bin_centers[position_bins], percentile=95.0
         )
 
         assert set(count_based) == set(time_weighted)
 
     def test_time_weighted_length_mismatch_raises(self):
         """Mismatched times length raises ValueError."""
-        position_bins = np.array([0, 1, 2])
+        positions = _HOME_ENV.bin_centers[[0, 1, 2]]
         times = np.array([0.0, 0.1])  # wrong length
 
         with pytest.raises(ValueError, match="same length"):
-            compute_home_range(position_bins, _HOME_ENV, times=times)
+            compute_home_range(_HOME_ENV, times, positions)
 
     @pytest.mark.parametrize(
         "times",
@@ -290,29 +317,16 @@ class TestComputeHomeRange:
     )
     def test_invalid_times_raise(self, times):
         with pytest.raises(ValueError, match="times"):
-            compute_home_range(np.array([0, 1, 1, 2]), _HOME_ENV, times=times)
-
-    @pytest.mark.parametrize(
-        "kwargs",
-        [{"epochs": (0.0, 1.0)}, {"max_gap": 0.5}, {"max_gap": None}],
-        ids=["epochs", "max_gap", "max_gap_none"],
-    )
-    def test_time_gates_without_times_raise(self, kwargs):
-        with pytest.raises(ValueError, match="without times"):
-            compute_home_range(np.array([0, 0, 1]), _HOME_ENV, **kwargs)
+            compute_home_range(_HOME_ENV, times, _HOME_ENV.bin_centers[[0, 1, 1, 2]])
 
     @pytest.mark.parametrize("percentile", [0.0, -10.0, 100.5, np.nan])
     def test_percentile_outside_0_100_raises(self, percentile):
         with pytest.raises(ValueError, match="percentile"):
-            compute_home_range(np.array([0, 0, 1]), _HOME_ENV, percentile=percentile)
+            _home_range(np.array([0, 0, 1]), percentile=percentile)
 
     def test_fractional_percentile_gets_a_hint(self):
         with pytest.raises(ValueError, match=r"percentile=95"):
-            compute_home_range(np.array([0, 0, 1]), _HOME_ENV, percentile=0.95)
-
-    def test_float_bins_raise(self):
-        with pytest.raises(TypeError, match="integer"):
-            compute_home_range(np.array([0.0, 1.7, 2.0]), _HOME_ENV)
+            _home_range(np.array([0, 0, 1]), percentile=0.95)
 
 
 class TestMeanSquareDisplacement:
@@ -553,10 +567,9 @@ class TestTrajectoryMetricsIntegration:
         turn_angles = compute_planar_turn_angles(times, positions)
         step_lengths = compute_step_lengths(positions, metric="euclidean")
 
-        # Home range still uses bins (makes sense for occupancy-based metrics)
+        # Home range ranks the environment's bins by time-weighted occupancy
         env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
-        home_range = compute_home_range(position_bins, _HOME_ENV, percentile=95.0)
+        home_range = compute_home_range(env, times, positions, percentile=95.0)
 
         # MSD uses continuous positions
         _msd = mean_square_displacement(
@@ -992,15 +1005,24 @@ def test_home_range_ranks_bins_by_time_per_area():
     small, large = int(np.argmin(sizes)), np.argsort(sizes)[-2:]
     assert 10 / sizes[small] > 12 / sizes[large[0]]
     position_bins = np.repeat([small, large[0], large[1]], [10, 12, 8])
-    home_range = compute_home_range(position_bins, env, percentile=33.0)
+    # Bin centres locate back to their own bins.
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
+    home_range = _home_range(position_bins, env, percentile=33.0)
     np.testing.assert_array_equal(home_range, [small])
 
 
-def test_home_range_refuses_a_bin_the_environment_does_not_have():
-    with pytest.raises(ValueError, match="environment has 3 bins"):
-        compute_home_range(
-            np.array([0, 1, 3]),
-            Environment.from_samples(
-                np.arange(3.0)[:, None], bin_size=1.0, infer_active_bins=False
-            ),
-        )
+def test_home_range_leaves_out_time_outside_the_environment():
+    """Time outside the environment is in no bin and not in the total.
+
+    0.3 s in bin 0 and 0.2 s in bin 1 (the step out of the environment adds
+    nothing), then 1 s outside. Half of the 0.5 s observed is 0.25 s, held by
+    bin 0 alone; counting the time outside, half would need both bins.
+    """
+    env = Environment.from_samples(
+        np.arange(3.0)[:, None], bin_size=1.0, infer_active_bins=False
+    )
+    positions = np.r_[np.zeros(3), np.ones(3), np.full(10, 50.0)][:, None]
+    times = np.arange(len(positions)) * 0.1
+    assert env.bin_at(np.array([[50.0]]))[0] == -1
+    home_range = compute_home_range(env, times, positions, percentile=50.0)
+    np.testing.assert_array_equal(home_range, [0])
