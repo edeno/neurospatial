@@ -184,11 +184,9 @@ def _observed_visits(
     """
     from neurospatial._exceptions import _format_error
 
-    clock, bins = sample_bins(
-        env, times, positions, call=call, epochs=as_intervals(epochs, name="epochs")
-    )
-    validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
+    clock, bins, tracked = sample_bins(env, times, positions, call=call, epochs=windows)
+    validate_max_gap(max_gap)
     if isinstance(regions, str):
         msg = f"{call}(): regions must be a sequence of names, for example ['left', 'right']."
         raise TypeError(msg)
@@ -211,7 +209,7 @@ def _observed_visits(
     clock, bins, breaks, kept = bridge_missing_positions(
         clock,
         bins,
-        positions,
+        tracked,
         max_gap=max_gap,
         epochs=windows,
         break_before=validate_break_before(break_before, clock.size, call=call),

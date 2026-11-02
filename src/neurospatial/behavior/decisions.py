@@ -500,7 +500,7 @@ def decision_region_entry_time(
     _require_region_mask(
         env, region, operation="decision_region_entry_time()", argument="region"
     )
-    times, position_bins = sample_bins(
+    times, position_bins, _ = sample_bins(
         env, times, positions, call="decision_region_entry_time"
     )
     entry = first_entry(
