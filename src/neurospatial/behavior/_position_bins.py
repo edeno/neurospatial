@@ -11,6 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     EMPTY_RESULT,
+    drop_missing_samples,
     start_allocation,
     times_in_intervals,
     warn_excluded_intervals,
@@ -257,10 +258,5 @@ def bridge_missing_positions(
         times, bins, tracked, max_gap=max_gap, epochs=epochs, break_before=break_before
     ).gates
     warn_excluded_intervals(gates, result=result)
-    kept = np.flatnonzero(tracked)
-    if break_before is not None:
-        declared = np.cumsum(np.asarray(break_before, dtype=np.intp))
-        moved = np.zeros(kept.size, dtype=bool)
-        moved[1:] = declared[kept[1:]] > declared[kept[:-1]]
-        break_before = moved
+    kept, break_before = drop_missing_samples(tracked, break_before)
     return times[kept], bins[kept], break_before, kept
