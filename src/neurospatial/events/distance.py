@@ -22,6 +22,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
+    empty_selection_names,
     intersect_intervals,
     linear_allocated_occupancy,
     value_frame_bins,
@@ -31,7 +32,6 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.events._core import (
     _finite_times,
     _make_bin_edges,
-    empty_selection_names,
     warn_empty_selection,
     warn_no_events,
 )

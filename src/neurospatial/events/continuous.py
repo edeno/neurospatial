@@ -19,7 +19,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
+from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    as_intervals,
+    empty_selection_names,
+)
 from neurospatial._observation import validated_signals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
@@ -48,7 +52,6 @@ from neurospatial.events._core import (
     _finite_times,
     _is_real_number,
     _validate_window,
-    empty_selection_names,
     interval_events,
     warn_no_events,
 )

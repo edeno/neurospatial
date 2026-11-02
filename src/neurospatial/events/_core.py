@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import empty_selection_message
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -63,25 +64,14 @@ def _validate_event_indices(
         raise ValueError(msg)
 
 
-def empty_selection_names(
-    epochs: NDArray[np.float64] | None, spike_window: NDArray[np.float64] | None
-) -> list[str]:
-    """The resolved windows that are an empty selection (no rows)."""
-    return [
-        name
-        for name, windows in (("epochs", epochs), ("spike_window", spike_window))
-        if windows is not None and windows.shape[0] == 0
-    ]
-
-
 def warn_empty_selection(names: list[str], *, n_events: int, result: str) -> None:
     """Warn that an empty selection leaves no event to average."""
     warnings.warn(
-        f"{' and '.join(names)} {'select' if len(names) > 1 else 'selects'} no "
-        "time (an Intervals with no windows, "
-        f"such as a condition with no trials), so none of the {n_events} "
-        f"events is analyzed and {result} is NaN with n_events == 0. Fix: "
-        "select intervals with duration, or leave this condition out.",
+        empty_selection_message(
+            names,
+            f"none of the {n_events} events is analyzed and {result} is NaN "
+            "with n_events == 0",
+        ),
         UserWarning,
         stacklevel=_external_stacklevel(),
     )

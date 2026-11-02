@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    empty_selection_names,
     intervals_contain,
     ragged_arange,
     resolve_time_windows,
@@ -36,7 +37,6 @@ from neurospatial.events._core import (
     _snap_to,
     _validate_window,
     _window_bounds,
-    empty_selection_names,
     interval_events,
     warn_empty_selection,
     warn_no_events,
