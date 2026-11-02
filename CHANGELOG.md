@@ -55,7 +55,9 @@ by its trial.
   table with `start_time`/`stop_time` columns is read by those names; an
   NWB `TimeIntervals` points to `read_intervals`.
 - An explicit `epochs=` is intersected with a pynapple sample's
-  `time_support` instead of replacing it.
+  `time_support` instead of replacing it, including a `Tsd` passed as
+  `values` to `compute_tuning_curve(s)`. Epochs that miss the support get
+  the same clock-mismatch diagnostics as with plain arrays.
 - `from_pynapple` reads whole-number float `interval_id`s as ids and refuses
   ids that are not whole numbers or repeat, instead of renumbering.
 - `Intervals` checks every record's times (finite, start <= stop) and
@@ -71,11 +73,12 @@ by its trial.
   bridge a NaN position like a deleted row, as visits and trials do. A
   position outside the environment still breaks observation.
 - The behavior detectors warn when more than half of the tracked positions
-  fall outside the environment (often mm against cm), and
+  inside `epochs` fall outside the environment (often mm against cm), and
   `detect_trials`/`detect_region_visits` warn when nothing is observed
   (epochs on another clock, all-NaN positions), as crossings did.
-- `Intervals.spike_counts` warns when no spike falls in any interval (spikes
-  on another clock).
+- `Intervals.spike_counts` warns when the spikes' time span misses every
+  interval (spikes on another clock); a cell silent in the trials does not
+  warn.
 - `time_to_goal` refuses trials without an `outcome` field or with outcomes
   other than `"reached"`, `"returned"` and `"censored"`, instead of
   returning all NaN; it and `compute_vte_session` accept any `Intervals` in
@@ -83,8 +86,10 @@ by its trial.
 - VTE `trials_table()` is indexed by `interval_id` (it was the row
   position), so it joins the trial table correctly; `VTESessionResult` gains
   `interval_ids`.
-- `compute_tuning_curve(s)` warn when more than half of the analyzed samples
-  fall outside `bin_edges`/`value_range` (often a unit mismatch).
+- `compute_tuning_curve(s)` warn when the samples outside
+  `bin_edges`/`value_range` look like another unit or frame: most of them
+  outside with values spanning ten times the edges, or at least 95%
+  outside. A deliberately narrow range does not warn.
 - Rate results refuse negative firing rates, occupancy and spike counts,
   and tuning results refuse `analysis_settings` that contradict a field.
 - PSTH results check at construction that NaN marks exactly the bins
@@ -754,14 +759,15 @@ video export, and units outside the standard registry.
   `env.occupancy`, encoding, decoding, visibility, simulation); NaN still
   marks a missing sample. `from_samples` no longer turns inf into NaN.
 - Samples outside the environment are excluded in behavior as in
-  `env.occupancy`: `detect_region_visits`, `compute_home_range`,
-  `detect_goal_directed_runs`, `detect_region_crossings`,
-  `detect_runs_between_regions`, `detect_laps`, `running_direction_labels`
-  and `segment_trials` no longer bridge a sample at bin -1; a run it
-  interrupts is reported as censored, and an interval touching it is not observed. `compute_home_range`'s
-  time-weighted dwell is now exactly `env.occupancy`'s start-allocated
-  occupancy (a run's last sample no longer gets the run's median interval).
-  A NaN position is a missing sample, bridged like a deleted row.
+  `env.occupancy`: `detect_region_visits`, `detect_trials`,
+  `detect_goal_directed_runs`, `detect_region_crossings` and `detect_laps`
+  no longer bridge a position outside the environment, and
+  `compute_home_range` no longer bridges a sample at bin -1; a run it
+  interrupts is reported as censored, and an interval touching it is not
+  observed. `compute_home_range`'s time-weighted dwell is now exactly
+  `env.occupancy`'s start-allocated occupancy (a run's last sample no longer
+  gets the run's median interval). A NaN position is a missing sample,
+  bridged like a deleted row.
 - Spike times may be in any order and of any sign everywhere; each train is
   sorted once when read. Spatial rate functions and `add_modulation` no
   longer refuse unsorted or negative spike times. A 2-D padded spike matrix
