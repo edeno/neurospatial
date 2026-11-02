@@ -14,6 +14,7 @@ import numbers
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
+from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_type_hints, overload
 
@@ -528,6 +529,7 @@ class Intervals(Generic[R]):
     def __getstate__(self) -> dict[str, Any]:
         state = dict(self.__dict__)
         state["_columns"] = {}
+        state.pop("_id_lookup", None)
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -733,10 +735,16 @@ class Intervals(Generic[R]):
                 f"{wanted.shape}. Flatten it first if every id is wanted."
             )
             raise ValueError(msg)
-        where = {int(i): p for p, i in enumerate(self._ids.tolist())}
-        flat = [int(i) for i in wanted.reshape(-1).tolist()]
-        missing = [i for i in flat if i not in where]
-        if missing:
+        flat = wanted.reshape(-1)
+        order, sorted_ids = self._id_lookup
+        # Ids are int64 and >= 0: unsigned ids beyond int64 wrap to negative
+        # values here, which match no row.
+        query = flat.astype(np.int64)
+        at = np.searchsorted(sorted_ids, query)
+        found = at < sorted_ids.size
+        found[found] = sorted_ids[at[found]] == query[found]
+        if not found.all():
+            missing = flat[~found].tolist()
             shown = ", ".join(map(str, missing[:10]))
             more = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
             msg = (
@@ -744,9 +752,16 @@ class Intervals(Generic[R]):
                 f"over {_id_span(self._ids)}."
             )
             raise KeyError(msg)
+        positions = order[at]
         if wanted.ndim == 0:
-            return self._records[where[flat[0]]]
-        return self[np.array([where[i] for i in flat], dtype=np.intp)]
+            return self._records[int(positions[0])]
+        return self[positions]
+
+    @cached_property
+    def _id_lookup(self) -> tuple[NDArray[np.intp], NDArray[np.int64]]:
+        """Row positions that sort the ids, and the sorted ids, for ``sel``."""
+        order = np.argsort(self._ids)
+        return order, self._ids[order]
 
     # ------------------------------------------------------------------ samples
 
