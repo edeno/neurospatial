@@ -73,6 +73,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import as_label_array
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_choice
+from neurospatial.behavior._position_bins import gate_settings
 
 if TYPE_CHECKING:
     from neurospatial.encoding.spike_trains import SpikeTrains
@@ -618,8 +619,7 @@ def labels_to_epochs(
     settings = {
         "labels": [values[c] for c in ordered],
         "unsupported_labels": [values[c] for c in unsupported],
-        "max_gap": None if max_gap is None else float(max_gap),
-        "epochs": None if windows is None else windows.tolist(),
+        **gate_settings(max_gap, windows),
         "missing_label": missing_label,
         "n_declared_breaks": 0 if breaks is None else int(breaks[1:].sum()),
     }

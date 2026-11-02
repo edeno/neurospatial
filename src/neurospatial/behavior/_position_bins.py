@@ -259,6 +259,16 @@ def bridge_missing_positions(
     return times[kept], bins[kept], break_before, kept
 
 
+def gate_settings(
+    max_gap: float | None, windows: NDArray[np.float64] | None
+) -> dict[str, Any]:
+    """The ``max_gap`` and resolved ``epochs`` entries of ``analysis_settings``."""
+    return {
+        "max_gap": None if max_gap is None else float(max_gap),
+        "epochs": None if windows is None else windows.tolist(),
+    }
+
+
 def observed_samples(
     env: Environment,
     times: ArrayLike,

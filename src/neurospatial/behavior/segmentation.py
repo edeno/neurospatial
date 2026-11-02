@@ -76,7 +76,7 @@ from neurospatial._intervals import (
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-from neurospatial.behavior._position_bins import observed_samples
+from neurospatial.behavior._position_bins import gate_settings, observed_samples
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -770,8 +770,7 @@ def segment_by_velocity(
             "min_duration": float(min_duration),
             "hysteresis": float(hysteresis),
             "smooth_window": None if speed_given else float(smooth_window),
-            "max_gap": None if max_gap is None else float(max_gap),
-            "epochs": None if windows is None else windows.tolist(),
+            **gate_settings(max_gap, windows),
         },
     )
 
@@ -1232,8 +1231,7 @@ def detect_laps(
         "min_overlap": None if method == "region" else float(min_overlap),
         "direction": direction,
         "start_region": start_region,
-        "max_gap": None if max_gap is None else float(max_gap),
-        "epochs": None if windows is None else windows.tolist(),
+        **gate_settings(max_gap, windows),
     }
     laps: list[Lap] = []
     if method == "region":
@@ -2230,8 +2228,7 @@ def detect_goal_directed_runs(
             "goal_region": goal_region,
             "directedness_threshold": float(directedness_threshold),
             "min_progress": float(min_progress),
-            "max_gap": None if max_gap is None else float(max_gap),
-            "epochs": None if windows is None else windows.tolist(),
+            **gate_settings(max_gap, windows),
         },
     )
 

@@ -26,7 +26,11 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial.behavior._position_bins import bridge_missing_positions, sample_bins
+from neurospatial.behavior._position_bins import (
+    bridge_missing_positions,
+    gate_settings,
+    sample_bins,
+)
 from neurospatial.behavior.segmentation import _checked_interval
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -246,8 +250,7 @@ def _observed_visits(
 
     settings: dict[str, Any] = {
         "regions": names,
-        "max_gap": None if max_gap is None else float(max_gap),
-        "epochs": None if windows is None else windows.tolist(),
+        **gate_settings(max_gap, windows),
         "break_before_given": breaks is not None,
     }
     # A sample at bin -1 is not located; as in env.occupancy, an interval
