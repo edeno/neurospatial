@@ -783,9 +783,10 @@ def compute_tuning_curve(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
-        ``value_range``, a selection with no rows gives NaN rates, zero
-        occupancy and a warning; with ``bin_size`` alone there are no values
+        ``analysis_settings["epoch_interval_ids"]`` (for a pynapple
+        ``values``, those of the rows inside its ``time_support``). With
+        ``bin_edges`` or ``value_range``, a selection with no rows gives NaN
+        rates, zero occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, and explicit epochs are intersected with it,
@@ -1018,9 +1019,10 @@ def compute_tuning_curves(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
-        ``value_range``, a selection with no rows gives NaN rates, zero
-        occupancy and a warning; with ``bin_size`` alone there are no values
+        ``analysis_settings["epoch_interval_ids"]`` (for a pynapple
+        ``values``, those of the rows inside its ``time_support``). With
+        ``bin_edges`` or ``value_range``, a selection with no rows gives NaN
+        rates, zero occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, and explicit epochs are intersected with it,
@@ -1353,6 +1355,7 @@ def _tuning_curves(
 
     settings = rate_analysis_settings(
         prepared.support,
+        epoch_interval_ids=epoch_ids,
         method="binned" if bandwidth is None else "gaussian",
         bandwidth=bandwidth,
         backend="numpy",
@@ -1364,7 +1367,6 @@ def _tuning_curves(
         bin_edges=edges.tolist(),
         value_range=[float(edges[0]), float(edges[-1])],
         edges_from=edges_source,
-        epoch_interval_ids=epoch_ids,
         n_samples_outside_range=n_outside,
     )
     return TuningCurvesResult(

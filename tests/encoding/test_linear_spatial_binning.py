@@ -86,7 +86,7 @@ def test_linear_observation_gates_exclude_complete_intervals(gate):
     elif gate == "missing":
         positions[-1] = np.nan
     else:
-        options[gate] = (1, 7)
+        options[gate] = np.array([[1.0, 7.0]])  # resolved windows
     record = prepare_linear_spatial_intervals(env, times, positions, **options)
     assert record.support.runs.shape == (0, 2)
     np.testing.assert_array_equal(record.occupancy, [0])

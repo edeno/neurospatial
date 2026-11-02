@@ -1552,6 +1552,9 @@ def compute_egocentric_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -1813,6 +1816,9 @@ def compute_object_vector_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -2301,6 +2307,7 @@ def _count_object_vectors(
     bandwidth: float | None,
     min_occupancy: float,
     backend: str,
+    epoch_interval_ids: list[int] | None,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
 ) -> _ObjectVectorCounts:
@@ -2335,6 +2342,9 @@ def _count_object_vectors(
         Resolved time windows.
     method, bandwidth, min_occupancy, backend
         Smoothing settings; ``bandwidth`` may be ``None`` for the default.
+    epoch_interval_ids : list of int or None
+        Ids of an ``Intervals`` given as ``epochs``, recorded in the
+        provenance.
     n_jobs : int, default=1
         Parallel jobs for spike counting.
     break_before : ndarray of bool, shape (n_time,), or None
@@ -2387,6 +2397,7 @@ def _count_object_vectors(
     )
     settings = rate_analysis_settings(
         prepared.support,
+        epoch_interval_ids=epoch_interval_ids,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -2586,6 +2597,9 @@ def compute_egocentric_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -2924,6 +2938,9 @@ def compute_object_vector_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -3188,7 +3205,7 @@ def _object_vector_rates(
     warning names unit ``0``, and the population-silence warning, which
     needs several units, is skipped.
     """
-    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+    resolved_epochs, resolved_spike_window, epoch_ids = resolve_time_windows(
         epochs, spike_window
     )
 
@@ -3283,6 +3300,7 @@ def _object_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        epoch_interval_ids=epoch_ids,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -4485,7 +4503,7 @@ def _object_vector_significance(
     positions = inputs.copies[0]
     if headings is not None:
         headings = inputs.copies[1]
-    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
+    resolved_epochs, resolved_spike_window, _ = inputs.windows
     # Estimator settings the null reads, copied from the caller's arrays.
     estimator = snapshot_options(
         {"bandwidth": bandwidth, "min_occupancy": min_occupancy, "max_gap": max_gap}

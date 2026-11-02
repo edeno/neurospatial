@@ -92,6 +92,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
+    TimeWindows,
     resolve_time_windows,
 )
 from neurospatial._observation import validate_break_before
@@ -1345,6 +1346,7 @@ class _ViewSetup(NamedTuple):
     backend: ResolvedBackend
     boundary_source: BoundarySource
     spike_window: NDArray[np.float64] | None
+    epoch_interval_ids: list[int] | None
 
 
 def _view_setup(
@@ -1358,9 +1360,8 @@ def _view_setup(
     view_distance: float | None,
     gaze_offsets: NDArray[np.float64] | None,
     max_gap: float | None,
-    epochs: Any,
+    windows: TimeWindows,
     break_before: ArrayLike | None,
-    spike_window: Any,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float | None,
     min_occupancy: float,
@@ -1377,9 +1378,11 @@ def _view_setup(
     env, spike_times, times, positions, headings
         As :func:`compute_view_rate` (``single_unit=True``: one spike-time
         array) or :func:`compute_view_rates` (any population spike input).
-    gaze_model, view_distance, gaze_offsets, max_gap, epochs, break_before, \
-spike_window, method, bandwidth, min_occupancy, backend, boundary_source
+    gaze_model, view_distance, gaze_offsets, max_gap, break_before, method, \
+bandwidth, min_occupancy, backend, boundary_source
         As :func:`compute_view_rates`.
+    windows : TimeWindows
+        The resolved ``epochs`` and ``spike_window``.
     unit_ids : array-like or None
         Population labels; ignored when ``single_unit``.
     context : str
@@ -1401,9 +1404,7 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_counts import prepare_view_binning
 
-    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
-        epochs, spike_window
-    )
+    resolved_epochs, resolved_spike_window, epoch_ids = windows
     _check_view_env(env, context=context)
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
@@ -1485,6 +1486,7 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
         resolved_backend,
         boundary_source,
         resolved_spike_window,
+        epoch_ids,
     )
 
 
@@ -1524,6 +1526,7 @@ def _view_rates(env: Environment, setup: _ViewSetup, *, n_jobs: int) -> _ViewRat
     spike_counts, occupancy = prepared.count(setup.trains, n_jobs=n_jobs)
     settings = rate_analysis_settings(
         prepared.support,
+        epoch_interval_ids=setup.epoch_interval_ids,
         method=setup.method,
         bandwidth=setup.bandwidth,
         min_occupancy=setup.min_occupancy,
@@ -1719,6 +1722,9 @@ def compute_view_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -1863,9 +1869,8 @@ def compute_view_rate(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=resolve_time_windows(epochs, spike_window),
         break_before=break_before,
-        spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -1985,6 +1990,9 @@ def compute_view_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -2177,9 +2185,8 @@ def compute_view_rates(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=resolve_time_windows(epochs, spike_window),
         break_before=break_before,
-        spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -2716,9 +2723,8 @@ def spatial_view_cell_significance(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
-        epochs=inputs.epochs,
+        windows=inputs.windows,
         break_before=break_before,
-        spike_window=inputs.spike_window,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,

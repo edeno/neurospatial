@@ -16,6 +16,7 @@ from neurospatial._intervals import TimeSupport
 def rate_analysis_settings(
     support: TimeSupport,
     *,
+    epoch_interval_ids: list[int] | None,
     method: str,
     bandwidth: float | None,
     backend: str,
@@ -27,9 +28,16 @@ def rate_analysis_settings(
     pooled: bool = True,
     **family_settings: Any,
 ) -> dict[str, Any]:
-    """Record resolved choices without retaining the input recording arrays."""
+    """Record resolved choices without retaining the input recording arrays.
+
+    ``epoch_interval_ids`` are the ids of an ``Intervals`` given as
+    ``epochs`` (``TimeWindows.epoch_interval_ids``), None for other epochs.
+    """
     return {
         **support.temporal_settings(),
+        "epoch_interval_ids": None
+        if epoch_interval_ids is None
+        else list(epoch_interval_ids),
         "min_speed": None if min_speed is None else float(min_speed),
         "speed_source": None
         if min_speed is None

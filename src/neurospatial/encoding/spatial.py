@@ -53,7 +53,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._intervals import DEFAULT_MAX_GAP, TimeWindows, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
@@ -3332,9 +3332,8 @@ def _prepare_spatial_support(
     speed: NDArray[np.float64] | None,
     min_speed: float | None,
     max_gap: float | None,
-    epochs: Any,
+    windows: TimeWindows,
     break_before: NDArray[np.bool_] | None,
-    spike_window: Any,
     warn_on_drop: bool,
     time_allocation: Literal["start", "linear"],
     method: str,
@@ -3359,8 +3358,8 @@ def _prepare_spatial_support(
         Speed supplied by the caller, recorded as given in the provenance.
     min_speed, max_gap : float or None
         Speed gate and maximum timestamp gap in seconds.
-    epochs, spike_window
-        Recording windows as passed by the caller.
+    windows : TimeWindows
+        The resolved ``epochs`` and ``spike_window``.
     break_before : ndarray of bool, shape (n_time,), or None
         Validated declared recording breaks, applied to the speed smoothing
         and the interval gate and recorded in the provenance.
@@ -3410,8 +3409,8 @@ def _prepare_spatial_support(
             speed=resolved_speed,
             min_speed=min_speed,
             max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
+            epochs=windows.epochs,
+            spike_window=windows.spike_window,
             break_before=break_before,
         )
         if time_allocation == "linear"
@@ -3425,8 +3424,8 @@ def _prepare_spatial_support(
         speed=resolved_speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=epochs,
-        spike_window=spike_window,
+        epochs=windows.epochs,
+        spike_window=windows.spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
         linear_intervals=linear_intervals,
@@ -3435,6 +3434,7 @@ def _prepare_spatial_support(
 
     settings = rate_analysis_settings(
         time_support,
+        epoch_interval_ids=windows.epoch_interval_ids,
         min_speed=min_speed,
         speed=speed,
         method=method,
@@ -3483,9 +3483,8 @@ def _spatial_rate_maps(
     min_speed: float | None,
     max_gap: float | None,
     time_allocation: Literal["start", "linear"],
-    epochs: Any,
+    windows: TimeWindows,
     break_before: ArrayLike | None,
-    spike_window: Any,
     n_jobs: int,
     backend: BackendType,
     warn_on_drop: bool,
@@ -3497,10 +3496,12 @@ def _spatial_rate_maps(
     """Validate the inputs and estimate every unit's spatial rate map.
 
     The one implementation behind :func:`compute_spatial_rate` and
-    :func:`compute_spatial_rates`; the parameters are theirs.
+    :func:`compute_spatial_rates`; the parameters are theirs, except:
 
     Parameters
     ----------
+    windows : TimeWindows
+        The resolved ``epochs`` and ``spike_window``.
     context : str
         Name of the public entry point, used in error messages.
     single_unit : bool
@@ -3575,9 +3576,8 @@ def _spatial_rate_maps(
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=windows,
         break_before=breaks,
-        spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
         method=method,
@@ -3916,6 +3916,9 @@ default="diffusion_kde"
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -4075,9 +4078,8 @@ default="diffusion_kde"
         min_speed=min_speed,
         max_gap=max_gap,
         time_allocation=time_allocation,
-        epochs=epochs,
+        windows=resolve_time_windows(epochs, spike_window),
         break_before=break_before,
-        spike_window=spike_window,
         n_jobs=1,
         backend=backend,
         warn_on_drop=warn_on_drop,
@@ -4275,6 +4277,9 @@ default="diffusion_kde"
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` is a pynapple ``TsdFrame`` or ``Tsd``, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -4482,9 +4487,8 @@ default="diffusion_kde"
         min_speed=min_speed,
         max_gap=max_gap,
         time_allocation=time_allocation,
-        epochs=epochs,
+        windows=resolve_time_windows(epochs, spike_window),
         break_before=break_before,
-        spike_window=spike_window,
         n_jobs=n_jobs,
         backend=backend,
         warn_on_drop=warn_on_drop,
@@ -5115,10 +5119,7 @@ def compute_directional_place_fields(
     ('backward', 'forward')
     """
     # Validate direction_labels length matches times
-    from neurospatial._intervals import (
-        intersect_intervals,
-        resolve_time_windows,
-    )
+    from neurospatial._intervals import intersect_intervals
     from neurospatial.encoding._spatial_counts import require_allocentric
 
     require_allocentric(env, "compute_directional_place_fields()")
@@ -5176,7 +5177,8 @@ def compute_directional_place_fields(
             occupancy_dict[label] = np.zeros(env.n_bins)
             continue
 
-        single = compute_spatial_rate(
+        # compute_spatial_rate on this label's windows, already resolved.
+        single = _spatial_rate_maps(
             env,
             spike_times,
             times,
@@ -5184,12 +5186,24 @@ def compute_directional_place_fields(
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
+            penalty=None,
+            rank=None,
+            pooled=True,
+            speed=None,
+            min_speed=None,
             max_gap=max_gap,
-            epochs=windows,
+            time_allocation="start",
+            windows=TimeWindows(windows, resolved_spike_window, None),
             break_before=breaks,
-            spike_window=resolved_spike_window,
+            n_jobs=1,
+            backend="numpy",
+            warn_on_drop=True,
+            dtype=np.float64,
+            unit_ids=None,
+            context="compute_spatial_rate",
+            single_unit=True,
         )
-        firing_rates_dict[label] = np.asarray(single.firing_rate, dtype=np.float64)
+        firing_rates_dict[label] = np.asarray(single.firing_rates[0], dtype=np.float64)  # type: ignore[index]
         occupancy_dict[label] = np.asarray(single.occupancy, dtype=np.float64)
 
     return DirectionalPlaceFields(
@@ -7555,7 +7569,6 @@ def _spatial_shuffle(
     )
     trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
     (positions,) = inputs.copies
-    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     options: dict[str, Any] = {
         "method": method,
         "bandwidth": bandwidth,
@@ -7570,12 +7583,7 @@ def _spatial_shuffle(
         "warn_on_drop": warn_on_drop,
         "dtype": dtype,
     }
-    options = snapshot_options(
-        options,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        unit_ids=ids,
-    )
+    options = snapshot_options(options, unit_ids=ids)
     _validate_env_argument(env, context=call, arguments="spike_times, times, positions")
     require_allocentric(env, f"{call}()")
     validate_trajectory(times, positions=positions, context=call, n_dims=env.n_dims)
@@ -7590,6 +7598,7 @@ def _spatial_shuffle(
         times,
         positions,
         **options,
+        windows=inputs.windows,
         time_allocation="start",
         n_jobs=1,
         context="compute_spatial_rates",

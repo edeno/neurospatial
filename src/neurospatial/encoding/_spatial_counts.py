@@ -97,8 +97,8 @@ def prepare_linear_spatial_intervals(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    spike_window: Any = None,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     interval_mask: NDArray[np.bool_] | None = None,
     break_before: NDArray[np.bool_] | None = None,
 ) -> LinearSpatialIntervals:
@@ -121,8 +121,9 @@ def prepare_linear_spatial_intervals(
         Resolved speed used with ``min_speed`` to gate complete intervals.
     min_speed, max_gap : float or None
         Speed and duration gates applied before geometric subdivision.
-    epochs, spike_window : array-like of shape (n_windows, 2), or None
-        Windows that must contain each complete observation interval.
+    epochs, spike_window : ndarray of shape (n_windows, 2), or None
+        Resolved windows (:func:`~neurospatial._intervals.resolve_time_windows`)
+        that must contain each complete observation interval.
     interval_mask : ndarray of bool, shape (n_samples - 1,), or None
         Optional precomputed observation validity, before geometric bounds.
     break_before : ndarray of bool, shape (n_samples,), or None
@@ -157,9 +158,6 @@ def prepare_linear_spatial_intervals(
         raise ValueError(msg)
     # This checks known nonmaterializable Arena support before any cell work.
     _uses_polygon_allocation(binning, arena)
-    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
-        epochs, spike_window
-    )
     gates: IntervalGates | None = None
     if interval_mask is None:
         gates = interval_gates(
@@ -167,8 +165,8 @@ def prepare_linear_spatial_intervals(
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
+            epochs=epochs,
+            spike_window=spike_window,
             break_before=break_before,
             sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         )
@@ -219,8 +217,8 @@ def prepare_linear_spatial_intervals(
     support = TimeSupport.from_mask(
         times,
         mask,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        spike_window=spike_window,
         max_gap=max_gap,
         break_before=break_before,
         runs=np.asarray(runs, dtype=np.float64).reshape(-1, 2),
@@ -787,8 +785,8 @@ def _resolve_spatial_time_support(
     speed: NDArray[np.float64] | None,
     min_speed: float | None,
     max_gap: float | None,
-    epochs: Any,
-    spike_window: Any,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
     warn_on_drop: bool,
     time_allocation: Literal["start", "linear"] = "start",
     linear_intervals: LinearSpatialIntervals | None = None,
@@ -796,8 +794,9 @@ def _resolve_spatial_time_support(
 ) -> TimeSupport:
     """Resolve training support shared by counting, occupancy and provenance.
 
-    ``break_before`` is already validated and drops the interval ending at
-    each declared recording break.
+    ``epochs`` and ``spike_window`` are resolved windows; ``break_before``
+    is already validated and drops the interval ending at each declared
+    recording break.
     """
     _validate_time_allocation(time_allocation)
     if time_allocation == "linear":
@@ -832,9 +831,6 @@ def _resolve_spatial_time_support(
                     suppress_hint=_WARN_ON_DROP_HINT,
                 )
         return support
-    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
-        epochs, spike_window
-    )
     gates = _spatial_interval_gates(
         env,
         times,
@@ -842,8 +838,8 @@ def _resolve_spatial_time_support(
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        spike_window=spike_window,
         break_before=break_before,
     )
     if warn_on_drop:
@@ -853,8 +849,8 @@ def _resolve_spatial_time_support(
     return TimeSupport.from_mask(
         times,
         gates.mask,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        spike_window=spike_window,
         max_gap=max_gap,
         break_before=break_before,
     )
@@ -1161,6 +1157,7 @@ def _resolve_spatial_mask(
     """
     if time_allocation == "linear":
         if linear_intervals is None:
+            epochs, spike_window, _ = resolve_time_windows(epochs, spike_window)
             linear_intervals = prepare_linear_spatial_intervals(
                 env,
                 times,
