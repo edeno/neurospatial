@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import times_in_intervals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_integer_at_least
@@ -297,9 +298,7 @@ def spike_words(
         bounds = _validated_epochs(epochs, operation)
         index = np.searchsorted(bounds[:, 0], times, side="right") - 1
         # No epochs (an empty selection) keep no letter.
-        inside = (index >= 0) & (
-            times < bounds[np.maximum(index, 0), 1] if bounds.size else False
-        )
+        inside = times_in_intervals(bounds, times)
         times, letter_units, index = times[inside], letter_units[inside], index[inside]
         epoch_id = index
         epoch_stop = bounds[index, 1]
