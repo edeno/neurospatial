@@ -88,9 +88,9 @@ from neurospatial.encoding._polar_results import (
     resolve_polar_grid,
 )
 from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
-    resolve_shuffle_settings,
     shuffle_information_verdict,
 )
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
@@ -178,7 +178,7 @@ def _object_vector_summary_frame(
         },
         classification={
             "is_object_vector_cell": _information_screen(
-                result, default=OBJECT_VECTOR_THRESHOLDS["min_info"], bias=bias
+                result, OBJECT_VECTOR_THRESHOLDS["min_info"], bias=bias
             )
         },
         extra_units={
@@ -633,21 +633,23 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
         return float(_information_bias(self)[0])
 
-    def is_object_vector_cell(self, *, min_info: float | None = None) -> bool:
-        """Classify as object-vector cell based on spatial information in the recorded frame.
+    def is_object_vector_cell(self, *, min_info: float = 0.3) -> bool:
+        """Screen one neuron for object-vector tuning by bias-corrected information.
 
-        Tests object-vector tuning in ``result.direction_frame``.
+        Screens object-vector tuning in ``result.direction_frame``.
 
-        A neuron is classified as a candidate in the recorded frame if its
+        A neuron passes the screen in the recorded frame if its
         bias-corrected spatial information meets or exceeds the minimum
         threshold. OVCs fire when the
-        animal is at a specific distance and direction from an object.
+        animal is at a specific distance and direction from an object. This
+        is a fast threshold screen, not a verdict; for a circular-shift
+        verdict call the free predicate with the raw arrays.
 
         Parameters
         ----------
-        min_info : float or None, default=None
-            Minimum spatial information in the recorded frame threshold in bits/spike.
-
+        min_info : float, default=0.3
+            Inclusive cutoff on bias-corrected spatial information in the
+            recorded frame (bits/spike).
 
         Returns
         -------
@@ -678,7 +680,6 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         a narrower distance_range or wider bins (the shuffle verdict needs the
         same corrected information).
         For publication, report a circular-shift test and its assumptions.
-        None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
         egocentric_object_vector_cell_significance(...) (egocentric)
         or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
@@ -757,11 +758,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         """
         from neurospatial.encoding._metrics import _information_screen
 
-        return bool(
-            _information_screen(
-                self, min_info, default=OBJECT_VECTOR_THRESHOLDS["min_info"]
-            )[0]
-        )
+        return bool(_information_screen(self, min_info)[0])
 
 
 @_copy_unit_table
@@ -1218,21 +1215,22 @@ class ObjectVectorRatesResult(
 
         return _information_bias(self)
 
-    def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
-        """Classify neurons as object-vector cells.
+    def classify(self, *, min_info: float = 0.3) -> NDArray[np.bool_]:
+        """Screen neurons for object-vector tuning by bias-corrected information.
 
-        Tests object-vector tuning in ``result.direction_frame``.
+        Screens object-vector tuning in ``result.direction_frame``.
 
-        A neuron is classified as a candidate in the recorded frame if its
+        A neuron passes the screen in the recorded frame if its
         bias-corrected spatial information meets or exceeds the minimum
         threshold. This is the
         single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
         ----------
-        min_info : float or None, default=None
-            Minimum spatial information in the recorded frame threshold in bits/spike.
-            See ObjectVectorRateResult.is_object_vector_cell() for threshold rationale.
+        min_info : float, default=0.3
+            Inclusive cutoff on bias-corrected spatial information in the
+            recorded frame (bits/spike). See
+            ObjectVectorRateResult.is_object_vector_cell() for its rationale.
 
         Returns
         -------
@@ -1263,7 +1261,6 @@ class ObjectVectorRatesResult(
         a narrower distance_range or wider bins (the shuffle verdict needs the
         same corrected information).
         For publication, report a circular-shift test and its assumptions.
-        None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
         egocentric_object_vector_cell_significance(...) (egocentric)
         or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
@@ -1310,9 +1307,7 @@ class ObjectVectorRatesResult(
         """
         from neurospatial.encoding._metrics import _information_screen
 
-        return _information_screen(
-            self, min_info, default=OBJECT_VECTOR_THRESHOLDS["min_info"]
-        )
+        return _information_screen(self, min_info)
 
     def summary_table(
         self,
@@ -1527,7 +1522,7 @@ def compute_egocentric_rate(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -1587,8 +1582,9 @@ def compute_egocentric_rate(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -1791,7 +1787,7 @@ def compute_object_vector_rate(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -1851,8 +1847,9 @@ def compute_object_vector_rate(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2572,7 +2569,7 @@ def compute_egocentric_rates(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -2632,8 +2629,9 @@ def compute_egocentric_rates(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2913,7 +2911,7 @@ def compute_object_vector_rates(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -2973,8 +2971,9 @@ def compute_object_vector_rates(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3529,11 +3528,11 @@ def is_object_vector_cell(
     positions: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    criterion: Literal["threshold", "shuffle"] = "threshold",
-    min_info: float | None = None,
-    alpha: float | None = None,
-    n_shuffles: int | None = None,
-    min_shift: float | None = None,
+    criterion: Literal["threshold", "shuffle"] = "shuffle",
+    min_info: float = 0.3,
+    alpha: float = 0.05,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
@@ -3549,7 +3548,17 @@ def is_object_vector_cell(
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
 ) -> bool:
-    """Classify one neuron by the object_vector_cell screen or circular-shift test.
+    """Test whether one neuron is an object-vector cell with a circular-shift shuffle (default).
+
+    By default (``criterion="shuffle"``) the neuron is an object-vector cell when the
+    allocentric polar map's spatial information is significant
+    (``p_value < alpha``) against ``n_shuffles=1000`` circularly shifted
+    spike trains and its bias-corrected information reaches ``min_info``.
+    The shuffle costs about ``n_shuffles`` rate-map recomputes; pass ``rng``
+    (an integer seed or a Generator) to make the verdict reproducible.
+    ``criterion="threshold"`` is the fast screen: it applies only the
+    ``min_info`` cutoff, like
+    :meth:`ObjectVectorRateResult.is_object_vector_cell`.
 
     Parameters
     ----------
@@ -3591,7 +3600,7 @@ def is_object_vector_cell(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -3645,8 +3654,9 @@ def is_object_vector_cell(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3657,17 +3667,18 @@ def is_object_vector_cell(
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
 
-    criterion : {"threshold", "shuffle"}, default="threshold"
-        Screen the observed statistic or test circular-shift significance.
-    min_info : float or None, default=None
+    criterion : {"shuffle", "threshold"}, default="shuffle"
+        Test circular-shift significance (a verdict), or screen the observed
+        statistic only (fast).
+    min_info : float, default=0.3
         Inclusive cutoff on bias-corrected information (bits/spike), for both
-        criteria; None resolves to the family threshold constant.
-    alpha : float or None, default=None
-        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
+        criteria.
+    alpha : float, default=0.05
+        P-value level for ``criterion="shuffle"``.
+    n_shuffles : int, default=1000
+        Number of circular shifts in shuffle mode.
+    min_shift : float, default=20.0
+        Minimum shift in analyzed seconds, in shuffle mode.
     rng : numpy.random.Generator, int or None, default=None
         Shuffle random source; an integer seed with the same unit label is stable
         across single and population calls.
@@ -3719,8 +3730,8 @@ def is_object_vector_cell(
     information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
     bins has an unknown bias and is not a object-vector cell, with a warning.
     Results keep no raw arrays or recompute closures. Shuffle keywords
-    belong only to the shuffle; passing one with ``criterion="threshold"``
-    raises.
+    belong only to the shuffle; passing one with a value other than its
+    default with ``criterion="threshold"`` raises.
 
     See Also
     --------
@@ -3732,10 +3743,10 @@ def is_object_vector_cell(
     >>> import numpy as np
     >>> from neurospatial.encoding import is_object_vector_cell
     >>> rng = np.random.default_rng(42)
-    >>> times = np.arange(0, 40, 0.04)
+    >>> times = np.arange(0, 120, 0.04)  # 2 minutes, in seconds
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
+    >>> spikes = np.sort(rng.uniform(0, 119.9, 500))  # untuned unit
     >>> result = is_object_vector_cell(
     ...     None,
     ...     spikes,
@@ -3744,9 +3755,10 @@ def is_object_vector_cell(
     ...     objects,
     ...     distance_range=(0.0, 50.0),
     ...     distance_bin_size=5.0,
+    ...     rng=0,
     ... )
-    >>> type(result)
-    <class 'bool'>
+    >>> result
+    False
     """
     return _is_object_vector_cell(
         env,
@@ -3787,11 +3799,11 @@ def is_egocentric_object_vector_cell(
     headings: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    criterion: Literal["threshold", "shuffle"] = "threshold",
-    min_info: float | None = None,
-    alpha: float | None = None,
-    n_shuffles: int | None = None,
-    min_shift: float | None = None,
+    criterion: Literal["threshold", "shuffle"] = "shuffle",
+    min_info: float = 0.3,
+    alpha: float = 0.05,
+    n_shuffles: int = 1000,
+    min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
@@ -3807,7 +3819,17 @@ def is_egocentric_object_vector_cell(
     min_occupancy: float = 0.0,
     backend: BackendType = "numpy",
 ) -> bool:
-    """Classify one neuron by the egocentric_object_vector_cell screen or circular-shift test.
+    """Test whether one neuron is an egocentric object-vector cell with a circular-shift shuffle (default).
+
+    By default (``criterion="shuffle"``) the neuron is an egocentric object-vector cell when the
+    egocentric polar map's spatial information is significant
+    (``p_value < alpha``) against ``n_shuffles=1000`` circularly shifted
+    spike trains and its bias-corrected information reaches ``min_info``.
+    The shuffle costs about ``n_shuffles`` rate-map recomputes; pass ``rng``
+    (an integer seed or a Generator) to make the verdict reproducible.
+    ``criterion="threshold"`` is the fast screen: it applies only the
+    ``min_info`` cutoff, like
+    :meth:`ObjectVectorRateResult.is_object_vector_cell`.
 
     Parameters
     ----------
@@ -3855,7 +3877,7 @@ def is_egocentric_object_vector_cell(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -3909,8 +3931,9 @@ def is_egocentric_object_vector_cell(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3921,17 +3944,18 @@ def is_egocentric_object_vector_cell(
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
 
-    criterion : {"threshold", "shuffle"}, default="threshold"
-        Screen the observed statistic or test circular-shift significance.
-    min_info : float or None, default=None
+    criterion : {"shuffle", "threshold"}, default="shuffle"
+        Test circular-shift significance (a verdict), or screen the observed
+        statistic only (fast).
+    min_info : float, default=0.3
         Inclusive cutoff on bias-corrected information (bits/spike), for both
-        criteria; None resolves to the family threshold constant.
-    alpha : float or None, default=None
-        P-value level for ``criterion="shuffle"``; None resolves to 0.05.
-    n_shuffles : int or None, default=None
-        Number of circular shifts in shuffle mode; None resolves to 1000.
-    min_shift : float or None, default=None
-        Minimum shift in analyzed seconds; None resolves to 20.0.
+        criteria.
+    alpha : float, default=0.05
+        P-value level for ``criterion="shuffle"``.
+    n_shuffles : int, default=1000
+        Number of circular shifts in shuffle mode.
+    min_shift : float, default=20.0
+        Minimum shift in analyzed seconds, in shuffle mode.
     rng : numpy.random.Generator, int or None, default=None
         Shuffle random source; an integer seed with the same unit label is stable
         across single and population calls.
@@ -3983,8 +4007,8 @@ def is_egocentric_object_vector_cell(
     information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
     bins has an unknown bias and is not a object-vector cell, with a warning.
     Results keep no raw arrays or recompute closures. Shuffle keywords
-    belong only to the shuffle; passing one with ``criterion="threshold"``
-    raises.
+    belong only to the shuffle; passing one with a value other than its
+    default with ``criterion="threshold"`` raises.
 
     See Also
     --------
@@ -3996,11 +4020,11 @@ def is_egocentric_object_vector_cell(
     >>> import numpy as np
     >>> from neurospatial.encoding import is_egocentric_object_vector_cell
     >>> rng = np.random.default_rng(42)
-    >>> times = np.arange(0, 40, 0.04)
+    >>> times = np.arange(0, 120, 0.04)  # 2 minutes, in seconds
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> headings = rng.uniform(-np.pi, np.pi, len(times))
     >>> objects = np.array([[50.0, 50.0]])
-    >>> spikes = np.sort(rng.uniform(0, 39.9, 500))
+    >>> spikes = np.sort(rng.uniform(0, 119.9, 500))  # untuned unit
     >>> result = is_egocentric_object_vector_cell(
     ...     None,
     ...     spikes,
@@ -4010,9 +4034,10 @@ def is_egocentric_object_vector_cell(
     ...     objects,
     ...     distance_range=(0.0, 50.0),
     ...     distance_bin_size=5.0,
+    ...     rng=0,
     ... )
-    >>> type(result)
-    <class 'bool'>
+    >>> result
+    False
     """
     return _is_object_vector_cell(
         env,
@@ -4054,10 +4079,10 @@ def _is_object_vector_cell(
     *,
     direction_frame: Literal["allocentric", "egocentric"],
     criterion: Literal["threshold", "shuffle"],
-    min_info: float | None,
-    alpha: float | None,
-    n_shuffles: int | None,
-    min_shift: float | None,
+    min_info: float,
+    alpha: float,
+    n_shuffles: int,
+    min_shift: float,
     rng: np.random.Generator | int | None,
     unit_id: Hashable | None,
     distance_range: tuple[float, float] | None,
@@ -4091,6 +4116,7 @@ def _is_object_vector_cell(
             "unit_id": unit_id,
             "alpha": alpha,
         },
+        defaults=_SHUFFLE_DEFAULTS,
         call=call,
     )
     settings: dict[str, Any] = {
@@ -4127,7 +4153,8 @@ def _is_object_vector_cell(
         label = 0 if unit_id is None else unit_id
         shuffle = {
             "unit_ids": [label],
-            **resolve_shuffle_settings(n_shuffles, min_shift),
+            "n_shuffles": n_shuffles,
+            "min_shift": min_shift,
             "rng": rng,
             **settings,
         }
@@ -4152,7 +4179,6 @@ def _is_object_vector_cell(
             rate_map,
             alpha=alpha,
             min_info=min_info,
-            default_min_info=OBJECT_VECTOR_THRESHOLDS["min_info"],
             kind="egocentric object-vector" if egocentric else "object-vector",
         )
     return rate_map().is_object_vector_cell(min_info=min_info)
@@ -4707,7 +4733,7 @@ def object_vector_cell_significance(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -4759,8 +4785,9 @@ def object_vector_cell_significance(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -4951,7 +4978,7 @@ def egocentric_object_vector_cell_significance(
         uses 5 cm converted to ``env.units``; pass it when the units are
         unknown. An explicit ``distance_range`` is divided into the whole
         number of rings nearest this width.
-    direction_bin_size : float, default=pi/6
+    direction_bin_size : float, default=π/6 rad (30°)
         Width of each direction bin in radians (30 degrees); the circle is
         divided into ``round(2 pi / direction_bin_size)`` bins. The 5 cm and
         30 degree defaults suit unsmoothed maps of 5-15 minute sessions;
@@ -5003,8 +5030,9 @@ def egocentric_object_vector_cell_significance(
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
-        known length, a kernel method needs it explicitly. Unused for
-        ``method="binned"``.
+        known length, a kernel method needs it explicitly. Binned maps are
+        not smoothed, so a positive bandwidth with ``method="binned"``
+        raises.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.

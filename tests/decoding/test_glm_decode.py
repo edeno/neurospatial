@@ -145,7 +145,7 @@ class TestBayesianDecoderGlm:
             spikes, times, positions, epochs=train
         )
         assert fitted.bandwidth is None
-        assert fitted.min_occupancy is None
+        assert fitted.min_occupancy == 0.0
         error = fitted.score(
             spikes, times, positions, epochs=test, distance="euclidean"
         )

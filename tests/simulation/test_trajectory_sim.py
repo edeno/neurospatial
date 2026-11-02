@@ -1023,7 +1023,6 @@ class TestSimulateTrajectoryLaps:
             n_laps=n_laps,
             speed_mean=10.0,
             pause_duration=0.0,
-            return_metadata=True,
             rng=42,
         )
 
@@ -1049,7 +1048,6 @@ class TestSimulateTrajectoryLaps:
         positions, _times, metadata = simulate_trajectory_laps(
             connected_arena_env,
             n_laps=3,
-            return_metadata=True,
             rng=42,
         )
 
@@ -1084,7 +1082,6 @@ class TestSimulateTrajectoryLaps:
             n_laps=3,
             pause_duration=pause_duration,
             sampling_frequency=sampling_frequency,
-            return_metadata=True,
             rng=42,
         )
 
@@ -1111,25 +1108,20 @@ class TestSimulateTrajectoryLaps:
                     f"Expected pause at lap boundary {i}, but found no low-velocity samples"
                 )
 
-    def test_return_metadata_false_returns_tuple_of_two(self, connected_arena_env):
-        """Test that return_metadata=False returns only (positions, times)."""
-        result = simulate_trajectory_laps(
-            connected_arena_env,
-            n_laps=3,
-            return_metadata=False,
-            rng=42,
-        )
-
-        # Should return tuple of 2 elements
-        assert isinstance(result, tuple), "Should return a tuple"
-        assert len(result) == 2, (
-            "Should return (positions, times) when return_metadata=False"
-        )
-
-        positions, times = result
-        assert len(positions) == len(times), (
-            "positions and times should have same length"
-        )
+    def test_always_returns_positions_times_and_metadata(self, connected_arena_env):
+        """One return type: (positions, times, metadata), with no flag."""
+        result = simulate_trajectory_laps(connected_arena_env, n_laps=3, rng=42)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        positions, times, metadata = result
+        assert len(positions) == len(times)
+        assert set(metadata) == {"lap_ids", "lap_boundaries", "direction"}
+        assert metadata["lap_ids"].shape == times.shape
+        assert metadata["direction"].shape == times.shape
+        with pytest.raises(TypeError, match="return_metadata"):
+            simulate_trajectory_laps(
+                connected_arena_env, n_laps=3, rng=42, return_metadata=True
+            )
 
     def test_custom_paths(self, simple_2d_env):
         """Test that custom outbound and inbound paths are used."""
@@ -1144,7 +1136,6 @@ class TestSimulateTrajectoryLaps:
             n_laps=2,
             outbound_path=outbound_path,
             inbound_path=inbound_path,
-            return_metadata=True,
             rng=42,
         )
 
@@ -1158,12 +1149,8 @@ class TestSimulateTrajectoryLaps:
 
     def test_reproducibility_with_seed(self, connected_arena_env):
         """Test that same seed produces same trajectory."""
-        result1 = simulate_trajectory_laps(
-            connected_arena_env, n_laps=3, rng=42, return_metadata=True
-        )
-        result2 = simulate_trajectory_laps(
-            connected_arena_env, n_laps=3, rng=42, return_metadata=True
-        )
+        result1 = simulate_trajectory_laps(connected_arena_env, n_laps=3, rng=42)
+        result2 = simulate_trajectory_laps(connected_arena_env, n_laps=3, rng=42)
 
         positions1, times1, metadata1 = result1
         positions2, times2, metadata2 = result2
@@ -1174,10 +1161,9 @@ class TestSimulateTrajectoryLaps:
 
     def test_trajectory_stays_in_environment(self, connected_arena_env):
         """Test that all positions are within environment bounds."""
-        positions, _times = simulate_trajectory_laps(
+        positions, _times, _ = simulate_trajectory_laps(
             connected_arena_env,
             n_laps=5,
-            return_metadata=False,
             rng=42,
         )
 

@@ -61,8 +61,7 @@ result = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    method="binned",
-    bandwidth=0.0,  # No smoothing: spike count / occupancy
+    method="binned",  # No smoothing: spike count / occupancy
     min_occupancy=0.5,  # Exclude bins with < 0.5 seconds occupancy
 )
 firing_rate = result.firing_rate
@@ -100,9 +99,9 @@ result = compute_spatial_rate(
 place_field = result.firing_rate
 ```
 
-Use `method="binned", bandwidth=0.0` for an unsmoothed count/occupancy map.
-With positive bandwidth, `binned` smooths the rate after division; KDE methods
-smooth the numerator and denominator separately.
+`method="binned"` is the unsmoothed count/occupancy map unless you pass a
+`bandwidth`. With positive bandwidth, `binned` smooths the rate after
+division; KDE methods smooth the numerator and denominator separately.
 
 `gaussian_kde` weighs bins by straight-line distance, so it smooths through
 walls. In a simulated maze, 10 cm from a field's center but across a thin
@@ -278,7 +277,7 @@ occupancy mask. `diffusion_kde` respects the environment's connectivity;
 `binned` divides counts by occupancy first. With positive bandwidth it uses
 a masked average that excludes undefined and sub-threshold input rates, then
 reapplies the output occupancy mask. This is not zero-filling missing bins
-before averaging. Set `bandwidth=0.0` to inspect the unsmoothed estimate.
+before averaging. Without a `bandwidth` it returns the unsmoothed estimate.
 
 Smoothing a returned rate map again with `env.smooth()` changes the estimator
 and is not equivalent to KDE. Likewise, replacing `NaN` with zero changes the
@@ -299,7 +298,6 @@ firing_rate = compute_spatial_rate(
     times,
     positions,
     method="binned",
-    bandwidth=0.0,
     min_occupancy=0.5,
 ).firing_rate
 place_field = compute_spatial_rate(

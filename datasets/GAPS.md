@@ -31,7 +31,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   for the units case; add `warn_on_drop=` to the directional entry points.
 - Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn; at most one discarded-data warning per call)
 
-## G-002: `method="binned"` smooths with a 5 cm bandwidth unless `bandwidth=0` is passed
+## G-002: `method="binned"` smoothed with a 5 cm bandwidth unless `bandwidth=0` was passed
 
 - Datasets: sargolini_000582 (reference check 1)
 - Operation / step: reference check, spatial information vs pynapple
@@ -43,10 +43,13 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   1.3896 vs 1.3893), the rest explained by spike assignment (G-003). A user
   comparing "binned" information with published unsmoothed values gets numbers
   several times too small.
-- Harness workaround: `datasets/reference_checks.py:_binned_rates` passes `bandwidth=0.0`
+- Harness workaround: none now; `datasets/reference_checks.py:_binned_rates`
+  passed `bandwidth=0.0` until the default changed and now uses the default.
 - Proposed change: `method="binned"` defaults to `bandwidth=0` (no smoothing)
   everywhere binned is accepted (maintainer decision).
-- Status: promoted (UX fixes phase 3b, branch `fix/ux-defaults-and-returns`)
+- Status: fixed (UX fixes phase 3b, branch `fix/ux-defaults-and-returns`):
+  `method="binned"` is unsmoothed unless `bandwidth` is passed; reference
+  check 1 now reports that the default and `bandwidth=0.0` agree exactly.
 
 ## G-003: Spikes are assigned to the tracking sample at or before them; pynapple uses the nearest sample
 

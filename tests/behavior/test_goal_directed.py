@@ -750,7 +750,9 @@ class TestGoalDirectedDistances:
             env, times, positions, goal=goal, metric="euclidean"
         )
         assert np.isnan(not_reached.time_to_reach_goal)
-        assert not_tested.time_to_reach_goal is None
+        assert not_reached.arrival_tested
+        assert np.isnan(not_tested.time_to_reach_goal)
+        assert not not_tested.arrival_tested
         assert "not reached" in str(not_reached)
         assert "not tested" in str(not_tested)
 
@@ -799,3 +801,68 @@ class TestGoalDirectedDistances:
             env, positions[0], goal
         )
         assert geodesic.min_distance_to_goal < geodesic.goal_distance_at_start
+
+
+def test_goal_directed_metrics_single_return_type():
+    """With or without intervals the result is a GoalDirectedMetrics.
+
+    A run east to a region at the end of a 10 cm strip and back to one at
+    its start, each its own trial, and a third trial with an unknown goal:
+    the per-trial arrays equal each trial measured alone, and the table has
+    typed columns.
+    """
+    from neurospatial import Environment, Intervals, Regions
+    from neurospatial.behavior import GoalDirectedMetrics, compute_goal_directed_metrics
+
+    times = np.arange(30) / 10.0  # s
+    x = np.r_[np.arange(10.0), np.arange(10.0)[::-1], np.full(10, 5.0)]
+    positions = np.column_stack([x, np.zeros(30)])  # cm
+    regions = Regions()
+    regions.add("east", point=(9.0, 0.0), radius=0.5)
+    regions.add("west", point=(0.0, 0.0), radius=0.5)
+    env = Environment.from_samples(positions, bin_size=1.0, units="cm").with_regions(
+        regions
+    )
+    trials = Intervals.from_arrays([0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
+    goals = ["east", "west", None]
+    options = {"metric": "euclidean", "min_speed": 1.0}
+
+    whole = compute_goal_directed_metrics(env, times, positions, goal="east", **options)
+    per_trial = compute_goal_directed_metrics(
+        env, times, positions, trials, goal=goals, **options
+    )
+    for result in (whole, per_trial):
+        assert type(result) is GoalDirectedMetrics
+        table = result.summary_table()
+        assert table.index.name == "interval_id"
+        assert table.select_dtypes(include="object").empty, table.dtypes
+        assert table.attrs["units"]["goal_distance_at_start"] == "cm"
+        assert table.attrs["units"]["mean_approach_rate"] == "cm/s"
+        assert table.attrs["units"]["time_to_reach_goal"] == "s"
+    assert isinstance(whole.goal_bias, float)
+    assert isinstance(whole.arrival_tested, bool)
+
+    np.testing.assert_array_equal(per_trial.interval_ids, trials.interval_ids)
+    for name in ("goal_bias", "time_to_reach_goal", "goal_distance_at_start"):
+        values = getattr(per_trial, name)
+        assert values.shape == (3,)
+        assert values.dtype == np.float64
+        assert not values.flags.writeable
+    for row in range(2):
+        inside = (times >= trials.start[row]) & (times < trials.stop[row])
+        alone = compute_goal_directed_metrics(
+            env, times[inside], positions[inside], goal=goals[row], **options
+        )
+        for name in ("goal_bias", "goal_distance_at_start", "time_to_reach_goal"):
+            assert getattr(per_trial, name)[row] == pytest.approx(
+                getattr(alone, name), rel=1e-12, nan_ok=True
+            )
+    # Both runs head straight at their goal and arrive after 0.9 s.
+    np.testing.assert_allclose(per_trial.goal_bias[:2], [1.0, 1.0])
+    np.testing.assert_allclose(per_trial.time_to_reach_goal[:2], [0.9, 0.9])
+    assert np.isnan(per_trial.goal_bias[2])
+    assert per_trial.arrival_tested.tolist() == [True, True, False]
+    table = per_trial.summary_table()
+    assert table["arrival_tested"].dtype == bool
+    assert table["goal"].isna().tolist() == [False, False, True]
+    assert table["goal"].iloc[:2].tolist() == ["east", "west"]

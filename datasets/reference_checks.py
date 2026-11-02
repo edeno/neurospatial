@@ -52,11 +52,11 @@ def _relative(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.abs(a - b) / np.maximum(np.abs(b), 1e-12)
 
 
-def _binned_rates(rec: Recording, bandwidth: float | None = 0.0) -> tuple[Any, Any]:
-    """Unsmoothed (``bandwidth=0``) binned rates on the reference grid.
+def _binned_rates(rec: Recording, bandwidth: float | None = None) -> tuple[Any, Any]:
+    """Binned rates on the reference grid, unsmoothed unless ``bandwidth`` is given.
 
-    ``method="binned"`` smooths with a 5 cm bandwidth unless ``bandwidth`` is
-    given, so the reference comparison passes ``bandwidth=0.0``.
+    ``method="binned"`` is the unsmoothed count / occupancy map by default, the
+    estimator pynapple's tuning curves use.
     """
     from neurospatial import Environment
     from neurospatial.encoding import compute_spatial_rates
@@ -123,7 +123,6 @@ def spatial_information_check(rec: Recording, env: Any, rates: Any) -> list[str]
     info = nap.compute_mutual_information(tuning)
     pn = info[["bits/sec", "bits/spike"]].to_numpy()
     ns = np.column_stack([ns_second, ns_spike])
-    default_si = np.asarray(_binned_rates(rec, bandwidth=None)[1].spatial_information())
 
     lines = [
         "## 1. Spatial information, DANDI 000582 sub-10884_ses-03080402",
@@ -131,7 +130,8 @@ def spatial_information_check(rec: Recording, env: Any, rates: Any) -> list[str]
         "Both tools: 40 × 40 bins of 2.5 cm over [−50, 50] cm, no smoothing, no"
         " occupancy threshold, all tracked samples. neurospatial:"
         " `Environment.from_samples(..., dimension_ranges=..., infer_active_bins=False)`,"
-        " `compute_spatial_rates(..., method='binned', bandwidth=0.0)`, `spatial_information()` and"
+        " `compute_spatial_rates(..., method='binned')` (unsmoothed by default),"
+        " `spatial_information()` and"
         " `information_per_second`. pynapple: `compute_tuning_curves` +"
         " `compute_mutual_information`, run in-process on the same arrays.",
         "",
@@ -153,10 +153,11 @@ def spatial_information_check(rec: Recording, env: Any, rates: Any) -> list[str]
         f"- Bins with occupancy: neurospatial {int(np.sum(occupancy > 0))},"
         f" pynapple {int(np.isfinite(tuning.to_numpy()[0]).sum())}.",
         *_assignment_lines(rec, env, rates, units, position),
-        f"- With the default `method='binned'` (5 cm smoothing, no `bandwidth=`),"
-        f" neurospatial gives {default_si[0]:.3f} bits/spike for unit"
-        f" {rec.unit_ids[0]} instead of {ns_spike[0]:.3f}; median relative difference"
-        f" from pynapple over units {np.median(_relative(default_si, pn[:, 1])):.2f}.",
+        f"- The neurospatial maps above use the default `method='binned'` (no"
+        f" `bandwidth=`, so no smoothing): median relative difference in"
+        f" bits/spike from pynapple over units"
+        f" {np.median(_relative(ns_spike, pn[:, 1])):.3g}, the remainder being the"
+        f" spike-to-sample assignment above.",
         "",
     ]
     return lines

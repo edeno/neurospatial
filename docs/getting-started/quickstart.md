@@ -81,7 +81,7 @@ print(result.summary())
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
 print("Spatial information (bits/spike):", result.spatial_information())
-print("Place candidate (information screen):", result.is_place_cell(criterion="threshold"))
+print("Place candidate (information screen):", result.is_place_cell())
 print("Has a detected field:", result.has_place_field())
 
 # One-row table has the same columns as a population rate table.
@@ -103,13 +103,13 @@ coverage; with your own recording, a low fraction means the animal did not
 sample much of the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
 
-Cell classification requires choosing a criterion: `"threshold"` compares
-spatial information, minus what an untuned cell shows by chance, with a
-cutoff, a fast screen; `"shuffle"` also requires the information to be
-significant against circularly shifted spike trains. Call
-`is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
-for that verdict using the raw arrays. It costs about 1000 map recomputes by
-default. Results offer screens and field detection; they keep no raw arrays.
+`result.is_place_cell()` is a fast screen: it compares spatial information,
+minus what an untuned cell shows by chance, with a cutoff. For a verdict, call
+the free function `is_place_cell(env, spike_times, times, positions, rng=0)`
+with the raw arrays. By default it also requires the information to be
+significant against 1000 circularly shifted spike trains, which costs about
+1000 map recomputes; `rng=0` makes it reproducible. Results offer screens and
+field detection; they keep no raw arrays.
 
 ### Native 1D fields
 
