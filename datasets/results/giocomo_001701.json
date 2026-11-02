@@ -36,7 +36,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
+    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
   },
   "load_warnings": [
     {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
+      "seconds": 0.033,
       "peak_mb": 4.3
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.013,
       "peak_mb": 7.1
     },
     "rates.spatial": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.184,
+      "seconds": 0.156,
       "peak_mb": 25.4
     },
     "rates.spatial_information": {
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.71,
+      "seconds": 0.561,
       "peak_mb": 32.5
     },
     "cells.place_screen": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.775,
+      "seconds": 1.551,
       "peak_mb": 1.3
     },
     "cells.border_score": {
@@ -160,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.239,
+      "seconds": 0.238,
       "peak_mb": 25.3
     },
     "decode.position": {
@@ -174,7 +174,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.188,
+      "seconds": 0.216,
       "peak_mb": 41.7
     },
     "io.nwb_roundtrip": {
@@ -185,7 +185,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.12,
+      "seconds": 3.555,
       "peak_mb": 4.4
     },
     "env.from_graph": {
@@ -214,7 +214,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
+      "seconds": 0.027,
       "peak_mb": 7.1
     },
     "behavior.turn_sequence": {
@@ -253,7 +253,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.57,
+      "seconds": 0.616,
       "peak_mb": 19.6
     },
     "imaging.rates": {

@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
+    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.308,
+      "seconds": 0.464,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -61,7 +61,7 @@
       "note": "ValueError: min_speed=1.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.5
     },
     "rates.spatial": {
@@ -118,7 +118,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.078,
+      "seconds": 0.183,
       "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.306,
+      "seconds": 0.429,
       "peak_mb": 16.1
     },
     "behavior.laps": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.916,
+      "seconds": 2.876,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.495,
+      "seconds": 1.368,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {

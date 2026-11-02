@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
+    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
+      "seconds": 0.043,
       "peak_mb": 1.5
     },
     "env.occupancy": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.007,
       "peak_mb": 2.7
     },
     "rates.spatial": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.015,
       "peak_mb": 2.7
     },
     "behavior.turn_sequence": {
@@ -168,7 +168,7 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.372,
+      "seconds": 0.3,
       "peak_mb": 2.0
     },
     "imaging.rates": {
@@ -190,7 +190,7 @@
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.542,
+      "seconds": 0.509,
       "peak_mb": 5.9
     }
   },

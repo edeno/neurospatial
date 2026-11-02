@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df0b6de02e3841db8218f2b27632c278c65afeba"
+    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.012,
       "peak_mb": 1.6
     },
     "env.occupancy": {
@@ -93,7 +93,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.236,
+      "seconds": 0.23,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -129,7 +129,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.574,
+      "seconds": 1.651,
       "peak_mb": 181.4
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.002,
       "peak_mb": 0.9
     },
     "cells.grid_score": {
@@ -193,7 +193,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.305,
+      "seconds": 0.242,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -204,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.066,
+      "seconds": 3.046,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -225,7 +225,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
+      "seconds": 0.022,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -266,7 +266,7 @@
           "count": 1
         }
       ],
-      "seconds": 15.876,
+      "seconds": 18.493,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
@@ -279,7 +279,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.232,
+      "seconds": 1.499,
       "peak_mb": 137.3
     },
     "imaging.rates": {
