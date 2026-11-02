@@ -15,7 +15,7 @@ These decisions are settled by the maintainer. Each row becomes one test in
 
 | Concept | Rule | Replaces |
 | --- | --- | --- |
-| Randomness | `rng: np.random.Generator \| int \| None = None`, keyword-only | `seed=` (13 functions, all of `simulation` plus `animation.estimate_colormap_range_from_subset`); `line_seed=0` in `replay.detect_trajectory_radon` |
+| Randomness | `rng: np.random.Generator \| int \| None = None`, keyword-only; `np.random.default_rng(rng)` semantics, so `rng=0` and `rng=np.random.default_rng(0)` give the same result | `seed=` (13 functions, all of `simulation` plus `animation.estimate_colormap_range_from_subset`); `line_seed=0` in `replay.detect_trajectory_radon` |
 | One region | `region=` (a name, or a `Region`) | `region_name=` |
 | Several regions | `regions=` | — |
 | Two region roles in one call | a role prefix on each: `decision_region=` + `goal_regions=` | used only when two roles coexist; `goal_region=` alone (`detect_goal_directed_runs`) becomes `region=` or `goal=`, matching the #256 goal functions |
@@ -23,7 +23,7 @@ These decisions are settled by the maintainer. Each row becomes one test in
 | Pre-entry window length | `window_duration=` | `pre_window=` (`compute_decision_analysis`, `behavior/decisions.py:1584`) |
 | Paired inputs | suffix `_a` / `_b` | `_1/_2` (`field_stability`, `compute_field_emd`, `field_shift_distance`, `population_vector_correlation`), `_i/_j` (`field_overlap`), `angles1/angles2` (`circular_circular_correlation`) |
 | Unit selection | `unit_ids=` | `cells=` (`replay.null_events`, `replay.spike_words`) |
-| Temporal smoothing width | `smooth_window=` | `smoothing_window=` (`stats.generate_inhomogeneous_poisson_surrogates`) |
+| Temporal smoothing width | `smooth_window=` is seconds; a width counted in bins says so: `smooth_bins=` | `smoothing_window=` (`stats.generate_inhomogeneous_poisson_surrogates`, a bin count) → `smooth_bins=` (maintainer decision 2026-11-02) |
 | Significance level | `alpha=` means only this | VTE mixing weight `alpha=` (`compute_vte_index`, `compute_vte_session`) → `speed_weight=` |
 | Matplotlib target | `ax=` keyword-only, never positional, never `axes=` | positional `ax` in free plot functions and in result `plot` methods (after `idx` where present); `axes=` in `plot_peri_event_response` → `ax=` taking a pair |
 | Field resampling | `f(source_env, target_env, values, *, …)` | `resample_field(field, src_env, dst_env)` → `resample_field(source_env, target_env, field)` to match `map_probabilities` |
