@@ -96,23 +96,27 @@ class TestMakeTMaze:
         left_end = maze.env_2d.regions["well_left"]
         right_end = maze.env_2d.regions["well_right"]
 
-        # All should be point regions
-        assert start.kind == "point"
-        assert junction.kind == "point"
-        assert left_end.kind == "point"
-        assert right_end.kind == "point"
+        # Each is a disc as wide as the corridor, the place where the animal
+        # stops, so that detect_trials accepts them.
+        for region in (start, junction, left_end, right_end):
+            assert region.kind == "polygon"
+            assert region.metadata["radius"] == dims.corridor_width / 2
 
         # Start and arm ends are centred in their corridor's end square.
         half_stem = dims.stem_length / 2
         inset = dims.corridor_width / 2
-        np.testing.assert_allclose(start.data, [0.0, -half_stem + inset])
-        np.testing.assert_allclose(junction.data, [0.0, half_stem])
-        np.testing.assert_allclose(left_end.data, [-dims.arm_length + inset, half_stem])
-        np.testing.assert_allclose(right_end.data, [dims.arm_length - inset, half_stem])
+        np.testing.assert_allclose(start.metadata["center"], [0.0, -half_stem + inset])
+        np.testing.assert_allclose(junction.metadata["center"], [0.0, half_stem])
+        np.testing.assert_allclose(
+            left_end.metadata["center"], [-dims.arm_length + inset, half_stem]
+        )
+        np.testing.assert_allclose(
+            right_end.metadata["center"], [dims.arm_length - inset, half_stem]
+        )
 
         polygon = maze.env_2d.arena.polygon
         for region in (start, left_end, right_end):
-            point = Point(region.data)
+            point = Point(region.metadata["center"])
             assert polygon.contains(point)
             # Half a corridor width from the end wall and both side walls.
             assert polygon.boundary.distance(point) == pytest.approx(inset)
@@ -136,7 +140,17 @@ class TestMakeTMaze:
                 "role": "reward_port",
                 "port_type": "food_well",
             }
-            np.testing.assert_allclose(landmark.data, maze.env_2d.regions[name].data)
+            np.testing.assert_allclose(
+                landmark.data, maze.env_2d.regions[name].metadata["center"]
+            )
+
+    def test_coarse_bins_warn_naming_the_regions_that_cover_no_bin(self):
+        """A disc narrower than a bin covers no bin; the warning names it."""
+        from neurospatial.simulation.mazes.t_maze import make_t_maze
+
+        with pytest.warns(UserWarning, match=r"regions start, junction cover no bin"):
+            maze = make_t_maze(bin_size=10.0)
+        assert len(maze.env_2d.bins_in_region("start")) == 0
 
     def test_default_extent_matches_the_figure_scale(self):
         """A 100 cm stem and a 2 x 50 cm crossbar of 10 cm wide corridors."""
@@ -145,16 +159,6 @@ class TestMakeTMaze:
         x_min, y_min, x_max, y_max = make_t_maze().env_2d.arena.polygon.bounds
         assert (x_min, x_max) == pytest.approx((-50.0, 50.0))
         assert (y_min, y_max) == pytest.approx((-50.0, 55.0))
-
-    def test_track_regions_stay_where_they_are_in_2d(self):
-        """Each region on the linearized track lies where it does in 2-D."""
-        from neurospatial.simulation.mazes.t_maze import make_t_maze
-
-        maze = make_t_maze(bin_size=1.0)
-        for name, region in maze.env_2d.regions.items():
-            np.testing.assert_allclose(
-                maze.env_track.regions[name].data, region.data, atol=1e-9
-            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""

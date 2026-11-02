@@ -93,7 +93,10 @@ A reward port, hole, hidden platform or start or goal box is a landmark whose
 `metadata["role"]` is one of `MAZE_LANDMARK_ROLES`. Encoding functions that take
 `object_positions` accept its name. A region of the same name gives its extent
 for visits and occupancy: the real size where the source publishes one,
-otherwise a point. A reward port's `metadata["port_type"]` names its hardware
+otherwise a point. The T-maze's `start`, `junction`, `well_left` and
+`well_right` are discs as wide as the corridor (radius 5 cm by default), which
+`detect_trials` accepts; at bin sizes near the corridor width a disc can cover
+no bin, and `make_t_maze` warns. A reward port's `metadata["port_type"]` names its hardware
 (`"food_well"`, `"food_cup"`, `"plastic_cap"` or `"liquid_port"`). The
 linearized track carries the same landmarks.
 

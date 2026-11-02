@@ -236,9 +236,12 @@ Add and query regions::
 
 Save and load::
 
+    >>> import tempfile
+    >>> from pathlib import Path
     >>> from neurospatial.io import to_file, from_file
-    >>> to_file(env, 'my_environment')
-    >>> loaded = from_file('my_environment')
+    >>> with tempfile.TemporaryDirectory() as folder:
+    ...     to_file(env, Path(folder) / 'my_environment')
+    ...     loaded = from_file(Path(folder) / 'my_environment')
 
 See Also
 --------

@@ -23,6 +23,7 @@ neurospatial's built-in simulators, and estimates the cell's firing-rate map.
 ```python
 import matplotlib.pyplot as plt
 import numpy as np
+from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.simulation import (
@@ -32,15 +33,12 @@ from neurospatial.simulation import (
 )
 from neurospatial import compute_spatial_rate
 
-rng = np.random.default_rng(1)
-
 # 1. Create an Environment: a 100 x 100 cm open-field arena binned at 2 cm.
-arena_samples = rng.uniform(0, 100, size=(2000, 2))
-env = Environment.from_samples(arena_samples, bin_size=2.0, units="cm")
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
-# 2. Simulate 5 minutes of foraging, plus one place cell tuned to arena center.
+# 2. Simulate 30 minutes of foraging, plus one place cell tuned to arena center.
 positions, times = simulate_trajectory_ou(
-    env, duration=300.0, speed_units="cm", seed=1
+    env, duration=1800.0, speed_units="cm", seed=1
 )
 place_cell = PlaceCellModel(
     env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0
@@ -50,14 +48,18 @@ spike_times = generate_poisson_spikes(firing_rate_hz, times, seed=2)
 
 # 3. Estimate the place field: a boundary-aware, smoothed firing-rate map.
 result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
+
+# Check that the map covers the arena: most bins should have a finite rate.
+assert np.isfinite(result.firing_rate).mean() > 0.8
 ```
 
 !!! note "Bringing your own data"
     Replace the simulation in step 2 with your own arrays: `spike_times`
     (shape `(n_spikes,)`, seconds), `times` (shape `(n_samples,)`, seconds),
     and `positions` (shape `(n_samples, 2)`, same units as `bin_size`). Build
-    `env` from your recorded trajectory instead of `arena_samples`. Nothing
-    else changes.
+    `env` from your arena's outline with `Environment.from_polygon(...)`:
+    `from_samples` on a trajectory leaves gaps wherever the animal did not
+    go. Nothing else changes.
 
 Required tracking pairs always put timestamps before positions:
 `compute_spatial_rate(env, spike_times, times, positions)`, and behavior uses
@@ -73,8 +75,8 @@ numbers, then plot the map:
 ```python
 # Scalar headline metrics include peak_firing_rate, spatial_information and sparsity.
 print(result.summary())
-# -> a dict of scalars, e.g. ~1383 bins, peak firing rate ~22 Hz,
-#    spatial_information in bits/spike and ~300 s shared occupancy (exact values vary).
+# -> a dict of scalars, e.g. 2500 bins, peak firing rate ~22 Hz,
+#    spatial_information ~0.95 bits/spike and ~1800 s of shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
@@ -95,7 +97,10 @@ plt.show()
 ```
 
 The peak sits near `(50, 50)` cm — right where the place cell was tuned — and
-the map is a smooth bump over the arena. That is the core loop: **environment +
+the map is a smooth bump with a finite rate in almost every bin of the arena
+(bins the animal never visited stay NaN). The assert in step 3 checks this
+coverage; with your own recording, a low fraction means the animal did not
+sample much of the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
 
 Cell classification requires choosing a criterion: `"threshold"` compares

@@ -1013,20 +1013,21 @@ def path_progress(
     >>> track = make_t_maze().env_track
     >>> positions = np.array(
     ...     [
-    ...         track.regions["start"].data,
+    ...         track.regions["start"].metadata["center"],
     ...         [0.0, 2.5],  # halfway up the stem
-    ...         track.regions["well_left"].data,
-    ...         track.regions["well_right"].data,  # the wrong arm's end
+    ...         track.regions["well_left"].metadata["center"],
+    ...         track.regions["well_right"].metadata["center"],  # the wrong arm's end
     ...     ]
     ... )
     >>> progress = path_progress(
     ...     track, np.arange(4.0), positions, start="start", goal="well_left"
     ... )
     >>> progress.round(2).tolist()
-    [0.0, 0.34, 1.0, 0.68]
+    [0.0, 0.33, 1.0, 0.69]
 
-    The wrong arm keeps the junction's value, 95 / 140 = 0.68: running into
-    it is no progress.
+    The wrong arm keeps the junction's value, 90 / 130 = 0.69 (90 cm of stem
+    between the 5 cm start disc and the junction, out of the 130 cm route to
+    the left well's disc): running into it is no progress.
 
     See Also
     --------

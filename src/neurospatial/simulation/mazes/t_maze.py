@@ -19,9 +19,9 @@ both spontaneous and rewarded alternation on it: "Animals are started from
 the base of the T and allowed to choose one of the goal arms", and the
 alternation "can be reinforced by making the animal hungry and rewarding it
 with a preferred food if it alternates". Each goal arm ends in a food well,
-``well_left`` and ``well_right``: reward-port landmarks with point regions of
-the same name, centred in the end square of their arm. For spontaneous
-alternation, ignore the wells.
+``well_left`` and ``well_right``: reward-port landmarks with disc regions of
+the same name, centred in the end square of their arm and as wide as the
+corridor. For spontaneous alternation, ignore the wells.
 
 The arms are walled (``arena.outline == "wall"``): Wijnen et al. (2024) note
 that in a T-maze "animals would collide with a wall" and "cannot look inside
@@ -146,11 +146,14 @@ def make_t_maze(
     - Arms run from x = -arm_length to x = +arm_length at y = +stem_length/2
     - Junction is at (0, +stem_length/2)
 
-    Regions (the start and arm-end points are centred in the end square of
-    their corridor, half a corridor width back from its far end):
+    Regions (each is a disc of radius ``corridor_width / 2``, so the regions
+    have an area and ``detect_trials`` accepts them; the start and arm-end
+    centres are in the end square of their corridor, half a corridor width
+    back from its far end). A disc covers no bin when ``bin_size`` is near
+    ``corridor_width``, and ``make_t_maze`` warns then:
 
-    - start: Point at stem base (0, -stem_length/2 + corridor_width/2)
-    - junction: Point at T-junction (0, +stem_length/2)
+    - start: Disc at stem base (0, -stem_length/2 + corridor_width/2)
+    - junction: Disc at T-junction (0, +stem_length/2)
     - well_left: Food well at the left arm end (-arm_length + corridor_width/2,
       +stem_length/2), also a reward-port landmark
     - well_right: Food well at the right arm end (+arm_length - corridor_width/2,
@@ -239,11 +242,16 @@ def make_t_maze(
     )
 
     # Add regions for key locations
+    # Each region is a disc as wide as the corridor, so it has an area and
+    # ``detect_trials`` accepts it.
+    radius = dims.corridor_width / 2.0
     region_builder = Regions()
     region_builder.add(
-        "start", point=corridor_end_point(junction_pos, start_pos, dims.corridor_width)
+        "start",
+        point=corridor_end_point(junction_pos, start_pos, dims.corridor_width),
+        radius=radius,
     )
-    region_builder.add("junction", point=junction_pos)
+    region_builder.add("junction", point=junction_pos, radius=radius)
     wells = {
         "well_left": corridor_end_point(
             junction_pos, left_end_pos, dims.corridor_width
@@ -253,7 +261,7 @@ def make_t_maze(
         ),
     }
     for name, point in wells.items():
-        region_builder.add(name, point=point)
+        region_builder.add(name, point=point, radius=radius)
     env_2d = env_2d.with_regions(region_builder)
     env_2d = env_2d.with_landmarks(
         Landmarks(

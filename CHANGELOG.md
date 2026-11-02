@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### First run works: quickstart, simulators and 1-D plots
+
+**Fixed**
+
+- The quickstart built its arena from 2000 random points and simulated 5
+  minutes, so the trajectory covered about 6% of the bins and the text called
+  a mostly-NaN map "a smooth bump over the arena". It now builds the arena
+  with `Environment.from_polygon(box(0, 0, 100, 100), ...)`, simulates 30
+  minutes, and asserts that most bins have a finite rate.
+- `open_field_session` and `grid_cell_session` build their arena with
+  `Environment.from_polygon`, so it declares its walls and spans exactly
+  0 to `arena_size` (2500 bins at the defaults, where the sampled grid gave
+  2601). Before, border scores were unavailable and
+  `spatial_cell_type_significance(...).summary_table()["cell_type"]` labelled
+  every simulated place cell `"undetermined"`; now place cells label `"place"`.
+  Seeded sessions have a different bin layout and trajectory than before.
+  `border_cell_session` builds the same arena.
+- The `make_t_maze` regions (`start`, `junction`, `well_left`, `well_right`),
+  and so those of `tmaze_alternation_session`, are discs as wide as the
+  corridor, not points, so `detect_trials(env, times, positions,
+  regions=[...])` accepts them. `path_progress` values on the T-maze change,
+  because its start and goal are now 5 cm discs. At a `bin_size` near the
+  corridor width (10 cm, for example) a disc covers no 2-D bin, and
+  `make_t_maze` warns and names the regions.
+- `env.plot()` on a one-dimensional grid, such as `linear_track_session().env`,
+  draws the bin edges along a line with the x-axis in the environment's units,
+  and marks point regions and landmarks with labels. It raised
+  `NotImplementedError`, and `plot_1d`'s refusal sent you back to it.
+- README: `max_gap` is 1.0 s, not 0.5 s, and the package map lists `arena`,
+  `binning`, `landmarks` and `testing` and no longer lists `composite.py`.
+- `docs/user-guide/workflows.md`: Workflow 3 and "Handling Edge Cases" use
+  `Environment.occupancy` and `compute_spatial_rate` and run in the docs
+  tests; they called a function that does not exist.
+- The `read_position`, `to_file`, `from_file` and package-level doctests write
+  to a temporary directory instead of the current directory.
+
 ### Warnings and refusals for silently wrong results
 
 Inputs that ran to completion and returned a plausible but wrong number now

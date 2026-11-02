@@ -268,7 +268,7 @@ for the full Bayesian decoding tutorial.
 
 ### Recording gaps and time windows
 
-Gaps longer than `max_gap=0.5` seconds are detected from `times` and excluded automatically.
+Gaps longer than `max_gap=1.0` seconds are detected from `times` and excluded automatically.
 `epochs=` selects analysis windows; `spike_window=` covers ephys that started late or stopped early.
 Without `spike_window`, spikes are assumed recorded whenever position was; `result.spike_window_assumed` says so.
 
@@ -577,7 +577,7 @@ env.animate_fields(
 )
 ```
 
-A field row is held until the next one, up to `max_gap=0.5` s; across longer
+A field row is held until the next one, up to `max_gap=1.0` s; across longer
 gaps in the recording it is shown as missing rather than frozen. The
 `backend` can be `"napari"`, `"widget"` (Jupyter), `"fastplotlib"` (GPU), or
 a file: `.mp4`, `.webm`, `.mov`, `.avi`, `.gif` or `.html`. Without
@@ -621,6 +621,10 @@ env.animate_fields(posterior, frame_times=decode_times, backend="napari")
 src/neurospatial/
 ├── environment/    # Environments, trajectories, fields, queries, and plots
 ├── layout/         # Grid, hexagonal, graph, polygon, mask, and mesh layouts
+├── arena.py        # Physical apparatus around the bins: outline, walls, drop edges
+├── binning.py      # Build an environment from your own bins
+├── landmarks.py    # Named cues, objects and reward ports
+├── testing.py      # Contract checks for custom environments
 ├── encoding/       # Place, grid, border, directional, view, and egocentric coding
 ├── decoding/       # Bayesian decoding, posterior summaries, and decoding accuracy
 ├── replay/         # Replay trajectory scores, replay shuffles, and significance tests
@@ -633,8 +637,7 @@ src/neurospatial/
 ├── animation/      # Field animation: viewers, overlays, and video/HTML export
 ├── annotation/     # Interactive video and track-graph annotation
 ├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
-├── regions/        # Standalone region containers, operations, I/O, and plotting
-└── composite.py    # Multi-environment composition
+└── regions/        # Standalone region containers, operations, I/O, and plotting
 
 tests/                 # More than 9,000 automated tests across the package
 examples/              # 9 task-oriented, paired Python/Jupyter tutorials

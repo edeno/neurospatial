@@ -341,7 +341,7 @@ class TestTmazeAlternationSession:
 
         # The ordered arm-end visits are the trial choices.
         wells = {
-            side: np.asarray(session.env.regions[f"well_{side}"].data)
+            side: np.asarray(session.env.regions[f"well_{side}"].metadata["center"])
             for side in ("left", "right")
         }
         at_well = np.full(len(session.positions), "", dtype=object)
@@ -924,3 +924,43 @@ def test_grid_phases_and_orientations_have_their_own_stream():
     shared = np.random.default_rng(_SEED)
     shared.shuffle(np.zeros((6, 2)))
     assert not np.allclose(orientations, shared.uniform(0, np.pi / 3, size=6))
+
+
+def test_open_field_session_labels_place_cells():
+    """Place cells in a walled arena get a place label, not a missing border score."""
+    from neurospatial.encoding import spatial_cell_type_significance
+
+    session = open_field_session(duration=120.0, n_place_cells=4, bin_size=4.0, seed=0)
+    assert session.env.arena.outline == "wall"
+    result = spatial_cell_type_significance(
+        session.env,
+        session.spike_times,
+        session.times,
+        session.positions,
+        n_shuffles=50,
+        rng=0,
+    )
+    table = result.summary_table()
+    assert (table["cell_type"] == "place").sum() > len(table) / 2
+    assert "border_score" not in table.attrs.get("unavailable_metrics", {})
+
+
+def test_tmaze_session_regions_work_with_detect_trials():
+    """The T-maze wells are areas, so ``detect_trials`` finds one trial per run."""
+    from neurospatial.behavior import detect_trials
+
+    n_trials = 10
+    session = tmaze_alternation_session(
+        duration=150.0, n_trials=n_trials, n_place_cells=2, seed=0
+    )
+    trials = detect_trials(
+        session.env,
+        session.times,
+        session.positions,
+        regions=["well_left", "well_right"],
+    )
+    # Each trial runs from one well to the other, so its end region is the arm
+    # chosen on the next trial; the last run back has no end region.
+    choices = session.metadata["trial_choices"]
+    ends = [region for region in trials.end_region if region is not None]
+    assert ends == [f"well_{choice}" for choice in choices[1:]]

@@ -145,11 +145,15 @@ def read_position(
     >>> pos = read_position(nwbfile, processing_module="behavior", position_name="xy")
     >>> pos.positions.shape
     (3, 2)
-    >>> with NWBHDF5IO("position.nwb", "w") as io:
-    ...     io.write(nwbfile)
-    >>> with NWBHDF5IO("position.nwb", "r") as io:
-    ...     pos_lazy = read_position(io.read(), lazy=True)
-    ...     first_position = np.asarray(pos_lazy.positions[:1])
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.TemporaryDirectory() as folder:
+    ...     path = str(Path(folder) / "position.nwb")
+    ...     with NWBHDF5IO(path, "w") as io:
+    ...         io.write(nwbfile)
+    ...     with NWBHDF5IO(path, "r") as io:
+    ...         pos_lazy = read_position(io.read(), lazy=True)
+    ...         first_position = np.asarray(pos_lazy.positions[:1])
     >>> first_position.tolist()
     [[0.0, 0.0]]
 

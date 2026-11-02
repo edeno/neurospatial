@@ -49,16 +49,18 @@ def test_validate_simulation_recovers_every_place_field(connected_arena_env):
 def test_place_field_detection_accuracy():
     """Detected place-field peaks recover every true center of an open field.
 
-    Five minutes at 50 Hz peak rate: each cell fires hundreds of spikes, and
-    each rate-map peak lies within one field width (11.1 cm) of its center.
+    Fifteen minutes at 50 Hz peak rate: the trajectory visits most of the arena,
+    each cell fires over a thousand spikes, and each rate-map peak lies within
+    one field width (11.1 cm) of its center. Five minutes visit under half of
+    the bins and leave some fields undersampled.
     """
     session = open_field_session(
-        duration=300.0, n_place_cells=5, seed=42, max_rate=50.0
+        duration=900.0, n_place_cells=5, seed=42, max_rate=50.0
     )
     env = session.env
     errors = []
     for model, spike_times in zip(session.models, session.spike_times, strict=True):
-        assert len(spike_times) > 100
+        assert len(spike_times) > 1000
         rate_map = compute_spatial_rate(
             env, spike_times, session.times, session.positions
         ).firing_rate

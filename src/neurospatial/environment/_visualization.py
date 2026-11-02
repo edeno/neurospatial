@@ -137,10 +137,20 @@ def _plot(
         ax.set_ylabel(ylabel)
         if not labels.coordinates.equal_aspect:
             ax.set_aspect("auto")
+    elif binning.bins.n_dims == 1 and binning.linearization is None:
+        # A one-dimensional grid is drawn along x, in the environment's units.
+        ax.set_xlabel(f"Position ({labels.units})" if labels.units else "Position")
 
+    one_d_grid = binning.bins.n_dims == 1 and binning.linearization is None
+    if one_d_grid:
+        # Points on the line, labeled; a 1-D region or landmark is a point.
+        if show_regions:
+            _draw_points_1d(ax, regions, marker="o", color="tab:red")
+        if landmarks:
+            _draw_points_1d(ax, landmarks, marker="*", color="darkorange")
     if arena is not None and arena.walls:
         _draw_walls(ax, arena)
-    if show_regions and len(regions):
+    if show_regions and len(regions) and not one_d_grid:
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
         # The renderers fix the limits to the bins; a region drawn past the
@@ -154,7 +164,7 @@ def _plot(
         if (world_to_pixel := r_kwargs.get("world_to_pixel")) is not None:
             drawn = [shapely.transform(geometry, world_to_pixel) for geometry in drawn]
         _widen_to_show(ax, drawn)
-    if landmarks:
+    if landmarks and not one_d_grid:
         _draw_landmarks(ax, landmarks)
 
     plot_title = labels.name
@@ -198,6 +208,34 @@ def _draw_walls(ax: matplotlib.axes.Axes, arena: Arena) -> None:
             fontsize=9,
             zorder=6,
         )
+
+
+def _draw_points_1d(
+    ax: matplotlib.axes.Axes,
+    items: Mapping[str, Any],
+    *,
+    marker: str,
+    color: str,
+) -> None:
+    """Mark each point region or landmark on a 1-D grid's line, with its name."""
+    for name, item in items.items():
+        data = item.data
+        if not isinstance(data, np.ndarray):
+            continue
+        x = float(data[0])
+        ax.plot(x, 0.0, marker=marker, markersize=12, color=color, zorder=5)
+        ax.annotate(
+            name,
+            (x, 0.0),
+            xytext=(6, 8),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            zorder=6,
+        )
+        low, high = ax.get_xlim()
+        margin = 0.05 * (high - low)
+        ax.set_xlim(min(low, x - margin), max(high, x + margin))
 
 
 def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
@@ -275,7 +313,7 @@ def _plot_1d(
                 f"plot_1d() draws a linearized track; this {layout_type!r} "
                 "environment has no linearization.",
                 why="Why: a 1D plot needs each bin's position along a track.",
-                fix="call env.plot() for a spatial view, or build a track with "
+                fix="call env.plot() to draw the bins, or build a track with "
                 "Environment.from_graph() or Environment.linear_track()",
             )
         )

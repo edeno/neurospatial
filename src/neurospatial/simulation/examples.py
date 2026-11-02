@@ -20,14 +20,14 @@ if TYPE_CHECKING:
 
 
 def _square_arena(arena_size: float, bin_size: float) -> Environment:
-    """A square arena of side ``arena_size`` cm, binned from a grid of samples."""
+    """A walled square arena of side ``arena_size`` cm."""
+    from shapely.geometry import box
+
     from neurospatial.environment import Environment
 
-    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
-    x = np.linspace(0, arena_size, n_points_per_dim)
-    xx, yy = np.meshgrid(x, x)
-    samples = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(samples, bin_size=bin_size, units="cm")
+    return Environment.from_polygon(
+        box(0, 0, arena_size, arena_size), bin_size=bin_size, units="cm"
+    )
 
 
 def open_field_session(
@@ -676,9 +676,7 @@ def border_cell_session(
     firing).
     """
     # Import here to avoid circular dependencies
-    from shapely.geometry import box
 
-    from neurospatial.environment import Environment
     from neurospatial.simulation._seeds import _stream_seeds
     from neurospatial.simulation.models import PlaceCellModel
     from neurospatial.simulation.session import (
@@ -700,10 +698,7 @@ def border_cell_session(
         msg = f"Only 'square' arena_shape is currently supported, got {arena_shape!r}"
         raise ValueError(msg)
 
-    # A walled square arena: its outline is a physical wall.
-    env = Environment.from_polygon(
-        box(0.0, 0.0, arena_size, arena_size), bin_size=bin_size, units="cm"
-    )
+    env = _square_arena(arena_size, bin_size)
 
     # Independent streams for the trajectory, the cells' tuning and the spikes.
     trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)

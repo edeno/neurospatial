@@ -191,8 +191,8 @@ def test_hampton_court_blinds_flat_except_the_loop():
 def test_dead_ends_bounded_in_2d():
     env = _maze("make_t_maze").env_2d
     progress = _at_bins(env, "start", "well_left", point_radius=5.0)
-    junction = np.asarray(env.regions["junction"].data)
-    right = np.asarray(env.regions["well_right"].data)
+    junction = np.asarray(env.regions["junction"].metadata["center"])
+    right = np.asarray(env.regions["well_right"].metadata["center"])
     x, y = env.bin_centers.T
     arm = (x > junction[0] + 5.0) & (np.abs(y - junction[1]) < 10.0)
     entrance = arm & (x <= x[arm].min())
@@ -327,14 +327,25 @@ def test_sized_targets_converge():
 
 def test_point_target_needs_radius():
     env = _maze("make_t_maze").env_2d
+    start_point, goal_point = [0.0, -45.0], [-45.0, 50.0]
     with pytest.raises(ValueError, match="point_radius was not given"):
-        _at_bins(env, "start", "well_left")
+        _at_bins(env, start_point, goal_point)
     with pytest.raises(ValueError, match="point_radius was not given"):
         _at_bins(env, [0.0, -40.0], "well_left")
     with pytest.raises(ValueError, match=r"covers [01] bin\(s\)"):
-        _at_bins(env, "start", "well_left", point_radius=0.5)
+        _at_bins(env, start_point, goal_point, point_radius=0.5)
     track = _maze("make_t_maze").env_track
     assert np.isfinite(_at_bins(track, "start", [-45.0, 50.0])).any()
+
+
+def test_point_region_name_needs_radius_in_2d():
+    env = _maze("make_t_maze").env_2d
+    regions = Regions(env.regions.values())
+    regions.add("goal_point", point=[-45.0, 50.0])
+    env = env.with_regions(regions)
+    with pytest.raises(ValueError, match="point_radius was not given"):
+        _at_bins(env, "start", "goal_point")
+    assert np.isfinite(_at_bins(env, "start", "goal_point", point_radius=5.0)).any()
 
 
 def _lollipop(*, with_long_route: bool) -> Environment:
@@ -513,7 +524,7 @@ def test_mostly_nan_warns():
 
 def test_start_goal_same_bin(t_track_trials):
     track, times, positions, _ = t_track_trials
-    with pytest.raises(ValueError, match="share 1 bin"):
+    with pytest.raises(ValueError, match=r"share \d+ bin"):
         path_progress(track, times, positions, start="well_left", goal="well_left")
     trials = Intervals.from_arrays(
         [0.0, 25.0], [25.0, 30.0], goal=["well_left", "start"]
@@ -532,8 +543,8 @@ def test_target_forms(t_track_trials):
     import pandas as pd
 
     track, times, positions, trials = t_track_trials
-    left = np.asarray(track.regions["well_left"].data, dtype=float)
-    right = np.asarray(track.regions["well_right"].data, dtype=float)
+    left = np.asarray(track.regions["well_left"].metadata["center"], dtype=float)
+    right = np.asarray(track.regions["well_right"].metadata["center"], dtype=float)
     by_name = path_progress(
         track,
         times,
@@ -557,8 +568,22 @@ def test_target_forms(t_track_trials):
         ["well_right", "well_left", None], index=trials.interval_ids[[2, 0, 1]]
     )
     by_id = path_progress(track, times, positions, trials, start="start", goal=series)
-    for other in (as_tuple, as_points, by_id):
+    for other in (as_tuple, by_id):
         np.testing.assert_array_equal(other, by_name)
+    # A coordinate goal is the same target as a point region at that coordinate
+    # (the wells themselves are discs, so by_name is a different target).
+    point_regions = Regions(track.regions.values())
+    point_regions.add("left_point", point=left)
+    point_regions.add("right_point", point=right)
+    by_point_name = path_progress(
+        track.with_regions(point_regions),
+        times,
+        positions,
+        trials,
+        start="start",
+        goal=["left_point", None, "right_point"],
+    )
+    np.testing.assert_array_equal(as_points, by_point_name)
     assert np.isnan(by_name[10:20]).all()
 
     # No trial reached an end region: every sample is NaN, which is expected.
@@ -602,7 +627,7 @@ def test_one_dimensional_points_need_no_radius():
 
 def test_single_shared_target_raises_with_intervals(t_track_trials):
     track, times, positions, trials = t_track_trials
-    with pytest.raises(ValueError, match="share 1 bin"):
+    with pytest.raises(ValueError, match=r"share \d+ bin"):
         path_progress(
             track, times, positions, trials, start="well_left", goal="well_left"
         )
