@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
   },
   "load_warnings": [
     {
@@ -103,7 +103,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.261,
+      "seconds": 0.249,
       "peak_mb": 105.6
     },
     "decode.position": {

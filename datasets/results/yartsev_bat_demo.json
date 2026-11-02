@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.272,
+      "seconds": 0.33,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -74,7 +74,7 @@
       "note": "ValueError: min_speed=0.5 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.9
     },
     "rates.spatial": {
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.455,
+      "seconds": 2.839,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -101,7 +101,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.011,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.665,
+      "seconds": 6.55,
       "peak_mb": 264.7
     },
     "cells.place_screen": {
@@ -128,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.073,
       "peak_mb": 66.8
     },
     "cells.grid_score": {
@@ -146,7 +146,7 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 3.9
     },
     "hd.tuning": {
@@ -165,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.373,
+      "seconds": 1.712,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -176,7 +176,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.049,
+      "seconds": 5.241,
       "peak_mb": 24.2
     },
     "env.from_graph": {
@@ -197,7 +197,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.725,
+      "seconds": 0.805,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -208,7 +208,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.177,
+      "seconds": 0.22,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {

@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.013,
       "peak_mb": 1.6
     },
     "env.occupancy": {
@@ -93,7 +93,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.341,
+      "seconds": 0.366,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -106,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.9
     },
     "rates.information_vs_shifts": {
@@ -129,7 +129,7 @@
           "count": 4
         }
       ],
-      "seconds": 2.006,
+      "seconds": 1.806,
       "peak_mb": 181.4
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.004,
       "peak_mb": 0.9
     },
     "cells.grid_score": {
@@ -193,7 +193,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.35,
+      "seconds": 0.327,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -204,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.412,
+      "seconds": 3.59,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -225,7 +225,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.044,
+      "seconds": 0.026,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -234,7 +234,7 @@
       "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.01,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -266,7 +266,7 @@
           "count": 1
         }
       ],
-      "seconds": 22.846,
+      "seconds": 22.709,
       "peak_mb": 225.2
     }
   },

@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f26cbb3740eef4f07fa00d94ac1271ba31f2094e"
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.442,
+      "seconds": 0.5,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -118,7 +118,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.099,
+      "seconds": 0.128,
       "peak_mb": 0.9
     },
     "behavior.segment_by_velocity": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.405,
+      "seconds": 0.435,
       "peak_mb": 16.1
     },
     "behavior.laps": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.142,
+      "seconds": 4.134,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.724,
+      "seconds": 2.107,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
