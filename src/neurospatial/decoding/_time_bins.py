@@ -234,15 +234,6 @@ or None
             raise ValueError(msg)
         windows = as_intervals(epochs, name="epochs")
         assert windows is not None
-        if windows.shape[0] == 0:
-            raise ValueError(
-                _format_error(
-                    "bin_spikes_in_time got epochs with no windows (an empty "
-                    "selection), so there is no time to bin.",
-                    fix="select at least one interval with duration, or skip "
-                    "this condition.",
-                )
-            )
     else:
         start_from_spikes = t_start is None
         if t_start is None:
@@ -284,6 +275,43 @@ or None
                 )
             )
         windows = np.array([[t_start, t_stop]], dtype=np.float64)
+    counts, bin_centers = spike_counts_in_windows(trains, windows, dt)
+    if orient == "neuron_x_time":
+        counts = counts.T
+    return counts, bin_centers
+
+
+def spike_counts_in_windows(
+    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], dt: float
+) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+    """Spike counts in the whole ``dt`` bins inside resolved windows.
+
+    The counting behind :func:`bin_spikes_in_time`, for windows already
+    resolved (no rows is an empty selection, refused here).
+
+    Parameters
+    ----------
+    trains : list of ndarray, each shape (n_spikes_i,)
+        Validated spike times in seconds, one array per neuron.
+    windows : ndarray of float64, shape (n_windows, 2)
+        Sorted, merged ``[start, stop)`` windows in seconds.
+    dt : float
+        Validated bin width in seconds.
+
+    Returns
+    -------
+    counts : ndarray of int64, shape (n_bins, n_neurons)
+    bin_centers : ndarray of float64, shape (n_bins,)
+    """
+    if windows.shape[0] == 0:
+        raise ValueError(
+            _format_error(
+                "bin_spikes_in_time got epochs with no windows (an empty "
+                "selection), so there is no time to bin.",
+                fix="select at least one interval with duration, or skip "
+                "this condition.",
+            )
+        )
     left, right = _time_bins_in_windows(windows, dt)
     if left.size == 0:
         longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
@@ -295,7 +323,4 @@ or None
             )
         )
     counts = _count_spikes_in_time_bins(trains, left, right)
-    bin_centers = left + dt / 2.0
-    if orient == "neuron_x_time":
-        counts = counts.T
-    return counts, bin_centers
+    return counts, left + dt / 2.0

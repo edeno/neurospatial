@@ -701,7 +701,7 @@ class _RateResultMixin(SpatialResultMixin):
         list cannot bypass read-only ownership.
         """
         from neurospatial._exceptions import _format_error
-        from neurospatial._intervals import as_intervals
+        from neurospatial._intervals import recorded_windows
 
         kind = type(self).__name__
         rates = _as_result_array(getattr(self, self._RATES_FIELD))
@@ -776,7 +776,9 @@ class _RateResultMixin(SpatialResultMixin):
         object.__setattr__(self, "min_occupancy", self._checked_min_occupancy())
         object.__setattr__(self, "n_spikes_outside_intervals", self._checked_counts())
         object.__setattr__(
-            self, "spike_window", as_intervals(self.spike_window, name="spike_window")
+            self,
+            "spike_window",
+            recorded_windows(self.spike_window, name="spike_window"),
         )
 
     def _refuse_negative(self, name: str, values: Any) -> None:

@@ -89,10 +89,10 @@ def _posterior_value_problems(posterior: NDArray[Any]) -> list[str]:
 
 def _owned_windows(value: Any, name: str) -> NDArray[np.float64]:
     """Sorted, merged, read-only ``(n_windows, 2)`` half-open windows."""
-    from neurospatial._intervals import as_intervals
+    from neurospatial._intervals import recorded_windows
 
-    window = as_intervals(value, name=name)
-    assert window is not None  # as_intervals returns None only for None
+    window = recorded_windows(value, name=name)
+    assert window is not None  # recorded_windows returns None only for None
     return marked_read_only(window)
 
 

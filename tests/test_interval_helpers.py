@@ -458,15 +458,29 @@ def test_windows_protocol():
         as_intervals(intervals, name="epochs"), [[0.0, 10.0], [20.0, 30.0]]
     )
 
-    # No windows is an empty selection; it stays empty when normalized again.
+    # No windows is an empty selection.
     empty = as_intervals(intervals[[]], name="epochs")
     assert empty.shape == (0, 2)
-    assert as_intervals(empty, name="epochs").shape == (0, 2)
     assert as_intervals(intervals[[1]], name="epochs").shape == (0, 2)
 
-    # A plain array without rows is still refused as a probable bug.
-    with pytest.raises(ValueError, match="no rows"):
-        as_intervals(np.empty((0, 2)), name="epochs")
+    # A plain array without rows is refused as a probable bug, the resolved
+    # empty selection included: analyses resolve their windows once.
+    for rows in (np.empty((0, 2)), empty):
+        with pytest.raises(ValueError, match="no rows"):
+            as_intervals(rows, name="epochs")
+
+
+def test_results_record_an_empty_selection():
+    """A result's recorded windows may be empty; analysis arguments may not."""
+    from neurospatial._intervals import recorded_windows
+
+    for rows in (np.empty((0, 2)), [], np.empty(0)):
+        assert recorded_windows(rows, name="spike_window").shape == (0, 2)
+    assert recorded_windows(None, name="spike_window") is None
+    np.testing.assert_array_equal(
+        recorded_windows([[5.0, 6.0], [0.0, 1.0]], name="spike_window"),
+        [[0.0, 1.0], [5.0, 6.0]],
+    )
 
 
 @pytest.mark.pynapple

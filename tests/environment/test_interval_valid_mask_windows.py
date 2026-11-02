@@ -122,6 +122,7 @@ def test_interval_valid_mask_gap_without_positions():
 
 
 def test_observed_run_samples(two_epoch_recording):
+    from neurospatial._intervals import as_intervals
     from neurospatial._observation import resolve_sample_support
 
     def observed_runs(times, *, max_gap, epochs, sample_valid=None):
@@ -132,7 +133,7 @@ def test_observed_run_samples(two_epoch_recording):
             times,
             valid,
             max_gap=max_gap,
-            epochs=epochs,
+            epochs=as_intervals(epochs, name="epochs"),
             break_before=None,
             result="the result is empty",
         ).run_samples()

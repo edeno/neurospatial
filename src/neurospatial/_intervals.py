@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import EMPTY_SELECTION, ReadOnlyArraysMixin
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 _ACCEPTED_FORMS = (
@@ -314,8 +314,6 @@ def _parse_intervals(
     Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
     are unusable; ``problems`` is empty when ``rows`` is valid.
     """
-    if value is EMPTY_SELECTION:
-        return EMPTY_SELECTION, []
     kind = type(value).__name__
     if _is_pynapple_object(value) and kind != "IntervalSet":
         # A Ts/Tsd/TsdFrame has scalar .start/.end (its first and last
@@ -346,7 +344,7 @@ def _parse_intervals(
         if rows.ndim != 2 or rows.shape[1] != 2:
             return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
         if rows.shape[0] == 0:
-            return EMPTY_SELECTION, []
+            return rows, []
     elif table and {"start_time", "stop_time"} <= set(value.columns):
         # A table (a task log, an NWB table's DataFrame): its bounds by name,
         # whatever its other columns or their order.
@@ -379,7 +377,7 @@ def _parse_intervals(
                 f"numbers ({exc})"
             ]
         if np.isfinite(start) and start == stop:
-            return EMPTY_SELECTION, []
+            return np.empty((0, 2)), []
         rows = np.array([[start, stop]])
     elif hasattr(value, "start") and hasattr(value, "end"):
         try:
@@ -481,7 +479,7 @@ def _parse_intervals(
 def _merge(rows: NDArray[np.float64]) -> NDArray[np.float64]:
     """Sort rows by start and merge overlapping or touching rows (vectorized)."""
     if rows.shape[0] == 0:
-        return EMPTY_SELECTION
+        return rows
     rows = rows[np.argsort(rows[:, 0], kind="stable")]
     running_stop = np.maximum.accumulate(rows[:, 1])
     opens_new = np.ones(rows.shape[0], dtype=bool)
@@ -566,6 +564,29 @@ IntervalSet-like
     if problems:
         _raise_invalid(problems)
     return rows
+
+
+def recorded_windows(value: Any, *, name: str) -> NDArray[np.float64] | None:
+    """Windows as a result records them: resolved rows, possibly none.
+
+    A result keeps the windows its analysis resolved, so an array or list
+    without rows is the empty selection that analysis was given (an
+    ``Intervals`` with no windows), not a probable bug as it would be in an
+    analysis argument. Any other value is read by :func:`as_intervals`.
+
+    Parameters
+    ----------
+    value : None, array-like of shape (n, 2), or any form :func:`as_intervals` reads
+    name : str
+        Field name used in error messages.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_windows, 2), or None
+    """
+    if isinstance(value, (np.ndarray, list)) and np.shape(value) in ((0,), (0, 2)):
+        return np.empty((0, 2))
+    return as_intervals(value, name=name)
 
 
 @dataclass(frozen=True)

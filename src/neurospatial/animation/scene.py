@@ -17,6 +17,7 @@ from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
     intersect_intervals,
+    recorded_windows,
     times_in_intervals,
     validate_max_gap,
 )
@@ -460,7 +461,7 @@ class Animation:
             if name in kwargs
         }
         name = "time_support" if result.time_support is not None else "spike_window"
-        known = as_intervals(getattr(result, name), name=name)
+        known = recorded_windows(getattr(result, name), name=name)
         selected = as_intervals(field_options.get("epochs"), name="epochs")
         if known is not None:
             selected = (

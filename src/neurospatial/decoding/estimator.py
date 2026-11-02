@@ -760,9 +760,7 @@ warn_on_drop
             spike_times, unit_ids, context="BayesianDecoder.fit"
         )
 
-        resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
-            epochs, spike_window
-        )
+        windows = resolve_time_windows(epochs, spike_window)
 
         _, firing_rates, rates_result = _fit_encoding_model(
             self.env,
@@ -780,9 +778,8 @@ warn_on_drop
             warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             context="BayesianDecoder.fit",
-            epochs=resolved_epochs,
+            windows=windows,
             break_before=break_before,
-            spike_window=resolved_spike_window,
         )
         return replace(
             self,
@@ -791,7 +788,7 @@ warn_on_drop
                 labels,
                 env=self.env,
                 spatial_support=rates_result.spatial_support,
-                spike_window=resolved_spike_window,
+                spike_window=windows.spike_window,
                 analysis_settings=rates_result.analysis_settings,
                 encoding_config=self._encoding_config(),
             ),
@@ -1068,15 +1065,22 @@ warn_on_drop
         caller: str,
         spike_times: SpikeTrainsLike,
         times: ArrayLike,
+        *,
+        epochs: Any,
+        spike_window: Any,
         **options: Any,
     ) -> Any:
         """Run a session decoder with the fitted models and this configuration."""
+        from neurospatial._intervals import resolve_time_windows
+
         encoding_models = self._check_fitted()
+        trains = self._align_to_fitted_units(spike_times, caller)
         return decode(
             self.env,
-            self._align_to_fitted_units(spike_times, caller),
+            trains,
             times,
             encoding_models,
+            windows=resolve_time_windows(epochs, spike_window),
             spatial_support=self.spatial_support,
             dt=self.dt,
             warn_spikes_outside=self.warn_on_drop,

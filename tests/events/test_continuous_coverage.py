@@ -45,7 +45,7 @@ def _supports(times, signals, *, epochs=None):
         call="test",
         # Below two 0.125 s frames: a single missing sample is a tracking loss.
         max_gap=0.2,
-        epochs=epochs,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=None,
         result="nothing is sampled",
     )

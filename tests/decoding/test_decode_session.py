@@ -877,20 +877,20 @@ class TestDecodeSessionMaxGap:
         return env, spike_times, times, positions, t_gap
 
     def test_max_gap_forwarded_to_encoder(self, monkeypatch) -> None:
-        """The max_gap kwarg reaches compute_spatial_rates verbatim."""
+        """The max_gap kwarg reaches the spatial rate estimation verbatim."""
         import neurospatial.encoding.spatial as spatial_mod
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions, _ = self._gap_session()
 
         seen = {}
-        real = spatial_mod.compute_spatial_rates
+        real = spatial_mod._spatial_rate_maps
 
         def _spy(*args, **kwargs):
             seen["max_gap"] = kwargs.get("max_gap", "MISSING")
             return real(*args, **kwargs)
 
-        monkeypatch.setattr(spatial_mod, "compute_spatial_rates", _spy)
+        monkeypatch.setattr(spatial_mod, "_spatial_rate_maps", _spy)
 
         decode_session(env, spike_times, times, positions, dt=0.1, max_gap=None)
         assert seen["max_gap"] is None
@@ -903,7 +903,7 @@ class TestDecodeSessionMaxGap:
         from neurospatial.decoding import decode_session
         from neurospatial.encoding import spatial
 
-        original = spatial.compute_spatial_rates
+        original = spatial._spatial_rate_maps
         models = []
 
         def track_models(*args, **kwargs):
@@ -911,7 +911,7 @@ class TestDecodeSessionMaxGap:
             models.append(np.asarray(result.firing_rates))
             return result
 
-        monkeypatch.setattr(spatial, "compute_spatial_rates", track_models)
+        monkeypatch.setattr(spatial, "_spatial_rate_maps", track_models)
 
         env, spike_times, times, positions, _ = self._gap_session()
 

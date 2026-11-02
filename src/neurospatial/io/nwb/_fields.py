@@ -21,8 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
-from neurospatial._results import EMPTY_SELECTION
+from neurospatial._intervals import recorded_windows
 from neurospatial.io.files import _check_schema
 from neurospatial.io.nwb._adapters import missing_error
 from neurospatial.io.nwb._core import _clear_for_write, _require_pynwb, logger
@@ -790,13 +789,8 @@ def read_spatial_rates(
             "expected a boolean to distinguish generated from explicit labels."
         )
         raise ValueError(msg)
-    stored_window = _required_key(meta, "spike_window", name)
-    # Results refuse windows without rows unless they are an empty selection,
-    # so a stored empty window is one; restore it as that object.
-    spike_window = (
-        EMPTY_SELECTION
-        if stored_window is not None and len(stored_window) == 0
-        else as_intervals(stored_window, name=f"{name}.spike_window")
+    spike_window = recorded_windows(
+        _required_key(meta, "spike_window", name), name=f"{name}.spike_window"
     )
     if spike_window is not None:
         spike_window.setflags(write=False)

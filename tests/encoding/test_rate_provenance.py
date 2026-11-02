@@ -176,6 +176,29 @@ def test_empty_populations_keep_observation_provenance(rate_family):
     assert empty.to_dataframe().empty
 
 
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_an_empty_spike_window_survives_copies(rate_family, how):
+    """Rates of an empty selection copy and index like any other rates."""
+    import copy
+    import pickle
+
+    from neurospatial import Intervals
+
+    _, compute, trains = rate_family
+    none = Intervals.from_arrays([0.0], [1.0])[[]]
+    with pytest.warns(UserWarning, match="spike_window selects no time"):
+        rates = compute(trains, spike_window=none)
+    copied = (
+        pickle.loads(pickle.dumps(rates)) if how == "pickle" else copy.deepcopy(rates)
+    )
+
+    for result in (rates, copied, copied[1]):
+        assert result.spike_window.shape == (0, 2)
+        assert not result.spike_window.flags.writeable
+        assert result.analysis_settings["spike_window"] == []
+    np.testing.assert_array_equal(copied[1].occupancy, rates[1].occupancy)
+
+
 @pytest.mark.parametrize("family", ["view", "object_vector", "egocentric"])
 @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde"])
 @pytest.mark.parametrize("declared_units", [True, False])

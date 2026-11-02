@@ -298,7 +298,7 @@ def resolve_observation_support(
         times,
         sample_valid,
         max_gap=max_gap,
-        epochs=epochs,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
         result=result,
     )
@@ -309,7 +309,7 @@ def resolve_sample_support(
     sample_valid: NDArray[np.bool_],
     *,
     max_gap: float | None,
-    epochs: Any,
+    epochs: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None,
     result: str | None,
 ) -> ObservationSupport:
@@ -321,8 +321,11 @@ def resolve_sample_support(
         Seconds; already validated and strictly increasing.
     sample_valid : ndarray of bool, shape (n_samples,)
         True for samples that were observed.
-    max_gap, epochs
-        The shared interval gates (``observed_interval_mask``).
+    max_gap : float or None
+        Longest bridged gap, in seconds (``observed_interval_mask``).
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Resolved epochs (:func:`~neurospatial._intervals.as_intervals`);
+        no rows is an empty selection.
     break_before : ndarray of bool, shape (n_samples,) or None
         Declared recording breaks; entry 0 is ignored.
     result : str or None
@@ -349,16 +352,15 @@ def resolve_sample_support(
     [ True  True  True  True]
     [ True False False  True]
     """
-    resolved_epochs = as_intervals(epochs, name="epochs")
     raw_gates = interval_valid_mask(
-        times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
+        times, max_gap=max_gap, epochs=epochs, break_before=break_before
     )
     support = _support_from_gates(
         times,
         sample_valid,
         raw_gates,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        epochs=epochs,
         break_before=break_before,
     )
     if result is not None:
@@ -847,7 +849,7 @@ def validated_signals(
     valid: ArrayLike | None,
     call: str,
     max_gap: float | None,
-    epochs: Any,
+    epochs: NDArray[np.float64] | None,
     break_before: Any,
     result: str,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], tuple[ObservationSupport, ...]]:
@@ -870,8 +872,10 @@ def validated_signals(
         Extra validity for every feature (1-D) or per feature (2-D).
     call : str
         Public function name, used in messages.
-    max_gap, epochs, break_before
+    max_gap, break_before
         The shared interval gates, as for ``validated_observations``.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Resolved epochs (:func:`~neurospatial._intervals.as_intervals`).
     result : str
         What an all-excluded selection leaves, for the shared warning.
 
@@ -896,9 +900,8 @@ def validated_signals(
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, t.size, call=call)
     sample_valid = np.isfinite(sig) & flags
-    resolved_epochs = as_intervals(epochs, name="epochs")
     raw_gates = interval_valid_mask(
-        t, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+        t, max_gap=max_gap, epochs=epochs, break_before=breaks
     )
     supports = tuple(
         _support_from_gates(
@@ -906,7 +909,7 @@ def validated_signals(
             np.ascontiguousarray(sample_valid[:, f]),
             raw_gates,
             max_gap=max_gap,
-            epochs=resolved_epochs,
+            epochs=epochs,
             break_before=breaks,
         )
         for f in range(sig.shape[1])
@@ -917,7 +920,7 @@ def validated_signals(
             t,
             np.any([support.interval_mask for support in supports], axis=0),
             max_gap,
-            epochs=resolved_epochs,
+            epochs=epochs,
             break_before=breaks,
             sample_valid=np.asarray(sample_valid.any(axis=1)),
         ),
