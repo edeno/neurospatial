@@ -14,7 +14,9 @@ namespace built by `_fixture_namespace`.
 Put a marker on the line directly above the fence:
 `<!-- docs-test: run -->`, `<!-- docs-test: run setup=<name> -->` (a key of
 `SETUPS`; every setup must be used), `<!-- docs-test: skip <reason> -->` or
-`<!-- docs-test: raises <Exception> -->`. NWB recipes in
+`<!-- docs-test: raises <Exception> -->` (add `match="<literal text>"` to
+check the message; prefer it over `try`/`except`, which passes silently when
+nothing raises). NWB recipes in
 `docs/user-guide/interoperability.md` use `<!-- nwb-docs-test: run -->` and run
 in `tests/nwb/test_documented_workflow.py`.
 
