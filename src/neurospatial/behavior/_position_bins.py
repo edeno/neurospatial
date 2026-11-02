@@ -12,6 +12,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     EMPTY_RESULT,
     start_allocation,
+    times_in_intervals,
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
@@ -104,7 +105,12 @@ def validated_position_bins(
 
 
 def sample_bins(
-    env: Environment, times: ArrayLike, positions: ArrayLike, *, call: str
+    env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    call: str,
+    epochs: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
     """Validated ``times`` and each position's bin, ``-1`` outside or missing.
 
@@ -123,6 +129,9 @@ def sample_bins(
         Positions in the environment's coordinates; NaN where missing.
     call : str
         Public function name, used in messages.
+    epochs : ndarray of float64, shape (n_windows, 2), optional
+        The detector's resolved epochs; only samples inside them count
+        toward the outside-the-environment warning.
 
     Returns
     -------
@@ -138,9 +147,9 @@ def sample_bins(
     Warns
     -----
     UserWarning
-        If more than half of the positions with finite coordinates are
-        outside the environment (usually a unit or coordinate-frame
-        mismatch).
+        If more than half of the positions with finite coordinates inside
+        ``epochs`` are outside the environment (usually a unit or
+        coordinate-frame mismatch).
     """
     from neurospatial._validation import validate_times_positions
 
@@ -158,8 +167,12 @@ def sample_bins(
             )
         )
     bins = np.asarray(env.bin_at(p), dtype=np.int64)
-    finite = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
-    _warn_if_mostly_outside(bins, finite, call=call)
+    # Time outside the epochs (a sleep box, a home cage) is not analyzed, so
+    # positions there say nothing about the units.
+    counted = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
+    if epochs is not None:
+        counted &= times_in_intervals(epochs, t)
+    _warn_if_mostly_outside(bins, counted, call=call)
     return t, bins
 
 

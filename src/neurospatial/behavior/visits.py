@@ -184,7 +184,9 @@ def _observed_visits(
     """
     from neurospatial._exceptions import _format_error
 
-    clock, bins = sample_bins(env, times, positions, call=call)
+    clock, bins = sample_bins(
+        env, times, positions, call=call, epochs=as_intervals(epochs, name="epochs")
+    )
     validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(regions, str):

@@ -505,7 +505,11 @@ def detect_region_crossings(
     )
 
     times, position_bins = sample_bins(
-        env, times, positions, call="detect_region_crossings"
+        env,
+        times,
+        positions,
+        call="detect_region_crossings",
+        epochs=as_intervals(epochs, name="epochs"),
     )
     times, position_bins, breaks, _ = bridge_missing_positions(
         times,
@@ -1216,7 +1220,13 @@ def detect_laps(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
-    times, position_bins = sample_bins(env, times, positions, call="detect_laps")
+    times, position_bins = sample_bins(
+        env,
+        times,
+        positions,
+        call="detect_laps",
+        epochs=as_intervals(epochs, name="epochs"),
+    )
     times, position_bins, breaks, _ = bridge_missing_positions(
         times,
         position_bins,
@@ -2184,7 +2194,11 @@ def detect_goal_directed_runs(
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
     times, position_bins = sample_bins(
-        env, times, positions, call="detect_goal_directed_runs"
+        env,
+        times,
+        positions,
+        call="detect_goal_directed_runs",
+        epochs=as_intervals(epochs, name="epochs"),
     )
     times, position_bins, breaks, _ = bridge_missing_positions(
         times,

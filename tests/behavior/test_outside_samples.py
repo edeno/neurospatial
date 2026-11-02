@@ -19,6 +19,7 @@ from neurospatial.behavior.segmentation import (
 )
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial.behavior.trials import detect_trials
+from neurospatial.behavior.visits import detect_region_visits
 from neurospatial.regions import Regions
 
 # Equal one-unit bins: the home range ranks them by occupancy alone.
@@ -306,6 +307,43 @@ def test_positions_mostly_outside_the_environment_warn(detect):
     n_outside = int(np.count_nonzero(track.bin_at(in_mm) < 0))
     assert f"{n_outside} of {times.size}" in message
     assert record[0].filename == __file__
+
+
+@pytest.mark.parametrize(
+    "detect",
+    [
+        lambda e, t, p, **kw: detect_trials(e, t, p, regions=["left", "right"], **kw),
+        lambda e, t, p, **kw: detect_region_visits(e, t, p, regions=["left"], **kw),
+        lambda e, t, p, **kw: detect_region_crossings(
+            e, t, p, region_name="left", **kw
+        ),
+        lambda e, t, p, **kw: detect_goal_directed_runs(
+            e, t, p, goal_region="right", min_progress=5.0, **kw
+        ),
+    ],
+    ids=["trials", "visits", "crossings", "goal_runs"],
+)
+def test_time_outside_the_epochs_does_not_count_as_outside(detect):
+    """A sleep box after the run session is outside the track but not analyzed."""
+    track, times, positions = _shuttle_in_cm()
+    sleep_times = times[-1] + np.arange(1, 2 * times.size + 1) * np.median(
+        np.diff(times)
+    )
+    sleep = np.full((sleep_times.size, positions.shape[1]), 500.0)
+    all_times = np.concatenate([times, sleep_times])
+    all_positions = np.concatenate([positions, sleep])
+    assert np.mean(track.bin_at(all_positions) < 0) > 0.5  # mostly in the box
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*outside the environment.*")
+        within = detect(
+            track, all_times, all_positions, epochs=[(times[0], sleep_times[0])]
+        )
+    # The session restricted to the run finds what the run alone gives.
+    alone = detect(track, times, positions)
+    assert len(alone) > 0
+    assert len(within) == len(alone)
 
 
 def test_nan_positions_do_not_count_as_outside():
