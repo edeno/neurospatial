@@ -66,6 +66,16 @@
     a valid answer. Check each of the 11 call sites, and add a
     `raise_if_empty: bool = True` parameter for the exceptions.
   - This covers times in ms and `pd.DatetimeIndex` times.
+  - It is also the only guard for positions in the wrong units (review S1).
+    Phase 1 deferred the partial outside-environment warning: every
+    drop-fraction or margin rule also fired on the documented
+    `env.subset(...)` region-of-interest recipes
+    (`spatial-analysis.md:1030`, `environments.md:932`), which keep as
+    little time as a ×8 pixel error does. An untested idea for a later PR:
+    a units error clusters the kept samples in a small corner of the
+    environment, while a region-of-interest analysis covers the subset.
+    Adopt it only if measured cases (×0.1, ×2.54, ×8, ×10, ×100 versus the
+    subset recipes) separate cleanly.
 - **Typo and choice hints.**
   - Simulator wrappers (`open_field_session`, `linear_track_session`,
     `simulate_session`) validate `**kwargs` against the inner function they
