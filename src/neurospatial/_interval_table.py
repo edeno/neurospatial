@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 import numbers
 import warnings
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_type_hints, overload
@@ -1622,3 +1622,49 @@ def readable_fields(
             continue
         out[name] = pd.Series(cells, index=table.index, dtype=object)
     return pd.DataFrame(out, index=table.index), dropped
+
+
+def intervals_from_stored(
+    table: pd.DataFrame,
+    *,
+    keep: Iterable[str],
+    id_column: str | None,
+    dropped_message: Callable[[list[str]], str],
+    checked_ids: Callable[[NDArray[Any]], NDArray[Any]] | None = None,
+) -> Intervals[Interval]:
+    """Intervals from a table stored elsewhere (an NWB table, pynapple metadata).
+
+    Columns that cannot be fields (:func:`readable_fields`) are left out with
+    a ``UserWarning`` reading ``dropped_message(names)``. A file may store
+    rows out of time order, so they are put in time order (ties keep the
+    stored order).
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        ``start_time``, ``stop_time``, the ids if any, and candidate fields.
+    keep : iterable of str
+        Columns kept as they are (the bounds and ids).
+    id_column : str, optional
+        Column with the ids; None numbers the rows as stored.
+    dropped_message : callable
+        The warning text for the names of the columns left out.
+    checked_ids : callable, optional
+        Converts or refuses the id column, in stored order, before the rows
+        are sorted.
+
+    Returns
+    -------
+    Intervals of Interval
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    table, dropped = readable_fields(table, keep=keep)
+    if dropped:
+        warnings.warn(
+            dropped_message(dropped), UserWarning, stacklevel=_external_stacklevel()
+        )
+    if checked_ids is not None and id_column is not None:
+        table[id_column] = checked_ids(table[id_column].to_numpy())
+    table = table.sort_values(["start_time", "stop_time"], kind="stable")
+    return Intervals.from_dataframe(table, id_column=id_column)

@@ -291,7 +291,7 @@ def read_intervals(
     ...     epochs = read_intervals(io.read(), interval_name="epochs")
     >>> epochs.interval_ids, epochs.fields  # doctest: +SKIP
     """
-    from neurospatial._interval_table import Intervals
+    from neurospatial._interval_table import intervals_from_stored
 
     # Verify pynwb is installed
     _require_pynwb()
@@ -320,32 +320,23 @@ def read_intervals(
             fix="pass interval_name= with a name from this list.",
         )
     logger.debug("Reading TimeIntervals '%s' from NWB file", interval_name)
-    import warnings
-
-    from neurospatial._interval_table import readable_fields
-    from neurospatial._stacklevel import _external_stacklevel
-
-    table = tables[interval_name].to_dataframe()
+    table = tables[interval_name].to_dataframe().reset_index()
     # The table's ids are its index, named "id"; a column cannot share it.
     # Tables written here carry the stable ids in an interval_id column.
     stable = "interval_id" if "interval_id" in table.columns else "id"
-    table, dropped = readable_fields(
-        table.reset_index(), keep=("id", "interval_id", "start_time", "stop_time")
-    )
     if stable == "interval_id":
         table = table.drop(columns="id")
-    if dropped:
-        warnings.warn(
+    return intervals_from_stored(
+        table,
+        keep=("id", "interval_id", "start_time", "stop_time"),
+        id_column=stable,
+        dropped_message=lambda dropped: (
             f"read_intervals: columns {dropped} of '{interval_name}' cannot be "
             "Intervals fields (references to other tables, nested arrays, or a "
             "name Intervals uses) and were left out. Fix: read them with "
-            f"nwbfile.intervals['{interval_name}'].to_dataframe() if you need them.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    # A file may store rows out of time order; Intervals keeps time order.
-    table = table.sort_values(["start_time", "stop_time"], kind="stable")
-    return Intervals.from_dataframe(table, id_column=stable)
+            f"nwbfile.intervals['{interval_name}'].to_dataframe() if you need them."
+        ),
+    )
 
 
 def _records(

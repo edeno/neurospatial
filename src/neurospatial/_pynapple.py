@@ -319,12 +319,9 @@ def intervals_from_interval_set(intervals: Any) -> Any:
     -------
     Intervals of Interval
     """
-    import warnings
-
     import pandas as pd
 
-    from neurospatial._interval_table import Intervals, readable_fields
-    from neurospatial._stacklevel import _external_stacklevel
+    from neurospatial._interval_table import intervals_from_stored
 
     rows = interval_rows(intervals)
     table = pd.DataFrame({"start_time": rows[:, 0], "stop_time": rows[:, 1]})
@@ -332,24 +329,18 @@ def intervals_from_interval_set(intervals: Any) -> Any:
     if metadata is not None:
         for column in metadata.columns:
             table[str(column)] = metadata[column].to_numpy()
-    table, dropped = readable_fields(
-        table, keep=("start_time", "stop_time", "interval_id")
-    )
-    if dropped:
-        warnings.warn(
+    return intervals_from_stored(
+        table,
+        keep=("start_time", "stop_time", "interval_id"),
+        id_column="interval_id" if "interval_id" in table.columns else None,
+        dropped_message=lambda dropped: (
             f"IntervalSet metadata {dropped} cannot be Intervals fields (not an "
             "identifier, a name Intervals uses, or values without a hashable "
             "form) and were left out. Fix: rename or convert those columns in "
-            "iset.metadata to keep them.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    id_column = None
-    if "interval_id" in table.columns:
-        table["interval_id"] = _metadata_ids(table["interval_id"].to_numpy())
-        id_column = "interval_id"
-    table = table.sort_values(["start_time", "stop_time"], kind="stable")
-    return Intervals.from_dataframe(table, id_column=id_column)
+            "iset.metadata to keep them."
+        ),
+        checked_ids=_metadata_ids,
+    )
 
 
 def _metadata_ids(ids: NDArray[Any]) -> NDArray[np.integer[Any]]:
