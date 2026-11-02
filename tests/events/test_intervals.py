@@ -88,7 +88,7 @@ class TestIntervalsToEvents:
 
     def test_each_event_carries_its_interval_id(self):
         """Ids follow the interval, not its position."""
-        intervals = Intervals.from_arrays([5.0, 1.0], [6.0, 2.0], interval_ids=[12, 30])
+        intervals = Intervals.from_arrays([1.0, 5.0], [2.0, 6.0], interval_ids=[30, 12])
 
         result = intervals_to_events(intervals, which="both")
 
@@ -172,7 +172,9 @@ class TestIntervalsToEvents:
             intervals_to_events(intervals, preserve_fields=["nonexistent"])
 
     def test_index_is_reset(self):
-        intervals = Intervals.from_arrays([3.0, 1.0, 2.0], [4.0, 2.0, 3.0])
+        intervals = Intervals.from_arrays(
+            [1.0, 2.0, 3.0], [2.0, 3.0, 4.0], interval_ids=[7, 3, 5]
+        )
 
         result = intervals_to_events(intervals, which="start")
 
@@ -181,7 +183,7 @@ class TestIntervalsToEvents:
 
     def test_a_task_log_with_its_own_column_names(self):
         """A table with other names becomes Intervals by naming its columns."""
-        log = pd.DataFrame({"begin": [3.0, 1.0], "end": [4.0, 2.0], "trial": [8, 7]})
+        log = pd.DataFrame({"begin": [1.0, 3.0], "end": [2.0, 4.0], "trial": [7, 8]})
         trials = Intervals.from_dataframe(
             log, start_column="begin", stop_column="end", id_column="trial"
         )
@@ -239,6 +241,17 @@ class TestEventsToIntervals:
         assert_allclose(result.stop, [4.0, 5.0, 6.0])
         assert result.fields == ("trial_id",)
         assert result._field_array("trial_id").tolist() == [1, 2, 3]
+
+    def test_start_events_out_of_time_order_give_rows_in_time_order(self):
+        """Matched by trial, the pairs come back in time order, not refused."""
+        start_events = _events(3.0, 1.0, 2.0, trial_id=[1, 2, 3])
+        stop_events = _events(3.5, 1.5, 2.5, trial_id=[1, 2, 3])
+
+        result = events_to_intervals(start_events, stop_events, match_by="trial_id")
+
+        assert_allclose(result.start, [1.0, 2.0, 3.0])
+        assert result._field_array("trial_id").tolist() == [2, 3, 1]
+        assert result.interval_ids.tolist() == [0, 1, 2]
 
     def test_max_duration_filter(self):
         # Sorted starts [1, 5, 10] pair with sorted stops [3, 8, 20].
@@ -514,7 +527,7 @@ class TestFilterByIntervals:
     def test_many_events_and_intervals_match_a_brute_force_check(self):
         rng = np.random.default_rng(0)
         times = rng.uniform(0, 100, 2000)
-        starts = rng.uniform(0, 100, 50)
+        starts = np.sort(rng.uniform(0, 100, 50))
         stops = starts + rng.uniform(0, 3, 50)
 
         kept = filter_by_intervals(

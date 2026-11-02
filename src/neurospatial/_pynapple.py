@@ -348,6 +348,7 @@ def intervals_from_interval_set(intervals: Any) -> Any:
     if "interval_id" in table.columns:
         table["interval_id"] = _metadata_ids(table["interval_id"].to_numpy())
         id_column = "interval_id"
+    table = table.sort_values(["start_time", "stop_time"], kind="stable")
     return Intervals.from_dataframe(table, id_column=id_column)
 
 

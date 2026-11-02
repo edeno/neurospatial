@@ -393,8 +393,10 @@ class Intervals(Generic[R]):
 
     **Per-interval values** are a ``pandas.Series`` indexed by
     ``interval_id`` (a field is one), aligned by id, or an array in row
-    order (sorted by time). An array built in the order of input records
-    that were not sorted is misaligned.
+    order (sorted by time). :meth:`from_arrays` and :meth:`from_dataframe`
+    refuse input out of time order, so arrays in the input order line up;
+    records passed to the constructor are sorted, so an array built in the
+    order of unsorted records is misaligned.
 
     Examples
     --------
@@ -1188,20 +1190,27 @@ class Intervals(Generic[R]):
         start, stop : array-like, shape (n,)
             Row bounds in seconds.
         interval_ids : array-like of int, shape (n,), optional
-            Stable ids in input order. Default ``0`` to ``n - 1``.
+            Stable ids, one per row. Default ``0`` to ``n - 1``.
         **fields : array-like, shape (n,)
-            One array per field, in input order.
+            One array per field, one value per row.
 
         Returns
         -------
         Intervals of Interval
 
+        Raises
+        ------
+        ValueError
+            If the rows are not in time order (by start, then stop): the
+            container keeps rows in time order, so an array or mask built in
+            the input order would select other rows. Sort the inputs first.
+
         Examples
         --------
         >>> from neurospatial import Intervals
-        >>> runs = Intervals.from_arrays([5.0, 0.0], [9.0, 4.0], speed=[30.0, 12.0])
+        >>> runs = Intervals.from_arrays([0.0, 5.0], [4.0, 9.0], speed=[12.0, 30.0])
         >>> runs.start.tolist(), runs.speed.tolist(), runs.interval_ids.tolist()
-        ([0.0, 5.0], [12.0, 30.0], [1, 0])
+        ([0.0, 5.0], [12.0, 30.0], [0, 1])
         """
         starts = np.asarray(start, dtype=np.float64)
         stops = np.asarray(stop, dtype=np.float64)
@@ -1223,7 +1232,13 @@ class Intervals(Generic[R]):
                 )
                 raise ValueError(msg)
             columns[name] = array
-        return _from_columns(starts, stops, columns, interval_ids=interval_ids)
+        return _from_columns(
+            starts,
+            stops,
+            columns,
+            interval_ids=interval_ids,
+            in_time_order="from_arrays",
+        )
 
     @classmethod
     def from_dataframe(
@@ -1260,7 +1275,11 @@ class Intervals(Generic[R]):
         Raises
         ------
         ValueError
-            If a named column is missing, or the ids repeat or are negative.
+            If a named column is missing, the ids repeat or are negative, or
+            the rows are not in time order (by start, then stop): the
+            container keeps rows in time order, so an array or mask in the
+            table's row order would select other rows. Sort the table first,
+            ``df.sort_values([start_column, stop_column])``.
         TypeError
             If ``id_column`` is not given and the index is not integers (call
             ``df.reset_index(drop=True)`` or name ``id_column``).
@@ -1312,6 +1331,7 @@ class Intervals(Generic[R]):
             interval_ids=_index_ids(df.index)
             if id_column is None
             else df[id_column].to_numpy(),
+            in_time_order="from_dataframe",
         )
 
     def __repr__(self) -> str:
@@ -1484,8 +1504,15 @@ def _from_columns(
     columns: dict[str, NDArray[Any]],
     *,
     interval_ids: ArrayLike | None,
+    in_time_order: str | None = None,
 ) -> Intervals[Interval]:
-    """Build Interval rows from parallel columns, keeping column dtypes."""
+    """Build Interval rows from parallel columns, keeping column dtypes.
+
+    Rows are put in time order (by start, then stop; ties keep their input
+    order). ``in_time_order`` names a public builder that refuses input out
+    of that order instead, so a caller's arrays in input order stay aligned
+    with the rows.
+    """
     for name in columns:
         _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
     names = tuple(columns)
@@ -1502,7 +1529,26 @@ def _from_columns(
         start.size,
         owner="Intervals",
     )
-    order = np.lexsort((ids, stop, start))
+    order = np.lexsort((stop, start))
+    # A row that sorts before the one above it: earlier start, or the same
+    # start and an earlier stop.
+    backward = (start[1:] < start[:-1]) | (
+        (start[1:] == start[:-1]) & (stop[1:] < stop[:-1])
+    )
+    if in_time_order is not None and backward.any():
+        k = int(np.flatnonzero(backward)[0])
+        raise ValueError(
+            _format_error(
+                f"{in_time_order}: the rows are not in time order: row {k + 1} "
+                f"[{start[k + 1]:g}, {stop[k + 1]:g}) s comes before row {k} "
+                f"[{start[k]:g}, {stop[k]:g}) s.",
+                why="Intervals keeps its rows in time order, so an array or mask "
+                "in this row order would select other rows.",
+                fix="sort the rows first, for a table "
+                "df.sort_values(['start_time', 'stop_time']); a Series built from "
+                "the sorted table selects by its index labels, the interval_ids.",
+            )
+        )
     intervals: Intervals[Interval] = object.__new__(Intervals)
     intervals._init_parts(
         records=tuple(rows[i] for i in order),

@@ -1392,9 +1392,10 @@ left = trials[trials.instructed_goal == "left"]
 ```
 
 Arrays with one value per trial are in row order, the order of the
-`Intervals` (sorted by time). An array built in the order of your log before
-`Intervals` sorted it is misaligned when the log was not in time order; pass a
-`pandas.Series` indexed by `interval_id` to align by id instead.
+`Intervals` (time order). `from_dataframe` and `from_arrays` refuse rows out of
+time order, so sort the log first (`log.sort_values("start_time")`); arrays
+built from the sorted log then line up with the trials, and a
+`pandas.Series` built from it aligns by `interval_id`.
 
 ---
 

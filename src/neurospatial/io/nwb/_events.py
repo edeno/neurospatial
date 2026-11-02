@@ -343,6 +343,8 @@ def read_intervals(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
+    # A file may store rows out of time order; Intervals keeps time order.
+    table = table.sort_values(["start_time", "stop_time"], kind="stable")
     return Intervals.from_dataframe(table, id_column=stable)
 
 

@@ -392,11 +392,11 @@ class TestReadIntervals:
         from neurospatial.io.nwb import read_intervals, write_trials
 
         trials = Intervals.from_arrays(
-            [5.0, 1.0],
-            [6.0, 2.5],
-            interval_ids=[4, 9],
-            outcome=["reached", None],
-            speed=[30.0, 12.0],
+            [1.0, 5.0],
+            [2.5, 6.0],
+            interval_ids=[9, 4],
+            outcome=[None, "reached"],
+            speed=[12.0, 30.0],
         )
         nwbfile = create_roundtrip_nwb()
         write_trials(nwbfile, trials)

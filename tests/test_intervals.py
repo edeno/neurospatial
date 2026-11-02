@@ -130,7 +130,7 @@ def test_zero_duration_observation(trials: Intervals[Trial]) -> None:
 
 def test_overlap_refused_where_samples_assigned() -> None:
     overlapping = Intervals.from_arrays(
-        [0.0, 10.0, 5.0], [20.0, 12.0, 6.0], interval_ids=[4, 8, 6]
+        [0.0, 5.0, 10.0], [20.0, 6.0, 12.0], interval_ids=[4, 6, 8]
     )
     times = np.arange(0.0, 25.0)
     message = r"intervals 4 and 6 overlap \(\[0, 20\) and \[5, 6\) s\)"
@@ -240,11 +240,11 @@ def test_table_round_trip_keeps_schema(trials: Intervals[Trial]) -> None:
 def test_from_dataframe() -> None:
     log = pd.DataFrame(
         {
-            "trial": [12, 11],
-            "begin": [10.0, 0.0],
-            "end": [17.0, 8.0],
-            "instructed_goal": ["right", np.nan],
-            "reward_ml": [0.1, 0.0],
+            "trial": [11, 12],
+            "begin": [0.0, 10.0],
+            "end": [8.0, 17.0],
+            "instructed_goal": [np.nan, "right"],
+            "reward_ml": [0.0, 0.1],
         }
     )
     trials = Intervals.from_dataframe(
@@ -303,7 +303,7 @@ def test_field_is_series_by_interval_id(trials: Intervals[Trial]) -> None:
 
 def test_boolean_series_selection_aligns_by_id() -> None:
     log = Intervals.from_arrays(
-        [20.0, 0.0, 10.0], [29.0, 8.0, 17.0], interval_ids=[5, 9, 2], goal=list("aba")
+        [0.0, 10.0, 20.0], [8.0, 17.0, 29.0], interval_ids=[9, 2, 5], goal=list("baa")
     )
     # Rows are in time order (ids 9, 2, 5); a mask built in another order
     # selects by id.
@@ -319,7 +319,7 @@ def test_boolean_series_selection_aligns_by_id() -> None:
 
 def test_with_fields_adds_and_replaces() -> None:
     trials = Intervals.from_arrays(
-        [10.0, 0.0], [17.0, 8.0], interval_ids=[4, 1], end_region=["b", "a"]
+        [0.0, 10.0], [8.0, 17.0], interval_ids=[1, 4], end_region=["a", "b"]
     )
     labelled = trials.with_fields(
         outcome=pd.Series(["error", "correct"], index=[4, 1]), end_region=["x", "y"]
@@ -508,8 +508,26 @@ def test_from_dataframe_ids_are_the_table_index() -> None:
     rewarded = trials.with_fields(reward=log.outcome == "correct")
     assert rewarded.reward.tolist() == [True, False, True]  # time order
     assert trials.interval_ids.tolist() == [1, 0, 2]
-    # A default index numbers the rows 0 to n - 1 in table order, as before.
-    assert Intervals.from_dataframe(log).interval_ids.tolist() == [1, 0, 2]
+
+
+def test_rows_out_of_time_order_are_refused() -> None:
+    """A mask in the input's row order would select other rows once sorted."""
+    log = pd.DataFrame(
+        {"start_time": [10.0, 0.0], "stop_time": [15.0, 5.0], "goal": ["a", "b"]}
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)from_dataframe: the rows are not in time order: row 1 \[0, 5\) s "
+        r"comes before row 0 \[10, 15\) s.*sort_values",
+    ):
+        Intervals.from_dataframe(log)
+    with pytest.raises(ValueError, match="from_arrays: the rows are not in time"):
+        Intervals.from_arrays([10.0, 0.0], [15.0, 5.0])
+    # The same start sorts by stop.
+    with pytest.raises(ValueError, match="row 1 \\[0, 2\\) s comes before row 0"):
+        Intervals.from_arrays([0.0, 0.0], [5.0, 2.0])
+    # Equal rows and touching rows are in time order.
+    assert len(Intervals.from_arrays([0.0, 0.0, 5.0], [5.0, 5.0, 9.0])) == 3
 
 
 @pytest.mark.parametrize(

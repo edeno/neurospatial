@@ -49,6 +49,11 @@ by its trial.
   (`trials[log.outcome == "correct"]`) selects the right trials. A
   non-integer, repeated or negative index is refused; pass `id_column=` or
   call `reset_index(drop=True)`.
+- `Intervals.from_dataframe` and `Intervals.from_arrays` refuse rows out of
+  time order (by start, then stop): the container keeps time order, so an
+  array or mask in the input's row order selected other rows. Sort first
+  (`log.sort_values("start_time")`). `read_intervals`, `read_trials`,
+  `from_pynapple` and `events_to_intervals` still sort what they read.
 - `epochs=` refuses a (2, 2) array whose rows overlap while its columns are
   two ordered windows (`[starts, stops]` stacked as rows), and refuses
   timedelta, datetime, bool and text values (convert to float seconds). A

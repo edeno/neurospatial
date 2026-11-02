@@ -55,11 +55,7 @@ def session():
         rows.append((onset, onset + STEP * N_CELLS))
     rows = np.array(rows)
     ids = np.array([40, 10, 30, 0, 20])
-    # Given out of time order; construction sorts the rows and keeps the ids.
-    shuffled = np.array([3, 0, 4, 1, 2])
-    events = Intervals.from_arrays(
-        rows[shuffled, 0], rows[shuffled, 1], interval_ids=ids[shuffled]
-    )
+    events = Intervals.from_arrays(rows[:, 0], rows[:, 1], interval_ids=ids)
     return [np.sort(np.array(t)) for t in trains], rows, events
 
 

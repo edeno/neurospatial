@@ -410,7 +410,12 @@ def events_to_intervals(
                 "  Fix: drop the column, or renumber it so each pair has its own id."
             )
             raise ValueError(msg)
-    return Intervals.from_dataframe(result.reset_index(drop=True), id_column=id_column)
+    # Pairs are matched in event order; Intervals keeps time order, and the
+    # index (the default ids) keeps each pair's position.
+    result = result.reset_index(drop=True).sort_values(
+        ["start_time", "stop_time"], kind="stable"
+    )
+    return Intervals.from_dataframe(result, id_column=id_column)
 
 
 def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:

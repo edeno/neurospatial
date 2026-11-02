@@ -262,6 +262,18 @@ class TestReadTrials:
         # A trial that reached no end region reads back as missing, not "".
         assert back.sel(interval_id=8).end_region is None
 
+    def test_a_file_with_rows_out_of_time_order_reads_in_time_order(self, tmp_path):
+        """A file's row order is not the user's; reading sorts and keeps ids."""
+        nwbfile = create_roundtrip_nwb()
+        nwbfile.add_trial_column(name="goal", description="goal well")
+        for start, stop, goal in [(20.0, 28.0, "left"), (0.0, 7.5, "right")]:
+            nwbfile.add_trial(start_time=start, stop_time=stop, goal=goal)
+        back, _ = _write_and_read(nwbfile, tmp_path)
+
+        np.testing.assert_array_equal(back.start, [0.0, 20.0])
+        assert back.interval_ids.tolist() == [1, 0]  # the file's row ids
+        assert back.goal.tolist() == ["right", "left"]
+
     def test_task_log_round_trip(self, tmp_path):
         """A task log with its own fields and trial numbers round-trips."""
         from neurospatial.io.nwb import write_trials
@@ -276,7 +288,9 @@ class TestReadTrials:
                 "rewarded": [True, False, True],
             }
         )
-        trials = Intervals.from_dataframe(log, id_column="trial")
+        trials = Intervals.from_dataframe(
+            log.sort_values("start_time"), id_column="trial"
+        )
         nwbfile = create_roundtrip_nwb()
         write_trials(nwbfile, trials)
         back, _ = _write_and_read(nwbfile, tmp_path)

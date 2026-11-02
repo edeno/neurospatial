@@ -483,11 +483,11 @@ def test_to_pynapple_then_from_pynapple_keeps_ids_and_fields():
     from neurospatial.io import from_pynapple, to_pynapple
 
     trials = Intervals.from_arrays(
-        [4.0, 0.0, 10.0],
-        [6.0, 2.5, 12.0],
-        interval_ids=[7, 3, 9],
-        outcome=["timeout", "reached", None],
-        n_licks=[2, 5, 0],
+        [0.0, 4.0, 10.0],
+        [2.5, 6.0, 12.0],
+        interval_ids=[3, 7, 9],
+        outcome=["reached", "timeout", None],
+        n_licks=[5, 2, 0],
     )
 
     back = from_pynapple(to_pynapple(trials))
