@@ -518,18 +518,16 @@ Home range is the set of bins containing a specified percentile of time spent. T
 from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial import Environment
 
-# Create environment and map positions to bins
 env = Environment.from_samples(positions, bin_size=5.0)
-position_bins = env.bin_at(positions)
 
-# Compute core territory (95th percentile)
-home_range_bins = compute_home_range(position_bins, env, times=times, percentile=95.0)
+# The bins holding 95% of the time spent
+home_range_bins = compute_home_range(env, times, positions, percentile=95.0)
 
 # Compute home range area
 home_range_area = env.bin_sizes[home_range_bins].sum()
 
 print(f"Home range: {home_range_area:.1f} cm²")
-core_bins = compute_home_range(position_bins, env, times=times, percentile=50.0)
+core_bins = compute_home_range(env, times, positions, percentile=50.0)
 print(f"Core area (50%): {env.bin_sizes[core_bins].sum():.1f} cm²")
 ```
 
@@ -1410,13 +1408,8 @@ Spatial overlap (set-based, order-independent).
 ```python
 from neurospatial.behavior.segmentation import trajectory_similarity
 
-# Compare two trajectories
-similarity = trajectory_similarity(
-    position1_bins,
-    position2_bins,
-    env,
-    method="jaccard"
-)
+# Compare two runs: positions of shape (n_samples, n_dims) each
+similarity = trajectory_similarity(env, positions_a, positions_b, method="jaccard")
 
 print(f"Jaccard similarity: {similarity:.3f}")
 ```
@@ -1443,12 +1436,7 @@ where $A$ and $B$ are the visited bins and $|\cdot|$ is their area
 Sequential correlation (order-sensitive).
 
 ```python
-similarity = trajectory_similarity(
-    position1_bins,
-    position2_bins,
-    env,
-    method="correlation"
-)
+similarity = trajectory_similarity(env, positions_a, positions_b, method="correlation")
 ```
 
 **Computes**: Pearson correlation between the positions along the track of
@@ -1472,12 +1460,7 @@ perfectly) or when either run stays in one bin.
 Maximum deviation between paths.
 
 ```python
-similarity = trajectory_similarity(
-    position1_bins,
-    position2_bins,
-    env,
-    method="hausdorff"
-)
+similarity = trajectory_similarity(env, positions_a, positions_b, method="hausdorff")
 ```
 
 **Formula**:
@@ -1507,12 +1490,7 @@ centers, for example to ask how close two routes came in the room.
 Optimal alignment allowing temporal shifts.
 
 ```python
-similarity = trajectory_similarity(
-    position1_bins,
-    position2_bins,
-    env,
-    method="dtw"
-)
+similarity = trajectory_similarity(env, positions_a, positions_b, method="dtw")
 ```
 
 **Algorithm**: Finds optimal time-shifted alignment between trajectories
@@ -1718,15 +1696,14 @@ print(f"First lap duration: {durations[0]:.1f}s")
 print(f"Last lap duration: {durations[-1]:.1f}s")
 print(f"Learning improvement: {(durations[0] - durations[-1]) / durations[0]:.1%}")
 
-# Step 4: Compare lap similarity (trajectory_similarity takes bin sequences)
-position_bins = env.bin_at(positions)
+# Step 4: Compare consecutive laps
 lap_slices = laps.sample_slices(times)
 for i in range(len(laps) - 1):
     similarity = trajectory_similarity(
-        position_bins[lap_slices[i]],
-        position_bins[lap_slices[i + 1]],
         env,
-        method="jaccard"
+        positions[lap_slices[i]],
+        positions[lap_slices[i + 1]],
+        method="jaccard",
     )
     print(f"Lap {i+1} vs {i+2}: similarity = {similarity:.3f}")
 ```
@@ -1752,12 +1729,9 @@ left_trials = choices[choices.end_region == "left"]
 
 # Step 3: Analyze path similarity within choice type; each slice holds one
 # trial's samples, start_time <= t < stop_time
-position_bins = env.bin_at(positions)
 left_slices = left_trials.sample_slices(times)
 left_similarities = [
-    trajectory_similarity(
-        position_bins[first], position_bins[second], env, method="jaccard"
-    )
+    trajectory_similarity(env, positions[first], positions[second], method="jaccard")
     for first, second in zip(left_slices[:-1], left_slices[1:])
 ]
 
@@ -1825,15 +1799,14 @@ if transition_idx is not None:
     transition_time = times[transition_idx * hop_size]
     print(f"Exploration → goal-directed transition at t={transition_time:.1f}s")
 
-    # Compare spatial coverage before/after (home range still uses bins)
+    # Compare spatial coverage before and after
     env = Environment.from_samples(positions, bin_size=5.0)
-    position_bins = env.bin_at(positions)
+    split = transition_idx * hop_size
 
-    explore_bins = position_bins[:transition_idx * hop_size]
-    goal_bins = position_bins[transition_idx * hop_size:]
-
-    explore_home = compute_home_range(explore_bins, env, percentile=95)
-    goal_home = compute_home_range(goal_bins, env, percentile=95)
+    explore_home = compute_home_range(
+        env, times[:split], positions[:split], percentile=95
+    )
+    goal_home = compute_home_range(env, times[split:], positions[split:], percentile=95)
 
     print(f"Exploration home range: {len(explore_home)} bins")
     print(f"Goal-directed home range: {len(goal_home)} bins")

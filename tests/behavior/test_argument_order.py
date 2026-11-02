@@ -63,10 +63,15 @@ def test_old_order_raises(name, recording):
             kwargs["goal_regions"] = ["goal"]
         else:
             kwargs["trials"] = Intervals([], record_type=behavior.Trial)
-    if name in {"compute_path_efficiency", "compute_goal_directed_metrics"}:
-        args = (env, positions, times, np.array([95.0, 50.0]))
-    if name in {"approach_rate", "goal_bias", "instantaneous_goal_alignment"}:
-        args += (np.array([95.0, 50.0]),)
+    if name in {
+        "approach_rate",
+        "compute_goal_directed_metrics",
+        "compute_path_efficiency",
+        "goal_bias",
+        "instantaneous_goal_alignment",
+    }:
+        args = (env, positions, times)
+        kwargs["goal"] = np.array([95.0, 50.0])
     if name in {
         "compute_pre_decision_metrics",
         "compute_vte_trial",
@@ -101,12 +106,12 @@ def test_1d_column_swap_no_longer_silent():
     with pytest.raises(
         ValueError, match="did you pass positions before times"
     ) as caught:
-        behavior.compute_path_efficiency(env, positions, times[:, None], goal)
+        behavior.compute_path_efficiency(env, positions, times[:, None], goal=goal)
     message = str(caught.value)
     assert "got shape (600, 1)" in message
     assert "Why:" in message
     assert "Fix:" in message
 
-    correct = behavior.compute_path_efficiency(env, times, positions, goal)
+    correct = behavior.compute_path_efficiency(env, times, positions, goal=goal)
     assert np.isfinite(correct.efficiency)
     assert 0 < correct.efficiency < 1

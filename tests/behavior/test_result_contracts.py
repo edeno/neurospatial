@@ -50,7 +50,7 @@ def _path_efficiency() -> PathEfficiencyResult:
         time_efficiency=None,
         angular_efficiency=0.9,
         start_position=np.array([0.0, 0.0]),
-        goal_position=np.array([10.0, 0.0]),
+        goal=np.array([10.0, 0.0]),
         metric="geodesic",
         fully_observed=True,
     )
@@ -137,7 +137,7 @@ _CASES = [
             min_distance_to_goal=1.0,
             goal_distance_at_start=20.0,
             goal_distance_at_end=2.0,
-            goal_position=np.array([10.0, 0.0]),
+            goal=np.array([10.0, 0.0]),
             metric="geodesic",
         ),
         {

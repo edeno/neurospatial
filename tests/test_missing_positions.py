@@ -111,6 +111,7 @@ VALUES = {
     "region_name": "center",
     "goal_region": "goal",
     "regions": ["start", "goal"],
+    "goals": ["start", "goal"],
     "goal_regions": ["goal", "left_arm"],
     "trials": _trials(),
     "direction_frame": "allocentric",
