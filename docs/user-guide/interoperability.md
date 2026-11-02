@@ -814,18 +814,17 @@ result = decoder.predict(
 print(result.summary())
 
 # Align the original tracking and preserve gaps through the plotting API.
-ax = result.plot(
-    show_map=True, colorbar=True,
+# A 2-D environment draws the x(t) and y(t) marginals on two axes.
+axes = result.plot(
+    show_map=True,
     true_times=pos.times, true_positions=pos.positions, max_gap=decoder.max_gap,
 )
-ax.legend()
 plt.show()
 ```
 
-The posterior plot's y-axis is spatial-bin indices; physical positions belong
-in separate position plots or accuracy metrics. The actual overlay follows the
-same display coordinates as the posterior and MAP line, with breaks across
-missing tracking and recording gaps. See the
+The posterior plot's y-axis is position in the environment's units. The actual
+overlay follows the same display coordinates as the posterior and MAP line,
+with breaks across missing tracking and recording gaps. See the
 [decoder plotting recipe](workflows.md#overlaying-actual-position-on-a-posterior)
 for the continuous/gapped-clock comparison. If an environment was already
 persisted in the file, use `read_environment(file)` inside the `with` block

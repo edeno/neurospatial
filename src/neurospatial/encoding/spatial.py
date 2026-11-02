@@ -1218,7 +1218,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
             - colorbar : bool, default=True
-            - colorbar_label : str, default="Firing Rate (Hz)"
+            - colorbar_label : str, default="Firing rate (Hz)"
 
         Returns
         -------
@@ -1244,7 +1244,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> type(ax).__name__
         'Axes'
         """
-        kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def spatial_information(self) -> float | Any:
@@ -2332,7 +2332,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
             - colorbar : bool, default=True
-            - colorbar_label : str, default="Firing Rate (Hz)"
+            - colorbar_label : str, default="Firing rate (Hz)"
 
         Returns
         -------
@@ -2374,7 +2374,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             )
             raise ValueError(msg)
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
     def spatial_information(self) -> NDArray[np.float64] | Any:
@@ -4908,25 +4908,40 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
             return pd.DataFrame(empty)
         return pd.concat(frames, ignore_index=True)
 
-    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Overlay the per-direction firing rate maps on a single axis.
+    def plot(
+        self, *, ax: Axes | Sequence[Axes] | None = None, **kwargs: Any
+    ) -> Axes | tuple[Axes, ...]:
+        """Plot each direction's firing rate map.
 
-        Plots each direction's firing rate against bin index as one line,
-        producing one artist per direction. This is most informative for
-        1-D / linearized environments where bin index maps to track position.
+        On a track or 1-D environment, one line per direction is drawn
+        against position in the environment's units, so the directions
+        overlay on one axes. In a 2-D environment each direction gets its own
+        panel, drawn with :meth:`Environment.plot_field` on shared color
+        limits, so the maps can be compared.
 
         Parameters
         ----------
-        ax : matplotlib.axes.Axes, optional
-            Axes to draw on. If None, a new figure and axes are created.
+        ax : matplotlib.axes.Axes or sequence of Axes, optional
+            Axes to draw on. A 2-D environment needs one axes per direction.
+            If None, a new figure is created.
         **kwargs
             Additional keyword arguments forwarded to ``ax.plot`` for each
-            direction's line.
+            direction's line in 1-D, or to ``env.plot_field`` for each
+            panel in 2-D.
 
         Returns
         -------
-        matplotlib.axes.Axes
-            The axes containing the overlay (one line per direction).
+        matplotlib.axes.Axes or tuple of Axes
+            The axes with one line per direction on a track; one axes per
+            direction in 2-D.
+
+        Raises
+        ------
+        ValueError
+            If the environment has three or more dimensions, or ``ax`` does
+            not hold one axes per direction in 2-D.
+        TypeError
+            If ``ax`` is not a single Axes on a track.
 
         Examples
         --------
@@ -4936,7 +4951,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         >>> from neurospatial import Environment
         >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
         >>> env = Environment.from_samples(
-        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0, units="cm"
         ... )
         >>> n = env.n_bins
         >>> result = DirectionalPlaceFields(
@@ -4950,21 +4965,82 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         >>> ax = result.plot()
         >>> len(ax.get_lines())
         2
+        >>> ax.get_xlabel()
+        'Position (cm)'
         """
         import matplotlib.pyplot as plt
+        from matplotlib.axes import Axes
 
+        from neurospatial.environment._queries import _track_extents
+
+        track = _track_extents(self.env)
+        if track is None and self.env.n_dims != 2:
+            msg = _format_error(
+                f"DirectionalPlaceFields.plot() cannot draw {self.env.n_dims}-D maps.",
+                why="it draws lines along a track or one map per direction in 2-D",
+                fix="use result.to_dataframe() to inspect the maps",
+            )
+            raise ValueError(msg)
+        created_axes = ax is None
+        units = f" ({self.env.units})" if self.env.units else ""
+
+        if track is not None:
+            if ax is None:
+                _, ax = plt.subplots()
+            if not isinstance(ax, Axes):
+                msg = _format_error(
+                    "DirectionalPlaceFields.plot() draws a 1-D environment on one "
+                    "Axes, but ax is not an Axes.",
+                    fix="pass a single Axes, for example `fig, ax = plt.subplots()`",
+                )
+                raise TypeError(msg)
+            starts, ends = track
+            position = (starts + ends) / 2
+            order = np.argsort(position)
+            # Break the lines across gaps between track segments.
+            gaps = np.flatnonzero(starts[order][1:] > ends[order][:-1] + 1e-9) + 1
+            for label in self.labels:
+                rate = _to_numpy(self.firing_rates[label]).ravel()
+                ax.plot(
+                    np.insert(position[order], gaps, np.nan),
+                    np.insert(rate[order], gaps, np.nan),
+                    label=str(label),
+                    **kwargs,
+                )
+            ax.set_xlabel(f"Position{units}")
+            ax.set_ylabel("Firing rate (Hz)")
+            if created_axes:
+                ax.set_title("Directional place fields")
+            ax.legend()
+            return ax
+
+        n_panels = len(self.labels)
         if ax is None:
-            _, ax = plt.subplots()
-
-        for label in self.labels:
-            rate = _to_numpy(self.firing_rates[label]).ravel()
-            ax.plot(np.arange(rate.shape[0]), rate, label=str(label), **kwargs)
-
-        ax.set_xlabel("Bin index")
-        ax.set_ylabel("Firing rate (Hz)")
-        ax.set_title("Directional place fields")
-        ax.legend()
-        return ax
+            _, made = plt.subplots(
+                1, n_panels, figsize=(4.5 * n_panels, 4.5), squeeze=False
+            )
+            panels = list(made.ravel())
+        else:
+            panels = list(np.atleast_1d(np.asarray(ax, dtype=object)).ravel())
+        if len(panels) != n_panels:
+            msg = _format_error(
+                f"DirectionalPlaceFields.plot() got {len(panels)} axes for "
+                f"{n_panels} directions.",
+                fix="pass one axes per direction, for example "
+                "`fig, ax = plt.subplots(1, n_directions)`",
+            )
+            raise ValueError(msg)
+        rates = [_to_numpy(self.firing_rates[label]).ravel() for label in self.labels]
+        finite = np.concatenate([rate[np.isfinite(rate)] for rate in rates] or [[]])
+        if finite.size:
+            kwargs.setdefault("vmin", 0.0)
+            kwargs.setdefault("vmax", float(finite.max()))
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
+        for panel, label, rate in zip(panels, self.labels, rates, strict=True):
+            self.env.plot_field(rate, ax=panel, **kwargs)
+            if created_axes:
+                panel.set_title(str(label))
+        return tuple(panels)
 
 
 @reads_pynapple_samples

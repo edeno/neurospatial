@@ -370,6 +370,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         -------
         matplotlib.axes.Axes
         """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
 

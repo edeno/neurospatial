@@ -90,7 +90,7 @@ def test_tutorial_actual_overlay_matches_perfect_posterior(path, gapped):
         )
         for line in (map_line, overlay):
             finite = np.isfinite(line.get_ydata())
-            np.testing.assert_array_equal(line.get_ydata()[finite], expected_bins)
+            np.testing.assert_allclose(line.get_ydata()[finite], actual[:, 0])
             np.testing.assert_allclose(line.get_xdata()[finite], expected_x)
             # Both curves visibly stop at a recording break, even when the
             # heatmap compresses the clock into consecutive display columns.
@@ -98,7 +98,7 @@ def test_tutorial_actual_overlay_matches_perfect_posterior(path, gapped):
                 code == MplPath.MOVETO for _, code in line.get_path().iter_segments()
             )
             assert starts == (2 if gapped else 1)
-        assert "bin" in ax.get_ylabel().lower()
+        assert "cm" in ax.get_ylabel()
         assert ax.get_xlim()[0] <= expected_x[0]
         assert ax.get_xlim()[1] >= expected_x[-1]
         # Physical outputs and source arrays stay in centimeters on the original clock.

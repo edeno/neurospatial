@@ -205,6 +205,7 @@ def plot_peri_event_response(
         for i, j, event in zip(first, stop, selected_events, strict=True)
     ]
 
+    created_axes = ax is None
     if ax is None:
         _, (raster_ax, histogram_ax) = plt.subplots(
             2,
@@ -221,7 +222,13 @@ def plot_peri_event_response(
     unit_label = "" if result.unit_id is None else f"Unit {result.unit_id}: "
     raster_ax.set_title(f"{unit_label}{result.n_events} retained events")
     raster_ax.axvline(0.0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
-    result.plot(ax=histogram_ax, show_sem=show_sem, as_rate=as_rate, color=color)
+    result.plot(
+        ax=histogram_ax,
+        show_sem=show_sem,
+        as_rate=as_rate,
+        color=color,
+        title=f"PSTH (n={result.n_events} events)" if created_axes else None,
+    )
     for target in (raster_ax, histogram_ax):
         target.set_xlim(bin_edges[0], bin_edges[-1])
     return raster_ax, histogram_ax

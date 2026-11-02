@@ -6,6 +6,7 @@ distributions from neural decoding and computes derived properties lazily.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal
@@ -124,6 +125,63 @@ def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
         return np.empty(0, dtype=np.intp)
     d = np.diff(times)
     return np.flatnonzero(d > 1.5 * np.min(d))
+
+
+@dataclass(frozen=True)
+class _PosteriorPanel:
+    """One image of a posterior plot and the lines drawn on it.
+
+    Without ``cells``, the image is drawn with ``imshow`` and ``map_rows`` and
+    ``truth_rows`` give each time bin's position as a fraction of the image's
+    vertical extent. With ``cells`` (the ``(starts, ends)`` of each image
+    column's bin along the axis, in image order, and the bin numbers in that
+    order), the image is drawn with ``pcolormesh`` so unequal bins and gaps
+    between them sit at their positions, and the two arrays are positions in
+    the axis units. NaN marks nothing to draw.
+    """
+
+    image: NDArray[np.float64]  # (n_time, n_rows)
+    y_range: tuple[float, float]
+    ylabel: str
+    map_rows: NDArray[np.float64]  # (n_time,)
+    truth_rows: NDArray[np.float64] | None  # (n_time,)
+    cells: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]] | None = (
+        None
+    )
+
+
+def _axis_marginal(
+    env: Environment, posterior: NDArray[np.float64], dim: int
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Posterior mass along one coordinate, summed over the other.
+
+    The coordinate is divided at the spacing of the distinct bin centers along
+    it when the centers line up in columns, so a regular grid keeps one value
+    per grid column, and at one bin side otherwise (rotated grids, scattered
+    bins). A row with NaN (undecodable) stays NaN.
+
+    Returns
+    -------
+    edges : ndarray of float64, shape (n_values + 1,)
+    marginal : ndarray of float64, shape (n_time, n_values)
+    """
+    centers = env.bin_centers[:, dim]
+    extent = float(np.ptp(centers))
+    ordered = np.sort(centers)
+    distinct = ordered[np.r_[True, np.diff(ordered) > 1e-9 * max(extent, 1.0)]]
+    side = float(np.median(env.bin_sizes ** (1.0 / env.n_dims)))
+    gap = float(np.median(np.diff(distinct))) if distinct.size > 1 else side
+    # Centers that line up in columns are spaced by the grid; rotated or
+    # scattered ones have tiny gaps, and a column is then one bin side wide.
+    width = gap if gap >= 0.5 * side else side
+    n_values = int(np.round(extent / width)) + 1
+    edges = centers.min() - width / 2 + width * np.arange(n_values + 1)
+    column = np.clip(
+        np.floor((centers - edges[0]) / width).astype(int), 0, n_values - 1
+    )
+    marginal = np.zeros((posterior.shape[0], n_values))
+    np.add.at(marginal.T, column, posterior.T)
+    return edges, marginal
 
 
 def _align_true_positions(
@@ -665,25 +723,29 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     def plot(
         self,
         *,
-        ax: Axes | None = None,
+        ax: Axes | Sequence[Axes] | None = None,
         true_times: NDArray[np.float64] | None = None,
         true_positions: NDArray[np.float64] | None = None,
         max_gap: float | None = DEFAULT_MAX_GAP,
         break_before: ArrayLike | None = None,
-        colorbar: bool = False,
+        colorbar: bool = True,
         show_map: bool = False,
         cmap: str = "viridis",
         **kwargs: Any,
-    ) -> Axes:
-        """Plot posterior probability over time as heatmap.
+    ) -> Axes | tuple[Axes, Axes]:
+        """Plot the posterior probability over time as a heatmap.
 
-        Visualizes the posterior probability distribution as a 2D heatmap
-        with time on the x-axis and spatial bins on the y-axis.
+        On a track or 1-D environment, time runs along the x-axis and position
+        along the y-axis, in the environment's units. In a 2-D environment the
+        figure has two stacked panels with shared time: the posterior mass of
+        x(t) on top, summed over y, and of y(t) below, summed over x. Both
+        draw the MAP and actual positions as lines in the same units.
 
         Parameters
         ----------
-        ax : matplotlib.axes.Axes | None, optional
-            Axes to plot on. If None, creates new figure and axes.
+        ax : matplotlib.axes.Axes or (Axes, Axes), optional
+            Axes to plot on. A 2-D environment needs a pair,
+            ``ax=(ax_x, ax_y)``. If None, creates a new figure.
         true_times : ndarray, shape (n_samples,), optional
             Ground-truth timestamps in seconds, on this result's clock.
             Supply together with ``true_positions`` to overlay actual position.
@@ -705,7 +767,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             time. Entry 0 is ignored. Indexes ``true_times``. Ground truth is never
             interpolated across a break, as for a gap longer than ``max_gap``;
             exact samples on either side stay observed.
-        colorbar : bool, default=False
+        colorbar : bool, default=True
             If True, add a colorbar showing probability scale.
         show_map : bool, default=False
             If True, overlay the MAP (maximum a posteriori) trajectory
@@ -718,8 +780,15 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
         Returns
         -------
-        matplotlib.axes.Axes
-            The axes containing the plot.
+        matplotlib.axes.Axes or tuple of Axes
+            The axes containing the plot; for a 2-D environment the pair
+            ``(ax_x, ax_y)``.
+
+        Raises
+        ------
+        ValueError
+            If the environment has three or more dimensions, or ``ax`` does
+            not hold one axes per panel.
 
         Examples
         --------
@@ -727,34 +796,21 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         ...     env, spike_counts, encoding_models, dt=dt
         ... )  # doctest: +SKIP
         >>> ax = result.plot()  # doctest: +SKIP
-        >>> ax = result.plot(colorbar=True, show_map=True)  # doctest: +SKIP
+        >>> ax = result.plot(show_map=True)  # doctest: +SKIP
         >>> ax = result.plot(cmap="viridis", vmin=0, vmax=0.5)  # doctest: +SKIP
 
         Notes
         -----
-        This method shows a "spectrogram-style" view with time on the x-axis
-        and spatial bin indices on the y-axis. This is useful for quick
-        diagnostics and 1D linearized tracks.
+        The 2-D marginals sum the posterior mass over the other coordinate, at
+        the spacing of the distinct bin centers along the plotted one; they show
+        where the posterior sits along each axis, not the joint distribution. To
+        see the joint posterior in space, plot one time bin with
+        ``env.plot_field(result.posterior[t])`` or animate it::
 
-        For 2D environments, use ``env.animate_fields`` with one timestamp
-        per posterior row to visualize the posterior in actual spatial
-        coordinates::
-
-            # 2D spatial visualization (recommended for 2D environments)
             env.animate_fields(
                 result.posterior,
                 frame_times=result.times,
                 backend="napari",
-            )
-
-            # With position overlay
-            from neurospatial.animation.overlays import PositionOverlay
-
-            overlay = PositionOverlay(positions=positions, times=times)
-            env.animate_fields(
-                result.posterior,
-                frame_times=result.times,
-                overlays=[overlay],
             )
 
         ``neurospatial.animation.Animation.from_decoding(result)`` builds the
@@ -810,10 +866,109 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
                 call="DecodingResult.plot",
             )
 
-        if ax is None:
-            _, ax = plt.subplots()
+        from neurospatial.environment._queries import _track_extents
 
-        # Compute extent for proper axis labeling
+        track = _track_extents(self.env)
+        if track is None and self.env.n_dims != 2:
+            msg = _format_error(
+                f"DecodingResult.plot() cannot draw a {self.env.n_dims}-D posterior.",
+                why="it draws the posterior against position on a track, or as "
+                "x(t) and y(t) marginals in 2-D, and has no axis for a third "
+                "dimension",
+                fix="plot a time bin with env.plot_field(result.posterior[t]), "
+                "or animate it with env.animate_fields(result.posterior)",
+            )
+            raise ValueError(msg)
+
+        units = f" ({self.env.units})" if self.env.units else ""
+        if track is not None:
+            starts, ends = track
+            order = np.argsort(starts, kind="stable")
+            first, last = starts[order], ends[order]
+            y_range = (float(first[0]), float(np.max(last)))
+            centers = (starts + ends) / 2
+            uniform = (
+                np.array_equal(order, np.arange(order.size))
+                and np.allclose(first[1:], last[:-1])
+                and np.allclose(last - first, (last - first)[0])
+            )
+            if uniform:
+                # Equal bins end to end: map and truth sit at the center of
+                # their bin's image row.
+                bin_row = (np.arange(self.env.n_bins) + 0.5) / self.env.n_bins
+                place = bin_row
+            else:
+                # Unequal bins or gaps between segments: positions are the
+                # bin centers themselves.
+                place = centers
+            map_rows = np.where(
+                self.map_bin >= 0, place[np.maximum(self.map_bin, 0)], np.nan
+            )
+            truth_rows = None
+            if aligned is not None:
+                truth_rows = np.full(self.n_time_bins, np.nan)
+                observed = np.all(np.isfinite(aligned), axis=1) & self._decoded_rows
+                if np.any(observed):
+                    indices = self.env.bin_at(aligned[observed])
+                    truth_rows[observed] = np.where(
+                        indices >= 0, place[np.maximum(indices, 0)], np.nan
+                    )
+            label = "Linear position" if self.env.is_linearized_track else "Position"
+            panels = [
+                _PosteriorPanel(
+                    image=self.posterior if uniform else self.posterior[:, order],
+                    y_range=y_range,
+                    ylabel=f"{label}{units}",
+                    map_rows=map_rows,
+                    truth_rows=truth_rows,
+                    cells=None if uniform else (first, last, order),
+                )
+            ]
+        else:
+            panels = []
+            polar = (
+                self.env.n_dims == 2
+                and self.env._plot_labels().coordinates.kind == "polar"
+            )
+            names = ("distance", "angle") if polar else ("x", "y")
+            suffix = (units, " (rad)") if polar else (units, units)
+            for dim in range(2):
+                edges, image = _axis_marginal(self.env, self.posterior, dim)
+                span = edges[-1] - edges[0]
+                panels.append(
+                    _PosteriorPanel(
+                        image=image,
+                        y_range=(float(edges[0]), float(edges[-1])),
+                        ylabel=f"{names[dim]}{suffix[dim]}",
+                        map_rows=(self.map_position[:, dim] - edges[0]) / span,
+                        truth_rows=None
+                        if aligned is None
+                        else np.where(
+                            self._decoded_rows,
+                            (aligned[:, dim] - edges[0]) / span,
+                            np.nan,
+                        ),
+                    )
+                )
+
+        created_axes = ax is None
+        if ax is None:
+            if len(panels) == 1:
+                _, ax = plt.subplots()
+            else:
+                _, ax = plt.subplots(
+                    len(panels), 1, sharex=True, figsize=(8, 6), layout="constrained"
+                )
+        axes = np.atleast_1d(np.asarray(ax, dtype=object)).ravel()
+        if axes.size != len(panels):
+            msg = _format_error(
+                f"DecodingResult.plot() got {axes.size} axes for a "
+                f"{self.env.n_dims}-D environment, which draws {len(panels)}.",
+                fix="pass ax=(ax_x, ax_y) for a 2-D environment, or a single "
+                "Axes for a track",
+            )
+            raise ValueError(msg)
+
         # extent = [left, right, bottom, top]
         breaks = _recording_breaks(self.times)
         uniform_clock = self.times is not None and (
@@ -821,27 +976,15 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             or np.allclose(np.diff(self.times), np.diff(self.times)[0])
         )
         if self.times is not None and breaks.size == 0 and uniform_clock:
-            # Use actual time values
             t_min = float(self.times[0])
             t_max = float(self.times[-1])
             width = (
                 (t_max - t_min) / (self.times.size - 1) if self.times.size > 1 else 1.0
             )
-            extent = [
-                t_min - width / 2,
-                t_max + width / 2,
-                -0.5,
-                self.posterior.shape[1] - 0.5,
-            ]
+            x_extent = [t_min - width / 2, t_max + width / 2]
             x_label = "Time (s)"
         else:
-            # Use bin indices
-            extent = [
-                -0.5,
-                self.posterior.shape[0] - 0.5,
-                -0.5,
-                self.posterior.shape[1] - 0.5,
-            ]
+            x_extent = [-0.5, self.posterior.shape[0] - 0.5]
             if breaks.size:
                 x_label = "Time bin (dashed lines: recording gaps)"
             elif self.times is not None and not uniform_clock:
@@ -849,101 +992,149 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             else:
                 x_label = "Time bin"
 
-        # Build imshow kwargs
-        im_kwargs: dict[str, Any] = {
-            "aspect": "auto",
-            "origin": "lower",
-            "interpolation": "nearest",
-            "cmap": cmap,
-            "extent": extent,
-        }
-        im_kwargs.update(kwargs)
-
-        # Plot the heatmap
-        im = ax.imshow(self.posterior.T, **im_kwargs)
-
-        # Add colorbar if requested
-        if colorbar:
-            plt.colorbar(im, ax=ax, label="Probability")
-
-        # Derive display centers from the image, including custom extents and
-        # reversed origin. These are display coordinates, never modifications
-        # to the stored posterior, times or world-coordinate positions.
-        left, right, bottom, top = im.get_extent()
-        width = (right - left) / self.n_time_bins
-        if (
-            "extent" not in kwargs
-            and self.times is not None
-            and uniform_clock
-            and not breaks.size
-        ):
-            x_coords = np.asarray(self.times, dtype=np.float64)
-        else:
-            x_coords = np.asarray(
-                left + (np.arange(self.n_time_bins) + 0.5) * width, dtype=np.float64
-            )
-        row_step = (top - bottom) / self.env.n_bins
-        if im.origin == "upper":
-            row_start, row_step = top, -row_step
-        else:
-            row_start = bottom
-
-        def display_rows(indices: NDArray[np.float64]) -> NDArray[np.float64]:
-            return row_start + (indices + 0.5) * row_step
-
         # Inserting NaNs retains every observed sample while preventing any
         # line segment from connecting recordings separated by a pause.
         def broken(values: NDArray[np.float64]) -> NDArray[np.float64]:
             return np.insert(values, breaks + 1, np.nan)
 
-        decodable = self._decoded_rows
-        if show_map:
-            map_bins = np.where(self.map_bin >= 0, self.map_bin, np.nan)
-            ax.plot(
-                broken(x_coords),
-                broken(display_rows(map_bins)),
-                color="white",
-                linewidth=1.5,
-                linestyle="-",
-                alpha=0.8,
-                label="MAP",
-            )
-
         if aligned is not None:
-            true_bins = np.full(self.n_time_bins, np.nan)
-            observed = np.all(np.isfinite(aligned), axis=1) & decodable
-            if np.any(observed):
-                indices = self.env.bin_at(aligned[observed])
-                true_bins[observed] = np.where(indices >= 0, indices, np.nan)
+            assert true_runs is not None
             # Even if there are no decode rows inside a tracking dropout,
             # successive truth samples from distinct observed runs cannot be
             # joined by a line. This also handles a two-row decode clock.
-            assert true_runs is not None
             true_breaks = np.flatnonzero(
                 (true_runs[:-1] >= 0)
                 & (true_runs[1:] >= 0)
                 & (true_runs[:-1] != true_runs[1:])
             )
             true_breaks = np.union1d(breaks, true_breaks) + 1
-            ax.plot(
-                np.insert(x_coords, true_breaks, np.nan),
-                np.insert(display_rows(true_bins), true_breaks, np.nan),
-                color="cyan",
-                linewidth=1.5,
-                linestyle="--",
-                label="Actual position",
+
+        # Panels share one color scale, so one colorbar describes both.
+        shared_limits: dict[str, float] = {}
+        if len(panels) > 1 and "norm" not in kwargs:
+            shared_limits = {
+                "vmin": 0.0,
+                "vmax": float(
+                    max(np.nanmax(panel.image, initial=0.0) for panel in panels)
+                ),
+            }
+
+        mappable = None
+        for panel_ax, panel in zip(axes, panels, strict=True):
+            if panel.cells is not None:
+                starts, ends, _ = panel.cells
+                # One image row per bin, with a blank row across each gap.
+                y_edges = [float(starts[0])]
+                source: list[int] = []
+                for i in range(starts.size):
+                    if i and starts[i] > y_edges[-1] + 1e-9 * max(ends.max(), 1.0):
+                        source.append(-1)
+                        y_edges.append(float(starts[i]))
+                    source.append(i)
+                    y_edges.append(float(ends[i]))
+                rows = np.asarray(source)
+                data = np.where(
+                    rows[None, :] >= 0,
+                    panel.image[:, np.maximum(rows, 0)],
+                    np.nan,
+                )
+                mesh_kwargs = {
+                    key: value
+                    for key, value in kwargs.items()
+                    if key not in {"aspect", "origin", "interpolation"}
+                }
+                mappable = panel_ax.pcolormesh(
+                    np.linspace(x_extent[0], x_extent[1], self.n_time_bins + 1),
+                    np.asarray(y_edges),
+                    data.T,
+                    cmap=cmap,
+                    **mesh_kwargs,
+                )
+                left, right = x_extent
+                bottom, top = panel.y_range
+                origin = "lower"
+            else:
+                im_kwargs: dict[str, Any] = {
+                    "aspect": "auto",
+                    "origin": "lower",
+                    "interpolation": "nearest",
+                    "cmap": cmap,
+                    "extent": [*x_extent, *panel.y_range],
+                    **shared_limits,
+                }
+                im_kwargs.update(kwargs)
+                mappable = panel_ax.imshow(panel.image.T, **im_kwargs)
+                # Derive display centers from the image, including custom
+                # extents and reversed origin. These are display coordinates,
+                # never modifications to the stored posterior, times or
+                # positions.
+                left, right, bottom, top = mappable.get_extent()
+                origin = mappable.origin
+            width = (right - left) / self.n_time_bins
+            if (
+                "extent" not in kwargs
+                and self.times is not None
+                and uniform_clock
+                and not breaks.size
+            ):
+                x_coords = np.asarray(self.times, dtype=np.float64)
+            else:
+                x_coords = np.asarray(
+                    left + (np.arange(self.n_time_bins) + 0.5) * width,
+                    dtype=np.float64,
+                )
+            if panel.cells is not None:
+                row_start, row_span = 0.0, 1.0  # already axis units
+            else:
+                row_start, row_span = (
+                    (top, bottom - top) if origin == "upper" else (bottom, top - bottom)
+                )
+
+            if show_map:
+                panel_ax.plot(
+                    broken(x_coords),
+                    broken(row_start + panel.map_rows * row_span),
+                    color="white",
+                    linewidth=1.5,
+                    linestyle="-",
+                    alpha=0.8,
+                    label="MAP",
+                )
+            if panel.truth_rows is not None:
+                panel_ax.plot(
+                    np.insert(x_coords, true_breaks, np.nan),
+                    np.insert(
+                        row_start + panel.truth_rows * row_span, true_breaks, np.nan
+                    ),
+                    color="cyan",
+                    linewidth=1.5,
+                    linestyle="--",
+                    label="Actual position",
+                )
+            for boundary in breaks:
+                panel_ax.axvline(
+                    left + (boundary + 1) * width,
+                    linestyle="--",
+                    color="black",
+                    alpha=0.6,
+                )
+            panel_ax.set_ylabel(panel.ylabel)
+            if show_map or panel.truth_rows is not None:
+                panel_ax.legend(loc="upper right")
+
+        assert mappable is not None
+        axes[-1].set_xlabel(x_label)
+        if colorbar:
+            # One axes takes a gridspec colorbar, which tight_layout respects.
+            plt.colorbar(
+                mappable,
+                ax=axes[0] if len(panels) == 1 else list(axes),
+                label="Probability",
             )
+        if created_axes:
+            axes[0].set_title("Posterior probability")
 
-        for boundary in breaks:
-            ax.axvline(
-                left + (boundary + 1) * width, linestyle="--", color="black", alpha=0.6
-            )
-
-        ax.set_xlabel(x_label)
-        ax.set_ylabel("Spatial bin")
-        ax.set_title("Posterior probability")
-
-        return ax
+        return axes[0] if len(panels) == 1 else (axes[0], axes[1])
 
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics for the decoded posterior.

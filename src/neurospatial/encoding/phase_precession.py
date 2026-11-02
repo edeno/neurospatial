@@ -1109,8 +1109,8 @@ def plot_phase_precession(
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``phases``, as in :func:`compute_phase_precession`. The plot
-        is in radians either way.
+        Unit of ``phases``, as in :func:`compute_phase_precession`. The y-axis
+        is labelled in this unit.
     position_label : str, default="Position"
         Label for x-axis.
     show_fit : bool, default=True
@@ -1233,12 +1233,14 @@ def plot_phase_precession(
     y_ticks = [0, np.pi, 2 * np.pi, 3 * np.pi, 4 * np.pi]
     y_labels = ["0", "π", "2π", "3π", "4π"]
     ax.set_yticks(y_ticks)
+    if angle_unit == "deg":
+        y_labels = ["0°", "180°", "360°", "540°", "720°"]
     ax.set_yticklabels(y_labels)
     ax.set_ylim(0, 4 * np.pi)
 
     # Labels
     ax.set_xlabel(position_label)
-    ax.set_ylabel("Phase (radians)")
+    ax.set_ylabel("Phase (degrees)" if angle_unit == "deg" else "Phase (radians)")
 
     # Add annotation explaining doubled phase axis
     if show_doubled_note:

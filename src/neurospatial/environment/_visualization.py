@@ -125,6 +125,7 @@ def _plot(
     """
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
+    created_axes = ax is None
 
     ax = _plot_binning(binning, connectivity, labels.layout_type, ax=ax, **l_kwargs)
     # layout.plot() always returns an Axes object, never None
@@ -152,7 +153,10 @@ def _plot(
         _draw_walls(ax, arena)
     if show_regions and len(regions) and not one_d_grid:
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
+        # plot_regions draws to scale; a polar map keeps the aspect it chose.
+        aspect = ax.get_aspect()
         plot_regions(regions, ax=ax, **r_kwargs)
+        ax.set_aspect(aspect)
         # The renderers fix the limits to the bins; a region drawn past the
         # bins still belongs in the picture, where plot_regions drew it.
         names = r_kwargs.get("region_names")
@@ -167,12 +171,14 @@ def _plot(
     if landmarks and not one_d_grid:
         _draw_landmarks(ax, landmarks)
 
-    plot_title = labels.name
-    if labels.layout_type:
-        plot_title += f" ({labels.layout_type})"
+    plot_title = (
+        f"{labels.name} ({labels.layout_type})"
+        if labels.name and labels.layout_type
+        else labels.name or labels.layout_type
+    )
 
-    # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
-    if ax.get_title() == "":
+    # A title belongs to the caller on axes they supplied.
+    if created_axes:
         ax.set_title(plot_title)
 
     # Add scale bar if requested
@@ -395,6 +401,7 @@ def _plot_field(
     # dispatch.
 
     # Create axes if needed
+    caller_title = None if ax is None else ax.get_title()
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 7))
 
@@ -419,6 +426,9 @@ def _plot_field(
             colorbar_label=colorbar_label,
         )
         mappable = _plot_binning_field(binning, field, ax, style, **kwargs)
+        if caller_title is not None:
+            # A track plot names itself; on the caller's axes the title is theirs.
+            ax.set_title(caller_title)
 
     # Add colorbar (not for 1D)
     # Note: mappable can be None if all field values are NaN and nan_color=None

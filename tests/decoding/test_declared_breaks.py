@@ -173,7 +173,7 @@ def test_ground_truth_is_never_interpolated_across_a_break(uniform_decode):
             true_positions=true_positions,
             max_gap=None,
             break_before=value,
-        )
+        )[0]  # the x(t) panel
     lines = {
         label: next(
             line for line in ax.get_lines() if line.get_label() == "Actual position"
@@ -198,7 +198,7 @@ def test_plotted_truth_is_split_at_a_break_between_decode_samples(uniform_decode
     true_positions = np.c_[np.arange(10.0) * 4, np.zeros(10)]
     breaks = np.zeros(10, dtype=bool)
     breaks[5] = True
-    ax = result.plot(
+    ax, _ = result.plot(
         true_times=true_times,
         true_positions=true_positions,
         max_gap=None,

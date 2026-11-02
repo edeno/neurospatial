@@ -57,6 +57,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._plotting import _require_polar
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import (
     is_finite_real,
@@ -975,10 +976,14 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
                 _, ax = plt.subplots(subplot_kw={"projection": "polar"})
             else:
                 _, ax = plt.subplots()
+        elif polar:
+            _require_polar(ax, "DirectionalRateResult.plot")
 
         ax.plot(centers_closed, rates_closed, **kwargs)
 
-        if not polar:
+        if polar:
+            _label_radius_away_from_peak(cast("PolarAxes", ax), self)
+        else:
             ax.set_xlabel("Direction (rad)")
             ax.set_ylabel("Firing rate (Hz)")
             ax.set_xlim(-np.pi, np.pi)
@@ -3217,6 +3222,14 @@ def is_head_direction_cell(
     return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
 
+def _label_radius_away_from_peak(ax: PolarAxes, result: DirectionalRateResult) -> None:
+    """Label the radial axis in Hz, its tick labels opposite the preferred direction."""
+    pfd = result.preferred_direction()
+    angle = np.degrees(pfd) + 180.0 if np.isfinite(pfd) else 135.0
+    ax.set_rlabel_position(angle % 360.0)
+    ax.set_ylabel("Firing rate (Hz)", labelpad=30)
+
+
 def plot_head_direction_tuning(
     result: DirectionalRateResult,
     *,
@@ -3302,9 +3315,12 @@ def plot_head_direction_tuning(
             _, ax = plt.subplots(subplot_kw={"projection": "polar"})
         else:
             _, ax = plt.subplots()
+    elif polar:
+        _require_polar(ax, "plot_head_direction_tuning")
 
     if polar:
         polar_ax = cast("PolarAxes", ax)
+        _label_radius_away_from_peak(polar_ax, result)
 
         # Draw angles as in the arena: 0 = East (right), counter-clockwise.
         polar_ax.set_theta_zero_location("E")
@@ -3347,7 +3363,7 @@ def plot_head_direction_tuning(
         # Fill under curve
         ax.fill(x_closed, rates_closed, color=color, alpha=fill_alpha)
 
-        ax.set_ylabel("Firing Rate (Hz)")
+        ax.set_ylabel("Firing rate (Hz)")
 
         # Mark preferred direction
         if show_preferred_direction:

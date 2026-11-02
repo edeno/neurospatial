@@ -70,6 +70,7 @@ from neurospatial._intervals import (
     start_allocated_occupancy,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial._plotting import _require_polar
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._spikes import spike_unit_table
@@ -420,7 +421,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
 
         Returns
         -------
@@ -446,6 +447,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         preferred_distance : Get distance component of peak response
         preferred_direction : Get direction component of peak response
         """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def preferred_distance(self) -> float:
@@ -997,7 +999,7 @@ class ObjectVectorRatesResult(
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
 
         Returns
         -------
@@ -1025,6 +1027,7 @@ class ObjectVectorRatesResult(
         preferred_distances : Get distance preferences for all neurons
         ObjectVectorRateResult.plot : Plot for single-neuron result
         """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
             ax=ax,
@@ -4163,7 +4166,7 @@ def plot_object_vector_tuning(
     *,
     ax: Axes | PolarAxes | None = None,
     show_peak: bool = True,
-    add_colorbar: bool = False,
+    colorbar: bool = True,
     cmap: str = "viridis",
     **kwargs: Any,
 ) -> Axes | PolarAxes:
@@ -4181,8 +4184,8 @@ def plot_object_vector_tuning(
         Axes to plot on. If None, creates new figure with polar projection.
     show_peak : bool, default=True
         If True, mark the peak location with a marker.
-    add_colorbar : bool, default=False
-        If True, add a colorbar.
+    colorbar : bool, default=True
+        If True, add a colorbar labelled "Firing rate (Hz)".
     cmap : str, default='viridis'
         Colormap name.
     **kwargs : dict
@@ -4209,7 +4212,6 @@ def plot_object_vector_tuning(
     ObjectVectorRateResult.plot : Basic plotting on result object
     """
     import matplotlib.pyplot as plt
-    from matplotlib.projections.polar import PolarAxes as MPLPolarAxes
 
     # Reshape firing rate to 2D grid (distance x direction)
     firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
@@ -4223,6 +4225,12 @@ def plot_object_vector_tuning(
     # Create figure if needed
     if ax is None:
         _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+    else:
+        _require_polar(
+            ax,
+            "plot_object_vector_tuning",
+            alternative="draw the map on Cartesian axes with `result.plot(ax=ax)`",
+        )
 
     # Create mesh grid for polar plot
     theta, r = np.meshgrid(direction_bins, distance_bins)
@@ -4231,14 +4239,15 @@ def plot_object_vector_tuning(
     mesh = ax.pcolormesh(theta, r, tuning_curve, cmap=cmap, shading="flat", **kwargs)
 
     # Configure polar plot
-    if isinstance(ax, MPLPolarAxes):
-        if result.direction_frame == "allocentric":
-            ax.set_theta_zero_location("E")
-            ax.set_xlabel("direction to object (allocentric, 0 = East)")
-        else:
-            ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
-        # Counter-clockwise: +π/2 = left of the animal is drawn on the left.
-        ax.set_theta_direction(1)
+    polar_ax = cast("PolarAxes", ax)
+    if result.direction_frame == "allocentric":
+        polar_ax.set_theta_zero_location("E")
+        polar_ax.set_xlabel("direction to object (allocentric, 0 = East)")
+    else:
+        polar_ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
+    # Counter-clockwise: +π/2 = left of the animal is drawn on the left.
+    polar_ax.set_theta_direction(1)
+    polar_ax.set_rlabel_position(135)
 
     # Mark peak if requested
     if show_peak:
@@ -4263,7 +4272,7 @@ def plot_object_vector_tuning(
             )
 
     # Add colorbar if requested
-    if add_colorbar:
+    if colorbar:
         plt.colorbar(mesh, ax=ax, label="Firing rate (Hz)")
 
     return ax

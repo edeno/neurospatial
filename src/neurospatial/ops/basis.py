@@ -119,6 +119,7 @@ from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
     import networkx as nx
+    from matplotlib.axes import Axes
     from scipy import sparse
     from scipy.spatial import cKDTree
 
@@ -1308,6 +1309,7 @@ def plot_basis_functions(
     env: FieldPlotConsumer,
     basis: NDArray[np.float64],
     *,
+    ax: Sequence[Axes] | NDArray[np.object_] | None = None,
     indices: list[int] | None = None,
     n_examples: int = 6,
     figsize: tuple[float, float] = (12, 8),
@@ -1329,20 +1331,28 @@ def plot_basis_functions(
         Environment used to create basis.
     basis : NDArray[np.float64], shape (n_basis, n_bins)
         Basis matrix from geodesic_rbf_basis() etc.
+    ax : sequence of matplotlib.axes.Axes, optional
+        One axes per basis function drawn, in order; extra axes are hidden. If
+        None, a new figure with a grid of axes is created.
     indices : list[int] or None
         Specific basis function indices to plot.
         If None, randomly selects n_examples.
     n_examples : int, default=6
         Number of example basis functions to show (if indices is None).
     figsize : tuple, default=(12, 8)
-        Figure size (width, height) in inches.
+        Figure size (width, height) in inches; unused when ``ax`` is given.
     cmap : str, default="viridis"
         Colormap for basis function values.
 
     Returns
     -------
     fig : matplotlib.figure.Figure
-        Figure object with subplots.
+        Figure object with subplots; the figure of ``ax`` when it is given.
+
+    Raises
+    ------
+    ValueError
+        If ``ax`` has fewer axes than basis functions to draw.
 
     Examples
     --------
@@ -1381,23 +1391,34 @@ def plot_basis_functions(
             indices = sorted(rng.choice(n_basis, size=n_examples, replace=False))
 
     n_plot = len(indices)
-    n_cols = min(3, n_plot)
-    n_rows = int(np.ceil(n_plot / n_cols))
+    created_figure = ax is None
+    if ax is None:
+        n_cols = min(3, n_plot)
+        n_rows = int(np.ceil(n_plot / n_cols))
+        fig, grid = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
+        panels = list(grid.ravel())
+    else:
+        panels = list(np.asarray(ax, dtype=object).ravel())
+        if len(panels) < n_plot:
+            msg = _format_error(
+                f"plot_basis_functions() draws {n_plot} basis functions but ax "
+                f"has {len(panels)} axes.",
+                fix="pass one axes per basis function, for example "
+                "`fig, ax = plt.subplots(1, n)`, or select fewer with indices=",
+            )
+            raise ValueError(msg)
+        fig = panels[0].figure
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-
-    for i, idx in enumerate(indices):
-        row, col = divmod(i, n_cols)
-        ax = axes[row, col]
-        env.plot_field(basis[idx], ax=ax, cmap=cmap, colorbar=False)
-        ax.set_title(f"Basis {idx}", fontsize=10)
+    for panel, idx in zip(panels, indices, strict=False):
+        env.plot_field(basis[idx], ax=panel, cmap=cmap, colorbar=False)
+        panel.set_title(f"Basis {idx}", fontsize=10)
 
     # Hide empty subplots
-    for i in range(n_plot, n_rows * n_cols):
-        row, col = divmod(i, n_cols)
-        axes[row, col].set_visible(False)
+    for panel in panels[n_plot:]:
+        panel.set_visible(False)
 
-    fig.suptitle(f"Basis Functions ({n_basis} total)", fontsize=12)
-    fig.tight_layout()
+    if created_figure:
+        fig.suptitle(f"Basis Functions ({n_basis} total)", fontsize=12)
+        fig.tight_layout()
 
     return fig

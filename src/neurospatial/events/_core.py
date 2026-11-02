@@ -1480,7 +1480,8 @@ def plot_peri_event_histogram(
     as_rate : bool, default=True
         Plot as firing rate (Hz) rather than spike counts.
     title : str, optional
-        Plot title. Default: "PSTH (n={n_events} events)".
+        Plot title. Default: "PSTH (n={n_events} events)" on axes this function
+        creates; a title already on a supplied ``ax`` is kept.
     xlabel : str, default="Time from event (s)"
         X-axis label.
     ylabel : str, optional
@@ -1507,6 +1508,7 @@ def plot_peri_event_histogram(
     """
     import matplotlib.pyplot as plt
 
+    created_axes = ax is None
     if ax is None:
         _, ax = plt.subplots()
 
@@ -1532,9 +1534,10 @@ def plot_peri_event_histogram(
         ylabel = "Firing rate (Hz)" if as_rate else "Spike count"
     ax.set_ylabel(ylabel)
 
-    if title is None:
-        title = f"PSTH (n={result.n_events} events)"
-    ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
+    elif created_axes:
+        ax.set_title(f"PSTH (n={result.n_events} events)")
 
     # Mark event time
     ax.axvline(0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
