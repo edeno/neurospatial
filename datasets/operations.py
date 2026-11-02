@@ -150,7 +150,7 @@ def hd_tuning(rec: Recording, cache: dict[str, Any]) -> Outcome:
             "n_units": len(tuning.unit_ids),
             **{
                 "mean_vector_length_" + k: v
-                for k, v in _finite_stats(tuning.mean_vector_lengths).items()
+                for k, v in _finite_stats(tuning.mean_vector_lengths()).items()
             },
         },
     )

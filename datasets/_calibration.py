@@ -13,7 +13,7 @@ import re
 import warnings
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -123,14 +123,24 @@ def probe_hazards(
     operations: tuple[Any, ...] = OPERATIONS,
     probe_ops: tuple[str, ...] = PROBE_OPS,
 ) -> list[dict[str, Any]]:
-    """Re-run ``probe_ops`` on each hazardous version of ``rec``."""
+    """Re-run ``probe_ops`` on each hazardous version of ``rec``.
+
+    An operation is probed only if it reads a field the hazard changed.
+    """
     rows = []
     for name, make in hazards_for(module, rec).items():
         bad: Recording = make(rec)  # not validated: the hazard is the point
+        changed = {
+            f.name
+            for f in fields(Recording)
+            if getattr(bad, f.name) is not getattr(rec, f.name)
+        }
         cache: dict[str, Any] = {}
         for op in operations:
-            if op.op_id not in probe_ops or any(
-                getattr(bad, f) is None for f in op.requires
+            if (
+                op.op_id not in probe_ops
+                or not changed & set(op.requires)
+                or any(getattr(bad, f) is None for f in op.requires)
             ):
                 continue
             outcome, error, caught = captured(op.run, bad, cache)

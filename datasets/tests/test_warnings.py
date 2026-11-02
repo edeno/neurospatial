@@ -72,6 +72,8 @@ def test_hazard_responses_classified(simulated_recording, loader_module):
     assert by_op["p.silent"]["response"] == "silent"
     assert by_op["p.silent"]["clean_summary"] == {"max": 100.0}
     assert by_op["p.silent"]["hazard_summary"]["max"] < 1.01
+    # Spike times in ms change no field these position-only operations read.
+    assert not [row for row in rows if row["hazard"] == "spike_times_in_ms"]
 
 
 def test_generic_hazards_apply_only_when_relevant(simulated_recording):
