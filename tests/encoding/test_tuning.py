@@ -451,6 +451,26 @@ def test_pynapple_values_use_their_time_support(runs):
     assert from_array.occupancy.sum() == pytest.approx(3.5)
 
 
+@pytest.mark.pynapple
+def test_explicit_epochs_are_intersected_with_the_values_support(runs):
+    """Explicit epochs keep the restricted series' gaps out and record their ids."""
+    nap = pytest.importorskip("pynapple")
+    times, progress = runs
+    restricted = nap.Tsd(t=times, d=progress).restrict(
+        nap.IntervalSet([0.0, 2.0], [1.5, 3.5])
+    )
+    trials = Intervals.from_arrays([0.0, 1.0], [1.0, 4.0], interval_ids=[7, 9])
+
+    curve = compute_tuning_curve(
+        np.array([1.0]), restricted.t, restricted, bin_edges=EDGES, epochs=trials
+    )
+
+    # [0, 1) and [1, 4) cover the recording, but only [0, 1.5) and [2, 3.5)
+    # of it was kept in the series: 3.0 s, not 3.5 s.
+    assert curve.occupancy.sum() == pytest.approx(3.0)
+    assert curve.analysis_settings["epoch_interval_ids"] == [7, 9]
+
+
 def test_to_xarray_names_the_variable(distance_curves):
     pytest.importorskip("xarray")
     dataset = distance_curves.to_xarray()

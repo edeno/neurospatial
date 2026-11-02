@@ -44,7 +44,11 @@ from neurospatial._intervals import (
     value_frame_bins,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import interval_rows, reads_pynapple_samples
+from neurospatial._pynapple import (
+    _epochs_within_supports,
+    interval_rows,
+    reads_pynapple_samples,
+)
 from neurospatial._results import _copy_analysis_settings
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
@@ -787,8 +791,9 @@ def compute_tuning_curve(
         occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
-        its ``time_support``, so time outside it (such as between trials of
-        a restricted series) is not analyzed.
+        its ``time_support``, and explicit epochs are intersected with it,
+        so time outside it (such as between trials of a restricted series)
+        is never analyzed.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``; that interval is excluded.
@@ -1032,8 +1037,9 @@ def compute_tuning_curves(
         occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
-        its ``time_support``, so time outside it (such as between trials of
-        a restricted series) is not analyzed.
+        its ``time_support``, and explicit epochs are intersected with it,
+        so time outside it (such as between trials of a restricted series)
+        is never analyzed.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``; that interval is excluded.
@@ -1232,21 +1238,27 @@ def _tuning_curves(
     from neurospatial.encoding._validation import validate_trajectory
 
     call = f"{owner}()"
-    if _is_pynapple_object(values):
-        # As for pynapple positions and headings: time outside the series'
-        # support (between trials, for a restricted series) is not analyzed.
-        support = getattr(values, "time_support", None)
-        if epochs is None and support is not None:
-            epochs = interval_rows(support)
-        values = np.asarray(values.d)
-    validate_instance(variable, str, name="variable", owner=call)
-    if units is not None:
-        validate_instance(units, str, name="units", owner=call)
     epoch_ids = (
         np.asarray(epochs.interval_ids).tolist()
         if isinstance(epochs, Intervals)
         else None
     )
+    if _is_pynapple_object(values):
+        # As for pynapple positions and headings: time outside the series'
+        # support (between trials, for a restricted series) is not analyzed,
+        # whether or not epochs are given.
+        support = getattr(values, "time_support", None)
+        if support is not None:
+            support_rows = interval_rows(support)
+            epochs = (
+                support_rows
+                if epochs is None
+                else _epochs_within_supports(epochs, {"values": support_rows})
+            )
+        values = np.asarray(values.d)
+    validate_instance(variable, str, name="variable", owner=call)
+    if units is not None:
+        validate_instance(units, str, name="units", owner=call)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     if single_unit:
