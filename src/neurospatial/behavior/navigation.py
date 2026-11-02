@@ -5332,6 +5332,7 @@ def _goal_directed(
         if goal.bins is not None:
             arrived = rows[goal.contains(env, positions[rows])]
         else:
+            assert goal_radius is not None  # a point goal is tested only with one
             arrived = rows[distances[rows] <= goal_radius]
         time_to_reach = (
             float(times[arrived[0]] - times[rows[0]]) if arrived.size else np.nan

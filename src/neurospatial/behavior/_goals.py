@@ -83,9 +83,9 @@ class Goal:
         assert self.point is not None
         if paths is not None:
             return paths.to_point(positions, self.point)
-        out = np.linalg.norm(positions - self.point, axis=1)
-        out[env.bin_at(positions) < 0] = np.nan
-        return out
+        straight: NDArray[np.float64] = np.linalg.norm(positions - self.point, axis=1)
+        straight[env.bin_at(positions) < 0] = np.nan
+        return straight
 
     def directions(
         self,

@@ -1932,8 +1932,8 @@ def compute_home_range(
     # Dwell is the start-allocated occupancy of env.occupancy: each interval
     # passing the gates adds its duration to the bin of its first sample.
     dwell = env.occupancy(
-        times,
-        positions,
+        np.asarray(times, dtype=np.float64),
+        np.asarray(positions, dtype=np.float64),
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
