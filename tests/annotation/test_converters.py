@@ -566,8 +566,13 @@ def near_collinear_polygon(draw, n_extra_points=5):
         end = base_coords[(i + 1) % 4]
         for _j in range(n_extra_points):
             t = draw(st.floats(min_value=0.1, max_value=0.9, allow_nan=False))
-            # Small perturbation perpendicular to edge
-            perturb = draw(st.floats(min_value=-0.01, max_value=0.01, allow_nan=False))
+            # Small perturbation perpendicular to edge: none, or at least 1e-9
+            # px. Pixel coordinates are never near 1e-307, where GEOS's simplify
+            # overflows on squared distances.
+            size = draw(
+                st.one_of(st.just(0.0), st.floats(min_value=1e-9, max_value=0.01))
+            )
+            perturb = size if draw(st.booleans()) else -size
             x = start[0] + t * (end[0] - start[0]) + perturb
             y = start[1] + t * (end[1] - start[1]) + perturb
             all_coords.append((x, y))
