@@ -300,5 +300,5 @@ def test_turn_sequence_per_trial(arena):
     ],
 )
 def test_empty_input_says_there_are_no_samples(arena, function, options):
-    with pytest.raises(ValueError, match="no samples|empty"):
+    with pytest.raises(ValueError, match=r"no samples|empty"):
         function(arena, np.array([]), np.empty((0, 2)), **options)
