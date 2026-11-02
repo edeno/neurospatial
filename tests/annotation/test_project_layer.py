@@ -11,7 +11,7 @@ from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 
 @pytest.mark.gui
 def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tmp_path):
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation._draft import add_polygons
     from neurospatial.annotation._napari_widget import setup_shapes_layer_for_annotation
@@ -105,7 +105,7 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
 
 @pytest.mark.gui
 def test_snapshot_reads_processed_identities_and_restore_keeps_runtime_guards():
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation._napari_widget import (
         create_annotation_widget,
@@ -151,7 +151,7 @@ def test_snapshot_reads_processed_identities_and_restore_keeps_runtime_guards():
 
 @pytest.mark.gui
 def test_invalid_polygon_survives_save_resume_until_repaired(tmp_path):
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation._napari_widget import setup_shapes_layer_for_annotation
     from neurospatial.annotation.core import _process_annotation_results

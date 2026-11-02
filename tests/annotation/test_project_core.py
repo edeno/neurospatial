@@ -243,7 +243,8 @@ def test_resume_requires_bin_size_when_environment_export_is_requested(monkeypat
 
 @pytest.mark.gui
 def test_draft_geometry_is_restored_before_annotation_widget_creation(monkeypatch):
-    from magicgui.widgets import Label, Select
+    widgets = pytest.importorskip("magicgui.widgets")
+    Label, Select = widgets.Label, widgets.Select
 
     from neurospatial.annotation import _napari_widget
 
@@ -294,7 +295,7 @@ def test_draft_geometry_is_restored_before_annotation_widget_creation(monkeypatc
 def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
     tmp_path, monkeypatch
 ):
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation import _session, _workflow
 
