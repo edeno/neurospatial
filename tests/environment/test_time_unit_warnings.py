@@ -96,4 +96,7 @@ def test_the_warning_reads_the_same_for_occupancy_and_rate_maps(env):
     rate = str(
         _clock_warnings(_run(CALLS["compute_spatial_rate"], env, times))[0].message
     )
-    assert rate == f"{occupancy} Set warn_on_drop=False to suppress this warning."
+    # The rate map's one warning also names the spikes its clock leaves out.
+    assert rate.startswith(f"{occupancy}\n\n")
+    assert "spike_times (41%) fell outside the position time window" in rate
+    assert rate.endswith(" Set warn_on_drop=False to suppress this warning.")

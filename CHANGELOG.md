@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### Warnings and refusals for silently wrong results
+
+Inputs that ran to completion and returned a plausible but wrong number now
+warn or raise, with what was lost, why and the fix. The threshold for
+discarded data is 5% of the input. `docs/errors.md` lists every message under
+"Data discarded at the boundary".
+
+**Breaking**
+
+- `compute_directional_rate(s)`, `head_direction_cell_significance` and
+  `is_head_direction_cell` refuse a `bin_size` wider than π radians, which
+  leaves fewer than two bins (mean vector length 1, a perfect-looking cell),
+  and a non-finite `bin_size`. `bin_size=6` meant as 6° now raises and
+  suggests `angle_unit="deg"`. A `bin_size` wider than π/4 (fewer than eight
+  bins, as `bin_size=3` meant as 3° gives) and a `bandwidth` wider than
+  1 radian (57°) warn, in one warning when both apply.
+- `spatial_information`, `sparsity`, `selectivity` and
+  `information_per_second` take `occupancy` by keyword only. Before:
+  `spatial_information(rate, occupancy)`; now:
+  `spatial_information(rate, occupancy=occupancy)`. A swapped positional
+  pair returned plausible values.
+- `detect_laps` with `method="auto"` or `"region"` raises on an environment
+  whose bins connect without a cycle (a 1-D linear track or arm), where it
+  returned round trips with direction `"unknown"`. Use
+  `detect_trials(env, times, positions, regions=[start, end])` for
+  back-and-forth runs, or `method="reference"` with a template round trip.
+- `decode_position` and `decode_position_summary` raise when `dt` is at
+  least 100 times the median spacing of `times`: `dt=25` meant as 25 ms on
+  25 ms bins made the posterior about 1000 times overconfident. Overlapping
+  windows, such as 20 ms windows stepped by 10 ms, are still accepted.
+
+**Changed**
+
+- Analyses that bridge gaps up to `max_gap` warn when the kept intervals
+  bridge runs of removed samples lasting 0.25 s to `max_gap` that add up to
+  more than 5% of the analysed time. `times[speed > 5], positions[speed > 5]`
+  gives this: the removed rest periods were bridged as occupancy, so their
+  time and spikes still counted. Dropped frames and short DeepLabCut-style
+  deletions stay silent, and `max_gap=None` (bridge every gap) skips the
+  check.
+- Spike drops warn above 5% of spikes, down from 50%: spikes outside the
+  position time window (a clock offset dropped 28% without a warning) and
+  spikes at positions outside the environment. `warn_on_drop=False` still
+  silences them. A call emits at most one discarded-data warning; when it
+  finds several problems, such as masked times and a clock offset, the one
+  warning names them all.
+- `decode_position`, `decode_position_summary` and `BayesianDecoder.predict`
+  warn when raw rates without a prior or `spatial_support` have rate 0 for
+  every neuron in more than 5% of the bins, as
+  `np.nan_to_num(rates.firing_rates)` gives. The default uniform prior gave
+  those unsupported bins full weight. The fix names the rate result,
+  `prior=rates.spatial_support * env.bin_sizes`, or
+  `BayesianDecoder.from_rates(rates)`.
+- `bin_spikes_in_time`, `decode_position`, `decode_position_summary`,
+  `decode_session` and `BayesianDecoder.predict` warn when `dt` is longer
+  than 1 s, which is usually milliseconds: position-decoding bins last
+  milliseconds to hundreds of milliseconds.
+- Spatial rate maps warn when an explicit `bandwidth` is below a quarter of
+  the median bin length (the radial ring width for polar maps), which barely
+  smooths and usually means another unit (metres on a cm environment).
+  `method="binned", bandwidth=0` stays silent.
+
 ### One goal argument for every goal measure
 
 Every behavior function that measures movement toward a goal takes the

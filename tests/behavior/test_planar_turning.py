@@ -468,6 +468,8 @@ def test_smoothing_never_crosses_a_long_gap_or_an_epoch_edge(gate, uniform_circl
     )
 
 
+# The 0.9 s gap is a deleted stretch of a 4 s clip on purpose.
+@pytest.mark.filterwarnings("ignore:.*boolean-masked:UserWarning")
 def test_smoothing_does_not_reach_across_a_bridged_gap_longer_than_the_kernel():
     # Straight along x, a 0.9 s tracking gap (bridged at max_gap=1.0), then
     # straight again for 0.2 s before a counterclockwise circle. Weights use

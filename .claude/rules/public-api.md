@@ -22,7 +22,9 @@ follow these rules. `tests/test_public_api_snapshot.py`,
   `metric="euclidean" | "geodesic"`, not `use_geodesic`.
 - Spell out acronyms in public names (no `detect_ovcs`).
 - Data arguments are positional. Algorithm parameters, thresholds and ranges are
-  keyword-only after `*`.
+  keyword-only after `*`. Metric functions whose two array arguments share a
+  shape take the second one keyword-only (`spatial_information(rate,
+  occupancy=occupancy)`), so a swap cannot run silently.
 
 ## Result classes
 

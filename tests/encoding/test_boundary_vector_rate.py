@@ -345,7 +345,7 @@ def test_distance_information_is_skaggs_information_along_the_preferred_ray(
     centers = (edges[:-1] + edges[1:]) / 2
     column = int(np.argmin(np.abs(centers - result.preferred_direction())))
     assert abs(centers[column]) <= np.pi / 12 + 1e-12  # one of the two East rays
-    expected = spatial_information(rates[:, column], occupancy[:, column])
+    expected = spatial_information(rates[:, column], occupancy=occupancy[:, column])
     assert result.distance_information() == pytest.approx(expected)
     assert result.summary_table()["distance_information"].iloc[0] == pytest.approx(
         expected

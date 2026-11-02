@@ -115,21 +115,21 @@ def test_binning_rejects_unknown_allocation(function):
         function(*args, time_allocation="other")
 
 
-def test_linear_warns_when_observed_path_never_enters_spatial_support():
+def test_linear_reports_when_observed_path_never_enters_spatial_support():
     env = holed_cell()
-    with pytest.warns(UserWarning, match="no spatial support"):
-        support = _resolve_spatial_time_support(
-            env,
-            np.array([0.0, 1.0]),
-            np.array([[-2.0, 1.0], [-1.0, 1.0]]),
-            speed=None,
-            min_speed=None,
-            max_gap=None,
-            epochs=None,
-            spike_window=None,
-            time_allocation="linear",
-            warn_on_drop=True,
-        )
+    support, message = _resolve_spatial_time_support(
+        env,
+        np.array([0.0, 1.0]),
+        np.array([[-2.0, 1.0], [-1.0, 1.0]]),
+        speed=None,
+        min_speed=None,
+        max_gap=None,
+        epochs=None,
+        spike_window=None,
+        time_allocation="linear",
+        warn_on_drop=True,
+    )
+    assert "no spatial support" in message
     np.testing.assert_array_equal(support.mask, [True])
     assert support.runs.shape == (0, 2)
 

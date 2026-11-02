@@ -589,9 +589,10 @@ class TestSpikeTimeOrderAndSign:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         env, times, positions = session
-        with_early = compute_spatial_rate(
-            env, np.array([-2.0, 1.0, 3.0]), times, positions
-        )
+        with pytest.warns(UserWarning, match="1/3 spike_times .* fell outside"):
+            with_early = compute_spatial_rate(
+                env, np.array([-2.0, 1.0, 3.0]), times, positions
+            )
         without = compute_spatial_rate(env, np.array([1.0, 3.0]), times, positions)
         np.testing.assert_array_equal(with_early.firing_rate, without.firing_rate)
 

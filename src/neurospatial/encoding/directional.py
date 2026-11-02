@@ -2227,22 +2227,97 @@ class _DirectionalCounts(NamedTuple):
     binning: FrameBinning  # frame bins and interval support, for recounting
 
 
-def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
-    """Refuse a smoothing bandwidth that is not a finite number > 0."""
+def _check_angular_widths(
+    bin_size: Any, bandwidth: Any, angle_unit: Literal["rad", "deg"]
+) -> None:
+    """Refuse or warn about a bin size or bandwidth in the wrong angle unit.
+
+    Raises
+    ------
+    ValueError
+        If ``bin_size`` is not finite or is wider than π radians (fewer than
+        two bins), as 6 degrees passed with ``angle_unit="rad"`` would be, or
+        if ``bandwidth`` is not a finite number > 0.
+
+    Warns
+    -----
+    UserWarning
+        Once, naming each problem, if ``bin_size`` is wider than π/4 radians
+        (fewer than eight bins cannot resolve a head-direction tuning curve,
+        about 60-90° full width) or ``bandwidth`` is wider than 1 radian (57°,
+        a kernel that flattens the tuning). Degree values passed with
+        ``angle_unit="rad"`` land here.
+    """
+    from neurospatial._angles import to_radians
     from neurospatial.encoding._base import _real_scalar
 
-    if bandwidth is None:
-        return
-    value = _real_scalar(bandwidth)
-    if value is None or not (np.isfinite(value) and value > 0):
-        raise ValueError(
-            _format_error(
-                f"bandwidth={bandwidth!r} is not a smoothing width.",
-                why="Why: the tuning curve is smoothed with a circular Gaussian "
-                f"of this standard deviation, in {angle_unit}.",
-                fix="pass a finite bandwidth > 0, or bandwidth=None for an "
-                "unsmoothed tuning curve.",
+    def fix(name: str, value: Any, narrower: str) -> str:
+        if angle_unit == "rad":
+            return (
+                f"pass angle_unit='deg' if {name}={value!r} is in degrees; "
+                "angular widths are in angle_unit (rad)."
             )
+        return f"use a {name} of at most {narrower}."
+
+    problems: list[str] = []
+    if bin_size is not None:
+        size = _real_scalar(bin_size)
+        if size is not None and not np.isfinite(size):
+            raise ValueError(
+                _format_error(
+                    f"bin_size={bin_size!r} is not a finite angular bin width.",
+                    why=f"the circle is cut into bins of this width, in {angle_unit}.",
+                    fix="pass a finite bin_size > 0 in angle_unit, or "
+                    "bin_size=None for 6° bins.",
+                )
+            )
+        size_rad = None if size is None else float(to_radians(size, angle_unit))
+        if size_rad is not None and size_rad > np.pi:
+            raise ValueError(
+                _format_error(
+                    f"bin_size={bin_size!r} {angle_unit} is wider than half a "
+                    "circle, so it leaves fewer than two heading bins.",
+                    why="a single bin makes every cell look perfectly tuned "
+                    "(mean vector length 1).",
+                    fix=fix("bin_size", bin_size, "45 (eight bins)"),
+                )
+            )
+        if size_rad is not None and size_rad > np.pi / 4:
+            n_bins = int(np.round(2 * np.pi / size_rad))
+            problems.append(
+                _format_error(
+                    f"bin_size={bin_size!r} {angle_unit} leaves {n_bins} heading "
+                    "bins, fewer than eight.",
+                    why="bins this wide cannot resolve a head-direction tuning "
+                    "curve (about 60-90° full width) or its preferred direction.",
+                    fix=fix("bin_size", bin_size, "45 (eight bins)"),
+                )
+            )
+    if bandwidth is not None:
+        value = _real_scalar(bandwidth)
+        if value is None or not (np.isfinite(value) and value > 0):
+            raise ValueError(
+                _format_error(
+                    f"bandwidth={bandwidth!r} is not a smoothing width.",
+                    why="Why: the tuning curve is smoothed with a circular "
+                    f"Gaussian of this standard deviation, in {angle_unit}.",
+                    fix="pass a finite bandwidth > 0, or bandwidth=None for an "
+                    "unsmoothed tuning curve.",
+                )
+            )
+        if float(to_radians(value, angle_unit)) > 1.0:
+            problems.append(
+                _format_error(
+                    f"bandwidth={bandwidth!r} {angle_unit} is wider than 1 "
+                    "radian (57°).",
+                    why="a circular Gaussian this wide flattens any "
+                    "head-direction tuning, which is about 60-90° wide.",
+                    fix=fix("bandwidth", bandwidth, "57 (1 radian)"),
+                )
+            )
+    if problems:
+        warnings.warn(
+            "\n\n".join(problems), UserWarning, stacklevel=_external_stacklevel()
         )
 
 
@@ -2319,7 +2394,7 @@ def _count_directional(
         spikes_outside_intervals,
     )
 
-    _check_smoothing_bandwidth(bandwidth, angle_unit)
+    _check_angular_widths(bin_size, bandwidth, angle_unit)
     # Counts and occupancy share one frame mask, including a single unit.
     prepared, bin_centers = prepare_directional_binning(
         times,
@@ -2430,10 +2505,14 @@ def compute_directional_rate(
     bin_size : float or None, default=None
         Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
         60 bins) in either unit. The bin count is rounded to tile the circle,
-        and ``result.bin_size`` records the width used, in radians.
+        and ``result.bin_size`` records the width used, in radians. Angular
+        widths are in ``angle_unit``: a width above π radians (fewer than
+        two bins, such as ``bin_size=6`` meant as degrees) raises, and one
+        above π/4 (fewer than eight bins) warns.
     bandwidth : float or None, default=None
-        Gaussian smoothing bandwidth for the tuning curve. Units match
-        ``angle_unit``. If None, no smoothing is applied.
+        Gaussian smoothing bandwidth for the tuning curve. Angular widths
+        are in ``angle_unit``; a bandwidth above 1 radian (57°) warns, since
+        it flattens head-direction tuning. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
@@ -2640,10 +2719,14 @@ def compute_directional_rates(
     bin_size : float or None, default=None
         Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
         60 bins) in either unit. The bin count is rounded to tile the circle,
-        and ``result.bin_size`` records the width used, in radians.
+        and ``result.bin_size`` records the width used, in radians. Angular
+        widths are in ``angle_unit``: a width above π radians (fewer than
+        two bins, such as ``bin_size=6`` meant as degrees) raises, and one
+        above π/4 (fewer than eight bins) warns.
     bandwidth : float or None, default=None
-        Gaussian smoothing bandwidth for the tuning curves. Units match
-        ``angle_unit``. If None, no smoothing is applied.
+        Gaussian smoothing bandwidth for the tuning curves. Angular widths
+        are in ``angle_unit``; a bandwidth above 1 radian (57°) warns, since
+        it flattens head-direction tuning. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
@@ -2962,10 +3045,14 @@ def is_head_direction_cell(
     bin_size : float or None, default=None
         Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
         60 bins) in either unit. The bin count is rounded to tile the circle,
-        and ``result.bin_size`` records the width used, in radians.
+        and ``result.bin_size`` records the width used, in radians. Angular
+        widths are in ``angle_unit``: a width above π radians (fewer than
+        two bins, such as ``bin_size=6`` meant as degrees) raises, and one
+        above π/4 (fewer than eight bins) warns.
     bandwidth : float or None, default=None
-        Gaussian smoothing bandwidth for the tuning curve. Units match
-        ``angle_unit``. If None, no smoothing is applied.
+        Gaussian smoothing bandwidth for the tuning curve. Angular widths
+        are in ``angle_unit``; a bandwidth above 1 radian (57°) warns, since
+        it flattens head-direction tuning. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
@@ -3387,10 +3474,14 @@ def head_direction_cell_significance(
     bin_size : float or None, default=None
         Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
         60 bins) in either unit. The bin count is rounded to tile the circle,
-        and ``result.bin_size`` records the width used, in radians.
+        and ``result.bin_size`` records the width used, in radians. Angular
+        widths are in ``angle_unit``: a width above π radians (fewer than
+        two bins, such as ``bin_size=6`` meant as degrees) raises, and one
+        above π/4 (fewer than eight bins) warns.
     bandwidth : float or None, default=None
-        Gaussian smoothing bandwidth for the tuning curves. Units match
-        ``angle_unit``. If None, no smoothing is applied.
+        Gaussian smoothing bandwidth for the tuning curves. Angular widths
+        are in ``angle_unit``; a bandwidth above 1 radian (57°) warns, since
+        it flattens head-direction tuning. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 

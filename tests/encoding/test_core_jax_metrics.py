@@ -465,7 +465,7 @@ class TestNumpyEquivalence:
             place_field_firing_rate, uniform_occupancy
         )
         np_result = np_spatial_info(
-            np.array(place_field_firing_rate), np.array(uniform_occupancy)
+            np.array(place_field_firing_rate), occupancy=np.array(uniform_occupancy)
         )
 
         assert_allclose(float(jax_result), np_result, rtol=1e-10)
@@ -495,7 +495,7 @@ class TestNumpyEquivalence:
 
         jax_result = sparsity_single(place_field_firing_rate, uniform_occupancy)
         np_result = np_sparsity(
-            np.array(place_field_firing_rate), np.array(uniform_occupancy)
+            np.array(place_field_firing_rate), occupancy=np.array(uniform_occupancy)
         )
 
         assert_allclose(float(jax_result), np_result, rtol=1e-10)

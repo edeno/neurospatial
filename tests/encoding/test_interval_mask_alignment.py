@@ -21,6 +21,9 @@ from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
+@pytest.mark.filterwarnings(
+    "ignore:.*fell outside the position time window:UserWarning"
+)
 def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, offset):
     f = frame_family
     r = replace(
@@ -248,6 +251,7 @@ def test_max_gap_alignment_against_hand_masked_reference(
     np.testing.assert_allclose(occ, ref_occ)
 
 
+@pytest.mark.filterwarnings("ignore:bandwidth=.* is far below:UserWarning")
 def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
     """The full rate-map path does not inflate the gap bin's rate."""
     times = gap_trajectory["times"]
@@ -787,6 +791,7 @@ def test_environment_occupancy_is_the_rate_denominator():
     assert occupancy.sum() == pytest.approx(0.5)
 
 
+@pytest.mark.filterwarnings("ignore:bandwidth=.* is far below:UserWarning")
 def test_isolated_tracking_dropouts_do_not_bias_rate():
     """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
     rng = np.random.default_rng(0)

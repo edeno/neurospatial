@@ -11,6 +11,10 @@ from neurospatial.behavior import labels_to_epochs
 from neurospatial.decoding import BayesianDecoder
 from neurospatial.encoding import compute_spatial_rates
 
+# The rate maps are binned with a 1 cm kernel on 10 cm bins on purpose, so
+# each condition's rates are its own counts over its own dwell.
+pytestmark = pytest.mark.filterwarnings("ignore:bandwidth=.* is far below:UserWarning")
+
 UNITS = ["u1"]
 # Below two 0.1 s frames, so the lost frame at 1.2 s is a tracking loss.
 MAX_GAP = 0.15

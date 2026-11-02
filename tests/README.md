@@ -163,7 +163,7 @@ def test_sparsity_range(simple_env):
     firing_rate = np.random.rand(simple_env.n_bins)
     occupancy = np.ones(simple_env.n_bins)
 
-    sp = sparsity(firing_rate, occupancy)
+    sp = sparsity(firing_rate, occupancy=occupancy)
 
     assert 0.0 <= sp <= 1.0
 ```
@@ -204,7 +204,7 @@ from hypothesis import given, strategies as st
 def test_sparsity_properties(data):
     """Property: sparsity is always in [0, 1] for all valid inputs."""
     firing_rate, occupancy = data
-    sp = sparsity(firing_rate, occupancy)
+    sp = sparsity(firing_rate, occupancy=occupancy)
     assert 0.0 <= sp <= 1.0
 ```
 
@@ -317,14 +317,14 @@ def test_expensive_operation(large_2d_env):
 def test_sparsity_uniform():
     firing_rate = np.ones(100)
     occupancy = np.ones(100)
-    sp = sparsity(firing_rate, occupancy)
+    sp = sparsity(firing_rate, occupancy=occupancy)
     assert sp < 0.1
 
 def test_sparsity_sparse():
     firing_rate = np.zeros(100)
     firing_rate[50] = 100.0
     occupancy = np.ones(100)
-    sp = sparsity(firing_rate, occupancy)
+    sp = sparsity(firing_rate, occupancy=occupancy)
     assert sp > 0.5
 ```
 
@@ -339,7 +339,7 @@ def test_sparsity(firing_pattern, expected_range):
     firing_rate = create_pattern(firing_pattern)
     occupancy = np.ones_like(firing_rate)
 
-    sp = sparsity(firing_rate, occupancy)
+    sp = sparsity(firing_rate, occupancy=occupancy)
 
     assert expected_range[0] <= sp <= expected_range[1]
 ```

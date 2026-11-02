@@ -443,7 +443,7 @@ class TestSpatialRateResultSpatialInformation:
             bandwidth=5.0,
         )
         # Compare with direct call to _metrics
-        expected = si_func(firing_rate, occupancy)
+        expected = si_func(firing_rate, occupancy=occupancy)
         assert result.spatial_information() == pytest.approx(expected)
 
     def test_spatial_information_nonnegative(
@@ -509,7 +509,7 @@ class TestSpatialRateResultSparsity:
             bandwidth=5.0,
         )
         # Compare with direct call to _metrics
-        expected = sparsity_func(firing_rate, occupancy)
+        expected = sparsity_func(firing_rate, occupancy=occupancy)
         assert result.sparsity() == pytest.approx(expected)
 
     def test_sparsity_in_valid_range(

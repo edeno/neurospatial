@@ -31,7 +31,7 @@ def fitted(recording):
             spikes, times, positions
         )
         for method, options in [
-            ("binned", {"bandwidth": 1.0, "min_occupancy": 0.0}),
+            ("binned", {"bandwidth": 1.5, "min_occupancy": 0.0}),
             ("glm", {"penalty": 1.0, "rank": 3}),
         ]
     }
@@ -81,7 +81,7 @@ def test_restored_decoder_keeps_encoding_guard(fitted, how, method):
 def test_from_rates_uses_recorded_encoding_configuration(recording, method):
     env, spikes, times, positions = recording
     options = (
-        {"bandwidth": 1.0, "min_occupancy": 0.1}
+        {"bandwidth": 1.5, "min_occupancy": 0.1}
         if method == "binned"
         else {"penalty": 1.0, "rank": 3}
     )

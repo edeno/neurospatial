@@ -19,6 +19,7 @@ from typing import Any, Literal, NamedTuple, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._constants import DISCARD_WARN_FRACTION
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
@@ -128,6 +129,14 @@ EMPTY_RESULT = "the result is empty or NaN rather than a measurement"
 #: Default longest stretch of missing tracking, in seconds, that is bridged.
 #: Calibrated by simulation; see the Notes of :func:`validate_max_gap`.
 DEFAULT_MAX_GAP = 1.0
+
+#: Shortest run of removed samples, in seconds, that counts as a sign of
+#: boolean masking. A speed mask (speed > 5 cm/s) on a simulated 100 Hz open
+#: field removes pauses with a median of 24 samples (0.24 s); its runs of at
+#: least this length make up about 9% of the analysed time.
+#: DeepLabCut-style deletions of 1-6 frames last at most 0.2 s at 30 Hz and
+#: stay below it.
+MASKED_RUN_MIN_DURATION = 0.25
 
 
 def validate_max_gap(max_gap: Any) -> float | None:
@@ -1704,16 +1713,49 @@ def warn_excluded_intervals(
     result: str = EMPTY_RESULT,
     suppress_hint: str = "",
 ) -> None:
-    """Warn when the interval gates leave no data or ``times`` look wrong.
+    """Warn with :func:`excluded_intervals_message`, if it has one.
 
-    Analyses call this with their final interval mask, so an empty or
-    gap-dominated selection warns the same way everywhere. It emits at most
-    one ``UserWarning``, and nothing for fewer than two samples:
+    Parameters
+    ----------
+    gates, samples, result
+        As for :func:`excluded_intervals_message`.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning.
+    """
+    message = excluded_intervals_message(gates, samples=samples, result=result)
+    if message is not None:
+        warnings.warn(
+            f"{message} {suppress_hint}".rstrip(),
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def excluded_intervals_message(
+    gates: IntervalGates,
+    *,
+    samples: Literal["positions", "headings", "values"] = "positions",
+    result: str = EMPTY_RESULT,
+) -> str | None:
+    """The warning for interval gates that leave no data or ``times`` that look wrong.
+
+    Analyses check their final interval mask with this (through
+    :func:`warn_excluded_intervals`, or joined with their own spike-drop
+    message), so an empty or gap-dominated selection warns the same way
+    everywhere. There is at most one message, and none for fewer than two
+    samples:
 
     - When every interval is excluded, the message names the active gates and
       how to fix each one, so an empty result is not mistaken for a
       measurement. When fewer than two samples are observed at all, it names
       the missing samples instead, since no gate is to blame.
+    - Otherwise, when the kept intervals bridge runs of removed samples
+      lasting from ``MASKED_RUN_MIN_DURATION`` to ``max_gap`` that add up to
+      more than ``DISCARD_WARN_FRACTION`` of the analysed time, ``times``
+      were probably boolean-masked (for example ``times[speed > 5]``), and
+      the time and spikes inside the removed runs still count. With
+      ``max_gap=None`` every gap is bridged on purpose, so this check is
+      skipped.
     - Otherwise, when most sampling intervals exceed ``max_gap``, they count
       as recording gaps. That usually means ``times`` are not in seconds (for
       example milliseconds), and the message says so.
@@ -1735,27 +1777,25 @@ def warn_excluded_intervals(
         ``"values"`` for the variable of a tuning curve.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
-    suppress_hint : str, optional
-        Closing sentence naming how to silence the warning.
+
+    Returns
+    -------
+    str or None
+        The message, without a closing hint on how to silence it.
     """
     if gates.mask.size == 0:
-        return
+        return None
     times, max_gap = gates.times, gates.max_gap
     dt = np.diff(times)
-    if gates.mask.any():
-        # Data are kept, so only intervals longer than max_gap can warn.
-        if max_gap is None or not np.any(dt > max_gap):
-            return
-        message = _kept_intervals_message(times, dt, max_gap)
-        if message is None:
-            return
-    else:
-        message = _all_excluded_message(gates, dt, samples=samples, result=result)
-    warnings.warn(
-        f"{message} {suppress_hint}".rstrip(),
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
+    if not gates.mask.any():
+        return _all_excluded_message(gates, dt, samples=samples, result=result)
+    message = _masked_samples_message(times, gates.mask, max_gap)
+    if message is not None:
+        return message
+    # Only intervals longer than max_gap can still warn.
+    if max_gap is None or not np.any(dt > max_gap):
+        return None
+    return _kept_intervals_message(times, dt, max_gap)
 
 
 def _timestamp_rounding(
@@ -1807,6 +1847,90 @@ def _rounded_problem(n_rounded: int, n_intervals: int, max_gap: float | None) ->
 def _rounded_fix(median_dt: float) -> str:
     return (
         f"set max_gap above the sampling interval, e.g. max_gap={1.5 * median_dt:.3g}"
+    )
+
+
+def _masked_sample_fraction(
+    times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float
+) -> float:
+    """Fraction of the analysed time spent in long, bridged runs of removed samples.
+
+    Boolean masking (``times[speed > 5]``) removes whole samples, so the
+    steps left are whole multiples of the median sampling interval. Only
+    kept steps no longer than ``max_gap`` whose removed run lasts at least
+    ``MASKED_RUN_MIN_DURATION`` count: shorter runs are dropped frames,
+    longer steps are recording gaps, and steps outside the kept intervals
+    (between epochs, for example) are not bridged.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times in seconds.
+    kept : ndarray of bool, shape (n_samples - 1,)
+        The intervals the analysis keeps.
+    max_gap : float
+
+    Returns
+    -------
+    float
+        Skipped seconds divided by the kept intervals' duration, the time the
+        analysis uses; 0 for fewer than 11 samples or nothing kept.
+
+    Examples
+    --------
+    Three removed samples at 10 Hz (0.3 s) count; a single one does not:
+
+    >>> import numpy as np
+    >>> times = np.delete(np.arange(100) * 0.1, [10, 11, 12, 50])
+    >>> round(_masked_sample_fraction(times, np.ones(times.size - 1, bool), 1.0), 4)
+    0.0303
+
+    Only the kept intervals count, in the numerator and the denominator:
+
+    >>> kept = times[:-1] < 5.0
+    >>> round(_masked_sample_fraction(times, kept, 1.0), 4)
+    0.0588
+    """
+    dt = np.diff(times)
+    if dt.size < 10:
+        return 0.0
+    step = float(np.median(dt))
+    if not np.isfinite(step) or step <= 0:
+        return 0.0
+    ratio = dt / step
+    skipped_time = (ratio - 1.0) * step
+    skipped = (
+        kept
+        & (ratio >= 1.5)
+        & (np.abs(ratio - np.round(ratio)) < 0.1)
+        & (skipped_time >= MASKED_RUN_MIN_DURATION)
+        & (dt <= max_gap)
+    )
+    analysed = float(dt[kept].sum())
+    if analysed <= 0:
+        return 0.0
+    return float(skipped_time[skipped].sum() / analysed)
+
+
+def _masked_samples_message(
+    times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float | None
+) -> str | None:
+    """The warning for boolean-masked ``times``, or None."""
+    if max_gap is None:
+        return None
+    fraction = _masked_sample_fraction(times, kept, max_gap)
+    if fraction <= DISCARD_WARN_FRACTION:
+        return None
+    return _format_error(
+        f"About {100 * fraction:.0f}% of the analysed time is in runs of "
+        f"removed samples lasting {MASKED_RUN_MIN_DURATION:g} s to "
+        f"max_gap={max_gap} s, which looks like times were boolean-masked "
+        "(for example times[speed > 5]).",
+        why="runs shorter than max_gap are bridged as continuous occupancy, so "
+        "the time and spikes inside the removed runs still count.",
+        fix="pass the full arrays and select with the function's min_speed= or "
+        "epochs= where it has them, or set max_gap below the shortest removed "
+        "run.",
     )
 
 

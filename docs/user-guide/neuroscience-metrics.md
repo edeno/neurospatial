@@ -132,7 +132,7 @@ from neurospatial.encoding import spatial_information
 occupancy = env.occupancy(times, positions, return_seconds=True)
 
 # Compute spatial information
-info = spatial_information(firing_rate, occupancy, base=2.0)
+info = spatial_information(firing_rate, occupancy=occupancy, base=2.0)
 # Returns: bits per spike
 ```
 
@@ -159,7 +159,7 @@ Sparsity measures how selectively a cell fires across space (Skaggs et al., 1996
 ```python
 from neurospatial.encoding import sparsity
 
-sparseness = sparsity(firing_rate, occupancy)
+sparseness = sparsity(firing_rate, occupancy=occupancy)
 # Returns: value in [0, 1]
 ```
 
@@ -1183,8 +1183,8 @@ for i, field in enumerate(fields):
 
 # 4. Compute single-cell metrics
 occupancy = env.occupancy(times, positions, return_seconds=True)
-info = spatial_information(firing_rate, occupancy)
-sparse = sparsity(firing_rate, occupancy)
+info = spatial_information(firing_rate, occupancy=occupancy)
+sparse = sparsity(firing_rate, occupancy=occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
 

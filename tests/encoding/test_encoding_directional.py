@@ -3106,7 +3106,8 @@ class TestComputeDirectionalRateEdgeCases:
         # Spikes at 0.5 and 9.5 are outside time range
         spike_times = np.array([0.5, 2.0, 5.0, 9.5])
 
-        result = compute_directional_rate(spike_times, times, headings)
+        with pytest.warns(UserWarning, match="2/4 spike_times .* fell outside"):
+            result = compute_directional_rate(spike_times, times, headings)
 
         # Only the spikes at 2.0 and 5.0 fall inside the tracked time.
         assert result.spike_counts.sum() == 2

@@ -921,7 +921,7 @@ class TestWarnOnDrop:
         """
         from neurospatial.encoding._spatial_counts import (
             _bin_spike_train_with_stats,
-            _emit_inactive_bin_warning,
+            _inactive_bin_message,
             _spike_track,
         )
 
@@ -943,9 +943,9 @@ class TestWarnOnDrop:
         )
         assert counts.sum() == 0
         assert (n_time_dropped, n_bin_dropped, n_total, n_after_time) == (0, 3, 3, 3)
-        with pytest.warns(UserWarning, match="mapped to positions outside") as w:
-            _emit_inactive_bin_warning(n_bin_dropped, n_after_time)
-        assert len(w) == 1
+        message = _inactive_bin_message(n_bin_dropped, n_after_time)
+        assert message is not None
+        assert "3/3 spikes (100%) mapped to positions outside" in message
 
     # ------------------------------------------------------------------
     # 6. Below-threshold drop: no warning when fraction is small

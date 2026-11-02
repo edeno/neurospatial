@@ -374,7 +374,7 @@ class TestMetricComputationPerformance:
         """Benchmark spatial information computation."""
         firing_rate, occupancy = firing_rate_and_occupancy
 
-        result = benchmark(spatial_information, firing_rate, occupancy)
+        result = benchmark(spatial_information, firing_rate, occupancy=occupancy)
 
         assert isinstance(result, float)
         assert result >= 0.0
@@ -383,7 +383,7 @@ class TestMetricComputationPerformance:
         """Benchmark sparsity computation."""
         firing_rate, occupancy = firing_rate_and_occupancy
 
-        result = benchmark(sparsity, firing_rate, occupancy)
+        result = benchmark(sparsity, firing_rate, occupancy=occupancy)
 
         assert isinstance(result, float)
         assert 0.0 <= result <= 1.0
