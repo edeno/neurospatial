@@ -640,6 +640,68 @@ def test_with_fields_keeps_the_record_class_rules(trials: Intervals[Trial]) -> N
     assert relabelled.goal.tolist() == ["a", "b", "a", "b"]
 
 
+def test_with_fields_names_the_interval_a_replacement_breaks(
+    trials: Intervals[Trial],
+) -> None:
+    # Row 2 in time order is trial id 5, which reached no region.
+    with pytest.raises(ValueError, match=r"interval 5 would not be a valid Trial"):
+        trials.with_fields(outcome=["reached", "reached", "reached", "censored"])
+
+
+def test_with_fields_of_owned_fields_keeps_the_record_class() -> None:
+    """Replacing a Trial's own fields gives Trials, with ids and settings kept."""
+    records = [
+        Trial(0.0, 8.0, "home", "right", "reached"),
+        Trial(10.0, 17.0, "home", None, "returned"),
+    ]
+    trials = Intervals(
+        records, interval_ids=[3, 5], analysis_settings={"detector": "test"}
+    )
+
+    # Trial 3 is re-scored as censored: no end region, no success.
+    relabelled = trials.with_fields(
+        outcome=pd.Series(["returned", "censored"], index=[5, 3]),
+        end_region=[None, None],
+    )
+
+    assert relabelled.record_type is Trial
+    assert list(relabelled) == [
+        Trial(0.0, 8.0, "home", None, "censored"),
+        Trial(10.0, 17.0, "home", None, "returned"),
+    ]
+    assert [trial.success for trial in relabelled] == [False, False]
+    assert relabelled.fields == ("start_region", "end_region", "outcome")
+    assert relabelled.interval_ids.tolist() == [3, 5]
+    assert relabelled.analysis_settings == {"detector": "test"}
+    assert repr(relabelled).startswith("Intervals[Trial]: 2 intervals")
+    assert trials.with_fields().record_type is Trial
+
+
+def test_with_fields_with_a_new_field_gives_interval_rows(
+    trials: Intervals[Trial],
+) -> None:
+    labelled = trials.with_fields(goal=["a", "b", "a", "b"])
+
+    assert labelled.record_type is Interval
+    assert labelled.fields == ("start_region", "end_region", "outcome", "goal")
+    assert labelled.sel(interval_id=3) == Interval(
+        0.0,
+        8.0,
+        {
+            "start_region": "home",
+            "end_region": "right",
+            "outcome": "reached",
+            "goal": "a",
+        },
+    )
+    # A replaced owned field still follows the record class's rules.
+    with pytest.raises(ValueError, match="interval 5 would not be a valid Trial"):
+        trials.with_fields(
+            outcome=["reached", "reached", "reached", "censored"],
+            goal=["a", "b", "a", "b"],
+        )
+
+
 def test_interval_refuses_the_names_intervals_reserves() -> None:
     for name in ("sel", "windows", "interval_id", "durations"):
         with pytest.raises(ValueError, match="already an attribute"):
@@ -652,3 +714,49 @@ def test_sel_refuses_an_id_array_that_is_not_one_dimensional(
     with pytest.raises(ValueError, match="1-D"):
         trials.sel(interval_id=np.array([[3, 5]]))
     assert trials.sel(interval_id=[5, 3]).interval_ids.tolist() == [3, 5]
+
+
+def test_trial_consumers_say_how_to_make_intervals() -> None:
+    from neurospatial.behavior import time_to_goal
+
+    times = np.arange(3.0)
+    table = pd.DataFrame(
+        {"start_time": [0.0], "stop_time": [1.0], "outcome": ["reached"]}
+    )
+    with pytest.raises(
+        TypeError,
+        match=r"(?s)trials must be an Intervals or a pynapple IntervalSet, got "
+        r"DataFrame.*Intervals\.from_dataframe\(table\)",
+    ):
+        time_to_goal(times, table)
+    with pytest.raises(
+        TypeError, match=r"(?s)got list.*wrap records with neurospatial\.Intervals"
+    ):
+        time_to_goal(times, [Interval(0.0, 1.0, {"outcome": "reached"})])
+
+
+@pytest.mark.parametrize(
+    "records", [[], [Interval(0.0, 1.0, {"a": 1})]], ids=["no rows", "rows"]
+)
+def test_repeated_field_names_are_refused_with_or_without_rows(records) -> None:
+    with pytest.raises(
+        ValueError, match=r"field names must be unique; repeated: \['a'\]"
+    ):
+        Intervals(records, record_type=Interval, fields=("a", "b", "a"))
+    with pytest.raises(
+        ValueError, match=r"field names must be unique; repeated: \['a'\]"
+    ):
+        Interval(0.0, 1.0, [("a", 1), ("a", 2)])
+
+
+def test_fields_of_an_empty_container_are_the_names_given() -> None:
+    empty = Intervals(record_type=Interval, fields=("goal", "outcome"))
+
+    assert empty.fields == ("goal", "outcome")
+    assert empty.intervals_table().columns.tolist() == [
+        "start_time",
+        "stop_time",
+        "goal",
+        "outcome",
+    ]
+    assert pickle.loads(pickle.dumps(empty)).fields == ("goal", "outcome")

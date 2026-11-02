@@ -23,7 +23,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._observation import _validated_signal_times
-from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._pynapple import (
+    intervals_from_interval_set,
+    is_pynapple_type,
+    reads_pynapple_samples,
+)
 from neurospatial._results import marked_read_only, plain_value
 from neurospatial._stacklevel import _external_stacklevel
 
@@ -145,11 +149,7 @@ class Interval:
             name, value = pair
             _check_field_name(name, owner="Interval", reserved=_MEMBERS)
             items.append((name, _checked_value("Interval", name, value)))
-        names = [name for name, _ in items]
-        repeated = sorted({name for name in names if names.count(name) > 1})
-        if repeated:
-            msg = f"Interval field names must be unique; repeated: {repeated}."
-            raise ValueError(msg)
+        _refuse_repeated_names([name for name, _ in items], owner="Interval")
         object.__setattr__(self, "items", tuple(items))
 
     @property
@@ -167,6 +167,14 @@ class Interval:
         names = [key for key, _ in object.__getattribute__(self, "items")]
         msg = f"Interval has no field {name!r}; its fields are {names}."
         raise AttributeError(msg)
+
+
+def _refuse_repeated_names(names: Sequence[str], *, owner: str) -> None:
+    """Refuse field names that repeat, naming them."""
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        msg = f"{owner} field names must be unique; repeated: {repeated}."
+        raise ValueError(msg)
 
 
 def _check_field_name(name: object, *, owner: str, reserved: Iterable[str]) -> None:
@@ -344,8 +352,8 @@ class Intervals(Generic[R]):
         The record class. Inferred from the records; required when there are
         none.
     fields : sequence of str, optional
-        The field names of :class:`Interval` records. Inferred from the first
-        record; required for no :class:`Interval` records. Detector records
+        The field names of :class:`Interval` records, each once. Inferred
+        from the first record; required for no :class:`Interval` records. Detector records
         take their fields from the class.
     interval_ids : array-like of int, shape (n,), optional
         Stable id of each record, in input order: unique and ``>= 0``.
@@ -481,7 +489,6 @@ class Intervals(Generic[R]):
         self._init_parts(
             records=tuple(rows[i] for i in order),
             record_type=kind,
-            fields=names,
             dtypes={name: column.dtype for name, column in columns.items()},
             ids=ids[order],
             start=start[order],
@@ -494,7 +501,6 @@ class Intervals(Generic[R]):
         *,
         records: tuple[R, ...],
         record_type: type[R],
-        fields: tuple[str, ...],
         dtypes: dict[str, np.dtype],
         ids: NDArray[np.int64],
         start: NDArray[np.float64],
@@ -503,7 +509,6 @@ class Intervals(Generic[R]):
     ) -> None:
         self._records = records
         self._record_type = record_type
-        self._fields = fields
         self._dtypes = dtypes
         self._ids = marked_read_only(np.asarray(ids, dtype=np.int64))
         self._start = marked_read_only(np.asarray(start, dtype=np.float64))
@@ -517,7 +522,6 @@ class Intervals(Generic[R]):
         new._init_parts(
             records=tuple(self._records[i] for i in positions),
             record_type=self._record_type,
-            fields=self._fields,
             dtypes=self._dtypes,
             ids=self._ids[positions],
             start=self._start[positions],
@@ -547,7 +551,7 @@ class Intervals(Generic[R]):
     @property
     def fields(self) -> tuple[str, ...]:
         """Field names, in schema order."""
-        return self._fields
+        return tuple(self._dtypes)
 
     @property
     def record_type(self) -> type[R]:
@@ -610,9 +614,9 @@ class Intervals(Generic[R]):
         """One field as a read-only array, shape ``(n,)``, in row order."""
         if name.startswith("_"):
             raise AttributeError(name)
-        if name not in self._fields:
+        if name not in self._dtypes:
             msg = (
-                f"Intervals has no field {name!r}; its fields are {list(self._fields)}."
+                f"Intervals has no field {name!r}; its fields are {list(self._dtypes)}."
             )
             raise AttributeError(msg)
         column = self._columns.get(name)
@@ -1078,7 +1082,7 @@ class Intervals(Generic[R]):
             "start_time": np.array(self._start),
             "stop_time": np.array(self._stop),
         }
-        for name in self._fields:
+        for name in self._dtypes:
             column = self._field_array(name)
             data[name] = pd.Series(np.array(column), dtype=column.dtype)
         table = pd.DataFrame(data)
@@ -1086,7 +1090,7 @@ class Intervals(Generic[R]):
         table.attrs["analysis_settings"] = self.analysis_settings
         return table
 
-    def with_fields(self, **columns: Any) -> Intervals[Interval]:
+    def with_fields(self, **columns: Any) -> Intervals[R] | Intervals[Interval]:
         """These intervals with fields added or replaced, same ids and times.
 
         For labels from your task: the instructed goal, correct or error, a
@@ -1101,14 +1105,17 @@ class Intervals(Generic[R]):
 
         Returns
         -------
-        Intervals of Interval
-            The same ``interval_ids``, bounds and ``analysis_settings``, with
-            the existing fields followed by the new ones. Consumers read
-            fields by name, so the record class does not matter. A replaced
-            field that the record class defines (a ``Trial``'s ``outcome``)
-            keeps that class's rules: each row is rebuilt as the record class
-            with the new values, so ``outcome="reached"`` without an
-            ``end_region`` is refused as it is for a ``Trial``.
+        Intervals
+            The same ``interval_ids``, bounds and ``analysis_settings``. A
+            replaced field that the record class defines (a ``Trial``'s
+            ``outcome``) keeps that class's rules: each row is rebuilt as the
+            record class with the new values, so ``outcome="reached"``
+            without an ``end_region`` is refused as it is for a ``Trial``.
+            When every name is such a field, the result holds the rebuilt
+            records, so a ``Trial`` stays a ``Trial`` (with its ``success``).
+            A new field gives :class:`Interval` rows with the existing fields
+            followed by the new ones; consumers read fields by name, so they
+            work the same on either.
 
         Raises
         ------
@@ -1130,8 +1137,18 @@ class Intervals(Generic[R]):
         ('end_region', 'outcome')
         >>> labelled[labelled.outcome == "error"].interval_ids.tolist()
         [1]
+
+        Re-scoring detected trials keeps them trials:
+
+        >>> from neurospatial.behavior import Trial
+        >>> detected = Intervals([Trial(0.0, 8.0, "home", "left", "reached")])
+        >>> rescored = detected.with_fields(outcome=["censored"], end_region=[None])
+        >>> rescored
+        Intervals[Trial]: 1 interval in [0, 8) s; fields: start_region, end_region, outcome
+        >>> rescored[0].success
+        False
         """
-        data = {name: self._field_array(name) for name in self._fields}
+        data = {name: self._field_array(name) for name in self._dtypes}
         for name, values in columns.items():
             _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
             if isinstance(values, str):
@@ -1145,36 +1162,18 @@ class Intervals(Generic[R]):
                 # A task log's missing label (NaN, pd.NA) is a missing value.
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
-        self._check_owned_fields(data, replaced=columns.keys())
-        # The rows are in time order, so the order check always passes.
-        labelled = _from_columns(
-            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        owned = (
+            set()
+            if self._record_type is Interval
+            else {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
         )
-        labelled._settings = deepcopy(self._settings)
-        return labelled
-
-    def _check_owned_fields(
-        self, data: Mapping[str, NDArray[Any]], *, replaced: Iterable[str]
-    ) -> None:
-        """Rebuild each record with the replaced fields its class owns.
-
-        The record class's own checks (for example ``Trial``: ``end_region``
-        is set exactly when ``outcome == "reached"``) then apply to the new
-        values, so a relabelled row is never one the class forbids.
-        """
-        if self._record_type is Interval:
-            return
-        owned = [
-            name
-            for name in replaced
-            if name in {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
-        ]
-        if not owned:
-            return
-        for i, record in enumerate(self._records):
-            new = {name: plain_value(data[name][i]) for name in owned}
+        replaced = [name for name in columns if name in owned]
+        records = list(self._records)
+        for i, record in enumerate(records if replaced else ()):
+            new = {name: plain_value(data[name][i]) for name in replaced}
             try:
-                dataclasses.replace(record, **new)  # type: ignore[type-var]
+                # The record class's own checks apply to the new values.
+                records[i] = dataclasses.replace(record, **new)  # type: ignore[type-var]
             except (TypeError, ValueError) as exc:
                 msg = (
                     f"with_fields: interval {self._ids[i]} would not be a valid "
@@ -1182,6 +1181,20 @@ class Intervals(Generic[R]):
                 )
                 error = TypeError if isinstance(exc, TypeError) else ValueError
                 raise error(msg) from exc
+        if len(replaced) == len(columns):
+            return Intervals(
+                records,
+                record_type=self._record_type,
+                fields=self.fields if self._record_type is Interval else None,
+                interval_ids=self._ids,
+                analysis_settings=self._settings,
+            )
+        # The rows are in time order, so the order check always passes.
+        labelled = _from_columns(
+            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        )
+        labelled._settings = deepcopy(self._settings)
+        return labelled
 
     @classmethod
     def from_arrays(
@@ -1347,7 +1360,7 @@ class Intervals(Generic[R]):
         name = f"Intervals[{self._record_type.__name__}]"
         n = len(self)
         span = f" in [{self._start.min():g}, {self._stop.max():g}) s" if n else ""
-        fields = ", ".join(self._fields) if self._fields else "none"
+        fields = ", ".join(self._dtypes) if self._dtypes else "none"
         return f"{name}: {n} interval{'s' if n != 1 else ''}{span}; fields: {fields}"
 
 
@@ -1366,16 +1379,33 @@ _MEMBERS = frozenset(
 
 
 def require_intervals(value: object, *, name: str, owner: str) -> Intervals[Any]:
-    """Require an :class:`Intervals`; a list of records gets the fix."""
+    """``value`` as :class:`Intervals`; a pynapple ``IntervalSet`` is converted.
+
+    The set is read as :func:`neurospatial.io.from_pynapple` reads it:
+    metadata become fields, an ``interval_id`` column the ids, and each
+    inclusive ``end`` the half-open stop holding the same timestamps.
+    Anything else is refused with how to build an ``Intervals`` from it.
+    """
     if isinstance(value, Intervals):
         return value
+    if is_pynapple_type(value, "IntervalSet"):
+        converted: Intervals[Interval] = intervals_from_interval_set(value)
+        return converted
+    fix = (
+        "wrap the table with Intervals.from_dataframe(table) (columns "
+        "start_time, stop_time, then any fields)"
+        if hasattr(value, "columns")
+        else "pass the Intervals from detect_trials() or read_trials(), build "
+        "one with Intervals.from_arrays(start, stop), or wrap records with "
+        f"neurospatial.Intervals({name})"
+    )
     raise TypeError(
         _format_error(
-            f"{owner}: {name} must be an Intervals, got {type(value).__name__}.",
-            why="consumers read fields (for example outcome) by name, so trials "
-            "detected, loaded from a task log or read from NWB work the same way.",
-            fix=f"pass the Intervals from detect_trials() or read_trials(), or "
-            f"wrap records with neurospatial.Intervals({name}).",
+            f"{owner}: {name} must be an Intervals or a pynapple IntervalSet, got "
+            f"{type(value).__name__}.",
+            why="intervals are half-open [start, stop) rows with named fields and "
+            "stable ids, whatever their source.",
+            fix=fix + ".",
         )
     )
 
@@ -1492,6 +1522,7 @@ def _schema(
         names = tuple(name for name, _ in rows[0].items)
     else:
         names = tuple(fields)
+        _refuse_repeated_names(names, owner="Intervals")
     expected = set(names)
     for i, row in enumerate(rows):
         got = [name for name, _ in row.items]
@@ -1561,7 +1592,6 @@ def _from_columns(
     intervals._init_parts(
         records=rows,
         record_type=Interval,
-        fields=names,
         # Each column keeps its dtype, for integer fields and empty selections.
         dtypes={
             name: array.dtype if array.dtype.kind in "biuf" else np.dtype(object)

@@ -1276,10 +1276,13 @@ def compute_vte_session(
         a non-finite coordinate (NaN, for a lost frame) is a missing sample.
     decision_region : str
         Name of decision region in env.regions.
-    trials : Intervals
+    trials : Intervals or IntervalSet
         Trials from detect_trials(), read_trials() or a task log. Each
         trial's samples are those in ``[start_time, stop_time)``; the sample
-        at ``stop_time`` (the arrival) is outside it.
+        at ``stop_time`` (the arrival) is outside it. A pynapple
+        ``IntervalSet`` is read as :func:`~neurospatial.io.from_pynapple`
+        reads it: metadata as fields, its inclusive ``end`` as the half-open
+        stop.
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds; finite and positive.
         Typical values: 0.5-2.0s depending on maze size and task.
@@ -1442,7 +1445,7 @@ def compute_vte_session(
     """
     from neurospatial._interval_table import require_intervals
 
-    require_intervals(trials, name="trials", owner="compute_vte_session()")
+    trials = require_intervals(trials, name="trials", owner="compute_vte_session()")
     require_cartesian(
         env.coordinate_system,
         "compute_vte_session()",

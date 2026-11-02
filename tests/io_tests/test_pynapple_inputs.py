@@ -732,3 +732,108 @@ def test_from_pynapple_refuses_ids_it_cannot_keep(nap, ids, problem):
     with pytest.raises(ValueError, match=problem) as exc:
         from_pynapple(iset)
     assert "Fix:" in str(exc.value)
+
+
+# =============================================================================
+# An IntervalSet as trials: read as from_pynapple reads it
+# =============================================================================
+
+
+def test_time_to_goal_reads_an_intervalset_with_its_inclusive_end(nap):
+    """The arrival at pynapple's inclusive end is inside the trial: 0 s to go."""
+    from neurospatial.behavior import time_to_goal
+    from neurospatial.io import from_pynapple
+
+    iset = nap.IntervalSet(
+        start=[1.0, 5.0],
+        end=[4.0, 8.0],
+        metadata={"outcome": ["reached", "censored"], "interval_id": [3, 9]},
+    )
+    times = np.arange(10.0)
+
+    got = time_to_goal(times, iset)
+
+    expected = [np.nan, 3.0, 2.0, 1.0, 0.0] + [np.nan] * 5
+    np.testing.assert_allclose(got, expected, atol=1e-12)
+    np.testing.assert_array_equal(got, time_to_goal(times, from_pynapple(iset)))
+
+
+def test_trials_between_visits_reads_an_intervalset_of_visits(nap):
+    from neurospatial.behavior import trials_between_visits
+    from neurospatial.io import from_pynapple
+
+    visits = nap.IntervalSet(
+        start=[0.0, 6.0, 15.0],
+        end=[2.0, 9.0, 17.0],
+        metadata={"well": ["well_2", "well_1", "well_2"]},
+    )
+
+    trials = trials_between_visits(visits, region="well")
+    expected = trials_between_visits(from_pynapple(visits), region="well")
+
+    assert list(trials) == list(expected)
+    assert trials.outcome.tolist() == ["reached", "reached"]
+    pd.testing.assert_frame_equal(trials.intervals_table(), expected.intervals_table())
+
+
+@pytest.mark.parametrize("name", ["path_progress", "distance_to_goal"])
+def test_route_functions_read_an_intervalset(nap, session, name):
+    from neurospatial import behavior
+    from neurospatial.io import from_pynapple
+
+    env, times, positions, _ = session
+    iset = nap.IntervalSet(start=[2.0, 20.0], end=[6.0, 25.0])
+    targets = {"goal": positions[300]}
+    if name == "path_progress":
+        targets.update(start=positions[0], point_radius=10.0)
+    func = getattr(behavior, name)
+
+    got = func(env, times, positions, iset, **targets)
+
+    np.testing.assert_array_equal(
+        got, func(env, times, positions, from_pynapple(iset), **targets)
+    )
+    outside = (times < 2.0) | ((times > 6.0) & (times < 20.0)) | (times > 25.0)
+    assert np.isnan(got[outside]).all()
+    assert np.isfinite(got[~outside]).any()
+
+
+def test_compute_vte_session_reads_an_intervalset(nap):
+    from neurospatial import Environment, Regions
+    from neurospatial.behavior import compute_vte_session
+    from neurospatial.io import from_pynapple
+
+    stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
+    bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
+    env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0)
+    regions = Regions()
+    regions.add("center", point=(50.0, 55.0))
+    env = env.with_regions(regions)
+    times, positions = [], []
+    for i, scan in enumerate([1.0, 2.0, 3.0]):
+        t = 3.0 * i + np.arange(60) / 30
+        x = 50.0 + scan * np.sin(np.linspace(0, 10 * np.pi, 60))
+        times.append(t)
+        positions.append(np.column_stack([x, np.linspace(30.0, 56.0, 60)]))
+    iset = nap.IntervalSet(
+        start=[t[0] for t in times],
+        end=[t[-1] for t in times],
+        metadata={"outcome": ["reached"] * 3},
+    )
+
+    def run(trials):
+        return compute_vte_session(
+            env,
+            np.concatenate(times),
+            np.vstack(positions),
+            decision_region="center",
+            trials=trials,
+            window_duration=0.5,
+            min_speed=5.0,
+            vte_threshold=0.0,
+        )
+
+    got, expected = run(iset), run(from_pynapple(iset))
+
+    assert got.interval_ids.tolist() == [0, 1, 2]
+    pd.testing.assert_frame_equal(got.trials_table(), expected.trials_table())

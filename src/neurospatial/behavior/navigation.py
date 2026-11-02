@@ -875,7 +875,7 @@ def _validated_route_samples(
     intervals: Intervals[Any] | None,
     *,
     call: str,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], Intervals[Any] | None]:
     from neurospatial._interval_table import require_intervals
     from neurospatial._validation import validate_times_positions
 
@@ -887,7 +887,7 @@ def _validated_route_samples(
         fix="use the allocentric environment the positions were recorded in",
     )
     if intervals is not None:
-        require_intervals(intervals, name="intervals", owner=f"{call}()")
+        intervals = require_intervals(intervals, name="intervals", owner=f"{call}()")
     t, p = validate_times_positions(times, positions, call=call)
     p = p.reshape(len(p), -1)
     if p.shape[1] != env.n_dims:
@@ -896,7 +896,7 @@ def _validated_route_samples(
             f"the environment has {env.n_dims}."
         )
         raise ValueError(msg)
-    return t, p
+    return t, p, intervals
 
 
 @reads_pynapple_samples
@@ -935,11 +935,13 @@ def path_progress(
     positions : array-like, shape (n_samples, n_dims)
         Positions in the environment's coordinates. A NaN row or a position
         outside the environment gives NaN.
-    intervals : Intervals, optional
+    intervals : Intervals or IntervalSet, optional
         Trials or other intervals. Samples outside every interval are NaN;
         overlapping intervals are refused. Without ``intervals`` every
         sample uses the one ``start`` and ``goal`` (to plot a trial that
-        lands on the goal, see Notes).
+        lands on the goal, see Notes). A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it: metadata as fields,
+        its inclusive ``end`` as the half-open stop.
     start, goal : str, array-like of shape (n_dims,), or per-interval sequence
         A region name (the region's bins: those whose centres lie in a
         polygon region; for a point region, see ``point_radius``), a point
@@ -980,7 +982,7 @@ def path_progress(
         region covers no bin, ``times`` or ``positions`` are invalid, or
         intervals overlap.
     TypeError
-        If ``intervals`` is not an Intervals.
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet.
     RegionNotFoundError
         If a region name is not in ``env.regions``.
     CartesianOnlyError
@@ -1096,7 +1098,7 @@ def path_progress(
     time_to_goal : Time until the goal is reached.
     """
     call = "path_progress"
-    times, positions = _validated_route_samples(
+    times, positions, intervals = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
     radius = validate_finite_scalar(
@@ -1227,9 +1229,11 @@ def distance_to_goal(
     positions : array-like, shape (n_samples, n_dims)
         Positions in the environment's coordinates. A NaN row or a position
         outside the environment gives NaN.
-    intervals : Intervals, optional
+    intervals : Intervals or IntervalSet, optional
         Trials or other intervals. Samples outside every interval are NaN;
-        overlapping intervals are refused.
+        overlapping intervals are refused. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it: metadata as fields,
+        its inclusive ``end`` as the half-open stop.
     goal : str, array-like of shape (n_dims,), or per-interval sequence
         A region name (its bins: the bin containing a point region, the bins
         whose centres lie in a polygon region), a point in environment
@@ -1261,7 +1265,7 @@ def distance_to_goal(
         ``metric`` is not recognized, ``times`` or ``positions`` are
         invalid, or intervals overlap.
     TypeError
-        If ``intervals`` is not an Intervals.
+        If ``intervals`` is not an Intervals or a pynapple IntervalSet.
     RegionNotFoundError
         If a region name is not in ``env.regions``.
     CartesianOnlyError
@@ -1300,7 +1304,7 @@ def distance_to_goal(
     """
     call = "distance_to_goal"
     paths = metric_paths(metric, env, call=call)
-    times, positions = _validated_route_samples(
+    times, positions, intervals = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
     rows, goals, _ = _rows_and_targets(
@@ -2398,7 +2402,7 @@ def time_to_goal(
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session, strictly increasing (seconds).
-    trials : Intervals
+    trials : Intervals or IntervalSet
         Trials from detect_trials(), read_trials() or a task log, with an
         ``outcome`` field holding trial outcomes: ``"reached"``,
         ``"returned"`` or ``"censored"``. Only reached trials are included;
@@ -2406,7 +2410,9 @@ def time_to_goal(
         not. The arrival is each trial's ``stop``. Map a task log's own
         labels first, for example
         ``trials.with_fields(outcome=trials.result.map({"correct":
-        "reached", "error": "returned"}))``.
+        "reached", "error": "returned"}))``. A pynapple ``IntervalSet`` is read as
+        :func:`~neurospatial.io.from_pynapple` reads it: metadata as fields,
+        its inclusive ``end`` as the half-open stop.
 
     Returns
     -------
@@ -2423,7 +2429,7 @@ def time_to_goal(
         ``trials`` has no ``outcome`` field or holds an outcome other than
         ``"reached"``, ``"returned"`` or ``"censored"``.
     TypeError
-        If ``trials`` is not an Intervals.
+        If ``trials`` is not an Intervals or a pynapple IntervalSet.
 
     Warns
     -----
@@ -2450,7 +2456,7 @@ def time_to_goal(
     from neurospatial._interval_table import require_intervals
     from neurospatial._observation import _validated_signal_times
 
-    require_intervals(trials, name="trials", owner="time_to_goal()")
+    trials = require_intervals(trials, name="trials", owner="time_to_goal()")
     _require_trial_outcomes(trials)
     times = _validated_signal_times(times, call="time_to_goal")
     # Only an observed arrival has a time to goal: timed-out, returned and

@@ -598,8 +598,9 @@ def _interval_columns(
 
     Parameters
     ----------
-    intervals : Intervals
-        The rows to write; anything else raises ``TypeError``.
+    intervals : Intervals or IntervalSet
+        The rows to write; a pynapple ``IntervalSet`` is converted as
+        ``from_pynapple`` converts it, and anything else raises ``TypeError``.
     descriptions : dict of str to str
         Column description of known fields; any other field gets a generic one.
     call : str
@@ -725,12 +726,15 @@ def write_laps(
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    laps : Intervals
+    laps : Intervals or IntervalSet
         Laps from :func:`~neurospatial.behavior.detect_laps`, or a selection
         of them. Writes every field, such as ``direction`` and
         ``overlap_score``. Laps detected without a template
         (``method="region"``) have no overlap score, so when every score is
-        NaN the ``overlap_score`` column is left out.
+        NaN the ``overlap_score`` column is left out. A pynapple
+        ``IntervalSet`` is read as :func:`~neurospatial.io.from_pynapple`
+        reads it: metadata as fields, its inclusive ``end`` as the half-open
+        stop.
     name : str, default "laps"
         Name of the table. ``"trials"``, ``"epochs"`` and ``"invalid_times"``
         are reserved by NWB.
@@ -744,8 +748,8 @@ def write_laps(
     Raises
     ------
     TypeError
-        If ``laps`` is not an Intervals (wrap a list of records with
-        ``Intervals(laps)``), or a field holds values other than numbers,
+        If ``laps`` is not an Intervals or a pynapple IntervalSet (wrap a
+        list of records with ``Intervals(laps)``), or a field holds values other than numbers,
         Booleans or text.
     ValueError
         If a field is named ``id``, which NWB reserves for the row ids. If
@@ -968,11 +972,14 @@ def write_trials(
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
-    trials : Intervals
+    trials : Intervals or IntervalSet
         Trials from :func:`~neurospatial.behavior.detect_trials`, or any
         :class:`~neurospatial.Intervals`, such as a task log read with
         ``Intervals.from_dataframe``. Fields must hold numbers, Booleans, or
-        text with ``None`` for missing values.
+        text with ``None`` for missing values. A pynapple ``IntervalSet`` is
+        read as :func:`~neurospatial.io.from_pynapple` reads it: metadata as
+        fields, its inclusive ``end`` as the half-open stop (the next float
+        above ``end``).
     description : str, default "Behavioral trials"
         Description of the trials table.
     overwrite : bool, default False
@@ -984,8 +991,8 @@ def write_trials(
     Raises
     ------
     TypeError
-        If ``trials`` is not an Intervals (wrap a list of records with
-        ``Intervals(records)``), or a field holds values other than numbers,
+        If ``trials`` is not an Intervals or a pynapple IntervalSet (wrap a
+        list of records with ``Intervals(records)``), or a field holds values other than numbers,
         Booleans or text.
     ValueError
         If a field is named ``id``, which NWB reserves for the row ids. If

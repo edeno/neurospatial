@@ -114,6 +114,23 @@ by its trial.
   axis setup, and playback no longer warns of a slowdown when every frame
   fits exactly in `max_playback_fps`.
 
+### Trials keep their record type; pynapple IntervalSet as trials
+
+**Changed**
+
+- `Intervals.with_fields` keeps the record class when it only replaces
+  fields the class defines, so re-scored trials stay `Trial` records with
+  `success`; a new field still gives `Interval` rows.
+- `trials_between_visits`, `time_to_goal`, `path_progress`,
+  `distance_to_goal`, `compute_vte_session`, `write_trials` and
+  `write_laps` accept a pynapple `IntervalSet` and read it as
+  `from_pynapple` does: metadata as fields, `interval_id` as the ids, the
+  inclusive end as the half-open stop. Given anything else they say how to
+  build an `Intervals`, including `Intervals.from_dataframe(table)` for a
+  table.
+- `Intervals(record_type=..., fields=...)` refuses repeated field names
+  even with no records.
+
 ### Faster trial and route analyses
 
 **Changed**

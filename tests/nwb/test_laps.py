@@ -141,8 +141,33 @@ class TestWriteLaps:
     def test_anything_but_intervals_is_refused(self, empty_nwb, laps):
         from neurospatial.io.nwb import write_laps
 
-        with pytest.raises(TypeError, match=r"laps must be an Intervals"):
+        with pytest.raises(
+            TypeError, match=r"laps must be an Intervals or a pynapple IntervalSet"
+        ):
             write_laps(empty_nwb, laps)
+
+    @pytest.mark.pynapple
+    def test_an_intervalset_writes_as_from_pynapple_reads_it(self, empty_nwb):
+        nap = pytest.importorskip("pynapple")
+        from neurospatial.io import from_pynapple
+        from neurospatial.io.nwb import write_laps
+
+        from .conftest import create_empty_nwb
+
+        iset = nap.IntervalSet(
+            start=[1.0, 5.0],
+            end=[4.5, 9.0],
+            metadata={"direction": ["clockwise", "counter-clockwise"]},
+        )
+        expected = create_empty_nwb()
+        write_laps(expected, from_pynapple(iset))
+
+        write_laps(empty_nwb, iset)
+
+        table = empty_nwb.intervals["laps"].to_dataframe()
+        pd.testing.assert_frame_equal(table, expected.intervals["laps"].to_dataframe())
+        assert table["interval_id"].tolist() == [0, 1]
+        assert table["direction"].tolist() == ["clockwise", "counter-clockwise"]
 
     def test_laps_read_back_write_again(self, tmp_path):
         """Laps read from NWB are Intervals of Interval and write the same table."""
