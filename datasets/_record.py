@@ -94,8 +94,9 @@ def validate_recording(rec: Recording) -> None:
             problems.append(
                 f"position_units {rec.position_units!r} not in {sorted(POSITION_UNITS)}"
             )
-        if "bin_size" not in rec.params:
-            problems.append("params missing ['bin_size']")
+        required = {"bin_size"} | ({"dt"} if rec.spike_times is not None else set())
+        if missing := sorted(required - set(rec.params)):
+            problems.append(f"params missing {missing}")
     if rec.headings is not None:
         if rec.times is None or rec.headings.shape != rec.times.shape:
             problems.append("headings must have one value per time")
@@ -155,40 +156,74 @@ MEASURES: dict[str, Callable[[Recording], Any]] = {
 }
 
 
+@dataclass(frozen=True)
+class Range:
+    """Inclusive expectation range, compared elementwise for array measures."""
+
+    low: Any
+    high: Any
+
+    def __post_init__(self) -> None:
+        if np.any(
+            np.asarray(self.low, dtype=float) > np.asarray(self.high, dtype=float)
+        ):
+            msg = f"Range low {self.low!r} is above high {self.high!r}"
+            raise ValueError(msg)
+
+    def contains(self, actual: Any) -> bool:
+        values = np.asarray(actual, dtype=float)
+        low = np.asarray(self.low, dtype=float)
+        high = np.asarray(self.high, dtype=float)
+        return bool(np.all((values >= low) & (values <= high)))
+
+
+def _check(rec: Recording, key: str, expected: Any) -> tuple[bool, str]:
+    if callable(expected):
+        return bool(expected(rec)), "predicate"
+    actual = MEASURES[key](rec)
+    detail = f"expected {expected!r}, got {actual!r}"
+    if actual is None:
+        return False, detail
+    if isinstance(expected, Range):
+        return expected.contains(actual), detail
+    return bool(np.array_equal(np.asarray(actual), np.asarray(expected))), detail
+
+
 def check_expectations(
     rec: Recording, expectations: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
-    """Evaluate pre-registered expectations; never raises on a failed check.
+    """Evaluate pre-registered expectations; a failed or erroring check never raises.
 
-    Each value is an exact value, a ``(low, high)`` range (inclusive, compared
-    elementwise for array measures), or a predicate on the ``Recording``.
+    Each value is an exact value, a ``Range``, or a predicate on the
+    ``Recording``. An unknown measure name is a mistake in the expectations and
+    raises ``KeyError``.
     """
+    unknown = [
+        k for k, v in expectations.items() if not callable(v) and k not in MEASURES
+    ]
+    if unknown:
+        msg = f"Unknown expectation {unknown[0]!r}; use one of {sorted(MEASURES)} or a predicate."
+        raise KeyError(msg)
     rows = []
     for key, expected in expectations.items():
-        if callable(expected):
-            rows.append(
-                {"key": key, "passed": bool(expected(rec)), "detail": "predicate"}
-            )
-            continue
-        if key not in MEASURES:
-            msg = f"Unknown expectation {key!r}; use one of {sorted(MEASURES)} or a predicate."
-            raise KeyError(msg)
-        actual = MEASURES[key](rec)
-        if isinstance(expected, tuple) and len(expected) == 2 and actual is not None:
-            low, high = expected
-            values = np.asarray(actual, dtype=float)
-            passed = bool(
-                np.all((values >= np.asarray(low)) & (values <= np.asarray(high)))
-            )
-        else:
-            passed = actual is not None and np.array_equal(
-                np.asarray(actual), np.asarray(expected)
-            )
-        rows.append(
-            {
-                "key": key,
-                "passed": passed,
-                "detail": f"expected {expected!r}, got {actual!r}",
-            }
-        )
+        try:
+            passed, detail = _check(rec, key, expected)
+        except Exception as exc:  # a check that cannot run has failed
+            passed, detail = False, f"check raised {type(exc).__name__}: {exc}"
+        rows.append({"key": key, "passed": passed, "detail": detail})
     return rows
+
+
+def alternating_blocks(
+    start: float, stop: float, length: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Split [start, stop) into alternating train and test blocks of ``length`` s.
+
+    Returns
+    -------
+    train, test : ndarray, shape (n, 2)
+        Even-numbered and odd-numbered blocks as [start, stop) rows.
+    """
+    edges = np.append(np.arange(start, stop, length), stop)
+    blocks = np.column_stack([edges[:-1], edges[1:]])
+    return blocks[::2], blocks[1::2]

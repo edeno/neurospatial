@@ -47,13 +47,14 @@ are not redistributed here; each loader records the dataset's license.
 - `results/matrix.md`: one row per dataset, one column per operation. `ok`
   means neurospatial did it through the public API with no adaptation;
   `wk G-###` worked only with a harness workaround; `miss G-###` cannot be
-  expressed with the public API; `err` raised (the message is in the JSON);
+  expressed with the public API; `err G-###` raised (the message is in the
+  JSON, the gap id comes from `verdicts.json`);
   `–` the dataset lacks the input. `⚠N` counts distinct warning messages.
   A second table gives runtime and peak traced memory.
 - `results/warnings.md`: every warning on correctly loaded data, and every
   hazard probe (the recording re-run with a known defect put back, such as
   headings in degrees or spike times in ms), each with a verdict from
-  `warning_verdicts.json`.
+  `verdicts.json`.
 - `results/reference_checks.md`: neurospatial against pynapple and opexebo on
   the same arrays, with the conventions that differ.
 - `results/<dataset>.json`: everything above for one dataset, plus the

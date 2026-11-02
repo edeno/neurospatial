@@ -88,3 +88,32 @@ def test_matrix_render(simulated_record):
     assert cells[columns.index("env.from_samples")] == "wk G-003 ⚠2"
     assert cells[columns.index("hd.tuning")] == "–"
     assert "| simulated_open_field | 1/1 | ok" in text
+
+
+def test_error_cell_shows_its_gap(simulated_record):
+    text = render_matrix(
+        [simulated_record],
+        {"simulated_open_field/cells.border_score": {"gap": "G-005"}},
+    )
+    assert "err G-005" in text
+
+
+def test_subset_run_keeps_other_operations(
+    simulated_recording, loader_module, tmp_path
+):
+    full = run_recording(
+        simulated_recording, loader_module, operations=OPERATIONS[:2], results=tmp_path
+    )
+    assert set(full["operations"]) == {"env.from_samples", "env.occupancy"}
+    partial = run_recording(
+        simulated_recording,
+        loader_module,
+        op_ids=["env.occupancy"],
+        operations=OPERATIONS[:2],
+        results=tmp_path,
+    )
+    assert set(partial["operations"]) == {"env.from_samples", "env.occupancy"}
+    assert (
+        partial["operations"]["env.from_samples"]
+        == full["operations"]["env.from_samples"]
+    )

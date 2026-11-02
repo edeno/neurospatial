@@ -122,7 +122,7 @@ def dandi_asset_url(asset_id: str) -> str:
 ```
 
 Pinning: for DANDI, take the SHA-256 from the asset metadata
-(`DandiAPIClient().get_dandiset(id, version).get_asset(asset_id).get_raw_metadata()["digest"]["dandi:sha2-256"]`)
+(`GET https://api.dandiarchive.org/api/dandisets/<id>/versions/<version>/assets/?path=<path>` gives the asset id; the asset's metadata has `digest["dandi:sha2-256"]`; the `dandi` package is not a dependency because it pins `wcwidth>=0.9` through `blessed` and would move the dev environment)
 and record the published version, not `draft`, whenever one exists. For Zenodo,
 check the downloaded file's MD5 against the record's `files[].checksum`, then
 pin the SHA-256. For OSF, compare against NeMoS's pooch registry
@@ -474,11 +474,17 @@ def probe_hazards(module, rec, clean_operations):
    and the clean vs hazardous summary side by side (a silent response with a
    changed summary means a quietly different result), and the verdict.
 
-Verdicts are hand-written in `datasets/warning_verdicts.json`, keyed by
-template (table 1) or `"<dataset>/<hazard>/<op>"` (table 2), each
-`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`. The renderer joins
-them in and prints `unreviewed` for keys without one, so verdicts survive
-regeneration. Verdict vocabulary:
+Verdicts are hand-written in `datasets/verdicts.json`, in three sections:
+`"warnings"` keyed by `"<origin> <category>: <template>"` (table 1),
+`"hazards"` keyed by `"<dataset>/<hazard>/<op>"` (table 2), each
+`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`, and `"errors"`
+keyed by `"<dataset>/<op>"` with the gap id of each `err` cell, which the
+matrix prints. The renderer prints `unreviewed` for rows without a verdict, so
+verdicts survive regeneration. As implemented, a probe counts as `warned` only
+for warnings the clean run of that operation did not emit, every operation
+reading a changed field (its `requires` plus `times`, `position_units`,
+`epochs`, `params`) is probed, and a hazard reaching none gets a `not probed`
+row. Verdict vocabulary:
 
 | Table | Verdict | Meaning | Gap kind |
 | --- | --- | --- | --- |

@@ -33,7 +33,7 @@ Dataset specifics: [appendix: sargolini_000582](appendix.md#sargolini_000582-pha
 - **Dataset hazards.** In each loader, add `HAZARDS` for any dataset-specific quirk the loader corrects (none is expected for these two beyond the generic hazards; if a loader records a correcting conversion, it gets a hazard). Write them after the loader works, not with the expectations.
 - **Gap log.** Create `datasets/GAPS.md` with the entry format from the contract; add entries as they arise (loader friction, reader failures, data quirks, error-message quality).
 - **Run.** `MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/run.py`; commit `results/*.json` and `results/matrix.md`. Review every `error`/`workaround`/`missing` cell and give it a gap entry.
-- **Warning verdicts.** Create `datasets/warning_verdicts.json` and give every row of `results/warnings.md` a verdict, with a gap entry where the [verdict table](designs.md#warning-calibration) calls for one. Open the triggering samples before calling a warning a false alarm. Commit the regenerated `results/warnings.md` with no `unreviewed` rows.
+- **Warning verdicts.** Create `datasets/verdicts.json` and give every row of `results/warnings.md` a verdict, with a gap entry where the [verdict table](designs.md#warning-calibration) calls for one. Open the triggering samples before calling a warning a false alarm. Commit the regenerated `results/warnings.md` with no `unreviewed` rows.
 - **Reference checks.** Implement `datasets/reference_checks.py` (all three checks in [designs](designs.md#reference-checks)); run; commit `results/reference_checks.md`. Every disagreement beyond the investigation trigger gets a gap entry with the convention analysis.
 - **README.** `datasets/README.md`: purpose (one paragraph), how to run, cache location and `NEUROSPATIAL_DATA_DIR`, licenses (data are not redistributed), how to add a dataset (point to the loader contract), how to read the matrix.
 
@@ -61,7 +61,7 @@ Dataset specifics: [appendix: sargolini_000582](appendix.md#sargolini_000582-pha
 | `datasets/tests/test_calibration.py::test_captured_groups_by_template` | an injected op that warns `"3 bins"` and `"5 bins"` and then raises yields one template `"# bins"` with count 2 and the exception returned, not raised |
 | `test_calibration.py::test_hazard_responses_classified` | on the simulated recording, injected probe ops that raise, warn, and do nothing are reported `raised`, `warned`, `silent`, with clean and hazardous summaries attached |
 | `test_calibration.py::test_generic_hazards_apply_only_when_relevant` | a recording without headings or without NaN positions gets no `headings_in_degrees` / `missing_positions_as_zero` probe; a loader `HAZARDS` entry is added to the generic ones |
-| `test_calibration.py::test_unreviewed_rows_rendered` | `warnings.md` marks a template missing from `warning_verdicts.json` as `unreviewed` and joins verdicts for the rest |
+| `test_calibration.py::test_unreviewed_rows_rendered` | `warnings.md` marks a template missing from `verdicts.json` as `unreviewed` and joins verdicts for the rest |
 | `uv run ruff check datasets && uv run ruff format --check datasets` | clean |
 | Real run (manual, network) | both datasets load and validate; `results/matrix.md`, `results/warnings.md` and `results/reference_checks.md` committed; every non-`ok` cell has a gap id; no `unreviewed` warning or hazard row |
 

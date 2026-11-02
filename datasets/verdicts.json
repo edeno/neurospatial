@@ -1,0 +1,66 @@
+{
+  "warnings": {
+    "neurospatial UserWarning: #/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.": {
+      "verdict": "false alarm",
+      "gap": "G-001",
+      "reason": "Sleep spikes outside the wake tracking window; epochs=wake was passed, and the advice (check units) is wrong here."
+    },
+    "third-party DeprecationWarning: The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.": {
+      "verdict": "third-party",
+      "gap": null,
+      "reason": "Emitted by hdmf/pynwb while reading the 2022 file; not neurospatial's."
+    }
+  },
+  "hazards": {
+    "sargolini_000582/missing_positions_as_zero/env.from_samples": {
+      "verdict": "undetectable",
+      "gap": null,
+      "reason": "One NaN sample in 30000 becomes (0, 0), the arena centre; no rule on values can tell it from a real sample."
+    },
+    "sargolini_000582/missing_positions_as_zero/env.occupancy": {
+      "verdict": "undetectable",
+      "gap": null,
+      "reason": "Same single sample; total occupancy 599.96 to 599.98 s, per-bin medians unchanged."
+    },
+    "sargolini_000582/missing_positions_as_zero/rates.spatial": {
+      "verdict": "undetectable",
+      "gap": null,
+      "reason": "Same single sample; median mean rate changes in the fifth significant digit."
+    },
+    "sargolini_000582/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warnings: all units silent for 363 s, and 100% of spikes outside tracking with 'about 1000 times ... divide them by 1000'. Peak rates fall to 0."
+    },
+    "sargolini_000582/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that bin_size is at least the data extent, suggests a units mismatch and a bin size."
+    },
+    "sargolini_000582/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "Occupancy now piles into 4 bins (median 151.7 s per bin vs 0.28 s); env.from_samples already warned in the same workflow."
+    },
+    "sargolini_000582/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that the bandwidth spans the environment and to check env.units."
+    },
+    "peyrache_mouse32/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning names the evidence (largest 180, steps of 359.9) and the fix (np.radians or angle_unit='deg'); the clean run's spike-drop warning repeats."
+    },
+    "peyrache_mouse32/spike_times_in_ms/hd.tuning": {
+      "verdict": "silent",
+      "gap": "G-010",
+      "reason": "Only the spike-drop warning the clean run already emits; no clock-ratio hint. Mean vector lengths change quietly (median 0.436 to 0.389, 10 units lose a value)."
+    }
+  },
+  "errors": {
+    "sargolini_000582/cells.border_score": {
+      "gap": "G-005"
+    }
+  }
+}

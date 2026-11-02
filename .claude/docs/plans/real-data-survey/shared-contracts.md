@@ -129,7 +129,7 @@ datasets/
   _fetch.py               # download + verify + cache
   _record.py              # Recording + validate_recording + check_expectations
   _calibration.py            # warning capture, generic hazards, hazard probes
-  warning_verdicts.json   # hand-written verdicts joined into results/warnings.md
+  verdicts.json   # hand-written verdicts joined into results/warnings.md
   operations.py           # operation registry
   reference_checks.py     # cross-tool comparisons
   run.py                  # driver: datasets x operations -> results/

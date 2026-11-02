@@ -25,7 +25,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: count as dropped only spikes inside the requested
   `epochs ∩ spike_window` that fall outside tracking; keep the clock-ratio hint
   for the units case; add `warn_on_drop=` to the directional entry points.
-- Status: open
+- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn)
 
 ## G-002: `method="binned"` smooths with a 5 cm bandwidth unless `bandwidth=0` is passed
 
@@ -40,10 +40,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   comparing "binned" information with published unsmoothed values gets numbers
   several times too small.
 - Harness workaround: `datasets/reference_checks.py:_binned_rates` passes `bandwidth=0.0`
-- Proposed change: undecided — make `binned` mean unsmoothed by default, or
-  keep the default and say in the `method` docs and the result's repr that
-  "binned" is smoothed.
-- Status: open
+- Proposed change: `method="binned"` defaults to `bandwidth=0` (no smoothing)
+  everywhere binned is accepted (maintainer decision).
+- Status: promoted (UX fixes phase 3b, branch `fix/ux-defaults-and-returns`)
 
 ## G-003: Spikes are assigned to the tracking sample at or before them; pynapple uses the nearest sample
 
@@ -53,7 +52,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: per-bin spike counts: neurospatial matches the at-or-before rule
   exactly (0 of 4013 spikes in a different bin) and pynapple the nearest-sample
   rule (1 of 4013); the two rules place 218 spikes in different bins at 50 Hz
-  tracking, which moves spatial information by up to 2.1 %.
+  tracking, which moves spatial information by up to 2.1 %. Occupancy also
+  differs slightly: neurospatial sums sample durations (599.96 s, the last
+  sample has none), pynapple counts samples at the sampling rate.
 - Harness workaround: none
 - Proposed change: state the assignment rule (`time_allocation="start"`) where
   rate maps are documented; no code change.
@@ -67,8 +68,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: `neurospatial.decoding` decodes position on an `Environment`; no
   heading decoder is public and no recipe in `docs/user-guide/` decodes head
   direction. pynapple's `decode_bayes` on the 31 ADn units (61 bins, 100 ms,
-  wake) gives a median absolute error of 9.5° against the tracked heading,
-  with the tutorial's 19590 decoded samples reproduced.
+  wake) gives a median absolute error of 8.9° against the tracked heading over
+  the 18283 bins outside tracking gaps longer than 0.2 s (9.5° over all 19590
+  bins, the tutorial's count).
 - Harness workaround: none
 - Proposed change: undecided — a circular (ring) environment the existing
   decoder accepts, or a documented recipe.
@@ -102,8 +104,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   is within 0.012 of opexebo for every unit. The autocorrelograms differ:
   neurospatial leaves 2822 of the 5041 lags in opexebo's extent undefined (NaN
   where fewer than a quarter of the visited bins overlap), and at shared lags
-  the values differ by up to 0.178. A threshold near 0.3–0.4 would classify
-  unit 2 differently.
+  the values differ by up to 0.178. Two conventions account for it: opexebo's
+  `autocorrelation` replaces NaN with 0 (unvisited bins as 0 Hz) — zero-filling
+  the map on the neurospatial side moves unit 2 from 0.179 to 0.307 — and the
+  undefined-lag rule accounts for the rest (0.307 vs 0.551 on opexebo's
+  autocorrelogram). A threshold near 0.3–0.4 would classify unit 2 differently.
 - Harness workaround: none
 - Proposed change: undecided — compare the overlap rule and NaN handling with
   BNT/opexebo's `normxcorr2_general`, then either match it or document why not.
@@ -114,8 +119,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Datasets: sargolini_000582
 - Operation / step: decode.position
 - Kind: docs
-- Evidence: median error 66.0 cm with 250 ms bins in a 100 cm box, where
-  shuffled-pair chance is 50.6 cm. 40 % of bins have no spikes; every one of
+- Evidence: median error 66.0 cm with 250 ms bins in a 100 cm box, against a
+  chance level of 55.3 cm (`chance_median_error` in the results: true position
+  of each decoded bin vs that of a random other decoded bin, seeded). 40 % of bins have no spikes; every one of
   them decodes to (−47.5, 47.5), next to the bin with the lowest summed rate
   (−50, 50, summed rate 0) — the Poisson likelihood of silence, so the decoder
   is behaving as specified. Error falls to 47.1 cm at 2 s bins. Nothing in the
@@ -145,8 +151,27 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Operation / step: loader
 - Kind: data-quirk
 - Evidence: only `processing/behavior/Position/SpatialSeriesLED1` exists in
-  `sub-10884_ses-03080402` (full tree walked); the survey appendix expected two
-  LEDs. `hd.tuning` is `n/a` for this dataset.
+  `sub-10884_ses-03080402` (full tree walked). `hd.tuning` is `n/a` for this
+  dataset.
 - Harness workaround: none
 - Proposed change: none; a later batch can use a two-LED 000582 session.
 - Status: open
+
+## G-010: Spike times in ms pass unnoticed when the tracking covers only part of the recording
+
+- Datasets: peyrache_mouse32 (hazard probe `spike_times_in_ms` / hd.tuning)
+- Operation / step: hd.tuning
+- Kind: silent-hazard
+- Evidence: with spike times multiplied by 1000, `compute_directional_rates`
+  emits only the spike-drop warning the clean run already emits (91 % → 100 %
+  of spikes outside the tracking window, same message), and no clock-ratio
+  hint: the spikes span the whole 22025 s recording while tracking covers the
+  1959 s wake epoch, so the ratio rule does not fire. The result changes
+  quietly: median mean vector length 0.436 → 0.389, and 10 of 49 units lose a
+  finite value. On 000582, where tracking covers the whole recording, the same
+  hazard is caught with "divide them by 1000".
+- Harness workaround: none
+- Proposed change: compare the spike span with the span of the requested
+  epochs (or the whole tracked session) rather than with `times` alone; fixing
+  G-001 removes the clean-run warning that hides this case.
+- Status: open (linked to G-001)

@@ -11,16 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from _record import Recording
-
-
-def alternating_blocks(
-    start: float, stop: float, length: float
-) -> tuple[np.ndarray, np.ndarray]:
-    """Split [start, stop) into alternating train/test blocks of ``length`` s."""
-    edges = np.append(np.arange(start, stop, length), stop)
-    blocks = np.column_stack([edges[:-1], edges[1:]])
-    return blocks[::2], blocks[1::2]
+from _record import Recording, alternating_blocks
 
 
 @pytest.fixture(scope="session")

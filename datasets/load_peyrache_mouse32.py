@@ -38,9 +38,9 @@ DATASET = {
     "download_size": "36.6 MB",
 }
 
-# Written from the survey appendix before the first run of this loader. The
-# appendix's "31 units in ADn" needs per-unit regions, which a Recording does
-# not hold; the head-direction reference check verifies it instead.
+# Pre-registered from pynapple's head-direction tutorial, before the first run
+# of this loader. Its "31 units in ADn" needs per-unit regions, which a
+# Recording does not hold; the head-direction reference check verifies it.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": 49,
     "epochs_include_wake_and_sleep": lambda rec: {"wake", "sleep"} <= set(rec.epochs),

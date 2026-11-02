@@ -30,7 +30,13 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_asset_url, fetch
-from _record import Recording, check_expectations, validate_recording
+from _record import (
+    Range,
+    Recording,
+    alternating_blocks,
+    check_expectations,
+    validate_recording,
+)
 
 DATASET = {
     "key": "sargolini_000582",
@@ -40,26 +46,19 @@ DATASET = {
     "download_size": "15.9 MB",
 }
 
-# Written from the survey appendix before the first run of this loader.
+# Pre-registered from the dataset description and pynapple's tutorial, before
+# the first run of this loader.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": 6,
     "n_dims": 2,
-    "sampling_rate_hz": (49.0, 51.0),
-    "position_min": ((-55.0, -55.0), (0.0, 0.0)),
-    "position_max": ((0.0, 0.0), (55.0, 55.0)),
+    "sampling_rate_hz": Range(49.0, 51.0),
+    "position_min": Range((-55.0, -55.0), (0.0, 0.0)),
+    "position_max": Range((0.0, 0.0), (55.0, 55.0)),
 }
 
 _PATH = "sub-10884/sub-10884_ses-03080402_behavior+ecephys.nwb"
 _ASSET_ID = "49d80982-99f4-4e17-a553-498fc9a4688f"
 _SHA256 = "89e1a1030565030d69bc061058403da8161ccaf103f20bdfeca56c37f4881501"
-
-
-def _alternating_blocks(
-    start: float, stop: float, length: float
-) -> tuple[np.ndarray, np.ndarray]:
-    edges = np.append(np.arange(start, stop, length), stop)
-    blocks = np.column_stack([edges[:-1], edges[1:]])
-    return blocks[::2], blocks[1::2]
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -85,7 +84,7 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected read_position to return metres, got {position.units!r}"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
-    train, test = _alternating_blocks(times[0], times[-1], 60.0)
+    train, test = alternating_blocks(times[0], times[-1], 60.0)
     return Recording(
         dataset=DATASET["key"],
         session="sub-10884_ses-03080402",

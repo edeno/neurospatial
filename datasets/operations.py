@@ -84,7 +84,11 @@ def _finite_stats(values: Any) -> dict[str, float | int]:
 
 def env_from_samples(rec: Recording, cache: dict[str, Any]) -> Outcome:
     env = _env(rec, cache)
-    return Outcome("ok", {"n_bins": env.n_bins, "n_dims": env.n_dims})
+    extent = np.ptp(np.asarray(env.bin_centers), axis=0)
+    return Outcome(
+        "ok",
+        {"n_bins": env.n_bins, "n_dims": env.n_dims, "max_extent": float(extent.max())},
+    )
 
 
 def occupancy(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -99,6 +103,10 @@ def occupancy(rec: Recording, cache: dict[str, Any]) -> Outcome:
         {
             "total_s": float(np.nansum(occ)),
             "frac_bins_visited": float(np.mean(occ > 0)),
+            "median_s_per_visited_bin": float(np.median(occ[occ > 0]))
+            if np.any(occ > 0)
+            else 0.0,
+            "max_s": float(np.nanmax(occ)),
         },
     )
 
@@ -106,9 +114,22 @@ def occupancy(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def rates_spatial(rec: Recording, cache: dict[str, Any]) -> Outcome:
     rates = _rates(rec, cache)
     firing = np.asarray(rates.firing_rates)
+    finite = np.where(np.isfinite(firing), firing, np.nan)
+    with np.errstate(all="ignore"):
+        peaks = np.nanmax(finite, axis=1) if finite.size else np.empty(0)
+        means = np.nanmean(finite, axis=1) if finite.size else np.empty(0)
     return Outcome(
         "ok",
-        {"n_units": firing.shape[0], "frac_nan_bins": float(np.isnan(firing).mean())},
+        {
+            "n_units": firing.shape[0],
+            "frac_nan_bins": float(np.isnan(firing).mean()),
+            "median_peak_hz": float(np.nanmedian(peaks))
+            if peaks.size
+            else float("nan"),
+            "median_mean_hz": float(np.nanmedian(means))
+            if means.size
+            else float("nan"),
+        },
     )
 
 
@@ -172,10 +193,23 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
     result = decoder.predict(spikes, rec.times, epochs=test)
     error = result.error_against(rec.times, rec.positions)
+    # Chance: distance between each decoded bin's true position and the true
+    # position of a random other decoded bin (seeded permutation).
+    actual = np.column_stack(
+        [
+            np.interp(result.times, rec.times, column)
+            for column in np.asarray(rec.positions).T
+        ]
+    )
+    actual = actual[np.isfinite(actual).all(axis=1)]
+    shuffled = actual[np.random.default_rng(0).permutation(len(actual))]
     return Outcome(
         "ok",
         {
             "median_error": float(np.nanmedian(error)),
+            "chance_median_error": float(
+                np.median(np.linalg.norm(actual - shuffled, axis=1))
+            ),
             "units": str(rec.position_units),
             "n_time_bins": int(result.n_time_bins),
         },

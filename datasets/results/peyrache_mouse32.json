@@ -26,12 +26,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3916+ge1f23d65f.d20261102",
+    "neurospatial": "0.6.1.dev3922+g752c5888b.d20261102",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
-    "git_commit": "08beac539d2cf8c4c3db01f8cc7e5ae632d89c9d"
+    "opexebo": "0.7.2",
+    "git_commit": "752c5888bdbb6715f04a785f4e31f04a2d88bc62"
   },
   "load_warnings": [
     {
@@ -97,7 +98,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.126,
+      "seconds": 0.167,
       "peak_mb": 105.6
     },
     "decode.position": {
@@ -116,7 +117,8 @@
       "hazard": "headings_in_degrees",
       "op": "hd.tuning",
       "response": "warned",
-      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 359.9, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".\n3995515/4398008 spike_times (91%) across all neurons fell outside the position time window [8812.42, 10771.3]; spike_times.min()=0.0015 spike_times.max()=22025. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 359.9, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 49,
         "mean_vector_length_median": 0.4356787549135757,
@@ -133,8 +135,9 @@
     {
       "hazard": "spike_times_in_ms",
       "op": "hd.tuning",
-      "response": "warned",
-      "message": "4397642/4398008 spike_times (100%) across all neurons fell outside the position time window [8812.42, 10771.3]; spike_times.min()=1.5 spike_times.max()=2.2025e+07. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 49,
         "mean_vector_length_median": 0.4356787549135757,

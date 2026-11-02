@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from _record import check_expectations, validate_recording
+from _record import Range, check_expectations, validate_recording
 
 
 def test_valid_simulated_recording_passes(simulated_recording):
@@ -40,7 +40,7 @@ def test_headings_without_positions_are_valid(simulated_recording):
 def test_expectations_report_failures_without_raising(simulated_recording):
     rows = check_expectations(
         simulated_recording,
-        {"n_units": 7, "sampling_rate_hz": (1000.0, 2000.0), "n_dims": 2},
+        {"n_units": 7, "sampling_rate_hz": Range(1000.0, 2000.0), "n_dims": 2},
     )
     by_key = {row["key"]: row for row in rows}
     assert not by_key["n_units"]["passed"]
@@ -55,8 +55,35 @@ def test_range_expectation_is_elementwise(simulated_recording):
     rows = check_expectations(
         simulated_recording,
         {
-            "position_min": ((-1.0, -1.0), (5.0, 5.0)),
-            "position_max": ((95.0, 200.0), (101.0, 201.0)),
+            "position_min": Range((-1.0, -1.0), (5.0, 5.0)),
+            "position_max": Range((95.0, 200.0), (101.0, 201.0)),
         },
     )
     assert [row["passed"] for row in rows] == [True, False]
+
+
+def test_two_element_values_are_exact_not_ranges(simulated_recording):
+    exact = tuple(simulated_recording.positions.min(axis=0))
+    rows = check_expectations(
+        simulated_recording, {"position_min": exact, "epoch_names": ("sleep", "wake")}
+    )
+    assert [row["passed"] for row in rows] == [True, False]
+
+
+def test_inverted_range_is_refused():
+    with pytest.raises(ValueError, match="above high"):
+        Range(5.0, 1.0)
+
+
+def test_check_that_raises_fails_without_raising(simulated_recording):
+    rows = check_expectations(
+        simulated_recording, {"heading_span": lambda rec: rec.headings.min() < -3}
+    )
+    assert not rows[0]["passed"]
+    assert rows[0]["detail"].startswith("check raised AttributeError")
+
+
+def test_dt_required_when_decoding_is_possible(simulated_recording):
+    params = {k: v for k, v in simulated_recording.params.items() if k != "dt"}
+    with pytest.raises(ValueError, match=r"params missing \['dt'\]"):
+        validate_recording(replace(simulated_recording, params=params))

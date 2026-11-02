@@ -34,8 +34,12 @@ def template(message: str) -> str:
 
 def _origin(filename: str) -> str:
     # neurospatial warns with a stacklevel that points at the caller (the
-    # harness), so anything raised from an installed package is third-party.
-    return "third-party" if "site-packages" in Path(filename).parts else "neurospatial"
+    # harness), or at its own modules; anything else raised from an installed
+    # package is third-party.
+    parts = Path(filename).parts
+    if "site-packages" in parts and "neurospatial" not in parts:
+        return "third-party"
+    return "neurospatial"
 
 
 def captured(
@@ -116,6 +120,14 @@ def hazards_for(module: ModuleType, rec: Recording) -> dict[str, Hazard]:
     return hazards
 
 
+# Fields every operation reads besides its ``requires``.
+ALWAYS_READ = frozenset({"times", "position_units", "epochs", "params"})
+
+
+def _warning_keys(rows: list[dict[str, Any]]) -> set[tuple[str, str]]:
+    return {(row["category"], row["template"]) for row in rows}
+
+
 def probe_hazards(
     module: ModuleType,
     rec: Recording,
@@ -125,7 +137,10 @@ def probe_hazards(
 ) -> list[dict[str, Any]]:
     """Re-run ``probe_ops`` on each hazardous version of ``rec``.
 
-    An operation is probed only if it reads a field the hazard changed.
+    An operation is probed when it reads a field the hazard changed. Its
+    response is ``raised``, ``warned`` (a warning the clean run of the same
+    operation did not emit) or ``silent``. A hazard that reaches no probed
+    operation gets one ``not probed`` row, so it cannot vanish from the table.
     """
     rows = []
     for name, make in hazards_for(module, rec).items():
@@ -136,18 +151,27 @@ def probe_hazards(
             if getattr(bad, f.name) is not getattr(rec, f.name)
         }
         cache: dict[str, Any] = {}
+        probed = False
         for op in operations:
             if (
                 op.op_id not in probe_ops
-                or not changed & set(op.requires)
+                or not changed & (set(op.requires) | ALWAYS_READ)
                 or any(getattr(bad, f) is None for f in op.requires)
             ):
                 continue
+            probed = True
+            clean = clean_operations.get(op.op_id, {})
             outcome, error, caught = captured(op.run, bad, cache)
+            new = [
+                row
+                for row in caught
+                if (row["category"], row["template"])
+                not in _warning_keys(list(clean.get("warnings", [])))
+            ]
             if error is not None:
                 response, message = "raised", f"{type(error).__name__}: {error}"
-            elif caught:
-                response, message = "warned", "\n".join(c["example"] for c in caught)
+            elif new:
+                response, message = "warned", "\n".join(row["example"] for row in new)
             else:
                 response, message = "silent", ""
             rows.append(
@@ -156,12 +180,23 @@ def probe_hazards(
                     "op": op.op_id,
                     "response": response,
                     "message": message,
-                    "clean_summary": dict(
-                        clean_operations.get(op.op_id, {}).get("summary", {})
-                    ),
+                    "repeated_clean_warnings": len(caught) - len(new),
+                    "clean_summary": dict(clean.get("summary", {})),
                     "hazard_summary": None
                     if outcome is None
                     else dict(outcome.summary),
+                }
+            )
+        if not probed:
+            rows.append(
+                {
+                    "hazard": name,
+                    "op": "",
+                    "response": "not probed",
+                    "message": f"changes {sorted(changed)}, which no probed operation reads",
+                    "repeated_clean_warnings": 0,
+                    "clean_summary": {},
+                    "hazard_summary": None,
                 }
             )
     return rows

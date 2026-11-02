@@ -73,7 +73,8 @@ def test_hazard_responses_classified(simulated_recording, loader_module):
     assert by_op["p.silent"]["clean_summary"] == {"max": 100.0}
     assert by_op["p.silent"]["hazard_summary"]["max"] < 1.01
     # Spike times in ms change no field these position-only operations read.
-    assert not [row for row in rows if row["hazard"] == "spike_times_in_ms"]
+    spikes = [row for row in rows if row["hazard"] == "spike_times_in_ms"]
+    assert [row["response"] for row in spikes] == ["not probed"]
 
 
 def test_generic_hazards_apply_only_when_relevant(simulated_recording):
@@ -95,6 +96,56 @@ def test_generic_hazards_apply_only_when_relevant(simulated_recording):
         "length_unit_off_by_100",
         "sentinel_left_in",
     }
+
+
+def test_warning_already_in_clean_run_is_not_a_response(
+    simulated_recording, loader_module
+):
+    def always_warns(rec, cache):
+        warnings.warn("12 spikes dropped", UserWarning, stacklevel=2)
+        return Outcome("ok", {})
+
+    clean = {
+        "p.same": {
+            "summary": {},
+            "warnings": [
+                {
+                    "category": "UserWarning",
+                    "template": "# spikes dropped",
+                    "origin": "neurospatial",
+                }
+            ],
+        }
+    }
+    rows = probe_hazards(
+        loader_module,
+        simulated_recording,
+        clean,
+        operations=(_probe("p.same", always_warns),),
+        probe_ops=("p.same",),
+    )
+    row = next(r for r in rows if r["hazard"] == "length_unit_off_by_100")
+    assert row["response"] == "silent"
+    assert row["repeated_clean_warnings"] == 1
+
+
+def test_hazard_reaching_no_operation_is_reported(simulated_recording):
+    def needs_headings(rec, cache):
+        return Outcome("ok", {})
+
+    module = SimpleNamespace(
+        HAZARDS={"spikes_shifted": lambda rec: replace(rec, spike_times=())}
+    )
+    rows = probe_hazards(
+        module,
+        simulated_recording,
+        {},
+        operations=(Operation("p.heading", ("headings",), needs_headings),),
+        probe_ops=("p.heading",),
+    )
+    row = next(r for r in rows if r["hazard"] == "spikes_shifted")
+    assert row["response"] == "not probed"
+    assert "spike_times" in row["message"]
 
 
 def test_unreviewed_rows_rendered():
@@ -130,10 +181,12 @@ def test_unreviewed_rows_rendered():
         ],
     }
     verdicts = {
-        "UserWarning: # spikes dropped": {
-            "verdict": "warranted",
-            "gap": None,
-            "reason": "real",
+        "warnings": {
+            "neurospatial UserWarning: # spikes dropped": {
+                "verdict": "warranted",
+                "gap": None,
+                "reason": "real",
+            }
         }
     }
     text = render_warnings([record], verdicts)
