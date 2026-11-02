@@ -3188,7 +3188,9 @@ def _object_vector_rates(
     warning names unit ``0``, and the population-silence warning, which
     needs several units, is skipped.
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
 
     from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._backend import (

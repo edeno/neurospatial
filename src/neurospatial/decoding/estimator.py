@@ -760,7 +760,7 @@ warn_on_drop
             spike_times, unit_ids, context="BayesianDecoder.fit"
         )
 
-        resolved_epochs, resolved_spike_window = resolve_time_windows(
+        resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
             epochs, spike_window
         )
 

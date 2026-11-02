@@ -5158,7 +5158,9 @@ def compute_directional_place_fields(
     firing_rates_dict: dict[Hashable, NDArray[np.float64]] = {}
     occupancy_dict: dict[Hashable, NDArray[np.float64]] = {}
 
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     for code in order:
         label = values[code]
         label_windows = run_windows[run_codes == code]

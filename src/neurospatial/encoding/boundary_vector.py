@@ -1005,7 +1005,9 @@ def _boundary_vector_rates(
         context=context,
     )
     require_known_bandwidth(env.units, bandwidth, method, context=context)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
 
     spike_trains, resolved_unit_ids = as_labelled_spike_trains(
         spike_times, unit_ids, context=context

@@ -412,7 +412,9 @@ def decode_session(
     ...     prior=rates.spatial_support * env.bin_sizes,
     ... )
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
     options = _decode_options(decode_kwargs, caller="decode_session", summary=False)
@@ -553,7 +555,7 @@ def _prepare_session_decode(
     from neurospatial.decoding.posterior import _prepare_decode_inputs
     from neurospatial.encoding import _validate_times
 
-    epochs, spike_window = resolve_time_windows(epochs, spike_window)
+    epochs, spike_window, _ = resolve_time_windows(epochs, spike_window)
     # Normalize array timestamps and spike groups at the boundary.
     trains, _ = _as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
@@ -948,7 +950,9 @@ warn_on_drop, dtype
     >>> len(summary.map_position) > 0
     True
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
     # Reject unsupported reduction options before performing the encoding fit.

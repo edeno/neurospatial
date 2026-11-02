@@ -157,7 +157,9 @@ def prepare_linear_spatial_intervals(
         raise ValueError(msg)
     # This checks known nonmaterializable Arena support before any cell work.
     _uses_polygon_allocation(binning, arena)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     gates: IntervalGates | None = None
     if interval_mask is None:
         gates = interval_gates(
@@ -830,7 +832,9 @@ def _resolve_spatial_time_support(
                     suppress_hint=_WARN_ON_DROP_HINT,
                 )
         return support
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     gates = _spatial_interval_gates(
         env,
         times,
@@ -1170,7 +1174,7 @@ def _resolve_spatial_mask(
             )
         return linear_intervals.support.mask, linear_intervals
     if interval_mask is None:
-        resolved_epochs, resolved_spike_window = resolve_time_windows(
+        resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
             epochs, spike_window
         )
         interval_mask = _spatial_interval_gates(

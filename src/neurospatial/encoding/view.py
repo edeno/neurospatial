@@ -1401,7 +1401,9 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_counts import prepare_view_binning
 
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     _check_view_env(env, context=context)
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;

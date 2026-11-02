@@ -106,7 +106,9 @@ def shuffle_inputs(
     times = np.array(times, dtype=np.float64, copy=True)
     copied = tuple(np.array(x, dtype=np.float64, copy=True) for x in copies)
     ids = np.arange(len(trains)) if labels is None else np.array(labels, copy=True)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     return ShuffleInputs(
         trains, times, copied, ids, resolved_epochs, resolved_spike_window
     )
