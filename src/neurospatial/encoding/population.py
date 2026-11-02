@@ -58,8 +58,8 @@ if TYPE_CHECKING:
 
 _PV = _Caller(
     operation="population_vector_correlation()",
-    first="firing_rates_1",
-    second="firing_rates_2",
+    first="firing_rates_a",
+    second="firing_rates_b",
     intersection_effect="correlate over the units recorded in both conditions",
 )
 # A population-vector correlation needs this many units: two always give +-1.
@@ -809,8 +809,8 @@ def count_place_cells(
 
 def field_overlap(
     env: Environment,
-    field_bins_i: NDArray[np.int64],
-    field_bins_j: NDArray[np.int64],
+    field_bins_a: NDArray[np.int64],
+    field_bins_b: NDArray[np.int64],
 ) -> float:
     """
     Compute Jaccard similarity between two place fields.
@@ -824,9 +824,9 @@ def field_overlap(
     env : Environment
         Spatial environment of the fields. Its bin measures
         (``env.bin_sizes``) make the overlap a ratio of areas.
-    field_bins_i : array
+    field_bins_a : array
         Bin indices in first field.
-    field_bins_j : array
+    field_bins_b : array
         Bin indices in second field.
 
     Returns
@@ -906,11 +906,11 @@ def field_overlap(
            the environment on the spatial firing of hippocampal complex-spike
            cells. Journal of Neuroscience, 7(7), 1951-1968.
     """
-    union = np.union1d(field_bins_i, field_bins_j).astype(np.intp)
+    union = np.union1d(field_bins_a, field_bins_b).astype(np.intp)
     if union.size == 0:
         # No field bin in either set: nothing to compare.
         return np.nan
-    intersection = np.intersect1d(field_bins_i, field_bins_j).astype(np.intp)
+    intersection = np.intersect1d(field_bins_a, field_bins_b).astype(np.intp)
     measures = _relative_measures(env.bin_sizes)
     return float(np.sum(measures[intersection]) / np.sum(measures[union]))
 
@@ -1014,8 +1014,8 @@ def rate_map_correlations(
 
 
 def population_vector_correlation(
-    firing_rates_1: SpatialRatesResult | NDArray[np.float64],
-    firing_rates_2: SpatialRatesResult | NDArray[np.float64],
+    firing_rates_a: SpatialRatesResult | NDArray[np.float64],
+    firing_rates_b: SpatialRatesResult | NDArray[np.float64],
     *,
     spatial_support: NDArray[np.bool_] | None = None,
     unit_selection: Literal["intersection", "exact"] = "intersection",
@@ -1041,7 +1041,7 @@ def population_vector_correlation(
 
     Parameters
     ----------
-    firing_rates_1, firing_rates_2 : SpatialRatesResult or array, shape (n_units, n_bins)
+    firing_rates_a, firing_rates_b : SpatialRatesResult or array, shape (n_units, n_bins)
         Rate maps of the two conditions. Pass two ``SpatialRatesResult``
         (recommended) or two arrays; a result and an array cannot be mixed.
 
@@ -1070,10 +1070,10 @@ def population_vector_correlation(
         raises unless both conditions hold the same units, in any order.
         Arrays carry no labels, so ``"exact"`` with arrays raises.
     bin_mapping : array-like of int, shape (n_pairs, 2), optional
-        Results only. Rows of ``(bin in firing_rates_1.env, bin in
-        firing_rates_2.env)`` pairing bins that are the same place, for maps
+        Results only. Rows of ``(bin in firing_rates_a.env, bin in
+        firing_rates_b.env)`` pairing bins that are the same place, for maps
         estimated on different environments such as a subset of the arena;
-        ``firing_rates_2.env.bin_mapping_from(firing_rates_1.env).pairs``
+        ``firing_rates_b.env.bin_mapping_from(firing_rates_a.env).pairs``
         builds them for an environment derived from the other.
         Checked as in ``compare_spatial_rates``: one-to-one, and paired bins
         must be the same cells in the same coordinates. By default the two
@@ -1089,7 +1089,7 @@ def population_vector_correlation(
     -------
     correlation : array, shape (n_bins,)
         Pearson correlation across units at each location, in [-1, 1]. With
-        results, ``n_bins`` is ``firing_rates_1.env.n_bins`` and entry ``j``
+        results, ``n_bins`` is ``firing_rates_a.env.n_bins`` and entry ``j``
         is bin ``j`` of that environment; with ``bin_mapping``, bins without
         a mapped partner are NaN. NaN where the location is not used (not
         observed in both conditions, a NaN rate in either map, or outside
@@ -1148,7 +1148,7 @@ def population_vector_correlation(
     With results, a location is observed in both conditions when each
     result's occupancy there reaches its ``min_occupancy`` and every compared
     unit's rate is finite. When every unit is compared this is
-    ``firing_rates_1.spatial_support & firing_rates_2.spatial_support``; a
+    ``firing_rates_a.spatial_support & firing_rates_b.spatial_support``; a
     unit left out by ``unit_selection="intersection"`` does not remove bins.
 
     Summarize over the defined locations, for example with the median, and
@@ -1247,8 +1247,8 @@ def population_vector_correlation(
         unit_selection, _UNIT_SELECTIONS, name="unit_selection", owner=_PV.operation
     )
     validate_choice(topology, _TOPOLOGIES, name="topology", owner=_PV.operation)
-    is_result_1 = _is_population_result(firing_rates_1, _PV.first)
-    is_result_2 = _is_population_result(firing_rates_2, _PV.second)
+    is_result_1 = _is_population_result(firing_rates_a, _PV.first)
+    is_result_2 = _is_population_result(firing_rates_b, _PV.second)
     if is_result_1 != is_result_2:
         result_name, array_name = (
             (_PV.first, _PV.second) if is_result_1 else (_PV.second, _PV.first)
@@ -1267,8 +1267,8 @@ def population_vector_correlation(
         )
     if is_result_1:
         return _population_vector_correlation_of_results(
-            cast("SpatialRatesResult", firing_rates_1),
-            cast("SpatialRatesResult", firing_rates_2),
+            cast("SpatialRatesResult", firing_rates_a),
+            cast("SpatialRatesResult", firing_rates_b),
             spatial_support=spatial_support,
             unit_selection=unit_selection,
             bin_mapping=bin_mapping,
@@ -1296,18 +1296,18 @@ def population_vector_correlation(
                 "columns of the arrays yourself",
             )
         )
-    rates_1 = np.asarray(firing_rates_1, dtype=np.float64)
-    rates_2 = np.asarray(firing_rates_2, dtype=np.float64)
+    rates_1 = np.asarray(firing_rates_a, dtype=np.float64)
+    rates_2 = np.asarray(firing_rates_b, dtype=np.float64)
     if rates_1.ndim != 2 or rates_2.ndim != 2:
         msg = (
-            "firing_rates_1 and firing_rates_2 must be 2-D (n_units, n_bins), "
+            "firing_rates_a and firing_rates_b must be 2-D (n_units, n_bins), "
             f"got shapes {rates_1.shape} and {rates_2.shape}. Pass one rate map "
             "per unit, for example rates.firing_rates from compute_spatial_rates."
         )
         raise ValueError(msg)
     if rates_1.shape != rates_2.shape:
         msg = (
-            "firing_rates_1 and firing_rates_2 must have the same shape, got "
+            "firing_rates_a and firing_rates_b must have the same shape, got "
             f"{rates_1.shape} and {rates_2.shape}. Compute both maps for the same "
             "units on the same environment, with the units in the same row order."
         )
@@ -1382,8 +1382,8 @@ def _population_vector_correlation_of_results(
                 f"{_PV.operation} got spatial_support= with two SpatialRatesResult.",
                 why="Why: each result carries the bins it observed, and only bins "
                 "observed in both conditions are compared "
-                "(firing_rates_1.spatial_support & "
-                "firing_rates_2.spatial_support); a second mask could disagree "
+                "(firing_rates_a.spatial_support & "
+                "firing_rates_b.spatial_support); a second mask could disagree "
                 "with them.",
                 fix="drop spatial_support=; to look at some bins only, index the "
                 "returned array, e.g. pv[env.bins_in_region('center')]",

@@ -147,7 +147,7 @@ def test_matched_alpha_takes_a_pairwise_order_method(track):
     intervals = []
     for index in range(10):
         event = simulate_replay_event(
-            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
+            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, rng=index
         )
         for cell, train in enumerate(event.spike_times):
             trains[cell].append(np.asarray(train) + 2.0 * index)

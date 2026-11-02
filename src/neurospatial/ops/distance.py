@@ -63,7 +63,7 @@ def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float6
 
 
 def geodesic_distance_matrix(
-    G: nx.Graph,
+    graph: nx.Graph,
     *,
     weight: str | None = "distance",
 ) -> NDArray[np.float64]:
@@ -73,7 +73,7 @@ def geodesic_distance_matrix(
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         NetworkX graph representing spatial connectivity, such as
         ``env.connectivity``. Its nodes must be the bin indices
         ``0 .. n_bins - 1``.
@@ -89,7 +89,7 @@ def geodesic_distance_matrix(
     Raises
     ------
     ValueError
-        If ``G`` is directed or a multigraph, its nodes are not exactly
+        If ``graph`` is directed or a multigraph, its nodes are not exactly
         ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
 
     Notes
@@ -103,18 +103,20 @@ def geodesic_distance_matrix(
     --------
     >>> import networkx as nx
     >>> from neurospatial.ops.distance import geodesic_distance_matrix
-    >>> G = nx.Graph()
+    >>> graph = nx.Graph()
     >>> # Rows follow the bin index, whatever order the edges were added in.
-    >>> G.add_edge(2, 3, distance=1.0)
-    >>> G.add_edge(0, 1, distance=1.0)
-    >>> G.add_edge(1, 2, distance=2.0)
-    >>> geodesic_distance_matrix(G)[0].tolist()
+    >>> graph.add_edge(2, 3, distance=1.0)
+    >>> graph.add_edge(0, 1, distance=1.0)
+    >>> graph.add_edge(1, 2, distance=2.0)
+    >>> geodesic_distance_matrix(graph)[0].tolist()
     [0.0, 1.0, 3.0, 4.0]
 
     """
     from scipy.sparse.csgraph import shortest_path
 
-    adjacency = _bin_adjacency(G, weight=weight, operation="geodesic_distance_matrix()")
+    adjacency = _bin_adjacency(
+        graph, weight=weight, operation="geodesic_distance_matrix()"
+    )
     if adjacency.shape[0] == 0:
         return np.empty((0, 0), dtype=np.float64)
 
@@ -130,7 +132,7 @@ def geodesic_distance_matrix(
 
 
 def geodesic_distance_between_points(
-    G: nx.Graph,
+    graph: nx.Graph,
     bin_from: int,
     bin_to: int,
     *,
@@ -141,7 +143,7 @@ def geodesic_distance_between_points(
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         NetworkX graph representing spatial connectivity.
     bin_from : int
         Source node/bin index.
@@ -161,17 +163,17 @@ def geodesic_distance_between_points(
     Raises
     ------
     networkx.NodeNotFound
-        If either bin is not a node of ``G``, such as the outside marker -1:
+        If either bin is not a node of ``graph``, such as the outside marker -1:
         a missing bin has no distance, which is not the same as no path.
     ValueError
         If an edge lacks the ``weight`` attribute.
 
     """
-    _require_nodes(G, [bin_from, bin_to], "geodesic_distance_between_points()")
-    _require_edge_weight(G, weight, "geodesic_distance_between_points()")
+    _require_nodes(graph, [bin_from, bin_to], "geodesic_distance_between_points()")
+    _require_edge_weight(graph, weight, "geodesic_distance_between_points()")
     try:
         length = nx.shortest_path_length(
-            G,
+            graph,
             source=bin_from,
             target=bin_to,
             weight=weight,
@@ -181,9 +183,9 @@ def geodesic_distance_between_points(
         return default
 
 
-def _require_nodes(G: nx.Graph, nodes: Iterable[int], operation: str) -> None:
+def _require_nodes(graph: nx.Graph, nodes: Iterable[int], operation: str) -> None:
     """Refuse bins that are not graph nodes, naming the outside marker -1."""
-    missing = [int(node) for node in nodes if node not in G]
+    missing = [int(node) for node in nodes if node not in graph]
     if missing:
         _raise_missing_nodes(missing, operation)
 
@@ -200,7 +202,7 @@ def _raise_missing_nodes(missing: list[int], operation: str) -> NoReturn:
     )
 
 
-def _require_bin_graph(G: nx.Graph, operation: str) -> int:
+def _require_bin_graph(graph: nx.Graph, operation: str) -> int:
     """Refuse a graph that is not an undirected simple graph of bins ``0 .. n - 1``.
 
     Distance arrays are indexed by bin, so row ``i`` must be node ``i``; each
@@ -209,27 +211,27 @@ def _require_bin_graph(G: nx.Graph, operation: str) -> int:
     Returns
     -------
     int
-        The number of bins, ``G.number_of_nodes()``.
+        The number of bins, ``graph.number_of_nodes()``.
     """
-    if G.is_directed() or G.is_multigraph():
+    if graph.is_directed() or graph.is_multigraph():
         raise ValueError(
             _format_error(
                 f"{operation}: the graph must be an undirected simple nx.Graph, "
-                f"got {type(G).__name__}.",
+                f"got {type(graph).__name__}.",
                 why="bin distances are undirected and each pair of bins has one "
                 "connection length, so reciprocal or parallel edges would be "
                 "counted twice or read inconsistently.",
                 fix="pass env.connectivity, or collapse the graph with "
-                "nx.Graph(G) after keeping one edge (the shortest) per pair of "
+                "nx.Graph(graph) after keeping one edge (the shortest) per pair of "
                 "bins",
             )
         )
-    n_bins: int = G.number_of_nodes()
-    if all(node in G for node in range(n_bins)):
+    n_bins: int = graph.number_of_nodes()
+    if all(node in graph for node in range(n_bins)):
         return n_bins
     stray = [
         node
-        for node in G.nodes
+        for node in graph.nodes
         if not (isinstance(node, (int, np.integer)) and 0 <= node < n_bins)
     ]
     raise ValueError(
@@ -239,13 +241,13 @@ def _require_bin_graph(G: nx.Graph, operation: str) -> int:
             why="Entry i of the result is the distance for bin i, so every "
             "node must be the index of the bin it stands for.",
             fix="pass env.connectivity, or relabel the graph with "
-            "nx.convert_node_labels_to_integers(G, ordering='sorted') and "
+            "nx.convert_node_labels_to_integers(graph, ordering='sorted') and "
             "translate your bin labels the same way",
         )
     )
 
 
-def _require_edge_weight(G: nx.Graph, weight: str | None, operation: str) -> None:
+def _require_edge_weight(graph: nx.Graph, weight: str | None, operation: str) -> None:
     """Refuse a ``weight`` attribute that some edges lack.
 
     NetworkX and SciPy would otherwise count such an edge as length 1, so a
@@ -253,14 +255,14 @@ def _require_edge_weight(G: nx.Graph, weight: str | None, operation: str) -> Non
     """
     if weight is None:
         return
-    measured = nx.get_edge_attributes(G, weight)
-    if len(measured) == G.number_of_edges():
+    measured = nx.get_edge_attributes(graph, weight)
+    if len(measured) == graph.number_of_edges():
         return
-    unmeasured = next((u, v) for u, v in G.edges if (u, v) not in measured)
-    present = sorted(G.edges[unmeasured])
+    unmeasured = next((u, v) for u, v in graph.edges if (u, v) not in measured)
+    present = sorted(graph.edges[unmeasured])
     raise ValueError(
         _format_error(
-            f"{operation}: {G.number_of_edges() - len(measured)} edge(s) have "
+            f"{operation}: {graph.number_of_edges() - len(measured)} edge(s) have "
             f"no {weight!r} attribute, for example edge {unmeasured} "
             f"(its attributes: {present}).",
             why="an edge without a length would count as 1, so distances "
@@ -271,12 +273,12 @@ def _require_edge_weight(G: nx.Graph, weight: str | None, operation: str) -> Non
     )
 
 
-def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_array:
+def _bin_adjacency(graph: nx.Graph, *, weight: str | None, operation: str) -> csr_array:
     """Sparse edge-length matrix whose row and column ``i`` are bin ``i``.
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         Graph whose nodes are the bins ``0 .. n_bins - 1``.
     weight : str or None
         Edge attribute holding each edge's length; None counts edges.
@@ -292,16 +294,16 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
     Raises
     ------
     ValueError
-        If ``G`` is directed or a multigraph, its nodes are not
+        If ``graph`` is directed or a multigraph, its nodes are not
         ``0 .. n_bins - 1``, or an edge lacks ``weight``.
     """
     from scipy.sparse import csr_array
 
-    n_bins = _require_bin_graph(G, operation)
-    n_edges = G.number_of_edges()
+    n_bins = _require_bin_graph(graph, operation)
+    n_edges = graph.number_of_edges()
     if weight is None:
         pairs = np.fromiter(
-            (node for edge in G.edges for node in edge),
+            (node for edge in graph.edges for node in edge),
             dtype=np.intp,
             count=2 * n_edges,
         ).reshape(n_edges, 2)
@@ -310,12 +312,16 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
         # One pass reads each edge as (u, v, length); a missing length reads
         # as NaN, told apart from a stored NaN only on that rare path.
         rows = np.fromiter(
-            (value for edge in G.edges(data=weight, default=np.nan) for value in edge),
+            (
+                value
+                for edge in graph.edges(data=weight, default=np.nan)
+                for value in edge
+            ),
             dtype=np.float64,
             count=3 * n_edges,
         ).reshape(n_edges, 3)
         if np.isnan(rows[:, 2]).any():
-            _require_edge_weight(G, weight, operation)
+            _require_edge_weight(graph, weight, operation)
         pairs, lengths = rows[:, :2].astype(np.intp), rows[:, 2]
     u, v = pairs[:, 0], pairs[:, 1]
     mirror = u != v  # a self-loop is one entry, as in nx.to_scipy_sparse_array
@@ -360,21 +366,21 @@ def _dijkstra_blocks(
 
 
 def _geodesic_pair_distances(
-    G: nx.Graph,
+    graph: nx.Graph,
     sources: NDArray[np.intp],
     targets: NDArray[np.intp],
     *,
     operation: str,
     weight: str | None = "distance",
 ) -> NDArray[np.float64]:
-    """Shortest-path length along ``G`` for each ``(source, target)`` bin pair.
+    """Shortest-path length along ``graph`` for each ``(source, target)`` bin pair.
 
     Runs Dijkstra only from the distinct source bins, in blocks, instead of
     building the dense ``(n_bins, n_bins)`` all-pairs matrix.
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         Graph whose nodes are the bins ``0 .. n_bins - 1``.
     sources, targets : NDArray[np.intp], shape (n_pairs,)
         Bin index pairs, each in ``0 .. n_bins - 1``.
@@ -388,7 +394,7 @@ def _geodesic_pair_distances(
     NDArray[np.float64], shape (n_pairs,)
         Path length per pair; ``inf`` between disconnected components.
     """
-    adjacency = _bin_adjacency(G, weight=weight, operation=operation)
+    adjacency = _bin_adjacency(graph, weight=weight, operation=operation)
     unique_sources, source_row = np.unique(sources, return_inverse=True)
     out = np.empty(len(sources), dtype=np.float64)
     for start, lengths in _dijkstra_blocks(adjacency, unique_sources):
@@ -421,7 +427,7 @@ def _require_bin_centers(
         msg = (
             f"bin_centers size {bin_centers.shape[0]} must match "
             f"number of nodes in graph ({n_nodes}). "
-            f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
+            f"Ensure bin_centers.shape[0] == graph.number_of_nodes()."
         )
         raise ValueError(msg)
     return bin_centers
@@ -458,7 +464,7 @@ def _as_bin_indices(
 
 
 def distance_field(
-    G: nx.Graph,
+    graph: nx.Graph,
     sources: list[int] | NDArray[np.int_],
     *,
     metric: str = "geodesic",
@@ -474,7 +480,7 @@ def distance_field(
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         NetworkX graph representing spatial connectivity.
     sources : list[int] or NDArray[np.int_]
         List of source node indices. Distance field measures distance to
@@ -519,15 +525,15 @@ def distance_field(
         If metric='euclidean' but bin_centers is None. Provide bin_centers array.
     ValueError
         If bin_centers shape doesn't match number of graph nodes. Ensure
-        bin_centers.shape[0] == G.number_of_nodes().
+        bin_centers.shape[0] == graph.number_of_nodes().
     ValueError
-        If ``G`` is directed or a multigraph, its nodes are not the bins
+        If ``graph`` is directed or a multigraph, its nodes are not the bins
         ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
         attribute.
     TypeError
         If ``sources`` are not integers.
     networkx.NodeNotFound
-        If a source is not a bin of ``G``, such as the outside marker -1.
+        If a source is not a bin of ``graph``, such as the outside marker -1.
 
     Examples
     --------
@@ -535,16 +541,16 @@ def distance_field(
     >>> import numpy as np
     >>> from neurospatial.ops.distance import distance_field
     >>> # Create a simple graph
-    >>> G = nx.Graph()
-    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in G.edges:
-    ...     G.edges[u, v]["distance"] = 1.0
+    >>> graph = nx.Graph()
+    >>> graph.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
+    >>> for u, v in graph.edges:
+    ...     graph.edges[u, v]["distance"] = 1.0
     >>> # Geodesic distance field from node 2
-    >>> dists = distance_field(G, sources=[2])
+    >>> dists = distance_field(graph, sources=[2])
     >>> dists
     array([2., 1., 0., 1., 2.])
     >>> # With cutoff
-    >>> dists = distance_field(G, sources=[2], cutoff=1.5)
+    >>> dists = distance_field(graph, sources=[2], cutoff=1.5)
     >>> dists
     array([inf,  1.,  0.,  1., inf])
 
@@ -578,7 +584,7 @@ def distance_field(
         )
         raise ValueError(msg)
 
-    n_nodes = _require_bin_graph(G, "distance_field()")
+    n_nodes = _require_bin_graph(graph, "distance_field()")
     if n_nodes == 0:
         return np.empty(0, dtype=np.float64)
 
@@ -603,7 +609,7 @@ def distance_field(
 
         return np.asarray(distances, dtype=np.float64)
 
-    adjacency = _bin_adjacency(G, weight=weight, operation="distance_field()")
+    adjacency = _bin_adjacency(graph, weight=weight, operation="distance_field()")
     # One Dijkstra from all sources together gives each bin its nearest
     # source's distance directly, without an (n_sources, n_nodes) array.
     distances = dijkstra(
@@ -617,7 +623,7 @@ def distance_field(
 
 
 def pairwise_distances(
-    G: nx.Graph,
+    graph: nx.Graph,
     nodes: list[int] | NDArray[np.int_],
     *,
     weight: str | None = "distance",
@@ -629,7 +635,7 @@ def pairwise_distances(
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         NetworkX graph representing spatial connectivity.
     nodes : list[int] or NDArray[np.int_]
         List of node indices to compute distances between.
@@ -645,22 +651,22 @@ def pairwise_distances(
     Raises
     ------
     ValueError
-        If ``G`` is directed or a multigraph, its nodes are not the bins
+        If ``graph`` is directed or a multigraph, its nodes are not the bins
         ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
     TypeError
         If ``nodes`` are not integers.
     networkx.NodeNotFound
-        If a node is not a bin of ``G``, such as the outside marker -1.
+        If a node is not a bin of ``graph``, such as the outside marker -1.
 
     Examples
     --------
     >>> import networkx as nx
     >>> from neurospatial.ops.distance import pairwise_distances
-    >>> G = nx.cycle_graph(10)
-    >>> for u, v in G.edges:
-    ...     G.edges[u, v]["distance"] = 1.0
+    >>> graph = nx.cycle_graph(10)
+    >>> for u, v in graph.edges:
+    ...     graph.edges[u, v]["distance"] = 1.0
     >>> # Compute distances between nodes 0, 3, 7
-    >>> dists = pairwise_distances(G, [0, 3, 7])
+    >>> dists = pairwise_distances(graph, [0, 3, 7])
     >>> dists.shape
     (3, 3)
     >>> float(dists[0, 1])  # Distance from node 0 to node 3
@@ -674,12 +680,12 @@ def pairwise_distances(
     """
     from scipy.sparse.csgraph import dijkstra
 
-    n_bins = _require_bin_graph(G, "pairwise_distances()")
+    n_bins = _require_bin_graph(graph, "pairwise_distances()")
     nodes_array = _as_bin_indices(nodes, n_bins, "pairwise_distances()", "nodes")
     if len(nodes_array) == 0:
         return np.empty((0, 0), dtype=np.float64)
 
-    adjacency = _bin_adjacency(G, weight=weight, operation="pairwise_distances()")
+    adjacency = _bin_adjacency(graph, weight=weight, operation="pairwise_distances()")
 
     # Run Dijkstra from all nodes at once; shape (n_nodes, n_graph_nodes).
     dist_from_sources = dijkstra(
@@ -693,7 +699,7 @@ def pairwise_distances(
 
 
 def neighbors_within(
-    G: nx.Graph,
+    graph: nx.Graph,
     centers: list[int] | NDArray[np.int_],
     *,
     radius: float,
@@ -709,7 +715,7 @@ def neighbors_within(
 
     Parameters
     ----------
-    G : nx.Graph
+    graph : nx.Graph
         NetworkX graph representing spatial connectivity.
     centers : list[int] or NDArray[np.int_]
         Center bin indices to query around.
@@ -748,15 +754,15 @@ def neighbors_within(
         If metric='euclidean' but bin_centers is None. Provide bin_centers array.
     ValueError
         If bin_centers shape doesn't match number of graph nodes. Ensure
-        bin_centers.shape[0] == G.number_of_nodes().
+        bin_centers.shape[0] == graph.number_of_nodes().
     ValueError
-        If ``G`` is directed or a multigraph, its nodes are not the bins
+        If ``graph`` is directed or a multigraph, its nodes are not the bins
         ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
         attribute.
     TypeError
         If ``centers`` are not integers.
     networkx.NodeNotFound
-        If a center is not a bin of ``G``, such as the outside marker -1,
+        If a center is not a bin of ``graph``, such as the outside marker -1,
         whatever the metric.
 
     Examples
@@ -764,12 +770,14 @@ def neighbors_within(
     >>> import networkx as nx
     >>> from neurospatial.ops.distance import neighbors_within
     >>> # Create line graph
-    >>> G = nx.Graph()
-    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in G.edges:
-    ...     G.edges[u, v]["distance"] = 1.0
+    >>> graph = nx.Graph()
+    >>> graph.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
+    >>> for u, v in graph.edges:
+    ...     graph.edges[u, v]["distance"] = 1.0
     >>> # Find neighbors within distance 1.5 of node 2
-    >>> neighborhoods = neighbors_within(G, centers=[2], radius=1.5, metric="geodesic")
+    >>> neighborhoods = neighbors_within(
+    ...     graph, centers=[2], radius=1.5, metric="geodesic"
+    ... )
     >>> sorted(neighborhoods[0].tolist())
     [1, 2, 3]
 
@@ -798,7 +806,7 @@ def neighbors_within(
         )
         raise ValueError(msg)
 
-    n_nodes = _require_bin_graph(G, "neighbors_within()")
+    n_nodes = _require_bin_graph(graph, "neighbors_within()")
     centers_array = _as_bin_indices(centers, n_nodes, "neighbors_within()", "centers")
     if len(centers_array) == 0:
         return []
@@ -812,7 +820,7 @@ def neighbors_within(
             )
         ]
     else:
-        adjacency = _bin_adjacency(G, weight=weight, operation="neighbors_within()")
+        adjacency = _bin_adjacency(graph, weight=weight, operation="neighbors_within()")
         neighborhoods = [
             np.flatnonzero(np.isfinite(row)).astype(np.int_)
             for _, lengths in _dijkstra_blocks(adjacency, centers_array, limit=radius)

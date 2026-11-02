@@ -779,7 +779,7 @@ def write_laps(
     ``IntervalSet`` passed to a neurospatial ``epochs=`` keeps it too. For the
     same selection on both routes, pick one meaning: the half-open one with
     ``epochs=np.column_stack([iset.start, iset.end])`` (a plain array is
-    half-open), or the inclusive one with ``in_epochs(t, rows,
+    half-open), or the inclusive one with ``in_epochs(times, rows,
     closed="both")`` on ``np.column_stack([laps.start, laps.stop])`` for
     ``laps = read_intervals(nwbfile, interval_name="laps")`` (every row,
     including laps with no duration, which ``laps.windows`` leaves out).
@@ -912,7 +912,7 @@ def write_region_crossings(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> from neurospatial.behavior import detect_region_crossings  # doctest: +SKIP
     >>> crossings = detect_region_crossings(  # doctest: +SKIP
-    ...     env, times, positions, region_name="goal"
+    ...     env, times, positions, region="goal"
     ... )
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()

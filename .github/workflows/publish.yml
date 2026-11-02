@@ -110,13 +110,13 @@ jobs:
               np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
           ).with_metadata(units="cm")
           positions, times = simulate_trajectory_ou(
-              env, duration=300.0, speed_units="cm", seed=42
+              env, duration=300.0, speed_units="cm", rng=42
           )
           cell = PlaceCellModel(
-              env, center=np.array([30.0, 30.0]), width=8.0, max_rate=15.0, seed=42
+              env, center=np.array([30.0, 30.0]), width=8.0, max_rate=15.0, rng=42
           )
           spikes = generate_population_spikes(
-              [cell], times, positions, seed=42, show_progress=False
+              [cell], times, positions, rng=42, show_progress=False
           )[0]
           result = compute_spatial_rate(env, spikes, times, positions, bandwidth=5.0)
           peak = np.asarray(result.peak_location()).ravel()

@@ -45,7 +45,7 @@ VTE analysis:
 ...     env,
 ...     times,
 ...     positions,
-...     decision_region="center",
+...     region="center",
 ...     trials=trials,
 ...     window_duration=1.0,
 ... )  # doctest: +SKIP
@@ -158,7 +158,8 @@ class VTETrialResult(ResultMixin):
         (higher = slower, more VTE-like). None if session statistics not
         computed; NaN when ``mean_speed`` is NaN.
     vte_index : float or None
-        Combined VTE index: alpha * z_head_sweep + (1-alpha) * z_speed_inverse.
+        Combined VTE index: ``head_sweep_weight * z_head_sweep +
+        (1 - head_sweep_weight) * z_speed_inverse``.
         None if session statistics not computed; NaN when either z-score is
         NaN.
     is_vte : bool or None
@@ -907,7 +908,7 @@ def compute_vte_index(
     z_head_sweep: float,
     z_speed_inv: float,
     *,
-    alpha: float = 0.5,
+    head_sweep_weight: float = 0.5,
 ) -> float:
     """Compute combined VTE index.
 
@@ -917,8 +918,8 @@ def compute_vte_index(
         Z-scored head sweep magnitude.
     z_speed_inv : float
         Negated z-scored speed (higher = slower).
-    alpha : float, default=0.5
-        Weight for head sweep (1-alpha for speed), in [0, 1].
+    head_sweep_weight : float, default=0.5
+        Weight for head sweep (1-head_sweep_weight for speed), in [0, 1].
         Default 0.5 weights both equally.
 
     Returns
@@ -929,30 +930,32 @@ def compute_vte_index(
     Raises
     ------
     ValueError
-        If ``alpha`` is not in [0, 1].
+        If ``head_sweep_weight`` is not in [0, 1].
 
     Examples
     --------
     >>> from neurospatial.behavior.vte import compute_vte_index
-    >>> compute_vte_index(1.0, 1.0, alpha=0.5)
+    >>> compute_vte_index(1.0, 1.0, head_sweep_weight=0.5)
     1.0
-    >>> compute_vte_index(2.0, 0.0, alpha=1.0)  # Head sweep only
+    >>> compute_vte_index(2.0, 0.0, head_sweep_weight=1.0)  # Head sweep only
     2.0
     """
-    alpha = _validated_alpha(alpha, call="compute_vte_index")
-    return alpha * z_head_sweep + (1 - alpha) * z_speed_inv
+    head_sweep_weight = _validated_head_sweep_weight(
+        head_sweep_weight, call="compute_vte_index"
+    )
+    return head_sweep_weight * z_head_sweep + (1 - head_sweep_weight) * z_speed_inv
 
 
-def _validated_alpha(alpha: float, *, call: str) -> float:
+def _validated_head_sweep_weight(head_sweep_weight: float, *, call: str) -> float:
     """A head-sweep weight in [0, 1]."""
-    value = float(alpha)
+    value = float(head_sweep_weight)
     if not 0.0 <= value <= 1.0:
         msg = (
-            f"{call}() needs alpha in [0, 1]; got {alpha!r}.\n"
-            "Why: alpha weights the head-sweep z-score and 1 - alpha the "
-            "slowness z-score, so outside [0, 1] one of them counts against "
+            f"{call}() needs head_sweep_weight in [0, 1]; got {head_sweep_weight!r}.\n"
+            "Why: head_sweep_weight weights the head-sweep z-score and "
+            "1 - head_sweep_weight the slowness z-score, so outside [0, 1] one of them counts against "
             "VTE.\n"
-            "Fix: pass alpha=0.5 to weight both equally, 1.0 for head sweep "
+            "Fix: pass head_sweep_weight=0.5 to weight both equally, 1.0 for head sweep "
             "only or 0.0 for slowness only."
         )
         raise ValueError(msg)
@@ -1250,13 +1253,13 @@ def compute_vte_session(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    decision_region: str,
+    region: str,
     trials: Intervals[Any],
     window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
-    alpha: float = 0.5,
+    head_sweep_weight: float = 0.5,
     vte_threshold: float = 0.5,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
@@ -1274,7 +1277,7 @@ def compute_vte_session(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates for entire session, ``n_dims >= 2``. A row with
         a non-finite coordinate (NaN, for a lost frame) is a missing sample.
-    decision_region : str
+    region : str
         Name of decision region in env.regions.
     trials : Intervals or IntervalSet
         Trials from detect_trials(), read_trials() or a task log. Each
@@ -1293,8 +1296,8 @@ def compute_vte_session(
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s); finite and non-negative.
-    alpha : float, default=0.5
-        Weight for head sweep in VTE index (1-alpha for speed), in [0, 1].
+    head_sweep_weight : float, default=0.5
+        Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
         Default 0.5 weights both equally.
     vte_threshold : float, default=0.5
         Threshold for VTE classification (finite).
@@ -1349,11 +1352,11 @@ def compute_vte_session(
     Raises
     ------
     ValueError
-        If ``decision_region`` is not in ``env.regions``, if there are no
+        If ``region`` is not in ``env.regions``, if there are no
         samples, if ``times`` is not finite and strictly increasing, if
         ``break_before`` is not a Boolean array with one entry per sample, if
         positions has fewer than two coordinates (x and y), if
-        ``window_duration`` is not finite and positive, if ``alpha`` is not
+        ``window_duration`` is not finite and positive, if ``head_sweep_weight`` is not
         in [0, 1], or if ``vte_threshold`` is not finite.
 
     Warns
@@ -1365,7 +1368,7 @@ def compute_vte_session(
 
     Notes
     -----
-    A trial that never enters ``decision_region`` inside ``epochs`` (for
+    A trial that never enters ``region`` inside ``epochs`` (for
     example an error trial) or has fewer than three observed samples before
     the entry is expected data, not an error: it has NaN metrics and
     ``status`` ``"no_entry"`` or ``"too_few_samples"``, with no warning.
@@ -1421,7 +1424,7 @@ def compute_vte_session(
     ...     env,
     ...     np.concatenate(times),
     ...     np.vstack(positions),
-    ...     decision_region="center",
+    ...     region="center",
     ...     trials=Intervals(trials),
     ...     window_duration=0.5,
     ...     min_speed=5.0,
@@ -1465,9 +1468,9 @@ def compute_vte_session(
     )
     _require_region_mask(
         env,
-        decision_region,
+        region,
         operation="compute_vte_session()",
-        argument="decision_region",
+        argument="region",
     )
     from neurospatial.behavior._decision_windows import validated_window_duration
     from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
@@ -1475,7 +1478,9 @@ def compute_vte_session(
     window_duration = validated_window_duration(
         window_duration, name="window_duration", call="compute_vte_session"
     )
-    alpha = _validated_alpha(alpha, call="compute_vte_session")
+    head_sweep_weight = _validated_head_sweep_weight(
+        head_sweep_weight, call="compute_vte_session"
+    )
     if not np.isfinite(vte_threshold):
         msg = (
             f"compute_vte_session() needs a finite vte_threshold; got "
@@ -1496,7 +1501,7 @@ def compute_vte_session(
             headings, name="headings", n_samples=len(times), call="compute_vte_session"
         ),
     )
-    region_bins = env.bins_in_region(decision_region)
+    region_bins = env.bins_in_region(region)
     in_epochs = support.sample_in_epochs
     measured: list[VTETrialResult] = []
     for index, trial in enumerate(trials):
@@ -1525,7 +1530,9 @@ def compute_vte_session(
     for m, z_head_sweep, z_speed in zip(
         measured, z_head_sweeps, z_speed_inv, strict=True
     ):
-        vte_idx = compute_vte_index(float(z_head_sweep), float(z_speed), alpha=alpha)
+        vte_idx = compute_vte_index(
+            float(z_head_sweep), float(z_speed), head_sweep_weight=head_sweep_weight
+        )
         trial_results.append(
             replace(
                 m,

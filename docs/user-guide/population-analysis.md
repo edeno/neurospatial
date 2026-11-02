@@ -53,10 +53,10 @@ from neurospatial.encoding import (
 )
 from neurospatial.simulation import generate_poisson_spikes, linear_track_session
 
-session = linear_track_session(duration=120.0, n_place_cells=20, n_laps=10, seed=0)
+session = linear_track_session(duration=120.0, n_place_cells=20, n_laps=10, rng=0)
 env, times, positions = session.env, session.times, session.positions
 untuned = [
-    generate_poisson_spikes(np.full(len(times), 2.0), times, seed=100 + i)
+    generate_poisson_spikes(np.full(len(times), 2.0), times, rng=100 + i)
     for i in range(5)
 ]
 spike_times = [*session.spike_times, *untuned]  # units 0-19 tuned, 20-24 untuned
@@ -173,7 +173,7 @@ from neurospatial.encoding import (
 )
 from neurospatial.simulation import PlaceCellModel
 
-session = linear_track_session(duration=240.0, n_place_cells=16, n_laps=20, seed=1)
+session = linear_track_session(duration=240.0, n_place_cells=16, n_laps=20, rng=1)
 env, times, positions = session.env, session.times, session.positions
 change_time = 120.0
 moves = np.arange(16) % 2 == 1  # odd-numbered units remap
@@ -186,7 +186,7 @@ for unit, cell in enumerate(session.models):
         new_center = 20.0 + (cell.ground_truth["center"] - 20.0 + 80.0) % 160.0
         moved = replace(cell, center=new_center)
         rate = np.where(times < change_time, rate, moved.firing_rate(times, positions))
-    spike_times.append(generate_poisson_spikes(rate, times, seed=200 + unit))
+    spike_times.append(generate_poisson_spikes(rate, times, rng=200 + unit))
 unit_ids = np.arange(len(spike_times))  # your sorter's unit labels
 
 conditions = {"before": (0.0, change_time), "after": (change_time, float(times[-1]))}
@@ -348,7 +348,7 @@ have the same firing rates and differ only in which cells fire together.
 from neurospatial.decoding import bin_spikes_in_time
 
 rng = np.random.default_rng(1)  # rest burst times; spikes use their own seeds
-track = linear_track_session(duration=120.0, n_place_cells=1, n_laps=10, seed=3)
+track = linear_track_session(duration=120.0, n_place_cells=1, n_laps=10, rng=3)
 env, positions = track.env, track.positions
 times = track.times + 60.0  # running occupies 60-180 s of the session clock
 periods = {"pre_rest": (0.0, 60.0), "run": (60.0, 180.0), "post_rest": (180.0, 240.0)}
@@ -385,9 +385,9 @@ for unit, assembly in enumerate(assembly_of):
     else:
         run_rate = np.ones(len(times))
     spike_times.append(np.concatenate([
-        generate_poisson_spikes(pre_rates[unit], rest_clock, seed=300 + unit),
-        generate_poisson_spikes(run_rate, times, seed=400 + unit),
-        180.0 + generate_poisson_spikes(post_rates[unit], rest_clock, seed=500 + unit),
+        generate_poisson_spikes(pre_rates[unit], rest_clock, rng=300 + unit),
+        generate_poisson_spikes(run_rate, times, rng=400 + unit),
+        180.0 + generate_poisson_spikes(post_rates[unit], rest_clock, rng=500 + unit),
     ]))
 
 dt = 0.05  # 50 ms bins

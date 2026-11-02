@@ -86,7 +86,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,
     boundary_mode="reflect",
     speed_units="cm",
-    seed=202,
+    rng=202,
 )
 center = np.array([55.0, 25.0])
 model = PlaceCellModel(
@@ -98,7 +98,7 @@ model = PlaceCellModel(
     metric="euclidean",
 )
 spike_times = generate_poisson_spikes(
-    model.firing_rate(times, positions), times, refractory_period=0.002, seed=203
+    model.firing_rate(times, positions), times, refractory_period=0.002, rng=203
 )
 
 # %%

@@ -89,7 +89,7 @@ def _vte_session(env, times, positions, **kwargs):
         ]
     )
     options = {
-        "decision_region": "mid_area",
+        "region": "mid_area",
         "trials": trials,
         "window_duration": 10.0,
         "min_speed": 1.0,
@@ -109,7 +109,7 @@ _GOAL = np.array([100.0, 5.0])
 
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
-        env, t, p, region_name="mid_area", **kw
+        env, t, p, region="mid_area", **kw
     ),
     "detect_trials": lambda env, t, p, **kw: detect_trials(
         env, t, p, regions=["mid_area"], **kw
@@ -118,7 +118,7 @@ CALLS = {
         env, t, p, regions=["mid_area"], **kw
     ),
     "detect_goal_directed_runs": lambda env, t, p, **kw: detect_goal_directed_runs(
-        env, t, p, goal_region="mid_area", min_progress=5.0, **kw
+        env, t, p, region="mid_area", min_progress=5.0, **kw
     ),
     "segment_by_velocity": lambda env, t, p, **kw: segment_by_velocity(
         t, p, min_speed=1.0, min_duration=0.0, **kw
@@ -255,13 +255,11 @@ def test_disabling_the_gap_gate_is_silent(coarse_track, name):
 def test_detect_region_crossings_recovers_crossings_without_gap_gate(coarse_track):
     env, times, positions = coarse_track
     with pytest.warns(UserWarning, match="excluded ALL"):
-        assert (
-            detect_region_crossings(env, times, positions, region_name="mid_area") == []
-        )
+        assert detect_region_crossings(env, times, positions, region="mid_area") == []
     assert (
         len(
             detect_region_crossings(
-                env, times, positions, region_name="mid_area", max_gap=None
+                env, times, positions, region="mid_area", max_gap=None
             )
         )
         > 0

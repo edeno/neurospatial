@@ -46,9 +46,9 @@ class TestHeadDirectionCellModel:
 
     def test_random_direction_selection(self):
         """Test that direction is randomly chosen if not provided."""
-        hd1 = HeadDirectionCellModel(seed=42).ground_truth["preferred_direction"]
-        hd2 = HeadDirectionCellModel(seed=42).ground_truth["preferred_direction"]
-        hd3 = HeadDirectionCellModel(seed=123).ground_truth["preferred_direction"]
+        hd1 = HeadDirectionCellModel(rng=42).ground_truth["preferred_direction"]
+        hd2 = HeadDirectionCellModel(rng=42).ground_truth["preferred_direction"]
+        hd3 = HeadDirectionCellModel(rng=123).ground_truth["preferred_direction"]
 
         # Same seed should give same direction
         assert hd1 == hd2

@@ -93,7 +93,7 @@ sim_env = Environment.from_grid_mask(
 )
 sim_env = sim_env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    sim_env, duration=180.0, dt=0.02, speed_units="cm", speed_mean=15.0, seed=42
+    sim_env, duration=180.0, dt=0.02, speed_units="cm", speed_mean=15.0, rng=42
 )
 coverage = np.array([[times[0], 75.0], [95.0, times[-1]]])
 unit_ids = np.array([7, 42])
@@ -103,7 +103,7 @@ for center, seed in [([40.0, 50.0], 142), ([60.0, 50.0], 143)]:
         sim_env, center=center, width=12.0, max_rate=25.0, baseline_rate=0.5
     )
     spikes = generate_poisson_spikes(
-        model.firing_rate(times, positions), times, seed=seed
+        model.firing_rate(times, positions), times, rng=seed
     )
     observed = np.zeros(spikes.size, dtype=bool)
     for start, stop in coverage:

@@ -35,7 +35,7 @@ def test_validate_simulation_recovers_every_place_field(connected_arena_env):
         cell_type="place",
         width=12.0,
         max_rate=20.0,
-        seed=1,
+        rng=1,
         show_progress=False,
     )
     result = validate_simulation(session)
@@ -54,9 +54,7 @@ def test_place_field_detection_accuracy():
     one field width (11.1 cm) of its center. Five minutes visit under half of
     the bins and leave some fields undersampled.
     """
-    session = open_field_session(
-        duration=900.0, n_place_cells=5, seed=42, max_rate=50.0
-    )
+    session = open_field_session(duration=900.0, n_place_cells=5, rng=42, max_rate=50.0)
     env = session.env
     errors = []
     for model, spike_times in zip(session.models, session.spike_times, strict=True):
@@ -92,12 +90,12 @@ def test_place_field_detection_with_longer_duration(connected_arena_env):
                 env,
                 duration=duration,
                 speed_units="cm",
-                seed=int(trajectory_stream.generate_state(1)[0]),
+                rng=int(trajectory_stream.generate_state(1)[0]),
             )
             spikes = generate_poisson_spikes(
                 model.firing_rate(times, positions),
                 times,
-                seed=int(spike_stream.generate_state(1)[0]),
+                rng=int(spike_stream.generate_state(1)[0]),
             )
             rate_map = compute_spatial_rate(env, spikes, times, positions).firing_rate
             peak = env.bin_centers[np.nanargmax(rate_map)]
@@ -111,7 +109,7 @@ def test_place_field_detection_with_longer_duration(connected_arena_env):
 
 def test_full_pipeline_reproducibility(connected_arena_env):
     """The same seed reproduces the trajectory, the spikes and the ground truth."""
-    kwargs = {"duration": 30.0, "n_cells": 5, "cell_type": "mixed", "seed": 42}
+    kwargs = {"duration": 30.0, "n_cells": 5, "cell_type": "mixed", "rng": 42}
     first = simulate_session(connected_arena_env, show_progress=False, **kwargs)
     second = simulate_session(connected_arena_env, show_progress=False, **kwargs)
 

@@ -38,7 +38,7 @@ def test_filtered_gap_cohort_preserves_input_order_and_duplicate_events():
         spikes,
         events,
         (-0.5, 0.5),
-        bin_size=0.25,
+        dt=0.25,
         epochs=[[1.0, 4.0], [7.0, 9.0]],
         spike_window=[[0.0, 5.0], [7.0, 10.0]],
     )
@@ -64,7 +64,7 @@ def test_exact_left_edge_is_included_and_right_edge_is_excluded():
             for event in events
         ]
     )
-    result = peri_event_histogram(spikes, events, (-0.5, 0.5), bin_size=0.25)
+    result = peri_event_histogram(spikes, events, (-0.5, 0.5), dt=0.25)
 
     raster_ax, _ = plot_peri_event_response(spikes, events, result)
 
@@ -82,7 +82,7 @@ def test_trailing_partial_bin_is_omitted_from_raster_and_axes():
     spikes = np.concatenate(
         [event + np.array([-0.5, -0.2, 0.1, 0.4, 0.45]) for event in events]
     )
-    result = peri_event_histogram(spikes, events, (-0.5, 0.5), bin_size=0.3)
+    result = peri_event_histogram(spikes, events, (-0.5, 0.5), dt=0.3)
 
     raster_ax, histogram_ax = plot_peri_event_response(spikes, events, result)
 
@@ -97,7 +97,7 @@ def test_partial_tail_exposure_still_uses_original_full_window():
     spikes = np.array([1.0, 2.0, 3.0])
     # The complete bins end at event + 0.4, but exposure needs event + 0.5.
     result = peri_event_histogram(
-        spikes, events, (-0.5, 0.5), bin_size=0.3, spike_window=(0.0, 3.45)
+        spikes, events, (-0.5, 0.5), dt=0.3, spike_window=(0.0, 3.45)
     )
 
     raster_ax, _ = plot_peri_event_response(spikes, events, result)
@@ -111,7 +111,7 @@ def test_large_clock_membership_uses_absolute_bounds_before_subtraction():
     spikes = np.concatenate([event + np.array([0.0, 0.2, 0.3]) for event in events])
     # A relative < 0.3 filter would incorrectly include the exact stop spike.
     assert (events[0] + 0.3) - events[0] < 0.3
-    result = peri_event_histogram(spikes, events, (0.0, 0.3), bin_size=0.1)
+    result = peri_event_histogram(spikes, events, (0.0, 0.3), dt=0.1)
 
     raster_ax, _ = plot_peri_event_response(spikes, events, result)
 
@@ -123,7 +123,7 @@ def test_large_clock_selected_left_edge_remains_visible():
     events = np.array([1e9, 1e9 + 10])
     spikes = events - 0.1
     assert spikes[0] - events[0] < -0.1  # floating-point display rounding
-    result = peri_event_histogram(spikes, events, (-0.1, 0.2), bin_size=0.1)
+    result = peri_event_histogram(spikes, events, (-0.1, 0.2), dt=0.1)
 
     raster_ax, _ = plot_peri_event_response(spikes, events, result)
 
@@ -150,9 +150,7 @@ def test_selected_unit_label_and_supplied_axes_are_preserved():
 
     events = np.array([1.0, 2.0])
     trains = SpikeTrains([np.array([1.1, 2.1]), np.array([0.8, 1.8])], unit_ids=[42, 7])
-    population = population_peri_event_histogram(
-        trains, events, (-0.5, 0.5), bin_size=0.25
-    )
+    population = population_peri_event_histogram(trains, events, (-0.5, 0.5), dt=0.25)
     result = population.sel(unit_id=7)
     fig, axes = plt.subplots(2, 1)
 
@@ -160,7 +158,7 @@ def test_selected_unit_label_and_supplied_axes_are_preserved():
         trains.sel(unit_id=7),
         events,
         result,
-        axes=axes,
+        ax=axes,
         show_sem=False,
         as_rate=False,
         color="purple",
@@ -183,7 +181,7 @@ def test_selected_unit_label_and_supplied_axes_are_preserved():
 def test_one_event_has_nan_sem_but_draws_response():
     events = np.array([1.0])
     spikes = np.array([1.0])
-    result = peri_event_histogram(spikes, events, (-0.5, 0.5), bin_size=0.25)
+    result = peri_event_histogram(spikes, events, (-0.5, 0.5), dt=0.25)
 
     raster_ax, histogram_ax = plot_peri_event_response(spikes, events, result)
 
@@ -257,7 +255,7 @@ def test_invalid_axes_pair_rejected(invalid, error):
         invalid = (ax, ax)
 
     with pytest.raises(error, match="two distinct Matplotlib Axes"):
-        plot_peri_event_response(spikes, events, result, axes=invalid)
+        plot_peri_event_response(spikes, events, result, ax=invalid)
 
 
 def test_no_complete_bin_is_refused_when_computing():
@@ -265,7 +263,7 @@ def test_no_complete_bin_is_refused_when_computing():
     spikes = np.array([1.0])
 
     with pytest.raises(ValueError, match="no complete bin fits"):
-        peri_event_histogram(spikes, events, (0.0, 0.1), bin_size=0.25)
+        peri_event_histogram(spikes, events, (0.0, 0.1), dt=0.25)
 
 
 def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
@@ -291,7 +289,7 @@ def test_plotting_does_not_retain_or_mutate_raw_inputs_or_result_arrays():
         "sem",
         "n_events",
         "window",
-        "bin_size",
+        "dt",
         "unit_id",
         "n_events_dropped",
         "event_indices",

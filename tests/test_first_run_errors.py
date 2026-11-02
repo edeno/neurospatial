@@ -405,17 +405,17 @@ def test_segmentation_unknown_region(site, recording):
     env = env.with_regions(region_builder)
     calls = {
         "crossing": lambda: detect_region_crossings(
-            env, r.times, r.positions, region_name="home"
+            env, r.times, r.positions, region="home"
         ),
         "lap": lambda: detect_laps(
             r.env, r.times, r.positions, method="region", start_region="home"
         ),
         "trials": lambda: detect_trials(env, r.times, r.positions, regions=["home"]),
         "goal": lambda: detect_goal_directed_runs(
-            env, r.times, r.positions, goal_region="home"
+            env, r.times, r.positions, region="home"
         ),
         "boundary": lambda: distance_to_boundary(
-            env, r.positions, boundary_type="region", region_name="home"
+            env, r.positions, boundary_type="region", region="home"
         ),
         "distance": lambda: env.distance_to(region="home"),
     }
@@ -483,7 +483,7 @@ def test_psth_window_in_ms_warns(recording):
     r = recording
     with pytest.warns(UserWarning, match=r"window=\(-0.5, 1.0\)"):
         peri_event_histogram(
-            r.spike_times, np.array([20.0, 30.0]), window=(-500, 1000), bin_size=1.0
+            r.spike_times, np.array([20.0, 30.0]), window=(-500, 1000), dt=1.0
         )
     with warnings.catch_warnings(record=True) as normal:
         warnings.simplefilter("always")

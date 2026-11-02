@@ -35,7 +35,7 @@ def _share_coincident_edges(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Give window edges that agree up to float rounding one shared value.
 
-    Adjacent windows of samples ``bin_size`` apart meet at an edge computed
+    Adjacent windows of samples ``dt`` apart meet at an edge computed
     twice, as ``s[k] + stop`` and ``s[k + 1] + start``. Rounding can leave a
     gap or an overlap of a few ulp between the two, which counts an event on
     that edge at no sample or at two. Edges within a few ulp of each other
@@ -310,8 +310,8 @@ def event_count_in_window(
     Windows are half-open, ``[time + start, time + stop)``: an
     event exactly at the start is counted and one exactly at the stop is not.
     Window edges that agree up to float rounding are treated as one instant,
-    so windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
-    bin_size / 2)`` tile time: each event inside the samples' windows counts
+    so windows of samples ``dt`` apart with ``window=(-dt / 2,
+    dt / 2)`` tile time: each event inside the samples' windows counts
     at exactly one sample, even when events and samples share a clock grid
     and fall on bin edges. Events outside every window are not counted.
 
@@ -412,8 +412,8 @@ def event_indicator(
     window : tuple[float, float]
         Time window (start, stop) relative to each sample time (seconds), half-open
         ``[time + start, time + stop)``. Required: no window is
-        right for every sampling rate. For time-binned samples ``bin_size``
-        apart, ``(-bin_size / 2, bin_size / 2)`` marks each event at exactly
+        right for every sampling rate. For time-binned samples ``dt``
+        apart, ``(-dt / 2, dt / 2)`` marks each event at exactly
         one sample. E.g., (-1.0, 0.0) matches events in the previous 1 second.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         When events were recorded: half-open [start, stop) windows in seconds
@@ -437,7 +437,7 @@ def event_indicator(
     -----
     Common use cases:
 
-    - Impulse regressor for time-binned data: ``window=(-bin_size/2, bin_size/2)``
+    - Impulse regressor for time-binned data: ``window=(-dt/2, dt/2)``
       marks each event at the one sample whose bin holds it
     - Event presence detection: ``window=(-0.1, 0.1)`` for events within 100ms
 

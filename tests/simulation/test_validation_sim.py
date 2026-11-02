@@ -26,7 +26,7 @@ def test_plot_session_summary_labels(simple_2d_env):
     from neurospatial.simulation import plot_session_summary
 
     session = simulate_session(
-        simple_2d_env, duration=30, n_cells=5, seed=0, show_progress=False
+        simple_2d_env, duration=30, n_cells=5, rng=0, show_progress=False
     )
     fig, axes = plot_session_summary(session, unit_ids=[1, 3])
     assert [ax.get_title() for ax in axes[2:4]] == ["Cell 1", "Cell 3"]
@@ -63,7 +63,7 @@ def place_session(connected_arena_env):
         cell_type="place",
         width=12.0,
         max_rate=20.0,
-        seed=0,
+        rng=0,
         show_progress=False,
     )
 
@@ -279,7 +279,7 @@ def test_default_center_error_threshold(connected_arena_env):
         duration=180.0,
         n_cells=2,
         cell_type="place",
-        seed=0,
+        rng=0,
         show_progress=False,
     )
 
@@ -353,7 +353,7 @@ def test_true_field_is_the_simulated_field(hairpin_track_env):
         metric="geodesic",
         width=15.0,
         max_rate=30.0,
-        seed=0,
+        rng=0,
         show_progress=False,
     )
     report = validate_simulation(session)
@@ -377,7 +377,7 @@ def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
         cell_type="mixed",
         width=15.0,
         max_rate=30.0,
-        seed=0,
+        rng=0,
         show_progress=False,
     )
     cell_types = [session.ground_truth[int(u)]["cell_type"] for u in session.unit_ids]
@@ -400,7 +400,7 @@ def test_mixed_sessions_validate_their_place_cells(connected_arena_env):
 def test_border_session_passes_on_its_recovered_place_cells():
     """Border cells cannot fail a session whose place cells are all recovered."""
     session = border_cell_session(
-        duration=300.0, n_border_cells=3, n_place_cells=4, seed=0
+        duration=300.0, n_border_cells=3, n_place_cells=4, rng=0
     )
     report = validate_simulation(session)
     assert report.unit_status[:3] == ("excluded",) * 3
@@ -442,7 +442,7 @@ class TestPlotSessionSummary:
         from neurospatial.simulation import linear_track_session
         from neurospatial.simulation.validation import plot_session_summary
 
-        session = linear_track_session(duration=30, n_place_cells=3, n_laps=4, seed=0)
+        session = linear_track_session(duration=30, n_place_cells=3, n_laps=4, rng=0)
         fig, axes = plot_session_summary(session)
         try:
             trajectory = axes[0]
@@ -515,7 +515,7 @@ class TestPlotSessionSummary:
             duration=30.0,
             n_cells=5,
             cell_type="place",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -538,7 +538,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=5,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -562,7 +562,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=10,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -585,7 +585,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=10,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -608,7 +608,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=5,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -632,7 +632,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=5.0,  # Very short, may have empty trains
             n_cells=3,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -653,7 +653,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=5,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -680,7 +680,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=5,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -703,7 +703,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=3,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -731,7 +731,7 @@ class TestPlotSessionSummary:
             simple_2d_env,
             duration=30.0,
             n_cells=15,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -766,7 +766,7 @@ def test_default_thresholds_separate_correct_from_misspecified_fields():
     """Correct ground truth passes; a center one width off, or a 3x width, fails."""
     from neurospatial.simulation import open_field_session
 
-    session = open_field_session(duration=600.0, n_place_cells=4, seed=0)
+    session = open_field_session(duration=600.0, n_place_cells=4, rng=0)
     report = validate_simulation(session)
     assert report.unit_status == ("passed",) * 4
     widths = np.array([session.ground_truth[int(u)]["width"] for u in session.unit_ids])

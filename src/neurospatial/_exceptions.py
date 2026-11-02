@@ -90,7 +90,7 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         Requested region name; ``None`` reports a missing name with guidance.
     available : list of str, optional
         Available region names, used to suggest a close match.
-    argument : str or None, default "region_name"
+    argument : str or None, default "region"
         Calling function's argument name, shown in the corrected call. None
         for a lookup by key, such as ``env.regions[name]``, which suggests
         the corrected name alone.
@@ -106,7 +106,7 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
     ... except KeyError as exc:
     ...     print(str(exc))
     Region 'goal' not found.
-    Fix: create regions = Regions(env.regions.values()); regions.add('goal', point=(x, y)) (or polygon=...); env = env.with_regions(regions), then pass region_name='goal'.
+    Fix: create regions = Regions(env.regions.values()); regions.add('goal', point=(x, y)) (or polygon=...); env = env.with_regions(regions), then pass region='goal'.
     """
 
     def __init__(
@@ -114,7 +114,7 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         name: str | None,
         *,
         available: list[str] | None = None,
-        argument: str | None = "region_name",
+        argument: str | None = "region",
         in_list: bool = False,
     ) -> None:
         def use(region: str) -> str:

@@ -23,7 +23,7 @@ def box():
 
 def _untuned(times, n_spikes, n_units, seed):
     rate = np.full(len(times), n_spikes / times[-1])
-    return [generate_poisson_spikes(rate, times, seed=seed + i) for i in range(n_units)]
+    return [generate_poisson_spikes(rate, times, rng=seed + i) for i in range(n_units)]
 
 
 def _spikes_in_map(rates):
@@ -81,7 +81,7 @@ def test_screen_rejects_untuned_cells_that_pass_uncorrected(box):
 def test_place_cell_passes_after_correction(box):
     env, times, positions = box
     field = 2.0 * np.exp(-np.sum((positions - 50.0) ** 2, axis=1) / (2 * 10.0**2))
-    spikes = generate_poisson_spikes(field + 0.05, times, seed=7)
+    spikes = generate_poisson_spikes(field + 0.05, times, rng=7)
     rates = compute_spatial_rates(env, [spikes], times, positions, bandwidth=5.0)
     corrected = rates.spatial_information() - rates.spatial_information_bias()
     assert corrected[0] > 1.0

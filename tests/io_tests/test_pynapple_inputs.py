@@ -161,9 +161,7 @@ def test_population_peri_event_histogram_keeps_unit_tables(group):
 
     events = np.array([10.0, 20.0, 30.0])
     for spikes in (group, SpikeTrains(group)):
-        result = population_peri_event_histogram(
-            spikes, events, (-0.5, 0.5), bin_size=0.1
-        )
+        result = population_peri_event_histogram(spikes, events, (-0.5, 0.5), dt=0.1)
         assert result.unit_ids.tolist() == [5, 6, 7]
         assert result.unit_table["region"].tolist() == ["CA1", "CA3", "CA1"]
 
@@ -651,8 +649,8 @@ def test_one_units_tsd_spike_times_are_read_as_timestamps(nap, session):
         )
         events = np.array([10.0, 20.0, 30.0])
         np.testing.assert_array_equal(
-            peri_event_histogram(train, events, (-1.0, 1.0), bin_size=0.1).histogram,
-            peri_event_histogram(spikes, events, (-1.0, 1.0), bin_size=0.1).histogram,
+            peri_event_histogram(train, events, (-1.0, 1.0), dt=0.1).histogram,
+            peri_event_histogram(spikes, events, (-1.0, 1.0), dt=0.1).histogram,
         )
 
 
@@ -826,7 +824,7 @@ def test_compute_vte_session_reads_an_intervalset(nap):
             env,
             np.concatenate(times),
             np.vstack(positions),
-            decision_region="center",
+            region="center",
             trials=trials,
             window_duration=0.5,
             min_speed=5.0,

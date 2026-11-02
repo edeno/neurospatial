@@ -53,7 +53,7 @@ Decision analysis:
 ...     positions,
 ...     decision_region="center",
 ...     goal_regions=["left", "right"],
-...     pre_window=1.0,
+...     window_duration=1.0,
 ... )  # doctest: +SKIP
 >>> if result.pre_decision.heading_circular_variance > 0.5:
 ...     print("High heading variability - possible deliberation")  # doctest: +SKIP
@@ -1588,7 +1588,7 @@ def compute_decision_analysis(
     *,
     decision_region: str,
     goal_regions: str | list[str],
-    pre_window: float = 1.0,
+    window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
@@ -1614,7 +1614,7 @@ def compute_decision_analysis(
         Names of goal regions (e.g., ["left", "right"]); a single name is a
         one-goal list. With one goal there is no decision boundary and
         ``result.boundary`` is None.
-    pre_window : float, default=1.0
+    window_duration : float, default=1.0
         Duration of pre-decision window to analyze (seconds); finite and
         positive.
     min_speed : float or None, default=None
@@ -1672,7 +1672,7 @@ def compute_decision_analysis(
         If positions and times have different lengths, if there are no
         samples, if ``times`` is not finite and strictly increasing, if
         ``break_before`` is not a Boolean array with one entry per sample, or
-        if ``pre_window`` is not finite and positive.
+        if ``window_duration`` is not finite and positive.
 
     Notes
     -----
@@ -1747,8 +1747,8 @@ def compute_decision_analysis(
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
         columns="xy",
     )
-    pre_window = validated_window_duration(
-        pre_window, name="pre_window", call="compute_decision_analysis"
+    window_duration = validated_window_duration(
+        window_duration, name="window_duration", call="compute_decision_analysis"
     )
 
     # Validate regions exist
@@ -1793,7 +1793,7 @@ def compute_decision_analysis(
         positions,
         support,
         entry_time,
-        pre_window,
+        window_duration,
         min_speed=min_speed,
         speed=validated_motion(speed, name="speed", n_samples=len(times), call=call),
         headings=validated_motion(

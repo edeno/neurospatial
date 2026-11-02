@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial.simulation._seeds import _concrete_rng
 from neurospatial.simulation.models.place_cells import (
     TRACK_PLACE_FIELD_PEAK_HZ,
     TRACK_PLACE_FIELD_WIDTH_CM,
@@ -36,7 +38,7 @@ def open_field_session(
     arena_size: float = 100.0,
     bin_size: float = 2.0,
     n_place_cells: int = 50,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     **kwargs: Any,
 ) -> SimulationSession:
     """Generate standard open field arena simulation.
@@ -55,8 +57,8 @@ def open_field_session(
         Spatial bin size in cm (default: 2.0).
     n_place_cells : int, optional
         Number of place cells (default: 50).
-    seed : int | None, optional
-        Random seed for reproducibility (default: None).
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng`` (default: None).
     **kwargs : Any
         Additional parameters passed to PlaceCellModel. Common options:
         - max_rate : float - Peak firing rate in Hz (default: 12.4, see
@@ -101,7 +103,7 @@ def open_field_session(
 
     >>> from neurospatial.simulation import open_field_session, validate_simulation
     >>> session = open_field_session(
-    ...     duration=180.0, bin_size=5.0, n_place_cells=3, seed=0
+    ...     duration=180.0, bin_size=5.0, n_place_cells=3, rng=0
     ... )
     >>> report = validate_simulation(session)
     >>> report.unit_status
@@ -112,7 +114,7 @@ def open_field_session(
     >>> from neurospatial.simulation import open_field_session, plot_session_summary
     >>> import matplotlib.pyplot as plt
     >>> session = open_field_session(
-    ...     duration=5.0, n_place_cells=3, seed=42
+    ...     duration=5.0, n_place_cells=3, rng=42
     ... )  # doctest: +SKIP
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -171,7 +173,7 @@ def open_field_session(
         cell_type="place",
         trajectory_method="ou",
         coverage="uniform",
-        seed=seed,
+        rng=rng,
         show_progress=False,  # Disable progress bar for convenience function
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
@@ -184,7 +186,7 @@ def linear_track_session(
     bin_size: float = 1.0,
     n_place_cells: int = 40,
     n_laps: int = 20,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     **kwargs: Any,
 ) -> SimulationSession:
     """Generate linear track simulation with lap-based running.
@@ -208,8 +210,8 @@ def linear_track_session(
     n_laps : int, optional
         Number of one-way traversals (default: 20), alternating outbound and
         inbound starting outbound. Two traversals form one out-and-back cycle.
-    seed : int | None, optional
-        Random seed for reproducibility (default: None).
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng`` (default: None).
     **kwargs : Any
         Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm,
         default 17.5) and ``max_rate`` (Hz, default 14.5), the CA1
@@ -257,9 +259,7 @@ def linear_track_session(
     one minute with six traversals, approximately 20 cm/s on the 200 cm track:
 
     >>> from neurospatial.simulation import linear_track_session, validate_simulation
-    >>> session = linear_track_session(
-    ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
-    ... )
+    >>> session = linear_track_session(duration=60.0, n_place_cells=3, n_laps=6, rng=42)
     >>> report = validate_simulation(session)
     >>> print(f"Validation: {report.passed}")
     Validation: True
@@ -340,7 +340,7 @@ def linear_track_session(
         trajectory_method="laps",
         coverage="uniform",
         n_laps=n_laps,
-        seed=seed,
+        rng=rng,
         show_progress=False,  # Disable progress bar for convenience function
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
@@ -351,7 +351,7 @@ def tmaze_alternation_session(
     duration: float = 300.0,
     n_trials: int = 20,
     n_place_cells: int = 60,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> SimulationSession:
     """Generate T-maze spatial alternation task simulation.
 
@@ -369,8 +369,8 @@ def tmaze_alternation_session(
         Number of alternation trials (default: 20).
     n_place_cells : int, optional
         Number of place cells (default: 60).
-    seed : int | None, optional
-        Random seed for reproducibility (default: None).
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng`` (default: None).
 
     Returns
     -------
@@ -408,7 +408,7 @@ def tmaze_alternation_session(
     Check trial alternation pattern:
 
     >>> from neurospatial.simulation import tmaze_alternation_session
-    >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, seed=42)
+    >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, rng=42)
     >>> trial_choices = session.metadata["trial_choices"]
     >>> len(trial_choices)
     3
@@ -423,7 +423,7 @@ def tmaze_alternation_session(
     ... )
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
     >>> session = tmaze_alternation_session(  # doctest: +SKIP
-    ...     duration=5.0, n_trials=3, n_place_cells=3, seed=42
+    ...     duration=5.0, n_trials=3, n_place_cells=3, rng=42
     ... )
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -459,7 +459,7 @@ def tmaze_alternation_session(
 
     Each trial runs from the end of the stem to the end of the chosen arm and
     back. Choices alternate perfectly, starting with a random first choice
-    determined by the seed, so trial ``i`` visits the arm
+    determined by the rng, so trial ``i`` visits the arm
     ``trial_choices[i]``.
 
     Session timing preserves ``n_trials`` round trips and fixed 0.5 s pauses
@@ -505,8 +505,11 @@ def tmaze_alternation_session(
     )
 
     # Perfect alternation from a seeded first choice.
-    rng = np.random.default_rng(seed)
-    first_choice = str(rng.choice(["left", "right"]))
+    # Copy the generator so the choice and the session start from the same
+    # state, as they do when ``rng`` is an int.
+    rng = _concrete_rng(rng)
+    choice_rng = np.random.default_rng(copy.deepcopy(rng))
+    first_choice = str(choice_rng.choice(["left", "right"]))
     second_choice = "right" if first_choice == "left" else "left"
     trial_choices = [
         first_choice if i % 2 == 0 else second_choice for i in range(n_trials)
@@ -534,7 +537,7 @@ def tmaze_alternation_session(
         inbound_path=round_trip(second_choice),
         width=TRACK_PLACE_FIELD_WIDTH_CM,  # linear-track CA1 fields
         max_rate=TRACK_PLACE_FIELD_PEAK_HZ,
-        seed=seed,
+        rng=rng,
         show_progress=False,  # Disable progress bar for convenience function
     )
 
@@ -552,7 +555,7 @@ def border_cell_session(
     n_border_cells: int = 30,
     n_place_cells: int = 20,
     distance_tolerance: float | None = None,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> SimulationSession:
     """Generate session with border and place cells.
 
@@ -580,8 +583,8 @@ def border_cell_session(
         Standard deviation in cm of every border cell's distance tuning
         (``BoundaryVectorCellModel(distance_tolerance=...)``). None (default)
         uses the model's rule, ``preferred_distance / 12 + 8`` cm.
-    seed : int | None, optional
-        Random seed for reproducibility (default: None). The trajectory, the
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng`` (default: None). The trajectory, the
         cells' tuning and the spikes draw from independent streams spawned
         from it.
 
@@ -620,7 +623,7 @@ def border_cell_session(
     Each unit's ground truth says what it is:
 
     >>> session = border_cell_session(
-    ...     duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
+    ...     duration=5.0, n_border_cells=3, n_place_cells=2, rng=42
     ... )
     >>> [truth["cell_type"] for truth in session.ground_truth.values()]
     ['boundary_vector', 'boundary_vector', 'boundary_vector', 'place', 'place']
@@ -633,7 +636,7 @@ def border_cell_session(
     ... )
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
     >>> session = border_cell_session(  # doctest: +SKIP
-    ...     duration=60.0, n_border_cells=3, n_place_cells=3, seed=42
+    ...     duration=60.0, n_border_cells=3, n_place_cells=3, rng=42
     ... )
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -677,7 +680,10 @@ def border_cell_session(
     """
     # Import here to avoid circular dependencies
 
-    from neurospatial.simulation._seeds import _stream_seeds
+    from neurospatial.simulation._seeds import (
+        _recorded_rng,
+        _stream_seeds,
+    )
     from neurospatial.simulation.models import PlaceCellModel
     from neurospatial.simulation.session import (
         _border_cells,
@@ -701,19 +707,20 @@ def border_cell_session(
     env = _square_arena(arena_size, bin_size)
 
     # Independent streams for the trajectory, the cells' tuning and the spikes.
-    trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)
+    rng = _concrete_rng(rng)
+    trajectory_seed, field_seed, spike_seed = _stream_seeds(rng, 3)
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, speed_units="cm", seed=trajectory_seed
+        env, duration=duration, speed_units="cm", rng=trajectory_seed
     )
 
-    rng = np.random.default_rng(field_seed)
+    field_rng = np.random.default_rng(field_seed)
     border_params = (
         {} if distance_tolerance is None else {"distance_tolerance": distance_tolerance}
     )
-    models = _border_cells(env, n_border_cells, rng, border_params)
+    models = _border_cells(env, n_border_cells, field_rng, border_params)
     models.extend(
         PlaceCellModel(env, center=center)
-        for center in _field_centers(env, n_place_cells, "uniform", rng)
+        for center in _field_centers(env, n_place_cells, "uniform", field_rng)
     )
 
     metadata = {
@@ -727,7 +734,7 @@ def border_cell_session(
         "cell_type": "mixed_border_place",
         "trajectory_method": "ou",
         "coverage": "uniform",
-        "seed": seed,
+        "rng": _recorded_rng(rng),
     }
     return _simulated_session(
         env,
@@ -746,7 +753,7 @@ def grid_cell_session(
     arena_size: float = 150.0,
     grid_spacing: float = 41.0,
     n_grid_cells: int = 40,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> SimulationSession:
     """Generate session with grid cells (2D only).
 
@@ -767,8 +774,8 @@ def grid_cell_session(
         dorsal-most rat grid cells; see ``GridCellModel``).
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
-    seed : int | None, optional
-        Random seed for reproducibility (default: None). The trajectory, the
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng`` (default: None). The trajectory, the
         cells' phases and orientations, and the spikes draw from independent
         streams spawned from it.
 
@@ -806,7 +813,7 @@ def grid_cell_session(
 
     >>> from neurospatial.simulation import grid_cell_session
     >>> session = grid_cell_session(
-    ...     duration=5.0, grid_spacing=40.0, n_grid_cells=3, seed=42
+    ...     duration=5.0, grid_spacing=40.0, n_grid_cells=3, rng=42
     ... )
     >>> session.metadata["grid_spacing"]
     40.0
@@ -816,7 +823,7 @@ def grid_cell_session(
     >>> from neurospatial.simulation import grid_cell_session, plot_session_summary
     >>> import matplotlib.pyplot as plt
     >>> session = grid_cell_session(
-    ...     duration=5.0, n_grid_cells=3, seed=42
+    ...     duration=5.0, n_grid_cells=3, rng=42
     ... )  # doctest: +SKIP
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -860,7 +867,10 @@ def grid_cell_session(
     creates a realistic population of grid cells from the same module.
     """
     # Import here to avoid circular dependencies
-    from neurospatial.simulation._seeds import _stream_seeds
+    from neurospatial.simulation._seeds import (
+        _recorded_rng,
+        _stream_seeds,
+    )
     from neurospatial.simulation.models import GridCellModel
     from neurospatial.simulation.session import _simulated_session
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -882,19 +892,20 @@ def grid_cell_session(
 
     # Independent streams for the trajectory, the cells' phases and
     # orientations, and the spikes.
-    trajectory_seed, field_seed, spike_seed = _stream_seeds(seed, 3)
+    rng = _concrete_rng(rng)
+    trajectory_seed, field_seed, spike_seed = _stream_seeds(rng, 3)
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, speed_units="cm", seed=trajectory_seed
+        env, duration=duration, speed_units="cm", rng=trajectory_seed
     )
 
     # Phases from bin centers spread over the arena, in a random order, and
     # random orientations.
-    rng = np.random.default_rng(field_seed)
+    field_rng = np.random.default_rng(field_seed)
     step = max(1, env.n_bins // n_grid_cells)
     # Copy: shuffling a view would permute the environment's own bin centers.
     phase_centers = env.bin_centers[::step][:n_grid_cells].copy()
-    rng.shuffle(phase_centers)
-    orientations = rng.uniform(0, np.pi / 3, size=n_grid_cells)
+    field_rng.shuffle(phase_centers)
+    orientations = field_rng.uniform(0, np.pi / 3, size=n_grid_cells)
     models: list[NeuralModel] = [
         GridCellModel(
             env,
@@ -915,7 +926,7 @@ def grid_cell_session(
         "cell_type": "grid",
         "trajectory_method": "ou",
         "coverage": "uniform",
-        "seed": seed,
+        "rng": _recorded_rng(rng),
     }
     return _simulated_session(
         env,

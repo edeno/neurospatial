@@ -114,7 +114,7 @@ Case = Callable[[Joined, np.ndarray, dict], Any]
 
 PAUSE_CASES: dict[str, Case] = {
     "detect_region_crossings": lambda r, t, kw: detect_region_crossings(
-        r.env, t, r.positions, region_name="target", **kw
+        r.env, t, r.positions, region="target", **kw
     ),
     "segment_by_velocity": lambda r, t, kw: segment_by_velocity(
         t, r.positions, min_speed=5.0, min_duration=0.1, **kw
@@ -123,7 +123,7 @@ PAUSE_CASES: dict[str, Case] = {
         r.env, t, r.positions, regions=["source", "target"], **kw
     ),
     "detect_goal_directed_runs": lambda r, t, kw: detect_goal_directed_runs(
-        r.env, t, r.positions, goal_region="target", min_progress=1.0, **kw
+        r.env, t, r.positions, region="target", min_progress=1.0, **kw
     ),
     "detect_region_visits": lambda r, t, kw: detect_region_visits(
         r.env, t, r.positions, regions=["source", "target"], **kw

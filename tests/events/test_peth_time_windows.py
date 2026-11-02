@@ -53,8 +53,8 @@ def test_flat_rate_recovered_at_recording_edges(event_recording, population):
     events = np.random.default_rng(0).uniform(0, 1200, 200)
     function = population_peri_event_histogram if population else peri_event_histogram
     spike_input = [spikes, spikes] if population else spikes
-    observed = function(spike_input, events, (-1, 1), bin_size=0.1, epochs=epochs)
-    naive = function(spike_input, events, (-1, 1), bin_size=0.1)
+    observed = function(spike_input, events, (-1, 1), dt=0.1, epochs=epochs)
+    naive = function(spike_input, events, (-1, 1), dt=0.1)
     rate = observed.mean_firing_rate if population else observed.firing_rate
     naive_rate = naive.mean_firing_rate if population else naive.firing_rate
     np.testing.assert_allclose(rate, 10.0, rtol=0.01)
@@ -110,14 +110,14 @@ def test_defaults_keep_all_events(event_recording):
 
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize(
-    ("window", "bin_size", "spikes", "expected"),
+    ("window", "dt", "spikes", "expected"),
     [
         ((0.1, 0.3), 0.1, [0.1, 0.2, 0.3], [1, 1]),
         ((0.0, 1.05), 0.25, [0.99, 1.0, 1.04], [0, 0, 0, 1]),
         ((1e9 + 0.1, 1e9 + 0.3), 0.1, [1e9 + 0.1, 1e9 + 0.3], [1, 0]),
     ],
 )
-def test_peth_bins_are_half_open(population, window, bin_size, spikes, expected):
+def test_peth_bins_are_half_open(population, window, dt, spikes, expected):
     """Every whole bin excludes its right edge, including the last bin."""
     # Duplicate events avoid the single-event warning without shifting boundaries.
     function = population_peri_event_histogram if population else peri_event_histogram
@@ -126,7 +126,7 @@ def test_peth_bins_are_half_open(population, window, bin_size, spikes, expected)
         [spike_array] if population else spike_array,
         np.array([0.0, 0.0]),
         window,
-        bin_size=bin_size,
+        dt=dt,
     )
     counts = result.histograms[0] if population else result.histogram
     np.testing.assert_array_equal(counts, expected)
@@ -135,8 +135,8 @@ def test_peth_bins_are_half_open(population, window, bin_size, spikes, expected)
 
 
 @pytest.mark.parametrize("population", [False, True])
-@pytest.mark.parametrize("bin_size", [0.25, np.nan, np.inf])
-def test_no_whole_peth_bin_is_refused(population, bin_size):
+@pytest.mark.parametrize("dt", [0.25, np.nan, np.inf])
+def test_no_whole_peth_bin_is_refused(population, dt):
     """A bin wider than the window, or not finite, used to return an empty PSTH."""
     function = population_peri_event_histogram if population else peri_event_histogram
     spikes = np.array([0.1])
@@ -145,7 +145,7 @@ def test_no_whole_peth_bin_is_refused(population, bin_size):
             [spikes] if population else spikes,
             np.array([0.0, 0.0]),
             (0, 0.1),
-            bin_size=bin_size,
+            dt=dt,
         )
 
 
@@ -159,7 +159,7 @@ def test_absolute_event_window_stop_is_excluded(population, event):
         [spikes] if population else spikes,
         np.array([event, event]),
         (0.1, 0.3),
-        bin_size=0.1,
+        dt=0.1,
     )
     counts = result.histograms[0] if population else result.histogram
     np.testing.assert_array_equal(counts, [1, 1])
@@ -169,12 +169,12 @@ def test_absolute_event_window_stop_is_excluded(population, event):
 def test_peth_rejects_unrepresentable_absolute_edges(population):
     function = population_peri_event_histogram if population else peri_event_histogram
     spikes = np.array([1e9])
-    with pytest.raises(ValueError, match=r"peri-event.*bin_size") as error:
+    with pytest.raises(ValueError, match=r"peri-event.*dt") as error:
         function(
             [spikes] if population else spikes,
             np.array([1e9, 1e9]),
             (0, 1e-6),
-            bin_size=2e-7,
+            dt=2e-7,
         )
     assert "Fix: subtract a time origin" in str(error.value)
 
@@ -186,7 +186,7 @@ def test_window_ending_at_an_epoch_stop_is_kept_despite_rounding():
         spikes,
         np.array([0.1, 1.1]),
         (-0.1, 0.2),
-        bin_size=0.1,
+        dt=0.1,
         epochs=[(0.0, 0.3), (1.0, 1.3)],
     )
     assert (result.n_events, result.n_events_dropped) == (2, 0)
@@ -195,7 +195,7 @@ def test_window_ending_at_an_epoch_stop_is_kept_despite_rounding():
 @pytest.mark.parametrize("population", [False, True])
 @pytest.mark.parametrize("event", [0.3, 7.0, 1234.5678])
 @pytest.mark.parametrize(
-    ("window", "bin_size"),
+    ("window", "dt"),
     [
         ((-0.3, 0.3), 0.1),
         ((-2.0, 0.5), 0.1),
@@ -204,7 +204,7 @@ def test_window_ending_at_an_epoch_stop_is_kept_despite_rounding():
     ],
 )
 def test_a_spike_at_the_event_is_counted_in_the_bin_starting_at_zero(
-    population, event, window, bin_size
+    population, event, window, dt
 ):
     """-0.3 + 3 * 0.1 is 5.6e-17, not 0: the zero edge must be exactly 0."""
     function = population_peri_event_histogram if population else peri_event_histogram
@@ -213,27 +213,27 @@ def test_a_spike_at_the_event_is_counted_in_the_bin_starting_at_zero(
         [spikes] if population else spikes,
         np.array([event, event]),
         window,
-        bin_size=bin_size,
+        dt=dt,
     )
     counts = result.histograms[0] if population else result.histogram
-    # By hand: the bin [0, bin_size) is number -window[0] / bin_size.
+    # By hand: the bin [0, dt) is number -window[0] / dt.
     expected = np.zeros(counts.size)
-    expected[round(-window[0] / bin_size)] = 1.0
+    expected[round(-window[0] / dt)] = 1.0
     np.testing.assert_array_equal(counts, expected)
 
 
-@pytest.mark.parametrize("bin_size", [0.1, 0.025, 0.05, 0.2, 0.001, 0.3])
-def test_grid_aligned_bin_edges_are_grid_values_inside_the_window(bin_size):
+@pytest.mark.parametrize("dt", [0.1, 0.025, 0.05, 0.2, 0.001, 0.3])
+def test_grid_aligned_bin_edges_are_grid_values_inside_the_window(dt):
     from neurospatial.events._core import _make_bin_edges
 
     for k_start in range(-12, 3):
         for n_bins in range(1, 9):
-            window = (k_start * bin_size, (k_start + n_bins) * bin_size)
-            edges = _make_bin_edges(window, bin_size)
+            window = (k_start * dt, (k_start + n_bins) * dt)
+            edges = _make_bin_edges(window, dt)
             k = k_start + np.arange(n_bins + 1)
             assert edges.size == n_bins + 1
-            # Interior edges are the grid values k * bin_size; 0 is exactly 0.
-            np.testing.assert_array_equal(edges[1:-1], k[1:-1] * bin_size)
+            # Interior edges are the grid values k * dt; 0 is exactly 0.
+            np.testing.assert_array_equal(edges[1:-1], k[1:-1] * dt)
             assert (edges[k == 0] == 0.0).all()
             # The outer edges are the window bounds.
             assert (edges[0], edges[-1]) == window

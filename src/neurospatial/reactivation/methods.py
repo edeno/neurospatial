@@ -30,7 +30,7 @@ of rest, or per theta cycle of the task (``rest_bins="events"``,
 :func:`compare_reactivation_methods`.
 
 Unlike the replay recipes, which record their decoding settings for
-reference only, a reactivation recipe applies its ``bin_size``: binning is
+reference only, a reactivation recipe applies its ``dt``: binning is
 part of the statistic (a correlation of 100 ms counts is not one of 250 ms
 counts). Choices a paper does not specify are listed in each recipe's
 ``notes``.
@@ -423,7 +423,7 @@ class ReactivationMethod:
         periods; ``"member_cofiring"`` detects patterns and compares the
         correlation of each pattern's members between the periods
         (:func:`~neurospatial.reactivation.assembly_member_cofiring`).
-    bin_size : float or None
+    dt : float or None
         Time bin in seconds. Applied: spike times are binned at this width
         inside each window. None when every period is counted in events.
     pairs : {"all", "different_tetrodes", "different_shanks", "different_regions"}
@@ -438,12 +438,12 @@ class ReactivationMethod:
         over them (Tatsuno et al. 2006); an assembly method needs one
         control window.
     template_bins, rest_bins : {"fixed", "events"}
-        ``"fixed"`` (default): counts in ``bin_size`` bins. ``"events"``:
+        ``"fixed"`` (default): counts in ``dt`` bins. ``"events"``:
         one bin per event, the spikes from its start to its stop, for the
         template (``template_events``, for example theta cycles) or for the
         control and match periods (``control_events`` and ``match_events``,
         for example SWRs), keeping the events whose start lies in the
-        period's window. Events shorter than ``bin_size`` are kept. Spike
+        period's window. Events shorter than ``dt`` are kept. Spike
         counts of events of different lengths share a duration component
         that raises every pair correlation alike; it cancels between
         periods only when their events have similar durations. ``rest_bins``
@@ -475,12 +475,12 @@ class ReactivationMethod:
         For assembly methods, the standard deviation in seconds of a
         Gaussian kernel applied to the spike trains before z-scoring and
         computing R(t) in the control and match periods (van de Ven et al.
-        2016); None uses counts in ``bin_size`` bins.
+        2016); None uses counts in ``dt`` bins.
     activation_step : float or None
         For assembly methods, seconds between samples of R(t). Without
-        smoothing, counts in ``bin_size`` bins that slide by this step (it
-        must divide ``bin_size``); with smoothing, the spacing of the
-        smoothed samples. None: ``bin_size`` without smoothing,
+        smoothing, counts in ``dt`` bins that slide by this step (it
+        must divide ``dt``); with smoothing, the spacing of the
+        smoothed samples. None: ``dt`` without smoothing,
         ``smoothing_bandwidth / 2`` with it.
     zscore_over : {"period", "control_and_match", "all_periods"}
         For assembly methods, the samples each unit is z-scored over before
@@ -563,11 +563,9 @@ class ReactivationMethod:
     --------
     >>> import dataclasses
     >>> from neurospatial.reactivation import EL_GABY_2021, KUDRIMOTI_1999
-    >>> KUDRIMOTI_1999.bin_size, KUDRIMOTI_1999.pairs
+    >>> KUDRIMOTI_1999.dt, KUDRIMOTI_1999.pairs
     (0.1, 'different_tetrodes')
-    >>> wider = dataclasses.replace(
-    ...     KUDRIMOTI_1999, name="kudrimoti_200ms", bin_size=0.2
-    ... )
+    >>> wider = dataclasses.replace(KUDRIMOTI_1999, name="kudrimoti_200ms", dt=0.2)
     >>> EL_GABY_2021.rest_bins, EL_GABY_2021.min_events
     ('events', 200)
     >>> EL_GABY_2021.needs_events
@@ -577,7 +575,7 @@ class ReactivationMethod:
     name: str
     reference: str
     measure: Literal["explained_variance", "assembly", "member_cofiring"]
-    bin_size: float | None
+    dt: float | None
     pairs: Literal[
         "all", "different_tetrodes", "different_shanks", "different_regions"
     ] = "all"
@@ -690,7 +688,7 @@ class ReactivationMethod:
                 raise ValueError(msg)
 
     def _check_bins(self, where: str) -> None:
-        """Refuse event bins for an assembly method and a bin_size that does not fit."""
+        """Refuse event bins for an assembly method and a dt that does not fit."""
         assembly = self.measure == "assembly"
         if assembly and self.rest_bins == "events":
             raise ValueError(
@@ -704,19 +702,14 @@ class ReactivationMethod:
             )
         fixed_bins = assembly or "fixed" in (self.template_bins, self.rest_bins)
         if fixed_bins and not (
-            self.bin_size is not None
-            and np.isfinite(self.bin_size)
-            and self.bin_size > 0
+            self.dt is not None and np.isfinite(self.dt) and self.dt > 0
         ):
-            msg = (
-                f"{where}: bin_size must be a positive number of seconds, got "
-                f"{self.bin_size!r}."
-            )
+            msg = f"{where}: dt must be a positive number of seconds, got {self.dt!r}."
             raise ValueError(msg)
-        if not fixed_bins and self.bin_size is not None:
+        if not fixed_bins and self.dt is not None:
             msg = (
-                f"{where}: every period is counted in events, so bin_size must "
-                f"be None, got {self.bin_size!r}."
+                f"{where}: every period is counted in events, so dt must "
+                f"be None, got {self.dt!r}."
             )
             raise ValueError(msg)
 
@@ -809,13 +802,13 @@ class ReactivationMethod:
                 )
                 raise ValueError(msg)
         if self.activation_step is not None and self.smoothing_bandwidth is None:
-            assert self.bin_size is not None
-            ratio = self.bin_size / self.activation_step
+            assert self.dt is not None
+            ratio = self.dt / self.activation_step
             if not (ratio >= 1 - 1e-9 and abs(ratio - round(ratio)) < 1e-6):
                 msg = (
                     f"{where}: without smoothing, activation_step "
-                    f"({self.activation_step:g} s) must divide bin_size "
-                    f"({self.bin_size:g} s) into a whole number of steps."
+                    f"({self.activation_step:g} s) must divide dt "
+                    f"({self.dt:g} s) into a whole number of steps."
                 )
                 raise ValueError(msg)
 
@@ -899,7 +892,7 @@ class ReactivationMethod:
                     "and spikes per second disagree, and Giri et al. "
                     "(2019) equalized fixed 250 ms bins.",
                     fix="drop n_rate_subsamples, or bin rest periods with "
-                    "rest_bins='fixed' and bin_size=",
+                    "rest_bins='fixed' and dt=",
                 )
             )
         if self.test == "pair_bootstrap":
@@ -1117,7 +1110,7 @@ def compare_reactivation_methods(
 
     Notes
     -----
-    Each method bins spike times at its own ``bin_size`` inside each of its
+    Each method bins spike times at its own ``dt`` inside each of its
     windows (:func:`~neurospatial.decoding.bin_spikes_in_time`), so bins
     never span two epochs, or counts spikes in each event. The template
     period is always one window of all ``template_epochs``.
@@ -1356,8 +1349,8 @@ def _rest_counts(
         Events in the window; None for fixed bins.
     """
     if method.rest_bins == "fixed":
-        assert method.bin_size is not None
-        return _binned(session.trains, window, method.bin_size)[0], None
+        assert method.dt is not None
+        return _binned(session.trains, window, method.dt)[0], None
     events = _events_in(session.events[f"{period}_events"], window)
     _check_min_events(method, events.shape[0], period)
     return _event_counts(session.trains, events), events.shape[0]
@@ -1390,8 +1383,8 @@ def _template_counts(
             msg = "no template event starts inside template_epochs"
             raise _MethodError(msg)
         return _event_counts(session.trains, events)
-    assert method.bin_size is not None
-    return _binned(session.trains, session.template, method.bin_size)[0]
+    assert method.dt is not None
+    return _binned(session.trains, session.template, method.dt)[0]
 
 
 class _MethodError(ValueError):
@@ -1462,9 +1455,9 @@ def _checked_groups(
 
 
 def _binned(
-    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], bin_size: float
+    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], dt: float
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Counts in ``bin_size`` bins inside ``windows`` and the bin centers.
+    """Counts in ``dt`` bins inside ``windows`` and the bin centers.
 
     Returns
     -------
@@ -1475,10 +1468,10 @@ def _binned(
     from neurospatial.decoding._time_bins import spike_counts_in_windows, validate_dt
 
     try:
-        # bin_spikes_in_time(trains, dt=bin_size, epochs=windows) on windows
+        # bin_spikes_in_time(trains, dt=dt, epochs=windows) on windows
         # already resolved.
         counts, centers = spike_counts_in_windows(
-            as_spike_trains(trains), windows, validate_dt(bin_size)
+            as_spike_trains(trains), windows, validate_dt(dt)
         )
     except ValueError as error:
         raise _MethodError(str(error)) from error
@@ -2181,7 +2174,7 @@ def _period_samples(
 ) -> _Samples:
     """Activity of one period for R(t): counts, sliding or smoothed.
 
-    Without smoothing, counts in ``bin_size`` bins, sliding by
+    Without smoothing, counts in ``dt`` bins, sliding by
     ``activation_step`` when it is given. With a smoothing bandwidth, spike
     trains convolved with a Gaussian of that standard deviation and sampled
     every ``activation_step`` (default half the bandwidth). Each epoch piece
@@ -2192,10 +2185,10 @@ def _period_samples(
 
     from scipy.ndimage import gaussian_filter1d
 
-    assert method.bin_size is not None  # assembly methods have one
+    assert method.dt is not None  # assembly methods have one
     smoothing = method.smoothing_bandwidth
     step = _sample_step(method)
-    width = method.bin_size if smoothing is None else step
+    width = method.dt if smoothing is None else step
     per_bin = round(width / step)
     pieces = window[window[:, 1] - window[:, 0] >= width]
     if not len(pieces):
@@ -2237,15 +2230,15 @@ def _period_samples(
 def _sample_step(method: ReactivationMethod) -> float:
     """Seconds between samples of an assembly method's R(t).
 
-    ``activation_step`` when given; otherwise ``bin_size`` without
+    ``activation_step`` when given; otherwise ``dt`` without
     smoothing and half the smoothing bandwidth with it.
     """
     if method.activation_step is not None:
         return method.activation_step
     if method.smoothing_bandwidth is not None:
         return method.smoothing_bandwidth / 2
-    assert method.bin_size is not None  # assembly methods have one
-    return method.bin_size
+    assert method.dt is not None  # assembly methods have one
+    return method.dt
 
 
 def _z_scored(
@@ -2460,7 +2453,7 @@ KUDRIMOTI_1999 = ReactivationMethod(
         "19(10), 4090-4101."
     ),
     measure="explained_variance",
-    bin_size=0.1,
+    dt=0.1,
     pairs="different_tetrodes",
     control_windows=ReactivationWindows(length=600.0, anchor="end", count=1),
     match_windows=ReactivationWindows(length=600.0, count=3),
@@ -2506,7 +2499,7 @@ PENNARTZ_2004 = ReactivationMethod(
         "hippocampal ripples. The Journal of Neuroscience, 24(29), 6446-6456."
     ),
     measure="explained_variance",
-    bin_size=0.05,
+    dt=0.05,
     pairs="all",
     control_windows=ReactivationWindows(
         length=600.0, anchor="end", count=1, clock="wall"
@@ -2544,7 +2537,7 @@ TATSUNO_2006 = ReactivationMethod(
         "10727-10742."
     ),
     measure="explained_variance",
-    bin_size=0.25,
+    dt=0.25,
     pairs="different_tetrodes",
     control_windows=ReactivationWindows(length=900.0, anchor="end", clock="wall"),
     match_windows=ReactivationWindows(length=900.0, clock="wall"),
@@ -2578,7 +2571,7 @@ LANSINK_2009 = ReactivationMethod(
         "replay of place-reward information. PLoS Biology, 7(8), e1000173."
     ),
     measure="explained_variance",
-    bin_size=0.05,
+    dt=0.05,
     pairs="different_regions",
     control_windows=ReactivationWindows(length=1200.0, anchor="end", count=1),
     match_windows=ReactivationWindows(length=1200.0),
@@ -2621,7 +2614,7 @@ GIRI_2019 = ReactivationMethod(
         "experience. The Journal of Neuroscience, 39(5), 866-875."
     ),
     measure="explained_variance",
-    bin_size=0.25,
+    dt=0.25,
     pairs="different_shanks",
     control_windows=ReactivationWindows(length=900.0, step=300.0, clock="wall"),
     match_windows=ReactivationWindows(length=900.0, step=300.0, clock="wall"),
@@ -2664,7 +2657,7 @@ GIRI_2024 = ReactivationMethod(
         "Nature, 630(8018), 935-942."
     ),
     measure="explained_variance",
-    bin_size=0.25,
+    dt=0.25,
     pairs="all",
     control_windows=ReactivationWindows(length=900.0, step=300.0, clock="wall"),
     match_windows=ReactivationWindows(length=900.0, step=300.0, clock="wall"),
@@ -2697,7 +2690,7 @@ PEYRACHE_2010 = ReactivationMethod(
         "Journal of Computational Neuroscience, 29(1-2), 309-325."
     ),
     measure="assembly",
-    bin_size=0.1,
+    dt=0.1,
     detection="pca",
     statistic="mean_activation_difference",
     test="cell_identity_shuffle",
@@ -2734,7 +2727,7 @@ VAN_DE_VEN_2016 = ReactivationMethod(
         "92(5), 968-974."
     ),
     measure="assembly",
-    bin_size=0.025,
+    dt=0.025,
     detection="ica",
     smoothing_bandwidth=0.025 / np.sqrt(12.0),
     activation_threshold=5.0,
@@ -2782,7 +2775,7 @@ OLIVA_2020_EV = dataclasses.replace(
         "memory. Nature, 587(7833), 264-269. "
         "https://doi.org/10.1038/s41586-020-2758-y"
     ),
-    bin_size=0.1,
+    dt=0.1,
     rest_bins="events",
     pairs="all",
     control_windows=ReactivationWindows(),
@@ -2822,7 +2815,7 @@ OLIVA_2020_ASSEMBLY = dataclasses.replace(
     VAN_DE_VEN_2016,
     name="oliva_2020_assembly",
     reference=OLIVA_2020_EV.reference,
-    bin_size=0.02,
+    dt=0.02,
     smoothing_bandwidth=0.01,
     zscore_over="all_periods",
     notes=(
@@ -2864,7 +2857,7 @@ EL_GABY_2021 = ReactivationMethod(
         "https://doi.org/10.1038/s41593-021-00820-w"
     ),
     measure="member_cofiring",
-    bin_size=0.025,
+    dt=0.025,
     rest_bins="events",
     min_events=200,
     detection="ica",
@@ -2931,7 +2924,7 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
     name="harvey_2023_assembly",
     reference=_HARVEY_2023_REFERENCE,
     measure="assembly",
-    bin_size=0.025,
+    dt=0.025,
     control_windows=ReactivationWindows(
         length=3600.0, count=1, clock="wall", allow_shorter=True
     ),
@@ -2985,7 +2978,7 @@ HARVEY_2023_ASSEMBLY = ReactivationMethod(
         "assemblies'), so match_event_response is the paper's number; post "
         "minus pre is reported for comparison. No per-pattern test.",
         "Fig. 7 variant: dataclasses.replace(HARVEY_2023_ASSEMBLY, "
-        "name=..., bin_size=0.05, smoothing_bandwidth=0.01, "
+        "name=..., dt=0.05, smoothing_bandwidth=0.01, "
         "activation_step=0.005, zscore_over='control_and_match'). Its "
         "cross-region selection and per-lag z-scoring of the peri-event "
         "curve are not applied. The code also drops patterns whose Otsu "
@@ -2998,7 +2991,7 @@ LIU_2023_EV = ReactivationMethod(
     name="liu_2023_ev",
     reference=_LIU_2023_REFERENCE,
     measure="explained_variance",
-    bin_size=None,
+    dt=None,
     template_bins="events",
     rest_bins="events",
     statistic="explained_variance",
@@ -3057,7 +3050,7 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
     name="liu_2023_assembly",
     reference=_LIU_2023_REFERENCE,
     measure="assembly",
-    bin_size=0.025,
+    dt=0.025,
     control_windows=ReactivationWindows(
         length=3600.0, anchor="end", count=1, allow_shorter=True
     ),
@@ -3096,7 +3089,7 @@ LIU_2023_ASSEMBLY = ReactivationMethod(
         "100ms after the ripple start', over ±0.5 s.",
         "R(t) sampling is not stated: here the 25 ms detection bins (the "
         "lab tutorial uses 20 ms bins in 1 ms steps; "
-        "dataclasses.replace(..., bin_size=0.02, activation_step=0.001) is "
+        "dataclasses.replace(..., dt=0.02, activation_step=0.001) is "
         "close to it, though detection then uses 20 ms bins too).",
         "Z-scoring: the lab's ReactivationStrength.m z-scores the bins it is "
         "given, pre- and post-task NREM together "
@@ -3119,7 +3112,7 @@ CHANG_2025_ASSEMBLY = ReactivationMethod(
     name="chang_2025_assembly",
     reference=_CHANG_2025_REFERENCE,
     measure="assembly",
-    bin_size=0.05,
+    dt=0.05,
     detection="ica",
     member_rule="positive_z",
     member_threshold=3.0,
@@ -3176,7 +3169,7 @@ ROBINSON_2026_PAIRWISE = dataclasses.replace(
     KUDRIMOTI_1999,
     name="robinson_2026_pairwise",
     reference=_ROBINSON_2026_REFERENCE,
-    bin_size=0.1,
+    dt=0.1,
     rest_bins="events",
     pairs="all",
     control_windows=ReactivationWindows(),
@@ -3213,7 +3206,7 @@ ROBINSON_2026_ASSEMBLY = ReactivationMethod(
     name="robinson_2026_assembly",
     reference=_ROBINSON_2026_REFERENCE,
     measure="assembly",
-    bin_size=0.05,
+    dt=0.05,
     detection="ica",
     member_rule="inverse_sqrt_n",
     member_threshold=None,

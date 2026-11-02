@@ -660,7 +660,7 @@ class TestComputeDecisionAnalysis:
             positions,
             decision_region="center",
             goal_regions=["left", "right"],
-            pre_window=1.0,
+            window_duration=1.0,
             min_speed=5.0,
         )
 
@@ -1134,7 +1134,7 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     kwargs = {
         "decision_region": "center",
         "goal_regions": ["left", "right"],
-        "pre_window": 1.0,
+        "window_duration": 1.0,
         "min_speed": 5.0,
     }
     result = compute_decision_analysis(env, times, positions, **kwargs)
@@ -1368,18 +1368,18 @@ def test_entry_inside_a_tracking_gap_keeps_the_empty_window():
     assert window_positions.shape == (0, 2)
 
 
-def test_decision_analysis_pre_window_must_be_positive(t_maze_environment):
+def test_decision_analysis_window_duration_must_be_positive(t_maze_environment):
     from neurospatial.behavior import compute_decision_analysis
 
     times, positions = _stem_right_then_back_left()
-    with pytest.raises(ValueError, match="finite, positive pre_window"):
+    with pytest.raises(ValueError, match="finite, positive window_duration"):
         compute_decision_analysis(
             t_maze_environment,
             times,
             positions,
             decision_region="center",
             goal_regions=["left", "right"],
-            pre_window=0.0,
+            window_duration=0.0,
             min_speed=5.0,
         )
 
@@ -1420,7 +1420,7 @@ def _min_speed_calls(env):
             env,
             times,
             positions,
-            decision_region="center",
+            region="center",
             trials=Intervals([], record_type=Trial),
             min_speed=v,
         ),

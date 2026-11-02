@@ -76,10 +76,10 @@ def _events_cases(spikes: NDArray[np.float64]) -> dict[str, Callable[[Any], Any]
         "event_count_in_window": lambda ev: event_count_in_window(TIMES, ev, WINDOW),
         "event_indicator": lambda ev: event_indicator(TIMES, ev, WINDOW),
         "peri_event_histogram": lambda ev: peri_event_histogram(
-            spikes, ev, WINDOW, bin_size=0.1
+            spikes, ev, WINDOW, dt=0.1
         ).histogram,
         "population_peri_event_histogram": lambda ev: population_peri_event_histogram(
-            [spikes, spikes[::2]], ev, WINDOW, bin_size=0.1
+            [spikes, spikes[::2]], ev, WINDOW, dt=0.1
         ).histograms,
         "align_spikes_to_events": lambda ev: align_spikes_to_events(spikes, ev, WINDOW),
         "align_continuous_to_events": lambda ev: align_continuous_to_events(
@@ -146,9 +146,9 @@ def test_pynapple_times_and_spikes_in_peri_event_histogram(
     """A one-unit train given as Ts, Tsd or TsdFrame is read by its timestamps."""
     from neurospatial.events import peri_event_histogram
 
-    expected = peri_event_histogram(spikes, EVENTS, WINDOW, bin_size=0.1).histogram
+    expected = peri_event_histogram(spikes, EVENTS, WINDOW, dt=0.1).histogram
     actual = peri_event_histogram(
-        WRAPPERS[wrapper](spikes), EVENTS, WINDOW, bin_size=0.1
+        WRAPPERS[wrapper](spikes), EVENTS, WINDOW, dt=0.1
     ).histogram
 
     np.testing.assert_array_equal(actual, expected)
@@ -162,7 +162,7 @@ def test_plot_peri_event_response_reads_event_timestamps(
 
     from neurospatial.events import peri_event_histogram, plot_peri_event_response
 
-    result = peri_event_histogram(spikes, EVENTS, WINDOW, bin_size=0.1)
+    result = peri_event_histogram(spikes, EVENTS, WINDOW, dt=0.1)
 
     def raster_offsets(events: Any) -> list[NDArray[np.float64]]:
         axes = plot_peri_event_response(spikes, events, result)

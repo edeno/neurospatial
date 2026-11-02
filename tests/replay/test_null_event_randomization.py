@@ -61,7 +61,9 @@ def test_spike_shift_draws_its_own_shift_for_each_cell(recording):
 def test_only_the_masked_cells_are_randomized(recording, kind):
     trains, intervals = recording
     cells = np.array([True, False, True, False, True, True])
-    null = null_events(trains, intervals, kind=kind, n_copies=4, cells=cells, rng=0)
+    null = null_events(
+        trains, intervals, kind=kind, n_copies=4, unit_ids=np.flatnonzero(cells), rng=0
+    )
     real = _in_events(trains, intervals)
     copies = _in_events(null.spike_times, null.intervals)
     changed = 0
@@ -204,7 +206,7 @@ class TestRatePoisson:
             intervals,
             kind="rate_poisson",
             n_copies=3,
-            cells=np.array([False, True]),
+            unit_ids=np.array([1]),
             rng=2,
         )
         real = _in_events(trains, intervals)

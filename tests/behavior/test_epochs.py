@@ -572,9 +572,7 @@ def test_detector_outputs_as_epochs() -> None:
         ),
         "trials": detect_trials(env, times, positions, regions=["start", "goal"]),
         "movement": segment_by_velocity(times, positions, min_speed=5.0),
-        "approaches": detect_goal_directed_runs(
-            env, times, positions, goal_region="goal"
-        ),
+        "approaches": detect_goal_directed_runs(env, times, positions, region="goal"),
         # A corridor has no loop, so its round trip is matched to a template.
         "laps": detect_laps(
             env,

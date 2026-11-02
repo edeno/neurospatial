@@ -165,7 +165,7 @@ def _poisson_draws(
 def generate_inhomogeneous_poisson_surrogates(
     spike_counts: NDArray[np.int64],
     *,
-    smoothing_window: int = 3,
+    smooth_bins: int = 3,
     n_surrogates: int = 1000,
     rng: np.random.Generator | int | None = None,
 ) -> Generator[NDArray[np.int64], None, None]:
@@ -183,7 +183,7 @@ def generate_inhomogeneous_poisson_surrogates(
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Original spike counts per neuron per time bin.
-    smoothing_window : int, default=3
+    smooth_bins : int, default=3
         Size of the uniform smoothing window (in time bins) applied to
         estimate time-varying rates. Larger values preserve less temporal
         detail (closer to homogeneous). Must be at least 1.
@@ -214,7 +214,7 @@ def generate_inhomogeneous_poisson_surrogates(
     ------
     ValueError
         If ``spike_counts`` is not a 2-D array of non-negative whole-number
-        counts, ``smoothing_window`` is not a positive integer, or
+        counts, ``smooth_bins`` is not a positive integer, or
         ``n_surrogates`` is not a positive integer.
 
     Examples
@@ -229,7 +229,7 @@ def generate_inhomogeneous_poisson_surrogates(
     ... )
     >>> for i, surrogate in enumerate(
     ...     generate_inhomogeneous_poisson_surrogates(
-    ...         spike_counts, smoothing_window=3, n_surrogates=3, rng=42
+    ...         spike_counts, smooth_bins=3, n_surrogates=3, rng=42
     ...     )
     ... ):
     ...     print(f"Surrogate {i}: shape={surrogate.shape}")
@@ -246,9 +246,9 @@ def generate_inhomogeneous_poisson_surrogates(
 
     counts = _validated_counts(spike_counts)
     validate_integer_at_least(
-        smoothing_window,
+        smooth_bins,
         1,
-        name="smoothing_window",
+        name="smooth_bins",
         owner="generate_inhomogeneous_poisson_surrogates()",
         hint="it is the smoothing window length in time bins, e.g. 3",
     )
@@ -259,7 +259,7 @@ def generate_inhomogeneous_poisson_surrogates(
     )
     # Time-varying Poisson means: counts smoothed along time, edges extended.
     lam = (
-        uniform_filter1d(counts, size=smoothing_window, axis=0, mode="nearest")
+        uniform_filter1d(counts, size=smooth_bins, axis=0, mode="nearest")
         if len(counts)
         else counts
     )

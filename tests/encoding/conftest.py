@@ -117,7 +117,7 @@ def allocentric_field_spikes(ou_env, ou_10min, obj):
 
     times, positions, _ = ou_10min
     model = PlaceCellModel(ou_env, center=obj[0] + [20, 0], width=6, max_rate=10)
-    return generate_poisson_spikes(model.firing_rate(times, positions), times, seed=3)
+    return generate_poisson_spikes(model.firing_rate(times, positions), times, rng=3)
 
 
 @pytest.fixture(scope="session")
@@ -135,7 +135,7 @@ def egocentric_ovc_spikes(ou_env, ou_10min, obj):
         max_rate=10,
     )
     return generate_poisson_spikes(
-        model.firing_rate(times, positions, headings=headings), times, seed=5
+        model.firing_rate(times, positions, headings=headings), times, rng=5
     )
 
 
@@ -145,7 +145,7 @@ def strong_field_spikes(ou_2min_env, ou_2min, obj):
 
     times, positions, _ = ou_2min
     model = PlaceCellModel(ou_2min_env, center=obj[0] + [20, 0], width=10, max_rate=20)
-    return generate_poisson_spikes(model.firing_rate(times, positions), times, seed=3)
+    return generate_poisson_spikes(model.firing_rate(times, positions), times, rng=3)
 
 
 @pytest.fixture
@@ -914,7 +914,7 @@ def grid_and_hexless():
         speed_units="cm",
         speed_mean=15.0,
         speed_std=7.5,
-        seed=1,
+        rng=1,
     )
     grid = GridCellModel(
         env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
@@ -930,7 +930,7 @@ def grid_and_hexless():
         times=times,
         positions=positions,
         trains=[
-            generate_poisson_spikes(grid, times, seed=21),
-            generate_poisson_spikes(hexless, times, seed=7),
+            generate_poisson_spikes(grid, times, rng=21),
+            generate_poisson_spikes(hexless, times, rng=7),
         ],
     )

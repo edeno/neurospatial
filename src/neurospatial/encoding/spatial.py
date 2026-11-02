@@ -1202,7 +1202,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             n_units=None,
         )
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
 
         Delegates to the environment's plot_field method for consistent
@@ -1517,7 +1517,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> env = Environment.from_samples(positions, bin_size=4.0)
         >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
         >>> rate = cell.firing_rate(times, positions)
-        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
+        >>> spike_times = generate_poisson_spikes(rate, times, rng=1)
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=5.0
         ... )
@@ -1596,7 +1596,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> env = Environment.from_samples(positions, bin_size=4.0)
         >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
         >>> rate = cell.firing_rate(times, positions)
-        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
+        >>> spike_times = generate_poisson_spikes(rate, times, rng=1)
         >>> result = compute_spatial_rate(
         ...     env, spike_times, times, positions, bandwidth=5.0
         ... )
@@ -2310,7 +2310,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         return self.peak_location()
 
     def plot(
-        self, idx: int | None = None, ax: Axes | None = None, **kwargs: Any
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
     ) -> Axes:
         """Plot the spatial rate map for a specific neuron.
 
@@ -4908,7 +4908,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
             return pd.DataFrame(empty)
         return pd.concat(frames, ignore_index=True)
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Overlay the per-direction firing rate maps on a single axis.
 
         Plots each direction's firing rate against bin index as one line,

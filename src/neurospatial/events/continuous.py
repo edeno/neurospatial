@@ -685,7 +685,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             out[f"n_dropped_{reason}"] = int(n)
         return out
 
-    def plot(self, ax: Axes | None = None, *, feature_id: Any = None) -> Axes:
+    def plot(self, *, ax: Axes | None = None, feature_id: Any = None) -> Axes:
         """Plot one feature's summary against time from the event.
 
         Linear features show ``means`` as a line (NaN leaves gaps). Circular

@@ -588,37 +588,37 @@ class TestComputeVTEIndex:
     """Test compute_vte_index() function."""
 
     def test_equal_weighting(self):
-        """Test VTE index with equal weighting (alpha=0.5)."""
+        """Test VTE index with equal weighting (head_sweep_weight=0.5)."""
         from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 1.0
         z_speed_inv = 1.0
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, alpha=0.5)
+        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.5)
 
         # 0.5 * 1.0 + 0.5 * 1.0 = 1.0
         assert result == 1.0
 
     def test_head_sweep_only(self):
-        """Test VTE index with alpha=1.0 (head sweep only)."""
+        """Test VTE index with head_sweep_weight=1.0 (head sweep only)."""
         from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, alpha=1.0)
+        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=1.0)
 
         # 1.0 * 2.0 + 0.0 * 0.5 = 2.0
         assert result == 2.0
 
     def test_speed_only(self):
-        """Test VTE index with alpha=0.0 (speed only)."""
+        """Test VTE index with head_sweep_weight=0.0 (speed only)."""
         from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, alpha=0.0)
+        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.0)
 
         # 0.0 * 2.0 + 1.0 * 0.5 = 0.5
         assert result == 0.5
@@ -630,20 +630,22 @@ class TestComputeVTEIndex:
 
 
 @pytest.mark.parametrize("alpha", [-0.1, 1.5, np.nan])
-def test_vte_index_alpha_must_be_a_weight(alpha):
+def test_vte_index_weight_must_be_a_weight(alpha):
     from neurospatial.behavior.vte import compute_vte_index
 
-    with pytest.raises(ValueError, match=r"alpha in \[0, 1\]"):
-        compute_vte_index(1.0, 1.0, alpha=alpha)
+    with pytest.raises(ValueError, match=r"head_sweep_weight in \[0, 1\]"):
+        compute_vte_index(1.0, 1.0, head_sweep_weight=alpha)
 
 
-def test_session_alpha_and_threshold_are_validated(t_maze_environment):
+def test_session_head_sweep_weight_and_threshold_are_validated(t_maze_environment):
     from neurospatial.behavior.vte import compute_vte_session
 
     times, positions, trials = _t_maze_session([2.0, 4.0])
     kwargs = {**_SESSION_KWARGS, "trials": trials}
-    with pytest.raises(ValueError, match=r"alpha in \[0, 1\]"):
-        compute_vte_session(t_maze_environment, times, positions, alpha=2.0, **kwargs)
+    with pytest.raises(ValueError, match=r"head_sweep_weight in \[0, 1\]"):
+        compute_vte_session(
+            t_maze_environment, times, positions, head_sweep_weight=2.0, **kwargs
+        )
     with pytest.raises(ValueError, match="finite vte_threshold"):
         compute_vte_session(
             t_maze_environment,
@@ -891,11 +893,11 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=trials,
-            decision_region="center",
+            region="center",
             env=env,
             window_duration=0.5,
             min_speed=1.0,
-            alpha=0.5,
+            head_sweep_weight=0.5,
             vte_threshold=0.0,  # Low threshold to ensure some VTE classification
         )
 
@@ -944,7 +946,7 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=trials,
-            decision_region="center",
+            region="center",
             env=env,
             window_duration=0.5,
             min_speed=1.0,
@@ -1021,13 +1023,13 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=Intervals(trials),
-            decision_region="center",
+            region="center",
             env=env,
             window_duration=0.5,
             min_speed=0.5,
-            # At alpha = 0.5 the faster zig-zags' head-sweep and speed
+            # At head_sweep_weight = 0.5 the faster zig-zags' head-sweep and speed
             # z-scores cancel exactly, putting every index on the threshold.
-            alpha=0.7,
+            head_sweep_weight=0.7,
             vte_threshold=0.0,
         )
 
@@ -1088,7 +1090,7 @@ def test_compute_vte_session_env_first(t_maze_environment):
         env,
         times,
         positions,
-        decision_region="center",
+        region="center",
         trials=trials,
         window_duration=0.5,
         min_speed=1.0,
@@ -1136,7 +1138,7 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
             env,
             times,
             positions,
-            decision_region="decision",
+            region="decision",
             trials=Intervals([Trial(5.0, 9.9, "start", "decision", "reached")]),
             window_duration=1.0,
             min_speed=5.0,
@@ -1161,7 +1163,7 @@ def test_session_marks_trial_window_too_short(zig_zag_then_run):
         env,
         times,
         positions,
-        decision_region="decision",
+        region="decision",
         trials=Intervals([Trial(5.2, 9.9, "start", "decision", "reached")]),
         window_duration=1.0,
         min_speed=5.0,
@@ -1209,7 +1211,7 @@ def _first_center_sample(env, times, positions, *, after):
 
 
 _SESSION_KWARGS = {
-    "decision_region": "center",
+    "region": "center",
     "window_duration": 0.5,
     "min_speed": 5.0,
     "vte_threshold": 0.0,
@@ -1454,7 +1456,7 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
             )
         ]
     )
-    kwargs = {"decision_region": "center", "window_duration": 1.0, "min_speed": 5.0}
+    kwargs = {"region": "center", "window_duration": 1.0, "min_speed": 5.0}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # one trial: no z-score spread
         whole = compute_vte_session(
@@ -1711,11 +1713,11 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
         t_maze_environment,
         times,
         positions,
-        decision_region="center",
+        region="center",
         trials=trials,
         window_duration=30.0,  # clipped at each trial start
         min_speed=2.0,
-        alpha=alpha,
+        head_sweep_weight=alpha,
         vte_threshold=threshold,
     )
     table = result.trials_table()

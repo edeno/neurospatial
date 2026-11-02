@@ -64,9 +64,7 @@ if TYPE_CHECKING:
     # built with ``from_arrays`` (an ``Intervals[Interval]``) is accepted.
     task_log = neurospatial.Intervals.from_arrays([0.0], [1.0], outcome=["reached"])
     time_to_goal(times, task_log)
-    compute_vte_session(
-        env, times, positions, decision_region="center", trials=task_log
-    )
+    compute_vte_session(env, times, positions, region="center", trials=task_log)
 
     # with_fields keeps the record class when every name is a field the class
     # defines, and gives Interval rows for a new field. Which one depends on

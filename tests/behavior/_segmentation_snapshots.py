@@ -30,7 +30,7 @@ def capture_segmentation_outputs(pause, laps):
     trials = Intervals([Trial(0.0, p.times[-1], "source", "target", "reached")])
     return {
         "detect_region_crossings": detect_region_crossings(
-            p.env, p.times, p.positions, region_name="target"
+            p.env, p.times, p.positions, region="target"
         ),
         "segment_by_velocity": segment_by_velocity(
             p.times, p.positions, min_speed=5.0, min_duration=0.1
@@ -56,7 +56,7 @@ def capture_segmentation_outputs(pause, laps):
             reference_lap=reference,
         ),
         "detect_goal_directed_runs": detect_goal_directed_runs(
-            p.env, p.times, p.positions, goal_region="target"
+            p.env, p.times, p.positions, region="target"
         ).windows,
         # The source and target boxes mirror each other about x = 50 cm, so
         # their Voronoi boundary splits the track there.
@@ -80,7 +80,7 @@ def capture_segmentation_outputs(pause, laps):
             p.positions,
             decision_region="target",
             goal_regions=["source", "target"],
-            pre_window=2.0,
+            window_duration=2.0,
         ),
         "compute_vte_trial": compute_vte_trial(
             p.times,
@@ -93,7 +93,7 @@ def capture_segmentation_outputs(pause, laps):
             p.env,
             p.times,
             p.positions,
-            decision_region="target",
+            region="target",
             trials=trials,
             window_duration=2.0,
         ),

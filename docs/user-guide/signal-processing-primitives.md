@@ -35,7 +35,7 @@ positions = 50.0 + 35.0 * np.column_stack(
 instantaneous_rate = 0.2 + 12.0 * np.exp(
     -np.sum((positions - [65.0, 35.0]) ** 2, axis=1) / (2 * 12.0**2)
 )
-spike_times = generate_poisson_spikes(instantaneous_rate, times, seed=707)
+spike_times = generate_poisson_spikes(instantaneous_rate, times, rng=707)
 result = compute_spatial_rate(
     env, spike_times, times, positions,
     bandwidth=5.0, min_occupancy=0.1, max_gap=0.1,

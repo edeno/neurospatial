@@ -597,8 +597,8 @@ class TestCountPlaceCells:
         distance2 = np.sum((positions - 50.0) ** 2, axis=1)
         field = 8.0 * np.exp(-distance2 / (2 * 10.0**2))
         trains = [
-            generate_poisson_spikes(field, times, seed=1),  # place cell
-            generate_poisson_spikes(np.full(36000, 0.5), times, seed=2),  # untuned
+            generate_poisson_spikes(field, times, rng=1),  # place cell
+            generate_poisson_spikes(np.full(36000, 0.5), times, rng=2),  # untuned
             np.array([]),  # silent
         ]
         return compute_spatial_rates(env, trains, times, positions)

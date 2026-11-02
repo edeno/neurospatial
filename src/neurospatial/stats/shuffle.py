@@ -610,7 +610,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             "n_shuffles_used": self.n_shuffles_used,
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the null distribution with observed score.
 
         Creates a histogram of the finite null scores with a vertical line

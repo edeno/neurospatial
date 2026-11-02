@@ -108,8 +108,6 @@ VALUES = {
     "window_duration": 1.0,
     "decision_region": "center",
     "region": "center",
-    "region_name": "center",
-    "goal_region": "goal",
     "regions": ["start", "goal"],
     "goals": ["start", "goal"],
     "goal_regions": ["goal", "left_arm"],

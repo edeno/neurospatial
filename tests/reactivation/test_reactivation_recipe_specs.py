@@ -50,7 +50,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # of PRE SWS as control, three 10-min POST SWS blocks, partial-r test.
     "kudrimoti_1999": {
         "measure": "explained_variance",
-        "bin_size": 0.1,
+        "dt": 0.1,
         "pairs": "different_tetrodes",
         "control_windows": ReactivationWindows(length=600.0, anchor="end", count=1),
         "match_windows": ReactivationWindows(length=600.0, count=3),
@@ -60,7 +60,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # 10-min blocks of REST2 on the clock, EV - REV across sessions.
     "pennartz_2004": {
         "measure": "explained_variance",
-        "bin_size": 0.05,
+        "dt": 0.05,
         "control_windows": ReactivationWindows(
             length=600.0, anchor="end", count=1, clock="wall"
         ),
@@ -71,7 +71,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # EV averaged over every PRE segment.
     "tatsuno_2006": {
         "measure": "explained_variance",
-        "bin_size": 0.25,
+        "dt": 0.25,
         "pairs": "different_tetrodes",
         "control_windows": ReactivationWindows(
             length=900.0, anchor="end", clock="wall"
@@ -82,7 +82,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # concatenated rest, 10,000 pair-triplet resamples, 2.5th percentile.
     "lansink_2009": {
         "measure": "explained_variance",
-        "bin_size": 0.05,
+        "dt": 0.05,
         "pairs": "different_regions",
         "control_windows": ReactivationWindows(length=1200.0, anchor="end", count=1),
         "match_windows": ReactivationWindows(length=1200.0),
@@ -95,7 +95,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # percentile, 1000 per-bin cell-identity shuffles at the 99th.
     "peyrache_2010": {
         "measure": "assembly",
-        "bin_size": 0.1,
+        "dt": 0.1,
         "detection": "pca",
         "statistic": "mean_activation_difference",
         "test": "cell_identity_shuffle",
@@ -106,7 +106,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # activations above 5, rest after - rest before.
     "van_de_ven_2016": {
         "measure": "assembly",
-        "bin_size": 0.025,
+        "dt": 0.025,
         "detection": "ica",
         "smoothing_bandwidth": 0.025 / np.sqrt(12.0),
         "activation_threshold": 5.0,
@@ -118,7 +118,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # not this main analysis, so n_rate_subsamples stays None.
     "giri_2019": {
         "measure": "explained_variance",
-        "bin_size": 0.25,
+        "dt": 0.25,
         "pairs": "different_shanks",
         "control_windows": ReactivationWindows(length=900.0, step=300.0, clock="wall"),
         "match_windows": ReactivationWindows(length=900.0, step=300.0, clock="wall"),
@@ -127,7 +127,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # (pair_mask) instead of shanks.
     "giri_2024": {
         "measure": "explained_variance",
-        "bin_size": 0.25,
+        "dt": 0.25,
         "control_windows": ReactivationWindows(length=900.0, step=300.0, clock="wall"),
         "match_windows": ReactivationWindows(length=900.0, step=300.0, clock="wall"),
     },
@@ -136,7 +136,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # EV - REV across mice.
     "oliva_2020_ev": {
         "measure": "explained_variance",
-        "bin_size": 0.1,
+        "dt": 0.1,
         "rest_bins": "events",
         "statistic": "ev_minus_rev",
     },
@@ -144,7 +144,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # Gaussian SD 10 ms, threshold 5, mean expression post - pre.
     "oliva_2020_assembly": {
         "measure": "assembly",
-        "bin_size": 0.02,
+        "dt": 0.02,
         "detection": "ica",
         "smoothing_bandwidth": 0.01,
         "zscore_over": "all_periods",
@@ -155,7 +155,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # 2 SD, member-pair r with one bin per SWR, sessions with >= 200 SWRs.
     "el_gaby_2021": {
         "measure": "member_cofiring",
-        "bin_size": 0.025,
+        "dt": 0.025,
         "rest_bins": "events",
         "min_events": 200,
         "detection": "ica",
@@ -168,7 +168,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # peak 0-50 ms, activations above 5.
     "harvey_2023_assembly": {
         "measure": "assembly",
-        "bin_size": 0.025,
+        "dt": 0.025,
         "control_windows": ReactivationWindows(
             length=3600.0, count=1, clock="wall", allow_shorter=True
         ),
@@ -191,7 +191,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # (sleep).
     "liu_2023_ev": {
         "measure": "explained_variance",
-        "bin_size": None,
+        "dt": None,
         "template_bins": "events",
         "rest_bins": "events",
     },
@@ -199,7 +199,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # pre, the semipartial correlation.
     "liu_2023_pairwise": {
         "measure": "explained_variance",
-        "bin_size": None,
+        "dt": None,
         "template_bins": "events",
         "rest_bins": "events",
         "statistic": "semipartial_correlation",
@@ -208,7 +208,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # hour of NREM, joint z-score, mean R 0-100 ms after SWR onset.
     "liu_2023_assembly": {
         "measure": "assembly",
-        "bin_size": 0.025,
+        "dt": 0.025,
         "control_windows": ReactivationWindows(
             length=3600.0, anchor="end", count=1, allow_shorter=True
         ),
@@ -228,7 +228,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # against -500 to -100 ms.
     "chang_2025_assembly": {
         "measure": "assembly",
-        "bin_size": 0.05,
+        "dt": 0.05,
         "detection": "ica",
         "member_rule": "positive_z",
         "member_threshold": 3.0,
@@ -247,7 +247,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # correlation of residuals on baseline sleep = the partial correlation.
     "robinson_2026_pairwise": {
         "measure": "explained_variance",
-        "bin_size": 0.1,
+        "dt": 0.1,
         "rest_bins": "events",
         "statistic": "partial_correlation",
     },
@@ -256,7 +256,7 @@ SPEC: dict[str, dict[str, Any]] = {
     # z above 1.96.
     "robinson_2026_assembly": {
         "measure": "assembly",
-        "bin_size": 0.05,
+        "dt": 0.05,
         "detection": "ica",
         "member_rule": "inverse_sqrt_n",
         "member_threshold": None,

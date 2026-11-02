@@ -357,7 +357,7 @@ import numpy as np
 from neurospatial.encoding import compute_spatial_rates, population_vector_correlation
 from neurospatial.simulation import linear_track_session
 
-session = linear_track_session(duration=120.0, n_place_cells=12, n_laps=10, seed=0)
+session = linear_track_session(duration=120.0, n_place_cells=12, n_laps=10, rng=0)
 unit_ids = np.arange(101, 113)  # the sorter's unit labels
 first_half, second_half = (
     compute_spatial_rates(
@@ -563,7 +563,7 @@ distances, directions = compute_boundary_distances(
 )
 wall_left = distances[:, np.isclose(directions, np.pi / 2)][:, 0]  # cm
 rate = 0.5 + 20 * np.exp(-0.5 * ((wall_left - 15) / 4) ** 2)  # Hz
-spike_times = generate_poisson_spikes(rate, times, seed=1)
+spike_times = generate_poisson_spikes(rate, times, rng=1)
 
 result = compute_boundary_vector_rate(
     env, spike_times, times, positions, headings,
@@ -923,7 +923,7 @@ crossed = np.where(rightward, x - field_start, field_end - x) / (field_end - fie
 preferred_phase = 5.5 - 5.0 * crossed  # rad: falls by 5 rad across the field
 theta_locking = np.exp(2.0 * (np.cos(2 * np.pi * 8.0 * lfp_times - preferred_phase) - 1))
 rate = 40.0 * ((x > field_start) & (x < field_end)) * theta_locking  # Hz
-spike_times = generate_poisson_spikes(rate, lfp_times, seed=1)
+spike_times = generate_poisson_spikes(rate, lfp_times, rng=1)
 # ---
 
 # Theta phase at each spike: interpolate the unwrapped phase, then re-wrap.

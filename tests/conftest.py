@@ -240,7 +240,7 @@ def open_field_120s():
     """A seeded two-minute open-field session (100 cm arena, 2 cm bins)."""
     from neurospatial.simulation import open_field_session
 
-    return open_field_session(duration=120.0, n_place_cells=8, seed=0)
+    return open_field_session(duration=120.0, n_place_cells=8, rng=0)
 
 
 # =============================================================================

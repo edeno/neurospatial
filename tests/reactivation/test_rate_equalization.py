@@ -195,7 +195,7 @@ def test_values_are_medians_over_subsamples_of_ev_averaged_over_controls() -> No
         name="two_controls",
         reference="test",
         measure="explained_variance",
-        bin_size=0.1,
+        dt=0.1,
         control_windows=ReactivationWindows(length=300.0),
         n_rate_subsamples=5,
     )

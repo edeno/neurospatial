@@ -199,7 +199,7 @@ def _traversals(speed_cm_s: float, n_trials: int, seed: int):
     progress = np.tile(np.arange(per_trial) / per_trial, n_trials)
     times = np.arange(progress.size) / 30.0
     rate = 2.0 + 20.0 * np.exp(-((progress - 0.6) ** 2) / (2 * 0.08**2))
-    return times, progress, generate_poisson_spikes(rate, times, seed=seed)
+    return times, progress, generate_poisson_spikes(rate, times, rng=seed)
 
 
 def test_speed_invariance():

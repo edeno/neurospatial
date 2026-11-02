@@ -74,7 +74,7 @@ class TestPlaceCellModel:
 
     def test_random_center_selection(self, simple_2d_env):
         """Test that center is randomly chosen from bin centers if not provided."""
-        pc = PlaceCellModel(simple_2d_env, seed=42)
+        pc = PlaceCellModel(simple_2d_env, rng=42)
 
         # Center should be one of the bin centers
         assert pc.center is None
@@ -336,8 +336,8 @@ class TestPlaceCellModel:
 
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same random center."""
-        pc1 = PlaceCellModel(simple_2d_env, seed=42)
-        pc2 = PlaceCellModel(simple_2d_env, seed=42)
+        pc1 = PlaceCellModel(simple_2d_env, rng=42)
+        pc2 = PlaceCellModel(simple_2d_env, rng=42)
 
         np.testing.assert_array_equal(
             pc1.ground_truth["center"], pc2.ground_truth["center"]
@@ -516,13 +516,13 @@ class TestBoundaryVectorCellModel:
         """17.5 cm, a tolerance growing with distance, and a seeded direction."""
         from neurospatial.simulation.models import BoundaryVectorCellModel
 
-        truth = BoundaryVectorCellModel(walled_box, seed=3).ground_truth
+        truth = BoundaryVectorCellModel(walled_box, rng=3).ground_truth
         assert truth["preferred_distance"] == pytest.approx(17.5)
         assert truth["distance_tolerance"] == pytest.approx(17.5 / 12 + 8.0)
         assert truth["direction_tolerance"] == pytest.approx(np.pi / 6)
-        again = BoundaryVectorCellModel(walled_box, seed=3).ground_truth
+        again = BoundaryVectorCellModel(walled_box, rng=3).ground_truth
         assert again["preferred_direction"] == truth["preferred_direction"]
-        near = BoundaryVectorCellModel(walled_box, preferred_distance=6.0, seed=3)
+        near = BoundaryVectorCellModel(walled_box, preferred_distance=6.0, rng=3)
         assert near.ground_truth["distance_tolerance"] == pytest.approx(6.0 / 12 + 8.0)
 
     @staticmethod
@@ -685,7 +685,7 @@ class TestSharedRayDistances:
         ]
         calls = self._count_casts(monkeypatch)
         shared = generate_population_spikes(
-            cells, times, positions, seed=4, show_progress=False
+            cells, times, positions, rng=4, show_progress=False
         )
         assert len(calls) == 1
         for alone, together in zip(separate, shared, strict=True):
@@ -721,7 +721,7 @@ class TestSharedRayDistances:
         from neurospatial.simulation import generate_population_spikes
 
         times, positions = samples
-        generate_population_spikes(cells, times, positions, seed=4, show_progress=False)
+        generate_population_spikes(cells, times, positions, rng=4, show_progress=False)
         calls = self._count_casts(monkeypatch)
         cells[0].firing_rate(times, positions)
         cells[1].firing_rate(times, positions)
@@ -778,7 +778,7 @@ class TestPopulationCache:
             generate_poisson_spikes(
                 cell.firing_rate(times, positions, headings=headings),
                 times,
-                seed=int(sequence.generate_state(1)[0]),
+                rng=int(sequence.generate_state(1)[0]),
             )
             for cell, sequence in zip(
                 cells, np.random.SeedSequence(8).spawn(len(cells)), strict=True
@@ -793,7 +793,7 @@ class TestPopulationCache:
 
         monkeypatch.setattr(owner, name, counting)
         shared = generate_population_spikes(
-            cells, times, positions, headings=headings, seed=8, show_progress=False
+            cells, times, positions, headings=headings, rng=8, show_progress=False
         )
         assert len(calls) == 1
         for alone, together in zip(separate, shared, strict=True):
@@ -805,7 +805,7 @@ def generate_poisson_spikes_for(cell, times, positions, sequence):
     from neurospatial.simulation import generate_poisson_spikes
 
     rate = cell.firing_rate(times, positions)
-    return generate_poisson_spikes(rate, times, seed=int(sequence.generate_state(1)[0]))
+    return generate_poisson_spikes(rate, times, rng=int(sequence.generate_state(1)[0]))
 
 
 class TestGridCellModel:
@@ -968,7 +968,7 @@ class TestGridCellModel:
         gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=2.0, rng=42, speed_units="cm"
         )
         rates = gc.firing_rate(times, positions)
 
@@ -989,7 +989,7 @@ class TestGridCellModel:
         )
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=5.0, rng=42, speed_units="cm"
         )
         rates = gc.firing_rate(times, positions)
 

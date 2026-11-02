@@ -3950,7 +3950,7 @@ class TestDirectionalRateRecovery:
         # A head-direction cell ignores where the animal is.
         positions = np.zeros((len(times), 2))
         rates = model.firing_rate(times, positions, headings=headings)
-        spike_times = generate_poisson_spikes(rates, times, seed=42)
+        spike_times = generate_poisson_spikes(rates, times, rng=42)
 
         result = compute_directional_rate(
             spike_times, times, headings, bin_size=self.BIN_SIZE

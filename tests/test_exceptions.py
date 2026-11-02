@@ -138,7 +138,7 @@ def test_every_library_error_is_a_neurospatial_error(name, builtin):
 
 def test_region_not_found_prints_fix_unquoted():
     exc = RegionNotFoundError("hom", available=["home"])
-    assert "\nFix: pass region_name='home'" in str(exc)
+    assert "\nFix: pass region='home'" in str(exc)
     assert not str(exc).startswith("'")
     assert isinstance(exc, (KeyError, ValueError))
     assert isinstance(exc, ValueError)

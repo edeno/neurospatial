@@ -38,13 +38,13 @@ env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
 # 2. Simulate 30 minutes of foraging, plus one place cell tuned to arena center.
 positions, times = simulate_trajectory_ou(
-    env, duration=1800.0, speed_units="cm", seed=1
+    env, duration=1800.0, speed_units="cm", rng=1
 )
 place_cell = PlaceCellModel(
     env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0
 )
 firing_rate_hz = place_cell.firing_rate(times, positions)
-spike_times = generate_poisson_spikes(firing_rate_hz, times, seed=2)
+spike_times = generate_poisson_spikes(firing_rate_hz, times, rng=2)
 
 # 3. Estimate the place field: a boundary-aware, smoothed firing-rate map.
 result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
@@ -121,7 +121,7 @@ labels explicitly, then choose a population row or its singular result:
 from neurospatial import compute_spatial_rates
 from neurospatial.simulation import linear_track_session
 
-sim = linear_track_session(duration=60, n_place_cells=3, seed=0)
+sim = linear_track_session(duration=60, n_place_cells=3, rng=0)
 track_rates = compute_spatial_rates(
     sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
 )

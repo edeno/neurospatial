@@ -1024,7 +1024,7 @@ def load_cvat_xml(
 def mask_to_region(
     mask: NDArray[np.bool_],
     *,
-    region_name: str,
+    region: str,
     pixel_to_world: SpatialTransform | None = None,
     simplify_tolerance: float = 0.0,
 ) -> Region:
@@ -1039,7 +1039,7 @@ def mask_to_region(
         Image mask indexed ``mask[row, column]``, where True (or 1) marks the
         area. The foreground must be one connected component; pixels that
         meet only at a corner are not connected.
-    region_name : str
+    region : str
         Name of the resulting region.
     pixel_to_world : SpatialTransform, optional
         Callable mapping ``(n, 2)`` pixel ``(x, y)`` coordinates to
@@ -1078,7 +1078,7 @@ def mask_to_region(
     >>> mask = np.zeros((5, 6), dtype=bool)
     >>> mask[1:4, 1:5] = True
     >>> mask[2, 2] = False  # a one-pixel hole
-    >>> region = mask_to_region(mask, region_name="arena")
+    >>> region = mask_to_region(mask, region="arena")
     >>> region.data.area, len(region.data.interiors)
     (11.0, 1)
     >>> region.data.bounds
@@ -1109,7 +1109,7 @@ def mask_to_region(
     if not polygons:
         raise ValueError(
             _format_error(
-                f"mask for region {region_name!r} has no foreground pixels.",
+                f"mask for region {region!r} has no foreground pixels.",
                 fix="mark the region's pixels True",
             )
         )
@@ -1117,7 +1117,7 @@ def mask_to_region(
         sizes = sorted((round(p.area) for p in polygons), reverse=True)[:5]
         raise ValueError(
             _format_error(
-                f"mask for region {region_name!r} has {len(polygons)} separate "
+                f"mask for region {region!r} has {len(polygons)} separate "
                 f"areas (largest pixel counts {sizes}).",
                 why="a Region holds one polygon, and pixels that touch only at "
                 "a corner are not connected",
@@ -1130,9 +1130,9 @@ def mask_to_region(
         polygons[0],
         pixel_to_world,
         name="pixel_to_world",
-        where=f"region {region_name!r}",
+        where=f"region {region!r}",
     )
     metadata: dict[str, Any] = {"source": "mask"}
     if pixel_to_world is None:
         metadata["coord_system"] = "pixels"
-    return Region(name=region_name, kind="polygon", data=polygon, metadata=metadata)
+    return Region(name=region, kind="polygon", data=polygon, metadata=metadata)

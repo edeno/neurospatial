@@ -47,7 +47,7 @@ def test_fast_walks_in_a_sharp_corner_never_stall():
         speed_mean=60.0,
         speed_std=30.0,
         speed_units="cm",
-        seed=0,
+        rng=0,
     )
     steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
     assert np.all(steps > 0)

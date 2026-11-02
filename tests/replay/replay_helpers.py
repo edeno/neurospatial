@@ -33,7 +33,7 @@ def sweeps_and_jumps(track, dt=0.02):
         kind = "sweep" if index % 2 else "random"
         extra = {"speed": 400.0} if kind == "sweep" else {}
         event = simulate_replay_event(
-            track, rates, kind=kind, rate_gain=3.0, seed=index, **extra
+            track, rates, kind=kind, rate_gain=3.0, rng=index, **extra
         )
         start = 2.0 * index
         for cell, train in enumerate(event.spike_times):

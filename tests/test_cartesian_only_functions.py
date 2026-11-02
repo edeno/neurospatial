@@ -112,25 +112,25 @@ def _polar_regions_env(env: Environment) -> Environment:
             lambda env: field_shift_distance(
                 env, _rates(env), np.arange(4), env, _rates(env), np.arange(4)
             ),
-            "field_shift_distance(env_1=...)",
+            "field_shift_distance(env_a=...)",
         ),
         (
             lambda env: field_shift_distance(
                 _room(), _rates(_room()), np.arange(4), env, _rates(env), np.arange(4)
             ),
-            "field_shift_distance(env_2=...)",
+            "field_shift_distance(env_b=...)",
         ),
         (
             lambda env: spatial_autocorrelation(env, _rates(env)),
             "spatial_autocorrelation()",
         ),
         (
-            lambda env: resample_field(_rates(env), env, _room()),
-            "resample_field(src_env=...)",
+            lambda env: resample_field(env, _room(), _rates(env)),
+            "resample_field(source_env=...)",
         ),
         (
-            lambda env: resample_field(_rates(_room()), _room(), env),
-            "resample_field(dst_env=...)",
+            lambda env: resample_field(_room(), env, _rates(_room())),
+            "resample_field(target_env=...)",
         ),
         (
             lambda env: compute_egocentric_distance(
@@ -313,7 +313,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _polar_regions_env(env),
                 _TIMES,
                 _POLAR_POSITIONS,
-                decision_region="near",
+                region="near",
                 trials=Intervals([Trial(0.0, 2.5, "near", "far", "reached")]),
             ),
             "compute_vte_session()",
@@ -342,7 +342,7 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (
             lambda env: simulate_trajectory_ou(
-                env.with_metadata(units="cm"), duration=1.0, speed_units="cm", seed=0
+                env.with_metadata(units="cm"), duration=1.0, speed_units="cm", rng=0
             ),
             "simulate_trajectory_ou()",
         ),
@@ -400,7 +400,7 @@ def _polar_regions_env(env: Environment) -> Environment:
                 _polar_regions_env(env),
                 _TIMES,
                 _POLAR_POSITIONS,
-                decision_region="near",
+                region="near",
                 trials=Intervals([], record_type=Trial),
             ),
             "compute_vte_session()",

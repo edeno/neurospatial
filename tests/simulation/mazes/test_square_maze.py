@@ -161,7 +161,7 @@ class TestMakeSquareMaze:
 
         env = make_square_maze().env_2d
         positions, times = simulate_trajectory_ou(
-            env, duration=600.0, speed_units="cm", seed=2026
+            env, duration=600.0, speed_units="cm", rng=2026
         )
         visits = detect_region_visits(
             env, times, positions, regions=["NE", "NW", "SE", "SW"], max_gap=None

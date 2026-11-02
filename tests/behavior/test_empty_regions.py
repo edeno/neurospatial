@@ -44,7 +44,7 @@ CALLS = {
         env, t, p, regions=["right", empty]
     ),
     "detect_region_crossings": lambda env, t, p, empty: detect_region_crossings(
-        env, t, p, region_name=empty
+        env, t, p, region=empty
     ),
     "detect_region_visits": lambda env, t, p, empty: detect_region_visits(
         env, t, p, regions=["left", empty]
@@ -53,7 +53,7 @@ CALLS = {
         env, t, p, method="region", start_region=empty
     ),
     "detect_goal_directed_runs": lambda env, t, p, empty: (
-        detect_goal_directed_runs(env, t, p, goal_region=empty)
+        detect_goal_directed_runs(env, t, p, region=empty)
     ),
     "decision_region_entry_time": lambda env, t, p, empty: (
         decision_region_entry_time(env, t, p, region=empty)
@@ -67,14 +67,14 @@ CALLS = {
         env,
         t,
         p,
-        decision_region=empty,
+        region=empty,
         trials=detect_trials(env, t, p, regions=["left", "right"]),
     ),
     "region_reward_field": lambda env, t, p, empty: region_reward_field(
-        env, region_name=empty
+        env, region=empty
     ),
     "distance_to_boundary": lambda env, t, p, empty: distance_to_boundary(
-        env, p, boundary_type="region", region_name=empty
+        env, p, boundary_type="region", region=empty
     ),
 }
 

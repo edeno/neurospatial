@@ -353,12 +353,10 @@ def _validate_window(
     return float(bounds[0]), float(bounds[1])
 
 
-def _make_bin_edges(
-    window: tuple[float, float], bin_size: float
-) -> NDArray[np.float64]:
+def _make_bin_edges(window: tuple[float, float], dt: float) -> NDArray[np.float64]:
     """Build PSTH bin edges that stay within the window.
 
-    When ``window_duration`` is not an integer multiple of ``bin_size``,
+    When ``window_duration`` is not an integer multiple of ``dt``,
     the trailing partial bin is dropped rather than appended. This keeps
     every edge (and therefore every center) inside ``[window[0],
     window[1]]``; otherwise the final bin would extend past ``window[1]``
@@ -369,8 +367,8 @@ def _make_bin_edges(
     timestamp-relative rounding rather than an absolute epsilon.
 
     When ``window[0]`` is a whole number of bins from 0 (up to float
-    rounding), each edge is the grid value ``k * bin_size`` rather than
-    ``window[0] + j * bin_size``, so the edge at the event is exactly 0
+    rounding), each edge is the grid value ``k * dt`` rather than
+    ``window[0] + j * dt``, so the edge at the event is exactly 0
     (``-0.3 + 3 * 0.1`` is ``5.6e-17``, which would put a spike at the event
     in the bin before it). The outer edges are the window bounds.
 
@@ -378,56 +376,54 @@ def _make_bin_edges(
     ----------
     window : tuple[float, float]
         Time window ``(start, end)`` relative to each event, in seconds.
-    bin_size : float
+    dt : float
         Width of each time bin in seconds.
 
     Returns
     -------
     bin_edges : NDArray[np.float64], shape (n_bins + 1,)
-        Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
+        Bin edges from ``window[0]`` up to ``window[0] + n_bins * dt``,
         which never exceeds ``window[1]``.
     """
-    left, _ = _time_bins_in_windows(np.asarray([window], dtype=np.float64), bin_size)
+    left, _ = _time_bins_in_windows(np.asarray([window], dtype=np.float64), dt)
     steps = np.arange(left.size + 1, dtype=np.float64)
-    first = window[0] / bin_size
+    first = window[0] / dt
     on_grid = abs(first - round(first)) <= 4.0 * np.finfo(np.float64).eps * max(
         1.0, abs(first)
     )
-    edges = (
-        (round(first) + steps) * bin_size if on_grid else window[0] + bin_size * steps
-    )
+    edges = (round(first) + steps) * dt if on_grid else window[0] + dt * steps
     clipped: NDArray[np.float64] = np.clip(edges, window[0], window[1])
     return clipped
 
 
 def _psth_bins(
-    window: tuple[float, float], bin_size: Any, *, context: str
+    window: tuple[float, float], dt: Any, *, context: str
 ) -> NDArray[np.float64]:
-    """Validate ``bin_size`` for a valid window; return the bin edges.
+    """Validate ``dt`` for a valid window; return the bin edges.
 
     Raises
     ------
     ValueError
-        If ``bin_size`` is not a finite positive number of seconds, or no
+        If ``dt`` is not a finite positive number of seconds, or no
         complete bin fits in the window.
     """
-    if not (_is_real_number(bin_size) and np.isfinite(bin_size) and bin_size > 0):
+    if not (_is_real_number(dt) and np.isfinite(dt) and dt > 0):
         raise ValueError(
             _format_error(
-                f"{context}: bin_size must be positive and finite, got {bin_size!r}.",
-                why="bin_size is the width of each peri-event time bin in seconds.",
-                fix="pass bin_size=0.025 (25 ms)",
+                f"{context}: dt must be positive and finite, got {dt!r}.",
+                why="dt is the width of each peri-event time bin in seconds.",
+                fix="pass dt=0.025 (25 ms)",
             )
         )
-    edges = _make_bin_edges(window, float(bin_size))
+    edges = _make_bin_edges(window, float(dt))
     if edges.size < 2:
         raise ValueError(
             _format_error(
-                f"{context}: bin_size={bin_size:g} s is longer than the "
+                f"{context}: dt={dt:g} s is longer than the "
                 f"{window[1] - window[0]:g} s window, so no complete bin fits.",
                 why="a trailing partial bin is dropped so every bin has the same "
                 "width.",
-                fix="choose a bin_size no larger than the window, e.g. bin_size=0.025",
+                fix="choose a dt no larger than the window, e.g. dt=0.025",
             )
         )
     return edges
@@ -439,15 +435,15 @@ def _validated_psth_fields(
     """Check and normalize the fields shared by the PSTH results in place.
 
     ``arrays`` maps each array field to its expected shape, with ``-1``
-    standing for the number of bins implied by ``window`` and ``bin_size``,
+    standing for the number of bins implied by ``window`` and ``dt``,
     and to the events a bin needs for a value: 1 for a mean, 2 for an SEM.
     Each array is NaN exactly in the bins with fewer events
     (``events_per_bin``, or ``n_events`` in every bin for plain times).
     """
     window = _validate_window(result.window, context=context, warn_wide=False)
-    n_bins = _psth_bins(window, result.bin_size, context=context).size - 1
+    n_bins = _psth_bins(window, result.dt, context=context).size - 1
     object.__setattr__(result, "window", window)
-    object.__setattr__(result, "bin_size", float(result.bin_size))
+    object.__setattr__(result, "dt", float(result.dt))
     for name in ("n_events", "n_events_dropped"):
         value = getattr(result, name)
         if isinstance(value, (bool, np.bool_)) or not isinstance(
@@ -473,7 +469,7 @@ def _validated_psth_fields(
         if array.shape != expected:
             msg = (
                 f"{context}: {name} has shape {array.shape}; window={window} "
-                f"with bin_size={result.bin_size:g} s gives {n_bins} bins, "
+                f"with dt={result.dt:g} s gives {n_bins} bins, "
                 f"so it needs shape {expected}."
             )
             raise ValueError(msg)
@@ -565,10 +561,10 @@ def _validated_interval_fields(
     return per_bin
 
 
-def _pre_event_bins(window: tuple[float, float], bin_size: float) -> NDArray[np.bool_]:
+def _pre_event_bins(window: tuple[float, float], dt: float) -> NDArray[np.bool_]:
     """Bins that end at or before the event, up to float rounding of the edges."""
-    edges = _make_bin_edges(window, bin_size)
-    rounding = _time_bin_rounding(np.asarray([window]), bin_size)[0]
+    edges = _make_bin_edges(window, dt)
+    rounding = _time_bin_rounding(np.asarray([window]), dt)[0]
     pre: NDArray[np.bool_] = edges[1:] <= rounding
     return pre
 
@@ -623,7 +619,7 @@ class _PeriEventExports:
     """Tables shared by the single-unit and population PSTH results."""
 
     window: tuple[float, float]
-    bin_size: float
+    dt: float
     n_events: int
     n_events_dropped: int
     event_indices: NDArray[np.intp] | None
@@ -634,13 +630,13 @@ class _PeriEventExports:
     @property
     def bin_centers(self) -> NDArray[np.float64]:
         """Bin centers relative to the event (s), shape ``(n_bins,)``."""
-        return _make_bin_edges(self.window, self.bin_size)[:-1] + self.bin_size / 2
+        return _make_bin_edges(self.window, self.dt)[:-1] + self.dt / 2
 
     def _table_attrs(self) -> dict[str, Any]:
         """Analysis settings stored in ``df.attrs`` of every table."""
         return {
             "window": self.window,
-            "bin_size": self.bin_size,
+            "dt": self.dt,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
             "align": self.align,
@@ -651,7 +647,7 @@ class _PeriEventExports:
         import pandas as pd
 
         metrics = _response_metrics(
-            rates, self.bin_centers, _pre_event_bins(self.window, self.bin_size)
+            rates, self.bin_centers, _pre_event_bins(self.window, self.dt)
         )
         df = pd.DataFrame(metrics, index=pd.Index(unit_ids, name="unit_id"))
         df.attrs = self._table_attrs()
@@ -675,8 +671,8 @@ class _PeriEventExports:
             {
                 "unit_id": np.repeat(unit_ids, n_bins),
                 "bin_center": np.tile(self.bin_centers, n_units),
-                "firing_rate": (histograms / self.bin_size).reshape(-1),
-                "firing_rate_sem": (sem / self.bin_size).reshape(-1),
+                "firing_rate": (histograms / self.dt).reshape(-1),
+                "firing_rate_sem": (sem / self.dt).reshape(-1),
                 "histogram": histograms.reshape(-1),
                 "sem": sem.reshape(-1),
                 "events_per_bin": np.tile(per_bin, n_units),
@@ -695,7 +691,7 @@ def _cohort_fields(source: _PeriEventExports | _PeriEventCounts) -> dict[str, An
     return {
         "n_events": source.n_events,
         "window": source.window,
-        "bin_size": source.bin_size,
+        "dt": source.dt,
         "n_events_dropped": source.n_events_dropped,
         "event_indices": source.event_indices,
         "events_per_bin": source.events_per_bin,
@@ -728,7 +724,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         selection), with every value NaN.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
-    bin_size : float
+    dt : float
         Width of time bins (seconds). Together with ``window`` it fixes the
         bins: ``histogram`` and ``sem`` need one entry per bin.
     unit_id : int or str or None
@@ -757,17 +753,17 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         of ``event_indices``; None for plain event times. Read-only.
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Time relative to event (seconds), derived from ``window`` and
-        ``bin_size``. Negative = before, positive = after.
+        ``dt``. Negative = before, positive = after.
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate (Hz), ``histogram / bin_size``.
+        Firing rate (Hz), ``histogram / dt``.
     firing_rate_sem : NDArray[np.float64], shape (n_bins,)
         Standard error of ``firing_rate`` across events (Hz),
-        ``sem / bin_size``.
+        ``sem / dt``.
 
     Raises
     ------
     ValueError
-        On construction, if ``window`` or ``bin_size`` is invalid, no complete
+        On construction, if ``window`` or ``dt`` is invalid, no complete
         bin fits, an array has the wrong shape or negative values, the event
         counts are not non-negative integers, ``histogram`` is not NaN
         exactly in the bins with no event or ``sem`` exactly in those with
@@ -786,7 +782,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
     >>> from neurospatial.events import peri_event_histogram
     >>> spikes = np.array([0.8, 1.0, 1.2, 2.8, 3.0, 3.2])
     >>> events = np.array([1.0, 3.0])
-    >>> result = peri_event_histogram(spikes, events, window=(-0.5, 0.5), bin_size=0.1)
+    >>> result = peri_event_histogram(spikes, events, window=(-0.5, 0.5), dt=0.1)
     >>> rate = result.firing_rate
     >>> rate.shape == result.bin_centers.shape
     True
@@ -798,7 +794,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
     sem: NDArray[np.float64]
     n_events: int
     window: tuple[float, float]
-    bin_size: float
+    dt: float
     unit_id: int | str | None = None
     n_events_dropped: int = 0
     event_indices: NDArray[np.intp] | None = None
@@ -816,14 +812,14 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
 
     @property
     def firing_rate(self) -> NDArray[np.float64]:
-        """Firing rate (Hz), shape ``(n_bins,)``: ``histogram / bin_size``."""
-        rate: NDArray[np.float64] = self.histogram / self.bin_size
+        """Firing rate (Hz), shape ``(n_bins,)``: ``histogram / dt``."""
+        rate: NDArray[np.float64] = self.histogram / self.dt
         return rate
 
     @property
     def firing_rate_sem(self) -> NDArray[np.float64]:
         """SEM of ``firing_rate`` across events (Hz), shape ``(n_bins,)``."""
-        sem: NDArray[np.float64] = self.sem / self.bin_size
+        sem: NDArray[np.float64] = self.sem / self.dt
         return sem
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -841,7 +837,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             (mean spike count per bin), ``sem`` (count units) and
             ``events_per_bin`` (events averaged in the bin; ``n_events`` in
             every bin for plain event times). ``df.attrs`` holds
-            ``window``, ``bin_size``, ``n_events``, ``n_events_dropped``,
+            ``window``, ``dt``, ``n_events``, ``n_events_dropped``,
             ``align`` and ``event_ids`` (a list, or None).
 
         Examples
@@ -853,7 +849,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         ...     sem=np.array([0.01, 0.02, 0.01]),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ...     unit_id="u0",
         ... )
         >>> df = result.to_dataframe()
@@ -881,7 +877,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             when no bin is above zero, as for a unit with no spikes) and
             ``baseline_rate`` (Hz, mean rate over the bins that end at or
             before the event; NaN when the window has none). ``df.attrs``
-            holds ``window``, ``bin_size``, ``n_events``,
+            holds ``window``, ``dt``, ``n_events``,
             ``n_events_dropped``, ``align`` and ``event_ids``.
         """
         return self._metrics_table(
@@ -910,7 +906,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         ...     sem=np.array([0.01, 0.02, 0.01]),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ... )
         >>> s = result.summary()
         >>> sorted(s)
@@ -921,7 +917,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         metrics = _response_metrics(
             self.firing_rate[np.newaxis],
             self.bin_centers,
-            _pre_event_bins(self.window, self.bin_size),
+            _pre_event_bins(self.window, self.dt),
         )
         return {
             "unit_id": self.unit_id,
@@ -930,7 +926,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             **{name: float(values[0]) for name, values in metrics.items()},
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the PSTH, returning the axis for composition.
 
         Delegates to :func:`plot_peri_event_histogram`.
@@ -965,7 +961,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         Per-unit mean spike count per time bin across events.
     sem : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit standard error of the mean across events, in **count
-        units** (matching ``histograms``). Divide by ``bin_size`` to
+        units** (matching ``histograms``). Divide by ``dt`` to
         convert to Hz.
     mean_sem : NDArray[np.float64], shape (n_bins,)
         Standard error across events of the population-mean histogram, in
@@ -978,7 +974,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         selection), with every value NaN.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
-    bin_size : float
+    dt : float
         Width of time bins (seconds).
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
@@ -1010,15 +1006,15 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         of ``event_indices``; None for plain event times. Read-only.
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Time relative to event (seconds), derived from ``window`` and
-        ``bin_size``.
+        ``dt``.
     n_units : int
         Number of units, ``len(histograms)``.
     mean_histogram : NDArray[np.float64], shape (n_bins,)
         Population average histogram, ``histograms.mean(axis=0)``.
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
-        Per-unit firing rates (Hz), ``histograms / bin_size``.
+        Per-unit firing rates (Hz), ``histograms / dt``.
     mean_firing_rate : NDArray[np.float64], shape (n_bins,)
-        Population-average firing rate (Hz), ``mean_histogram / bin_size``;
+        Population-average firing rate (Hz), ``mean_histogram / dt``;
         the population-level analog of ``PeriEventResult.firing_rate``.
 
     Raises
@@ -1039,7 +1035,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     >>> spikes = [np.array([0.8, 1.0, 3.2]), np.array([1.2, 2.8, 3.0])]
     >>> events = np.array([1.0, 3.0])
     >>> result = population_peri_event_histogram(
-    ...     spikes, events, window=(-0.5, 0.5), bin_size=0.1
+    ...     spikes, events, window=(-0.5, 0.5), dt=0.1
     ... )
     >>> rates = result.firing_rates
     >>> rates.shape[0]
@@ -1053,7 +1049,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     mean_sem: NDArray[np.float64]
     n_events: int
     window: tuple[float, float]
-    bin_size: float
+    dt: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = None
     unit_table: pd.DataFrame | None = None
     n_events_dropped: int = 0
@@ -1103,13 +1099,13 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     @property
     def firing_rates(self) -> NDArray[np.float64]:
         """Per-unit firing rates (Hz), shape ``(n_units, n_bins)``."""
-        rates: NDArray[np.float64] = self.histograms / self.bin_size
+        rates: NDArray[np.float64] = self.histograms / self.dt
         return rates
 
     @property
     def mean_firing_rate(self) -> NDArray[np.float64]:
         """Population-average firing rate (Hz), shape ``(n_bins,)``."""
-        return self.mean_histogram / self.bin_size
+        return self.mean_histogram / self.dt
 
     def __len__(self) -> int:
         """Return the number of units in the population.
@@ -1150,7 +1146,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ...     mean_sem=np.zeros(3),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ...     unit_ids=["a", "b"],
         ... )
         >>> result[1].unit_id
@@ -1191,7 +1187,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             ``firing_rate_sem`` (Hz), ``histogram`` (mean spike count per
             bin), ``sem`` (count units) and ``events_per_bin`` (events
             averaged in the bin; ``n_events`` in every bin for plain event
-            times). ``df.attrs`` holds ``window``, ``bin_size``,
+            times). ``df.attrs`` holds ``window``, ``dt``,
             ``n_events``, ``n_events_dropped``, ``align`` and ``event_ids``
             (a list, or None).
 
@@ -1206,7 +1202,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ...     mean_sem=np.zeros(3),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ... )
         >>> df = result.to_dataframe()
         >>> list(df.columns)
@@ -1230,7 +1226,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             relative to the event; NaN for a unit with no bin above zero), and
             ``baseline_rate`` (Hz, mean rate over
             the bins that end at or before the event). ``df.attrs`` holds
-            ``window``, ``bin_size``, ``n_events``, ``n_events_dropped``,
+            ``window``, ``dt``, ``n_events``, ``n_events_dropped``,
             ``align`` and ``event_ids`` (a list, or None).
 
         Examples
@@ -1244,7 +1240,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ...     mean_sem=np.zeros(3),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
@@ -1278,7 +1274,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         ...     mean_sem=np.zeros(3),
         ...     n_events=10,
         ...     window=(-0.75, 0.75),
-        ...     bin_size=0.5,
+        ...     dt=0.5,
         ... )
         >>> sorted(result.summary())
         ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
@@ -1297,7 +1293,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             "population_peak_latency": float(latency[0]),
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the population-average PSTH, returning the axis.
 
         The band is ``mean_sem``, the standard error across events of the
@@ -1505,7 +1501,7 @@ def plot_peri_event_histogram(
     >>> from neurospatial.events import peri_event_histogram
     >>> spikes = np.array([0.8, 1.0, 1.2, 2.8, 3.0, 3.2])
     >>> result = peri_event_histogram(
-    ...     spikes, np.array([1.0, 3.0]), window=(-0.5, 0.5), bin_size=0.1
+    ...     spikes, np.array([1.0, 3.0]), window=(-0.5, 0.5), dt=0.1
     ... )
     >>> ax = plot_peri_event_histogram(result, title="Reward response")
     """

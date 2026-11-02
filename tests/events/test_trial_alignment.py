@@ -99,7 +99,7 @@ def test_values_match_pynapple_build_tensor_before_each_stop():
 
 
 def test_psth_averages_each_bin_over_the_trials_under_way(trials):
-    result = peri_event_histogram(SPIKES, trials, (-0.5, 4.0), bin_size=0.5)
+    result = peri_event_histogram(SPIKES, trials, (-0.5, 4.0), dt=0.5)
     # By hand: trial [1, 3) counts 1 1 1 0 1 in its bins from 0.5 s; trial
     # [5, 8.5) counts 0 1 0 0 0 0 0 1 from 4.5 s; trial [9, 9) only has the
     # bin before its start, holding the spike at 8.6 s.
@@ -129,10 +129,10 @@ def test_psth_of_trials_longer_than_the_window_equals_plain_times():
     trials = Intervals.from_arrays([1.0, 5.0, 9.0], [4.0, 8.0, 12.0])
     spikes = np.sort(np.random.default_rng(0).uniform(0, 13, 80))
     from_trials = population_peri_event_histogram(
-        [spikes, spikes[::2]], trials, (-0.5, 2.0), bin_size=0.25
+        [spikes, spikes[::2]], trials, (-0.5, 2.0), dt=0.25
     )
     from_times = population_peri_event_histogram(
-        [spikes, spikes[::2]], trials.start, (-0.5, 2.0), bin_size=0.25
+        [spikes, spikes[::2]], trials.start, (-0.5, 2.0), dt=0.25
     )
     np.testing.assert_allclose(from_trials.histograms, from_times.histograms)
     np.testing.assert_allclose(from_trials.sem, from_times.sem)
@@ -148,7 +148,7 @@ def test_psth_of_trials_longer_than_the_window_equals_plain_times():
 def test_psth_window_outside_every_trial_raises(trials):
     with pytest.raises(ValueError, match="no interval holds a whole bin"):
         # Every trial is shorter than 4 s, and its window ends at its stop.
-        peri_event_histogram(SPIKES, trials, (4.0, 5.0), bin_size=0.5)
+        peri_event_histogram(SPIKES, trials, (4.0, 5.0), dt=0.5)
 
 
 def test_raster_is_cut_at_each_trial_s_other_bound(trials):
@@ -207,7 +207,7 @@ def test_continuous_cut_is_exact_at_float_rounded_trial_bounds():
 
 def test_psth_leaves_a_spike_at_a_trial_stop_to_the_next_trial():
     trials = Intervals.from_arrays([0.1, 0.3], [0.3, 0.6])
-    result = peri_event_histogram(np.array([0.3]), trials, (0.0, 0.3), bin_size=0.1)
+    result = peri_event_histogram(np.array([0.3]), trials, (0.0, 0.3), dt=0.1)
     np.testing.assert_allclose(result.histogram, [0.5, 0.0, 0.0])
     raster = align_spikes_to_events(np.array([0.3]), trials, (0.0, 0.3))
     assert [r.tolist() for r in raster] == [[], [0.0]]
@@ -221,7 +221,7 @@ def test_psth_bins_end_at_a_float_rounded_trial_stop():
     trials = Intervals.from_arrays([0.1, 0.3], [0.3, 0.6])
     spikes = np.array([0.25, 0.3])
     per_trial = np.array([[0.0, 1.0, np.nan], [1.0, 0.0, 0.0]])
-    result = peri_event_histogram(spikes, trials, (0.0, 0.3), bin_size=0.1)
+    result = peri_event_histogram(spikes, trials, (0.0, 0.3), dt=0.1)
     np.testing.assert_array_equal(result.events_per_bin, [2, 2, 1])
     np.testing.assert_allclose(result.histogram, [0.5, 0.5, 0.0])
     np.testing.assert_allclose(
@@ -237,7 +237,7 @@ def test_response_plot_cuts_raster_rows_like_the_histogram():
 
     trials = Intervals.from_arrays([1.0, 2.0], [2.0, 3.0])
     spikes = np.array([1.5, 2.1, 2.5])
-    result = peri_event_histogram(spikes, trials, (0.0, 2.0), bin_size=0.5)
+    result = peri_event_histogram(spikes, trials, (0.0, 2.0), dt=0.5)
     raster_ax, _ = plot_peri_event_response(spikes, trials, result)
     # Trial [1, 2) shows only its spike at 1.5; 2.1 and 2.5 are the next
     # trial's, in its own row.
@@ -256,7 +256,7 @@ def test_aligned_at_the_stop_keeps_a_spike_at_the_trial_start(start, stop):
     spikes = np.array([start])
     length = round(stop - start, 1)
     for align, window in (("stop", (-length, 0.0)), ("start", (0.0, length))):
-        result = peri_event_histogram(spikes, trials, window, bin_size=0.1, align=align)
+        result = peri_event_histogram(spikes, trials, window, dt=0.1, align=align)
         assert np.nansum(result.histogram * result.events_per_bin) == 1.0
         raster = align_spikes_to_events(spikes, trials, window, align=align)
         assert [r.size for r in raster] == [1]
@@ -279,7 +279,7 @@ def test_spikes_at_trial_bounds_count_once_in_counts_psth_and_raster(align):
     per_trial = trials.spike_counts(spikes)[0].to_numpy()
     raster = align_spikes_to_events(spikes, trials, window, align=align)
     np.testing.assert_array_equal([r.size for r in raster], per_trial)
-    result = peri_event_histogram(spikes, trials, window, bin_size=0.1, align=align)
+    result = peri_event_histogram(spikes, trials, window, dt=0.1, align=align)
     assert result.n_events == 50
     # histogram is the mean count over the events_per_bin trials of each bin,
     # so their product summed over bins is every counted spike (NaN bins have
@@ -293,11 +293,11 @@ CENSORED = Intervals.from_arrays(
 )
 ALIGN_CALLS = {
     "peri_event_histogram": lambda trials, align: peri_event_histogram(
-        SPIKES, trials, (-1.0, 0.0), bin_size=0.5, align=align
+        SPIKES, trials, (-1.0, 0.0), dt=0.5, align=align
     ),
     "population_peri_event_histogram": lambda trials, align: (
         population_peri_event_histogram(
-            [SPIKES], trials, (-1.0, 0.0), bin_size=0.5, align=align
+            [SPIKES], trials, (-1.0, 0.0), dt=0.5, align=align
         )
     ),
     "align_spikes_to_events": lambda trials, align: align_spikes_to_events(
@@ -330,9 +330,7 @@ def test_response_plot_refuses_censored_trials_aligned_at_their_stop():
     from neurospatial.events import plot_peri_event_response
 
     reached = CENSORED[CENSORED.outcome != "censored"]
-    result = peri_event_histogram(
-        SPIKES, reached, (-1.0, 0.0), bin_size=0.5, align="stop"
-    )
+    result = peri_event_histogram(SPIKES, reached, (-1.0, 0.0), dt=0.5, align="stop")
     with pytest.raises(ValueError, match="censored"):
         plot_peri_event_response(SPIKES, CENSORED, result)
 
@@ -342,9 +340,9 @@ def test_psth_records_the_interval_ids_of_the_retained_trials():
         [1.0, 5.0, 9.0], [3.0, 8.5, 9.0], interval_ids=[7, 3, 9]
     )
     # Trial 9 has no duration, so it holds no whole bin of (0, 1) and is dropped.
-    single = peri_event_histogram(SPIKES, trials, (0.0, 1.0), bin_size=0.5)
+    single = peri_event_histogram(SPIKES, trials, (0.0, 1.0), dt=0.5)
     population = population_peri_event_histogram(
-        [SPIKES, SPIKES[::2]], trials, (0.0, 1.0), bin_size=0.5, unit_ids=["a", "b"]
+        [SPIKES, SPIKES[::2]], trials, (0.0, 1.0), dt=0.5, unit_ids=["a", "b"]
     )
     for result in (single, population, population[1], population.sel(unit_id="a")):
         np.testing.assert_array_equal(result.event_ids, [7, 3])
@@ -352,7 +350,7 @@ def test_psth_records_the_interval_ids_of_the_retained_trials():
         assert not result.event_ids.flags.writeable
         assert result.to_dataframe().attrs["event_ids"] == [7, 3]
     np.testing.assert_array_equal(single.event_indices, [0, 1])
-    plain = peri_event_histogram(SPIKES, trials.start, (0.0, 1.0), bin_size=0.5)
+    plain = peri_event_histogram(SPIKES, trials.start, (0.0, 1.0), dt=0.5)
     assert plain.event_ids is None
     assert plain.to_dataframe().attrs["event_ids"] is None
 
@@ -372,13 +370,13 @@ def test_psth_result_refuses_inconsistent_event_ids(changes, match):
     from neurospatial.events import PeriEventResult
 
     trials = Intervals.from_arrays([1.0, 5.0], [3.0, 8.5], interval_ids=[7, 3])
-    result = peri_event_histogram(SPIKES, trials, (0.0, 1.0), bin_size=0.5)
+    result = peri_event_histogram(SPIKES, trials, (0.0, 1.0), dt=0.5)
     fields = {
         "histogram": result.histogram,
         "sem": result.sem,
         "n_events": result.n_events,
         "window": result.window,
-        "bin_size": result.bin_size,
+        "dt": result.dt,
         "event_indices": result.event_indices,
         "events_per_bin": result.events_per_bin,
         "align": result.align,
@@ -401,7 +399,7 @@ def test_psth_of_random_overlapping_trials_passes_the_result_checks(align, seed)
     spikes = [np.sort(rng.uniform(-3.0, 36.0, 300)) for _ in range(2)]
     window = (-1.0, 2.0) if align == "start" else (-2.0, 1.0)
     result = population_peri_event_histogram(
-        spikes, trials, window, bin_size=0.25, align=align
+        spikes, trials, window, dt=0.25, align=align
     )
     per_bin = result.events_per_bin
     assert per_bin.max() == result.n_events
@@ -428,7 +426,7 @@ def test_psth_result_refuses_events_per_bin_its_align_cannot_give(
             sem=np.where(np.array(events_per_bin) < 2, np.nan, 0.0),
             n_events=2,
             window=(0.0, 1.0),
-            bin_size=0.5,
+            dt=0.5,
             events_per_bin=np.array(events_per_bin),
             align=align,
             event_ids=np.array([0, 1]),
@@ -475,16 +473,14 @@ def test_psth_aligned_at_the_stop(trials, population):
     )
     if population:
         result = population_peri_event_histogram(
-            [SPIKES, np.array([])], trials, (-1.0, 1.0), bin_size=0.5, align="stop"
+            [SPIKES, np.array([])], trials, (-1.0, 1.0), dt=0.5, align="stop"
         )
         histogram, sem = result.histograms[0], result.sem[0]
         np.testing.assert_array_equal(result.histograms[1], [0, 0, 0, 0])
         # SEM across trials of each trial's mean over the two units.
         np.testing.assert_allclose(result.mean_sem, [0, 0, 0, 1 / 6])
     else:
-        result = peri_event_histogram(
-            SPIKES, trials, (-1.0, 1.0), bin_size=0.5, align="stop"
-        )
+        result = peri_event_histogram(SPIKES, trials, (-1.0, 1.0), dt=0.5, align="stop")
         histogram, sem = result.histogram, result.sem
     np.testing.assert_allclose(histogram, [0, 1, 1, 1 / 3])
     np.testing.assert_array_equal(result.events_per_bin, [2, 2, 3, 3])
@@ -501,7 +497,7 @@ def test_psth_drops_only_the_trials_without_a_whole_bin(trials):
 
     # Window (0, 1) after each start: [1, 3) counts 1.05 and 1.5 (1 1),
     # [5, 8.5) counts 5.2 (1 0), and [9, 9) holds no bin, so it is dropped.
-    result = peri_event_histogram(SPIKES, trials, (0.0, 1.0), bin_size=0.5)
+    result = peri_event_histogram(SPIKES, trials, (0.0, 1.0), dt=0.5)
     assert (result.n_events, result.n_events_dropped) == (2, 1)
     np.testing.assert_array_equal(result.event_indices, [0, 1])
     np.testing.assert_allclose(result.histogram, [1.0, 0.5])
@@ -514,9 +510,7 @@ def test_psth_drops_only_the_trials_without_a_whole_bin(trials):
 def test_response_plot_of_a_psth_aligned_at_the_stop_matches_the_raster(trials):
     from neurospatial.events import plot_peri_event_response
 
-    result = peri_event_histogram(
-        SPIKES, trials, (-1.0, 1.0), bin_size=0.5, align="stop"
-    )
+    result = peri_event_histogram(SPIKES, trials, (-1.0, 1.0), dt=0.5, align="stop")
     raster_ax, _ = plot_peri_event_response(SPIKES, trials, result)
     rows = [np.asarray(c.get_positions()) for c in raster_ax.collections]
     expected = align_spikes_to_events(SPIKES, trials, (-1.0, 1.0), align="stop")
@@ -530,7 +524,7 @@ def test_overlapping_trials_each_count_a_shared_spike():
     # the first start (bin 3) and 0.25 s after the second (bin 1).
     trials = Intervals.from_arrays([0.0, 0.5], [1.0, 1.5])
     spikes = np.array([0.75])
-    result = peri_event_histogram(spikes, trials, (0.0, 1.0), bin_size=0.25)
+    result = peri_event_histogram(spikes, trials, (0.0, 1.0), dt=0.25)
     np.testing.assert_allclose(result.histogram, [0.0, 0.5, 0.0, 0.5])
     np.testing.assert_array_equal(result.events_per_bin, [2, 2, 2, 2])
     raster = align_spikes_to_events(spikes, trials, (0.0, 1.0))

@@ -25,7 +25,7 @@ def _single() -> PeriEventResult:
         sem=np.array([0.01, 0.02, 0.01]),
         n_events=10,
         window=(-0.75, 0.75),
-        bin_size=0.5,
+        dt=0.5,
         unit_id="u0",
     )
 
@@ -38,7 +38,7 @@ def _population() -> PopulationPeriEventResult:
         mean_sem=np.zeros(3),
         n_events=10,
         window=(-0.75, 0.75),
-        bin_size=0.5,
+        dt=0.5,
     )
 
 
@@ -50,11 +50,11 @@ def test_psth_results_inherit_canonical_result_mixin():
 def test_frozen_dataclass_construction_and_derived_rates():
     """Inheriting ResultMixin must not break construction or derived rates."""
     single = _single()
-    np.testing.assert_allclose(single.firing_rate, single.histogram / single.bin_size)
+    np.testing.assert_allclose(single.firing_rate, single.histogram / single.dt)
 
     pop = _population()
-    np.testing.assert_allclose(pop.firing_rates, pop.histograms / pop.bin_size)
-    np.testing.assert_allclose(pop.mean_firing_rate, pop.mean_histogram / pop.bin_size)
+    np.testing.assert_allclose(pop.firing_rates, pop.histograms / pop.dt)
+    np.testing.assert_allclose(pop.mean_firing_rate, pop.mean_histogram / pop.dt)
     # unit_ids resolved to defaults.
     assert list(pop.unit_ids) == [0, 1]
 
@@ -119,7 +119,7 @@ def test_single_and_population_summary_tables_share_columns_and_attrs():
     for table in (single_table, pop_table, single.to_dataframe(), pop.to_dataframe()):
         assert table.attrs == {
             "window": (-0.75, 0.75),
-            "bin_size": 0.5,
+            "dt": 0.5,
             "n_events": 10,
             "n_events_dropped": 0,
             "align": None,
@@ -145,7 +145,7 @@ def test_baseline_excludes_the_bin_that_straddles_the_event():
         sem=np.zeros(3),
         n_events=4,
         window=(-0.35, 0.35),
-        bin_size=0.2,
+        dt=0.2,
     )
     np.testing.assert_allclose(result.bin_centers, [-0.25, -0.05, 0.15])
     assert result.summary()["baseline_rate"] == 1.0
@@ -159,7 +159,7 @@ def test_baseline_keeps_a_bin_that_ends_exactly_at_the_event():
         sem=np.zeros(6),
         n_events=4,
         window=(-0.3, 0.3),
-        bin_size=0.1,
+        dt=0.1,
     )
     np.testing.assert_allclose(result.summary()["baseline_rate"], 2.0)
 
@@ -170,7 +170,7 @@ def test_baseline_is_nan_without_pre_event_bins():
         sem=np.zeros(2),
         n_events=3,
         window=(0.0, 1.0),
-        bin_size=0.5,
+        dt=0.5,
     )
     assert np.isnan(result.summary()["baseline_rate"])
 
@@ -189,14 +189,14 @@ def test_silent_unit_has_no_peak_latency():
     )
 
     events = np.array([10.0, 20.0])
-    single = peri_event_histogram(np.array([]), events, (-1.0, 1.0), bin_size=0.1)
+    single = peri_event_histogram(np.array([]), events, (-1.0, 1.0), dt=0.1)
     assert single.summary()["peak_rate"] == 0.0
     assert np.isnan(single.summary()["peak_latency"])
     assert np.isnan(single.summary_table()["peak_latency"].iloc[0])
 
     # One responsive unit and one silent unit: only the silent one loses its peak.
     population = population_peri_event_histogram(
-        [np.array([10.25, 20.25]), np.array([])], events, (-1.0, 1.0), bin_size=0.1
+        [np.array([10.25, 20.25]), np.array([])], events, (-1.0, 1.0), dt=0.1
     )
     table = population.summary_table()
     np.testing.assert_allclose(table["peak_latency"].iloc[0], 0.25)
@@ -204,7 +204,7 @@ def test_silent_unit_has_no_peak_latency():
     assert table["peak_rate"].tolist()[1] == 0.0
 
     silent = population_peri_event_histogram(
-        [np.array([]), np.array([])], events, (-1.0, 1.0), bin_size=0.1
+        [np.array([]), np.array([])], events, (-1.0, 1.0), dt=0.1
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -222,7 +222,7 @@ def test_all_nan_histogram_has_no_peak():
         mean_sem=np.full(3, np.nan),
         n_events=0,
         window=(-0.75, 0.75),
-        bin_size=0.5,
+        dt=0.5,
     )
     table = empty.summary_table()
     assert np.isnan(table["peak_rate"]).all()
@@ -237,7 +237,7 @@ def test_all_nan_histogram_has_no_peak():
         mean_sem=np.array([0.25, np.nan, np.nan]),
         n_events=2,
         window=(-0.75, 0.75),
-        bin_size=0.5,
+        dt=0.5,
         events_per_bin=np.array([2, 1, 0]),
         align="start",
         event_ids=np.array([0, 1]),

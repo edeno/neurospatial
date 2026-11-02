@@ -325,7 +325,7 @@ default="map_position"
     >>> cw = laps[laps.direction == "clockwise"]  # doctest: +SKIP
     >>> spikes.restrict(cw)  # spikes during clockwise laps  # doctest: +SKIP
     >>> crossings = to_pynapple(  # doctest: +SKIP
-    ...     detect_region_crossings(env, times, positions, region_name="reward"),
+    ...     detect_region_crossings(env, times, positions, region="reward"),
     ...     epochs=(times[0], times[-1]),
     ... )
 

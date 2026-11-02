@@ -56,9 +56,9 @@ if TYPE_CHECKING:
         field_shift_distance(cartesian, values, bins, polar, values, bins)  # type: ignore[arg-type]
         spatial_autocorrelation(cartesian, values)
         spatial_autocorrelation(polar, values)  # type: ignore[arg-type]
-        resample_field(values, cartesian, cartesian)
-        resample_field(values, polar, cartesian)  # type: ignore[arg-type]
-        resample_field(values, cartesian, polar)  # type: ignore[arg-type]
+        resample_field(cartesian, cartesian, values)
+        resample_field(polar, cartesian, values)  # type: ignore[arg-type]
+        resample_field(cartesian, polar, values)  # type: ignore[arg-type]
         map_probabilities(cartesian, cartesian, values)
         map_probabilities(polar, cartesian, values)  # type: ignore[arg-type]
         map_probabilities(cartesian, polar, values)  # type: ignore[arg-type]

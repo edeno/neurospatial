@@ -273,7 +273,7 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         )
         model = PlaceCellModel(env, center=[5.0, -5.0], width=5.0, max_rate=15.0)
         spike_times = generate_poisson_spikes(
-            model.firing_rate(times, positions), times, seed=5
+            model.firing_rate(times, positions), times, rng=5
         )
         result = compute_spatial_rate(env, spike_times, times, positions)
 
@@ -433,7 +433,7 @@ class TestFFTAutocorrelationLagsArePhysical:
             times,
             positions,
         )
-        spike_times = generate_poisson_spikes(rate, times, seed=seed + 1)
+        spike_times = generate_poisson_spikes(rate, times, rng=seed + 1)
         return env, spike_times, times, positions
 
     @pytest.mark.parametrize("bin_size", [5.0, 3.3, 2.0])

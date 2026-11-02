@@ -31,11 +31,11 @@ def env() -> Environment:
 
 DETECTORS = {
     "detect_region_crossings": lambda env, t, p: detect_region_crossings(
-        env, t, p, region_name="goal"
+        env, t, p, region="goal"
     ),
     "detect_laps": lambda env, t, p: detect_laps(env, t, p),
     "detect_goal_directed_runs": lambda env, t, p: detect_goal_directed_runs(
-        env, t, p, goal_region="goal"
+        env, t, p, region="goal"
     ).windows,
 }
 
@@ -85,7 +85,7 @@ def test_nan_marks_a_missing_sample(env):
     positions, times = _walk()
     positions[20] = np.nan
     (crossing,) = detect_region_crossings(
-        env, times, positions, region_name="goal", direction="entry"
+        env, times, positions, region="goal", direction="entry"
     )
     assert crossing.time == times[-2]
 
@@ -97,7 +97,7 @@ def test_unknown_crossing_direction_is_refused(env):
             env,
             times,
             positions,
-            region_name="goal",
+            region="goal",
             direction="entries",  # type: ignore[arg-type]
         )
 
@@ -146,7 +146,7 @@ class TestMinProgressUnits:
         env = self._corridor(scale, units)
         x = np.linspace(start_cm, 96.0, 20) * scale
         runs = detect_goal_directed_runs(
-            env, np.arange(20) / 10.0, np.c_[x, np.zeros_like(x)], goal_region="goal"
+            env, np.arange(20) / 10.0, np.c_[x, np.zeros_like(x)], region="goal"
         ).windows
         assert runs.shape == ((1, 2) if detected else (0, 2))
 
@@ -156,13 +156,13 @@ class TestMinProgressUnits:
         times = np.arange(20) / 10.0
         with pytest.raises(ValueError, match="needs min_progress"):
             detect_goal_directed_runs(
-                env, times, np.c_[x, np.zeros_like(x)], goal_region="goal"
+                env, times, np.c_[x, np.zeros_like(x)], region="goal"
             )
         runs = detect_goal_directed_runs(
             env,
             times,
             np.c_[x, np.zeros_like(x)],
-            goal_region="goal",
+            region="goal",
             min_progress=20.0,
         ).windows
         assert runs.shape == (1, 2)

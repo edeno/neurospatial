@@ -433,7 +433,7 @@ class ViewRateResult(SingleUnitRateMixin):
             return {"spatial_information": float("nan")}
         return {"spatial_information": float(self.spatial_information())}
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field (firing rate by viewed location).
 
         Delegates to the environment's plot_field method for consistent
@@ -870,7 +870,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
             bandwidth=self.bandwidth,
         )
 
-    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field for a specific neuron.
 
         Delegates to the environment's plot_field method for consistent

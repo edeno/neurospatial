@@ -769,7 +769,7 @@ def template_match_dataset_test(
         The events, ``(start, stop)`` in seconds. For ``"best_match"`` with
         several templates, a mapping of each template's words, keyed like
         ``encoding_models`` (Lee & Wilson cut each template's cells into
-        words separately: ``spike_words(..., cells=...).intervals``). For
+        words separately: ``spike_words(..., unit_ids=...).intervals``). For
         ``"matching_index"``, one array of frames for every template.
     encoding_models : array of shape (n_cells, n_bins), SpatialRatesResult, or Mapping
         Each cell's rate map on ``env``, in Hz, or a mapping of them, one
@@ -915,7 +915,7 @@ def _template_intervals(
                 f"words, got {given}.",
                 why="Lee & Wilson cut each template's cells into words separately",
                 fix="pass {name: spike_words(spike_times, max_isi=..., word_gap=..., "
-                "cells=template_cells).intervals for each template}",
+                "unit_ids=template_unit_ids).intervals for each template}",
             )
         )
     return {
@@ -1364,7 +1364,7 @@ LEE_WILSON_2002 = TemplateMatchMethod(
         "Letters: a cell's spikes less than 50 ms apart are one letter at the "
         "first spike. Words: the letters of one template's cells, split where "
         "adjacent letters are more than 100 ms apart, within slow-wave sleep: "
-        "spike_words(max_isi=0.05, word_gap=0.1, cells=..., epochs=sws). A given "
+        "spike_words(max_isi=0.05, word_gap=0.1, unit_ids=..., epochs=sws). A given "
         "interval is scored as one word; bursts are found on the whole trains.",
         "Best match: the best (x, y) on the list (K, 0) > (K, 1) > (K - 1, 0) > "
         "... > (2, 0); p is the share of the n! orderings of the word's letters "

@@ -20,6 +20,26 @@ follow these rules. `tests/test_public_api_snapshot.py`,
   `targets` for egocentric operations and `object_positions` for encoding;
   `bandwidth` in physical units, not `sigma`; `method` for estimators;
   `metric="euclidean" | "geodesic"`, not `use_geodesic`.
+- One name per concept. `tests/test_argument_conventions.py` enforces each row;
+  the old name is never kept as an alias.
+
+  | Concept | Name | Not |
+  | --- | --- | --- |
+  | Randomness | `rng: np.random.Generator \| int \| None`, keyword-only, read as `np.random.default_rng(rng)`, so `rng=0` and `rng=np.random.default_rng(0)` give the same result | `seed`, `line_seed` |
+  | One region | `region=` (a name) | `region_name`, `goal_region` |
+  | Several regions | `regions=` | |
+  | Two region roles in one call | a role prefix on each: `decision_region=` and `goal_regions=` | |
+  | Time-bin width | `dt=` (seconds); spatial, angular and distance widths stay `bin_size` | `bin_size` for seconds |
+  | Pre-entry window length | `window_duration=` | `pre_window` |
+  | Paired inputs | suffix `_a` / `_b` | `_1` / `_2`, `_i` / `_j`, `angles1` / `angles2` |
+  | Unit selection | `unit_ids=` (unit labels; as a selector, an array of integer ids, never a boolean mask) | `cells` |
+  | Temporal smoothing width | `smooth_window=` is seconds; a width counted in bins is `smooth_bins=` | `smoothing_window` |
+  | Significance level | `alpha=` means only this; the VTE head-sweep weight is `head_sweep_weight=` | `alpha` as a mixing weight |
+  | Matplotlib target | `ax=`, keyword-only, never positional; a pair of axes is `ax=(raster_ax, psth_ax)` | `axes=`, positional `ax` |
+  | Field resampling | `f(source_env, target_env, values, *, ...)` | `resample_field(field, src_env, dst_env)` |
+  | Graph input in `ops` | `graph=` | `G` |
+  | Sample times | `times` | `t` |
+
 - Spell out acronyms in public names (no `detect_ovcs`).
 - Data arguments are positional. Algorithm parameters, thresholds and ranges are
   keyword-only after `*`. Metric functions whose two array arguments share a
@@ -40,8 +60,8 @@ Each terminal verb means the same thing on every result class:
   axis for singular results and `unit_id` as the label index; duplicate
   `unit_ids` raise. Decode results use `("time", "bin")` with no unit axis.
   Never conflate the two. PSTH results have no `to_xarray()`.
-- `summary()` returns a flat dict of scalars; `plot(ax=None, ...)` returns the
-  `Axes`. `Environment.plot` and `plot_field` also take
+- `summary()` returns a flat dict of scalars; `plot(*, ax=None, ...)` (after
+  `idx` on population results) returns the `Axes`. `Environment.plot` and `plot_field` also take
   `backend="fastplotlib"`, which returns the fastplotlib figure; typing
   overloads keep the `Axes` return for the default.
 

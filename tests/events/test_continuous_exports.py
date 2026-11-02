@@ -364,7 +364,7 @@ def test_plot_returns_axes_for_every_kind(agg):
 def test_plot_uses_given_axes_and_unit_label(agg):
     _, ax = agg.subplots()
     result = _mixed_result()
-    assert result.plot(ax, feature_id="b") is ax
+    assert result.plot(ax=ax, feature_id="b") is ax
     assert ax.get_ylabel() == "cm/s"
 
 

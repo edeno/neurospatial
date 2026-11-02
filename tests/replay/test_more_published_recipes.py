@@ -56,7 +56,7 @@ def place_code():
 def _event(env, rates, kind, seed, **kwargs):
     """Spike counts of a simulated event in 20 ms bins and their times."""
     event = simulate_replay_event(
-        env, rates, kind=kind, rate_gain=4.0, seed=seed, **kwargs
+        env, rates, kind=kind, rate_gain=4.0, rng=seed, **kwargs
     )
     return bin_spikes_in_time(
         list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration

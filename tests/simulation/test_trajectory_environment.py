@@ -25,7 +25,7 @@ def test_ou_trajectory_explores_sparse_environment_fails():
         duration=10.0,
         dt=0.1,
         speed_mean=7.5,
-        seed=42,
+        rng=42,
         speed_units="cm",
     )
 
@@ -59,7 +59,7 @@ def test_ou_trajectory_explores_grid_environment_succeeds():
         duration=10.0,
         dt=0.1,
         speed_mean=7.5,
-        seed=42,
+        rng=42,
         speed_units="cm",
     )
 

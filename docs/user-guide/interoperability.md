@@ -48,14 +48,14 @@ env = Environment.from_samples(
 )
 env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+    env, duration=120.0, dt=0.02, speed_mean=15.0, rng=0, speed_units="cm"
 )
 cells = [
-    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, rng=i)
     for i, c in enumerate(np.linspace(5.0, 95.0, 15))
 ]
 spike_times = generate_population_spikes(
-    cells, times, positions, seed=0, show_progress=False
+    cells, times, positions, rng=0, show_progress=False
 )
 
 # Rate maps and a one-call decode, straight from arrays.
@@ -189,7 +189,7 @@ rate panels for plotting.
 from neurospatial.encoding import compute_spatial_rates
 from neurospatial.simulation import open_field_session, validate_simulation
 
-sim = open_field_session(duration=60, n_place_cells=5, seed=0)
+sim = open_field_session(duration=60, n_place_cells=5, rng=0)
 rates = compute_spatial_rates(
     sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids,
 )
@@ -279,7 +279,7 @@ distances in your coordinate units.
 
 `restrict`, `in_epochs`, and `restrict_spike_trains` select time windows.
 `restrict(times, *arrays, epochs=...)` slices `times` and any number of arrays
-**aligned to it** by the same in-epoch mask; `in_epochs(t, epochs)` returns the
+**aligned to it** by the same in-epoch mask; `in_epochs(times, epochs)` returns the
 boolean mask; and `restrict_spike_trains(spike_times, epochs)` masks *ragged* trains
 (each unit by its own timestamps). It returns a `SpikeTrains` that keeps each
 unit's label and metadata row, so a restricted `TsGroup` with units 5, 6 and 7
@@ -528,7 +528,7 @@ recording span, instead:
 from neurospatial.behavior import detect_region_crossings
 
 crossings = to_pynapple(
-    detect_region_crossings(env, times, positions, region_name="reward"),
+    detect_region_crossings(env, times, positions, region="reward"),
     epochs=(times[0], times[-1] + 1 / 30),  # through the last 30 Hz frame
 )
 reward_entries = crossings[crossings.direction == "entry"]

@@ -324,7 +324,7 @@ class TestResampleFieldOutOfBounds:
         field = np.arange(src_env.n_bins, dtype=np.float64)
         field[-1] = 999.0
 
-        resampled = resample_field(field, src_env, dst_env, method="nearest")
+        resampled = resample_field(src_env, dst_env, field, method="nearest")
 
         assert resampled.shape == (dst_env.n_bins,)
 
@@ -353,7 +353,7 @@ class TestResampleFieldOutOfBounds:
         env = Environment.from_samples(data, bin_size=2.0)
         field = np.arange(env.n_bins, dtype=np.float64)
 
-        resampled = resample_field(field, env, env, method="nearest")
+        resampled = resample_field(env, env, field, method="nearest")
         assert np.allclose(resampled, field)
 
 
@@ -401,7 +401,7 @@ class TestResampleFieldDiffuseNaN:
         assert np.any(~outside)  # ... and some covered bins
 
         diffuse = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=2.0
+            src_env, dst_env, field, method="diffuse", bandwidth=2.0
         )
 
         # Inside-source bins must be finite (not annihilated by a propagated NaN)
@@ -426,7 +426,7 @@ class TestResampleFieldDiffuseNaN:
         assert np.any(outside)
 
         diffuse = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=2.0
+            src_env, dst_env, field, method="diffuse", bandwidth=2.0
         )
 
         # The zero-fill for smoothing must not leak a smoothed-zero into the
@@ -445,7 +445,7 @@ class TestResampleFieldDiffuseNaN:
         env = Environment.from_samples(data, bin_size=2.0)
         field = np.arange(env.n_bins, dtype=np.float64) + 1.0
 
-        diffuse = resample_field(field, env, env, method="diffuse", bandwidth=2.0)
+        diffuse = resample_field(env, env, field, method="diffuse", bandwidth=2.0)
 
         assert not np.any(np.isnan(diffuse))
         assert np.isfinite(diffuse.sum())
@@ -464,4 +464,4 @@ class TestResampleFieldInfiniteValues:
         field[3] = value
 
         with pytest.raises(ValueError, match="infinite values"):
-            resample_field(field, src_env, dst_env, method=method, bandwidth=2.0)
+            resample_field(src_env, dst_env, field, method=method, bandwidth=2.0)

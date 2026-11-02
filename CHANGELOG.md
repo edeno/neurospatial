@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### One name per concept in every argument
+
+**Breaking**
+
+A concept has one argument name across the public API. The old keyword is
+removed with no alias, so a call that uses it raises `TypeError`. Results and
+`analysis_settings` that record a renamed argument use the new name too.
+
+| Concept | Old | New |
+| --- | --- | --- |
+| Randomness (`rng=0` and `rng=np.random.default_rng(0)` now give the same result) | `seed=` in `simulate_session`, `open_field_session`, `linear_track_session`, `tmaze_alternation_session`, `border_cell_session`, `grid_cell_session`, `simulate_trajectory_ou`, `simulate_trajectory_laps`, `simulate_replay_event`, `generate_poisson_spikes`, `generate_population_spikes`, `add_modulation`, `animation.estimate_colormap_range_from_subset` and the `PlaceCellModel`, `BoundaryVectorCellModel` and `HeadDirectionCellModel` fields | `rng=` |
+| Random lines of the Radon search | `detect_trajectory_radon(line_seed=0)` | `rng=0` |
+| One region | `region_name=` in `distance_to_boundary`, `detect_region_crossings`, `region_reward_field`, `Environment.bins_in_region`, `regions.mask_to_region` | `region=` |
+| One region | `detect_goal_directed_runs(goal_region=)`, its `goal_region` interval field and setting | `region=`, `region` |
+| One region | `compute_vte_session(decision_region=)` | `region=` |
+| Time-bin width in seconds | `peri_event_histogram(bin_size=)`, `population_peri_event_histogram(bin_size=)`, the `bin_size` field of the PSTH results | `dt=`, `dt` |
+| Time-bin width in seconds | the `bin_size` field and constructor argument of `ReactivationMethod` and its published recipes (`dataclasses.replace(KUDRIMOTI_1999, bin_size=0.2)`) | `dt` |
+| Pre-entry window length | `compute_decision_analysis(pre_window=)` | `window_duration=` |
+| Paired inputs | `field_stability(rate_map_1, rate_map_2)`, `compute_field_emd(firing_rate_1, firing_rate_2)`, `field_shift_distance(env_1, firing_rate_1, field_bins_1, env_2, firing_rate_2, field_bins_2)`, `population_vector_correlation(firing_rates_1, firing_rates_2)` | the same names with `_a` and `_b` |
+| Paired inputs | `field_overlap(field_bins_i, field_bins_j)` | `field_bins_a`, `field_bins_b` |
+| Paired inputs | `circular_circular_correlation(angles1, angles2)` | `angles_a`, `angles_b` |
+| Unit selection | `replay.null_events(cells=mask)`, `replay.spike_words(cells=mask)`, a boolean mask | `unit_ids=`, now unit ids: the labels a spike group carries (a dict's keys, a `TsGroup`'s index), else positions in the list of trains, e.g. `unit_ids=np.flatnonzero(mask)`; a boolean array, unknown ids (the message lists the available ones) and repeated ids raise |
+| Smoothing width counted in bins | `generate_inhomogeneous_poisson_surrogates(smoothing_window=)` | `smooth_bins=` |
+| Significance level only | `compute_vte_index(alpha=)`, `compute_vte_session(alpha=)` (the head-sweep weight) | `head_sweep_weight=` |
+| Matplotlib target | `plot_peri_event_response(axes=)` | `ax=(raster_ax, histogram_ax)` |
+| Matplotlib target | `ax` by position in `plot` methods and plot functions, such as `result.plot(0, ax)` | `ax=` by keyword |
+| Field resampling order | `resample_field(field, src_env, dst_env)` | `resample_field(source_env, target_env, field)` |
+| Graph input in `ops` | `G` in `distance_field`, `neighbors_within`, `geodesic_distance_matrix`, `geodesic_distance_between_points`, `pairwise_distances` | `graph=` |
+| Sample times | `in_epochs(t, ...)` | `in_epochs(times, ...)` |
+
+`SimulationSession.metadata["seed"]` is now `metadata["rng"]`: the int that was
+passed, or, for `rng=None`, the entropy drawn (pass it as `rng` to repeat the
+session), or `None` when a generator was passed (pass an int seed to make a
+session reproducible from its metadata). An integer `rng` reproduces the output
+of the same integer `seed` before. A generator passed to a simulator that makes
+several streams spawns them from its own seed sequence, as `Generator.spawn`
+does, so the same generator gives a different session each time; the cell
+models copy a generator when built, so `dataclasses.replace` keeps their draws
+and the caller's generator is not advanced.
+
+`behavior.in_epochs` now reads a pynapple `Tsd` as its times (`.t`), not its
+values.
+
 ### First run works: quickstart, simulators and 1-D plots
 
 **Fixed**

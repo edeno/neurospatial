@@ -47,7 +47,7 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
         "bins_in_region": (
             lambda value: env.bins_in_region(value),
             "rewrd",
-            "pass region_name='reward'",
+            "pass region='reward'",
         ),
         "region_mask": (
             lambda value: env.region_mask(value),
@@ -75,9 +75,9 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "use 'reward'",
         ),
         "region_reward_field": (
-            lambda value: region_reward_field(env, region_name=value),
+            lambda value: region_reward_field(env, region=value),
             "rewrd",
-            "pass region_name='reward'",
+            "pass region='reward'",
         ),
         "compute_region_coverage": (
             lambda value: compute_region_coverage(env, bins, regions=value),

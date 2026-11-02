@@ -145,20 +145,21 @@ def _mask_in_intervals(
     return mask
 
 
+@reads_pynapple_samples
 def in_epochs(
-    t: NDArray[np.float64],
+    times: NDArray[np.float64],
     epochs: Any,
     *,
     closed: _Closed = "left",
 ) -> NDArray[np.bool_]:
-    """Boolean mask: ``True`` where each element of ``t`` falls in any epoch.
+    """Boolean mask: ``True`` where each element of ``times`` falls in any epoch.
 
     Vectorized over samples (broadcasting, no Python loop) and taking the
     **union** across intervals (overlapping intervals behave as their union).
 
     Parameters
     ----------
-    t : ndarray
+    times : ndarray
         Timestamps to test (any shape; the mask has the same shape).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Windows in seconds, on the same clock as the input timestamps. Rows
@@ -168,7 +169,7 @@ def in_epochs(
         arrays are not an input form; pass an ``(n, 2)`` array instead.
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
-        Which endpoints are inclusive. Default ``"left"``: ``start <= t <
+        Which endpoints are inclusive. Default ``"left"``: ``start <= times <
         stop``, the half-open windows of every analysis ``epochs=`` and
         ``spike_window=`` argument, so a spike exactly at the stop of one
         window and the start of the next lands in exactly one of them.
@@ -181,7 +182,7 @@ def in_epochs(
     Returns
     -------
     ndarray of bool
-        Same shape as ``t``; ``True`` where ``t`` is inside any interval.
+        Same shape as ``times``; ``True`` where ``times`` is inside any interval.
 
     See Also
     --------
@@ -209,7 +210,7 @@ def in_epochs(
     validate_choice(closed, _CLOSED_CHOICES, name="closed", owner="in_epochs()")
 
     intervals = as_intervals(epochs, name="epochs")
-    return _mask_in_intervals(t, intervals, closed=closed)
+    return _mask_in_intervals(times, intervals, closed=closed)
 
 
 @reads_pynapple_samples
@@ -313,7 +314,7 @@ def restrict(
 
     mask = in_epochs(times_arr, epochs, closed=closed)
 
-    times_kept = times_arr[mask]
+    times_kept: NDArray[Any] = times_arr[mask]
     if not coerced:
         return times_kept
     intervals = as_intervals(epochs, name="epochs")

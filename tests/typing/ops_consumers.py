@@ -93,7 +93,7 @@ if TYPE_CHECKING:
         _bins: CartesianBinsConsumer = cartesian
         _target: ResampleTargetConsumer = cartesian
         _spatial: SpatialBasisConsumer = cartesian
-        resample_field(values, cartesian, cartesian)
+        resample_field(cartesian, cartesian, values)
         map_probabilities(cartesian, cartesian, values)
         spatial_basis(cartesian)
         assert_type(cartesian.apply_transform(transform), Environment[CartesianSystem])
@@ -101,8 +101,8 @@ if TYPE_CHECKING:
         _polar_bins: CartesianBinsConsumer = polar  # type: ignore[assignment]
         _polar_target: ResampleTargetConsumer = polar  # type: ignore[assignment]
         _polar_spatial: SpatialBasisConsumer = polar  # type: ignore[assignment]
-        resample_field(values, polar, cartesian)  # type: ignore[arg-type]
-        resample_field(values, cartesian, polar)  # type: ignore[arg-type]
+        resample_field(polar, cartesian, values)  # type: ignore[arg-type]
+        resample_field(cartesian, polar, values)  # type: ignore[arg-type]
         spatial_basis(polar)  # type: ignore[arg-type]
 
     def _internals_take_components(

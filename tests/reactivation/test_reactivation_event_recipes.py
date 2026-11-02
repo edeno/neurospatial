@@ -472,7 +472,7 @@ def test_z_scoring_choice_moves_a_rate_change_in_opposite_directions() -> None:
         name="period",
         reference="test",
         measure="assembly",
-        bin_size=0.025,
+        dt=0.025,
         detection="ica",
         event_response=EventResponse(),
         statistic="event_response_difference",
@@ -605,8 +605,8 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
 @pytest.mark.parametrize(
     ("base", "options", "message"),
     [
-        (LIU_2023_EV, {"bin_size": 0.1}, "bin_size must be None"),
-        (OLIVA_2020_EV, {"bin_size": None}, "bin_size must be a positive"),
+        (LIU_2023_EV, {"dt": 0.1}, "dt must be None"),
+        (OLIVA_2020_EV, {"dt": None}, "dt must be a positive"),
         (OLIVA_2020_ASSEMBLY, {"rest_bins": "events"}, "does not apply to an assembly"),
         (EL_GABY_2021, {"member_threshold": None}, "needs a finite member_threshold"),
         (HARVEY_2023_ASSEMBLY, {"member_threshold": 2.0}, "member_threshold=None"),
@@ -619,12 +619,12 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
             "needs event_response",
         ),
         (LIU_2023_ASSEMBLY, {"test": "event_modulation"}, "baseline_window"),
-        (CHANG_2025_ASSEMBLY, {"activation_step": 0.03}, "must divide bin_size"),
+        (CHANG_2025_ASSEMBLY, {"activation_step": 0.03}, "must divide dt"),
         # R(t) every 250 ms: lags -0.5, -0.25, 0 and 0.25 s.
         (
             CHANG_2025_ASSEMBLY,
             {
-                "bin_size": 0.25,
+                "dt": 0.25,
                 "activation_step": None,
                 "event_response": EventResponse(
                     response_window=(0.05, 0.2), baseline_window=(-0.5, -0.1)
@@ -635,7 +635,7 @@ def test_simulated_session_returns_its_bursts_as_events() -> None:
         (
             CHANG_2025_ASSEMBLY,
             {
-                "bin_size": 0.25,
+                "dt": 0.25,
                 "activation_step": None,
                 "event_response": EventResponse(baseline_window=(-0.2, -0.1)),
             },

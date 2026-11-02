@@ -42,14 +42,14 @@ STR_IDS = ["mua_a", "mua_b", "mua_c"]
 def test_unit_ids_round_trip(spike_trains, event_times):
     ids = np.array([7, 8, 9])
     result = population_peri_event_histogram(
-        spike_trains, event_times, window=(-0.5, 1.0), bin_size=0.1, unit_ids=ids
+        spike_trains, event_times, window=(-0.5, 1.0), dt=0.1, unit_ids=ids
     )
     np.testing.assert_array_equal(result.unit_ids, ids)
 
 
 def test_unit_ids_default_arange(spike_trains, event_times):
     result = population_peri_event_histogram(
-        spike_trains, event_times, window=(-0.5, 1.0), bin_size=0.1
+        spike_trains, event_times, window=(-0.5, 1.0), dt=0.1
     )
     np.testing.assert_array_equal(result.unit_ids, np.arange(len(spike_trains)))
 
@@ -60,7 +60,7 @@ def test_length_mismatch_raises(spike_trains, event_times):
             spike_trains,
             event_times,
             window=(-0.5, 1.0),
-            bin_size=0.1,
+            dt=0.1,
             unit_ids=["only_one"],
         )
 
@@ -70,7 +70,7 @@ def test_string_ids_round_trip(spike_trains, event_times):
         spike_trains,
         event_times,
         window=(-0.5, 1.0),
-        bin_size=0.1,
+        dt=0.1,
         unit_ids=STR_IDS,
     )
     assert list(result.unit_ids) == STR_IDS
@@ -91,7 +91,7 @@ def test_peri_event_result_has_unit_id():
         sem=sem,
         n_events=3,
         window=(-0.5, 1.0),
-        bin_size=0.5,
+        dt=0.5,
     )
     assert default.unit_id is None
 
@@ -100,7 +100,7 @@ def test_peri_event_result_has_unit_id():
         sem=sem,
         n_events=3,
         window=(-0.5, 1.0),
-        bin_size=0.5,
+        dt=0.5,
         unit_id="ca1_07",
     )
     assert labeled.unit_id == "ca1_07"
@@ -114,7 +114,7 @@ def test_population_getitem_stamps_unit_id(spike_trains, event_times):
         spike_trains,
         event_times,
         window=(-0.5, 1.0),
-        bin_size=0.1,
+        dt=0.1,
         unit_ids=STR_IDS,
     )
     for i in range(len(spike_trains)):
@@ -133,7 +133,7 @@ def test_population_iteration_preserves_order_and_labels(spike_trains, event_tim
         spike_trains,
         event_times,
         window=(-0.5, 1.0),
-        bin_size=0.1,
+        dt=0.1,
         unit_ids=STR_IDS,
     )
     assert [child.unit_id for child in result] == list(result.unit_ids)
@@ -153,7 +153,7 @@ def test_population_unit_table_wrong_length_raises(spike_trains, event_times):
             mean_sem=np.zeros(3),
             n_events=3,
             window=(-0.5, 1.0),
-            bin_size=0.5,
+            dt=0.5,
             unit_table=bad_table,
         )
 
@@ -175,7 +175,7 @@ def test_population_unit_table_edits_stay_with_the_caller(spike_trains, event_ti
         mean_sem=result.mean_sem,
         n_events=result.n_events,
         window=result.window,
-        bin_size=result.bin_size,
+        dt=result.dt,
         unit_ids=result.unit_ids,
         unit_table=table,
     )

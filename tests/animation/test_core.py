@@ -627,8 +627,8 @@ class TestEstimateColormapRangeFromSubset:
         rng = np.random.default_rng(42)
         fields = rng.random((1000, 50))
 
-        result1 = estimate_colormap_range_from_subset(fields, seed=123)
-        result2 = estimate_colormap_range_from_subset(fields, seed=123)
+        result1 = estimate_colormap_range_from_subset(fields, rng=123)
+        result2 = estimate_colormap_range_from_subset(fields, rng=123)
 
         assert result1 == result2
 

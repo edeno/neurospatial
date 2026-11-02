@@ -23,6 +23,7 @@ from neurospatial.simulation.models.base import (
     _draw_rng,
     _model_inputs,
     _set_rates,
+    _snapshot_rng,
     _tuned_rate,
     geodesic_lookup_bins,
 )
@@ -60,7 +61,7 @@ class PlaceCellModel:
         The spatial environment.
     center : NDArray[np.float64], shape (n_dims,), optional
         Place field center in continuous coordinates.
-        If None, randomly chosen from env.bin_centers with ``seed``.
+        If None, randomly chosen from env.bin_centers with ``rng``.
     width : float | NDArray[np.float64], optional
         Place field width (standard deviation of Gaussian), in environment
         units. Can be scalar (isotropic) or one value per dimension
@@ -99,11 +100,12 @@ class PlaceCellModel:
         - Region-specific: ``lambda pos, t: (pos[:, 0] > x_min) & (pos[:, 0] < x_max)``
         - Trial-type: ``lambda pos, t: is_correct_trial``, where
           ``is_correct_trial`` is a bool array with one entry per sample
-    seed : int | None, optional
-        Random seed for reproducible random center selection. When None
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed for reproducible random center selection. When None
         and the center is drawn, the model draws a seed from the operating
-        system and keeps it in ``seed``, so ``dataclasses.replace`` and
-        pickling keep the drawn center.
+        system and keeps it in ``rng``, so ``dataclasses.replace`` and
+        pickling keep the drawn center. A generator is copied when the model is built: the caller's generator
+        is not advanced, and ``replace`` draws the same values.
 
     Attributes
     ----------
@@ -148,7 +150,7 @@ class PlaceCellModel:
     >>>
     >>> # Generate trajectory and compute firing rates
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ...     env, duration=10.0, rng=42, speed_units="cm"
     ... )
     >>> rates = pc.firing_rate(times, positions)
     >>> rates.shape[0] == len(times)
@@ -242,13 +244,14 @@ class PlaceCellModel:
     condition: (
         Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]] | None
     ) = None
-    seed: int | None = None
+    rng: np.random.Generator | int | None = None
     _center: NDArray[np.float64] = field(init=False, repr=False)
     _width: float | NDArray[np.float64] = field(init=False, repr=False)
     _center_place: NDArray[np.float64] = field(init=False, repr=False)
     _distance_field: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        _snapshot_rng(self)
         env = self.env
         _set_rates(self)
         _check_metric(self.metric, "PlaceCellModel()")

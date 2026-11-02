@@ -383,7 +383,7 @@ def test_resample_diffuse_numerator_not_floored_signed():
     rng = np.random.default_rng(7)
     field = rng.standard_normal(src_env.n_bins)
     field -= field.mean()
-    resampled = resample_field(field, src_env, dst_env, method="diffuse", bandwidth=4.0)
+    resampled = resample_field(src_env, dst_env, field, method="diffuse", bandwidth=4.0)
     finite = np.isfinite(resampled)
     assert np.any(resampled[finite] < 0.0), "signed resample must keep negatives"
     assert np.any(resampled[finite] > 0.0)

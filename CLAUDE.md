@@ -72,7 +72,7 @@ encoding      f(env, spike_times, times, positions[, headings][, object_position
 directional   f(spike_times, times, headings, *, params)      # heading is not a position: no env
 egocentric    f(positions, headings, targets)
 behavior      f(env, times, positions, *, ...) or f(times, positions, *, ...)  # detectors bin positions inside
-events        f(spike_times, event_times, window, *, bin_size)
+events        f(spike_times, event_times, window, *, dt)
 ```
 
 Data comes before metadata, and `times` precedes `positions` whenever both are

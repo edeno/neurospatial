@@ -189,7 +189,7 @@ class TestReactivationWindows:
     ("options", "message"),
     [
         ({"measure": "rate"}, "measure must be one of"),
-        ({"bin_size": 0.0}, "bin_size must be a positive"),
+        ({"dt": 0.0}, "dt must be a positive"),
         ({"statistic": "mean_activation_difference"}, "does not fit measure"),
         ({"test": "cell_identity_shuffle"}, "does not fit measure"),
         ({"percentile": 99.0}, "do not apply to explained_variance methods"),
@@ -667,7 +667,7 @@ def test_a_custom_recipe_runs(reactivated) -> None:
         name="all_pairs_200ms",
         reference="for illustration",
         measure="explained_variance",
-        bin_size=0.2,
+        dt=0.2,
     )
     row = _compare(reactivated, [gridchyn_like]).iloc[0]
     assert row["n_pairs"] == 276

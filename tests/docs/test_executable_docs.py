@@ -100,14 +100,14 @@ env = Environment.from_samples(
 )
 env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+    env, duration=120.0, dt=0.02, speed_mean=15.0, rng=0, speed_units="cm"
 )
 cells = [
-    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, rng=i)
     for i, c in enumerate(np.linspace(5.0, 95.0, 15))
 ]
 spike_times = generate_population_spikes(
-    cells, times, positions, seed=0, show_progress=False
+    cells, times, positions, rng=0, show_progress=False
 )
 """,
     "workflows_batch_processing_compute_spatial_rates": """import os
@@ -124,17 +124,17 @@ env = Environment.from_samples(
 )
 env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+    env, duration=120.0, dt=0.02, speed_mean=15.0, rng=0, speed_units="cm"
 )
 
 def load_all_neurons():
     cells = [
-        PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+        PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, rng=i)
         for i, c in enumerate(np.linspace(5.0, 95.0, 5))
     ]
     return {
         f"unit_{i}": generate_poisson_spikes(
-            cell.firing_rate(times, positions), times, seed=i
+            cell.firing_rate(times, positions), times, rng=i
         )
         for i, cell in enumerate(cells)
     }

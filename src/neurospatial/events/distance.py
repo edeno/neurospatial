@@ -217,7 +217,7 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
             "total_occupancy": float(self.occupancy.sum()),
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot firing rate against distance from the event.
 
         Parameters

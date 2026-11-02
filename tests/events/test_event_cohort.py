@@ -17,7 +17,7 @@ def test_exposure_filtered_histograms_and_raster_share_original_event_cohort():
     spikes = np.array([1.8, 2.0, 2.3, 7.5, 8.0, 8.2])
     kwargs = {
         "window": (-0.5, 0.5),
-        "bin_size": 0.25,
+        "dt": 0.25,
         "epochs": [[1.0, 4.0], [7.0, 9.0]],
         "spike_window": [[0.0, 5.0], [7.0, 10.0]],
     }

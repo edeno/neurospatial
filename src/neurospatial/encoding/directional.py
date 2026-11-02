@@ -907,6 +907,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
     def plot(
         self,
+        *,
         ax: Axes | PolarAxes | None = None,
         polar: bool = True,
         **kwargs: Any,
@@ -1827,6 +1828,7 @@ class DirectionalRatesResult(
     def plot(
         self,
         idx: int,
+        *,
         ax: Axes | PolarAxes | None = None,
         polar: bool = True,
         **kwargs: Any,
@@ -3217,8 +3219,8 @@ def is_head_direction_cell(
 
 def plot_head_direction_tuning(
     result: DirectionalRateResult,
-    ax: Axes | PolarAxes | None = None,
     *,
+    ax: Axes | PolarAxes | None = None,
     polar: bool = True,
     show_preferred_direction: bool = True,
     show_metrics: bool = True,

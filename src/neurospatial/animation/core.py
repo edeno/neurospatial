@@ -763,7 +763,7 @@ def estimate_colormap_range_from_subset(
     *,
     n_samples: int = 10_000,
     percentile: tuple[float, float] = (1.0, 99.0),
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> tuple[float, float]:
     """Estimate colormap range from random subset of frames.
 
@@ -785,8 +785,8 @@ def estimate_colormap_range_from_subset(
         The percentile of the frames' minima for the bottom and of their
         maxima for the top: about this share of frames reach past each end,
         so a few outlier frames cannot wash out the rest.
-    seed : int, optional
-        Random seed for reproducibility. If None, results may vary between calls.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``. If None, results may vary between calls.
 
     Returns
     -------
@@ -823,7 +823,7 @@ def estimate_colormap_range_from_subset(
     n_frames = fields.shape[0] if isinstance(fields, np.ndarray) else len(fields)
 
     # Determine indices to sample
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(rng)
     if n_frames <= n_samples:
         # Use all frames
         indices = np.arange(n_frames)

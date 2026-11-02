@@ -513,7 +513,7 @@ class TuningCurveResult(_TuningCurveMixin, SingleUnitRateMixin):
         """
         return self._tuning_summary_frame(self._row_unit_ids().tolist())
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot firing rate against the variable.
 
         Parameters
@@ -674,7 +674,7 @@ class TuningCurvesResult(_TuningCurveMixin, PopulationRateMixin[TuningCurveResul
         labels = resolve_unit_ids(index, len(self), context="summary_table")
         return self._tuning_summary_frame(list(labels))
 
-    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot one unit's firing rate against the variable.
 
         Parameters

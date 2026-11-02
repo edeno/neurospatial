@@ -58,10 +58,11 @@ def test_old_order_raises(name, recording):
     kwargs = {}
     if name in {"compute_decision_analysis", "compute_vte_session"}:
         args = (env, positions, times)
-        kwargs["decision_region"] = "decision"
         if name == "compute_decision_analysis":
+            kwargs["decision_region"] = "decision"
             kwargs["goal_regions"] = ["goal"]
         else:
+            kwargs["region"] = "decision"
             kwargs["trials"] = Intervals([], record_type=behavior.Trial)
     if name in {
         "approach_rate",

@@ -119,7 +119,7 @@ class TestVTEDecisionAnalysisIntegration:
             env,
             times,
             trajectory,
-            decision_region="decision",
+            region="decision",
             trials=trials,
             window_duration=0.5,
             min_speed=1.0,
@@ -207,11 +207,11 @@ class TestVTERoundTrip:
             env,
             times_array,
             positions_array,
-            decision_region="decision",
+            region="decision",
             trials=trials,
             window_duration=0.8,
             min_speed=1.0,
-            alpha=0.5,
+            head_sweep_weight=0.5,
             vte_threshold=0.0,  # Lower threshold for testing
         )
 

@@ -360,15 +360,13 @@ class TestPeriEventHistogram:
         spike_times = np.linspace(9.5, 10.5, 10)
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         assert isinstance(result, PeriEventResult)
         assert result.n_events == 1
-        assert result.bin_size == bin_size
+        assert result.dt == dt
         assert result.window == window
         assert len(result.bin_centers) == 10  # 1.0 / 0.1 = 10 bins
 
@@ -385,11 +383,9 @@ class TestPeriEventHistogram:
             ]
         )
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         assert result.n_events == 3
         # Should have 1 spike per event in bins around -0.3 and +0.2
@@ -402,13 +398,11 @@ class TestPeriEventHistogram:
         spike_times = np.array([10.0])
         event_times = np.array([10.0])
         window = (-1.0, 1.0)
-        bin_size = 0.5
+        dt = 0.5
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
-        # Window is 2.0s, bin_size 0.5s → 4 bins
+        # Window is 2.0s, dt 0.5s → 4 bins
         # Centers at: -0.75, -0.25, 0.25, 0.75
         expected_centers = np.array([-0.75, -0.25, 0.25, 0.75])
         assert_array_almost_equal(result.bin_centers, expected_centers)
@@ -417,27 +411,25 @@ class TestPeriEventHistogram:
         """Bin edges and centers stay within window when not a clean multiple.
 
         Regression test: with window_duration not an integer multiple of
-        bin_size, the old implementation appended a partial bin extending
+        dt, the old implementation appended a partial bin extending
         past window[1], so bin_centers[-1] > window[1] and the last bin
         absorbed out-of-window spikes. Edges and centers must stay within
         the requested window.
         """
         from neurospatial.events.alignment import peri_event_histogram
 
-        # Window 1.0s, bin_size 0.3s. 1.0 / 0.3 = 3.33..., not a clean
+        # Window 1.0s, dt 0.3s. 1.0 / 0.3 = 3.33..., not a clean
         # multiple. Old code produced 4 bins ending at -0.5 + 4*0.3 = 0.7
         # (> window[1] = 0.5). Correct behavior: 3 full bins ending at 0.4.
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
-        bin_size = 0.3
+        dt = 0.3
 
         # A spike at relative time +0.45 falls in the dropped partial bin
         # [0.4, 0.7). It must NOT be counted in any in-window bin.
         spike_times = np.array([10.45])
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         # All bin centers must lie strictly within the window.
         assert result.bin_centers[-1] <= window[1]
@@ -455,11 +447,9 @@ class TestPeriEventHistogram:
         spike_times = np.full(10, 9.55)  # All in first bin around -0.45
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         # First bin has 10 spikes in 0.1s → 100 Hz
         rates = result.firing_rate
@@ -486,11 +476,9 @@ class TestPeriEventHistogram:
             ]
         )
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         # SEM should be non-zero for first bin (variable counts)
         assert result.sem[0] > 0
@@ -553,26 +541,26 @@ class TestPeriEventHistogram:
             peri_event_histogram(spike_times, event_times, window)
 
     def test_invalid_bin_size_zero(self):
-        """Zero bin_size raises ValueError."""
+        """Zero dt raises ValueError."""
         from neurospatial.events.alignment import peri_event_histogram
 
         spike_times = np.array([10.0])
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.raises(ValueError, match="bin_size"):
-            peri_event_histogram(spike_times, event_times, window, bin_size=0.0)
+        with pytest.raises(ValueError, match="dt"):
+            peri_event_histogram(spike_times, event_times, window, dt=0.0)
 
     def test_invalid_bin_size_negative(self):
-        """Negative bin_size raises ValueError."""
+        """Negative dt raises ValueError."""
         from neurospatial.events.alignment import peri_event_histogram
 
         spike_times = np.array([10.0])
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.raises(ValueError, match="bin_size"):
-            peri_event_histogram(spike_times, event_times, window, bin_size=-0.1)
+        with pytest.raises(ValueError, match="dt"):
+            peri_event_histogram(spike_times, event_times, window, dt=-0.1)
 
     # --- Output properties ---
 
@@ -583,11 +571,9 @@ class TestPeriEventHistogram:
         spike_times = np.linspace(9.0, 11.0, 100)
         event_times = np.array([10.0])
         window = (-1.0, 1.0)
-        bin_size = 0.1
+        dt = 0.1
 
-        result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         n_bins = len(result.bin_centers)
         assert len(result.histogram) == n_bins
@@ -628,7 +614,7 @@ class TestPeriEventHistogram:
         spike_times = np.sort(np.concatenate([baseline_spikes, evoked_spikes]))
 
         result = peri_event_histogram(
-            spike_times, stim_times, window=(-0.5, 1.0), bin_size=0.05
+            spike_times, stim_times, window=(-0.5, 1.0), dt=0.05
         )
 
         assert result.n_events == len(stim_times)
@@ -657,10 +643,10 @@ class TestPopulationPeriEventHistogram:
         ]
         event_times = np.array([10.0])
         window = (-1.0, 1.0)
-        bin_size = 0.5
+        dt = 0.5
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=bin_size
+            spike_trains, event_times, window, dt=dt
         )
 
         assert isinstance(result, PopulationPeriEventResult)
@@ -679,10 +665,10 @@ class TestPopulationPeriEventHistogram:
         ]
         event_times = np.array([10.0, 20.0])  # 2 events, so mean is 0.5 per event
         window = (-0.5, 0.5)
-        bin_size = 0.25
+        dt = 0.25
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=bin_size
+            spike_trains, event_times, window, dt=dt
         )
 
         # Mean histogram should equal per-unit histogram (since identical)
@@ -698,10 +684,10 @@ class TestPopulationPeriEventHistogram:
         ]
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=bin_size
+            spike_trains, event_times, window, dt=dt
         )
 
         rates = result.firing_rates
@@ -722,10 +708,10 @@ class TestPopulationPeriEventHistogram:
         ]
         event_times = np.array([10.0, 20.0])
         window = (-0.5, 0.5)
-        bin_size = 0.1
+        dt = 0.1
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=bin_size
+            spike_trains, event_times, window, dt=dt
         )
 
         # SEM should have same shape as histograms
@@ -762,17 +748,15 @@ class TestPopulationPeriEventHistogram:
         spike_times = np.array([9.8, 10.2, 10.5])
         event_times = np.array([10.0, 20.0])
         window = (-0.5, 1.0)
-        bin_size = 0.1
+        dt = 0.1
 
         # Single unit population
         pop_result = population_peri_event_histogram(
-            [spike_times], event_times, window, bin_size=bin_size
+            [spike_times], event_times, window, dt=dt
         )
 
         # Should match single-unit PSTH
-        single_result = peri_event_histogram(
-            spike_times, event_times, window, bin_size=bin_size
-        )
+        single_result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
         assert pop_result.n_units == 1
         assert_array_almost_equal(pop_result.histograms[0], single_result.histogram)
@@ -801,10 +785,10 @@ class TestPopulationPeriEventHistogram:
         ]
         event_times = np.array([10.0, 20.0])
         window = (-0.5, 1.0)
-        bin_size = 0.1
+        dt = 0.1
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=bin_size
+            spike_trains, event_times, window, dt=dt
         )
 
         n_units = 3
@@ -836,7 +820,7 @@ class TestPopulationPeriEventHistogram:
         window = (-0.5, 1.0)
 
         result = population_peri_event_histogram(
-            spike_trains, event_times, window, bin_size=0.05
+            spike_trains, event_times, window, dt=0.05
         )
 
         assert result.n_units == n_units
@@ -862,7 +846,7 @@ class TestPopulationPeriEventHistogramSpikeGroup:
         from neurospatial.events.alignment import population_peri_event_histogram
 
         return population_peri_event_histogram(
-            spike_trains, self.EVENT_TIMES, (-1.0, 1.0), bin_size=0.1, **kwargs
+            spike_trains, self.EVENT_TIMES, (-1.0, 1.0), dt=0.1, **kwargs
         )
 
     def test_population_psth_accepts_tsgroup(

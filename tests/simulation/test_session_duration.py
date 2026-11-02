@@ -38,13 +38,13 @@ def test_linear_track_requested_duration_controls_clock(duration):
         bin_size=0.2,
         n_place_cells=2,
         n_laps=2,
-        seed=42,
+        rng=42,
     )
     assert_recording_clock(sim, duration, 500.0)
 
 
 def test_tmaze_requested_duration_controls_clock():
-    sim = tmaze_alternation_session(duration=1.0, n_trials=1, n_place_cells=1, seed=42)
+    sim = tmaze_alternation_session(duration=1.0, n_trials=1, n_place_cells=1, rng=42)
     assert_recording_clock(sim, 1.0, 500.0)
 
 
@@ -59,7 +59,7 @@ def test_lap_session_keeps_every_requested_traversal(short_track, duration):
         sampling_frequency=40.0,
         n_cells=2,
         max_rate=200.0,
-        seed=42,
+        rng=42,
         show_progress=False,
     )
     assert_recording_clock(sim, duration, 40.0)
@@ -79,7 +79,7 @@ def test_minimum_sample_budget_keeps_pause_and_both_endpoints(short_track):
         pause_duration=1.0,
         sampling_frequency=500.0,
         n_cells=1,
-        seed=42,
+        rng=42,
         show_progress=False,
     )
     assert_recording_clock(sim, 1.008, 500.0)
@@ -102,7 +102,7 @@ def test_duration_too_short_for_pauses_and_traversals_raises():
             bin_size=0.2,
             n_place_cells=1,
             n_laps=2,
-            seed=42,
+            rng=42,
         )
     assert "Why:" in str(raised.value)
     assert "Fix:" in str(raised.value)
@@ -131,7 +131,7 @@ def test_duration_controlled_laps_are_seeded(short_track):
         "sampling_frequency": 40.0,
         "n_cells": 2,
         "max_rate": 200.0,
-        "seed": 42,
+        "rng": 42,
         "show_progress": False,
     }
     first = simulate_session(short_track, **kwargs)

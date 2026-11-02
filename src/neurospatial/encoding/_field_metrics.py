@@ -345,8 +345,8 @@ def _is_constant(
 
 
 def field_stability(
-    rate_map_1: NDArray[np.float64],
-    rate_map_2: NDArray[np.float64],
+    rate_map_a: NDArray[np.float64],
+    rate_map_b: NDArray[np.float64],
     *,
     method: Literal["pearson", "spearman"] = "pearson",
 ) -> float:
@@ -357,9 +357,9 @@ def field_stability(
 
     Parameters
     ----------
-    rate_map_1 : array, shape (n_bins,)
+    rate_map_a : array, shape (n_bins,)
         First firing rate map (Hz).
-    rate_map_2 : array, shape (n_bins,)
+    rate_map_b : array, shape (n_bins,)
         Second firing rate map (Hz).
     method : {'pearson', 'spearman'}, default='pearson'
         Correlation method. Pearson for linear correlation, Spearman
@@ -422,9 +422,9 @@ def field_stability(
         method, ("pearson", "spearman"), name="method", owner="field_stability()"
     )
     # Remove NaN values
-    valid_mask = np.isfinite(rate_map_1) & np.isfinite(rate_map_2)
-    map1_clean = rate_map_1[valid_mask]
-    map2_clean = rate_map_2[valid_mask]
+    valid_mask = np.isfinite(rate_map_a) & np.isfinite(rate_map_b)
+    map1_clean = rate_map_a[valid_mask]
+    map2_clean = rate_map_b[valid_mask]
 
     # Fewer than 3 paired bins: 2 points always give r = +-1 (not a measurement)
     # and fewer give no correlation; neither is "no similarity"
@@ -936,12 +936,12 @@ def field_shape_metrics(
 
 
 def field_shift_distance(
-    env_1: Environment[CartesianSystem],
-    firing_rate_1: NDArray[np.float64],
-    field_bins_1: NDArray[np.int64],
-    env_2: Environment[CartesianSystem],
-    firing_rate_2: NDArray[np.float64],
-    field_bins_2: NDArray[np.int64],
+    env_a: Environment[CartesianSystem],
+    firing_rate_a: NDArray[np.float64],
+    field_bins_a: NDArray[np.int64],
+    env_b: Environment[CartesianSystem],
+    firing_rate_b: NDArray[np.float64],
+    field_bins_b: NDArray[np.int64],
     *,
     metric: DistanceMetric = "euclidean",
 ) -> float:
@@ -953,17 +953,17 @@ def field_shift_distance(
 
     Parameters
     ----------
-    env_1 : Environment
+    env_a : Environment
         Spatial environment for first session.
-    firing_rate_1 : NDArray[np.float64], shape (n_bins_1,)
+    firing_rate_a : NDArray[np.float64], shape (n_bins_a,)
         Firing rate map from first session (Hz or spikes/second).
-    field_bins_1 : NDArray[np.int64], shape (n_field_bins_1,)
+    field_bins_a : NDArray[np.int64], shape (n_field_bins_a,)
         Indices of bins belonging to place field in first session.
-    env_2 : Environment
+    env_b : Environment
         Spatial environment for second session.
-    firing_rate_2 : NDArray[np.float64], shape (n_bins_2,)
+    firing_rate_b : NDArray[np.float64], shape (n_bins_b,)
         Firing rate map from second session (Hz or spikes/second).
-    field_bins_2 : NDArray[np.int64], shape (n_field_bins_2,)
+    field_bins_b : NDArray[np.int64], shape (n_field_bins_b,)
         Indices of bins belonging to place field in second session.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric. ``"euclidean"`` is straight-line distance between
@@ -971,7 +971,7 @@ def field_shift_distance(
         environments in one coordinate frame. ``"geodesic"`` is the shortest
         path along the connectivity graph between the bins containing the
         two centroids; it respects barriers and boundaries and requires
-        ``env_1`` and ``env_2`` to have the same bins and connectivity.
+        ``env_a`` and ``env_b`` to have the same bins and connectivity.
 
     Returns
     -------
@@ -989,10 +989,10 @@ def field_shift_distance(
     ValueError
         If ``metric`` is not ``"euclidean"`` or ``"geodesic"``.
     IncompatibleEnvironmentError
-        If ``metric="geodesic"`` and ``env_1`` and ``env_2`` differ in their
+        If ``metric="geodesic"`` and ``env_a`` and ``env_b`` differ in their
         bins or connectivity: there is no single graph to measure a path on.
     CartesianOnlyError
-        If ``env_1`` or ``env_2`` is polar: field centroids are Cartesian
+        If ``env_a`` or ``env_b`` is polar: field centroids are Cartesian
         rate-weighted means of bin centers.
 
     Notes
@@ -1037,27 +1037,27 @@ def field_shift_distance(
     >>> env2 = Environment.from_samples(data, bin_size=2.0, name="session2")
     >>>
     >>> # Create place field in env1
-    >>> firing_rate_1 = np.zeros(env1.n_bins)
+    >>> firing_rate_a = np.zeros(env1.n_bins)
     >>> centers1 = env1.bin_centers
     >>> field_mask_1 = np.linalg.norm(centers1 - [10, 10], axis=1) < 5
-    >>> field_bins_1 = np.where(field_mask_1)[0]
-    >>> firing_rate_1[field_bins_1] = 10.0
+    >>> field_bins_a = np.where(field_mask_1)[0]
+    >>> firing_rate_a[field_bins_a] = 10.0
     >>>
     >>> # Create shifted field in env2 (shifted by ~7 units)
-    >>> firing_rate_2 = np.zeros(env2.n_bins)
+    >>> firing_rate_b = np.zeros(env2.n_bins)
     >>> centers2 = env2.bin_centers
     >>> field_mask_2 = np.linalg.norm(centers2 - [15, 15], axis=1) < 5
-    >>> field_bins_2 = np.where(field_mask_2)[0]
-    >>> firing_rate_2[field_bins_2] = 10.0
+    >>> field_bins_b = np.where(field_mask_2)[0]
+    >>> firing_rate_b[field_bins_b] = 10.0
     >>>
     >>> # Compute shift distance (env-first canonical argument order)
     >>> shift = field_shift_distance(
     ...     env1,
-    ...     firing_rate_1,
-    ...     field_bins_1,
+    ...     firing_rate_a,
+    ...     field_bins_a,
     ...     env2,
-    ...     firing_rate_2,
-    ...     field_bins_2,
+    ...     firing_rate_b,
+    ...     field_bins_b,
     ... )
     >>> print(f"Field shifted by: {shift:.1f} units")  # doctest: +SKIP
     Field shifted by: 7.1 units
@@ -1081,7 +1081,7 @@ def field_shift_distance(
             "metric='geodesic' for the path through the environment."
         )
         raise ValueError(msg)
-    for argument, env in (("env_1", env_1), ("env_2", env_2)):
+    for argument, env in (("env_a", env_a), ("env_b", env_b)):
         require_cartesian(
             env.coordinate_system,
             f"field_shift_distance({argument}=...)",
@@ -1098,11 +1098,11 @@ def field_shift_distance(
         from neurospatial._exceptions import IncompatibleEnvironmentError
         from neurospatial.environment import _environment_differences
 
-        bins, topology = _environment_differences(env_1, env_2)
+        bins, topology = _environment_differences(env_a, env_b)
         mismatch = bins or topology
         if mismatch is not None:
             msg = (
-                "field_shift_distance(metric='geodesic') needs env_1 and env_2 "
+                "field_shift_distance(metric='geodesic') needs env_a and env_b "
                 f"to have the same bins and connectivity; they differ in "
                 f"{mismatch}. A path is measured on one environment's graph, "
                 "and the other session's bins are not on it."
@@ -1114,13 +1114,13 @@ def field_shift_distance(
                     "environments in one coordinate frame, or compute both rate "
                     "maps on the same environment"
                 ),
-                first=env_1,
-                second=env_2,
+                first=env_a,
+                second=env_b,
             )
 
     # Compute centroids for both fields
-    centroid_1 = rate_map_centroid(env_1, firing_rate_1, field_bins_1)
-    centroid_2 = rate_map_centroid(env_2, firing_rate_2, field_bins_2)
+    centroid_1 = rate_map_centroid(env_a, firing_rate_a, field_bins_a)
+    centroid_2 = rate_map_centroid(env_b, firing_rate_b, field_bins_b)
 
     # Check for NaN centroids
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
@@ -1129,17 +1129,17 @@ def field_shift_distance(
     if metric == "euclidean":
         return float(np.linalg.norm(centroid_1 - centroid_2))
 
-    # Same bins and connectivity: measure the path on env_1's graph.
-    centroid_bins = env_1.bin_at(np.stack([centroid_1, centroid_2]))
+    # Same bins and connectivity: measure the path on env_a's graph.
+    centroid_bins = env_a.bin_at(np.stack([centroid_1, centroid_2]))
     if np.any(centroid_bins < 0):
         return np.nan
-    return float(env_1.distance_between(bins=centroid_bins))
+    return float(env_a.distance_between(bins=centroid_bins))
 
 
 def compute_field_emd(
     env: Environment,
-    firing_rate_1: NDArray[np.float64],
-    firing_rate_2: NDArray[np.float64],
+    firing_rate_a: NDArray[np.float64],
+    firing_rate_b: NDArray[np.float64],
     *,
     metric: DistanceMetric = "geodesic",
     normalize: bool = True,
@@ -1160,10 +1160,10 @@ def compute_field_emd(
     ----------
     env : Environment
         Spatial environment defining bin positions and connectivity.
-    firing_rate_1 : NDArray[np.float64], shape (n_bins,)
+    firing_rate_a : NDArray[np.float64], shape (n_bins,)
         First firing rate distribution across spatial bins. NaN marks an
         unsampled bin.
-    firing_rate_2 : NDArray[np.float64], shape (n_bins,)
+    firing_rate_b : NDArray[np.float64], shape (n_bins,)
         Second firing rate distribution across spatial bins. NaN marks an
         unsampled bin.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -1289,12 +1289,12 @@ def compute_field_emd(
     from scipy.spatial.distance import pdist, squareform
 
     # Validate inputs
-    if len(firing_rate_1) != len(firing_rate_2):
-        msg = f"firing_rate arrays must have same length, got {len(firing_rate_1)} and {len(firing_rate_2)}"
+    if len(firing_rate_a) != len(firing_rate_b):
+        msg = f"firing_rate arrays must have same length, got {len(firing_rate_a)} and {len(firing_rate_b)}"
         raise ValueError(msg)
 
-    if len(firing_rate_1) != env.n_bins:
-        msg = f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_1)}"
+    if len(firing_rate_a) != env.n_bins:
+        msg = f"firing_rate arrays must match env.n_bins ({env.n_bins}), got {len(firing_rate_a)}"
         raise ValueError(msg)
 
     if metric not in ("euclidean", "geodesic"):
@@ -1314,10 +1314,10 @@ def compute_field_emd(
     # Compare only bins observed in both maps. Unsampled (NaN) bins are
     # missing, not zero rate: filling them with zero would make mass in one
     # map move onto bins the other session never sampled.
-    firing_rate_1 = np.asarray(firing_rate_1, dtype=np.float64)
-    firing_rate_2 = np.asarray(firing_rate_2, dtype=np.float64)
+    firing_rate_a = np.asarray(firing_rate_a, dtype=np.float64)
+    firing_rate_b = np.asarray(firing_rate_b, dtype=np.float64)
     common_bins = np.flatnonzero(
-        np.isfinite(firing_rate_1) & np.isfinite(firing_rate_2)
+        np.isfinite(firing_rate_a) & np.isfinite(firing_rate_b)
     )
     # The mass in each bin is the firing it holds, rate x measure, so a large
     # bin carries more than a small one at the same rate. Normalized masses
@@ -1326,23 +1326,23 @@ def compute_field_emd(
     measures = env.bin_sizes[common_bins]
     if normalize:
         measures = _relative_measures(measures)
-    firing_rate_1 = firing_rate_1[common_bins] * measures
-    firing_rate_2 = firing_rate_2[common_bins] * measures
+    firing_rate_a = firing_rate_a[common_bins] * measures
+    firing_rate_b = firing_rate_b[common_bins] * measures
 
     # Normalize distributions if requested
     if normalize:
-        sum1 = np.sum(firing_rate_1)
-        sum2 = np.sum(firing_rate_2)
+        sum1 = np.sum(firing_rate_a)
+        sum2 = np.sum(firing_rate_b)
 
         if sum1 == 0 or sum2 == 0:
             return np.nan
 
-        firing_rate_1 = firing_rate_1 / sum1
-        firing_rate_2 = firing_rate_2 / sum2
+        firing_rate_a = firing_rate_a / sum1
+        firing_rate_b = firing_rate_b / sum2
     else:
         # Check that unnormalized distributions have equal total mass
-        sum1 = np.sum(firing_rate_1)
-        sum2 = np.sum(firing_rate_2)
+        sum1 = np.sum(firing_rate_a)
+        sum2 = np.sum(firing_rate_b)
         if not np.isclose(sum1, sum2, rtol=1e-6):
             msg = (
                 f"Unnormalized distributions must have equal total mass (rate x "
@@ -1353,7 +1353,7 @@ def compute_field_emd(
 
     # Filter to bins with non-zero mass in either distribution
     # This reduces problem size significantly for sparse fields
-    nonzero_mask = (firing_rate_1 > 0) | (firing_rate_2 > 0)
+    nonzero_mask = (firing_rate_a > 0) | (firing_rate_b > 0)
     n_active = np.sum(nonzero_mask)
 
     if n_active == 0:
@@ -1367,8 +1367,8 @@ def compute_field_emd(
 
     # Get active bins and their distributions
     active_bins = common_bins[nonzero_mask]
-    p = firing_rate_1[nonzero_mask]
-    q = firing_rate_2[nonzero_mask]
+    p = firing_rate_a[nonzero_mask]
+    q = firing_rate_b[nonzero_mask]
 
     if metric == "geodesic":
         return _graph_transport_cost(env, active_bins, p - q)

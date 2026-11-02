@@ -287,3 +287,70 @@ def _probability_rows(
             fix=fix,
         )
     )
+
+
+def _selected_units(
+    unit_ids: Any,
+    n_units: int,
+    operation: str,
+    labels: Any = None,
+) -> NDArray[np.bool_]:
+    """The units named by ``unit_ids`` as a boolean mask, ``(n_units,)``.
+
+    ``None`` selects every unit. Otherwise ``unit_ids`` is a 1-D array of
+    distinct unit ids, in any order. They are read against ``labels``, the
+    labels the spike input carries (a dict's keys, a ``TsGroup``'s index),
+    and otherwise against the default labels ``np.arange(n_units)``.
+    """
+    mask = np.ones(n_units, dtype=bool)
+    if unit_ids is None:
+        return mask
+    ids = np.asarray(unit_ids)
+    if ids.dtype == np.bool_:
+        raise ValueError(
+            _format_error(
+                f"{operation}: unit_ids is a boolean array, not unit ids.",
+                why="unit_ids names units by id, as everywhere else; "
+                "a mask has one entry per unit instead",
+                fix="pass the selected ids, e.g. unit_ids=np.flatnonzero(mask)",
+            )
+        )
+    carried = labels is not None
+    if ids.ndim != 1 or (not carried and ids.size and ids.dtype.kind not in "iu"):
+        raise ValueError(
+            _format_error(
+                f"{operation}: unit_ids must be a 1-D array of integer unit ids, "
+                f"got dtype {ids.dtype} and shape {ids.shape}."
+                if not carried
+                else f"{operation}: unit_ids must be a 1-D array of unit ids, "
+                f"got shape {ids.shape}.",
+                why="units are selected by their ids",
+                fix="pass e.g. unit_ids=np.array([0, 2, 5])",
+            )
+        )
+    available = np.asarray(labels).tolist() if carried else list(range(n_units))
+    position = {label: index for index, label in enumerate(available)}
+    wanted = ids.tolist()
+    unknown = [unit for unit in wanted if unit not in position]
+    if unknown:
+        shown = available if len(available) <= 20 else [*available[:20], "..."]
+        raise ValueError(
+            _format_error(
+                f"{operation}: unit_ids {unknown} are not among the units "
+                f"(available ids: {shown}).",
+                why="an id is a unit's label: the one its spike group carries, "
+                "or its position in a plain list of spike trains",
+                fix="pass ids from the available ids",
+            )
+        )
+    if len(set(wanted)) != len(wanted):
+        raise ValueError(
+            _format_error(
+                f"{operation}: unit_ids repeats a unit.",
+                why="each unit takes part once",
+                fix="pass np.unique(unit_ids)",
+            )
+        )
+    mask[:] = False
+    mask[[position[unit] for unit in wanted]] = True
+    return mask

@@ -563,7 +563,7 @@ def test_directionality_index_separates_bidirectional_and_one_way_cells():
     ).with_metadata(units="cm")
     for seed in range(3):
         positions, times = simulate_trajectory_laps(
-            env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+            env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
         )
         x = positions[:, 0]
         velocity = np.gradient(x, times)
@@ -575,7 +575,7 @@ def test_directionality_index_separates_bidirectional_and_one_way_cells():
         out_only = field * (velocity > 0) + 0.1
         di = {}
         for k, rate in enumerate((both_ways, out_only)):
-            spikes = generate_poisson_spikes(rate, times, seed=400 + 2 * seed + k)
+            spikes = generate_poisson_spikes(rate, times, rng=400 + 2 * seed + k)
             maps = compute_directional_place_fields(
                 env, spikes, times, positions, labels
             )

@@ -182,10 +182,10 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 2: Detect region crossings
         left_crossings = detect_region_crossings(
-            env, times, traj_positions, region_name="left", direction="entry"
+            env, times, traj_positions, region="left", direction="entry"
         )
         right_crossings = detect_region_crossings(
-            env, times, traj_positions, region_name="right", direction="entry"
+            env, times, traj_positions, region="right", direction="entry"
         )
 
         assert len(left_crossings) >= 1, "Should detect left entries"
@@ -204,7 +204,7 @@ class TestFullTrajectoryAnalysisWorkflow:
                     env,
                     trial_times,
                     trial_positions,
-                    goal_region=trial.end_region,
+                    region=trial.end_region,
                     directedness_threshold=0.3,  # Lower for synthetic data
                     min_progress=5.0,
                 ).windows
@@ -284,7 +284,7 @@ class TestFullTrajectoryAnalysisWorkflow:
             env,
             all_times,
             all_positions,
-            goal_region="goal",
+            region="goal",
             directedness_threshold=0.7,
             min_progress=10.0,
         ).windows
@@ -332,10 +332,10 @@ def test_detect_goal_directed_runs_raises_valueerror() -> None:
     times = np.linspace(0, 10, 20)
     walk = np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
 
-    with pytest.raises(ValueError, match=r"(?s)not found.*goal_region="):
+    with pytest.raises(ValueError, match=r"(?s)not found.*region="):
         detect_goal_directed_runs(
             env,
             times,
             walk,
-            goal_region="nonexistent",
+            region="nonexistent",
         )

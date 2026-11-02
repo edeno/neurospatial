@@ -46,7 +46,7 @@ def tracking():
         np.arctan2(np.gradient(positions[:, 1]), 1e-9 + np.gradient(x))
     )
     spikes = generate_poisson_spikes(
-        2 + 10 * np.exp(-((x - 70) ** 2) / 200), times, seed=21
+        2 + 10 * np.exp(-((x - 70) ** 2) / 200), times, rng=21
     )
     return times, positions, np.angle(np.exp(1j * headings)), spikes, lost
 

@@ -67,8 +67,8 @@ class TestOpenFieldSession:
         """open_field_session() with same seed should produce identical results."""
         seed = 42
 
-        session1 = open_field_session(duration=10.0, n_place_cells=5, seed=seed)
-        session2 = open_field_session(duration=10.0, n_place_cells=5, seed=seed)
+        session1 = open_field_session(duration=10.0, n_place_cells=5, rng=seed)
+        session2 = open_field_session(duration=10.0, n_place_cells=5, rng=seed)
 
         # Trajectories should be identical
         np.testing.assert_array_equal(session1.positions, session2.positions)
@@ -89,7 +89,7 @@ class TestOpenFieldSession:
     def test_open_field_session_custom_arena_size(self):
         """open_field_session() should create arena with custom size."""
         session = open_field_session(
-            duration=10.0, arena_size=50.0, bin_size=1.0, n_place_cells=5, seed=0
+            duration=10.0, arena_size=50.0, bin_size=1.0, n_place_cells=5, rng=0
         )
         assert_square_arena(session.env, 50.0)
 
@@ -111,7 +111,7 @@ class TestOpenFieldSession:
     def test_open_field_session_generates_spikes(self):
         """open_field_session() should generate spikes."""
         # Two minutes with fields on a 3 x 3 grid: the walk reaches some field.
-        session = open_field_session(duration=120.0, n_place_cells=9, seed=42)
+        session = open_field_session(duration=120.0, n_place_cells=9, rng=42)
 
         # At least some cells should have spikes
         total_spikes = sum(len(st) for st in session.spike_times)
@@ -119,7 +119,7 @@ class TestOpenFieldSession:
 
     def test_open_field_session_trajectory_within_bounds(self):
         """open_field_session() trajectory should be within arena bounds."""
-        session = open_field_session(duration=10.0, n_place_cells=5, seed=42)
+        session = open_field_session(duration=10.0, n_place_cells=5, rng=42)
 
         # All positions should map to valid bins
         bin_indices = session.env.bin_at(session.positions)
@@ -128,7 +128,7 @@ class TestOpenFieldSession:
     def test_open_field_session_ground_truth_structure(self):
         """open_field_session() should have proper ground_truth structure."""
         n_cells = 5
-        session = open_field_session(duration=10.0, n_place_cells=n_cells, seed=42)
+        session = open_field_session(duration=10.0, n_place_cells=n_cells, rng=42)
 
         # Check ground_truth keys
         assert len(session.ground_truth) == n_cells
@@ -150,7 +150,7 @@ class TestLinearTrackSession:
     def test_field_centers_cover_the_whole_track(self):
         """Centers are evenly spaced from one end of the track to the other."""
         session = linear_track_session(
-            duration=10.0, track_length=200.0, n_place_cells=40, n_laps=2, seed=0
+            duration=10.0, track_length=200.0, n_place_cells=40, n_laps=2, rng=0
         )
         centers = np.sort([t["center"][0] for t in session.ground_truth.values()])
         ends = session.env.bin_centers[:, 0].min(), session.env.bin_centers[:, 0].max()
@@ -165,10 +165,8 @@ class TestLinearTrackSession:
         from neurospatial.simulation import tmaze_alternation_session
 
         for session in (
-            linear_track_session(duration=5.0, n_place_cells=2, n_laps=2, seed=0),
-            tmaze_alternation_session(
-                duration=5.0, n_trials=2, n_place_cells=2, seed=0
-            ),
+            linear_track_session(duration=5.0, n_place_cells=2, n_laps=2, rng=0),
+            tmaze_alternation_session(duration=5.0, n_trials=2, n_place_cells=2, rng=0),
         ):
             for model in session.models:
                 assert (model.width, model.max_rate) == (17.5, 14.5)
@@ -182,7 +180,7 @@ class TestLinearTrackSession:
             width=7.0,
             max_rate=9.0,
             baseline_rate=0.2,
-            seed=0,
+            rng=0,
         )
         for model in session.models:
             assert (model.width, model.max_rate, model.baseline_rate) == (7.0, 9.0, 0.2)
@@ -212,10 +210,10 @@ class TestLinearTrackSession:
         seed = 42
 
         session1 = linear_track_session(
-            duration=10.0, n_place_cells=5, n_laps=3, seed=seed
+            duration=10.0, n_place_cells=5, n_laps=3, rng=seed
         )
         session2 = linear_track_session(
-            duration=10.0, n_place_cells=5, n_laps=3, seed=seed
+            duration=10.0, n_place_cells=5, n_laps=3, rng=seed
         )
 
         # Trajectories should be identical
@@ -278,7 +276,7 @@ class TestLinearTrackSession:
     def test_linear_track_session_custom_n_laps(self):
         """linear_track_session() should use custom n_laps."""
         session = linear_track_session(
-            duration=20.0, n_place_cells=5, n_laps=10, seed=42
+            duration=20.0, n_place_cells=5, n_laps=10, rng=42
         )
 
         # Should complete without error
@@ -287,9 +285,7 @@ class TestLinearTrackSession:
 
     def test_linear_track_session_generates_spikes(self):
         """linear_track_session() should generate spikes."""
-        session = linear_track_session(
-            duration=30.0, n_place_cells=5, n_laps=5, seed=42
-        )
+        session = linear_track_session(duration=30.0, n_place_cells=5, n_laps=5, rng=42)
 
         # At least some cells should have spikes
         total_spikes = sum(len(st) for st in session.spike_times)
@@ -297,9 +293,7 @@ class TestLinearTrackSession:
 
     def test_linear_track_session_trajectory_within_bounds(self):
         """linear_track_session() trajectory should be within track bounds."""
-        session = linear_track_session(
-            duration=10.0, n_place_cells=5, n_laps=3, seed=42
-        )
+        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3, rng=42)
 
         # All positions should map to valid bins
         bin_indices = session.env.bin_at(session.positions)
@@ -334,7 +328,7 @@ class TestTmazeAlternationSession:
         """Each trial runs to the arm its choice names, alternating left/right."""
         n_trials = 6
         session = tmaze_alternation_session(
-            duration=60.0, n_trials=n_trials, n_place_cells=3, seed=42
+            duration=60.0, n_trials=n_trials, n_place_cells=3, rng=42
         )
         trial_choices = session.metadata["trial_choices"]
         assert all(a != b for a, b in itertools.pairwise(trial_choices))
@@ -359,7 +353,7 @@ class TestTmazeAlternationSession:
     def test_tmaze_alternation_session_fields_cover_the_track(self):
         """Field centers are distinct and spread over the stem and both arms."""
         session = tmaze_alternation_session(
-            duration=20.0, n_trials=2, n_place_cells=30, seed=0
+            duration=20.0, n_trials=2, n_place_cells=30, rng=0
         )
         centers = np.array([truth["center"] for truth in session.ground_truth.values()])
         assert len(np.unique(centers, axis=0)) == 30
@@ -402,10 +396,10 @@ class TestTmazeAlternationSession:
         seed = 42
 
         session1 = tmaze_alternation_session(
-            duration=20.0, n_trials=8, n_place_cells=10, seed=seed
+            duration=20.0, n_trials=8, n_place_cells=10, rng=seed
         )
         session2 = tmaze_alternation_session(
-            duration=20.0, n_trials=8, n_place_cells=10, seed=seed
+            duration=20.0, n_trials=8, n_place_cells=10, rng=seed
         )
 
         # Trajectories should be identical
@@ -432,7 +426,7 @@ class TestTmazeAlternationSession:
     def test_tmaze_alternation_session_generates_spikes(self):
         """tmaze_alternation_session() should generate spikes."""
         session = tmaze_alternation_session(
-            duration=60.0, n_trials=10, n_place_cells=10, seed=42
+            duration=60.0, n_trials=10, n_place_cells=10, rng=42
         )
 
         # At least some cells should have spikes
@@ -442,7 +436,7 @@ class TestTmazeAlternationSession:
     def test_tmaze_alternation_session_trajectory_within_bounds(self):
         """tmaze_alternation_session() trajectory should be within environment bounds."""
         session = tmaze_alternation_session(
-            duration=20.0, n_trials=5, n_place_cells=10, seed=42
+            duration=20.0, n_trials=5, n_place_cells=10, rng=42
         )
 
         # All positions should map to valid bins
@@ -525,14 +519,14 @@ class TestBorderCellSession:
             duration=10.0,
             n_border_cells=5,
             n_place_cells=5,
-            seed=seed,
+            rng=seed,
         )
         session2 = border_cell_session(
             distance_tolerance=5.0,
             duration=10.0,
             n_border_cells=5,
             n_place_cells=5,
-            seed=seed,
+            rng=seed,
         )
 
         # Trajectories should be identical
@@ -561,7 +555,7 @@ class TestBorderCellSession:
             arena_size=80.0,
             n_border_cells=5,
             n_place_cells=5,
-            seed=0,
+            rng=0,
         )
         assert_square_arena(session.env, 80.0)
 
@@ -577,7 +571,7 @@ class TestBorderCellSession:
     def test_border_cell_session_generates_spikes(self):
         """border_cell_session() should generate spikes."""
         session = border_cell_session(
-            duration=30.0, n_border_cells=5, n_place_cells=5, seed=42
+            duration=30.0, n_border_cells=5, n_place_cells=5, rng=42
         )
 
         # At least some cells should have spikes
@@ -593,7 +587,7 @@ class TestBorderCellSession:
             duration=10.0,
             n_border_cells=n_border,
             n_place_cells=n_place,
-            seed=42,
+            rng=42,
         )
 
         # Each unit's ground truth is its model's own.
@@ -611,7 +605,7 @@ class TestBorderCellSession:
     def test_place_cells_are_spread_over_the_interior(self):
         """Place fields lie inside the walls, covering both axes."""
         session = border_cell_session(
-            duration=5.0, n_border_cells=2, n_place_cells=20, seed=0
+            duration=5.0, n_border_cells=2, n_place_cells=20, rng=0
         )
         centers = np.array([m.center for m in session.models[2:]])
         assert len(np.unique(centers, axis=0)) == 20
@@ -631,7 +625,7 @@ class TestBorderCellSession:
         from neurospatial import compute_spatial_rates
 
         session = border_cell_session(
-            duration=900.0, n_border_cells=8, n_place_cells=4, seed=0
+            duration=900.0, n_border_cells=8, n_place_cells=4, rng=0
         )
         rates = compute_spatial_rates(
             session.env,
@@ -647,7 +641,7 @@ class TestBorderCellSession:
     def test_border_cell_session_trajectory_within_bounds(self):
         """border_cell_session() trajectory should be within environment bounds."""
         session = border_cell_session(
-            duration=10.0, n_border_cells=5, n_place_cells=5, seed=42
+            duration=10.0, n_border_cells=5, n_place_cells=5, rng=42
         )
 
         # All positions should map to valid bins
@@ -690,13 +684,13 @@ class TestGridCellSession:
 
     def test_grid_cell_session_returns_simulation_session(self):
         """grid_cell_session() should return SimulationSession instance."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, rng=0)
 
         assert isinstance(session, SimulationSession)
 
     def test_grid_cell_session_default_parameters(self):
         """Defaults: 40 cells of one 41 cm module in a 150 cm arena."""
-        session = grid_cell_session(duration=10.0, seed=0)
+        session = grid_cell_session(duration=10.0, rng=0)
         assert len(session.spike_times) == 40
         assert {m.grid_spacing for m in session.models} == {41.0}
         assert len({m.grid_orientation for m in session.models}) == 40
@@ -705,7 +699,7 @@ class TestGridCellSession:
     def test_grid_cell_session_creates_2d_arena(self):
         """grid_cell_session() should create 2D arena environment."""
         session = grid_cell_session(
-            duration=10.0, arena_size=150.0, n_grid_cells=5, seed=0
+            duration=10.0, arena_size=150.0, n_grid_cells=5, rng=0
         )
         assert session.env.n_dims == 2
         assert session.env.units == "cm"
@@ -714,7 +708,7 @@ class TestGridCellSession:
     def test_grid_cell_session_correct_number_of_cells(self):
         """grid_cell_session() should create correct number of grid cells."""
         n_cells = 20
-        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, seed=0)
+        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, rng=0)
 
         assert len(session.models) == n_cells
         assert len(session.spike_times) == n_cells
@@ -724,7 +718,7 @@ class TestGridCellSession:
         """grid_cell_session() should create only grid cells."""
         from neurospatial.simulation.models import GridCellModel
 
-        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, rng=0)
 
         # All models should be grid cells
         assert all(isinstance(m, GridCellModel) for m in session.models)
@@ -733,8 +727,8 @@ class TestGridCellSession:
         """grid_cell_session() with same seed should produce identical results."""
         seed = 42
 
-        session1 = grid_cell_session(duration=10.0, n_grid_cells=5, seed=seed)
-        session2 = grid_cell_session(duration=10.0, n_grid_cells=5, seed=seed)
+        session1 = grid_cell_session(duration=10.0, n_grid_cells=5, rng=seed)
+        session2 = grid_cell_session(duration=10.0, n_grid_cells=5, rng=seed)
 
         # Trajectories should be identical
         np.testing.assert_array_equal(session1.positions, session2.positions)
@@ -747,7 +741,7 @@ class TestGridCellSession:
     def test_grid_cell_session_custom_duration(self):
         """grid_cell_session() should respect custom duration."""
         duration = 60.0
-        session = grid_cell_session(duration=duration, n_grid_cells=5, seed=0)
+        session = grid_cell_session(duration=duration, n_grid_cells=5, rng=0)
 
         # Check that session duration matches
         assert session.times[-1] >= duration * 0.9  # Allow small tolerance
@@ -755,14 +749,14 @@ class TestGridCellSession:
     def test_grid_cell_session_custom_arena_size(self):
         """grid_cell_session() should create arena with custom size."""
         session = grid_cell_session(
-            duration=10.0, arena_size=100.0, n_grid_cells=5, seed=0
+            duration=10.0, arena_size=100.0, n_grid_cells=5, rng=0
         )
         assert_square_arena(session.env, 100.0)
 
     def test_grid_cell_session_custom_grid_spacing(self):
         """grid_cell_session() should use custom grid_spacing."""
         session = grid_cell_session(
-            duration=10.0, grid_spacing=30.0, n_grid_cells=5, seed=42
+            duration=10.0, grid_spacing=30.0, n_grid_cells=5, rng=42
         )
         assert [m.grid_spacing for m in session.models] == [30.0] * 5
         assert all(t["grid_spacing"] == 30.0 for t in session.ground_truth.values())
@@ -770,7 +764,7 @@ class TestGridCellSession:
 
     def test_grid_cell_session_metadata(self):
         """grid_cell_session() metadata should contain session info."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=0)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, rng=0)
 
         meta = session.metadata
         assert "cell_type" in meta
@@ -778,7 +772,7 @@ class TestGridCellSession:
 
     def test_grid_cell_session_generates_spikes(self):
         """grid_cell_session() should generate spikes."""
-        session = grid_cell_session(duration=30.0, n_grid_cells=5, seed=42)
+        session = grid_cell_session(duration=30.0, n_grid_cells=5, rng=42)
 
         # At least some cells should have spikes
         total_spikes = sum(len(st) for st in session.spike_times)
@@ -786,7 +780,7 @@ class TestGridCellSession:
 
     def test_grid_cell_session_trajectory_within_bounds(self):
         """grid_cell_session() trajectory should be within arena bounds."""
-        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=42)
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, rng=42)
 
         # All positions should map to valid bins
         bin_indices = session.env.bin_at(session.positions)
@@ -795,7 +789,7 @@ class TestGridCellSession:
     def test_grid_cell_session_ground_truth_structure(self):
         """grid_cell_session() should have proper ground_truth structure."""
         n_cells = 5
-        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, seed=42)
+        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, rng=42)
 
         # Check ground_truth keys
         assert len(session.ground_truth) == n_cells
@@ -816,14 +810,14 @@ class TestGridCellSession:
             grid_cell_session(duration=-1.0, n_grid_cells=5)
 
         with pytest.raises(ValueError, match="duration must be positive"):
-            grid_cell_session(duration=0.0, n_grid_cells=5, seed=0)
+            grid_cell_session(duration=0.0, n_grid_cells=5, rng=0)
 
     def test_grid_cell_session_validates_n_grid_cells(self):
         """grid_cell_session() should reject non-positive n_grid_cells."""
         import pytest
 
         with pytest.raises(ValueError, match="n_grid_cells must be positive"):
-            grid_cell_session(duration=30.0, n_grid_cells=0, seed=0)
+            grid_cell_session(duration=30.0, n_grid_cells=0, rng=0)
 
         with pytest.raises(ValueError, match="n_grid_cells must be positive"):
             grid_cell_session(duration=30.0, n_grid_cells=-5)
@@ -865,7 +859,7 @@ class TestGridCellSession:
             )
 
     def test_ground_truth_is_each_models_own(self):
-        session = grid_cell_session(duration=5.0, n_grid_cells=4, seed=0)
+        session = grid_cell_session(duration=5.0, n_grid_cells=4, rng=0)
         for label, model in zip(session.unit_ids, session.models, strict=True):
             truth = session.ground_truth[int(label)]
             assert truth.keys() == model.ground_truth.keys()
@@ -876,18 +870,18 @@ class TestGridCellSession:
 _SEED = 7
 _EXAMPLE_SESSIONS = {
     "open_field": lambda: open_field_session(
-        duration=20.0, n_place_cells=4, max_rate=40.0, width=20.0, seed=_SEED
+        duration=20.0, n_place_cells=4, max_rate=40.0, width=20.0, rng=_SEED
     ),
     "linear_track": lambda: linear_track_session(
-        duration=20.0, n_place_cells=4, n_laps=4, seed=_SEED
+        duration=20.0, n_place_cells=4, n_laps=4, rng=_SEED
     ),
     "tmaze": lambda: tmaze_alternation_session(
-        duration=20.0, n_trials=2, n_place_cells=4, seed=_SEED
+        duration=20.0, n_trials=2, n_place_cells=4, rng=_SEED
     ),
     "border": lambda: border_cell_session(
-        duration=20.0, n_border_cells=2, n_place_cells=2, seed=_SEED
+        duration=20.0, n_border_cells=2, n_place_cells=2, rng=_SEED
     ),
-    "grid": lambda: grid_cell_session(duration=20.0, n_grid_cells=4, seed=_SEED),
+    "grid": lambda: grid_cell_session(duration=20.0, n_grid_cells=4, rng=_SEED),
 }
 
 
@@ -907,7 +901,7 @@ def test_example_spike_streams_are_independent_of_the_trajectory(name):
         session.models,
         session.times,
         session.positions,
-        seed=_SEED,
+        rng=_SEED,
         show_progress=False,
     )
     assert any(
@@ -919,7 +913,7 @@ def test_example_spike_streams_are_independent_of_the_trajectory(name):
 
 def test_grid_phases_and_orientations_have_their_own_stream():
     """Grid tuning is not drawn from the stream the bare seed starts."""
-    session = grid_cell_session(duration=5.0, n_grid_cells=6, seed=_SEED)
+    session = grid_cell_session(duration=5.0, n_grid_cells=6, rng=_SEED)
     orientations = [m.grid_orientation for m in session.models]
     shared = np.random.default_rng(_SEED)
     shared.shuffle(np.zeros((6, 2)))
@@ -930,7 +924,7 @@ def test_open_field_session_labels_place_cells():
     """Place cells in a walled arena get a place label, not a missing border score."""
     from neurospatial.encoding import spatial_cell_type_significance
 
-    session = open_field_session(duration=120.0, n_place_cells=4, bin_size=4.0, seed=0)
+    session = open_field_session(duration=120.0, n_place_cells=4, bin_size=4.0, rng=0)
     assert session.env.arena.outline == "wall"
     result = spatial_cell_type_significance(
         session.env,
@@ -951,7 +945,7 @@ def test_tmaze_session_regions_work_with_detect_trials():
 
     n_trials = 10
     session = tmaze_alternation_session(
-        duration=150.0, n_trials=n_trials, n_place_cells=2, seed=0
+        duration=150.0, n_trials=n_trials, n_place_cells=2, rng=0
     )
     trials = detect_trials(
         session.env,

@@ -304,7 +304,7 @@ class TestLoadLabelmeJson:
         mask[0, 1:3] = True
 
         drawn = load_labelme_json(json_path)["pair"].data
-        assert drawn.equals(mask_to_region(mask, region_name="pair").data)
+        assert drawn.equals(mask_to_region(mask, region="pair").data)
 
     def test_pixel_to_world_wrong_shape_raises(self, tmp_path):
         json_path = _write_labelme(tmp_path, [_shape("zone", [[0, 0], [4, 0], [4, 3]])])
@@ -572,7 +572,7 @@ class TestLoadCvatXml:
         image = np.zeros((6, 8), dtype=bool)
         image[2, 4:6] = image[3, 3:7] = image[4, 4:6] = True
 
-        traced = mask_to_region(image, region_name="blob")
+        traced = mask_to_region(image, region="blob")
         assert region.data.normalize().equals_exact(traced.data.normalize(), 0.0)
         # A CVAT polygon drawn along the mask's outer pixel edges lands on it too.
         drawn = _load_one(
@@ -805,7 +805,7 @@ class TestMaskToRegion:
         mask[5:45, 5:15] = True  # a 40-row L
         mask[35:45, 5:25] = True
 
-        polygon = mask_to_region(mask, region_name="L").data
+        polygon = mask_to_region(mask, region="L").data
         assert len(polygon.exterior.coords) == 7  # six corners, closed
         assert polygon.area == mask.sum()
 
@@ -814,7 +814,7 @@ class TestMaskToRegion:
         mask[1:6, 2:8] = True
         mask[3, 4] = False  # one-pixel hole
 
-        region = mask_to_region(mask, region_name="arena")
+        region = mask_to_region(mask, region="arena")
 
         polygon = region.data
         assert region.kind == "polygon"
@@ -834,7 +834,7 @@ class TestMaskToRegion:
         ],
     )
     def test_single_pixel_row_and_column(self, mask, bounds):
-        region = mask_to_region(mask, region_name="thin")
+        region = mask_to_region(mask, region="thin")
 
         assert region.data.bounds == bounds
         assert region.data.area == mask.sum()
@@ -843,7 +843,7 @@ class TestMaskToRegion:
         mask = np.zeros((4, 4), dtype=np.uint8)
         mask[1:3, 1:3] = 1
 
-        region = mask_to_region(mask, region_name="zone")
+        region = mask_to_region(mask, region="zone")
 
         assert region.data.bounds == (0.5, 0.5, 2.5, 2.5)
 
@@ -851,7 +851,7 @@ class TestMaskToRegion:
         mask = np.ones((5, 5), dtype=bool)
         mask[2, 2] = False
 
-        region = mask_to_region(mask, region_name="ring", pixel_to_world=_scale(2.0))
+        region = mask_to_region(mask, region="ring", pixel_to_world=_scale(2.0))
 
         assert region.data.bounds == (-1.0, -1.0, 9.0, 9.0)
         assert Polygon(region.data.interiors[0]).bounds == (3.0, 3.0, 5.0, 5.0)
@@ -859,7 +859,7 @@ class TestMaskToRegion:
         assert "coord_system" not in region.metadata
 
     def test_pixel_metadata(self):
-        region = mask_to_region(np.ones((2, 2), dtype=bool), region_name="r")
+        region = mask_to_region(np.ones((2, 2), dtype=bool), region="r")
 
         assert region.metadata["source"] == "mask"
         assert region.metadata["coord_system"] == "pixels"
@@ -869,15 +869,15 @@ class TestMaskToRegion:
         mask[2:28, 2:28] = True
         mask[10:20, 10:20] = False
 
-        region = mask_to_region(mask, region_name="r", simplify_tolerance=1.0)
+        region = mask_to_region(mask, region="r", simplify_tolerance=1.0)
 
         assert len(region.data.interiors) == 1
         with pytest.raises(ValueError, match="finite and nonnegative"):
-            mask_to_region(mask, region_name="r", simplify_tolerance=-1.0)
+            mask_to_region(mask, region="r", simplify_tolerance=-1.0)
 
     def test_empty_mask_raises(self):
         with pytest.raises(ValueError, match="no foreground"):
-            mask_to_region(np.zeros((4, 4), dtype=bool), region_name="empty")
+            mask_to_region(np.zeros((4, 4), dtype=bool), region="empty")
 
     @pytest.mark.parametrize(
         "mask",
@@ -889,7 +889,7 @@ class TestMaskToRegion:
     def test_several_components_raise_with_count(self, mask):
         n_areas = int(mask.sum())
         with pytest.raises(ValueError, match=f"{n_areas} separate areas"):
-            mask_to_region(mask, region_name="split")
+            mask_to_region(mask, region="split")
 
     @pytest.mark.parametrize(
         ("mask", "match"),
@@ -904,7 +904,7 @@ class TestMaskToRegion:
     )
     def test_rejects_non_mask_input(self, mask, match):
         with pytest.raises(ValueError, match=match):
-            mask_to_region(mask, region_name="bad")
+            mask_to_region(mask, region="bad")
 
 
 class TestPixelToWorldValidation:
@@ -916,7 +916,7 @@ class TestPixelToWorldValidation:
         ):
             mask_to_region(
                 np.ones((2, 2), dtype=bool),
-                region_name="r",
+                region="r",
                 pixel_to_world=lambda points: points[:, 0],
             )
 
@@ -928,5 +928,5 @@ class TestPixelToWorldValidation:
 
         with pytest.raises(ValueError, match="non-finite coordinates for 1 of"):
             mask_to_region(
-                np.ones((2, 2), dtype=bool), region_name="r", pixel_to_world=to_nan
+                np.ones((2, 2), dtype=bool), region="r", pixel_to_world=to_nan
             )
