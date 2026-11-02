@@ -5,8 +5,9 @@
 Build a tracked `datasets/` folder that loads public spatial-neuroscience
 recordings into plain arrays, runs a fixed set of neurospatial operations on
 each, and records the outcome in a dataset × operation table. Every place a
-loader or operation needed a workaround, or where neurospatial disagrees with an
-independent tool or with what we expected beforehand, goes into a gap log. The
+loader or operation needed a workaround, where neurospatial disagrees with an
+independent tool or with what we expected beforehand, or where its warnings fire
+on good data or stay silent on known defects, goes into a gap log. The
 log, not the scripts, is the product: it is the evidence for what neurospatial
 is missing. The first batches cover seven datasets chosen for variety (2-D grid
 cells, head direction, 1-D figure-8 with replay, 3-D bat flight, imaging, a
@@ -26,7 +27,7 @@ For agent invocation, **load only the slice you need**:
 
 - [overview.md](overview.md) — goals, non-goals, integration points, dependency policy, risks
 - [shared-contracts.md](shared-contracts.md) — the `Recording` record, loader module contract, operation/outcome contract, gap-log entry format
-- [designs.md](designs.md) — fetch/cache helper, record validation, operation registry, driver, reference checks
+- [designs.md](designs.md) — fetch/cache helper, record validation, operation registry, driver, warning calibration, reference checks
 - Phases (each ships as a separable PR):
   - [phase-1-harness-reference-sets.md](phase-1-harness-reference-sets.md) — harness + the two datasets with independent reference numbers (000582 grid cells, Mouse32 head direction) + reference cross-checks
   - [phase-2-tracks-graphs-3d.md](phase-2-tracks-graphs-3d.md) — 000552 figure-8 (1-D, replay), Rosenberg labyrinth (graph maze, behavior only), Yartsev bat (3-D)

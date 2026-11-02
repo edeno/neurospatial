@@ -47,6 +47,11 @@ after phase 4.
 - Independent reference checks where another tool publishes or computes the
   same quantity (pynapple spatial information and head-direction decoding,
   opexebo grid score).
+- Warning calibration in both directions: every warning neurospatial emits on
+  correctly loaded real data gets a verdict (warranted or false alarm), and each
+  recording is re-run with known defects re-introduced (headings in degrees,
+  missing positions as 0, wrong time or length units, the dataset's own quirks)
+  to see whether neurospatial raises, warns or stays silent.
 - A gap log with evidence, and (phase 4) a ranked list of proposed changes.
 
 ### Non-Goals
@@ -89,6 +94,7 @@ Commit `uv.lock` changes in the same commit as the group.
   `missing` or `error` cell links to a gap-log entry.
 - Reference checks report a numeric agreement for each comparison, with the
   convention differences written down when they don't agree.
+- Every warning template and hazard probe in `results/warnings.md` has a verdict.
 - Phase 4 output: each proposed change cites ≥2 datasets or one reference
   disagreement as evidence.
 

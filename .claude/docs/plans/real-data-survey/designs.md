@@ -7,6 +7,7 @@
 - [Expectations](#expectations)
 - [Operation registry](#operation-registry)
 - [Driver](#driver)
+- [Warning calibration](#warning-calibration)
 - [Reference checks](#reference-checks)
 - [Loader recipe](#loader-recipe)
 
@@ -362,7 +363,9 @@ RESULTS = Path(__file__).resolve().parent / "results"
 
 def run_dataset(key: str, op_ids: Sequence[str] | None) -> dict[str, Any]:
     module = importlib.import_module(LOADERS[key])
-    rec = module.load()
+    rec, load_error, load_warnings = captured(module.load)
+    if load_error is not None:
+        raise load_error  # a loader that fails is a harness bug, not a table cell
     validate_recording(rec)
     record = {
         "dataset": key,
@@ -371,6 +374,7 @@ def run_dataset(key: str, op_ids: Sequence[str] | None) -> dict[str, Any]:
         "conversions": list(rec.conversions),
         "expectations": check_expectations(rec, module.EXPECTATIONS),
         "versions": _versions(),
+        "load_warnings": load_warnings,  # e.g. from neurospatial.io.nwb readers
         "operations": {},
     }
     cache: dict[str, Any] = {}
@@ -382,14 +386,16 @@ def run_dataset(key: str, op_ids: Sequence[str] | None) -> dict[str, Any]:
             continue
         tracemalloc.start()
         start = time.perf_counter()
-        try:
-            outcome = op.run(rec, cache)
-        except Exception as exc:
+        outcome, exc, caught = captured(op.run, rec, cache)
+        if exc is not None:
             outcome = Outcome("error", note=f"{type(exc).__name__}: {exc}")
         seconds = time.perf_counter() - start
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        record["operations"][op.op_id] = {**asdict(outcome), "seconds": round(seconds, 3), "peak_mb": round(peak / 1e6, 1)}
+        record["operations"][op.op_id] = {
+            **asdict(outcome), "warnings": caught, "seconds": round(seconds, 3), "peak_mb": round(peak / 1e6, 1)
+        }
+    record["hazards"] = probe_hazards(module, rec, record["operations"])
     (RESULTS / f"{key}.json").write_text(json.dumps(record, indent=2, default=_jsonable))
     return record
 ```
@@ -399,13 +405,132 @@ def run_dataset(key: str, op_ids: Sequence[str] | None) -> dict[str, Any]:
 - `_jsonable` converts numpy scalars/arrays to Python values.
 - After running, regenerate `results/matrix.md` from every `results/*.json`:
   one row per dataset, one column per op_id, cell text `ok`, `wk G-###`,
-  `miss G-###`, `err`, or `–` (n/a), plus a column `expectations` showing
+  `miss G-###`, `err`, or `–` (n/a), followed by `⚠N` when the operation
+  emitted N distinct warning templates, plus a column `expectations` showing
   `passed/total`. A second table lists `seconds` and `peak_mb` per cell.
+  Also regenerate `results/warnings.md` (see [Warning calibration](#warning-calibration)).
 - CLI: `python datasets/run.py [--datasets KEY ...] [--ops OP_ID ...]`;
   default is every dataset and every op.
 - `tracemalloc` sees NumPy allocations but not JAX device memory; the matrix
   footer says so.
 - Run with `MPLBACKEND=Agg` (see the `nwb-docs-test-plt-show-hang` memory).
+
+## Warning calibration
+
+Checks warnings in both directions. **Too aggressive:** every warning emitted
+while loading or running operations on correctly loaded data is a candidate
+false alarm. **Not aggressive enough:** each recording is re-run with one known
+defect re-introduced (a *hazard*); an operation that accepts it without a
+warning or error is a candidate silent hazard. Both live in
+`datasets/_warnings.py`.
+
+```python
+import re
+import warnings
+from collections import Counter
+from dataclasses import replace
+
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:e[-+]?\d+)?")
+
+
+def template(message: str) -> str:
+    """Group warnings that differ only in the numbers they report."""
+    return _NUMBER.sub("#", message)
+
+
+def captured(fn, *args):
+    """Call fn(*args); return (value, exception or None, distinct warnings)."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            value, error = fn(*args), None
+        except Exception as exc:  # the driver records every failure
+            value, error = None, exc
+    counts = Counter((w.category.__name__, template(str(w.message))) for w in caught)
+    example = {}
+    for w in caught:
+        example.setdefault((w.category.__name__, template(str(w.message))), str(w.message))
+    rows = [
+        {"category": category, "template": text, "example": example[category, text], "count": n}
+        for (category, text), n in counts.items()
+    ]
+    return value, error, rows
+
+
+# Applied to every recording they fit: (applies?, make hazardous recording).
+GENERIC_HAZARDS = {
+    "headings_in_degrees": (
+        lambda r: r.headings is not None,
+        lambda r: replace(r, headings=np.degrees(r.headings)),
+    ),
+    "missing_positions_as_zero": (
+        lambda r: r.positions is not None and bool(np.isnan(r.positions).any()),
+        lambda r: replace(r, positions=np.nan_to_num(r.positions, nan=0.0)),
+    ),
+    "spike_times_in_ms": (
+        lambda r: r.spike_times is not None,
+        lambda r: replace(r, spike_times=tuple(t * 1e3 for t in r.spike_times)),
+    ),
+    # Off by 100: metres labelled cm, or cm labelled metres. params["bin_size"]
+    # stays in the labelled unit, as a user who missed the error would leave it.
+    "length_unit_off_by_100": (
+        lambda r: r.positions is not None and r.position_units in ("cm", "m"),
+        lambda r: replace(r, positions=r.positions * (0.01 if r.position_units == "cm" else 100.0)),
+    ),
+}
+PROBE_OPS = ("env.from_samples", "env.occupancy", "rates.spatial", "hd.tuning")
+
+
+def probe_hazards(module, rec, clean_operations):
+    hazards = {name: make for name, (applies, make) in GENERIC_HAZARDS.items() if applies(rec)}
+    hazards.update(getattr(module, "HAZARDS", {}))
+    rows = []
+    for name, make in hazards.items():
+        bad, cache = make(rec), {}  # no validate_recording: the hazard is the point
+        for op in OPERATIONS:
+            if op.op_id not in PROBE_OPS or any(getattr(bad, f) is None for f in op.requires):
+                continue
+            outcome, error, caught = captured(op.run, bad, cache)
+            rows.append({
+                "hazard": name,
+                "op": op.op_id,
+                "response": "raised" if error else "warned" if caught else "silent",
+                "message": f"{type(error).__name__}: {error}" if error else [c["example"] for c in caught],
+                "clean_summary": clean_operations.get(op.op_id, {}).get("summary"),
+                "hazard_summary": None if outcome is None else outcome.summary,
+            })
+    return rows
+```
+
+`results/warnings.md` (regenerated from `results/*.json`) has two tables:
+
+1. **Warnings on clean data** — one row per (category, template): example
+   message, the datasets and operations (or `load`) where it fired, total
+   count, the largest count from a single operation call, and the verdict.
+2. **Hazard probes** — one row per (dataset, hazard, op): response, message,
+   and the clean vs hazardous summary side by side (a silent response with a
+   changed summary means a quietly different result), and the verdict.
+
+Verdicts are hand-written in `datasets/warning_verdicts.json`, keyed by
+template (table 1) or `"<dataset>/<hazard>/<op>"` (table 2), each
+`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`. The renderer joins
+them in and prints `unreviewed` for keys without one, so verdicts survive
+regeneration. Verdict vocabulary:
+
+| Table | Verdict | Meaning | Gap kind |
+| --- | --- | --- | --- |
+| 1 | `warranted` | the data really has the condition, and the message says what failed, why, and how to fix it | none |
+| 1 | `false alarm` | the condition is harmless for this data; `reason` says why | `false-alarm` |
+| 1 | `unactionable` | true, but the message does not say what to do | `error-message` |
+| 1 | `noisy` | warranted, but repeated within one call (count > 1 for a single fact) | `friction` |
+| 2 | `caught` | raised or warned, with an actionable message | none |
+| 2 | `caught, poor message` | raised or warned, but the message would not lead a user to the cause | `error-message` |
+| 2 | `silent` | accepted without comment | `silent-hazard` |
+| 2 | `undetectable` | silent, but no rule on values could catch it (`reason` says why, e.g. both value ranges are plausible) | `docs` if the docs should warn instead |
+
+Judge a `false alarm` against the data, not the threshold: open the samples
+that triggered it before deciding. A threshold change is proposed only in
+phase 4, with the counts from every dataset.
 
 ## Reference checks
 

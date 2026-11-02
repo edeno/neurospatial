@@ -19,19 +19,21 @@
 
 - [Recording](shared-contracts.md#recording), [Loader module](shared-contracts.md#loader-module), [Operation and Outcome](shared-contracts.md#operation-and-outcome), [Gap-log entry](shared-contracts.md#gap-log-entry), [Folder layout](shared-contracts.md#folder-layout) — implement exactly; do not weaken.
 
-**Designs referenced:** [fetch](designs.md#fetch-and-cache), [validation](designs.md#record-validation), [expectations](designs.md#expectations), [registry](designs.md#operation-registry), [driver](designs.md#driver), [reference checks](designs.md#reference-checks), [loader recipe](designs.md#loader-recipe).
+**Designs referenced:** [fetch](designs.md#fetch-and-cache), [validation](designs.md#record-validation), [expectations](designs.md#expectations), [registry](designs.md#operation-registry), [driver](designs.md#driver), [warning calibration](designs.md#warning-calibration), [reference checks](designs.md#reference-checks), [loader recipe](designs.md#loader-recipe).
 
 Dataset specifics: [appendix: sargolini_000582](appendix.md#sargolini_000582-phase-1), [appendix: peyrache_mouse32](appendix.md#peyrache_mouse32-phase-1).
 
 ## Tasks
 
 - **Tooling.** Add the `datasets` dependency group and the `"datasets/**/*.py" = ["T201"]` ruff per-file ignore to `pyproject.toml` (see [overview: dependency policy](overview.md#dependency-policy)); run `uv lock`; commit with `uv.lock`.
-- **Harness core.** Create `datasets/_fetch.py`, `datasets/_record.py` (`Recording`, `validate_recording`, `MEASURES`, `check_expectations`), `datasets/operations.py` (phase-1 registry incl. `nwb_roundtrip`), `datasets/run.py` (driver + `results/matrix.md` rendering), as designed. No `__init__.py` in `datasets/`.
+- **Harness core.** Create `datasets/_fetch.py`, `datasets/_record.py` (`Recording`, `validate_recording`, `MEASURES`, `check_expectations`), `datasets/operations.py` (phase-1 registry incl. `nwb_roundtrip`), `datasets/_warnings.py` (`captured`, `GENERIC_HAZARDS`, `probe_hazards`), `datasets/run.py` (driver + `results/matrix.md` and `results/warnings.md` rendering), as designed. No `__init__.py` in `datasets/`.
 - **Offline tests.** `datasets/tests/conftest.py` puts `datasets/` on `sys.path` and builds a simulated `Recording` with `neurospatial.simulation` (place cells in a 100 cm box, seeded RNG; read `src/neurospatial/simulation/` for the current generator names). Tests per the validation slice below.
 - **Pre-registered expectations (own commit, before any real run).** Create `datasets/load_sargolini_000582.py` and `datasets/load_peyrache_mouse32.py` containing only `DATASET`, `EXPECTATIONS` (seeded from the appendix; refine from the paper/readme, never from running the loader) and a `load` that raises `NotImplementedError`. Commit.
 - **Loaders.** Implement both `load` functions per the [loader recipe](designs.md#loader-recipe). Try neurospatial's NWB readers first and log every failure or surprise as a gap. Choose `params` with a justification comment each (e.g. `bin_size` 2.5 cm for a 100 cm box: 40 bins, matching the pynapple reference; `min_speed` 2.5 cm/s if used, citing the convention; `train_epochs`/`test_epochs` as alternating 60 s blocks of the session for held-out decoding).
+- **Dataset hazards.** In each loader, add `HAZARDS` for any dataset-specific quirk the loader corrects (none is expected for these two beyond the generic hazards; if a loader records a correcting conversion, it gets a hazard). Write them after the loader works, not with the expectations.
 - **Gap log.** Create `datasets/GAPS.md` with the entry format from the contract; add entries as they arise (loader friction, reader failures, data quirks, error-message quality).
 - **Run.** `MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/run.py`; commit `results/*.json` and `results/matrix.md`. Review every `error`/`workaround`/`missing` cell and give it a gap entry.
+- **Warning verdicts.** Create `datasets/warning_verdicts.json` and give every row of `results/warnings.md` a verdict, with a gap entry where the [verdict table](designs.md#warning-calibration) calls for one. Open the triggering samples before calling a warning a false alarm. Commit the regenerated `results/warnings.md` with no `unreviewed` rows.
 - **Reference checks.** Implement `datasets/reference_checks.py` (all three checks in [designs](designs.md#reference-checks)); run; commit `results/reference_checks.md`. Every disagreement beyond the investigation trigger gets a gap entry with the convention analysis.
 - **README.** `datasets/README.md`: purpose (one paragraph), how to run, cache location and `NEUROSPATIAL_DATA_DIR`, licenses (data are not redistributed), how to add a dataset (point to the loader contract), how to read the matrix.
 
@@ -56,8 +58,12 @@ Dataset specifics: [appendix: sargolini_000582](appendix.md#sargolini_000582-pha
 | `datasets/tests/test_run.py::test_driver_statuses_on_simulated_recording` | running the registry on the simulated recording yields `ok` for 2-D ops, `n/a` for `hd.tuning` when headings are `None`, `error` with `"<Type>: <msg>"` when an op raises (inject a failing op) |
 | `test_run.py::test_simulated_place_cells_recovered` | on the simulated recording, `rates.spatial_information` median > 0.5 bits/spike and `decode.position` median error < 10 cm (scientific sanity, ground truth known) |
 | `test_run.py::test_matrix_render` | `matrix.md` has one row per JSON and the status codes in the right cells |
+| `datasets/tests/test_warnings.py::test_captured_groups_by_template` | an injected op that warns `"3 bins"` and `"5 bins"` and then raises yields one template `"# bins"` with count 2 and the exception returned, not raised |
+| `test_warnings.py::test_hazard_responses_classified` | on the simulated recording, injected probe ops that raise, warn, and do nothing are reported `raised`, `warned`, `silent`, with clean and hazardous summaries attached |
+| `test_warnings.py::test_generic_hazards_apply_only_when_relevant` | a recording without headings or without NaN positions gets no `headings_in_degrees` / `missing_positions_as_zero` probe; a loader `HAZARDS` entry is added to the generic ones |
+| `test_warnings.py::test_unreviewed_rows_rendered` | `warnings.md` marks a template missing from `warning_verdicts.json` as `unreviewed` and joins verdicts for the rest |
 | `uv run ruff check datasets && uv run ruff format --check datasets` | clean |
-| Real run (manual, network) | both datasets load and validate; `results/matrix.md` and `results/reference_checks.md` committed; every non-`ok` cell has a gap id |
+| Real run (manual, network) | both datasets load and validate; `results/matrix.md`, `results/warnings.md` and `results/reference_checks.md` committed; every non-`ok` cell has a gap id; no `unreviewed` warning or hazard row |
 
 Run the offline tests with `uv run --group datasets pytest datasets/tests -n 0`
 (they're outside `testpaths`). Simulated tests must not need the network.

@@ -57,6 +57,7 @@ Each dataset is one file `datasets/load_<key>.py` exposing exactly:
 ```python
 DATASET: dict[str, str]   # {"key", "title", "source", "license", "download_size"}
 EXPECTATIONS: dict[str, Any]  # pre-registered checks, committed before the first run
+HAZARDS: dict[str, Callable[[Recording], Recording]]  # optional; see below
 
 def load(cache: Path | None = None) -> Recording: ...
 
@@ -68,6 +69,7 @@ if __name__ == "__main__":  # standalone: fetch, load, validate, print a summary
 - `EXPECTATIONS` keys are free-form but each is checked by `check_expectations` ([designs.md#expectations](designs.md#expectations)); supported forms: exact value, `(low, high)` range, or a callable predicate on the `Recording`.
 - `EXPECTATIONS` lands in its own commit before the commit that first runs the driver on that dataset, so history shows it was written first.
 - The module docstring states: what was recorded, where the data lives, what the loader converts, and every analysis choice in `params` with its justification.
+- `HAZARDS` (optional) maps a short name to a function that undoes one correction the loader made for a quirk this dataset really has, returning the recording as a user who missed the quirk would pass it (e.g. the stored "mm" values left unconverted, a −500 sentinel left in place of NaN). Each entry names the `conversions` line it undoes in a comment. The harness also applies [generic hazards](designs.md#warning-calibration) to every recording, so a loader lists only dataset-specific ones. Hazardous recordings bypass `validate_recording`: the point is to see what neurospatial does with them.
 
 ## Operation and Outcome
 
@@ -105,7 +107,7 @@ class Operation:
 ## G-007: Head direction labelled degrees but stored in radians is read as degrees
 - Datasets: giocomo_001701
 - Operation / step: loader (read_head_direction)
-- Kind: wrong-result | missing-feature | friction | error-message | docs | performance | data-quirk
+- Kind: wrong-result | missing-feature | friction | error-message | docs | performance | data-quirk | false-alarm | silent-hazard
 - Evidence: <numbers, file:line in the loader, table cell, reference-check output>
 - Harness workaround: <datasets/load_x.py:NN, or "none">
 - Proposed change: <one line, or "undecided">
@@ -114,6 +116,9 @@ class Operation:
 
 `data-quirk` entries describe the source data, not neurospatial; they matter
 when the question is whether neurospatial should detect or refuse the quirk.
+`false-alarm` entries are warnings that fired on correctly loaded data;
+`silent-hazard` entries are hazards neurospatial accepted without a warning or
+error (see [warning calibration](designs.md#warning-calibration)).
 
 ## Folder layout
 
@@ -123,11 +128,13 @@ datasets/
   GAPS.md                 # gap log (hand-written, tracked)
   _fetch.py               # download + verify + cache
   _record.py              # Recording + validate_recording + check_expectations
+  _warnings.py            # warning capture, generic hazards, hazard probes
+  warning_verdicts.json   # hand-written verdicts joined into results/warnings.md
   operations.py           # operation registry
   reference_checks.py     # cross-tool comparisons
   run.py                  # driver: datasets x operations -> results/
   load_<key>.py           # one per dataset
-  results/                # tracked, regenerated: <key>.json, matrix.md, reference_checks.md
+  results/                # tracked, regenerated: <key>.json, matrix.md, warnings.md, reference_checks.md
   tests/                  # offline tests on simulated recordings
 ```
 
