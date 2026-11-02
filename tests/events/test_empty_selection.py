@@ -140,6 +140,32 @@ def test_psth_of_no_events_is_nan_with_a_warning(name, selection):
         assert result.events_per_bin is None
 
 
+@pytest.mark.parametrize("selection", list(EVENT_SELECTIONS))
+def test_response_plot_of_no_events_draws_an_empty_raster(selection):
+    import matplotlib.pyplot as plt
+
+    from neurospatial.events import plot_peri_event_response
+
+    events = EVENT_SELECTIONS[selection]
+    with pytest.warns(UserWarning, match="event_times holds no event"):
+        result = peri_event_histogram(SPIKES, events, (-1.0, 1.0), bin_size=0.25)
+    raster_ax, _ = plot_peri_event_response(SPIKES, events, result)
+    assert raster_ax.get_ylim() == (-0.5, 0.5)
+    assert raster_ax.get_title() == "0 retained events"
+    plt.close(raster_ax.figure)
+
+
+def test_distance_histogram_of_no_events_is_nan_with_a_warning():
+    with pytest.warns(UserWarning, match="event_times holds no event") as record:
+        result = peri_event_distance_histogram(
+            SPIKES, np.array([]), TIMES, POSITIONS, (-10.0, 10.0), bin_size=2.0
+        )
+    assert len(record) == 1
+    assert (result.n_events, result.n_events_dropped) == (0, 0)
+    assert result.event_indices.size == 0
+    assert np.isnan(result.firing_rate).all()
+
+
 @pytest.mark.parametrize("name", list(PSTH_CALLS))
 def test_psth_of_no_trials_aligned_at_their_stop(name):
     with pytest.warns(UserWarning, match="event_times holds no event"):

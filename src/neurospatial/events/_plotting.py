@@ -216,7 +216,8 @@ def plot_peri_event_response(
         )
     raster_ax.eventplot(aligned, colors=raster_color, linelengths=0.8, linewidths=0.8)
     raster_ax.set_ylabel("Retained event row")
-    raster_ax.set_ylim(-0.5, result.n_events - 0.5)
+    # With no retained event, keep one empty row rather than a zero-height axis.
+    raster_ax.set_ylim(-0.5, max(result.n_events, 1) - 0.5)
     unit_label = "" if result.unit_id is None else f"Unit {result.unit_id}: "
     raster_ax.set_title(f"{unit_label}{result.n_events} retained events")
     raster_ax.axvline(0.0, color="gray", linestyle="--", alpha=0.5, linewidth=1)

@@ -33,6 +33,7 @@ from neurospatial.events._core import (
     _make_bin_edges,
     empty_selection_names,
     warn_empty_selection,
+    warn_no_events,
 )
 
 if TYPE_CHECKING:
@@ -362,13 +363,14 @@ or None
     ------
     ValueError
         If ``window`` or ``bin_size`` is invalid, ``min_speed`` is negative
-        or not finite, ``event_times`` is empty or an ``Intervals``, or no
+        or not finite, ``event_times`` is an ``Intervals``, or no
         event falls on tracked time inside windows with duration.
 
     Warns
     -----
     UserWarning
-        When ``epochs`` or ``spike_window`` is an empty selection.
+        When ``event_times`` is empty, or ``epochs`` or ``spike_window`` is
+        an empty selection; ``firing_rate`` is then NaN.
 
     Notes
     -----
@@ -430,17 +432,20 @@ or None
         )
     edges = _make_bin_edges(window, bin_size)
     spikes = np.sort(_finite_times(spike_times, "spike_times"))
-    events = _finite_times(event_times, "event_times", non_empty=True)
+    events = _finite_times(event_times, "event_times")
     analyzed = as_intervals(epochs, name="epochs")
     recorded = as_intervals(spike_window, name="spike_window")
     empty = empty_selection_names(analyzed, recorded)
-    if empty:
+    if empty or events.size == 0:
         # Validate the recording as any call does, so the result never
         # depends on the selection being empty.
         compute_cumulative_distance(
             times, positions, max_gap=max_gap, break_before=break_before
         )
-        warn_empty_selection(empty, n_events=events.size, result="the rate")
+        if events.size == 0:
+            warn_no_events(result="the rate")
+        if empty:
+            warn_empty_selection(empty, n_events=events.size, result="the rate")
         no_events = np.zeros((0, edges.size - 1), dtype=np.float64)
         return PeriEventDistanceResult(
             spike_counts=no_events,
