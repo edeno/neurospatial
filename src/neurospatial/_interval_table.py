@@ -1018,8 +1018,8 @@ class Intervals(Generic[R]):
             input_ids=input_ids,
         )
         counts = np.empty((len(self), len(trains)), dtype=np.int64)
+        # The trains come back in time order, as searchsorted needs.
         for unit, train in enumerate(trains):
-            train = np.sort(train)
             counts[:, unit] = np.searchsorted(
                 train, self._stop, side="left"
             ) - np.searchsorted(train, self._start, side="left")
